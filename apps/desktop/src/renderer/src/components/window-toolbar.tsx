@@ -6,7 +6,7 @@ import {
   useState,
   type PointerEventHandler,
 } from "react";
-import { ChevronLeft, ChevronRight, History } from "lucide-react";
+import { ChevronLeft, ChevronRight, History, RotateCw } from "lucide-react";
 import {
   SidebarTrigger,
   useSidebar,
@@ -23,6 +23,7 @@ import {
   useTabPresentation,
 } from "@multica/views/layout";
 import { useNavigation } from "@multica/views/navigation";
+import { useT } from "@multica/views/i18n";
 import {
   useTabHistory,
   type BrowsingHistoryEntry,
@@ -180,6 +181,7 @@ function HistoryMenuItem({
 }
 
 export function WindowToolbar() {
+  const { t } = useT("settings");
   const { state: sidebarState, isCompact } = useSidebar();
   const sidebarHidden = sidebarState === "collapsed" || isCompact;
   const toolbarWidth: React.CSSProperties["width"] = sidebarHidden
@@ -194,6 +196,7 @@ export function WindowToolbar() {
     goBack,
     goForward,
     goToHistoryIndex,
+    reload,
   } = useTabHistory();
   const { push } = useNavigation();
   const [menu, setMenu] = useState<OpenHistoryMenu | null>(null);
@@ -369,6 +372,15 @@ export function WindowToolbar() {
           }}
         >
           <ChevronRight aria-hidden className="size-4" />
+        </button>
+        <button
+          type="button"
+          aria-label={t(($) => $.desktop.worktrees.refresh_tab)}
+          title={t(($) => $.desktop.worktrees.refresh_tab)}
+          className={navButtonClassName}
+          onClick={reload}
+        >
+          <RotateCw aria-hidden className="size-4" />
         </button>
       </div>
 

@@ -17,6 +17,9 @@ vi.mock("../platform/daemon-reauth", () => ({
 
 let emitLogLine: (line: string) => void = () => {};
 
+// Worktree management has its own query-backed component suite.
+vi.mock("./worktree-manager", () => ({ WorktreeManager: () => null }));
+
 function installDaemonAPI(status: DaemonStatus) {
   Object.defineProperty(window, "daemonAPI", {
     configurable: true,

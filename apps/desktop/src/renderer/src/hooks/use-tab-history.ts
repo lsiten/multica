@@ -49,6 +49,10 @@ export function useTabHistory() {
     useTabStore.getState().goToHistoryIndex(index);
   }, []);
 
+  const reload = useCallback(() => {
+    useTabStore.getState().reloadActiveTab();
+  }, []);
+
   return {
     canGoBack,
     canGoForward,
@@ -58,6 +62,7 @@ export function useTabHistory() {
     goBack,
     goForward,
     goToHistoryIndex,
+    reload,
   };
 }
 

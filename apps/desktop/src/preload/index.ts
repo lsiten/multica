@@ -23,6 +23,8 @@ import { AUTH_SESSION_STATE_CHANNEL } from "../shared/auth-session";
 import type {
   DaemonStatus,
   LocalRuntimeProbe,
+  ManagedWorktree,
+  ManagedWorktreeCleanupResult,
 } from "../shared/daemon-types";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
@@ -221,6 +223,8 @@ const desktopAPI = {
       ipcRenderer.removeListener("tab:close-active", handler);
     };
   },
+  onReloadActiveTab: (callback: () => void) =>
+    subscribeToMainRendererChannel("tab:reload-active", () => callback()),
   /** Listen for Cmd/Ctrl+, requests to open Settings. Only the main window
    *  subscribes — main delivers the chord there even when it was pressed in
    *  an issue window, because Settings is a tab. Returns an unsubscribe fn. */
@@ -263,6 +267,10 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:probe-runtimes"),
   getHostName: (): Promise<string> =>
     ipcRenderer.invoke("daemon:get-host-name"),
+  listWorktrees: (): Promise<ManagedWorktree[]> =>
+    ipcRenderer.invoke("daemon:list-worktrees"),
+  cleanupWorktrees: (paths: string[], discardChanges = false): Promise<ManagedWorktreeCleanupResult> =>
+    ipcRenderer.invoke("daemon:cleanup-worktrees", paths, discardChanges),
   onStatusChange: (callback: (status: DaemonStatus) => void) => {
     const handler = (_: unknown, status: DaemonStatus) => callback(status);
     ipcRenderer.on("daemon:status", handler);

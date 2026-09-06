@@ -63,6 +63,11 @@ function useNativeNavigationGestures() {
   }, [goBack, goForward]);
 }
 
+function useActiveTabRefresh() {
+  const { reload } = useTabHistory();
+  useEffect(() => window.desktopAPI.onReloadActiveTab?.(reload), [reload]);
+}
+
 
 // The main area's top bar doubles as a window drag region. When the sidebar
 // is not occupying enough main-flow width, leave the remainder here so tabs
@@ -207,6 +212,7 @@ function DesktopInboxBridge() {
 export function DesktopShell() {
   useInternalLinkHandler();
   useNativeNavigationGestures();
+  useActiveTabRefresh();
   useNavigationInputBindings();
 
   // Reactive read of current workspace slug from the platform singleton.

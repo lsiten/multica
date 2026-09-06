@@ -34,22 +34,26 @@ function key(
   };
 }
 
-describe("handleAppShortcut — reload blocking", () => {
-  it("swallows Cmd+R on macOS", () => {
+describe("handleAppShortcut — safe tab refresh", () => {
+  it("requests a tab refresh for Cmd+R on macOS", () => {
     const wc = makeWc();
-    expect(handleAppShortcut(key("r", { meta: true }), wc, "darwin")).toBe(true);
+    expect(handleAppShortcut(key("r", { meta: true }), wc, "darwin")).toBe("reload-tab");
     expect(wc.setZoomLevel).not.toHaveBeenCalled();
   });
 
   it("swallows Ctrl+R on Linux/Windows", () => {
     const wc = makeWc();
-    expect(handleAppShortcut(key("r", { control: true }), wc, "linux")).toBe(true);
-    expect(handleAppShortcut(key("R", { control: true }), wc, "win32")).toBe(true);
+    expect(handleAppShortcut(key("r", { control: true }), wc, "linux")).toBe("reload-tab");
+    expect(handleAppShortcut(key("R", { control: true }), wc, "win32")).toBe("reload-tab");
   });
 
   it("swallows F5 regardless of modifier", () => {
     const wc = makeWc();
-    expect(handleAppShortcut(key("F5"), wc, "darwin")).toBe(true);
+    expect(handleAppShortcut(key("F5"), wc, "darwin")).toBe("reload-tab");
+  });
+
+  it("does not repeatedly refresh while the shortcut is held", () => {
+    expect(handleAppShortcut({ ...key("r", { meta: true }), isAutoRepeat: true }, makeWc(), "darwin")).toBe(true);
   });
 
   it("ignores non-keyDown events", () => {

@@ -20,8 +20,11 @@ import type {
   DaemonStatus,
   DaemonPrefs,
   LocalRuntimeProbe,
+  ManagedWorktree,
+  ManagedWorktreeCleanupResult,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
+import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
 import {
@@ -197,6 +200,32 @@ async function fetchHealthAtPort(
     return (await res.json()) as HealthPayload;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchWorktreeManager(
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
+  const active = await ensureActiveProfile();
+  if (!active) throw new Error("The daemon profile is not ready yet.");
+  const config = await readProfileConfig(active.name);
+  if (typeof config.token !== "string" || !config.token) {
+    throw new Error("Sign in before managing worktrees.");
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  try {
+    const response = await fetch(`http://127.0.0.1:${active.port}${path}`, {
+      ...init,
+      headers: { ...init?.headers, Authorization: `Bearer ${config.token}`, "X-Multica-Profile": active.name },
+      signal: controller.signal,
+    });
+    if (response.status === 404) throw new Error("Update and restart the daemon to manage worktrees.");
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
   } finally {
     clearTimeout(timeout);
   }
@@ -1375,6 +1404,19 @@ export function setupDaemonManager(
     return lifecycleOperations.runForeground(() => restartDaemon());
   });
   ipcMain.handle("daemon:get-status", () => fetchHealth());
+  ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
+    parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
+  );
+  ipcMain.handle("daemon:cleanup-worktrees", async (_event, paths: unknown, discardChanges: unknown = false): Promise<ManagedWorktreeCleanupResult> => {
+    if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((path) => typeof path !== "string" || !path) || typeof discardChanges !== "boolean") {
+      throw new Error("Select between 1 and 1000 worktrees to clean.");
+    }
+    return parseManagedWorktreeCleanup(await fetchWorktreeManager("/worktrees", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths, discard_changes: discardChanges }),
+    }));
+  });
   ipcMain.handle("daemon:probe-runtimes", () => probeLocalRuntimes());
   // The host's OS name, available regardless of daemon state. The Runtimes
   // page uses it as a fallback identity for "this machine" when no
