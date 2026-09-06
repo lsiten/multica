@@ -1,8 +1,9 @@
-# Explicit source-build override. The base file also builds from source by default.
+# Explicit local-build override. Normal deployments only pull CI-built images.
 
 services:
   backend:
     image: multica-backend:dev
+    pull_policy: build
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,6 +14,7 @@ services:
 
   frontend:
     image: multica-web:dev
+    pull_policy: build
     build:
       context: .
       dockerfile: Dockerfile.web

@@ -1,0 +1,109 @@
+name: Fork Images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'lsiten/multica' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [backend, web]
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deployment contracts
+        run: bash scripts/selfhost-source.test.sh
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push architecture image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image == 'web' && 'Dockerfile.web' || 'Dockerfile' }}
+          platforms: linux/${{ matrix.arch }}
+          pull: true
+          build-args: |
+            VERSION=sha-${{ github.sha }}
+            COMMIT=${{ github.sha }}
+            NEXT_PUBLIC_APP_VERSION=sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/lsiten/multica
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=fork-${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=fork-${{ matrix.image }}-${{ matrix.arch }}
+          outputs: type=image,name=ghcr.io/lsiten/multica-${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+      - name: Record digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fork-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fork-*
+          path: /tmp/digests
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish matching multi-architecture versions
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for image in backend web; do
+            refs=()
+            for arch in amd64 arm64; do
+              for digest in /tmp/digests/fork-${image}-${arch}/*; do
+                test -f "$digest"
+                refs+=("ghcr.io/lsiten/multica-${image}@sha256:$(basename "$digest")")
+              done
+            done
+            docker buildx imagetools create -t "ghcr.io/lsiten/multica-${image}:sha-${COMMIT_SHA}" "${refs[@]}"
+          done
+          # Promote only after both versioned manifests exist. Deployments can
+          # pin sha tags to avoid the brief window between channel updates.
+          for image in backend web; do
+            docker buildx imagetools create \
+              -t "ghcr.io/lsiten/multica-${image}:main" \
+              "ghcr.io/lsiten/multica-${image}:sha-${COMMIT_SHA}"
+          done
+          echo "Deploy both images with MULTICA_IMAGE_TAG=sha-${COMMIT_SHA}" >> "$GITHUB_STEP_SUMMARY"

@@ -1,8 +1,8 @@
 # Self-Hosting Guide
 
 > For this fork, use [lsiten/multica deployment instructions](SELF_HOSTING_FORK.md).
-> `make selfhost` builds the current checkout; `make selfhost-images` explicitly
-> opts into the upstream prebuilt-image workflow described below.
+> `make selfhost` pulls GitHub-built fork images without compiling on the server.
+> `make selfhost-build` is the explicit local compilation option.
 
 Deploy Multica on your own infrastructure in minutes.
 
