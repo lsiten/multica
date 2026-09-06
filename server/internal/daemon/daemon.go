@@ -5795,6 +5795,8 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// is reference-counted, so the duplicate marks runTask installs are
 	// correctly nested within these.
 	resolvedEnvRoot, resolveRootErr := execenv.ResolveRootDir(taskRootDirParams(d.cfg.WorkspacesRoot, task))
+	var completedEnvRoot string
+	defer func() { d.autoCleanupCompletedWorktree(ctx, completedEnvRoot) }()
 	if resolveRootErr != nil {
 		taskLog.Error("resolve stable task env root", "error", resolveRootErr)
 	}
@@ -5935,6 +5937,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// crash leaves the directory as an orphan (cleaned up by GCOrphanTTL).
 	if result.EnvRoot != "" {
 		if meta, ok := gcMetaForTask(task); ok {
+			meta.AutoCleanup = result.Status == "completed"
 			// A local_directory project_resource matched this daemon
 			// means the agent ran in the user's own tree. Stamp the
 			// meta so the GC loop never tries to RemoveAll envRoot's
@@ -5954,6 +5957,8 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 			}
 			if err := execenv.WriteGCMeta(result.EnvRoot, meta, taskLog); err != nil {
 				taskLog.Warn("write gc meta failed (non-fatal)", "error", err)
+			} else if meta.AutoCleanup {
+				completedEnvRoot = result.EnvRoot
 			}
 		}
 	}
@@ -6417,7 +6422,10 @@ func (d *Daemon) sendTerminalTaskReport(ctx context.Context, report terminalTask
 // internal task with no IDs at all). The caller skips writing a meta file
 // in that case so the directory falls back to mtime-based orphan cleanup.
 func gcMetaForTask(task Task) (execenv.GCMeta, bool) {
-	meta := execenv.GCMeta{WorkspaceID: task.WorkspaceID, TaskID: task.ID}
+	meta := execenv.GCMeta{WorkspaceID: task.WorkspaceID, TaskID: task.ID, AgentID: task.AgentID}
+	if task.Agent != nil {
+		meta.AgentName = task.Agent.Name
+	}
 	switch {
 	case task.ChatSessionID != "":
 		meta.Kind = execenv.GCKindChat
