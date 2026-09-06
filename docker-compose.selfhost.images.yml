@@ -1,0 +1,9 @@
+# Explicit opt-in to prebuilt images; upstream images do not include fork features.
+# Use make selfhost-images, or combine with the base file and up --no-build.
+services:
+  backend:
+    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:${MULTICA_IMAGE_TAG:-latest}
+    pull_policy: always
+  frontend:
+    image: ${MULTICA_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:${MULTICA_IMAGE_TAG:-latest}
+    pull_policy: always

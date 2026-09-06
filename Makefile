@@ -79,7 +79,11 @@ makehelp: help ## Alias for `make help`
 # ---------- Self-hosting (Docker Compose) ----------
 ##@ Self-hosting
 
-selfhost: ## Create .env if needed, then pull and start the official self-hosted images
+.PHONY: selfhost-images
+
+selfhost: selfhost-build ## Build and deploy this checkout, including database migrations
+
+selfhost-images: ## Explicitly deploy prebuilt images (official upstream by default)
 	$(REQUIRE_COMPOSE)
 	@if [ ! -f .env ]; then \
 		echo "==> Creating .env from .env.example..."; \
@@ -101,7 +105,7 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and MULTICA_VCS_SECRET_KEY"; \
 	fi
 	@echo "==> Pulling official Multica images..."
-	@if ! $(COMPOSE) -f docker-compose.selfhost.yml pull; then \
+	@if ! $(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.images.yml pull; then \
 		echo ""; \
 		echo "Official images for tag '$${MULTICA_IMAGE_TAG:-latest}' are not published yet."; \
 		echo "If this is before the first GHCR release, build from the current checkout:"; \
@@ -109,7 +113,7 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		exit 1; \
 	fi
 	@echo "==> Starting Multica via Docker Compose..."
-	$(COMPOSE) -f docker-compose.selfhost.yml up -d
+	$(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.images.yml up -d --no-build
 	@bash scripts/selfhost-wait.sh official
 
 selfhost-build: ## Build backend/web from the current checkout and start the self-hosted stack

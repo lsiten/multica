@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Wait for the self-hosted stack to answer /health, then print connection info.
-# Shared by `make selfhost` and `make selfhost-build`.
+# Shared by source builds and the explicit prebuilt-image deployment.
 #
 # Why the host port is read back from Compose instead of re-derived here: the
 # recipes used to probe `${PORT:-8080}` while Compose published `${BACKEND_PORT:-8080}`.
@@ -17,10 +17,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-mode=${1:-official}
+mode=${1:-build}
 case "$mode" in
 official)
-  compose_files=(-f docker-compose.selfhost.yml)
+  compose_files=(-f docker-compose.selfhost.yml -f docker-compose.selfhost.images.yml)
   ;;
 build)
   compose_files=(-f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml)
