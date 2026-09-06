@@ -4,6 +4,7 @@ import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSche
 import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { configStore } from "../config";
+import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
   Issue,
   IssuePriority,
@@ -2815,6 +2816,30 @@ export class ApiClient {
 
   async archiveCompletedInbox(): Promise<{ count: number }> {
     return this.fetch("/api/inbox/archive-completed", { method: "POST" });
+  }
+
+  async listNotificationBots(workspaceSlug: string) {
+    const raw = await this.fetch<unknown>("/api/notification-bots", { headers: workspaceHeader(workspaceSlug) });
+    return parseWithFallback<NotificationBotList>(raw, NotificationBotListSchema, {available: false, bots: []}, {endpoint: "GET /api/notification-bots"});
+  }
+
+  async saveNotificationBot(input: SaveNotificationBot, workspaceSlug: string): Promise<void> {
+    const credentials = input.credentials;
+    await this.fetch<unknown>(`/api/notification-bots${input.id ? `/${encodeURIComponent(input.id)}` : ""}`, {
+      method: input.id ? "PUT" : "POST",
+      headers: workspaceHeader(workspaceSlug),
+      body: JSON.stringify({ name: input.name, platform: input.platform, is_enabled: input.isEnabled,
+        ...(credentials ? {credentials: {webhook_url: credentials.webhookURL, secret: credentials.secret, bot_token: credentials.botToken, chat_id: credentials.chatID}} : {}),
+      }),
+    });
+  }
+
+  async deleteNotificationBot(id: string, workspaceSlug: string): Promise<void> {
+    await this.fetch(`/api/notification-bots/${encodeURIComponent(id)}`, {method:"DELETE",headers:workspaceHeader(workspaceSlug)});
+  }
+
+  async testNotificationBot(id: string, workspaceSlug: string): Promise<void> {
+    await this.fetch(`/api/notification-bots/${encodeURIComponent(id)}/test`, {method:"POST",headers:workspaceHeader(workspaceSlug)});
   }
 
   // Notification preferences
