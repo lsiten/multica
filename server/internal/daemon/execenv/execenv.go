@@ -624,6 +624,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 			IssueID:       params.Task.IssueID,
 			ChatSessionID: params.Task.ChatSessionID,
 			AgentID:       params.Task.AgentID,
+			AgentName:     params.AgentName,
 		}); err != nil && logger != nil {
 			logger.Warn("execenv: write managed env provenance failed (non-fatal); a follow-up may start a fresh session", "error", err)
 		}
@@ -1096,7 +1097,13 @@ type GCMeta struct {
 	AutopilotRunID string     `json:"autopilot_run_id,omitempty"`
 	TaskID         string     `json:"task_id,omitempty"`
 	WorkspaceID    string     `json:"workspace_id"`
-	CompletedAt    time.Time  `json:"completed_at"`
+	// AgentID and AgentName make completed task environments attributable in
+	// the local worktree manager. They are diagnostic metadata only; task
+	// authorization continues to use TaskID and the server-side task record.
+	AgentID     string    `json:"agent_id,omitempty"`
+	AgentName   string    `json:"agent_name,omitempty"`
+	CompletedAt time.Time `json:"completed_at"`
+	AutoCleanup bool      `json:"auto_cleanup,omitempty"`
 	// LocalDirectory marks tasks whose WorkDir pointed at a user-owned
 	// path rather than the synthesised envRoot/workdir. The GC loop honours
 	// this by never falling into the gcActionClean branch (which would
@@ -1176,6 +1183,7 @@ type ManagedEnvProvenance struct {
 	IssueID       string `json:"issue_id,omitempty"`
 	ChatSessionID string `json:"chat_session_id,omitempty"`
 	AgentID       string `json:"agent_id"`
+	AgentName     string `json:"agent_name,omitempty"`
 }
 
 // WriteManagedEnvProvenance persists the reuse-eligibility marker at the env

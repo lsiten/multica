@@ -25,6 +25,8 @@ type TaskDiskUsage struct {
 	TaskShort         string `json:"task_short"`
 	Path              string `json:"path"`
 	Kind              string `json:"kind"`
+	AgentID           string `json:"agent_id,omitempty"`
+	AgentName         string `json:"agent_name,omitempty"`
 	ParentID          string `json:"parent_id,omitempty"`
 	ParentStatus      string `json:"parent_status"`
 	AgeSeconds        int64  `json:"age_seconds"`
@@ -333,6 +335,8 @@ func buildTaskUsage(taskDir, wsID, taskShort string, matcher artifactMatcher) Ta
 			usage.WorkspaceShort = ShortID(workspaceID)
 		}
 		usage.Kind = string(meta.Kind)
+		usage.AgentID = strings.TrimSpace(meta.AgentID)
+		usage.AgentName = strings.TrimSpace(meta.AgentName)
 		usage.ParentID = parentIDForMeta(meta)
 		if !meta.CompletedAt.IsZero() {
 			usage.AgeSeconds = int64(time.Since(meta.CompletedAt).Seconds())

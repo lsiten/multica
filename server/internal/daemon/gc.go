@@ -215,6 +215,15 @@ func (d *Daemon) gcWorkspace(ctx context.Context, wsDir string, stats *gcStats) 
 			continue
 		}
 		meta, metaErr := execenv.ReadGCMeta(taskDir)
+		if metaErr == nil && meta.AutoCleanup && !meta.LocalDirectory && !d.cfg.KeepEnvAfterTask {
+			if reason := d.cleanupManagedWorktree(ctx, worktreeCleanup{path: taskDir, automatic: true}); reason == "" {
+				cleanedHere++
+				stats.cleaned++
+			} else {
+				stats.skipped++
+			}
+			continue
+		}
 		if metaErr == nil && meta.Kind == execenv.GCKindIssue && strings.TrimSpace(meta.IssueID) != "" {
 			if workspaceID := strings.TrimSpace(meta.WorkspaceID); workspaceID != "" {
 				issueCandidatesByWorkspace[workspaceID] = append(
