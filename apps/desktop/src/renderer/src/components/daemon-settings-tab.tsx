@@ -18,6 +18,7 @@ import {
   formatUptime,
 } from "../../../shared/daemon-types";
 import { daemonStateLabel } from "./daemon-i18n";
+import { WorktreeManager } from "./worktree-manager";
 
 // One row inside the diagnostics block. Values that are likely to be
 // long IDs / URLs render as monospaced + truncated with a tooltip.
@@ -185,6 +186,8 @@ export function DaemonSettingsTab() {
           {cliInstalled !== false && <span />}
         </SettingsRow>
       </SettingsCard>
+
+      <WorktreeManager key={status.profile} status={status} />
 
       {/* Diagnostics — moved out of the logs panel so the panel can focus
           on logs. These fields matter for support tickets and bug reports,

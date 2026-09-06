@@ -42,6 +42,8 @@ export interface DaemonPrefs {
   autoStop: boolean;
 }
 
+export type { ManagedWorktree, ManagedWorktreeCleanupResult } from "@multica/core/types/managed-worktree";
+
 export type LocalRuntimeProbe =
   | {
       probeResult: "success";

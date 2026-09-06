@@ -46,6 +46,8 @@ const ZOOM_MAX = 4.5;
  * - `"close-tab"`: Cmd/Ctrl+W intercepted — caller should send IPC to renderer
  * - `"open-settings"`: Cmd/Ctrl+, intercepted — caller should route the
  *   request to the tabbed main window
+ * - `"reload-tab"`: Cmd/Ctrl+R / F5 intercepted — caller should refresh the
+ *   active product tab without reloading Electron's renderer document
  * - `{ action: "select-tab", key }`: Cmd/Ctrl+1..9 intercepted — caller
  *   should route the requested browser-style tab position to the main window
  */
@@ -53,6 +55,7 @@ export type ShortcutResult =
   | boolean
   | "close-tab"
   | "open-settings"
+  | "reload-tab"
   | { action: "select-tab"; key: TabSelectionShortcutKey };
 
 export function handleAppShortcut(
@@ -65,10 +68,11 @@ export function handleAppShortcut(
   const secondary = platform === "darwin" ? input.control : input.meta;
   const noSecondaryModifiers = !secondary && !input.alt;
 
-  // Block reload — accidental Cmd+R / Ctrl+R / F5 destroys in-memory state
-  // (tabs, drafts, WS connections) with no URL bar to recover from.
+  // Refresh the product tab rather than Chromium's document: the latter drops
+  // tabs, drafts, and WebSocket state. The renderer remounts only this tab.
   if ((primary && input.key.toLowerCase() === "r") || input.key === "F5") {
-    return true;
+    if (input.isAutoRepeat) return true;
+    return "reload-tab";
   }
 
   if (!primary || !noSecondaryModifiers) return false;

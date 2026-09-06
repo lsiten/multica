@@ -24,7 +24,11 @@ export function useTabHistory() {
     useTabStore.getState().goForward();
   }, []);
 
-  return { canGoBack, canGoForward, goBack, goForward };
+  const reload = useCallback(() => {
+    useTabStore.getState().reloadActiveTab();
+  }, []);
+
+  return { canGoBack, canGoForward, goBack, goForward, reload };
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

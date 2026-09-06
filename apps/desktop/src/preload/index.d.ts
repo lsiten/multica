@@ -15,6 +15,8 @@ import type {
   DaemonStatus,
   DaemonPrefs,
   LocalRuntimeProbe,
+  ManagedWorktree,
+  ManagedWorktreeCleanupResult,
 } from "../shared/daemon-types";
 import type { TabSelectionShortcutKey } from "../shared/main-renderer-messages";
 
@@ -106,6 +108,8 @@ interface DesktopAPI {
   /** Listen for Cmd/Ctrl+W tab-close requests from the main process.
    *  Returns an unsubscribe function. */
   onCloseActiveTab: (callback: () => void) => () => void;
+  /** Listen for a safe active-tab refresh request. */
+  onReloadActiveTab: (callback: () => void) => () => void;
   /** Listen for Cmd/Ctrl+, requests to open Settings, delivered to the main
    *  window whichever window had focus. Returns an unsubscribe function. */
   onOpenSettings: (callback: () => void) => () => void;
@@ -134,6 +138,10 @@ interface DaemonAPI {
   getStatus: () => Promise<DaemonStatus>;
   probeRuntimes: () => Promise<LocalRuntimeProbe>;
   getHostName: () => Promise<string>;
+  /** List daemon-owned task environments, including active-state protection. */
+  listWorktrees: () => Promise<ManagedWorktree[]>;
+  /** Remove selected inactive daemon-owned task environments. */
+  cleanupWorktrees: (paths: string[], discardChanges?: boolean) => Promise<ManagedWorktreeCleanupResult>;
   onStatusChange: (callback: (status: DaemonStatus) => void) => () => void;
   setTargetApiUrl: (url: string) => Promise<void>;
   syncToken: (token: string, userId: string) => Promise<void>;

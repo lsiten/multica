@@ -1141,6 +1141,36 @@
     "toast_save_failed": "保存代码仓库失败"
   },
   "desktop": {
+    "worktrees": {
+      "discard_changes": "永久丢弃未提交修改和未推送提交。",
+      "title": "Worktree 管理",
+      "description": "新运行完成后会自动清理可安全回收的任务目录。有未提交修改、未推送提交或本地产出文件时会保留。",
+      "scope": "查看此设备上当前守护进程配置管理的全部任务目录。",
+      "count": "{{count}} 个 worktree",
+      "group_by_agent": "按智能体分组",
+      "refresh": "刷新",
+      "clean_all": "清理全部",
+      "clean_agent": "清理此智能体",
+      "clean": "清理",
+      "all": "全部 worktree",
+      "unknown_agent": "未知智能体",
+      "active": "运行中 · 已保护",
+      "dirty": "有未提交修改 · 已保护",
+      "unpushed": "有未推送提交 · 已保护",
+      "unowned": "无法确认归属 · 已保护",
+      "output": "有本地产出 · 已保留",
+      "unavailable": "无法验证状态 · 已保护",
+      "inactive": "未在运行",
+      "offline": "启动守护进程后可查看和清理 worktree。",
+      "load_failed": "加载 worktree 失败。",
+      "cleanup_failed": "清理失败，请刷新列表后重试。",
+      "empty": "此设备上暂无 worktree。",
+      "confirm_title": "清理 {{count}} 个 worktree？",
+      "confirm_description": "将永久删除所选任务目录、日志和本地产出文件。运行中的任务、有未提交修改或未推送成果的目录会受到保护。保存在这些目录之外仓库中的分支会继续保留。",
+      "cleaned": "已清理 {{count}} 个 worktree。",
+      "retained": "{{count}} 个 worktree 状态已变化或无法验证，已保留。",
+      "refresh_tab": "刷新当前标签页"
+    },
     "tabs": {
       "updates": "更新"
     },

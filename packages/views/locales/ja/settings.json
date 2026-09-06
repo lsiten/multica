@@ -1141,6 +1141,36 @@
     "toast_save_failed": "リポジトリを保存できませんでした"
   },
   "desktop": {
+    "worktrees": {
+      "discard_changes": "選択したディレクトリの未コミット変更と未プッシュコミットも完全に破棄する。",
+      "title": "Worktree 管理",
+      "description": "新しい実行の完了後、安全に削除できるタスク環境を自動清掃します。未コミットの変更、未プッシュのコミット、ローカル出力は保持します。",
+      "scope": "この端末の現在のデーモンプロファイルが管理するすべてのタスク環境。",
+      "count": "{{count}} 個の worktree",
+      "group_by_agent": "エージェント別に表示",
+      "refresh": "更新",
+      "clean_all": "すべて清掃",
+      "clean_agent": "このエージェントを清掃",
+      "clean": "清掃",
+      "all": "すべての worktree",
+      "unknown_agent": "不明なエージェント",
+      "active": "実行中 · 保護済み",
+      "dirty": "未コミットの変更 · 保護済み",
+      "unpushed": "未プッシュのコミット · 保護済み",
+      "unowned": "所有者未確認 · 保護済み",
+      "output": "ローカル出力 · 保持",
+      "unavailable": "確認できません · 保護済み",
+      "inactive": "非実行中",
+      "offline": "デーモンを起動して worktree を管理してください。",
+      "load_failed": "Worktree を読み込めませんでした。",
+      "cleanup_failed": "清掃に失敗しました。リストを更新して再試行してください。",
+      "empty": "この端末に worktree はありません。",
+      "confirm_title": "{{count}} 個の worktree を清掃しますか？",
+      "confirm_description": "選択したタスクディレクトリ、ログ、ローカル出力を完全に削除します。実行中のタスクと未コミット・未プッシュの作業は保護されます。ディレクトリ外のリポジトリのブランチは保持されます。",
+      "cleaned": "{{count}} 個の worktree を清掃しました。",
+      "retained": "状態が変化したか確認できなかった {{count}} 個の worktree を保持しました。",
+      "refresh_tab": "現在のタブを更新"
+    },
     "tabs": {
       "updates": "アップデート"
     },

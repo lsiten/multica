@@ -5,7 +5,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // Workspace packages export TypeScript source, not Node-loadable bundles.
+    plugins: [externalizeDepsPlugin({ exclude: ["@multica/core"] })],
   },
   preload: {
     // `@electron-toolkit/preload` must be bundled INTO the preload script:

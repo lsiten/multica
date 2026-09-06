@@ -262,6 +262,13 @@ function installWindowShortcutHandler(window: BrowserWindow): void {
     if (result === "close-tab") {
       event.preventDefault();
       window.webContents.send("tab:close-active");
+    } else if (result === "reload-tab") {
+      event.preventDefault();
+      if (issueWindows.has(window)) {
+        window.webContents.reload();
+      } else {
+        dispatchToMainRenderer("tab:reload-active", null);
+      }
     } else if (result === "open-settings") {
       event.preventDefault();
       // Settings is a tab, so it can only live in the tabbed main window.

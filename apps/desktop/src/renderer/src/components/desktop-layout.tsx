@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
 import { motion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@multica/ui/lib/utils";
@@ -35,9 +35,10 @@ import {
 import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
+import { useT } from "@multica/views/i18n";
 
 const TOP_BAR_HEIGHT_CLASS = "h-12";
-const WINDOW_TOOLBAR_CLEARANCE = 184;
+const WINDOW_TOOLBAR_CLEARANCE = 220;
 const toolbarMotion = {
   type: "spring",
   stiffness: 420,
@@ -46,14 +47,15 @@ const toolbarMotion = {
 } as const;
 
 function WindowToolbar() {
-  const { canGoBack, canGoForward, goBack, goForward } = useTabHistory();
+  const { t } = useT("settings");
+  const { canGoBack, canGoForward, goBack, goForward, reload } = useTabHistory();
   const navButtonClassName =
     "flex size-7 items-center justify-center rounded-md text-faint-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-30";
 
   return (
     <div
       className={cn(
-        "fixed left-0 top-0 z-30 flex w-[184px] shrink-0 items-center px-3",
+        "fixed left-0 top-0 z-30 flex w-[220px] shrink-0 items-center px-3",
         TOP_BAR_HEIGHT_CLASS,
       )}
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
@@ -89,6 +91,16 @@ function WindowToolbar() {
           >
             <ChevronRight className="size-4" />
           </button>
+          <button
+            type="button"
+            onClick={reload}
+            aria-label={t(($) => $.desktop.worktrees.refresh_tab)}
+            title={t(($) => $.desktop.worktrees.refresh_tab)}
+            className={navButtonClassName}
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            <RotateCw className="size-4" />
+          </button>
         </div>
       </div>
     </div>
@@ -111,6 +123,11 @@ function useNativeNavigationGestures() {
       }
     });
   }, [goBack, goForward]);
+}
+
+function useActiveTabRefresh() {
+  const { reload } = useTabHistory();
+  useEffect(() => window.desktopAPI.onReloadActiveTab?.(reload), [reload]);
 }
 
 
@@ -223,6 +240,7 @@ function DesktopInboxBridge() {
 export function DesktopShell() {
   useInternalLinkHandler();
   useNativeNavigationGestures();
+  useActiveTabRefresh();
   useNavigationInputBindings();
 
   // Reactive read of current workspace slug from the platform singleton.
