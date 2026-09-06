@@ -1020,6 +1020,31 @@ type Member struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type NotificationBot struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Name           string             `json:"name"`
+	Platform       string             `json:"platform"`
+	Credentials    []byte             `json:"credentials"`
+	IsEnabled      bool               `json:"is_enabled"`
+	ActiveSince    pgtype.Timestamptz `json:"active_since"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	LastDeliveryAt pgtype.Timestamptz `json:"last_delivery_at"`
+	LastError      string             `json:"last_error"`
+}
+
+type NotificationBotDelivery struct {
+	ID            pgtype.UUID        `json:"id"`
+	BotID         pgtype.UUID        `json:"bot_id"`
+	InboxID       pgtype.UUID        `json:"inbox_id"`
+	Attempts      int32              `json:"attempts"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type NotificationPreference struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

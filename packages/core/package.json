@@ -55,6 +55,8 @@
     "./inbox/filter-store": "./inbox/filter-store.ts",
     "./inbox/ws-updaters": "./inbox/ws-updaters.ts",
     "./notification-preferences": "./notification-preferences/index.ts",
+    "./notification-bots/queries": "./notification-bots/queries.ts",
+    "./notification-bots/schema": "./notification-bots/schema.ts",
     "./notification-preferences/queries": "./notification-preferences/queries.ts",
     "./notification-preferences/mutations": "./notification-preferences/mutations.ts",
     "./notification-preferences/patch": "./notification-preferences/patch.ts",

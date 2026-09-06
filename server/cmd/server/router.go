@@ -1172,6 +1172,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		slog.Info("composio integration disabled (COMPOSIO_API_KEY not set)")
 	}
 
+	configureNotificationBots(h)
+
 	// VCS at-rest encryption: the box encrypts per-workspace access tokens and
 	// webhook secrets for token-based providers (Forgejo / Gitea / GitLab).
 	// Without it, connect/webhook handlers return 503 (so a misconfigured
@@ -2291,6 +2293,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Notification preferences
+			r.Route("/api/notification-bots", func(r chi.Router) {
+				r.Get("/", h.ListNotificationBots)
+				r.Post("/", h.SaveNotificationBot)
+				r.Put("/{id}", h.SaveNotificationBot)
+				r.Delete("/{id}", h.DeleteNotificationBot)
+				r.Post("/{id}/test", h.TestNotificationBot)
+			})
+
 			r.Route("/api/notification-preferences", func(r chi.Router) {
 				r.Get("/", h.GetNotificationPreferences)
 				r.Patch("/", h.PatchNotificationPreferences)

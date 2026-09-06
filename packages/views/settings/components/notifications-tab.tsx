@@ -9,6 +9,7 @@ import { Switch } from "@multica/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { BrowserNotificationSetting } from "./browser-notification-setting";
+import { NotificationBotsSection } from "./notification-bots-section";
 import {
   SettingsCard,
   SettingsRow,
@@ -108,6 +109,7 @@ export function NotificationsTab() {
             desktop (OS-native delivery) or where the Notification API is absent. */}
         <BrowserNotificationSetting />
       </SettingsSection>
+      <NotificationBotsSection />
     </SettingsTab>
   );
 }

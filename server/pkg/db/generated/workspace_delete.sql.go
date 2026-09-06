@@ -73,6 +73,13 @@ deleted_notification_preferences AS (
     DELETE FROM notification_preference
     WHERE notification_preference.workspace_id = $1
 ),
+deleted_notification_bot_deliveries AS (
+    DELETE FROM notification_bot_delivery
+    WHERE bot_id IN (SELECT id FROM notification_bot WHERE workspace_id = $1)
+),
+deleted_notification_bots AS (
+    DELETE FROM notification_bot WHERE workspace_id = $1
+),
 deleted_pins AS (
     DELETE FROM pinned_item WHERE pinned_item.workspace_id = $1
 ),
