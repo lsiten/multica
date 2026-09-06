@@ -258,7 +258,7 @@ chmod +x "$stub_dir/docker" "$stub_dir/curl"
 # Throwaway checkout so the recipe never touches this repo's own .env.
 recipe_dir="$tmp_dir/recipe"
 mkdir -p "$recipe_dir/scripts"
-cp Makefile .env.example docker-compose.selfhost.yml docker-compose.selfhost.build.yml "$recipe_dir/"
+cp Makefile .env.example docker-compose.selfhost.yml docker-compose.selfhost.build.yml docker-compose.selfhost.images.yml "$recipe_dir/"
 cp scripts/selfhost-wait.sh "$recipe_dir/scripts/"
 
 record="$tmp_dir/published"

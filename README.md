@@ -1,3 +1,7 @@
+> **lsiten/multica deployment:** run `make selfhost` from this checkout to build
+> and deploy the fork, including migrations. The upstream installer below uses
+> upstream images. See [fork deployment instructions](SELF_HOSTING_FORK.md).
+
 <div align="center">
 
 <picture>

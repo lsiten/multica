@@ -9,6 +9,8 @@
 #   apps/docs/content/docs/self-host-quickstart.mdx
 #
 # Usage:
+#   # Run from a full checkout of lsiten/multica; source builds are the default.
+#   # Prefer make selfhost to initialize .env and wait for readiness.
 #   cp .env.example .env
 #   # Edit .env — generate JWT_SECRET with `openssl rand -hex 32` (required)
 #   docker compose -f docker-compose.selfhost.yml up -d
@@ -53,7 +55,15 @@ services:
       retries: 5
 
   backend:
-    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:${MULTICA_IMAGE_TAG:-latest}
+    image: multica-backend:dev
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+        DATE: ${DATE:-unknown}
     depends_on:
       postgres:
         condition: service_healthy
@@ -201,7 +211,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${MULTICA_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:${MULTICA_IMAGE_TAG:-latest}
+    image: multica-web:dev
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_APP_VERSION: ${VERSION:-dev}
     depends_on:
       - backend
     ports:
