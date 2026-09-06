@@ -76,12 +76,19 @@ export function useDaemonIPCBridge(wsId: string | undefined): void {
 
     const unsubscribe = daemonAPI.onStatusChange((status) => {
       if (!status.daemonId) return;
+      let hasMatchingRuntime = false;
       qc.setQueryData<AgentRuntime[]>(runtimeKeys.list(wsId), (old) => {
         if (!old) return old;
+        hasMatchingRuntime = old.some(
+          (runtime) => runtime.daemon_id === status.daemonId,
+        );
         return old.map((rt) =>
           rt.daemon_id === status.daemonId ? mergeDaemonStatus(rt, status) : rt,
         );
       });
+      if (status.state === "running" && !hasMatchingRuntime) {
+        void qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
+      }
     });
 
     return unsubscribe;
