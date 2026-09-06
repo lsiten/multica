@@ -81,9 +81,9 @@ makehelp: help ## Alias for `make help`
 
 .PHONY: selfhost-images
 
-selfhost: selfhost-build ## Build and deploy this checkout, including database migrations
+selfhost: selfhost-images ## Pull GitHub-built fork images and deploy without compiling
 
-selfhost-images: ## Explicitly deploy prebuilt images (official upstream by default)
+selfhost-images: ## Pull and deploy prebuilt fork images
 	$(REQUIRE_COMPOSE)
 	@if [ ! -f .env ]; then \
 		echo "==> Creating .env from .env.example..."; \
@@ -104,12 +104,12 @@ selfhost-images: ## Explicitly deploy prebuilt images (official upstream by defa
 		fi; \
 		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and MULTICA_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Pulling official Multica images..."
+	@echo "==> Pulling GitHub-built Multica images..."
 	@if ! $(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.images.yml pull; then \
 		echo ""; \
-		echo "Official images for tag '$${MULTICA_IMAGE_TAG:-latest}' are not published yet."; \
-		echo "If this is before the first GHCR release, build from the current checkout:"; \
-		echo "  make selfhost-build"; \
+		echo "Cannot pull images for tag '$${MULTICA_IMAGE_TAG:-main}'."; \
+		echo "Check the Fork Images workflow, image names in .env, and GHCR login permissions."; \
+		echo "No local build fallback was attempted."; \
 		exit 1; \
 	fi
 	@echo "==> Starting Multica via Docker Compose..."

@@ -9,7 +9,7 @@
 #   apps/docs/content/docs/self-host-quickstart.mdx
 #
 # Usage:
-#   # Run from a full checkout of lsiten/multica; source builds are the default.
+#   # Wait for the Fork Images workflow to succeed before deployment.
 #   # Prefer make selfhost to initialize .env and wait for readiness.
 #   cp .env.example .env
 #   # Edit .env — generate JWT_SECRET with `openssl rand -hex 32` (required)
@@ -55,15 +55,8 @@ services:
       retries: 5
 
   backend:
-    image: multica-backend:dev
-    pull_policy: build
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        VERSION: ${VERSION:-dev}
-        COMMIT: ${COMMIT:-unknown}
-        DATE: ${DATE:-unknown}
+    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/lsiten/multica-backend}:${MULTICA_IMAGE_TAG:-main}
+    pull_policy: always
     depends_on:
       postgres:
         condition: service_healthy
@@ -211,13 +204,8 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: multica-web:dev
-    pull_policy: build
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-      args:
-        NEXT_PUBLIC_APP_VERSION: ${VERSION:-dev}
+    image: ${MULTICA_WEB_IMAGE:-ghcr.io/lsiten/multica-web}:${MULTICA_IMAGE_TAG:-main}
+    pull_policy: always
     depends_on:
       - backend
     ports:

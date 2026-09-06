@@ -17,7 +17,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-mode=${1:-build}
+mode=${1:-official}
 case "$mode" in
 official)
   compose_files=(-f docker-compose.selfhost.yml -f docker-compose.selfhost.images.yml)
@@ -84,8 +84,8 @@ if [ "$mode" = "build" ]; then
   echo "Built images locally via docker-compose.selfhost.build.yml."
   echo "Local tags: multica-backend:dev and multica-web:dev."
 else
-  echo "Images: ${MULTICA_BACKEND_IMAGE:-ghcr.io/multica-ai/multica-backend}:${MULTICA_IMAGE_TAG:-latest}"
-  echo "        ${MULTICA_WEB_IMAGE:-ghcr.io/multica-ai/multica-web}:${MULTICA_IMAGE_TAG:-latest}"
+  echo "Images: ${MULTICA_BACKEND_IMAGE:-ghcr.io/lsiten/multica-backend}:${MULTICA_IMAGE_TAG:-main}"
+  echo "        ${MULTICA_WEB_IMAGE:-ghcr.io/lsiten/multica-web}:${MULTICA_IMAGE_TAG:-main}"
 fi
 echo ""
 echo "Log in: configure RESEND_API_KEY in .env for email codes,"

@@ -1,4 +1,4 @@
-> **lsiten/multica 部署：**在完整代码目录运行 `make selfhost`，即可构建定制版并自动执行数据库迁移。
+> **lsiten/multica 部署：**GitHub 构建成功后运行 `make selfhost`，拉取定制版镜像并自动执行数据库迁移，不在服务器编译。
 > 下方原仓库安装脚本使用官方镜像，不包含本仓库新增功能。参见[定制版部署说明](SELF_HOSTING_FORK.md)。
 
 <div align="center">
