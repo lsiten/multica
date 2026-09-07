@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Loader2, RotateCcw, Square } from "lucide-react";
+import { ChevronRight, Code2, GitBranch, Loader2, RotateCcw, Square } from "lucide-react";
 import { toast } from "sonner";
 import { api, dispatchReasonCode } from "@multica/core/api";
 import { issueKeys } from "@multica/core/issues/queries";
@@ -367,6 +367,7 @@ export function ActiveTaskRow({
   return (
     <RowShell task={task}>
       <TriggerText text={trigger} />
+      <TaskWorktreeMetadata task={task} />
       <TaskCommentCoverage task={task} />
       <RowStatus title={label}>
         {task.status === "running" ? (
@@ -430,6 +431,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
   const { t: tAgents } = useT("agents");
   const timeAgo = useTimeAgo();
   const [retrying, setRetrying] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const label = useStatusLabel(task.status);
   const trigger = useTriggerText(task);
   const time = task.completed_at ? timeAgo(task.completed_at) : "—";
@@ -478,6 +480,37 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
   // wrong agent would fire on rows whose agent has since been displaced
   // (e.g. reassignment, squad worker, or a one-off @-mention agent).
   const canRetry = task.status === "failed" || task.status === "cancelled";
+  const canReview = Boolean(
+    task.agent_id && (task.branch_name?.trim() || task.work_dir?.trim()),
+  );
+
+  const handleReview = async () => {
+    if (reviewing || !canReview) return;
+    setReviewing(true);
+    try {
+      const branch = task.branch_name?.trim();
+      const workDir = task.work_dir?.trim();
+      const context = [
+        branch ? `branch: ${branch}` : "",
+        workDir ? `worktree: ${workDir}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      await api.createComment(
+        issueId,
+        `[@Review](mention://agent/${task.agent_id}) 请 Review 这次运行的代码改动。\n${context}\n对比任务开始前的基线，检查功能正确性、权限、错误处理和测试；将问题按严重级别回复到本任务，不要直接修改代码。`,
+      );
+      toast.success(t(($) => $.execution_log.review_requested));
+    } catch (e) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t(($) => $.execution_log.review_request_failed),
+      );
+    } finally {
+      setReviewing(false);
+    }
+  };
 
   const handleRetry = async () => {
     if (retrying) return;
@@ -506,6 +539,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
   return (
     <RowShell task={task} title={rowTitle}>
       <TriggerText text={trigger} />
+      <TaskWorktreeMetadata task={task} />
       <TaskCommentCoverage task={task} />
       <RowStatus title={statusTitle}>
         <TaskStatusIcon status={task.status} />
@@ -520,6 +554,24 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
       </RowStatus>
       <RowActions>
         <TranscriptButton task={task} agentName="" title={t(($) => $.execution_log.transcript_tooltip)} />
+        {canReview && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={() => void handleReview()}
+                  disabled={reviewing}
+                  aria-label={t(($) => $.execution_log.review_changes_aria)}
+                />
+              }
+              className="flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {reviewing ? <Loader2 className="size-3.5 animate-spin" /> : <Code2 className="size-3.5" />}
+            </TooltipTrigger>
+            <TooltipContent>{t(($) => $.execution_log.review_changes_tooltip)}</TooltipContent>
+          </Tooltip>
+        )}
         {canRetry && (
           <Tooltip>
             <TooltipTrigger
@@ -584,6 +636,21 @@ function RowShell({
 
 function TriggerText({ text }: { text: string }) {
   return <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{text}</span>;
+}
+
+function TaskWorktreeMetadata({ task }: { task: AgentTask }) {
+  const branch = task.branch_name?.trim();
+  const workDir = task.work_dir?.trim();
+  if (!branch && !workDir) return null;
+  return (
+    <span
+      className="hidden max-w-[14rem] shrink-0 items-center gap-1 truncate text-micro text-muted-foreground md:inline-flex"
+      title={workDir ?? undefined}
+    >
+      <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+      <span className="truncate">{branch ?? workDir}</span>
+    </span>
+  );
 }
 
 function supportsCommentCoverage(status: AgentTask["status"]): boolean {

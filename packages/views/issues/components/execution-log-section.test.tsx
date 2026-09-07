@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentTask } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
@@ -38,6 +38,8 @@ import { act, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { issueKeys } from "@multica/core/issues/queries";
 import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api";
 
 function makeTask(overrides: Partial<AgentTask> = {}): AgentTask {
   return {
@@ -257,6 +259,46 @@ describe("execution log failure reasons", () => {
     fireEvent.click(screen.getByRole("button", { name: "显示历史运行（1）" }));
     expect(screen.queryByTitle(/provider returned 402/)).not.toBeInTheDocument();
     expect(screen.getByTitle("提供商配额已用尽")).toBeInTheDocument();
+  });
+});
+
+describe("worktree review", () => {
+  it("shows a run branch and creates an agent-mentioned review request", async () => {
+    vi.useRealTimers();
+    const createComment = vi.fn().mockResolvedValue({ id: "comment-1" });
+    setApiInstance({ createComment } as unknown as ApiClient);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(issueKeys.tasks("issue-1"), [
+      makeTask({
+        status: "completed",
+        completed_at: "2026-06-08T08:04:00Z",
+        branch_name: "agent/review-123",
+        work_dir: "/managed/review-123",
+      }),
+    ]);
+
+    renderWithI18n(
+      <QueryClientProvider client={queryClient}>
+        <ExecutionLogSection issueId="issue-1" />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Show past runs (1)" }));
+    expect(screen.getByText("agent/review-123")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review code changes" }));
+    await waitFor(() => {
+      expect(createComment).toHaveBeenCalledWith(
+        "issue-1",
+        expect.stringContaining("mention://agent/agent-1"),
+      );
+    });
+    expect(createComment).toHaveBeenCalledWith(
+      "issue-1",
+      expect.stringContaining("branch: agent/review-123"),
+    );
   });
 });
 
