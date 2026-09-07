@@ -74,6 +74,9 @@
     },
 
     "packages/eslint-config": {},
+    "packages/plugin-sdk": {
+      "entry": ["eslint.config.mjs"]
+    },
     "packages/tsconfig": {}
   }
 }
