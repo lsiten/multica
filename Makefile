@@ -107,7 +107,7 @@ selfhost-images: ## Pull and deploy prebuilt fork images
 	@echo "==> Pulling GitHub-built Multica images..."
 	@if ! $(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.images.yml pull; then \
 		echo ""; \
-		echo "Cannot pull images for tag '$${MULTICA_IMAGE_TAG:-main}'."; \
+		echo "Cannot pull images for tag '$${MULTICA_IMAGE_TAG:-latest}'."; \
 		echo "Check the Fork Images workflow, image names in .env, and GHCR login permissions."; \
 		echo "No local build fallback was attempted."; \
 		exit 1; \

@@ -55,7 +55,7 @@ services:
       retries: 5
 
   backend:
-    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/lsiten/multica-backend}:${MULTICA_IMAGE_TAG:-main}
+    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/lsiten/multica-backend}:${MULTICA_IMAGE_TAG:-latest}
     pull_policy: always
     depends_on:
       postgres:
@@ -204,7 +204,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${MULTICA_WEB_IMAGE:-ghcr.io/lsiten/multica-web}:${MULTICA_IMAGE_TAG:-main}
+    image: ${MULTICA_WEB_IMAGE:-ghcr.io/lsiten/multica-web}:${MULTICA_IMAGE_TAG:-latest}
     pull_policy: always
     depends_on:
       - backend

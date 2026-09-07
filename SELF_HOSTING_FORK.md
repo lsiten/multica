@@ -5,16 +5,29 @@ The upstream installer/images do not contain this fork's custom features.
 
 ## Build on GitHub
 
-The **Fork Images** workflow runs on pushes to `main` in `lsiten/multica`, and
-can be started manually on `main`. Enable Actions in the fork if disabled.
+The **Fork Images** workflow runs only when a version tag such as `v1.2.3` or
+`v1.2.3-rc.1` is pushed to `lsiten/multica`. Ordinary pushes to `main` do not
+build images. Enable Actions in the fork if disabled.
 It uses `GITHUB_TOKEN` with `packages: write`; no server credentials are needed.
 It does not deploy to the server, create release tags, or release desktop/CLI
-artifacts. The existing release-tag workflow remains separate.
+artifacts. The original Release workflow is skipped in this fork to avoid
+duplicate image publishing and desktop releases.
 
 Native amd64 and arm64 runners build both application images. After all four
-builds succeed, matching `sha-<full SHA>` manifests are published, then the
-`main` channel is updated. Pin both services to the same SHA for reproducibility;
+builds succeed, matching version and `sha-<full SHA>` manifests are published.
+Stable tags update `latest`; prerelease tags do not. Pin both services to the same version;
 moving channel tags are not atomically updated.
+
+Commit and push the workflow change before creating a new tag on that commit.
+For example, replacing `v1.2.3` with the intended unused release version:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+Tagging an older commit uses that commit's workflow, not the updated one. Retry
+a failed build using GitHub's Re-run jobs action rather than moving an existing tag.
 
 Wait for **Fork Images** to succeed before deploying. New GHCR packages can be
 private: make them public in package settings for anonymous pulls, or log the
@@ -29,7 +42,7 @@ the existing `.env` (old values still override defaults):
 ```dotenv
 MULTICA_BACKEND_IMAGE=ghcr.io/lsiten/multica-backend
 MULTICA_WEB_IMAGE=ghcr.io/lsiten/multica-web
-MULTICA_IMAGE_TAG=main
+MULTICA_IMAGE_TAG=latest
 FRONTEND_ORIGIN=https://multica.lene.fun
 MULTICA_APP_URL=https://multica.lene.fun
 MULTICA_PUBLIC_URL=https://multica.lene.fun
@@ -41,8 +54,9 @@ at the public reverse proxy. Route `/api/`, `/auth/`, and `/ws` (with WebSocket
 upgrade) to the backend, and page requests to the web container. Keep existing
 working reverse-proxy rules when upgrading. No desktop artifacts are published.
 
-Replace `main` with `sha-<full successful build commit>` to pin a version. Old
-`multica-ai` image names and `latest` tags must be replaced. Then run:
+Replace `latest` with the successful version tag (for example `v1.2.3`) to pin
+both services. Old `multica-ai` image names and the previous `main` tag must be
+replaced in existing `.env` files. Then run:
 
 ```bash
 make selfhost

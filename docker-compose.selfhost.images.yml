@@ -2,8 +2,8 @@
 # Use make selfhost-images, or combine with the base file and up --no-build.
 services:
   backend:
-    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/lsiten/multica-backend}:${MULTICA_IMAGE_TAG:-main}
+    image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/lsiten/multica-backend}:${MULTICA_IMAGE_TAG:-latest}
     pull_policy: always
   frontend:
-    image: ${MULTICA_WEB_IMAGE:-ghcr.io/lsiten/multica-web}:${MULTICA_IMAGE_TAG:-main}
+    image: ${MULTICA_WEB_IMAGE:-ghcr.io/lsiten/multica-web}:${MULTICA_IMAGE_TAG:-latest}
     pull_policy: always

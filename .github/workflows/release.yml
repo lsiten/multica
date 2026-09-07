@@ -14,6 +14,9 @@ permissions:
 
 jobs:
   verify:
+    # The fork publishes only server images through fork-images.yml.
+    # Skip this dependency root to avoid duplicate images and desktop releases.
+    if: github.repository != 'lsiten/multica'
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}

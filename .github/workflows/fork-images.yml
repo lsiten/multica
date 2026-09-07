@@ -2,19 +2,37 @@ name: Fork Images
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "v*.*.*"
+      - "!v*-dirty*"
 
 permissions:
   contents: read
 
 concurrency:
-  group: fork-images-${{ github.ref }}
+  group: fork-images-release
   cancel-in-progress: false
 
 jobs:
+  verify:
+    if: github.repository == 'lsiten/multica'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Validate release tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ || "$RELEASE_TAG" == *-dirty* || ${#RELEASE_TAG} -gt 128 ]]; then
+            echo "::error::Expected vX.Y.Z or vX.Y.Z-prerelease, without a dirty suffix."
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
   build:
-    if: github.repository == 'lsiten/multica' && github.ref == 'refs/heads/main'
+    needs: verify
     permissions:
       contents: read
       packages: write
@@ -44,9 +62,9 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           pull: true
           build-args: |
-            VERSION=sha-${{ github.sha }}
+            VERSION=${{ needs.verify.outputs.tag }}
             COMMIT=${{ github.sha }}
-            NEXT_PUBLIC_APP_VERSION=sha-${{ github.sha }}
+            NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/lsiten/multica
             org.opencontainers.image.revision=${{ github.sha }}
@@ -67,7 +85,7 @@ jobs:
           retention-days: 7
 
   publish:
-    needs: build
+    needs: [verify, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -87,6 +105,7 @@ jobs:
       - name: Publish matching multi-architecture versions
         env:
           COMMIT_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
         run: |
           set -euo pipefail
           for image in backend web; do
@@ -97,13 +116,17 @@ jobs:
                 refs+=("ghcr.io/lsiten/multica-${image}@sha256:$(basename "$digest")")
               done
             done
-            docker buildx imagetools create -t "ghcr.io/lsiten/multica-${image}:sha-${COMMIT_SHA}" "${refs[@]}"
+            docker buildx imagetools create \
+              -t "ghcr.io/lsiten/multica-${image}:${RELEASE_TAG}" \
+              -t "ghcr.io/lsiten/multica-${image}:sha-${COMMIT_SHA}" "${refs[@]}"
           done
           # Promote only after both versioned manifests exist. Deployments can
           # pin sha tags to avoid the brief window between channel updates.
-          for image in backend web; do
-            docker buildx imagetools create \
-              -t "ghcr.io/lsiten/multica-${image}:main" \
-              "ghcr.io/lsiten/multica-${image}:sha-${COMMIT_SHA}"
-          done
-          echo "Deploy both images with MULTICA_IMAGE_TAG=sha-${COMMIT_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$RELEASE_TAG" != *-* ]]; then
+            for image in backend web; do
+              docker buildx imagetools create \
+                -t "ghcr.io/lsiten/multica-${image}:latest" \
+                "ghcr.io/lsiten/multica-${image}:${RELEASE_TAG}"
+            done
+          fi
+          echo "Deploy both images with MULTICA_IMAGE_TAG=${RELEASE_TAG}" >> "$GITHUB_STEP_SUMMARY"
