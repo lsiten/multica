@@ -255,6 +255,7 @@ type DaemonReauthResult =
   | { ok: false; reason: "transient"; message: string };
 
 const daemonAPI = {
+  readLocalReview: (request: unknown): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review", request),
   start: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("daemon:start"),
   stop: (): Promise<{ success: boolean; error?: string }> =>

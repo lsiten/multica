@@ -1464,6 +1464,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/runtimes/{runtimeId}/update/{updateId}/result", h.ReportUpdateResult)
 		r.Post("/runtimes/{runtimeId}/models/{requestId}/result", h.ReportModelListResult)
 		r.Post("/runtimes/{runtimeId}/local-skills/{requestId}/result", h.ReportLocalSkillListResult)
+		r.Post("/runtimes/{runtimeId}/local-reviews/relay/claim", h.ClaimLocalReviewRelay)
+		r.Get("/runtimes/{runtimeId}/tasks/{taskId}/review-binding", h.GetLocalReviewRuntimeBinding)
+		r.Get("/tasks/{taskId}/review-binding", h.DiscoverLocalReviewRuntimeBinding)
+		r.Post("/runtimes/{runtimeId}/local-reviews/relay/{commandId}/result", h.ReportLocalReviewRelay)
 		r.Post("/runtimes/{runtimeId}/local-skills/import/{requestId}/result", h.ReportLocalSkillImportResult)
 
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
@@ -2299,6 +2303,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Put("/{id}", h.SaveNotificationBot)
 				r.Delete("/{id}", h.DeleteNotificationBot)
 				r.Post("/{id}/test", h.TestNotificationBot)
+			})
+			r.Route("/api/local-reviews", func(r chi.Router) {
+				r.Use(handler.RequireHumanActor)
+				r.Post("/execute", h.ForwardLocalReview)
+				r.Get("/worktrees", h.ListLocalReviewWorktrees)
 			})
 
 			r.Route("/api/notification-preferences", func(r chi.Router) {

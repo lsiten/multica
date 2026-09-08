@@ -1,4 +1,5 @@
 import { configStore } from "../config";
+import { localReviewCapabilitySchema, localReviewRelayResponseSchema, remoteWorktreesSchema } from "../types/local-review";
 import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
   Issue,
@@ -786,6 +787,25 @@ export class ApiClient {
       return undefined as T;
     }
     return res.json() as Promise<T>;
+  }
+
+  async supportsLocalMR(): Promise<boolean> {
+    const result = localReviewCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: AbortSignal.timeout(15000) }));
+    return result.local_review_supported === true;
+  }
+
+  async executeLocalReview(request: import("../types/local-review").LocalReviewRequest) {
+    return localReviewRelayResponseSchema.parse(await this.fetch<unknown>("/api/local-reviews/execute", {
+      method: "POST", signal: AbortSignal.timeout(55000),
+      body: JSON.stringify({ task_id: request.task_id, path: request.path, target: request.target,
+        action: request.action ?? "read", snapshot_id: request.snapshot_id, comment: request.comment, command_id: request.command_id }),
+    }));
+  }
+
+  async listReviewWorktrees(offset = 0, agentId?: string) {
+    const query = new URLSearchParams({ offset: String(offset) });
+    if (agentId) query.set("agent_id", agentId);
+    return remoteWorktreesSchema.parse(await this.fetch<unknown>(`/api/local-reviews/worktrees?${query}`, { signal: AbortSignal.timeout(20000) }));
   }
 
   // Auth

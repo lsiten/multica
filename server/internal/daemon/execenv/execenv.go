@@ -41,6 +41,7 @@ type PrepareParams struct {
 	WorkspaceID     string // workspace UUID — stable identity and path suffix
 	WorkspaceSlug   string // human-readable workspace path prefix
 	TaskID          string // task UUID — stable identity and path suffix
+	RuntimeID       string // runtime that owns this task environment
 	IssueIdentifier string // human-readable issue key (e.g. MUL-6063); empty for non-issue tasks
 	AgentName       string // for git branch naming only
 	// EnvRootPreclaimed says the CALLER already holds this env root's claim
@@ -505,6 +506,9 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		}
 	}
 	multicaConfigRoot := filepath.Join(envRoot, "multica-config")
+	if err := WriteReviewRuntime(envRoot, ReviewRuntime{WorkspaceID: params.WorkspaceID, TaskID: params.TaskID, RuntimeID: params.RuntimeID, AgentID: params.Task.AgentID, AgentName: params.AgentName}); err != nil {
+		return nil, fmt.Errorf("execenv: record task runtime: %w", err)
+	}
 	if err := os.MkdirAll(multicaConfigRoot, 0o700); err != nil {
 		return nil, fmt.Errorf("execenv: create task-local Multica config directory: %w", err)
 	}
@@ -740,6 +744,11 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	}
 
 	logger.Info("execenv: prepared env", "root", envRoot, "repos_available", len(params.Task.Repos))
+	if env.LocalDirectory {
+		if err := WriteReviewDirectory(envRoot, ReviewDirectory{WorkspaceID: params.WorkspaceID, TaskID: params.TaskID, Path: env.WorkDir}); err != nil {
+			logger.Warn("execenv: local review directory binding unavailable", "error", err)
+		}
+	}
 	prepareSucceeded = true
 	lockClaimed = false // ownership of any lock passes to the Environment
 	return env, nil

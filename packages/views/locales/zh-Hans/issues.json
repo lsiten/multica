@@ -570,6 +570,21 @@
     "stop_tooltip": "停止智能体",
     "cancel_failed": "取消运行失败"
   },
+  "local_review": {
+    "repository": "仓库",
+    "runtime_pending": "等待所属运行时处理并返回结果…",
+    "state_open": "待审查",
+    "select_repository": "选择要审查的仓库",
+    "apply_target": "对比目标分支",
+    "load_more": "加载更多 worktree",
+    "history": "审查记录",
+    "former_member": "已离开的成员",
+    "merge_requested": "已请求合并",
+    "upgrade_required": "当前服务端尚不支持本地 MR。请更新后端和所属运行时的 daemon，然后刷新。",
+    "request_timeout": "服务端请求超时。请先刷新确认 MR 状态，再重试操作。",
+    "delivery_notice": "Worktree 已收尾，将由运行时读取已记录的交付提交（如有）。",
+    "title": "本地 MR", "open": "查看 / 提交 MR", "target": "目标分支", "refresh": "刷新", "files": "文件", "loading": "正在读取本地改动…", "dirty": "包含未提交改动，请先提交再合并。", "empty": "没有文件改动", "commits": "本地提交", "comment": "审查意见", "submit": "提交 MR", "request_changes": "请求修改", "approve": "确认通过", "merge": "合并", "confirm_merge": "确认本地合并", "cancel": "取消", "draft": "草稿", "approved": "已通过", "changes_requested": "待修改", "merged": "已合并", "worktrees": "关联 worktree", "no_worktrees": "尚未上报关联的 worktree。", "run": "关联运行", "desktop_required": "请在对应运行时机器上打开更新后的桌面端，查看本地文件。", "finalized": "临时 worktree 已完成收尾。这里保留的是历史位置，并非当前可审查的快照。"
+  },
   "execution_log": {
     "section": "执行日志",
     "show_past": "显示历史运行（{{count}}）",

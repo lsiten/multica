@@ -529,9 +529,11 @@ func (l *LocalPathLocker) Acquire(ctx context.Context, realPath, taskID string, 
 
 	// Try the fast path first — no allocation, no waiter goroutine.
 	if entry.mu.TryLock() {
+		l.mu.Lock()
 		entry.mu2.Lock()
 		entry.holderID = taskID
 		entry.mu2.Unlock()
+		l.mu.Unlock()
 		return l.releaser(realPath, entry), nil
 	}
 
@@ -553,9 +555,11 @@ func (l *LocalPathLocker) Acquire(ctx context.Context, realPath, taskID string, 
 
 	select {
 	case <-acquired:
+		l.mu.Lock()
 		entry.mu2.Lock()
 		entry.holderID = taskID
 		entry.mu2.Unlock()
+		l.mu.Unlock()
 		return l.releaser(realPath, entry), nil
 	case <-ctx.Done():
 		// We lost the wait — the goroutine above will still complete and

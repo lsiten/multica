@@ -892,6 +892,10 @@ func (d *Daemon) cleanTaskDir(taskDir string) (bytes int64, removed bool) {
 		d.logger.Warn("gc: refusing to remove unowned task directory", "dir", taskDir, "error", ownerErr)
 		return 0, false
 	}
+	if err := execenv.ArchiveReviewDirectory(d.cfg.WorkspacesRoot, taskDir); err != nil {
+		d.logger.Warn("gc: could not archive local review; preserving task directory", "error", err)
+		return 0, false
+	}
 	if err := os.RemoveAll(taskDir); err != nil {
 		d.logger.Warn("gc: remove task dir failed", "dir", taskDir, "error", err)
 		return 0, false

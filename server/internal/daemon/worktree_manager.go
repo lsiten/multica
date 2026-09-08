@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 )
@@ -14,8 +15,11 @@ import (
 // desktop app needs it only as an opaque cleanup handle.
 type ManagedWorktree struct {
 	TaskDiskUsage
-	Active           bool   `json:"active"`
-	ProtectionReason string `json:"protection_reason"`
+	Active           bool     `json:"active"`
+	ProtectionReason string   `json:"protection_reason"`
+	TaskID           string   `json:"task_id"`
+	RuntimeID        string   `json:"runtime_id,omitempty"`
+	Repositories     []string `json:"repositories"`
 }
 
 type managedWorktreeCleanupRequest struct {
@@ -75,10 +79,37 @@ func (d *Daemon) managedWorktrees(ctx context.Context) ([]ManagedWorktree, error
 				task.AgentName = provenance.AgentName
 			}
 		}
+		taskID := ""
+		runtimeID := ""
+		if owner, err := d.gcTaskDirOwner(task.Path); err == nil {
+			taskID = owner.TaskID
+			if binding, err := execenv.ReadReviewRuntime(task.Path); err == nil && binding.TaskID == owner.TaskID && binding.WorkspaceID == owner.WorkspaceID {
+				runtimeID = binding.RuntimeID
+				if task.AgentID == "" {
+					task.AgentID, task.AgentName = binding.AgentID, binding.AgentName
+				}
+			}
+		}
+		repositories, _ := inspectWorktreeRepositories(ctx, task.Path, d.cfg.WorkspacesRoot)
+		if len(repositories) == 0 && taskID != "" {
+			binding, err := execenv.ReadReviewDirectory(task.Path)
+			if err == nil && binding.TaskID == taskID && binding.WorkspaceID == task.WorkspaceID && filepath.IsAbs(binding.Path) {
+				canonical, err := filepath.EvalSymlinks(binding.Path)
+				if err == nil && canonical == binding.Path {
+					repositories = []string{canonical}
+				}
+			}
+		}
+		if repositories == nil {
+			repositories = []string{}
+		}
 		worktrees = append(worktrees, ManagedWorktree{
 			TaskDiskUsage:    task,
 			Active:           active,
 			ProtectionReason: reason,
+			TaskID:           taskID,
+			RuntimeID:        runtimeID,
+			Repositories:     repositories,
 		})
 	}
 	return worktrees, nil

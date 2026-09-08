@@ -680,6 +680,16 @@ func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, err
 		}
 	}
 
+	if !dropped && err == nil {
+		root := filepath.Dir(w.Path)
+		if owner, ownerErr := ReadEnvRootOwner(root); ownerErr == nil && owner.TaskID != "" && owner.WorkspaceID != "" {
+			binding := ReviewDirectory{WorkspaceID: owner.WorkspaceID, TaskID: owner.TaskID, Path: w.GitRoot, SourcePath: w.WorkDir, Branch: w.Branch, Commit: tip}
+			if bindingErr := WriteReviewDirectory(root, binding); bindingErr != nil {
+				outcome.PreservedPath = w.Path
+				return outcome, fmt.Errorf("could not save local review delivery; worktree preserved: %w", bindingErr)
+			}
+		}
+	}
 	if removeErr := removeLocalWorktreeDir(w.GitRoot, w.Path, logger); removeErr != nil {
 		outcome.PreservedPath = w.Path
 		return outcome, fmt.Errorf(

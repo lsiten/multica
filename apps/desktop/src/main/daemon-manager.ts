@@ -24,6 +24,7 @@ import type {
   ManagedWorktreeCleanupResult,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
+import { requestLocalReview } from "./local-review-request";
 import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
@@ -208,8 +209,9 @@ async function fetchHealthAtPort(
 async function fetchWorktreeManager(
   path: string,
   init?: RequestInit,
+  selectedProfile?: ActiveProfile,
 ): Promise<unknown> {
-  const active = await ensureActiveProfile();
+  const active = selectedProfile ?? await ensureActiveProfile();
   if (!active) throw new Error("The daemon profile is not ready yet.");
   const config = await readProfileConfig(active.name);
   if (typeof config.token !== "string" || !config.token) {
@@ -1407,6 +1409,22 @@ export function setupDaemonManager(
   ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
     parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
   );
+  ipcMain.handle("daemon:read-local-review", (_event, input: unknown) => requestLocalReview(input, {
+    resolveProfile: ensureActiveProfile,
+    discoverRuntime: async (profile, request) => {
+      const config = await readProfileConfig(profile.name);
+      if (typeof config.token !== "string" || !config.token || typeof config.server_url !== "string" || !config.server_url) throw new Error("Sign in to discover this legacy worktree runtime.");
+      const response = await fetch(`${config.server_url.replace(/\/+$/, "")}/api/daemon/tasks/${encodeURIComponent(request.task_id)}/review-binding`, {
+        headers: { Authorization: `Bearer ${config.token}` }, signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error("Legacy worktree runtime discovery unavailable; check server connection and ownership.");
+      return response.json();
+    },
+    health: (profile) => fetchHealthAtPort(profile.port),
+    review: (profile, request) => fetchWorktreeManager("/worktrees/review", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request),
+    }, profile),
+  }));
   ipcMain.handle("daemon:cleanup-worktrees", async (_event, paths: unknown, discardChanges: unknown = false): Promise<ManagedWorktreeCleanupResult> => {
     if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((path) => typeof path !== "string" || !path) || typeof discardChanges !== "boolean") {
       throw new Error("Select between 1 and 1000 worktrees to clean.");

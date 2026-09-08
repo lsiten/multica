@@ -593,6 +593,21 @@
     "stop_tooltip": "Stop agent",
     "cancel_failed": "Failed to cancel run"
   },
+  "local_review": {
+    "repository": "Repository",
+    "runtime_pending": "Waiting for the owning runtime to return the result…",
+    "state_open": "Awaiting review",
+    "select_repository": "Select a repository to review",
+    "apply_target": "Compare target",
+    "load_more": "Load more worktrees",
+    "history": "Review history",
+    "former_member": "Former member",
+    "merge_requested": "Merge requested",
+    "upgrade_required": "This server does not support local MR yet. Update the backend and the owning runtime daemon, then refresh.",
+    "request_timeout": "The server request timed out. Refresh to check the MR state before retrying an operation.",
+    "delivery_notice": "Worktree finalized. The runtime will read its recorded delivery commit if available.",
+    "title": "Local MR", "open": "Open / submit MR", "target": "Target branch", "refresh": "Refresh", "files": "Files", "loading": "Reading local changes…", "dirty": "Includes uncommitted changes. Commit them before merging.", "empty": "No changed files", "commits": "Local commits", "comment": "Review comment", "submit": "Submit MR", "request_changes": "Request changes", "approve": "Approve", "merge": "Merge", "confirm_merge": "Confirm local merge", "cancel": "Cancel", "draft": "Draft", "approved": "Approved", "changes_requested": "Changes requested", "merged": "Merged", "worktrees": "Associated worktrees", "no_worktrees": "No associated worktree has been reported.", "run": "Source run", "desktop_required": "Open the updated desktop app on the runtime machine to review local files.", "finalized": "The temporary worktree was finalized. This saved location is historical; it is not a live review snapshot."
+  },
   "execution_log": {
     "section": "Execution log",
     "show_past": "Show past runs ({{count}})",

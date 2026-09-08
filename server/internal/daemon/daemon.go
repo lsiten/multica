@@ -2051,6 +2051,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.gcLoop(ctx)
 	go d.autoUpdateLoop(ctx)
 	go d.tokenRenewalLoop(ctx)
+	go d.localReviewLoop(ctx)
 
 	// Preflight succeeded and the background loops are up: the daemon has
 	// registered its runtimes and can now claim and run tasks. Flip /health
@@ -7585,6 +7586,16 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// Whether it did decides whether an env-root-scoped session store — the
 		// Hermes overlay's task-local state.db — carried over from the prior task.
 		envReused = env != nil
+		if envReused {
+			// Keep the prior task owner intact; this task's own environment holds
+			// its review binding to the verified reused repository.
+			if err := execenv.WriteReviewDirectory(envClaim.RootDir(), execenv.ReviewDirectory{WorkspaceID: task.WorkspaceID, TaskID: task.ID, Path: env.WorkDir}); err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("record reused review directory: %w", err))
+			}
+			if err := execenv.WriteReviewRuntime(envClaim.RootDir(), execenv.ReviewRuntime{WorkspaceID: task.WorkspaceID, TaskID: task.ID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, AgentName: agentName}); err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("record reused review runtime: %w", err))
+			}
+		}
 	}
 	if env == nil {
 		var err error
@@ -7594,6 +7605,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			WorkspaceID:     task.WorkspaceID,
 			WorkspaceSlug:   task.WorkspaceSlug,
 			TaskID:          task.ID,
+			RuntimeID:       task.RuntimeID,
 			IssueIdentifier: task.IssueIdentifier,
 			AgentName:       agentName,
 			// This run already holds the claim (envClaim above) and the reset
