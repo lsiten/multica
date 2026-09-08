@@ -14,6 +14,9 @@ import {
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
+// Worktree/MR behavior has its own local-worktree-reviews component suite.
+vi.mock("../../../issues/components/local-worktree-reviews", () => ({ LocalWorktreeReviews: () => null }));
+
 vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));

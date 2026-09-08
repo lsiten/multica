@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/daemon/localreview"
 )
 
 // cleanupManagedWorktree shares exclusion and preservation rules between
@@ -120,7 +121,15 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 func worktreeGit(ctx context.Context, path string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", path}, args...)...)
+	options := []string{"-c", "core.fsmonitor=false", "-C", path}
+	if len(args) > 0 && (args[0] == "status" || args[0] == "diff") {
+		filters, err := localreview.InspectionFilterOptions(ctx, path)
+		if err != nil {
+			return "", err
+		}
+		options = append(options, filters...)
+	}
+	cmd := exec.CommandContext(ctx, "git", append(options, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	output, err := cmd.Output()
 	return strings.TrimSpace(string(output)), err

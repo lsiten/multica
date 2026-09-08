@@ -140,6 +140,7 @@ interface DaemonAPI {
   getHostName: () => Promise<string>;
   /** List daemon-owned task environments, including active-state protection. */
   listWorktrees: () => Promise<ManagedWorktree[]>;
+  readLocalReview: (request: unknown) => Promise<unknown>;
   /** Remove selected inactive daemon-owned task environments. */
   cleanupWorktrees: (paths: string[], discardChanges?: boolean) => Promise<ManagedWorktreeCleanupResult>;
   onStatusChange: (callback: (status: DaemonStatus) => void) => () => void;

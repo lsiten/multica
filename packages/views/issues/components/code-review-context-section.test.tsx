@@ -3,12 +3,16 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { setApiInstance } from "@multica/core/api";
-import type { ApiClient } from "@multica/core/api";
+import { ApiClient, setApiInstance } from "@multica/core/api";
+import type { LocalReviewSnapshot } from "@multica/core/types/local-review";
+import { readLocalReview } from "../../platform/local-review";
 import { issueKeys } from "@multica/core/issues/queries";
 import type { AgentTask } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { CodeReviewContextSection } from "./code-review-context-section";
+
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("../../platform/local-review", () => ({ readLocalReview: vi.fn(), localReviewInventory: async () => [] }));
 
 const task: AgentTask = {
   id: "task-1",
@@ -28,9 +32,17 @@ const task: AgentTask = {
 };
 
 describe("CodeReviewContextSection", () => {
-  it("shows the task branch and worktree before requesting an agent review", async () => {
-    const createComment = vi.fn().mockResolvedValue({ id: "comment-1" });
-    setApiInstance({ createComment } as unknown as ApiClient);
+  it("opens the local MR for the same run whose branch and path are shown", async () => {
+    class FixtureClient extends ApiClient { override async listTasksByIssue() { return [task]; } }
+    const api = new FixtureClient("https://fixture.invalid");
+    const createComment = vi.spyOn(api, "createComment").mockRejectedValue(new Error("Unexpected comment request"));
+    setApiInstance(api);
+    vi.mocked(readLocalReview).mockImplementation(async (request): Promise<LocalReviewSnapshot> => ({
+      id: "entry-snapshot", path: request.path, branch: "agent/review-123", target: request.target,
+      head: "head", target_head: "base", base: "base", dirty: false, repositories: [], branches: ["main"], commits: "head change",
+      files: [{ path: "entry.ts", status: "tracked", patch: "@@ -1 +1 @@\n-before\n+entry-change" }],
+      review: { snapshot_id: "entry-snapshot", state: request.action === "approve" ? "approved" : "open", comment: "", merged_commit: "" },
+    }));
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -43,16 +55,15 @@ describe("CodeReviewContextSection", () => {
       { locale: "zh-Hans" },
     );
 
-    expect(screen.getByText("代码上下文")).toBeInTheDocument();
+    expect(screen.getByText("本地 MR")).toBeInTheDocument();
     expect(screen.getByText("agent/review-123")).toBeInTheDocument();
     expect(screen.getByText("/managed/review-worktree")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Review 代码改动" }));
-    await waitFor(() => {
-      expect(createComment).toHaveBeenCalledWith(
-        "issue-1",
-        expect.stringContaining("mention://agent/agent-1"),
-      );
-    });
+    fireEvent.click(screen.getByRole("button", { name: "查看 / 提交 MR" }));
+    expect(await screen.findByText("+entry-change")).toBeInTheDocument();
+    expect(readLocalReview).toHaveBeenCalledWith(expect.objectContaining({ task_id: "task-1", runtime_id: "runtime-1", path: "/managed/review-worktree" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认通过" }));
+    await waitFor(() => expect(readLocalReview).toHaveBeenLastCalledWith(expect.objectContaining({ task_id: "task-1", action: "approve", snapshot_id: "entry-snapshot" })));
+    expect(createComment).not.toHaveBeenCalled();
   });
 });

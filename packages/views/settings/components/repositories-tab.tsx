@@ -61,6 +61,7 @@ import {
 } from "./settings-layout";
 import { useAutoSave } from "./use-auto-save";
 import { GitHubMark } from "./github-mark";
+import { LocalWorktreeReviews } from "../../issues/components/local-worktree-reviews";
 
 const EMPTY_REPOSITORIES: WorkspaceRepo[] = [];
 
@@ -363,6 +364,7 @@ export function RepositoriesTab() {
 
   return (
     <SettingsTab title={t(($) => $.page.tabs.repositories)}>
+      <LocalWorktreeReviews workspaceId={wsId} />
       <SettingsSection
         description={t(($) => $.repositories.description)}
         action={

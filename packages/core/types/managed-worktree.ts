@@ -4,6 +4,9 @@ import { parseWithFallback } from "../api/schema";
 const managedWorktreeSchema = z.object({
   workspace_id: z.string(),
   task_short: z.string(),
+  task_id: z.string().optional().default(""),
+  runtime_id: z.string().optional(),
+  repositories: z.array(z.string()).optional().default([]),
   path: z.string().min(1),
   agent_id: z.string().optional().default(""),
   agent_name: z.string().optional().default(""),
@@ -14,6 +17,9 @@ const managedWorktreeSchema = z.object({
 }).transform((row) => ({
   workspaceId: row.workspace_id,
   taskName: row.task_short,
+  taskId: row.task_id,
+  ...(row.runtime_id ? { runtimeId: row.runtime_id } : {}),
+  repositories: row.repositories,
   path: row.path,
   agentId: row.agent_id,
   agentName: row.agent_name,

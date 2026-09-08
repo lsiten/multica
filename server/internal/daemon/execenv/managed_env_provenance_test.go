@@ -16,6 +16,7 @@ func TestPrepareManagedIssueEnvWritesProvenance(t *testing.T) {
 	env, err := Prepare(PrepareParams{
 		WorkspacesRoot: root,
 		WorkspaceID:    "ws-prov-001",
+		RuntimeID:      "runtime-prov-001",
 		TaskID:         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
 		AgentName:      "Prov Agent",
 		Task: TaskContextForEnv{
@@ -27,6 +28,10 @@ func TestPrepareManagedIssueEnvWritesProvenance(t *testing.T) {
 		t.Fatalf("Prepare failed: %v", err)
 	}
 	defer env.Cleanup(true)
+	runtime, err := ReadReviewRuntime(env.RootDir)
+	if err != nil || runtime.RuntimeID != "runtime-prov-001" || runtime.WorkspaceID != "ws-prov-001" || runtime.TaskID != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
+		t.Fatalf("prepared runtime binding mismatch: %+v, %v", runtime, err)
+	}
 
 	prov, err := ReadManagedEnvProvenance(env.RootDir)
 	if err != nil {

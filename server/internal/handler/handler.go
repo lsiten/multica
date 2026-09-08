@@ -190,7 +190,8 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
-	NotificationBots *notificationbot.Worker
+	localReviewRelay       localReviewRelay
+	NotificationBots       *notificationbot.Worker
 	Queries                *db.Queries
 	ReadSelector           *dbreader.Selector
 	DB                     dbExecutor
