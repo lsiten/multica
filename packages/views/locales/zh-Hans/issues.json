@@ -571,6 +571,7 @@
     "cancel_failed": "取消运行失败"
   },
   "local_review": {
+    "branch_comparison": "{{branch}} ({{head}}) → {{target}} ({{targetHead}})",
     "repository": "仓库",
     "runtime_pending": "等待所属运行时处理并返回结果…",
     "state_open": "待审查",

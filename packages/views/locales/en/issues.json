@@ -594,6 +594,7 @@
     "cancel_failed": "Failed to cancel run"
   },
   "local_review": {
+    "branch_comparison": "{{branch}} ({{head}}) → {{target}} ({{targetHead}})",
     "repository": "Repository",
     "runtime_pending": "Waiting for the owning runtime to return the result…",
     "state_open": "Awaiting review",
