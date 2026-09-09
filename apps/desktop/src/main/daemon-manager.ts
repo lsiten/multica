@@ -24,7 +24,10 @@ import type {
   ManagedWorktreeCleanupResult,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
-import { requestLocalReview } from "./local-review-request";
+import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, type LocalReviewTransport } from "./local-review-request";
+import { LocalReviewCancellation } from "./local-review-cancellation";
+import { isPagedReviewDecision, pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
+import { requestReviewInventory } from "./local-review-inventory";
 import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
@@ -190,12 +193,13 @@ interface HealthPayload {
 async function fetchHealthAtPort(
   port: number,
   timeoutMs = HEALTH_PROBE_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<HealthPayload | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
     });
     if (!res.ok) return null;
     return (await res.json()) as HealthPayload;
@@ -223,7 +227,7 @@ async function fetchWorktreeManager(
     const response = await fetch(`http://127.0.0.1:${active.port}${path}`, {
       ...init,
       headers: { ...init?.headers, Authorization: `Bearer ${config.token}`, "X-Multica-Profile": active.name },
-      signal: controller.signal,
+      signal: init?.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
     });
     if (response.status === 404) throw new Error("Update and restart the daemon to manage worktrees.");
     if (!response.ok) throw new Error(await response.text());
@@ -1409,22 +1413,41 @@ export function setupDaemonManager(
   ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
     parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
   );
-  ipcMain.handle("daemon:read-local-review", (_event, input: unknown) => requestLocalReview(input, {
+  ipcMain.handle("daemon:review-inventory", () => requestReviewInventory({
     resolveProfile: ensureActiveProfile,
-    discoverRuntime: async (profile, request) => {
+    health: (profile) => fetchHealthAtPort(profile.port),
+    inventory: (profile) => fetchWorktreeManager("/worktrees", undefined, profile),
+  }));
+  const reviewTransport: LocalReviewTransport = {
+    resolveProfile: ensureActiveProfile,
+    discoverRuntime: async (profile, request, signal) => {
       const config = await readProfileConfig(profile.name);
       if (typeof config.token !== "string" || !config.token || typeof config.server_url !== "string" || !config.server_url) throw new Error("Sign in to discover this legacy worktree runtime.");
       const response = await fetch(`${config.server_url.replace(/\/+$/, "")}/api/daemon/tasks/${encodeURIComponent(request.task_id)}/review-binding`, {
-        headers: { Authorization: `Bearer ${config.token}` }, signal: AbortSignal.timeout(5000),
+        headers: { Authorization: `Bearer ${config.token}` }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
       });
       if (!response.ok) throw new Error("Legacy worktree runtime discovery unavailable; check server connection and ownership.");
       return response.json();
     },
-    health: (profile) => fetchHealthAtPort(profile.port),
-    review: (profile, request) => fetchWorktreeManager("/worktrees/review", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request),
+    health: (profile, signal) => fetchHealthAtPort(profile.port, HEALTH_PROBE_TIMEOUT_MS, signal),
+    review: (profile, request, signal) => fetchWorktreeManager("/worktrees/review", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request), signal,
     }, profile),
-  }));
+  };
+  ipcMain.handle("daemon:read-local-review", (_event, input: unknown) => requestLocalReview(input, reviewTransport));
+  const reviewReads = new LocalReviewCancellation();
+  ipcMain.handle("daemon:read-local-review-branches", (event, input: unknown, readID: unknown) => {
+    if (typeof readID !== "string") return requestLocalReviewBranches(input, reviewTransport);
+    return reviewReads.run(event.sender, readID, (signal) => requestLocalReviewBranches(input, reviewTransport, signal));
+  });
+  ipcMain.handle("daemon:read-local-review-page", (event, input: unknown, readID: unknown) => {
+    const request = pagedReviewRequestSchema.parse(input);
+    if (typeof readID !== "string" || isPagedReviewDecision(request.action)) return requestLocalReviewPage(request, reviewTransport);
+    return reviewReads.run(event.sender, readID, (signal) => requestLocalReviewPage(request, reviewTransport, signal));
+  });
+  ipcMain.on("daemon:cancel-local-review-read", (event, readID: unknown) => {
+    if (typeof readID === "string") reviewReads.cancel(event.sender, readID);
+  });
   ipcMain.handle("daemon:cleanup-worktrees", async (_event, paths: unknown, discardChanges: unknown = false): Promise<ManagedWorktreeCleanupResult> => {
     if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((path) => typeof path !== "string" || !path) || typeof discardChanges !== "boolean") {
       throw new Error("Select between 1 and 1000 worktrees to clean.");

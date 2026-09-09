@@ -1,0 +1,81 @@
+{
+  "results": [
+    {
+      "name": "initial merge disabled",
+      "status": "PASS"
+    },
+    {
+      "name": "tracked additions render",
+      "status": "PASS"
+    },
+    {
+      "name": "source branch visible",
+      "status": "PASS"
+    },
+    {
+      "name": "target branch value",
+      "status": "PASS"
+    },
+    {
+      "name": "untracked file selection",
+      "status": "PASS"
+    },
+    {
+      "name": "commits expand",
+      "status": "PASS"
+    },
+    {
+      "name": "comment accepts CJK",
+      "status": "PASS"
+    },
+    {
+      "name": "request changes updates status",
+      "status": "PASS"
+    },
+    {
+      "name": "merge stays disabled after changes requested",
+      "status": "PASS"
+    },
+    {
+      "name": "submit reopens review",
+      "status": "PASS"
+    },
+    {
+      "name": "approve enables merge",
+      "status": "PASS"
+    },
+    {
+      "name": "merge opens separate confirmation",
+      "status": "PASS"
+    },
+    {
+      "name": "cancel preserves approval",
+      "status": "PASS"
+    },
+    {
+      "name": "unapplied target disables decisions",
+      "status": "PASS"
+    },
+    {
+      "name": "restoring target restores decisions",
+      "status": "PASS"
+    },
+    {
+      "name": "explicit confirmation merges fixture",
+      "status": "PASS"
+    },
+    {
+      "name": "merged state disables every decision",
+      "status": "PASS"
+    },
+    {
+      "name": "mobile viewport horizontal bounds",
+      "status": "PASS"
+    },
+    {
+      "name": "no browser runtime exceptions",
+      "status": "PASS"
+    }
+  ],
+  "errors": []
+}

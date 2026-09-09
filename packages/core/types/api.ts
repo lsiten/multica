@@ -24,6 +24,8 @@ export interface CreateIssueRequest {
   /** ID-keyed custom-property values validated and persisted atomically with
    * the issue. */
   properties?: IssuePropertyValues;
+  /** Enables the task's review-gated goal mode when non-empty. */
+  goal_objective?: string;
 }
 
 export interface CreateCommentSubIssueManualRequest {

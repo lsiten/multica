@@ -36,6 +36,8 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		return result
 	}
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
+	input.VersionID, input.FilePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.Offset, command.Limit
+	input.Side = command.Side
 	input.CommandID = command.ID
 	if command.CommandID != "" {
 		input.CommandID = command.CommandID
@@ -46,6 +48,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 			return recovered
 		}
 	}
+	var page json.RawMessage
 	call := func(action string) (worktreeReviewResponse, error) {
 		input.Action = action
 		data, err := json.Marshal(input)
@@ -63,6 +66,10 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		if w.status != http.StatusOK {
 			return worktreeReviewResponse{}, fmt.Errorf("%s", w.body.String())
 		}
+		if isPagedReviewRead(action) || input.VersionID != "" {
+			page = append(json.RawMessage{}, w.body.Bytes()...)
+			return worktreeReviewResponse{}, nil
+		}
 		var response worktreeReviewResponse
 		err = json.Unmarshal(w.body.Bytes(), &response)
 		return response, err
@@ -70,7 +77,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	var response worktreeReviewResponse
 	var err error
 	switch command.Action {
-	case "read", "submit", "approve", "request_changes":
+	case "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes":
 		response, err = call(command.Action)
 	case "merge":
 		if command.SnapshotID == "" {
@@ -84,6 +91,18 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	}
 	if err != nil {
 		result.Error = err.Error()
+		return result
+	}
+	if command.Action == "branches" {
+		result.Branches = response.Branches
+		return result
+	}
+	if isPagedReviewRead(command.Action) || input.VersionID != "" {
+		result.Page = page
+		var view pagedReviewManifest
+		if json.Unmarshal(page, &view) == nil {
+			result.MergedCommit = view.Review.MergedCommit
+		}
 		return result
 	}
 	result.Snapshot, err = json.Marshal(response.Snapshot)
@@ -124,7 +143,10 @@ func (d *Daemon) localReviewLoop(ctx context.Context) {
 				d.logger.Warn("local review command runtime mismatch")
 				continue
 			}
-			result := d.runRemoteReview(ctx, command)
+			result, report := d.runClaimedReview(ctx, command)
+			if !report {
+				continue
+			}
 			resultPath := "/api/daemon/runtimes/" + runtimeID + "/local-reviews/relay/" + command.ID + "/result"
 			for attempt := 0; attempt < 5; attempt++ {
 				if err := d.client.postJSON(ctx, resultPath, result, nil); err == nil {

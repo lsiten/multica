@@ -6,6 +6,8 @@ import { RESOURCES } from "@multica/views/locales";
 import { WorktreeManager } from "./worktree-manager";
 import type { ManagedWorktree } from "../../../shared/daemon-types";
 import { api } from "@multica/core/api";
+import { pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
+import { reviewFileFixture, reviewManifestFixture } from "../../../../../../packages/views/test/local-review-pages";
 
 vi.mock("@multica/core/api", () => ({ api: { listAgents: vi.fn(), listRuntimes: vi.fn() } }));
 
@@ -16,7 +18,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: v
 
 const listWorktrees = vi.fn();
 const cleanupWorktrees = vi.fn();
-const readLocalReview = vi.fn();
+const readLocalReviewPage = vi.fn();
 const row = (agentId: string, path: string): ManagedWorktree => ({
   agentId, agentName: "Same name", path, workspaceId: "ws", taskName: path,
   taskId: "task-id", repositories: [],
@@ -37,22 +39,23 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.listAgents).mockResolvedValue([]);
   vi.mocked(api.listRuntimes).mockResolvedValue([]);
-  Object.defineProperty(window, "daemonAPI", { configurable: true, value: { listWorktrees, cleanupWorktrees, readLocalReview } });
+  Object.defineProperty(window, "daemonAPI", { configurable: true, value: { listWorktrees, cleanupWorktrees, readLocalReviewPage, readLocalReviewBranches: async () => ({ branches: ["main"] }) } });
 });
 
 describe("worktree management", () => {
   it("opens the real MR dialog for the selected repository without cleaning it", async () => {
     listWorktrees.mockResolvedValue([{ ...row("agent-id", "/task-root"), runtimeId: "runtime", repositories: ["/repo/worktree"] }]);
-    readLocalReview.mockResolvedValue({
-      id: "manager-snapshot", path: "/repo/worktree", branch: "feature", target: "main", head: "head", target_head: "base", base: "base",
-      dirty: false, repositories: [], branches: ["main"], commits: "head change",
-      files: [{ path: "entry.ts", status: "tracked", patch: "@@ -1 +1 @@\n-before\n+manager-change" }],
-      review: { snapshot_id: "manager-snapshot", state: "open", comment: "", merged_commit: "" },
+    readLocalReviewPage.mockImplementation(async (raw: unknown) => {
+      const input = pagedReviewRequestSchema.parse(raw);
+      if (input.action === "repositories") return { repositories: [input.path] };
+      if (input.action === "lease") return { version_id: input.version_id, expires_at: "2100-01-01T00:00:00Z" };
+      if (input.action === "file") return reviewFileFixture(input, "+manager-change");
+      return reviewManifestFixture(input);
     });
     mount();
     fireEvent.click(await screen.findByRole("button", { name: /查看 \/ 提交 MR/ }));
     expect(await screen.findByText("+manager-change")).toBeInTheDocument();
-    expect(readLocalReview).toHaveBeenCalledWith(expect.objectContaining({ task_id: "task-id", workspace_id: "ws", runtime_id: "runtime", path: "/repo/worktree" }));
+    expect(readLocalReviewPage).toHaveBeenCalledWith(expect.objectContaining({ task_id: "task-id", workspace_id: "ws", runtime_id: "runtime", path: "/repo/worktree" }), expect.any(String));
     expect(cleanupWorktrees).not.toHaveBeenCalled();
   });
   it("groups local worktrees by business agent even when agents share a runtime", async () => {

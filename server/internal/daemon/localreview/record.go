@@ -13,6 +13,7 @@ import (
 // Record persists decisions outside the checkout, so review metadata never enters a diff.
 type Record struct {
 	SnapshotID      string    `json:"snapshot_id"`
+	VersionID       string    `json:"version_id,omitempty"`
 	State           string    `json:"state"`
 	Comment         string    `json:"comment"`
 	MergedCommit    string    `json:"merged_commit"`
@@ -26,6 +27,7 @@ type Record struct {
 
 // Event preserves decisions on the owning runtime even after the diff changes.
 type Event struct {
+	VersionID  string    `json:"version_id,omitempty"`
 	CommandID  string    `json:"command_id,omitempty"`
 	Kind       string    `json:"kind"`
 	SnapshotID string    `json:"snapshot_id"`

@@ -70,7 +70,7 @@ it("discovers a legacy task runtime once and preserves it for later local reques
   };
   const result = await requestLocalReview({ ...input, runtime_id: undefined }, transport);
   expect(result?.runtime_id).toBe("runtime");
-  expect(review).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ runtime_id: "runtime" }));
+  expect(review).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ runtime_id: "runtime" }), undefined);
   await requestLocalReview({ ...input, runtime_id: result?.runtime_id }, transport);
   expect(discoverRuntime).toHaveBeenCalledTimes(1);
 });

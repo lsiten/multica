@@ -57,6 +57,11 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 	if d.client == nil {
 		return "unavailable"
 	}
+	if active, err := localreview.HasActiveReview(ctx, path, time.Now()); err != nil {
+		return "unavailable"
+	} else if active {
+		return "review"
+	}
 	status, err := d.client.GetTaskGCCheck(ctx, owner.TaskID)
 	if err != nil || !isAgentTaskTerminal(status.Status) {
 		return "unavailable"
@@ -92,6 +97,9 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 				return "output"
 			}
 		}
+	}
+	if err := execenv.ArchiveReviewDirectory(ctx, d.cfg.WorkspacesRoot, path); err != nil {
+		return "unavailable"
 	}
 	for _, repo := range repositories {
 		common, err := worktreeGit(ctx, repo, "rev-parse", "--path-format=absolute", "--git-common-dir")

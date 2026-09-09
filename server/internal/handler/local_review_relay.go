@@ -39,6 +39,7 @@ func (relay *localReviewRelay) enqueue(command protocol.LocalReviewCommand) (*lo
 		relay.pending = make(map[string]*localReviewExchange)
 	}
 	command.ID, command.ClaimToken = randomID(), randomID()
+	command.CancellationSupported = true
 	relay.sequence++
 	exchange := &localReviewExchange{command: command, sequence: relay.sequence, response: make(chan protocol.LocalReviewResult, 1)}
 	relay.pending[command.ID] = exchange

@@ -73,8 +73,9 @@ type AppConfig struct {
 	// one. Releases between that fix and this signal do gate the save but say
 	// nothing, so they are treated the same way — the client cannot distinguish
 	// them, and only one of the two guesses is safe.
-	LocalWorktreeSupported bool `json:"local_worktree_supported"`
-	LocalReviewSupported   bool `json:"local_review_supported"`
+	LocalWorktreeSupported     bool `json:"local_worktree_supported"`
+	LocalReviewSupported       bool `json:"local_review_supported"`
+	LocalReviewPagingSupported bool `json:"local_review_paging_supported"`
 
 	// AgentConversationStartersSupported tells independently deployed clients
 	// that agent create/update persists conversation_starters. Older handlers
@@ -113,6 +114,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		// running, the save gate is running with it.
 		LocalWorktreeSupported:             true,
 		LocalReviewSupported:               true,
+		LocalReviewPagingSupported:         true,
 		AgentConversationStartersSupported: true,
 		IssueCreatePropertiesSupported:     true,
 		CommentDeleteKeepRepliesSupported:  true,

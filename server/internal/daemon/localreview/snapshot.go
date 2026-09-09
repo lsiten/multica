@@ -64,7 +64,7 @@ func git(ctx context.Context, path string, args ...string) (string, error) {
 		options = append(options, filters...)
 	}
 	cmd := exec.CommandContext(ctx, "git", append(options, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_LITERAL_PATHSPECS=1", "GIT_NO_REPLACE_OBJECTS=1")
 	out, stderr := &boundedOutput{}, &boundedOutput{}
 	cmd.Stdout, cmd.Stderr = out, stderr
 	if err := cmd.Run(); err != nil {

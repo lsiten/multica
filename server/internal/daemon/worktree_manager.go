@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/daemon/localreview"
 )
 
 // ManagedWorktree is a daemon-owned completed task environment. Its Path is
@@ -73,6 +75,13 @@ func (d *Daemon) managedWorktrees(ctx context.Context) ([]ManagedWorktree, error
 		} else {
 			_, reason = inspectWorktreeRepositories(ctx, task.Path, d.cfg.WorkspacesRoot)
 		}
+		if !active && reason != "unowned" {
+			if reviewing, err := localreview.HasActiveReview(ctx, task.Path, time.Now()); err != nil {
+				reason = "unavailable"
+			} else if reviewing {
+				reason = "review"
+			}
+		}
 		if task.AgentID == "" {
 			if provenance, err := execenv.ReadManagedEnvProvenance(task.Path); err == nil {
 				task.AgentID = provenance.AgentID
@@ -93,7 +102,7 @@ func (d *Daemon) managedWorktrees(ctx context.Context) ([]ManagedWorktree, error
 		repositories, _ := inspectWorktreeRepositories(ctx, task.Path, d.cfg.WorkspacesRoot)
 		if len(repositories) == 0 && taskID != "" {
 			binding, err := execenv.ReadReviewDirectory(task.Path)
-			if err == nil && binding.TaskID == taskID && binding.WorkspaceID == task.WorkspaceID && filepath.IsAbs(binding.Path) {
+			if err == nil && binding.SourcePath == "" && binding.Commit == "" && binding.TaskID == taskID && binding.WorkspaceID == task.WorkspaceID && filepath.IsAbs(binding.Path) {
 				canonical, err := filepath.EvalSymlinks(binding.Path)
 				if err == nil && canonical == binding.Path {
 					repositories = []string{canonical}

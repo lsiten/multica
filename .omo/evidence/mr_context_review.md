@@ -1,0 +1,44 @@
+# Local MR context/history review
+
+Verdict: **FAIL — lifecycle preservation and legacy-task acceptance remain incomplete.**
+
+Reviewed 2026-09-08, HEAD `9da4ed8163a377e59b6a74d13d89c5599f277093` plus current dirty MR files. This is a read-only source/history review, not runtime or authenticated UI acceptance. Only this report was written; no source/history mutation or real agent execution occurred.
+
+## Requirements applied
+
+Latest supplied requirement takes precedence over the former cloud-MR implementation: daemon/runtime owns snapshots, approvals, history and merge recovery; owner-machine direct access, remote clients authorized ephemeral relay; existing cloud identity/routing metadata only; issue/task, business-agent Work tab and worktree management entrances; no GitHub PR creation. `LOCAL_MR_IMPLEMENTATION.md:5–13` agrees. Its section beginning at line 114 explicitly makes older entries historical, so earlier references to persistent cloud commands/tables are not current acceptance criteria.
+
+## Findings
+
+### P1 — Ordinary managed task cleanup can delete the only MR history/receipt
+
+`server/internal/daemon/execenv/review_archive.go:22–24` returns success without copying anything when the task has no `.review-directory.json`. Ordinary managed repository task preparation writes `.review-runtime.json`, but the directory-binding write is conditional on `env.LocalDirectory` (`execenv.go:747–751`); other production directory-binding writers cover reuse and local-worktree delivery, not every ordinary managed clone. MR records are stored under the resolved task root (`worktree_review.go:195`, `:322–330`). Therefore an ordinary managed task can acquire MR decisions/merge receipts without a directory binding. `gc.go:895–899` treats the archive no-op as success and removes the task directory, losing the runtime's sole durable MR history. Existing pinned-delivery archive test explicitly seeds the missing binding (`worktree_review_test.go:31`) and does not cover this path.
+
+Reproduction to add at the owning implementation layer: prepare a non-local-directory managed repository task; create/approve MR; call permitted terminal-task cleanup; assert the record/history remains in a daemon-owned archive. Preserve records independently of a live external-directory binding, or explicitly retain task roots with unarchivable MR records. This is a source-proven path, not an executed reproduction in this review.
+
+### P2 — Existing completed task worktrees cannot use the direct owner decision flow
+
+The new runtime provenance exists only for newly prepared/reused task roots. Inventory leaves `runtime_id` blank when the binding is absent (`worktree_manager.go:82–90`); the desktop MR button still enables based only on task ID (`apps/desktop/src/renderer/src/components/worktree-manager.tsx:129`). The direct routing guard requires a runtime ID (`apps/desktop/src/shared/local-review-routing.ts:10–12`); direct mutations further require a matching on-disk runtime binding (`worktree_review.go:201–205`). No production backfill writer was found outside new preparation/reuse. An existing worktree can consequently be displayed as reviewable but cannot complete the owner-machine direct decision flow. The journal itself names legacy provenance as incomplete (`LOCAL_MR_IMPLEMENTATION.md:30`). A safe authoritative migration/backfill or clearly defined legacy unsupported flow is still needed; do not infer ownership from branch or provider names.
+
+### Scope clarification — Browser on the owner machine always uses the server
+
+`packages/views/platform/local-review.ts:10–21` only attempts direct access through Electron's `window.daemonAPI`; ordinary Web has no equivalent adapter. The daemon HTTP endpoint explicitly rejects Origin-bearing requests (`worktree_review.go:125`). Thus owner-machine Web currently uses relay. If “owning-machine client accesses its daemon directly” includes Web as written in the requirement, this is an unmet requirement. If direct-owner access intentionally means Desktop only, document that limitation before claiming full compliance. It is not appropriate to weaken loopback Origin/auth protections implicitly.
+
+## Historical and contract checks
+
+- `0b329cbe940933a59543d90da62f226a471a58bf` (`feat(daemon): add safe automatic and manual worktree cleanup`) established task ownership, active-root reservation, cross-process claim, terminal server status, dirty/unpushed/output preservation. Current `worktree_cleanup.go:24–117` retains those guards. New review writes use reservation, claim and actual source claim (`worktree_review.go:210–245`). Preserve these guards when addressing the archive gap.
+- `f1ab63965bb1428ccb17268a0810eee7c319f1ba` (`feat(desktop): add tab refresh and agent-grouped worktree management`) established business-agent grouping; current fallback uses explicit AgentID/AgentName in validated runtime provenance (`worktree_manager.go:84–90`), not CLI providers. New matching/stale-task/other-workspace inventory fixtures check this (`local_review_runtime_inventory_test.go:10–35`; inspected, not executed).
+- `7e2e18ee9cd681b4ae1e68ffaa9a243475acaaf8` (`feat(issues): request review for worktree changes`) and HEAD `9da4ed8` establish the previous issue review entry. The new issue selector is present (`code-review-context-section.tsx:19–36`), shared business-agent list is present (`local-worktree-reviews.tsx:12–38`), and desktop manager embeds the dialog (`worktree-manager.tsx:129–138`). Three entrance wiring exists; live usability remains unverified.
+- Stable conversation ownership is workspace + business agent + conversation, with a recorded checkpoint ancestor check; branch name is display identity only (`execenv/local_worktree.go:95–105`, `:1253–1280`). Built-in project documentation explains this at `server/internal/service/builtin_skills/multica-platform/references/projects.md:82–109`. Local-directory cleanup must never delete the user directory (`execenv.go:1229–1255`). Reused aliases must preserve the actual checkout; the new archive/alias test covers a binding-bearing alias, not ordinary managed-clone history.
+- Desktop profile isolation already rotates credentials on account switch (`daemon-manager.ts:780–791`). MR routing compares active profile plus workspace/runtime health (`:1412–1419` and shared routing guard). This static review does not establish production login/account-switch acceptance; an authenticated A → B switch with old worktrees should remain a required negative scenario.
+- SQL inventory is an existing-metadata SELECT, with workspace and reader/runtime visibility restrictions (`server/pkg/db/queries/local_review_worktrees.sql:1–11`). No new cloud MR state mutation was found in this inspection. Remote messages use a transient loop (`local_review_remote.go:102–143`); multi-instance delivery semantics require separate implementation/QA evidence.
+- API response drift rule remains mandatory (`CLAUDE.md`, API Compatibility). The new direct response and request are parsed at the IPC boundary (`daemon-manager.ts:1413`, `:1419`). Related negative/schema tests exist but were not executed in this lane.
+- Built-in project/issue docs were searched. They describe worktree delivery and GitHub PR behavior but do not document local MR decisions/history/direct-vs-relay restrictions. `LOCAL_MR_IMPLEMENTATION.md` is an implementation journal, not a replacement for the authoritative consumer-facing worktree contract. Add relevant documentation if this feature changes documented agent delivery/review behavior, as required by `CLAUDE.md` Coding Rules.
+
+## Sources and limits
+
+Searched: root `CLAUDE.md`, supplied AGENTS instructions, RTK guidance, git-master HISTORY skill; local git status/log and exact commit metadata/diffs above; CodeGraph exploration (index exists, 3,826 files), then targeted on-disk reads because new untracked MR symbols were not returned; MR journal, daemon ownership/reuse/archive/cleanup sources and tests, desktop routing/account-switch source, shared entry/transport code, SQL inventory, built-in project/issue documentation. Quick memory search found no relevant Multica historical entry and contributed no claims.
+
+Unavailable: GitHub CLI commit metadata request (`gh api repos/lsiten/multica/commits/9da4ed8163a377e59b6a74d13d89c5599f277093`) failed because gh is not authenticated; no remote issue/PR conclusions are made. Local history has a limited imported boundary at `ca47495`, so precise earlier introduction of every worktree convention cannot be attributed from this checkout's file history.
+
+Skipped intentionally: personal Slack/Notion, session transcripts, credentials/config contents, `.env`, deployed services, real agent CLI, browser/Electron execution, database tests, commits/push/deploy. No tests were run in this context lane; parent QA/implementation lanes own executable verification.

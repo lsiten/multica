@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
@@ -25,12 +24,15 @@ type worktreeReviewRequest struct {
 	Target        string `json:"target"`
 	Action        string `json:"action"`
 	SnapshotID    string `json:"snapshot_id"`
+	VersionID     string `json:"version_id,omitempty"`
+	FilePath      string `json:"file_path,omitempty"`
+	Side          string `json:"side,omitempty"`
+	Offset        int    `json:"offset,omitempty"`
+	Limit         int    `json:"limit,omitempty"`
 	Comment       string `json:"comment"`
 	CommandID     string `json:"command_id"`
 	ActorID       string `json:"actor_id"`
 }
-
-var localReviewOperations sync.Mutex
 
 type worktreeReviewResponse struct {
 	localreview.Snapshot
@@ -137,11 +139,11 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 			http.Error(w, "task, workspace and absolute repository path are required", http.StatusBadRequest)
 			return
 		}
-		if !forwarded && request.Action != "" && request.Action != "read" && request.RuntimeID == "" {
+		if !forwarded && !isReadReviewAction(request.Action) && request.RuntimeID == "" {
 			http.Error(w, "runtime identity required for local decisions", http.StatusForbidden)
 			return
 		}
-		if request.Action != "" && request.Action != "read" && strings.TrimSpace(request.CommandID) == "" {
+		if !isReadReviewAction(request.Action) && strings.TrimSpace(request.CommandID) == "" {
 			http.Error(w, "operation ID required for review decisions", http.StatusBadRequest)
 			return
 		}
@@ -162,7 +164,7 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 				return
 			}
 		}
-		if !forwarded && request.Action != "" && request.Action != "read" {
+		if !forwarded && !isReadReviewAction(request.Action) {
 			_, root, err := d.resolveReviewRoot(r.Context(), request)
 			if err != nil {
 				http.Error(w, "local task unavailable", http.StatusForbidden)
@@ -187,6 +189,13 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 					http.Error(w, result.Error, http.StatusConflict)
 					return
 				}
+				if len(result.Page) > 0 {
+					w.Header().Set("Content-Type", "application/json")
+					if err := json.NewEncoder(w).Encode(result.Page); err != nil {
+						d.logger.Debug("local review recovery response interrupted", "error", err)
+					}
+					return
+				}
 				var response worktreeReviewResponse
 				if json.Unmarshal(result.Snapshot, &response.Snapshot) != nil || json.Unmarshal(result.Review, &response.Review) != nil {
 					http.Error(w, "cannot decode recovered review", http.StatusInternalServerError)
@@ -199,7 +208,10 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 				return
 			}
 		}
-		localReviewOperations.Lock()
+		if err := localReviewOperations.Lock(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusRequestTimeout)
+			return
+		}
 		defer localReviewOperations.Unlock()
 		path, root, err := d.resolveReviewRoot(r.Context(), request)
 		if err != nil {
@@ -207,6 +219,24 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 			return
 		}
 		actorName := ""
+		if isPagedReviewRead(request.Action) {
+			d.pagedReviewRead(w, r, pagedReviewContext{request: request, path: path, root: root})
+			return
+		}
+		if request.Action == "branches" {
+			branches, branchErr := localreview.Branches(r.Context(), path)
+			if branchErr != nil {
+				http.Error(w, branchErr.Error(), http.StatusConflict)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(struct {
+				Branches []string `json:"branches"`
+			}{branches}); err != nil {
+				d.logger.Debug("local branch response interrupted", "error", err)
+			}
+			return
+		}
 		if !forwarded && request.Action != "" && request.Action != "read" {
 			binding, err := execenv.ReadReviewRuntime(root)
 			if errors.Is(err, os.ErrNotExist) && request.legacyRuntime != nil {
@@ -261,6 +291,10 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 				return
 			}
 			defer unlock()
+		}
+		if request.VersionID != "" && !isReadReviewAction(request.Action) {
+			d.pagedReviewDecision(w, r, pagedReviewDecisionContext{pagedReviewContext: pagedReviewContext{request: request, path: path, root: root}, actorName: actorName})
+			return
 		}
 		var snapshot localreview.Snapshot
 		if binding, bindingErr := execenv.ReadReviewDirectory(root); bindingErr == nil && binding.SourcePath == request.Path && binding.Commit != "" {

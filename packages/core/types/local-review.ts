@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const localReviewCapabilitySchema = z.object({ local_review_supported: z.boolean().optional().catch(false) });
+export const localReviewBranchesSchema = z.object({ branches: z.array(z.string()) });
 export const localReviewRuntimeBindingSchema = z.object({ workspace_id: z.string().min(1), task_id: z.string().min(1), runtime_id: z.string().min(1) });
 export const localReviewRuntimeHealthSchema = z.object({
   profile: z.string(),
@@ -13,12 +14,13 @@ export const localReviewRequestSchema = z.object({
   runtime_id: z.string().optional(),
   path: z.string().min(1),
   target: z.string().min(1),
-  action: z.enum(["read", "submit", "approve", "request_changes", "merge"]).optional(),
+  action: z.enum(["read", "branches", "submit", "approve", "request_changes", "merge"]).optional(),
   snapshot_id: z.string().optional(),
   comment: z.string().max(8000).optional(),
   review_id: z.string().optional(),
   command_id: z.string().min(1).max(128).optional(),
 });
+export const localReviewBranchesRequestSchema = localReviewRequestSchema.extend({ target: z.string().optional().default("") });
 
 export const localReviewSnapshotSchema = z.object({
   runtime_id: z.string().optional(),
@@ -41,6 +43,7 @@ export type LocalReviewRequest = z.infer<typeof localReviewRequestSchema>;
 export type LocalReviewSnapshot = z.infer<typeof localReviewSnapshotSchema>;
 
 export const localReviewEventSchema = z.object({
+  version_id: z.string().optional(),
   kind: z.string(), snapshot_id: z.string(), comment: z.string(),
   actor_id: z.string().optional().default(""), actor_name: z.string().nullish(), created_at: z.string(),
 });

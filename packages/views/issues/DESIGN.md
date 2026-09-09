@@ -1,0 +1,29 @@
+# Local review surface
+
+## 1. Scope
+Preserve the existing MR dialog and shared component system. This work changes data loading and review interaction, not the application brand or task layout.
+
+## 2. Color
+Use the shared semantic background/card/popover, foreground, muted-foreground, border, success, warning and destructive tokens. Added/removed code uses success/destructive text and tinted backgrounds; color is accompanied by diff markers and line numbers.
+
+## 3. Typography
+Use text-caption for dense metadata/code, text-body for ordinary controls, and font-mono for file paths/patch content. Do not add fonts or raw font sizes.
+
+## 4. Layout
+Keep the existing flex dialog with bounded viewport height. Its file-browser region owns scrolling. Desktop has a file-list column and diff column; smaller widths stack them. Both grid children must allow shrinking without pushing controls outside the dialog.
+
+## 5. Primitives and states
+Reuse Dialog, Button, Input, Popover and Command. Branch selection supports keyboard search. File selection uses semantic buttons with pressed state. Loading, retry, empty, binary, oversized and unsupported content are explicit states. Patch pagination uses previous/next actions and never silently appends unlimited content.
+
+Omitted hunk context uses a full-width ghost button on the muted hunk background. Expanding loads at most 50 original lines per explicit action, preserves both line-number columns, and offers collapse. Loading and errors appear inline at that gap; they must not block other files. Collapsing unmounts the reader and cancels unfinished work. No additional motion is introduced.
+
+## 6. Interaction and motion
+Use existing component focus/hover/pressed behavior. No decorative motion is added. Target selection is separate from applying a comparison. Merge requires a separate confirmation against visible source and target commit identities.
+
+## 7. Accessibility
+Give branch search, file navigation and pagination localized labels. Errors use role=alert; load/empty feedback uses role=status. Keep visible focus, readable CJK wrapping, and bounded technical details. Code lines remain selectable.
+
+## 8. Acceptance and debt
+Test lazy per-file requests, correct version identity, file pagination, patch pagination, error isolation and merge confirmation. Fresh visual acceptance is still required; lack of native control permission is an evidence gap, not a visual pass. No performance claim is based only on unit tests.
+
+The user subsequently declined actual desktop/browser operation. Do not request or perform it for this task; report visual acceptance as not performed at their request.

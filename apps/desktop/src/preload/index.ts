@@ -256,6 +256,10 @@ type DaemonReauthResult =
 
 const daemonAPI = {
   readLocalReview: (request: unknown): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review", request),
+  readLocalReviewBranches: (request: unknown, readID?: string): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review-branches", request, readID),
+  readLocalReviewPage: (request: unknown, readID?: string): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review-page", request, readID),
+  cancelLocalReviewRead: (readID: string): void => ipcRenderer.send("daemon:cancel-local-review-read", readID),
+  reviewInventory: (): Promise<unknown> => ipcRenderer.invoke("daemon:review-inventory"),
   start: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("daemon:start"),
   stop: (): Promise<{ success: boolean; error?: string }> =>
