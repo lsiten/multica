@@ -298,6 +298,9 @@ var concurrentIndexCleanups = map[string]string{
 	"443_issue_project_status_index":                            "idx_issue_project_status",
 	"445_comment_delegated_failure_unsettled_index":             "idx_comment_delegated_failure_unsettled",
 	"446_issue_properties_bigm_index":                           "idx_issue_properties_bigm",
+	"452_notification_bot_owner_index":                          "notification_bot_owner_idx",
+	"453_notification_bot_delivery_unique":                      "notification_bot_delivery_unique_idx",
+	"454_notification_bot_delivery_ready":                       "notification_bot_delivery_ready_idx",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
