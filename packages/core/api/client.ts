@@ -1,12 +1,15 @@
 import { configStore } from "../config";
-import { localReviewCapabilitySchema, localReviewRelayResponseSchema, remoteWorktreesSchema } from "../types/local-review";
+import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewInput } from "../types/local-review-pages";
+import { localReviewBranchesSchema, localReviewCapabilitySchema, localReviewRelayResponseSchema, remoteWorktreesSchema } from "../types/local-review";
 import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
   Issue,
+  IssueGoal,
   IssuePriority,
   CreateIssueRequest,
   MoveIssueRequest,
   UpdateIssueRequest,
+  UpsertIssueGoalRequest,
   GroupedIssuesResponse,
   ListIssuesResponse,
   SearchIssuesResponse,
@@ -310,6 +313,7 @@ import {
   ListIssuesResponseSchema,
   CreateIssueResponseSchema,
   IssueSchema,
+  IssueGoalSchema,
   AgentTaskSchema,
   SourceContextPreviewSchema,
   CommentSubIssueTaskResponseSchema,
@@ -789,9 +793,32 @@ export class ApiClient {
     return res.json() as Promise<T>;
   }
 
-  async supportsLocalMR(): Promise<boolean> {
-    const result = localReviewCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: AbortSignal.timeout(15000) }));
+  async supportsLocalMR(signal?: AbortSignal): Promise<boolean> {
+    const timeout = AbortSignal.timeout(15000);
+    const result = localReviewCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: signal ? AbortSignal.any([signal, timeout]) : timeout }));
     return result.local_review_supported === true;
+  }
+
+  async supportsPagedLocalMR(signal?: AbortSignal): Promise<boolean> {
+    const timeout = AbortSignal.timeout(15000);
+    const result = pagedReviewCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: signal ? AbortSignal.any([signal, timeout]) : timeout }));
+    return result.local_review_paging_supported === true;
+  }
+
+  async executePagedLocalReview(input: PagedReviewInput, signal?: AbortSignal) {
+    const request = pagedReviewRequestSchema.parse(input);
+    const timeout = AbortSignal.timeout(55000);
+    const raw = await this.fetch<unknown>("/api/local-reviews/execute", {
+      method: "POST", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      body: JSON.stringify({
+        task_id: request.task_id, path: request.path, target: request.target, action: request.action,
+        version_id: request.version_id, file_path: request.file_path, offset: request.offset, limit: request.limit,
+        side: request.action === "content" ? request.side : undefined,
+        snapshot_id: request.snapshot_id, command_id: request.command_id, comment: request.comment,
+      }),
+    });
+    if (!raw || typeof raw !== "object" || !("page" in raw)) throw new Error("Review page response missing");
+    return parsePagedReviewResponse(request, raw.page);
   }
 
   async executeLocalReview(request: import("../types/local-review").LocalReviewRequest) {
@@ -802,10 +829,19 @@ export class ApiClient {
     }));
   }
 
-  async listReviewWorktrees(offset = 0, agentId?: string) {
+  async listReviewWorktrees(offset = 0, agentId?: string, issueId?: string) {
     const query = new URLSearchParams({ offset: String(offset) });
     if (agentId) query.set("agent_id", agentId);
+    if (issueId) query.set("issue_id", issueId);
     return remoteWorktreesSchema.parse(await this.fetch<unknown>(`/api/local-reviews/worktrees?${query}`, { signal: AbortSignal.timeout(20000) }));
+  }
+
+  async listLocalReviewBranches(request: import("../types/local-review").LocalReviewRequest, signal?: AbortSignal) {
+    const timeout = AbortSignal.timeout(55000);
+    return localReviewBranchesSchema.parse(await this.fetch<unknown>("/api/local-reviews/execute", {
+      method: "POST", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      body: JSON.stringify({ task_id: request.task_id, path: request.path, action: "branches" }),
+    })).branches;
   }
 
   // Auth
@@ -1223,6 +1259,42 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  async getIssueGoal(id: string): Promise<IssueGoal> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(id)}/goal`);
+    const goal = parseWithFallback<IssueGoal | null>(raw, IssueGoalSchema, null, {
+      endpoint: "GET /api/issues/:id/goal",
+    });
+    if (!goal) throw new Error("GET /api/issues/:id/goal returned a malformed goal");
+    return goal;
+  }
+
+  async upsertIssueGoal(id: string, data: UpsertIssueGoalRequest): Promise<IssueGoal> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(id)}/goal`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    const goal = parseWithFallback<IssueGoal | null>(raw, IssueGoalSchema, null, {
+      endpoint: "PUT /api/issues/:id/goal",
+    });
+    if (!goal) throw new Error("PUT /api/issues/:id/goal returned a malformed goal");
+    return goal;
+  }
+
+  async completeIssueGoal(id: string): Promise<IssueGoal> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(id)}/goal/complete`, {
+      method: "POST",
+    });
+    const goal = parseWithFallback<IssueGoal | null>(raw, IssueGoalSchema, null, {
+      endpoint: "POST /api/issues/:id/goal/complete",
+    });
+    if (!goal) throw new Error("POST /api/issues/:id/goal/complete returned a malformed goal");
+    return goal;
+  }
+
+  async deleteIssueGoal(id: string): Promise<void> {
+    await this.fetch(`/api/issues/${encodeURIComponent(id)}/goal`, { method: "DELETE" });
   }
 
   async moveIssue(id: string, data: MoveIssueRequest): Promise<Issue> {

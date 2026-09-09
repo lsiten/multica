@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,7 +55,10 @@ func TestLocalReviewRuntimeProcessHelper(t *testing.T) {
 			}
 		}
 	}
-	result := d.runRemoteReview(ctx, *claim.Command)
+	result, report := d.runClaimedReview(ctx, *claim.Command)
+	if !report {
+		t.Fatal("live reader was cancelled")
+	}
 	if result.Error != "" {
 		t.Fatal(result.Error)
 	}
@@ -64,6 +68,15 @@ func TestLocalReviewRuntimeProcessHelper(t *testing.T) {
 }
 
 func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		paged bool
+	}{{"legacy", false}, {"paged", true}} {
+		t.Run(tc.name, func(t *testing.T) { runLocalReviewProcessScenario(t, tc.paged) })
+	}
+}
+
+func runLocalReviewProcessScenario(t *testing.T, paged bool) {
 	url := os.Getenv("LOCAL_REVIEW_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("LOCAL_REVIEW_TEST_DATABASE_URL not set")
@@ -99,7 +112,11 @@ func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
 	worktreeTestGit(t, repo, "config", "user.email", "review@example.test")
 	checkout := filepath.Join(envRoot, "worktree")
 	worktreeTestGit(t, repo, "worktree", "add", "-b", "feature", checkout)
-	if err := os.WriteFile(filepath.Join(checkout, "app.txt"), []byte("delivered from runtime\n"), 0o600); err != nil {
+	contents := "delivered from runtime\n"
+	if paged {
+		contents = strings.Repeat(contents, 400000)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, "app.txt"), []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	worktreeTestGit(t, checkout, "add", "app.txt")
@@ -126,6 +143,11 @@ func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
 	router.With(middleware.RequireWorkspaceMember(queries), handler.RequireHumanActor).Post("/reviews", h.ForwardLocalReview)
 	router.Post("/runtime/{runtimeId}/claim", h.ClaimLocalReviewRelay)
 	router.Post("/runtime/{runtimeId}/{commandId}/result", h.ReportLocalReviewRelay)
+	var statusChecks atomic.Int64
+	router.Post("/api/daemon/runtimes/{runtimeId}/local-reviews/relay/{commandId}/status", func(w http.ResponseWriter, r *http.Request) {
+		statusChecks.Add(1)
+		h.LocalReviewRelayStatus(w, r)
+	})
 	server := httptest.NewServer(router)
 	defer server.Close()
 	wrongToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": fx.UserID}).SignedString([]byte("wrong-fixture-key"))
@@ -189,7 +211,7 @@ func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
 		}
 		return result
 	}
-	runWorker := func(input map[string]string) map[string]json.RawMessage {
+	runWorker := func(input protocol.LocalReviewCommand) map[string]json.RawMessage {
 		t.Helper()
 		workerCtx, cancel := context.WithTimeout(ctx, time.Minute)
 		defer cancel()
@@ -210,38 +232,11 @@ func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
 		}()
 		return call("POST", "/reviews", input)
 	}
-	input := map[string]string{"task_id": taskID, "path": checkout, "target": "main", "action": "read"}
-	view := runWorker(input)
-	var snapshot struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(view["snapshot"], &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(view["snapshot"]), "delivered from runtime") {
-		t.Fatal("runtime diff missing from platform snapshot")
-	}
-	input["snapshot_id"], input["action"] = snapshot.ID, "approve"
-	input["command_id"] = "process-approve"
-	runWorker(input)
-	input["action"] = "merge"
-	input["command_id"] = "process-merge"
-	view = runWorker(input)
-	var merged string
-	if err := json.Unmarshal(view["merged_commit"], &merged); err != nil {
-		t.Fatal(err)
-	}
-	var record struct {
-		State string `json:"state"`
-	}
-	if err := json.Unmarshal(view["review"], &record); err != nil {
-		t.Fatal(err)
-	}
-	if record.State != "merged" || merged == "" || worktreeTestGit(t, repo, "rev-parse", "HEAD") != merged {
-		t.Fatal("platform and target Git state disagree")
-	}
-	if worktreeTestGit(t, checkout, "rev-parse", "HEAD") != sourceHead {
-		t.Fatal("source checkout moved")
+	fixture := processReviewFixture{taskID: taskID, checkout: checkout, repo: repo, sourceHead: sourceHead, run: runWorker}
+	if paged {
+		verifyPagedReviewProcess(t, fixture)
+	} else {
+		verifyLegacyReviewProcess(t, fixture)
 	}
 	var hasCloudMRStorage bool
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('local_review') IS NOT NULL
@@ -251,5 +246,8 @@ func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
 	}
 	if hasCloudMRStorage {
 		t.Fatal("fresh installation created cloud MR storage")
+	}
+	if paged && statusChecks.Load() == 0 {
+		t.Fatal("paged runtime never checked the authenticated reader status")
 	}
 }

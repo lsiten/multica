@@ -18,16 +18,19 @@ JOIN agent ON agent.id = task.agent_id
 JOIN agent_runtime runtime ON runtime.id = task.runtime_id AND runtime.workspace_id = agent.workspace_id
 WHERE agent.workspace_id = $1
 AND task.work_dir IS NOT NULL AND task.work_dir <> ''
+AND (task.status NOT IN ('completed', 'failed', 'cancelled') OR COALESCE(task.durable_work_dir, '') = '')
 AND (runtime.owner_id = $2 OR runtime.visibility = 'public')
 AND (task.issue_id IS NOT NULL OR runtime.owner_id = $2)
 AND ($3::uuid IS NULL OR task.agent_id = $3)
-ORDER BY task.created_at DESC, task.id DESC LIMIT 100 OFFSET $4
+AND ($4::uuid IS NULL OR task.issue_id = $4)
+ORDER BY task.created_at DESC, task.id DESC LIMIT 100 OFFSET $5
 `
 
 type ListLocalReviewWorktreesParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	ReaderID    pgtype.UUID `json:"reader_id"`
 	AgentID     pgtype.UUID `json:"agent_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
 	PageOffset  int32       `json:"page_offset"`
 }
 
@@ -47,6 +50,7 @@ func (q *Queries) ListLocalReviewWorktrees(ctx context.Context, arg ListLocalRev
 		arg.WorkspaceID,
 		arg.ReaderID,
 		arg.AgentID,
+		arg.IssueID,
 		arg.PageOffset,
 	)
 	if err != nil {

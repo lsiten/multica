@@ -52,6 +52,13 @@ func (h *Handler) ListLocalReviewWorktrees(w http.ResponseWriter, r *http.Reques
 		}
 		params.AgentID = id
 	}
+	if raw := r.URL.Query().Get("issue_id"); raw != "" {
+		id, valid := parseUUIDOrBadRequest(w, raw, "issue_id")
+		if !valid {
+			return
+		}
+		params.IssueID = id
+	}
 	rows, err := h.Queries.ListLocalReviewWorktrees(r.Context(), params)
 	if err != nil {
 		writeError(w, 500, "cannot list runtime worktrees")

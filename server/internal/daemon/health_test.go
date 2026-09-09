@@ -56,6 +56,9 @@ func TestHealthHandlerReportsCLIVersionAndTaskCounts(t *testing.T) {
 	if got, want := raw["cli_version"], "v9.9.9"; got != want {
 		t.Errorf("cli_version key: got %v, want %q", got, want)
 	}
+	if raw["local_review_paging_supported"] != true {
+		t.Error("daemon must advertise its paged review protocol")
+	}
 	// JSON numbers decode to float64 through map[string]any.
 	if got, want := raw["active_task_count"], float64(2); got != want {
 		t.Errorf("active_task_count key: got %v, want %v", got, want)

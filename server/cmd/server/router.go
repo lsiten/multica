@@ -1468,6 +1468,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/runtimes/{runtimeId}/tasks/{taskId}/review-binding", h.GetLocalReviewRuntimeBinding)
 		r.Get("/tasks/{taskId}/review-binding", h.DiscoverLocalReviewRuntimeBinding)
 		r.Post("/runtimes/{runtimeId}/local-reviews/relay/{commandId}/result", h.ReportLocalReviewRelay)
+		r.Post("/runtimes/{runtimeId}/local-reviews/relay/{commandId}/status", h.LocalReviewRelayStatus)
 		r.Post("/runtimes/{runtimeId}/local-skills/import/{requestId}/result", h.ReportLocalSkillImportResult)
 
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
@@ -1889,6 +1890,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetIssue)
 					r.Put("/", h.UpdateIssue)
+					r.Get("/goal", h.GetIssueGoal)
+					r.Put("/goal", h.UpsertIssueGoal)
+					r.Delete("/goal", h.DeleteIssueGoal)
+					r.Post("/goal/complete", h.CompleteIssueGoal)
 					r.Post("/move", h.MoveIssue)
 					r.Delete("/", h.DeleteIssue)
 					r.Post("/comments/trigger-preview", h.PreviewCommentTriggers)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/daemon/localreview"
 	"github.com/multica-ai/multica/server/internal/daemon/processtree"
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
 )
@@ -215,6 +216,7 @@ func (d *Daemon) gcWorkspace(ctx context.Context, wsDir string, stats *gcStats) 
 			continue
 		}
 		meta, metaErr := execenv.ReadGCMeta(taskDir)
+		d.maintainIdleReviewCache(ctx, taskDir)
 		if metaErr == nil && meta.AutoCleanup && !meta.LocalDirectory && !d.cfg.KeepEnvAfterTask {
 			if reason := d.cleanupManagedWorktree(ctx, worktreeCleanup{path: taskDir, automatic: true}); reason == "" {
 				cleanedHere++
@@ -892,7 +894,12 @@ func (d *Daemon) cleanTaskDir(taskDir string) (bytes int64, removed bool) {
 		d.logger.Warn("gc: refusing to remove unowned task directory", "dir", taskDir, "error", ownerErr)
 		return 0, false
 	}
-	if err := execenv.ArchiveReviewDirectory(d.cfg.WorkspacesRoot, taskDir); err != nil {
+	archiveContext, cancelArchive := context.WithTimeout(d.recoveryContext(), time.Minute)
+	defer cancelArchive()
+	if active, err := localreview.HasActiveReview(archiveContext, taskDir, time.Now()); err != nil || active {
+		return 0, false
+	}
+	if err := execenv.ArchiveReviewDirectory(archiveContext, d.cfg.WorkspacesRoot, taskDir); err != nil {
 		d.logger.Warn("gc: could not archive local review; preserving task directory", "error", err)
 		return 0, false
 	}

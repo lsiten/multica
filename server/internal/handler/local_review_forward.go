@@ -30,16 +30,31 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		Target     string `json:"target"`
 		Action     string `json:"action"`
 		SnapshotID string `json:"snapshot_id"`
+		VersionID  string `json:"version_id,omitempty"`
+		FilePath   string `json:"file_path,omitempty"`
+		Side       string `json:"side,omitempty"`
+		Offset     int    `json:"offset,omitempty"`
+		Limit      int    `json:"limit,omitempty"`
 		Comment    string `json:"comment"`
 		CommandID  string `json:"command_id"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&input) != nil || strings.TrimSpace(input.Target) == "" || len(input.Target) > 250 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&input) != nil || (input.Action != "branches" && input.Action != "repositories" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
 		writeError(w, http.StatusBadRequest, "task and target branch required")
 		return
 	}
 	switch input.Action {
 	case "", "read":
 		input.Action = "read"
+	case "branches":
+	case "repositories", "manifest", "files", "file", "context", "content", "commits", "lease":
+		maxLimit := 500
+		if input.Action == "content" {
+			maxLimit = 64 << 10
+		}
+		if len(input.VersionID) > 64 || len(input.FilePath) > 4096 || input.Offset < 0 || input.Limit < 0 || input.Limit > maxLimit || (input.Action != "manifest" && input.Action != "repositories" && input.VersionID == "") || (input.Side != "" && input.Side != "old" && input.Side != "new") {
+			writeError(w, http.StatusBadRequest, "invalid review page request")
+			return
+		}
 	case "submit", "approve", "request_changes", "merge":
 		if strings.TrimSpace(input.CommandID) == "" || len(input.CommandID) > 128 {
 			writeError(w, http.StatusBadRequest, "valid operation ID required")
@@ -99,6 +114,8 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		TaskID: input.TaskID, Path: path, Target: input.Target, Action: input.Action,
 		SnapshotID: input.SnapshotID, Comment: input.Comment, ActorID: user,
 		CommandID: input.CommandID,
+		VersionID: input.VersionID, FilePath: input.FilePath, Offset: input.Offset, Limit: input.Limit,
+		Side: input.Side,
 	})
 	if err != nil {
 		writeError(w, http.StatusTooManyRequests, "local review relay busy")

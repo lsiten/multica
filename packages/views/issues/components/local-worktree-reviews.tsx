@@ -24,7 +24,7 @@ function LocalWorktreeReviewList({ workspaceId, agentId }: { workspaceId: string
     enabled: !!userId, retry: false, refetchInterval: 30000,
   });
   const [request, setRequest] = useState<LocalReviewRequest | null>(null);
-  const rows = inventory.data?.pages.flat().filter((row) => row.workspaceId === workspaceId && (!agentId || row.agentId === agentId)) ?? [];
+  const rows = inventory.data?.pages.flat().filter((row) => row.repositories.length > 0 && row.workspaceId === workspaceId && (!agentId || row.agentId === agentId)) ?? [];
   return <section className="space-y-2 rounded-lg border p-3">
     <h3 className="text-body font-medium">{t(($) => $.local_review.worktrees)}</h3>
     {inventory.error && <p role="alert">{inventory.error.message}</p>}
@@ -35,6 +35,6 @@ function LocalWorktreeReviewList({ workspaceId, agentId }: { workspaceId: string
       <Button variant="outline" size="sm" disabled={!row.taskId} onClick={() => setRequest({ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: "main" })}>{t(($) => $.local_review.open)}</Button>
     </div>))}
     {inventory.hasNextPage && <Button variant="outline" disabled={inventory.isFetchingNextPage} onClick={() => void inventory.fetchNextPage()}>{t(($) => $.local_review.load_more)}</Button>}
-    {request && <LocalReviewDialog key={request.path} request={request} onClose={() => setRequest(null)} />}
+    {request && rows.some((row) => row.taskId === request.task_id && row.repositories.includes(request.path)) && <LocalReviewDialog key={request.path} request={request} onClose={() => setRequest(null)} />}
   </section>;
 }

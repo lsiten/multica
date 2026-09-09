@@ -1196,6 +1196,7 @@
       "active": "Active · protected",
       "dirty": "Uncommitted changes · protected",
       "unpushed": "Unpushed commits · protected",
+      "review_active": "In review or viewed in the last 5 minutes · protected",
       "unowned": "Ownership unverified · protected",
       "output": "Local output · retained",
       "unavailable": "Unable to verify · protected",

@@ -30,13 +30,21 @@ func MergePrepared(ctx context.Context, expected Snapshot, prepare func(string) 
 	if current.ID != expected.ID {
 		return "", errors.New("changes have moved; reload and review again")
 	}
+	return mergeVerifiedSnapshot(ctx, current, prepare)
+}
+
+func mergeVerifiedSnapshot(ctx context.Context, current Snapshot, prepare func(string) error) (string, error) {
 	if current.Dirty {
 		return "", errors.New("commit local changes before merging")
 	}
 	if current.Branch == current.Target {
 		return "", errors.New("source and target branches must differ for merging")
 	}
-	if current.Commits == "" {
+	count, err := trimmed(ctx, current.Path, "rev-list", "--count", current.TargetHead+".."+current.Head)
+	if err != nil {
+		return "", err
+	}
+	if count == "0" {
 		return "", errors.New("no commits to merge")
 	}
 	// Compute the merge in Git's object database, leaving both checkouts untouched on conflict.

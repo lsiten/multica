@@ -83,6 +83,10 @@ type IssueCreateParams struct {
 	// ErrIssueLabelNotFound rather than being silently dropped.
 	LabelIDs       []pgtype.UUID
 	AllowDuplicate bool
+	// GoalObjective enables goal mode for the new issue. It is written in the
+	// same transaction as the issue, so a review-gated task cannot be created
+	// without its objective.
+	GoalObjective pgtype.Text
 	// Stage groups this issue into an ordered barrier group under its parent
 	// (NULL = unstaged). See issue_child_done.go for the staged-barrier wake.
 	Stage pgtype.Int4
@@ -381,6 +385,13 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 	if err != nil {
 		return IssueCreateResult{}, fmt.Errorf("create issue: %w", err)
+	}
+	if p.GoalObjective.Valid {
+		if _, err := qtx.UpsertIssueGoal(ctx, db.UpsertIssueGoalParams{
+			IssueID: issue.ID, Objective: p.GoalObjective.String,
+		}); err != nil {
+			return IssueCreateResult{}, fmt.Errorf("create issue goal: %w", err)
+		}
 	}
 
 	if p.SourceContext != nil {

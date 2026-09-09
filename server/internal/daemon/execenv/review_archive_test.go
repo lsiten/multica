@@ -22,7 +22,7 @@ func TestArchiveReviewReceiptsWithoutDirectoryBinding(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, name), receipt, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := ArchiveReviewDirectory(workspace, root); err != nil {
+	if err := ArchiveReviewDirectory(t.Context(), workspace, root); err != nil {
 		t.Fatal(err)
 	}
 	archived, err := os.ReadFile(filepath.Join(ReviewArchivePath(workspace, "ws", "task"), name))

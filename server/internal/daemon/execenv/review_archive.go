@@ -1,14 +1,16 @@
 package execenv
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/multica-ai/multica/server/internal/daemon/localreview"
 )
 
 func ReviewArchivePath(workspacesRoot, workspaceID, taskID string) string {
@@ -18,7 +20,7 @@ func ReviewArchivePath(workspacesRoot, workspaceID, taskID string) string {
 
 // ArchiveReviewDirectory preserves bindings and recovery receipts before task GC.
 // It copies review metadata and diff receipts, not checkouts or runtime credentials.
-func ArchiveReviewDirectory(workspacesRoot, taskRoot string) error {
+func ArchiveReviewDirectory(ctx context.Context, workspacesRoot, taskRoot string) error {
 	binding, err := ReadReviewDirectory(taskRoot)
 	hasBinding := err == nil
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -55,24 +57,21 @@ func ArchiveReviewDirectory(workspacesRoot, taskRoot string) error {
 	if err != nil || !filepath.IsLocal(relative) {
 		return errors.New("invalid archive directory")
 	}
-	if err := workspace.MkdirAll(relative, 0o700); err != nil {
+	if filepath.Dir(relative) != ".local-mr-archive" {
+		return errors.New("invalid review archive parent")
+	}
+	archiveParent, err := openReviewArchiveChild(workspace, ".local-mr-archive")
+	if err != nil {
 		return err
 	}
-	archive, err := workspace.OpenRoot(relative)
+	defer archiveParent.Close()
+	archive, err := openReviewArchiveChild(archiveParent, filepath.Base(relative))
 	if err != nil {
 		return err
 	}
 	defer archive.Close()
 	write := func(name string, data []byte) error {
-		file, err := archive.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		if _, err := file.Write(data); err != nil {
-			return err
-		}
-		return file.Sync()
+		return writeReviewArchiveFile(archive, name, data)
 	}
 	if hasBinding {
 		data, err := json.Marshal(binding)
@@ -103,24 +102,40 @@ func ArchiveReviewDirectory(workspacesRoot, taskRoot string) error {
 		return err
 	}
 	defer root.Close()
+	type receipt struct {
+		name   string
+		digest [32]byte
+	}
+	receipts := []receipt{}
+	versionIDs := []string{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if !isReviewReceipt(entry) {
 			continue
 		}
-		file, err := root.Open(name)
+		data, err := readReviewArchiveReceipt(root, name)
 		if err != nil {
 			return err
 		}
-		data, err := io.ReadAll(io.LimitReader(file, (12<<20)+1))
-		file.Close()
+		var record localreview.Record
+		if err := json.Unmarshal(data, &record); err != nil {
+			return err
+		}
+		versionIDs = append(versionIDs, localreview.RecordVersionIDs(record)...)
+		receipts = append(receipts, receipt{name, sha256.Sum256(data)})
+	}
+	if err := localreview.ArchiveVersions(ctx, localreview.VersionArchive{Source: taskRoot, Destination: destination, IDs: versionIDs}); err != nil {
+		return err
+	}
+	for _, receipt := range receipts {
+		data, err := readReviewArchiveReceipt(root, receipt.name)
 		if err != nil {
 			return err
 		}
-		if len(data) > 12<<20 {
-			return errors.New("review receipt too large")
+		if sha256.Sum256(data) != receipt.digest {
+			return errors.New("review receipt changed during archival")
 		}
-		if err := write(name, data); err != nil {
+		if err := write(receipt.name, data); err != nil {
 			return err
 		}
 	}

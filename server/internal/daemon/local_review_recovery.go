@@ -14,7 +14,10 @@ import (
 
 func (d *Daemon) recoverRemoteMerge(ctx context.Context, input worktreeReviewRequest, claim string) (protocol.LocalReviewResult, bool) {
 	result := protocol.LocalReviewResult{ClaimToken: claim}
-	localReviewOperations.Lock()
+	if err := localReviewOperations.Lock(ctx); err != nil {
+		result.Error = err.Error()
+		return result, true
+	}
 	defer localReviewOperations.Unlock()
 	path, root, err := d.resolveReviewRoot(ctx, input)
 	if err != nil {
@@ -105,6 +108,34 @@ func (d *Daemon) recoverRemoteMerge(ctx context.Context, input worktreeReviewReq
 			result.Error = "cannot persist recovered merge receipt"
 			return result, true
 		}
+	}
+	if input.VersionID != "" {
+		if record.VersionID != input.VersionID {
+			result.Error = "merge recovery version mismatch"
+			return result, true
+		}
+		store, openErr := localreview.OpenBlobStore(root, 64<<20)
+		if openErr != nil {
+			result.Error = "merge completed but review cache is unavailable"
+			return result, true
+		}
+		defer store.Close()
+		version, loadErr := store.LoadVersion(ctx, input.VersionID)
+		if loadErr != nil {
+			result.Error = "merge completed but review version is unavailable"
+			return result, true
+		}
+		page, pageErr := version.FilePage(localreview.FilePageRequest{Limit: 100})
+		if pageErr != nil {
+			result.Error = pageErr.Error()
+			return result, true
+		}
+		result.Page, err = json.Marshal(pagedReviewManifest{VersionID: input.VersionID, Header: version.Header, Page: page, Review: record.View()})
+		if err != nil {
+			result.Error = "cannot encode recovered review version"
+		}
+		result.MergedCommit = record.PreparedCommit
+		return result, true
 	}
 	result.Snapshot, err = json.Marshal(record.Snapshot)
 	if err != nil {

@@ -791,6 +791,16 @@ type IssueDependency struct {
 	Type             string      `json:"type"`
 }
 
+type IssueGoal struct {
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	Objective       string             `json:"objective"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	CompletedByType pgtype.Text        `json:"completed_by_type"`
+	CompletedByID   pgtype.UUID        `json:"completed_by_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type IssueLabel struct {
 	ID           pgtype.UUID        `json:"id"`
 	WorkspaceID  pgtype.UUID        `json:"workspace_id"`

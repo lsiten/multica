@@ -1249,6 +1249,13 @@ export const IssueSchema = z.object({
   source_context: IssueSourceContextSchema.optional().catch(undefined),
 }).loose();
 
+export const IssueGoalSchema = z.object({
+  objective: z.string().min(1),
+  completed_at: z.string().nullable(),
+  completed_by_type: z.enum(["member", "agent"]).nullable(),
+  completed_by_id: z.string().nullable(),
+}).loose();
+
 export const ListIssuesResponseSchema = z.object({
   issues: z.array(IssueSchema).default([]),
   total: z.number().default(0),

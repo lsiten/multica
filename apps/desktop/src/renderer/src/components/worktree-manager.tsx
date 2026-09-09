@@ -87,6 +87,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
       case "active": return t(($) => $.desktop.worktrees.active);
       case "dirty": return t(($) => $.desktop.worktrees.dirty);
       case "unpushed": return t(($) => $.desktop.worktrees.unpushed);
+      case "review": return t(($) => $.desktop.worktrees.review_active);
       case "unowned": return t(($) => $.desktop.worktrees.unowned);
       case "output": return t(($) => $.desktop.worktrees.output);
       case "": return t(($) => $.desktop.worktrees.inactive);

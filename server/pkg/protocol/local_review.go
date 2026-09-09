@@ -10,19 +10,33 @@ type LocalReviewRuntimeBinding struct {
 }
 
 type LocalReviewCommand struct {
-	ID          string `json:"id"`
-	CommandID   string `json:"command_id,omitempty"`
-	ClaimToken  string `json:"claim_token"`
-	ReviewID    string `json:"review_id"`
-	WorkspaceID string `json:"workspace_id"`
-	RuntimeID   string `json:"runtime_id"`
-	TaskID      string `json:"task_id"`
-	Path        string `json:"path"`
-	Target      string `json:"target"`
-	Action      string `json:"action"`
-	SnapshotID  string `json:"snapshot_id"`
-	ActorID     string `json:"actor_id,omitempty"`
-	Comment     string `json:"comment,omitempty"`
+	CancellationSupported bool   `json:"cancellation_supported,omitempty"`
+	ID                    string `json:"id"`
+	CommandID             string `json:"command_id,omitempty"`
+	ClaimToken            string `json:"claim_token"`
+	ReviewID              string `json:"review_id"`
+	WorkspaceID           string `json:"workspace_id"`
+	RuntimeID             string `json:"runtime_id"`
+	TaskID                string `json:"task_id"`
+	Path                  string `json:"path"`
+	Target                string `json:"target"`
+	Action                string `json:"action"`
+	SnapshotID            string `json:"snapshot_id"`
+	VersionID             string `json:"version_id,omitempty"`
+	FilePath              string `json:"file_path,omitempty"`
+	Side                  string `json:"side,omitempty"`
+	Offset                int    `json:"offset,omitempty"`
+	Limit                 int    `json:"limit,omitempty"`
+	ActorID               string `json:"actor_id,omitempty"`
+	Comment               string `json:"comment,omitempty"`
+}
+
+type LocalReviewStatusRequest struct {
+	ClaimToken string `json:"claim_token"`
+}
+
+type LocalReviewStatus struct {
+	Active *bool `json:"active"`
 }
 
 type LocalReviewClaim struct {
@@ -30,6 +44,8 @@ type LocalReviewClaim struct {
 }
 
 type LocalReviewResult struct {
+	Page         json.RawMessage `json:"page,omitempty"`
+	Branches     []string        `json:"branches"`
 	ClaimToken   string          `json:"claim_token"`
 	Snapshot     json.RawMessage `json:"snapshot"`
 	Review       json.RawMessage `json:"review,omitempty"`

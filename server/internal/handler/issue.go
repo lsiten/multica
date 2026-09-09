@@ -2778,7 +2778,8 @@ type CreateIssueRequest struct {
 	OriginType *string `json:"origin_type,omitempty"`
 	OriginID   *string `json:"origin_id,omitempty"`
 
-	AllowDuplicate bool `json:"allow_duplicate,omitempty"`
+	AllowDuplicate bool    `json:"allow_duplicate,omitempty"`
+	GoalObjective  *string `json:"goal_objective,omitempty"`
 }
 
 func duplicateIssueMessage(issue IssueResponse) string {
@@ -2827,6 +2828,15 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	if req.Stage != nil && *req.Stage < 1 {
 		writeError(w, http.StatusBadRequest, "stage must be >= 1")
 		return
+	}
+	var goalObjective pgtype.Text
+	if req.GoalObjective != nil {
+		objective := strings.TrimSpace(*req.GoalObjective)
+		if objective == "" {
+			writeError(w, http.StatusBadRequest, "goal_objective must not be empty")
+			return
+		}
+		goalObjective = pgtype.Text{String: objective, Valid: true}
 	}
 
 	var assigneeType pgtype.Text
@@ -3020,6 +3030,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		AttachmentIDs:  attachmentIDs,
 		LabelIDs:       labelIDs,
 		AllowDuplicate: req.AllowDuplicate,
+		GoalObjective:  goalObjective,
 	}, service.IssueCreateOpts{
 		ActorID:          actualCreatorID,
 		AnalyticsAgentID: analyticsAgentID,
@@ -3381,6 +3392,11 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	if req.Status != nil {
 		statusKey, _, ok := h.resolveIssueStatusKeyKind(w, r, prevIssue.WorkspaceID, *req.Status)
 		if !ok {
+			return
+		}
+		if issuestatus.Effective(r.Context(), h.Queries, prevIssue.WorkspaceID, statusKey) == "in_review" &&
+			!h.requireCompletedIssueGoalForReview(r, prevIssue.ID) {
+			writeError(w, http.StatusConflict, "the assignee must complete this goal before the issue can enter review")
 			return
 		}
 		statusKeyForGuard = statusKey
@@ -3984,6 +4000,9 @@ func (h *Handler) deleteIssuesAndCollectAttachmentURLs(ctx context.Context, issu
 			}
 		} else if !errors.Is(contextErr, pgx.ErrNoRows) {
 			return issueDeleteResult{}, fmt.Errorf("load issue source context for delete: %w", contextErr)
+		}
+		if err := qtx.DeleteIssueGoal(ctx, issue.ID); err != nil {
+			return issueDeleteResult{}, fmt.Errorf("delete issue goal: %w", err)
 		}
 		if err := qtx.DeleteIssue(ctx, db.DeleteIssueParams{ID: issue.ID, WorkspaceID: issue.WorkspaceID}); err != nil {
 			return issueDeleteResult{}, fmt.Errorf("delete issue: %w", err)

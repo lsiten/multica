@@ -21,6 +21,8 @@ export interface CreateIssueRequest {
   /** Issue-scoped label IDs to attach in the same transaction as the create.
    *  Unknown or non-issue ids are rejected by the server with 400. */
   label_ids?: string[];
+  /** Enables the task's review-gated goal mode when non-empty. */
+  goal_objective?: string;
 }
 
 export interface CreateCommentSubIssueManualRequest {

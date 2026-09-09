@@ -93,6 +93,7 @@ import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
 import { CodeReviewContextSection } from "./code-review-context-section";
 import { QuickActionsSection } from "./quick-actions-section";
+import { GoalModeSection } from "./goal-mode-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestList } from "./pull-request-list";
 import { useGitHubSettings } from "@multica/core/github";
@@ -2337,6 +2338,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               onUpdate={handleUpdateField}
             />
           </PropRow>
+          <div className="col-span-2 pt-2">
+            <GoalModeSection issue={issue} wsId={wsId} />
+          </div>
 
           {/* Optional props — rendered only when set on the issue OR added
               via "+ Add property" in this session. Row order follows the
