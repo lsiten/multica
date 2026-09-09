@@ -86,7 +86,7 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
           <Button disabled={busy || merged || data.dirty || data.branch === data.target || data.review.state !== "approved"} onClick={() => setConfirmMerge(true)}>{t(($) => $.local_review.merge)}</Button>
         </div>
         {confirmMerge && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded border p-3 text-caption">
-          <span>{data.branch} ({data.head.slice(0, 8)}) → {target} ({data.target_head.slice(0, 8)})</span>
+          <span>{t(($) => $.local_review.branch_comparison, { branch: data.branch, head: data.head.slice(0, 8), target, targetHead: data.target_head.slice(0, 8) })}</span>
           <Button disabled={busy} onClick={() => operation.mutate("merge")}>{t(($) => $.local_review.confirm_merge)}</Button>
           <Button variant="ghost" onClick={() => setConfirmMerge(false)}>{t(($) => $.local_review.cancel)}</Button>
         </div>}
