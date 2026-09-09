@@ -190,7 +190,8 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
-	localReviewRelay       localReviewRelay
+	// Query snapshots shallow-copy Handler, so relay state and its mutex must stay shared.
+	localReviewRelay       *localReviewRelay
 	NotificationBots       *notificationbot.Worker
 	Queries                *db.Queries
 	ReadSelector           *dbreader.Selector
@@ -467,6 +468,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// a disabled client, which turns the feature off rather than failing.
 	taskSvc.QuickActions = llmClient
 	h := &Handler{
+		localReviewRelay:             &localReviewRelay{},
 		Queries:                      queries,
 		ReadSelector:                 dbreader.NewPrimaryOnly(queries),
 		DB:                           executor,
