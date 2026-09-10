@@ -18,6 +18,23 @@ const manifest: ReviewManifest = {
 };
 const request = { task_id: "task", workspace_id: "ws", runtime_id: "runtime", path: "/repo", target: "main" };
 
+it("adds historical differences to pending merge and can preview and remove them without staging", async () => {
+  const stage = vi.fn();
+  vi.mocked(readReviewFile).mockResolvedValue({ version_id: id, path: "a.ts", preview: "text", page: { lines: [{ text: "+historical diff", kind: "add", new_line: 1 }], next_line: 1, has_more: false } });
+  function SelectionHarness() {
+    const [files, setFiles] = useState<ReviewManifest["page"]["files"]>([]);
+    return <LocalReviewFileBrowser request={request} manifest={manifest} staging={{ files: [], busy: false, change: stage }} selection={{ files, busy: false, add: (file) => setFiles([...files, file]), remove: (path) => setFiles(files.filter((file) => file.path !== path)) }} />;
+  }
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><SelectionHarness /></QueryClientProvider>, { locale: "zh-Hans" });
+  fireEvent.click(screen.getByRole("button", { name: "加入待合并 a.ts" }));
+  fireEvent.click(screen.getByRole("button", { name: "待合并文件 a.ts" }));
+  await screen.findByText("+historical diff");
+  expect(stage).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "移出待合并 a.ts" }));
+  expect(screen.queryByRole("button", { name: "待合并文件 a.ts" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "加入待合并 a.ts" })).toBeEnabled();
+});
+
 it("offers staging beside the file row without changing the selected diff", async () => {
   const stage = vi.fn();
   vi.mocked(readReviewFile).mockResolvedValue({ version_id: id, path: "a.ts", preview: "binary" });

@@ -26,6 +26,10 @@ Use existing component focus/hover/pressed behavior. No decorative motion is add
 Give branch search, file navigation and pagination localized labels. Errors use role=alert; load/empty feedback uses role=status. Keep visible focus, readable CJK wrapping, and bounded technical details. Code lines remain selectable.
 
 ## 8. Acceptance and debt
+
+Selective merging is separate from Git staging. Historical branch-row plus controls add to a pending-merge group with immutable source-diff preview and removal. Working-row plus controls retain real staging behavior. The pending group uses a dedicated message and confirmation naming file count, target and reviewed commit identities; changed selection invalidates confirmation. Conflicts appear as a file list and never clear pending files or publish a target commit. Successful selective publication clears selection and reports the new target commit. No whole-source merge ancestry is recorded for a file selection.
+
+Pending merge and actual Git commit controls share one bounded, scrollable operation area; empty Git commit controls are hidden. Their messages and destinations remain distinct. Add all enumerates every immutable manifest page before updating selection and excludes real working/index paths. Remove all clears only pending merge selection, never the Git index. Bulk loading disables selection controls; failure leaves the previous selection unchanged and exposes a retryable error.
 Test lazy per-file requests, correct version identity, file pagination, patch pagination, error isolation and merge confirmation. Fresh visual acceptance is still required; lack of native control permission is an evidence gap, not a visual pass. No performance claim is based only on unit tests.
 
 The user subsequently declined actual desktop/browser operation. Do not request or perform it for this task; report visual acceptance as not performed at their request.

@@ -18,9 +18,10 @@ export async function requestReviewPage(input: PagedReviewInput, signal?: AbortS
     }
   }
   const index = isLocalIndexAction(request.action);
-  const supported = await (index ? api.supportsLocalIndex(signal) : api.supportsPagedLocalMR(signal));
+  const selected = request.action === "merge_selected";
+  const supported = await (selected ? api.supportsSelectedMerge() : index ? api.supportsLocalIndex(signal) : api.supportsPagedLocalMR(signal));
   signal?.throwIfAborted();
-  if (!supported) throw new Error(index ? "local_review_index_upgrade_required" : "local_review_paging_upgrade_required");
+  if (!supported) throw new Error(selected ? "local_review_selected_merge_upgrade_required" : index ? "local_review_index_upgrade_required" : "local_review_paging_upgrade_required");
   return api.executePagedLocalReview(request, signal);
 }
 
