@@ -62,31 +62,34 @@ func mergeVerifiedSnapshot(ctx context.Context, current Snapshot, prepare func(s
 			return "", err
 		}
 	}
+	return commit, publishReviewCommit(ctx, current, commit)
+}
+
+func publishReviewCommit(ctx context.Context, current Snapshot, commit string) error {
 	targetPath, err := TargetWorktree(ctx, current.Path, current.Target)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if targetPath == "" {
 		_, err = git(ctx, current.Path, "update-ref", "refs/heads/"+current.Target, commit, current.TargetHead)
-		return commit, err
+		return err
 	}
 	status, err := git(ctx, targetPath, "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if err != nil || status != "" {
-		return "", errors.New("target checkout has local changes")
+		return errors.New("target checkout has local changes")
 	}
 	head, err := trimmed(ctx, targetPath, "rev-parse", "HEAD")
 	if err != nil || head != current.TargetHead {
-		return "", errors.New("target checkout changed; reload the review")
+		return errors.New("target checkout changed; reload the review")
 	}
 	branch, err := trimmed(ctx, targetPath, "symbolic-ref", "--short", "HEAD")
 	if err != nil || branch != current.Target {
-		return "", errors.New("target checkout switched branches")
+		return errors.New("target checkout switched branches")
 	}
 	// A local receive-pack transaction validates the exact old ref while Git
 	// updates the checked-out tree (updateInstead). A plain merge --ff-only can
 	// accept an externally rewound HEAD between our check and its own read.
-	err = updateCheckedOutTarget(ctx, current.Path, targetPath, current, commit)
-	return commit, err
+	return updateCheckedOutTarget(ctx, current.Path, targetPath, current, commit)
 }
 
 func updateCheckedOutTarget(ctx context.Context, source, destination string, snapshot Snapshot, commit string) error {
