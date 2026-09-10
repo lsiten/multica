@@ -1,5 +1,6 @@
 import { api } from "@multica/core/api";
 import { createSafeId } from "@multica/core/utils";
+import { isLocalIndexAction } from "@multica/core/types/local-review-index";
 import { readWithCancellation } from "./local-review-cancellation";
 import { isPagedReviewDecision, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewInput } from "@multica/core/types/local-review-pages";
 
@@ -16,15 +17,28 @@ export async function requestReviewPage(input: PagedReviewInput, signal?: AbortS
       if (response !== null) return parsePagedReviewResponse(request, response);
     }
   }
-  const supported = await api.supportsPagedLocalMR(signal);
+  const index = isLocalIndexAction(request.action);
+  const supported = await (index ? api.supportsLocalIndex(signal) : api.supportsPagedLocalMR(signal));
   signal?.throwIfAborted();
-  if (!supported) throw new Error("local_review_paging_upgrade_required");
+  if (!supported) throw new Error(index ? "local_review_index_upgrade_required" : "local_review_paging_upgrade_required");
   return api.executePagedLocalReview(request, signal);
 }
 
 export async function readReviewManifest(input: PagedReviewInput, signal?: AbortSignal) {
   const response = await requestReviewPage(input, signal);
   if (!("header" in response)) throw new Error("Review manifest response expected");
+  return response;
+}
+
+export async function readLocalIndex(input: PagedReviewInput, signal?: AbortSignal) {
+  const response = await requestReviewPage({ ...input, action: "index" }, signal);
+  if (!("kind" in response) || response.kind !== "index") throw new Error("Index status response expected");
+  return response;
+}
+
+export async function changeLocalIndex(input: PagedReviewInput & { action: "stage" | "unstage" | "commit" }) {
+  const response = await requestReviewPage(input);
+  if (!("kind" in response) || response.kind !== "index_result") throw new Error("Index operation response expected");
   return response;
 }
 

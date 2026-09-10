@@ -42,3 +42,9 @@ it("does not dispatch after cancellation during profile selection", async () => 
   expect(healthRead).not.toHaveBeenCalled();
   expect(review).not.toHaveBeenCalled();
 });
+
+it("requires separate index support even when paging is available", async () => {
+  const review = vi.fn();
+  await expect(requestLocalReviewPage({ ...request, action: "index" }, { resolveProfile: async () => profile, health: async () => health, review })).rejects.toThrow("local_review_index_upgrade_required");
+  expect(review).not.toHaveBeenCalled();
+});

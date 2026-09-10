@@ -1,28 +1,29 @@
 package localreview
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"time"
 )
 
 // Record persists decisions outside the checkout, so review metadata never enters a diff.
 type Record struct {
-	SnapshotID      string    `json:"snapshot_id"`
-	VersionID       string    `json:"version_id,omitempty"`
-	State           string    `json:"state"`
-	Comment         string    `json:"comment"`
-	MergedCommit    string    `json:"merged_commit"`
-	SourceHead      string    `json:"source_head"`
-	PreparedCommit  string    `json:"prepared_commit,omitempty"`
-	PreparedRequest *Event    `json:"prepared_request,omitempty"`
-	CommandID       string    `json:"command_id,omitempty"`
-	Snapshot        *Snapshot `json:"snapshot,omitempty"`
-	Events          []Event   `json:"events,omitempty"`
+	IndexOperation  *IndexOperationReceipt `json:"index_operation,omitempty"`
+	SnapshotID      string                 `json:"snapshot_id"`
+	VersionID       string                 `json:"version_id,omitempty"`
+	State           string                 `json:"state"`
+	Comment         string                 `json:"comment"`
+	MergedCommit    string                 `json:"merged_commit"`
+	SourceHead      string                 `json:"source_head"`
+	PreparedCommit  string                 `json:"prepared_commit,omitempty"`
+	PreparedRequest *Event                 `json:"prepared_request,omitempty"`
+	CommandID       string                 `json:"command_id,omitempty"`
+	Snapshot        *Snapshot              `json:"snapshot,omitempty"`
+	Events          []Event                `json:"events,omitempty"`
 }
 
 // Event preserves decisions on the owning runtime even after the diff changes.
@@ -66,7 +67,7 @@ func LoadRecord(root, id string) (Record, error) {
 			return r, errors.New("invalid snapshot identifier")
 		}
 	}
-	b, err := os.ReadFile(filepath.Join(root, ".local-review-"+id+".json"))
+	b, err := readRecordBytes(root, ".local-review-"+id+".json")
 	if errors.Is(err, os.ErrNotExist) {
 		return r, nil
 	}
@@ -85,11 +86,20 @@ func SaveRecord(root, key string, r Record) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(root, ".local-review-tmp-")
+	if len(data) > maxRecordBytes {
+		return ErrInvalidReviewVersion
+	}
+	directory, err := os.OpenRoot(root)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
+	defer directory.Close()
+	name := ".local-review-tmp-" + rand.Text()
+	f, err := directory.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer directory.Remove(name)
 	if _, err = f.Write(data); err != nil {
 		f.Close()
 		return err
@@ -101,5 +111,5 @@ func SaveRecord(root, key string, r Record) error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), filepath.Join(root, ".local-review-"+key+".json"))
+	return directory.Rename(name, ".local-review-"+key+".json")
 }

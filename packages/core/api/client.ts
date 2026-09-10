@@ -5,6 +5,7 @@ import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { configStore } from "../config";
 import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewInput } from "../types/local-review-pages";
+import { localIndexCapabilitySchema } from "../types/local-review-index";
 import { localReviewBranchesSchema, localReviewCapabilitySchema, localReviewRelayResponseSchema, remoteWorktreesSchema } from "../types/local-review";
 import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
@@ -981,6 +982,7 @@ export class ApiClient {
         version_id: request.version_id, file_path: request.file_path, offset: request.offset, limit: request.limit,
         side: request.action === "content" ? request.side : undefined,
         snapshot_id: request.snapshot_id, command_id: request.command_id, comment: request.comment,
+        index_id: request.index_id, branch: request.branch, head: request.head, paths: request.paths, message: request.message,
       }),
     });
     if (!raw || typeof raw !== "object" || !("page" in raw)) throw new Error("Review page response missing");
@@ -993,6 +995,12 @@ export class ApiClient {
       body: JSON.stringify({ task_id: request.task_id, path: request.path, target: request.target,
         action: request.action ?? "read", snapshot_id: request.snapshot_id, comment: request.comment, command_id: request.command_id }),
     }));
+  }
+
+  async supportsLocalIndex(signal?: AbortSignal): Promise<boolean> {
+    const timeout = AbortSignal.timeout(15000);
+    const config = localIndexCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: signal ? AbortSignal.any([signal, timeout]) : timeout }));
+    return config.local_review_index_supported === true;
   }
 
   async listReviewWorktrees(offset = 0, agentId?: string, issueId?: string) {

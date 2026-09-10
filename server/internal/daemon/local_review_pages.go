@@ -32,7 +32,7 @@ type pagedReviewFile struct {
 
 func isPagedReviewRead(action string) bool {
 	switch action {
-	case "repositories", "manifest", "files", "file", "context", "content", "commits", "lease":
+	case "index", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease":
 		return true
 	default:
 		return false
@@ -44,6 +44,10 @@ func isReadReviewAction(action string) bool {
 
 // pagedReviewRead is called only after the existing task/directory ownership gate.
 func (d *Daemon) pagedReviewRead(w http.ResponseWriter, r *http.Request, scope pagedReviewContext) {
+	if scope.request.Action == "index" {
+		d.localIndexRead(w, r, scope)
+		return
+	}
 	request := scope.request
 	maxLimit := 500
 	if request.Action == "content" {

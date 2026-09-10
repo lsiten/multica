@@ -8,11 +8,27 @@ import { useT } from "../../i18n";
 import { LocalReviewError } from "./local-review-error";
 import { LocalReviewContent } from "./local-review-content";
 import { LocalReviewContext } from "./local-review-context";
+import { Plus, Minus } from "lucide-react";
+import type { LocalIndexView } from "@multica/core/types/local-review-index";
 
-export function LocalReviewFileBrowser({ request, manifest }: { request: LocalReviewRequest; manifest: ReviewManifest }) {
+export type LocalReviewRowStaging = {
+  readonly files: LocalIndexView["status"]["files"];
+  readonly busy: boolean;
+  readonly preview?: ReviewManifest;
+  readonly previewError?: Error;
+  readonly workingPreview?: ReviewManifest;
+  readonly workingPreviewError?: Error;
+  readonly reason?: string;
+  readonly change: (action: "stage" | "unstage", path: string) => void;
+};
+
+export function LocalReviewFileBrowser({ request, manifest, staging }: { request: LocalReviewRequest; manifest: ReviewManifest; staging?: LocalReviewRowStaging }) {
   const { t } = useT("issues");
   const errorId = useId();
   const [selected, setSelected] = useState("");
+  const [stagedSelection, setStagedSelection] = useState("");
+  const [stagedVisible, setStagedVisible] = useState(100);
+  const [workingVisible, setWorkingVisible] = useState(100);
   const files = useInfiniteQuery({
     queryKey: ["review-version-files", request.workspace_id, request.task_id, manifest.version_id],
     queryFn: ({ pageParam, signal }) => readReviewManifest({ ...request, target: manifest.header.target, action: "files", version_id: manifest.version_id, offset: pageParam, limit: 100 }, signal),
@@ -21,33 +37,61 @@ export function LocalReviewFileBrowser({ request, manifest }: { request: LocalRe
     getNextPageParam: (last) => last.page.has_more ? last.page.next_offset : undefined,
     staleTime: Infinity, refetchOnWindowFocus: false, retry: false, networkMode: "always",
   });
-  const rows = files.data.pages.flatMap((page) => page.page.files);
+  const indexFiles = new Map(staging?.files.map((entry) => [entry.path, entry]));
+  const stagedFiles = staging?.files.filter((entry) => entry.staged) ?? [];
+  const allRows = files.data.pages.flatMap((page) => page.page.files);
+  const workingFiles = new Map(staging?.workingPreview?.page.files.map((entry) => [entry.path, entry]));
+  const rows = allRows.filter((entry) => { const status = indexFiles.get(entry.path); return !status?.staged || status.unstaged; }).map((entry) => indexFiles.get(entry.path)?.unstaged ? workingFiles.get(entry.path) ?? { ...entry, status: "working_only" } : entry);
+  const listedPaths = new Set(rows.map((entry) => entry.path));
+  for (const entry of staging?.files ?? []) {
+    if (entry.unstaged && !listedPaths.has(entry.path)) { rows.push(workingFiles.get(entry.path) ?? { path: entry.path, status: "working_only", preview: "text", additions: 0, deletions: 0 }); listedPaths.add(entry.path); }
+  }
+  rows.sort((first, second) => Number(!!indexFiles.get(second.path)?.unstaged) - Number(!!indexFiles.get(first.path)?.unstaged));
+  const visibleRows = Math.max(workingVisible, allRows.length, rows.findIndex((entry) => entry.path === selected) + 1);
+  const activePath = selected || allRows[0]?.path || "";
+  const stagedPath = stagedSelection && indexFiles.get(stagedSelection)?.staged ? stagedSelection : indexFiles.get(activePath)?.staged && !indexFiles.get(activePath)?.unstaged ? activePath : "";
+  const stagedIndex = stagedFiles.findIndex((entry) => entry.path === stagedPath);
+  const selectStaged = (path: string) => { const position = stagedFiles.findIndex((entry) => entry.path === path); if (position >= stagedVisible) setStagedVisible(position + 1); setSelected(path); setStagedSelection(path); };
+  const stagedNavigation = {
+    loading: staging?.busy ?? false,
+    previous: stagedIndex > 0 ? () => selectStaged(stagedFiles[stagedIndex - 1]?.path ?? "") : undefined,
+    next: stagedFiles[stagedIndex + 1] ? () => selectStaged(stagedFiles[stagedIndex + 1]?.path ?? "") : rows[0] ? () => { setSelected(rows[0]?.path ?? ""); setStagedSelection(""); } : undefined,
+  };
   const file = rows.find((entry) => entry.path === selected) ?? rows[0];
+  const workingPath = file && indexFiles.get(file.path)?.unstaged ? file.path : "";
+  const workingManifest = workingPath ? staging?.workingPreview : undefined;
   const fileIndex = rows.findIndex((entry) => entry.path === file?.path);
   const nextFile = async () => {
     const next = rows[fileIndex + 1];
     if (next) { setSelected(next.path); return; }
     if (!files.hasNextPage) return;
     const result = await files.fetchNextPage({ throwOnError: false });
-    const loaded = result.data?.pages.flatMap((page) => page.page.files)[fileIndex + 1];
+    const available = result.data?.pages.flatMap((page) => page.page.files).filter((entry) => { const status = indexFiles.get(entry.path); return !status?.staged || status.unstaged; }) ?? [];
+    const position = available.findIndex((entry) => entry.path === file?.path);
+    const loaded = position >= 0 ? available[position + 1] : undefined;
     if (loaded) setSelected((current) => current === selected ? loaded.path : current);
   };
   const navigation = {
-    previous: fileIndex > 0 ? () => setSelected(rows[fileIndex - 1]?.path ?? "") : undefined,
+    previous: fileIndex > 0 ? () => setSelected(rows[fileIndex - 1]?.path ?? "") : stagedFiles.length ? () => selectStaged(stagedFiles.at(-1)?.path ?? "") : undefined,
     next: rows[fileIndex + 1] || files.hasNextPage ? () => { void nextFile(); } : undefined,
     loading: files.isFetchingNextPage,
   };
   return <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] gap-3 md:grid-cols-[16rem_1fr] md:grid-rows-1">
     <nav className="max-h-36 overflow-auto rounded border md:max-h-none" aria-label={t(($) => $.local_review.files)}>
-      {rows.map((entry) => <button key={entry.path} type="button" aria-pressed={file?.path === entry.path} onClick={() => setSelected(entry.path)} className={`block w-full break-all px-3 py-2 text-left text-caption hover:bg-accent ${file?.path === entry.path ? "bg-accent font-semibold" : ""}`}>
+      {staging && <div className="border-b"><h4 className="px-3 py-2 text-caption font-semibold">{t(($) => $.local_review.staged)} · {stagedFiles.length}</h4>{stagedFiles.slice(0, stagedVisible).map((entry) => <div key={entry.path} className={`flex items-start ${stagedPath === entry.path ? "bg-accent" : ""}`}><button type="button" aria-label={`${t(($) => $.local_review.staged)} ${entry.path}`} aria-pressed={stagedPath === entry.path} className="min-w-0 flex-1 break-all px-3 py-2 text-left text-caption hover:bg-accent" onClick={() => selectStaged(entry.path)}>{entry.path}</button><Button className="mr-2 mt-2" variant="ghost" size="icon-xs" aria-label={t(($) => $.local_review.unstage_file, { path: entry.path })} disabled={staging.busy || entry.conflicted || entry.unsupported} onClick={() => staging.change("unstage", entry.path)}><Minus aria-hidden="true" /></Button></div>)}</div>}
+      {staging && stagedFiles.length > stagedVisible && <Button variant="ghost" className="m-2" onClick={() => setStagedVisible(stagedVisible + 100)}>{t(($) => $.local_review.staged)} · {t(($) => $.local_review.load_more_files)}</Button>}
+      {rows.slice(0, visibleRows).map((entry) => { const status = indexFiles.get(entry.path); return <div key={entry.path} className={`flex items-start ${!stagedPath && file?.path === entry.path ? "bg-accent" : ""}`}><button type="button" aria-pressed={!stagedPath && file?.path === entry.path} onClick={() => { setSelected(entry.path); setStagedSelection(""); }} className={`block min-w-0 flex-1 break-all px-3 py-2 text-left text-caption hover:bg-accent ${!stagedPath && file?.path === entry.path ? "font-semibold" : ""}`}>
         <span>{entry.path}</span>
-        <span className="mt-1 block text-muted-foreground">{t(($) => $.local_review.file_changes, { additions: entry.additions, deletions: entry.deletions })}</span>
-      </button>)}
-      <p className="p-2 text-caption text-muted-foreground">{t(($) => $.local_review.loaded_files, { loaded: rows.length, total: manifest.page.total_files })}</p>
+        {entry.status !== "working_only" && <span className="mt-1 block text-muted-foreground">{t(($) => $.local_review.file_changes, { additions: entry.additions, deletions: entry.deletions })}</span>}
+      </button>{staging && <div className="flex shrink-0 gap-1 pr-2 pt-2" title={staging.reason || (!status ? t(($) => $.local_review.no_working_change) : status.conflicted || status.unsupported ? t(($) => $.local_review.index_unavailable) : undefined)}>
+        <Button variant="ghost" size="icon-xs" aria-label={t(($) => $.local_review.stage_file, { path: entry.path })} disabled={staging.busy || !status?.unstaged || status.conflicted || status.unsupported} onClick={() => staging.change("stage", entry.path)}><Plus aria-hidden="true" /></Button>
+      </div>}</div>; })}
+      {rows.length > visibleRows && <Button variant="ghost" className="m-2" onClick={() => setWorkingVisible(visibleRows + 100)}>{t(($) => $.local_review.unstaged)} · {t(($) => $.local_review.load_more_files)}</Button>}
+      <p className="p-2 text-caption text-muted-foreground">{t(($) => $.local_review.branch_changes)} · {t(($) => $.local_review.loaded_files, { loaded: allRows.length, total: manifest.page.total_files })}</p>
       {files.error && <LocalReviewError error={files.error} id={errorId} />}
       {files.hasNextPage && <Button className="m-2" variant="outline" disabled={files.isFetchingNextPage} onClick={() => void files.fetchNextPage()}>{t(($) => $.local_review.load_more_files)}</Button>}
     </nav>
-    {file ? <LocalReviewPatch key={manifest.version_id + file.path} request={request} manifest={manifest} filePath={file.path} navigation={navigation} /> : <p className="p-3 text-caption">{t(($) => $.local_review.empty)}</p>}
+    {stagedPath ? staging?.preview ? <LocalReviewPatch key={staging.preview.version_id + stagedPath} request={request} manifest={staging.preview} filePath={stagedPath} navigation={stagedNavigation} /> : staging?.previewError ? <LocalReviewError error={staging.previewError} id={errorId} /> : <p role="status" className="p-3 text-caption">{t(($) => $.local_review.loading)}</p> : workingPath ? workingManifest ? <LocalReviewPatch key={workingManifest.version_id + workingPath} request={request} manifest={workingManifest} filePath={workingPath} navigation={navigation} /> : staging?.workingPreviewError ? <LocalReviewError error={staging.workingPreviewError} id={errorId} /> : <p role="status" className="p-3 text-caption">{t(($) => $.local_review.loading)}</p> : file ? <LocalReviewPatch key={manifest.version_id + file.path} request={request} manifest={manifest} filePath={file.path} navigation={navigation} /> : <p className="p-3 text-caption">{t(($) => $.local_review.empty)}</p>}
   </div>;
 }
 

@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-type WorkingVersionRequest struct{ Path, Target string }
+type WorkingVersionRequest struct {
+	Path, Target string
+	indexBase    string
+}
 
 // CaptureWorking pins the raw bytes the reviewer sees, including unstaged and
 // untracked files. It does not run clean filters or modify the user's index.
@@ -30,6 +33,12 @@ func (s *BlobStore) CaptureWorking(ctx context.Context, request WorkingVersionRe
 		return version, err
 	}
 	header.Committed = false
+	if request.indexBase != "" {
+		if !validGitObjectID(request.indexBase) {
+			return version, ErrInvalidReviewVersion
+		}
+		header.Base, header.IndexTree = request.indexBase, request.indexBase
+	}
 	repository := header.Repository
 	status, err := git(ctx, repository, "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if err != nil {
@@ -62,6 +71,21 @@ func (s *BlobStore) CaptureWorking(ctx context.Context, request WorkingVersionRe
 		name = strings.TrimSuffix(name, "/")
 		if !validVersionPath(name) {
 			return version, ErrInvalidReviewVersion
+		}
+		if index := slices.IndexFunc(files, func(file VersionFile) bool { return file.Path == name }); index >= 0 {
+			if files[index].Status != "deleted" {
+				return version, ErrInvalidReviewVersion
+			}
+			recreated, err := compareRecreatedPath(ctx, workingPathComparison{Repository: repository, Base: header.Base, Path: name})
+			if err != nil {
+				return version, err
+			}
+			if recreated == nil {
+				files = slices.Delete(files, index, index+1)
+			} else {
+				files[index] = *recreated
+			}
+			continue
 		}
 		files = append(files, VersionFile{Path: name, Status: "untracked", OldMode: "000000", Preview: "text"})
 	}

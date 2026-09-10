@@ -80,3 +80,20 @@ func TestIndexStatusPreservesRenameSourceAndDestination(t *testing.T) {
 		t.Fatalf("rename identity lost: %+v", status)
 	}
 }
+
+func TestIndexStatusCombinesStagedDeletionAndRecreatedWorkingFile(t *testing.T) {
+	repo := repository(t)
+	run(t, repo, "rm", "--cached", "app.txt")
+	write(t, repo, "app.txt", "recreated working file\n")
+	status, err := ReadIndexStatus(t.Context(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Files) != 1 {
+		t.Fatalf("same path appeared more than once: %+v", status.Files)
+	}
+	file := status.Files[0]
+	if file.Path != "app.txt" || !file.Staged || !file.Unstaged || !file.Untracked || file.IndexCode != "D" {
+		t.Fatalf("lost one side of the index/working state: %+v", file)
+	}
+}

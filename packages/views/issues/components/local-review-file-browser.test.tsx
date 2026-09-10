@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReviewManifest } from "@multica/core/types/local-review-pages";
@@ -16,6 +17,65 @@ const manifest: ReviewManifest = {
   review: { snapshot_id: id, state: "open", comment: "", merged_commit: "", events: [] },
 };
 const request = { task_id: "task", workspace_id: "ws", runtime_id: "runtime", path: "/repo", target: "main" };
+
+it("offers staging beside the file row without changing the selected diff", async () => {
+  const stage = vi.fn();
+  vi.mocked(readReviewFile).mockResolvedValue({ version_id: id, path: "a.ts", preview: "binary" });
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalReviewFileBrowser request={request} manifest={manifest} staging={{ busy: false, workingPreview: manifest, files: [{ path: "a.ts", staged: false, unstaged: true, untracked: false, conflicted: false, unsupported: false, index_code: " ", working_code: "M" }], change: stage }} /></QueryClientProvider>, { locale: "zh-Hans" });
+  fireEvent.click(await screen.findByRole("button", { name: "暂存 a.ts" }));
+  expect(stage).toHaveBeenCalledExactlyOnceWith("stage", "a.ts");
+  expect(screen.getByRole("button", { name: /a.ts.*\+2/ })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("opens the staged snapshot from its own group and allows unstaging", async () => {
+  const stagedID = "f".repeat(64);
+  const change = vi.fn();
+  vi.mocked(readReviewFile).mockImplementation(async (input) => ({ version_id: input.version_id || id, path: "a.ts", preview: "text", page: { lines: [{ text: input.version_id === stagedID ? "+staged bytes" : "+working bytes", kind: "add", new_line: 1 }], next_line: 1, has_more: false } }));
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalReviewFileBrowser request={request} manifest={manifest} staging={{ busy: false, workingPreview: manifest, preview: { ...manifest, version_id: stagedID }, files: [{ path: "a.ts", staged: true, unstaged: true, untracked: false, conflicted: false, unsupported: false, index_code: "M", working_code: "M" }], change }} /></QueryClientProvider>, { locale: "zh-Hans" });
+  await screen.findByText("+working bytes");
+  fireEvent.click(screen.getByRole("button", { name: "已暂存 a.ts" }));
+  await screen.findByText("+staged bytes");
+  expect(screen.queryByText("+working bytes")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "取消暂存 a.ts" }));
+  expect(change).toHaveBeenCalledExactlyOnceWith("unstage", "a.ts");
+});
+
+it("moves a fully staged row back out when refreshed status reports unstage", async () => {
+  vi.mocked(readReviewFile).mockResolvedValue({ version_id: id, path: "a.ts", preview: "binary" });
+  function StatusHarness() {
+    const [staged, setStaged] = useState(true);
+    return <LocalReviewFileBrowser request={request} manifest={manifest} staging={{ busy: false, workingPreview: manifest, preview: manifest, files: [{ path: "a.ts", staged, unstaged: !staged, untracked: false, conflicted: false, unsupported: false, index_code: staged ? "M" : " ", working_code: staged ? " " : "M" }], change: (action) => { if (action === "unstage") setStaged(false); } }} />;
+  }
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><StatusHarness /></QueryClientProvider>, { locale: "zh-Hans" });
+  expect(screen.getByRole("button", { name: "已暂存 a.ts" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /a.ts.*\+2/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "取消暂存 a.ts" }));
+  expect(screen.queryByRole("button", { name: "已暂存 a.ts" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /a.ts.*\+2/ })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "暂存 a.ts" })).toBeEnabled();
+});
+
+it("shows a new working file outside the historical MR manifest with the index-relative preview", async () => {
+  const workingID = "e".repeat(64);
+  vi.mocked(readReviewFile).mockImplementation(async (input) => ({ version_id: input.version_id || id, path: input.file_path || "", preview: "text", page: { lines: [{ text: input.version_id === workingID ? "+only unstaged change" : "+historical change", kind: "add", new_line: 1 }], next_line: 1, has_more: false } }));
+  const preview = { ...manifest, version_id: workingID, page: { ...manifest.page, files: [{ path: "new.ts", status: "untracked", preview: "text" as const, additions: 1, deletions: 0 }] } };
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalReviewFileBrowser request={request} manifest={manifest} staging={{ busy: false, workingPreview: preview, files: [{ path: "new.ts", staged: false, unstaged: true, untracked: true, conflicted: false, unsupported: false, index_code: "?", working_code: "?" }], change: vi.fn() }} /></QueryClientProvider>, { locale: "zh-Hans" });
+  fireEvent.click(await screen.findByRole("button", { name: /new.ts.*\+1/ }));
+  await screen.findByText("+only unstaged change");
+  expect(readReviewFile).toHaveBeenLastCalledWith(expect.objectContaining({ file_path: "new.ts", version_id: workingID }), expect.any(AbortSignal));
+});
+
+it("bounds initially rendered working files and exposes explicit loading of more rows", async () => {
+  const entries = Array.from({ length: 150 }, (_, index) => ({ path: `working-${index}.ts`, status: "untracked", preview: "text" as const, additions: 1, deletions: 0 }));
+  const empty = { ...manifest, page: { ...manifest.page, files: [], total_files: 0, next_offset: 0, has_more: false } };
+  const working = { ...manifest, page: { ...manifest.page, files: entries, total_files: 150, next_offset: 150, has_more: false } };
+  vi.mocked(readReviewFile).mockResolvedValue({ version_id: id, path: "working-0.ts", preview: "binary" });
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalReviewFileBrowser request={request} manifest={empty} staging={{ busy: false, workingPreview: working, files: entries.map((entry) => ({ path: entry.path, staged: false, unstaged: true, untracked: true, conflicted: false, unsupported: false, index_code: "?", working_code: "?" })), change: vi.fn() }} /></QueryClientProvider>, { locale: "zh-Hans" });
+  expect(screen.getByRole("button", { name: /working-99.ts.*\+1/ })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /working-149.ts.*\+1/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "未暂存 · 加载更多文件" }));
+  expect(screen.getByRole("button", { name: /working-149.ts.*\+1/ })).toBeInTheDocument();
+});
 
 it("expands omitted original lines inline and can collapse them again", async () => {
   vi.mocked(readReviewFile).mockResolvedValue({ version_id: id, path: "a.ts", preview: "text", page: { lines: [{ text: "@@ -5 +5 @@", kind: "meta", context_old_start: 1, context_new_start: 1, context_lines: 4 }], next_line: 1, has_more: false } });
@@ -56,6 +116,20 @@ it("loads the next file-list page when advancing past the loaded files", async (
   fireEvent.click(screen.getByRole("button", { name: "下一段" }));
   await screen.findByText("+b.ts");
   expect(readReviewManifest).toHaveBeenCalledWith(expect.objectContaining({ action: "files", offset: 1 }), expect.any(AbortSignal));
+});
+
+it("advances past staged rows when loading the next file-list page", async () => {
+  const initial = { ...manifest, page: { ...manifest.page, files: [
+    { path: "staged.ts", status: "modified", preview: "text" as const, additions: 1, deletions: 0 },
+    { path: "working.ts", status: "modified", preview: "text" as const, additions: 1, deletions: 0 },
+  ], next_offset: 2, total_files: 3, has_more: true } };
+  vi.mocked(readReviewManifest).mockResolvedValue({ ...initial, page: { ...initial.page, files: [{ path: "next.ts", status: "added", preview: "text", additions: 1, deletions: 0 }], next_offset: 3, has_more: false } });
+  vi.mocked(readReviewFile).mockImplementation(async (input) => ({ version_id: input.version_id || id, path: input.file_path || "", preview: "text", page: { lines: [{ text: "+" + input.file_path, kind: "add", new_line: 1 }], next_line: 1, has_more: false } }));
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalReviewFileBrowser request={request} manifest={initial} staging={{ busy: false, preview: initial, files: [{ path: "staged.ts", staged: true, unstaged: false, untracked: false, conflicted: false, unsupported: false, index_code: "M", working_code: " " }], change: vi.fn() }} /></QueryClientProvider>, { locale: "zh-Hans" });
+  fireEvent.click(screen.getByRole("button", { name: /working.ts.*\+1/ }));
+  await screen.findByText("+working.ts");
+  fireEvent.click(screen.getByRole("button", { name: "下一段" }));
+  await screen.findByText("+next.ts");
 });
 
 it("cancels an unfinished patch read when its viewer unmounts", async () => {

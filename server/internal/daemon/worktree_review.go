@@ -13,9 +13,15 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/localreview"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 type worktreeReviewRequest struct {
+	IndexID       string   `json:"index_id,omitempty"`
+	Branch        string   `json:"branch,omitempty"`
+	Head          string   `json:"head,omitempty"`
+	Message       string   `json:"message,omitempty"`
+	Paths         []string `json:"paths,omitempty"`
 	legacyRuntime *execenv.ReviewRuntime
 	TaskID        string `json:"task_id"`
 	WorkspaceID   string `json:"workspace_id"`
@@ -291,6 +297,10 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 				return
 			}
 			defer unlock()
+		}
+		if protocol.IsLocalIndexMutation(request.Action) {
+			d.localIndexMutation(w, r, pagedReviewContext{request: request, path: path, root: root})
+			return
 		}
 		if request.VersionID != "" && !isReadReviewAction(request.Action) {
 			d.pagedReviewDecision(w, r, pagedReviewDecisionContext{pagedReviewContext: pagedReviewContext{request: request, path: path, root: root}, actorName: actorName})
