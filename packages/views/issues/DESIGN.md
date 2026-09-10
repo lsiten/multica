@@ -17,6 +17,8 @@ Reuse Dialog, Button, Input, Popover and Command. Branch selection supports keyb
 
 Omitted hunk context uses a full-width ghost button on the muted hunk background. Expanding loads at most 50 original lines per explicit action, preserves both line-number columns, and offers collapse. Loading and errors appear inline at that gap; they must not block other files. Collapsing unmounts the reader and cancels unfinished work. No additional motion is introduced.
 
+Git index controls live in a separate collapsible section from the target-branch diff. Show staged and unstaged groups, per-file actions, conflicts/unsupported flags, source branch, refresh, and a commit-message field. Render at most 100 rows per group initially with explicit load-more controls. Commit requires a second confirmation naming the staged file count; mutations disable competing controls and closing the parent dialog until settled.
+
 ## 6. Interaction and motion
 Use existing component focus/hover/pressed behavior. No decorative motion is added. Target selection is separate from applying a comparison. Merge requires a separate confirmation against visible source and target commit identities.
 

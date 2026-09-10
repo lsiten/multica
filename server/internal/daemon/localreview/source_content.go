@@ -37,6 +37,9 @@ func (s *BlobStore) VersionContent(ctx context.Context, version ReviewVersion, r
 		return ContentPage{}, ErrFilePreviewUnavailable
 	}
 	reference, oid, cached, tree, name := file.New, file.NewOID, file.NewCached, version.Header.Head, file.Path
+	if version.Header.IndexTree != "" {
+		tree = version.Header.IndexTree
+	}
 	absent := request.Side == "new" && file.Status == "deleted"
 	if request.Side == "old" {
 		reference, oid, cached, tree = file.Old, file.OldOID, file.OldCached, version.Header.Base

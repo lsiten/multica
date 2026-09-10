@@ -76,6 +76,7 @@ type AppConfig struct {
 	LocalWorktreeSupported     bool `json:"local_worktree_supported"`
 	LocalReviewSupported       bool `json:"local_review_supported"`
 	LocalReviewPagingSupported bool `json:"local_review_paging_supported"`
+	LocalReviewIndexSupported  bool `json:"local_review_index_supported"`
 
 	// AgentConversationStartersSupported tells independently deployed clients
 	// that agent create/update persists conversation_starters. Older handlers
@@ -102,6 +103,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		LocalWorktreeSupported:             true,
 		LocalReviewSupported:               true,
 		LocalReviewPagingSupported:         true,
+		LocalReviewIndexSupported:          true,
 		AgentConversationStartersSupported: true,
 		AllowSignup:                        os.Getenv("ALLOW_SIGNUP") != "false",
 		GoogleClientID:                     os.Getenv("GOOGLE_CLIENT_ID"),

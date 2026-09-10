@@ -19,6 +19,7 @@ const maxVersionFiles = 10000
 var ErrInvalidReviewVersion = errors.New("invalid local review version")
 
 type VersionHeader struct {
+	IndexTree  string `json:"index_tree,omitempty"`
 	Repository string `json:"repository"`
 	Branch     string `json:"branch"`
 	Target     string `json:"target"`
@@ -111,6 +112,9 @@ func (s *BlobStore) LoadVersion(ctx context.Context, id string) (ReviewVersion, 
 
 func validateReviewVersion(version ReviewVersion) error {
 	h := version.Header
+	if h.IndexTree != "" && !validGitObjectID(h.IndexTree) {
+		return ErrInvalidReviewVersion
+	}
 	if version.Format != 2 || !filepath.IsAbs(h.Repository) || h.Branch == "" || h.Target == "" || !validGitObjectID(h.Head) || !validGitObjectID(h.TargetHead) || !validGitObjectID(h.Base) || len(version.Files) > maxVersionFiles {
 		return ErrInvalidReviewVersion
 	}

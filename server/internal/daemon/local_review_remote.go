@@ -38,6 +38,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
 	input.VersionID, input.FilePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.Offset, command.Limit
 	input.Side = command.Side
+	input.IndexID, input.Branch, input.Head, input.Message, input.Paths = command.IndexID, command.Branch, command.Head, command.Message, command.Paths
 	input.CommandID = command.ID
 	if command.CommandID != "" {
 		input.CommandID = command.CommandID
@@ -66,7 +67,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		if w.status != http.StatusOK {
 			return worktreeReviewResponse{}, fmt.Errorf("%s", w.body.String())
 		}
-		if isPagedReviewRead(action) || input.VersionID != "" {
+		if isPagedReviewRead(action) || protocol.IsLocalIndexMutation(action) || input.VersionID != "" {
 			page = append(json.RawMessage{}, w.body.Bytes()...)
 			return worktreeReviewResponse{}, nil
 		}
@@ -77,7 +78,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	var response worktreeReviewResponse
 	var err error
 	switch command.Action {
-	case "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes":
+	case "index", "stage", "unstage", "commit", "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes":
 		response, err = call(command.Action)
 	case "merge":
 		if command.SnapshotID == "" {
@@ -97,7 +98,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		result.Branches = response.Branches
 		return result
 	}
-	if isPagedReviewRead(command.Action) || input.VersionID != "" {
+	if isPagedReviewRead(command.Action) || protocol.IsLocalIndexMutation(command.Action) || input.VersionID != "" {
 		result.Page = page
 		var view pagedReviewManifest
 		if json.Unmarshal(page, &view) == nil {

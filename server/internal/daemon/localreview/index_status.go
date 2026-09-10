@@ -3,6 +3,8 @@ package localreview
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"strings"
 )
 
@@ -22,15 +24,20 @@ type IndexFile struct {
 }
 
 type IndexStatus struct {
-	Branch string      `json:"branch"`
-	Head   string      `json:"head"`
-	Files  []IndexFile `json:"files"`
+	IndexID string      `json:"index_id"`
+	Branch  string      `json:"branch"`
+	Head    string      `json:"head"`
+	Files   []IndexFile `json:"files"`
 }
 
 // ReadIndexStatus reports HEAD/index/worktree state, not target-branch history.
 // Optional Git locks are disabled by git(), so inspecting it cannot refresh the
 // user's index. Mutation preconditions must separately pin index/content bytes.
 func ReadIndexStatus(ctx context.Context, path string) (IndexStatus, error) {
+	indexID, err := indexIdentity(ctx, path)
+	if err != nil {
+		return IndexStatus{}, err
+	}
 	branch, err := trimmed(ctx, path, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
 		return IndexStatus{}, err
@@ -58,7 +65,27 @@ func ReadIndexStatus(ctx context.Context, path string) (IndexStatus, error) {
 	if currentBranch != branch || currentHead != head {
 		return IndexStatus{}, ErrIndexStateChanged
 	}
-	return IndexStatus{Branch: branch, Head: head, Files: files}, nil
+	currentIndex, err := indexIdentity(ctx, path)
+	if err != nil {
+		return IndexStatus{}, err
+	}
+	if indexID != currentIndex {
+		return IndexStatus{}, ErrIndexStateChanged
+	}
+	return IndexStatus{IndexID: indexID, Branch: branch, Head: head, Files: files}, nil
+}
+
+func indexIdentity(ctx context.Context, path string) (string, error) {
+	directory, err := trimmed(ctx, path, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", err
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	return copyIndex(ctx, root, "index", io.Discard)
 }
 
 func parseIndexFiles(raw string) ([]IndexFile, error) {
@@ -70,6 +97,7 @@ func parseIndexFiles(raw string) ([]IndexFile, error) {
 		return nil, ErrInvalidIndexStatus
 	}
 	parts := strings.Split(strings.TrimSuffix(raw, "\x00"), "\x00")
+	positions := make(map[string]int)
 	for index := 0; index < len(parts); index++ {
 		entry := parts[index]
 		if len(entry) < 4 || entry[2] != ' ' {
@@ -95,10 +123,34 @@ func parseIndexFiles(raw string) ([]IndexFile, error) {
 			}
 			file.OldPath = parts[index]
 		}
+		if position, exists := positions[file.Path]; exists {
+			merged, err := mergeRecreatedIndexFile(files[position], file)
+			if err != nil {
+				return nil, err
+			}
+			files[position] = merged
+			continue
+		}
+		positions[file.Path] = len(files)
 		files = append(files, file)
 		if len(files) > maxVersionFiles {
 			return nil, ErrInvalidIndexStatus
 		}
 	}
 	return files, nil
+}
+
+// Git reports a staged deletion and a recreated untracked file as separate
+// porcelain records. The UI needs one path carrying both independent states.
+func mergeRecreatedIndexFile(first, second IndexFile) (IndexFile, error) {
+	tracked, untracked := first, second
+	if first.Untracked {
+		tracked, untracked = second, first
+	}
+	if tracked.Path != untracked.Path || tracked.IndexCode != "D" || tracked.Untracked || !untracked.Untracked {
+		return IndexFile{}, ErrInvalidIndexStatus
+	}
+	tracked.Unstaged, tracked.Untracked, tracked.WorkingCode = true, true, "?"
+	tracked.Unsupported = tracked.Unsupported || untracked.Unsupported
+	return tracked, nil
 }

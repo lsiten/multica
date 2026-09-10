@@ -15,6 +15,9 @@ func (s *BlobStore) VerifyVersion(ctx context.Context, selection VersionSelectio
 		return ReviewVersion{}, err
 	}
 	header := expected.Header
+	if header.IndexTree != "" {
+		return ReviewVersion{}, ErrInvalidReviewVersion
+	}
 	if header.Repository != selection.Path || header.Target != selection.Target {
 		return ReviewVersion{}, ErrInvalidReviewVersion
 	}

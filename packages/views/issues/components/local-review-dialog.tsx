@@ -14,7 +14,8 @@ import { readReviewCommits, readReviewManifest, readReviewRepositories, renewRev
 import { useT } from "../../i18n";
 import { LocalReviewError, reviewErrorKind } from "./local-review-error";
 import { LocalReviewTargetPicker } from "./local-review-target-picker";
-import { LocalReviewFileBrowser } from "./local-review-file-browser";
+import { LocalReviewStagingBrowser } from "./local-review-staging-browser";
+import { LocalReviewIndex } from "./local-review-index";
 
 type Decision = "submit" | "approve" | "request_changes" | "merge";
 
@@ -30,6 +31,8 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
   const [draft, setDraft] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [confirmMerge, setConfirmMerge] = useState(false);
+  const [indexOpen, setIndexOpen] = useState(false);
+  const [indexBusy, setIndexBusy] = useState(false);
   const repositories = useQuery({
     queryKey: ["review-repositories", userId, request.workspace_id, request.task_id, request.path],
     queryFn: async ({ signal }) => {
@@ -75,13 +78,13 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
     },
     enabled: !!data, refetchInterval: 60000, refetchIntervalInBackground: true, retry: false, networkMode: "always",
   });
-  const pending = repositories.isFetching || branches.isFetching || manifest.isFetching || operation.isPending;
+  const pending = repositories.isFetching || branches.isFetching || manifest.isFetching || operation.isPending || indexBusy;
   const targetChanged = targetDraft !== target;
   const busy = pending || targetChanged;
   const error = operation.error ?? manifest.error ?? branches.error ?? repositories.error ?? lease.error;
   const merged = data?.review.state === "merged";
   const effectiveScope = { ...scope, runtime_id: scope.runtime_id || data?.runtime_id, target };
-  return <Dialog open onOpenChange={(open) => { if (!open && !operation.isPending) onClose(); }}>
+  return <Dialog open onOpenChange={(open) => { if (!open && !operation.isPending && !indexBusy) onClose(); }}>
     <DialogContent className="flex h-[85vh] w-[95vw] max-w-6xl flex-col sm:max-w-6xl">
       <DialogHeader><DialogTitle>{t(($) => $.local_review.title)}</DialogTitle><DialogDescription className="break-all">{repositoryPath}</DialogDescription></DialogHeader>
       {repositories.data && repositories.data.repositories.length > 1 && <select aria-label={t(($) => $.local_review.repository)} value={repositoryPath} disabled={operation.isPending} className="rounded border bg-background p-2 text-caption" onChange={(event) => { setRepository(event.target.value); setTarget(null); setDraft(null); setConfirmMerge(false); operation.reset(); }}>{repositories.data.repositories.map((path) => <option key={path} value={path}>{path}</option>)}</select>}
@@ -97,8 +100,9 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
       {branches.isSuccess && !branches.data.length && <p role="status" className="text-caption">{t(($) => $.local_review.no_local_branches)}</p>}
       {data && <>
         {data.header.dirty && <p className="text-caption text-warning">{t(($) => $.local_review.dirty)}</p>}
-        <LocalReviewFileBrowser key={data.version_id} request={effectiveScope} manifest={data} />
+        <LocalReviewStagingBrowser key={data.version_id} request={effectiveScope} manifest={data} disabled={operation.isPending} onBusyChange={setIndexBusy} onChanged={() => { void manifest.refetch(); }} />
         <LocalReviewCommits key={"commits-" + data.version_id} request={effectiveScope} manifest={data} />
+        <details open={indexOpen} className="text-caption" onToggle={(event) => { if (indexBusy && !event.currentTarget.open) { event.currentTarget.open = true; return; } setIndexOpen(event.currentTarget.open); }}><summary>{t(($) => $.local_review.index_title)}</summary>{indexOpen && <LocalReviewIndex key={repositoryPath} request={effectiveScope} disabled={operation.isPending} onBusyChange={setIndexBusy} onChanged={() => { void manifest.refetch(); }} />}</details>
         {!!data.review.events.length && <details className="text-caption"><summary>{t(($) => $.local_review.history)}</summary><ol className="max-h-32 space-y-2 overflow-auto py-2">{data.review.events.map((event, index) => <li key={index} className="rounded border p-2"><p>{event.actor_name || event.actor_id || t(($) => $.local_review.former_member)} · {event.kind === "approve" ? t(($) => $.local_review.approved) : event.kind === "request_changes" ? t(($) => $.local_review.changes_requested) : event.kind === "merge" || event.kind === "merge_recovered" ? t(($) => $.local_review.merged) : t(($) => $.local_review.submit)} · <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleString()}</time></p>{event.comment && <p className="mt-1 whitespace-pre-wrap break-words">{event.comment}</p>}</li>)}</ol></details>}
         <Input value={comment} onChange={(event) => setComment(event.target.value)} placeholder={t(($) => $.local_review.comment)} aria-label={t(($) => $.local_review.comment)} maxLength={8000} />
         <div className="flex flex-wrap justify-end gap-2">

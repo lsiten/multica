@@ -54,3 +54,14 @@ it("propagates cancellation to branch discovery without changing its payload", a
   expect(transportSignal?.aborted).toBe(true);
   expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/local-reviews/execute", expect.objectContaining({ body: JSON.stringify({ task_id: "task", path: "/repo", action: "branches" }) }));
 });
+
+it("sends the selected index identity and file set through the relay", async () => {
+  let body: unknown;
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+    if (typeof init?.body !== "string") throw new Error("Missing JSON request");
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ page: { kind: "index_result", result: { index_id: "e".repeat(64) } } }), { status: 200 });
+  }));
+  await new ApiClient("https://api.example.test").executePagedLocalReview({ ...request, action: "stage", version_id: id, snapshot_id: id, index_id: "b".repeat(64), head: "c".repeat(40), branch: "feature", paths: ["selected.ts"], command_id: "stage-once" });
+  expect(body).toMatchObject({ action: "stage", command_id: "stage-once", index_id: "b".repeat(64), head: "c".repeat(40), branch: "feature", paths: ["selected.ts"] });
+});

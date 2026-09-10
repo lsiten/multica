@@ -25,20 +25,25 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		TaskID     string `json:"task_id"`
-		Path       string `json:"path"`
-		Target     string `json:"target"`
-		Action     string `json:"action"`
-		SnapshotID string `json:"snapshot_id"`
-		VersionID  string `json:"version_id,omitempty"`
-		FilePath   string `json:"file_path,omitempty"`
-		Side       string `json:"side,omitempty"`
-		Offset     int    `json:"offset,omitempty"`
-		Limit      int    `json:"limit,omitempty"`
-		Comment    string `json:"comment"`
-		CommandID  string `json:"command_id"`
+		IndexID    string   `json:"index_id,omitempty"`
+		Branch     string   `json:"branch,omitempty"`
+		Head       string   `json:"head,omitempty"`
+		Message    string   `json:"message,omitempty"`
+		Paths      []string `json:"paths,omitempty"`
+		TaskID     string   `json:"task_id"`
+		Path       string   `json:"path"`
+		Target     string   `json:"target"`
+		Action     string   `json:"action"`
+		SnapshotID string   `json:"snapshot_id"`
+		VersionID  string   `json:"version_id,omitempty"`
+		FilePath   string   `json:"file_path,omitempty"`
+		Side       string   `json:"side,omitempty"`
+		Offset     int      `json:"offset,omitempty"`
+		Limit      int      `json:"limit,omitempty"`
+		Comment    string   `json:"comment"`
+		CommandID  string   `json:"command_id"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&input) != nil || (input.Action != "branches" && input.Action != "repositories" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&input) != nil || (input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
 		writeError(w, http.StatusBadRequest, "task and target branch required")
 		return
 	}
@@ -46,6 +51,22 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 	case "", "read":
 		input.Action = "read"
 	case "branches":
+	case "index":
+	case "stage", "unstage", "commit":
+		if input.CommandID == "" || len(input.CommandID) > 128 || len(input.VersionID) != 64 || len(input.IndexID) != 64 || input.Branch == "" || len(input.Branch) > 250 || (len(input.Head) != 40 && len(input.Head) != 64) || len(input.Message) > 8000 || len(input.Paths) > 1000 {
+			writeError(w, http.StatusBadRequest, "valid index operation identity required")
+			return
+		}
+		if (input.Action == "commit" && strings.TrimSpace(input.Message) == "") || (input.Action != "commit" && len(input.Paths) == 0) {
+			writeError(w, http.StatusBadRequest, "selected files or commit message required")
+			return
+		}
+		for _, path := range input.Paths {
+			if path == "" || len(path) > 4096 {
+				writeError(w, http.StatusBadRequest, "invalid selected file")
+				return
+			}
+		}
 	case "repositories", "manifest", "files", "file", "context", "content", "commits", "lease":
 		maxLimit := 500
 		if input.Action == "content" {
@@ -89,8 +110,8 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "only the runtime owner can review this run")
 		return
 	}
-	if input.Action == "merge" && uuidToString(runtime.OwnerID) != user {
-		writeError(w, http.StatusForbidden, "only the runtime owner can merge")
+	if (input.Action == "merge" || protocol.IsLocalIndexMutation(input.Action)) && uuidToString(runtime.OwnerID) != user {
+		writeError(w, http.StatusForbidden, "only the runtime owner can modify Git")
 		return
 	}
 	path := task.WorkDir.String
@@ -115,7 +136,8 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		SnapshotID: input.SnapshotID, Comment: input.Comment, ActorID: user,
 		CommandID: input.CommandID,
 		VersionID: input.VersionID, FilePath: input.FilePath, Offset: input.Offset, Limit: input.Limit,
-		Side: input.Side,
+		Side:    input.Side,
+		IndexID: input.IndexID, Branch: input.Branch, Head: input.Head, Message: input.Message, Paths: input.Paths,
 	})
 	if err != nil {
 		writeError(w, http.StatusTooManyRequests, "local review relay busy")

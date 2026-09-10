@@ -1,5 +1,6 @@
 import { localReviewBranchesRequestSchema, localReviewBranchesSchema, localReviewRequestSchema, localReviewDirectResponseSchema, localReviewRuntimeBindingSchema, type LocalReviewRequest } from "@multica/core/types/local-review";
 import { ownsReviewRuntime } from "../shared/local-review-routing";
+import { isLocalIndexAction, localIndexCapabilitySchema } from "@multica/core/types/local-review-index";
 import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewRequest } from "@multica/core/types/local-review-pages";
 
 type ReviewOperationRequest = LocalReviewRequest | PagedReviewRequest;
@@ -49,6 +50,10 @@ async function requestReviewOperation(request: ReviewOperationRequest, transport
   const health = await transport.health(profile, signal);
   signal?.throwIfAborted();
   if (!ownsReviewRuntime(health, scopedRequest, profile.name)) return null;
-  if (paged && pagedReviewCapabilitySchema.parse(health).local_review_paging_supported !== true) throw new Error("local_review_paging_upgrade_required");
+  if (paged) {
+    if (isLocalIndexAction(request.action ?? "read")) {
+      if (localIndexCapabilitySchema.parse(health).local_review_index_supported !== true) throw new Error("local_review_index_upgrade_required");
+    } else if (pagedReviewCapabilitySchema.parse(health).local_review_paging_supported !== true) throw new Error("local_review_paging_upgrade_required");
+  }
   return { response: await transport.review(profile, scopedRequest, signal), runtimeId };
 }

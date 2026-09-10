@@ -71,12 +71,13 @@ func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		paged bool
-	}{{"legacy", false}, {"paged", true}} {
-		t.Run(tc.name, func(t *testing.T) { runLocalReviewProcessScenario(t, tc.paged) })
+		index bool
+	}{{"legacy", false, false}, {"paged", true, false}, {"index", false, true}} {
+		t.Run(tc.name, func(t *testing.T) { runLocalReviewProcessScenario(t, tc.paged, tc.index) })
 	}
 }
 
-func runLocalReviewProcessScenario(t *testing.T, paged bool) {
+func runLocalReviewProcessScenario(t *testing.T, paged, index bool) {
 	url := os.Getenv("LOCAL_REVIEW_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("LOCAL_REVIEW_TEST_DATABASE_URL not set")
@@ -233,7 +234,9 @@ func runLocalReviewProcessScenario(t *testing.T, paged bool) {
 		return call("POST", "/reviews", input)
 	}
 	fixture := processReviewFixture{taskID: taskID, checkout: checkout, repo: repo, sourceHead: sourceHead, run: runWorker}
-	if paged {
+	if index {
+		verifyIndexReviewProcess(t, fixture)
+	} else if paged {
 		verifyPagedReviewProcess(t, fixture)
 	} else {
 		verifyLegacyReviewProcess(t, fixture)
