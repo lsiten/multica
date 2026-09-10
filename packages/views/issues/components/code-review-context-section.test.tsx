@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClient, setApiInstance } from "@multica/core/api";
 import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import { localReviewInventory } from "../../platform/local-review";
-import { readReviewManifest, readReviewFile } from "../../platform/local-review-pages";
+import { readReviewManifest, readReviewFile, readReviewRepositories } from "../../platform/local-review-pages";
 import { reviewFileFixture, reviewManifestFixture } from "../../test/local-review-pages";
 import { issueKeys } from "@multica/core/issues/queries";
 import type { AgentTask } from "@multica/core/types";
@@ -16,7 +16,7 @@ import { CodeReviewContextSection } from "./code-review-context-section";
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 vi.mock("@multica/core/auth", () => { const state = { user: { id: "viewer" } }; return { useAuthStore: Object.assign((select: (value: typeof state) => unknown) => select(state), { getState: () => state }) }; });
 vi.mock("../../platform/local-review", () => ({ readLocalReview: vi.fn(), readLocalReviewBranches: async () => ["main"], localReviewInventory: vi.fn() }));
-vi.mock("../../platform/local-review-pages", () => ({ readReviewManifest: vi.fn(), readReviewFile: vi.fn(), readReviewRepositories: async (input: PagedReviewInput) => ({ repositories: [input.path] }), readReviewCommits: vi.fn(), renewReviewLease: async (input: PagedReviewInput) => ({ version_id: input.version_id || "", expires_at: "2100-01-01T00:00:00Z" }) }));
+vi.mock("../../platform/local-review-pages", () => ({ readReviewManifest: vi.fn(), readReviewFile: vi.fn(), readReviewRepositories: vi.fn(), readReviewCommits: vi.fn(), renewReviewLease: async (input: PagedReviewInput) => ({ version_id: input.version_id || "", expires_at: "2100-01-01T00:00:00Z" }) }));
 
 const task: AgentTask = {
   id: "task-1",
@@ -38,10 +38,23 @@ const task: AgentTask = {
 describe("CodeReviewContextSection", () => {
   afterEach(cleanup);
   beforeEach(() => {
+    vi.mocked(readReviewRepositories).mockImplementation(async (input) => ({ repositories: [input.path] }));
     vi.mocked(localReviewInventory).mockResolvedValue([{
       taskId: task.id, workspaceId: "ws-1", runtimeId: "runtime-1", agentId: "agent-1",
       path: "/managed/review-worktree", taskName: "agent/review-123", repositories: ["/managed/review-worktree"], active: false,
     }]);
+  });
+  it("only lists verified repositories and collapses reused directory runs", async () => {
+    const rows = [task, { ...task, id: "older", created_at: "2026-09-07T00:00:00Z" }, { ...task, id: "empty", work_dir: "/empty" }, { ...task, id: "remote", runtime_id: "runtime-2" }];
+    class FixtureClient extends ApiClient { override async listTasksByIssue() { return rows; } }
+    setApiInstance(new FixtureClient("https://fixture.invalid"));
+    vi.mocked(localReviewInventory).mockResolvedValue(rows.map((row) => ({ taskId: row.id, workspaceId: "ws-1", runtimeId: row.runtime_id || "", agentId: "agent-1", path: row.work_dir || "", taskName: row.id, repositories: [row.work_dir || ""], active: false })));
+    vi.mocked(readReviewRepositories).mockImplementation(async (input) => ({ repositories: input.path === "/empty" ? [] : [input.path] }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(issueKeys.tasks("issue-1"), rows);
+    renderWithI18n(<QueryClientProvider client={client}><CodeReviewContextSection issueId="issue-1" /></QueryClientProvider>, { locale: "zh-Hans" });
+    await waitFor(() => expect(screen.getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["task-1", "remote"]));
+    expect(screen.queryByRole("option", { name: /empty/ })).not.toBeInTheDocument();
   });
   it("does not offer a historical path when the runtime inventory has no repository", async () => {
     class FixtureClient extends ApiClient { override async listTasksByIssue() { return [task]; } }
@@ -53,6 +66,18 @@ describe("CodeReviewContextSection", () => {
     await waitFor(() => expect(localReviewInventory).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "查看 / 提交 MR" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+  it.each(["empty", "failed"])("hides both selector and MR when every runtime probe is %s", async (state) => {
+    class FixtureClient extends ApiClient { override async listTasksByIssue() { return [task]; } }
+    setApiInstance(new FixtureClient("https://fixture.invalid"));
+    if (state === "empty") vi.mocked(readReviewRepositories).mockResolvedValue({ repositories: [] });
+    else vi.mocked(readReviewRepositories).mockRejectedValue(new Error("offline"));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(issueKeys.tasks("issue-1"), [task]);
+    renderWithI18n(<QueryClientProvider client={client}><CodeReviewContextSection issueId="issue-1" /></QueryClientProvider>, { locale: "zh-Hans" });
+    await screen.findByText(state === "empty" ? "无可审查的 Git 仓库" : "无法验证仓库，请检查运行时连接后重试");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看 / 提交 MR" })).not.toBeInTheDocument();
   });
   it("hides finalized runs even when an old inventory still contains their path", async () => {
     class FixtureClient extends ApiClient { override async listTasksByIssue() { return [{ ...task, durable_work_dir: "/delivery" }]; } }
