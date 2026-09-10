@@ -24,11 +24,32 @@ describe("checkQuickCreateCliVersion", () => {
     expect(checkQuickCreateCliVersion("not-a-version").state).toBe("missing");
   });
 
-  it("treats git-describe dev builds as ok regardless of base tag", () => {
-    expect(checkQuickCreateCliVersion("v0.2.15-235-gdaf0e935").state).toBe("ok");
-    expect(checkQuickCreateCliVersion("v0.2.15-235-gdaf0e935-dirty").state).toBe("ok");
-    expect(checkQuickCreateCliVersion("0.1.0-1-gabc1234").state).toBe("ok");
+  it.each([
+    "v0.1.5-62-gfa34804-dirty",
+    "v0.2.15-235-gdaf0e935",
+    "0.1.0-1-gabc1234",
+    "dev",
+    "  dev  ",
+    "fa34804",
+    "fa34804-dirty",
+    "0123456",
+    "FA34804",
+    "abcd",
+    "fa34804fa34804fa34804fa34804fa34804fa34804",
+    "v0.1.5-dirty",
+    "0.1.5-dirty",
+  ])("accepts development build %s across CLI version gates", (version) => {
+    expect(checkQuickCreateCliVersion(version).state).toBe("ok");
+    expect(checkQuickCreateFieldsCliVersion(version).state).toBe("ok");
+    expect(chatProjectContextSupported(version)).toBe(true);
   });
+
+  it.each(["v0.1.5", "0.1.5-rc.1", "0.1.5+build.123"])(
+    "still enforces the minimum for release %s",
+    (version) => {
+      expect(checkQuickCreateCliVersion(version).state).toBe("too_old");
+    },
+  );
 });
 
 describe("checkQuickCreateFieldsCliVersion", () => {

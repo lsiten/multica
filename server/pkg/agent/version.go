@@ -60,20 +60,19 @@ var (
 	ErrCLIVersionTooOld  = errors.New("multica CLI version is below required minimum")
 )
 
-// devDescribeRe matches the `git describe --tags --always --dirty` output for
-// a build past the latest tag, e.g. `v0.2.15-235-gdaf0e935` (optionally with a
-// trailing `-dirty`). Daemons built from source (Makefile `make build` / `make
-// daemon`) report this shape; tagged releases are bare semver. Treating dev-
-// described daemons as OK keeps `make daemon` unblocked without weakening the
-// gate for staging or production users running stale stable releases.
-var devDescribeRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+-\d+-g[0-9a-fA-F]+`)
+// devBuildRe covers the source-build default `dev` and git-describe output:
+// commits past a tag, a dirty tag, or a bare hash when no tag is reachable.
+// Keep it in sync with DEV_BUILD_RE in packages/core/runtimes/cli-version.ts
+// so every development build passes both gates while tagged releases still
+// use the minimum version.
+var devBuildRe = regexp.MustCompile(`^(?:dev|[0-9a-fA-F]{4,64}(?:-dirty)?|v?\d+\.\d+\.\d+-(?:\d+-g[0-9a-fA-F]+(?:-dirty)?|dirty))$`)
 
 // CheckMinCLIVersion returns nil when `detected` parses as ≥ minimum. Returns
 // ErrCLIVersionMissing for empty or unparsable input, and ErrCLIVersionTooOld
 // when parsable but below the minimum. The caller can check for these
 // sentinel errors with errors.Is to drive the response shape.
 //
-// Dev-built daemons (git-describe shape) always pass — the version string
+// Dev-built daemons (`dev` or git-describe builds) always pass — the version string
 // itself is the shared signal, so the modal pre-check and this server gate
 // agree by construction without needing to compare separate env flags.
 func CheckMinCLIVersion(detected string) error {
@@ -88,7 +87,7 @@ func CheckMinCLIVersionFor(detected, minimum string) error {
 	if d == "" {
 		return ErrCLIVersionMissing
 	}
-	if devDescribeRe.MatchString(d) {
+	if devBuildRe.MatchString(d) {
 		return nil
 	}
 	parsed, err := parseSemver(d)
