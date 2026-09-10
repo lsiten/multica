@@ -67,6 +67,8 @@ func TestCheckMinCLIVersion(t *testing.T) {
 		{"git-describe dev build past old tag", "v0.2.15-235-gdaf0e935", nil},
 		{"git-describe dirty dev build", "v0.2.15-235-gdaf0e935-dirty", nil},
 		{"git-describe dev build past current tag", "v0.2.21-3-gabc1234", nil},
+		{"release candidate below minimum", "0.1.5-rc.1", ErrCLIVersionTooOld},
+		{"release metadata below minimum", "0.1.5+build.123", ErrCLIVersionTooOld},
 	}
 	for _, tt := range tests {
 		err := CheckMinCLIVersion(tt.input)
@@ -76,6 +78,33 @@ func TestCheckMinCLIVersion(t *testing.T) {
 		if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 			t.Errorf("%s: CheckMinCLIVersion(%q) = %v, want %v", tt.name, tt.input, err, tt.wantErr)
 		}
+	}
+}
+
+func TestCheckMinCLIVersionForDevelopmentBuilds(t *testing.T) {
+	versions := []string{
+		"v0.1.5-62-gfa34804-dirty",
+		"v0.2.15-235-gdaf0e935",
+		"0.1.0-1-gabc1234",
+		"dev",
+		"  dev  ",
+		"fa34804",
+		"fa34804-dirty",
+		"0123456",
+		"FA34804",
+		"abcd",
+		"fa34804fa34804fa34804fa34804fa34804fa34804",
+		"v0.1.5-dirty",
+		"0.1.5-dirty",
+	}
+	for _, version := range versions {
+		t.Run(version, func(t *testing.T) {
+			for _, minimum := range []string{MinQuickCreateCLIVersion, MinQuickCreateFieldsCLIVersion} {
+				if err := CheckMinCLIVersionFor(version, minimum); err != nil {
+					t.Errorf("CheckMinCLIVersionFor(%q, %q) = %v, want nil", version, minimum, err)
+				}
+			}
+		})
 	}
 }
 
