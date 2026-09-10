@@ -68,7 +68,7 @@ func TestLocalReviewRuntimeProcessHelper(t *testing.T) {
 }
 
 func TestLocalReviewAcrossHTTPDatabaseAndRuntimeProcesses(t *testing.T) {
-	for _, mode := range []string{"legacy", "paged", "index", "selected"} {
+	for _, mode := range []string{"legacy", "paged", "index", "selected", "reuse"} {
 		t.Run(mode, func(t *testing.T) { runLocalReviewProcessScenario(t, mode) })
 	}
 }
@@ -120,7 +120,15 @@ func runLocalReviewProcessScenario(t *testing.T, mode string) {
 	worktreeTestGit(t, checkout, "add", "app.txt")
 	worktreeTestGit(t, checkout, "commit", "-m", "feature")
 	sourceHead := worktreeTestGit(t, checkout, "rev-parse", "HEAD")
-	fx.Task(t, agentID, testutil.Cols{"id": taskID, "runtime_id": runtimeID, "status": "completed", "work_dir": checkout})
+	taskCols := testutil.Cols{"id": taskID, "runtime_id": runtimeID, "status": "completed", "work_dir": checkout}
+	if mode == "reuse" {
+		taskCols["issue_id"] = fx.Issue(t, "Reused review directory")
+	}
+	fx.Task(t, agentID, taskCols)
+	if mode == "reuse" {
+		delete(taskCols, "id")
+		taskID = fx.Task(t, agentID, taskCols)
+	}
 	queries := db.New(pool)
 	t.Cleanup(func() {
 		if err := queries.DeleteWorkspacePullRequests(ctx, util.MustParseUUID(fx.WorkspaceID)); err != nil {
@@ -141,6 +149,7 @@ func runLocalReviewProcessScenario(t *testing.T, mode string) {
 	router.With(middleware.RequireWorkspaceMember(queries), handler.RequireHumanActor).Post("/reviews", h.ForwardLocalReview)
 	router.Post("/runtime/{runtimeId}/claim", h.ClaimLocalReviewRelay)
 	router.Post("/runtime/{runtimeId}/{commandId}/result", h.ReportLocalReviewRelay)
+	router.Get("/api/daemon/runtimes/{runtimeId}/tasks/{taskId}/review-binding", h.GetLocalReviewRuntimeBinding)
 	var statusChecks atomic.Int64
 	router.Post("/api/daemon/runtimes/{runtimeId}/local-reviews/relay/{commandId}/status", func(w http.ResponseWriter, r *http.Request) {
 		statusChecks.Add(1)

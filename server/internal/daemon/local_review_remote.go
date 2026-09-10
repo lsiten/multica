@@ -44,6 +44,14 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		input.CommandID = command.CommandID
 	}
 	input.ActorID, input.Comment = command.ActorID, command.Comment
+	verification := input
+	verification.RuntimeID = command.RuntimeID
+	directoryTask, err := d.reviewDirectoryTask(ctx, verification)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	input.TaskID = directoryTask
 	if command.Action == "merge" {
 		if recovered, ok := d.recoverRemoteMerge(ctx, input, command.ClaimToken); ok {
 			return recovered
@@ -76,7 +84,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		return response, err
 	}
 	var response worktreeReviewResponse
-	var err error
+	err = nil
 	switch command.Action {
 	case "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes":
 		response, err = call(command.Action)
