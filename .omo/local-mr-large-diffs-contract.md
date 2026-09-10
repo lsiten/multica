@@ -13,6 +13,16 @@ The user clarified and confirmed that historical branch-diff plus buttons should
 - Real temporary-worktree tests prove selected content arrives, conflicting unselected source edits do not overwrite target edits, source ref stays unchanged, and selected-file conflicts stop before receipt preparation/ref publication. Full localreview race suite and vet passed.
 - This is backend groundwork only. Pending-file UI, typed public operations, durable selective-merge receipts, detailed conflict presentation and end-to-end acceptance are still to implement. No user branch, running process or remote deployment was changed.
 
+### Selective-merge workflow integration
+
+- Historical branch-row plus controls now add client-owned path selections to a separate pending-merge group. Pending rows preview the immutable branch diff and can be removed; actual unstaged rows retain Git staging. Snapshot/version changes reset selection through the existing version-keyed view.
+- Added a message and explicit confirmation with file count, target and source/target commit identities. Selection changes invalidate confirmation. Pending writes block competing staging/review actions and closing the dialog; successful publication clears selection and reports the target commit.
+- Added owner-only `merge_selected` forwarding, bounded request bodies and a separate selected-merge capability. Local capability checks use owning-runtime health; other runtimes use server capability. Typed results bind exact version/target/path selection and distinguish commit success from conflict files.
+- Runtime receipts bind actor, command, message, selection and snapshot. Lost-completion replay proves the prepared commit is already in target history rather than publishing again. Conflict paths come from Git merge-tree's name-only output; conflicts preserve pending selection and never update refs/checkouts.
+- Verified with real Git worktrees: selected-only publication, preservation of unselected target edits, conflict rejection, single-parent target history, source ref stability and lost-completion/actor-mismatch handling. Database owner-authorization tests passed for selected merge.
+- Full JWT/PostgreSQL/HTTP/separate-daemon scenarios explicitly passed: legacy, paged, index and selected (33.15s total). Core tests passed 34; views/locale/entry tests passed 227; views and desktop typechecks passed. Targeted confirmation/conflict and pending-file preview/removal tests passed. Temporary DB was removed.
+- No user repository was staged/merged during QA, no GUI operation was performed, and no commit/push/restart/deployment was done for this change. Current running processes still need synchronization before the new capability is available there. Selective merging retains the clean-reviewed-snapshot requirement.
+
 ## Additional user requirements (2026-09-10)
 
 - Diagnose long-lived dialog getting stuck loading (user screenshot shows 1,054 files).
