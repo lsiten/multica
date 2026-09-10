@@ -588,6 +588,10 @@
     "cancel_failed": "実行をキャンセルできませんでした"
   },
   "local_review": {
+    "entry_checking": "リポジトリを確認中…",
+    "entry_empty": "レビュー可能な Git リポジトリがありません",
+    "entry_failed": "リポジトリを確認できません。ランタイムの接続を確認して再試行してください",
+    "entry_recheck": "再確認",
     "uncached_file": "内容全体はキャッシュされていません。「ファイル内容を表示」で固定バージョンを確認できます。",
     "view_content": "ファイル内容を表示",
     "expand_context": "前後の {{count}} 行を展開",

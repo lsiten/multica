@@ -610,6 +610,10 @@
     "cancel_failed": "Failed to cancel run"
   },
   "local_review": {
+    "entry_checking": "Checking repository…",
+    "entry_empty": "No Git repository to review",
+    "entry_failed": "Cannot verify repository; check the runtime connection and retry",
+    "entry_recheck": "Check again",
     "uncached_file": "Full content was not cached. Use View file contents to read the fixed version.",
     "view_content": "View file contents",
     "expand_context": "Expand {{count}} context lines",

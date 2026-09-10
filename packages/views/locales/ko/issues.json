@@ -588,6 +588,10 @@
     "cancel_failed": "실행을 취소하지 못했습니다"
   },
   "local_review": {
+    "entry_checking": "저장소 확인 중…",
+    "entry_empty": "검토할 Git 저장소가 없습니다",
+    "entry_failed": "저장소를 확인할 수 없습니다. 런타임 연결을 확인한 후 다시 시도하세요",
+    "entry_recheck": "다시 확인",
     "uncached_file": "전체 내용이 캐시되지 않았습니다. 파일 내용 보기에서 고정된 버전을 확인하세요.",
     "view_content": "파일 내용 보기",
     "expand_context": "주변 {{count}}줄 펼치기",

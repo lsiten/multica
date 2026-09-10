@@ -10,12 +10,11 @@ import { SettingsCard, SettingsRow, SettingsSection } from "@multica/views/setti
 import { useT } from "@multica/views/i18n";
 import { toast } from "sonner";
 import type { DaemonStatus, ManagedWorktree } from "../../../shared/daemon-types";
-import { LocalReviewDialog } from "@multica/views/issues/components";
+import { LocalReviewDialog, LocalReviewEntry } from "@multica/views/issues/components";
 import type { LocalReviewRequest } from "@multica/core/types/local-review";
 
 export function WorktreeManager({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
-  const { t: tIssues } = useT("issues");
   const [review, setReview] = useState<LocalReviewRequest | null>(null);
   const userId = useAuthStore((state) => state.user?.id);
   const client = useQueryClient();
@@ -127,7 +126,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
                     <p className="truncate font-medium text-foreground" title={row.taskName}>{row.taskName}</p>
                     <p className="break-all font-mono" title={row.path}>{row.path}</p>
                     <p>{(row.sizeBytes / 1024 ** 2).toFixed(1)} MB · {reasonLabel(row.active ? "active" : row.protectionReason)}</p>
-                    {row.repositories?.map((path) => <Button key={path} variant="outline" size="sm" disabled={!row.taskId} onClick={() => setReview({ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: "main" })}>{tIssues(($) => $.local_review.open)} · {path.split(/[\\/]/).pop()}</Button>)}
+                    {row.repositories?.map((path) => <LocalReviewEntry key={path} labelSuffix={path.split(/[\\/]/).pop()} request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: "main" }} onOpen={setReview} />)}
                   </div>
                   <Button variant="ghost" size="sm" disabled={blocked || cleanable([row]).length === 0} onClick={() => selectCleanup([row])}>{t(($) => $.desktop.worktrees.clean)}</Button>
                 </div>

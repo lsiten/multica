@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
 import { issueKeys } from "@multica/core/issues/queries";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { Button } from "@multica/ui/components/ui/button";
+import { LocalReviewEntry } from "./local-review-entry";
 import { LocalReviewDialog } from "./local-review-dialog";
 import { localReviewInventory } from "../../platform/local-review";
 import { useT } from "../../i18n";
@@ -32,7 +32,7 @@ export function CodeReviewContextSection({ issueId }: { issueId: string }) {
       <p className="break-all text-caption text-muted-foreground">{task.work_dir || task.durable_work_dir}</p>
       {repositories.length > 1 && <select className="w-full rounded border bg-background p-1 text-caption" aria-label={t(($) => $.local_review.repository)} value={path} onChange={(event) => { setRepository(event.target.value); setOpen(false); }}>{repositories.map((path) => <option key={path} value={path}>{path}</option>)}</select>}
       {task.durable_work_dir && <p className="text-caption text-muted-foreground">{t(($) => $.local_review.delivery_notice)}</p>}
-      <Button className="w-full" variant="outline" size="sm" disabled={!path} onClick={() => { if (path) { setSelected(task.id); setRepository(path); setOpen(true); } }}>{t(($) => $.local_review.open)}</Button>
+      {path && <LocalReviewEntry request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target: "main" }} onOpen={() => { setSelected(task.id); setRepository(path); setOpen(true); }} />}
       {open && path && selected === task.id && repository === path && <LocalReviewDialog key={task.id + path} request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target: "main" }} onClose={() => setOpen(false)} />}
     </>}
   </section>;

@@ -86,6 +86,7 @@ describe("CodeReviewContextSection", () => {
     expect(await screen.findByText("agent/review-123")).toBeInTheDocument();
     expect(screen.getByText("/managed/review-worktree")).toBeInTheDocument();
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "查看 / 提交 MR" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "查看 / 提交 MR" }));
     expect(await screen.findByText("+entry-change")).toBeInTheDocument();
     expect(readReviewManifest).toHaveBeenCalledWith(expect.objectContaining({ task_id: "task-1", runtime_id: "runtime-1", path: "/managed/review-worktree" }), expect.any(AbortSignal));

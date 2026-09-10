@@ -588,6 +588,10 @@
     "cancel_failed": "取消运行失败"
   },
   "local_review": {
+    "entry_checking": "正在验证仓库…",
+    "entry_empty": "无可审查的 Git 仓库",
+    "entry_failed": "无法验证仓库，请检查运行时连接后重试",
+    "entry_recheck": "重新检查",
     "uncached_file": "此文件未缓存完整内容，可使用“查看文件内容”读取固定版本。",
     "view_content": "查看文件内容",
     "expand_context": "展开 {{count}} 行上下文",

@@ -13,6 +13,7 @@ Use text-caption for dense metadata/code, text-body for ordinary controls, and f
 Keep the existing flex dialog with bounded viewport height. Its file-browser region owns scrolling. Desktop has a file-list column and diff column; smaller widths stack them. Both grid children must allow shrinking without pushing controls outside the dialog.
 
 ## 5. Primitives and states
+MR entry buttons are fail-closed until the owning runtime confirms at least one Git repository. Show checking, confirmed-empty, and verification-failed states beside the disabled entry, with an explicit recheck action. Share this gate across task, agent, and worktree-management entries. Bound concurrent probes and cancel queued reads when entries disappear. A historical work_dir is a candidate, never proof of a repository.
 Reuse Dialog, Button, Input, Popover and Command. Branch selection supports keyboard search. File selection uses semantic buttons with pressed state. Loading, retry, empty, binary, oversized and unsupported content are explicit states. Patch pagination uses previous/next actions and never silently appends unlimited content.
 
 Omitted hunk context uses a full-width ghost button on the muted hunk background. Expanding loads at most 50 original lines per explicit action, preserves both line-number columns, and offers collapse. Loading and errors appear inline at that gap; they must not block other files. Collapsing unmounts the reader and cancels unfinished work. No additional motion is introduced.

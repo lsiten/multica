@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithI18n } from "../../test/i18n";
@@ -26,6 +26,7 @@ describe("remote worktree entry points", () => {
     renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalWorktreeReviews workspaceId="ws" agentId="agent-b" /></QueryClientProvider>, { locale: "zh-Hans" });
     expect(await screen.findByText(/\/remote\/worktree-b/)).toBeInTheDocument();
     expect(screen.queryByText(/\/remote\/worktree-a/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "查看 / 提交 MR" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "查看 / 提交 MR" }));
     expect(await screen.findByText("+task-b-change")).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toHaveTextContent("/remote/worktree-b");
@@ -37,6 +38,7 @@ describe("remote worktree entry points", () => {
     expect(screen.getAllByRole("button", { name: "查看 / 提交 MR" })).toHaveLength(2);
     const [first] = screen.getAllByRole("button", { name: "查看 / 提交 MR" });
     if (!first) throw new Error("MR entry missing");
+    await waitFor(() => expect(first).toBeEnabled());
     fireEvent.click(first);
     expect(await screen.findByText("+task-a-change")).toBeInTheDocument();
   });
