@@ -132,6 +132,7 @@ jobs:
           path: |
             apps/desktop/dist/*/multica-desktop-*
             apps/desktop/dist/*/*.yml
+            !apps/desktop/dist/*/builder-debug.yml
           if-no-files-found: error
           retention-days: 7
 
@@ -158,6 +159,9 @@ jobs:
           mkdir release-assets
           while IFS= read -r -d '' asset; do
             name="$(basename "$asset")"
+            if [[ "$name" == "builder-debug.yml" ]]; then
+              continue
+            fi
             if [[ -e "release-assets/$name" ]]; then
               echo "::error::Duplicate release asset: $name"
               exit 1
