@@ -13,6 +13,7 @@ export function reviewErrorKind(error: Error) {
   if (detail === "local_review_upgrade_required") return "upgrade";
   if (detail === "local_review_paging_upgrade_required") return "paging";
   if (detail === "local_review_index_upgrade_required") return "index";
+  if (detail === "local_review_selected_merge_upgrade_required") return "selection";
   if (error.name === "TimeoutError" || detail === "API error: 504") return "timeout";
   return "unknown";
 }
@@ -26,6 +27,7 @@ export function LocalReviewError({ error, id }: { error: Error; id: string }) {
     upgrade: t(($) => $.local_review.upgrade_required),
     paging: t(($) => $.local_review.paging_upgrade),
     index: t(($) => $.local_review.index_upgrade),
+    selection: t(($) => $.local_review.selection_upgrade),
     timeout: t(($) => $.local_review.request_timeout),
     unknown: t(($) => $.local_review.error_generic),
   };

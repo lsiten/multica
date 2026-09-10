@@ -9,9 +9,9 @@ import { useT } from "../../i18n";
 import { LocalReviewError } from "./local-review-error";
 
 type IndexAction = { readonly action: "stage" | "unstage" | "commit"; readonly paths?: string[] };
-type Props = { readonly request: LocalReviewRequest; readonly onChanged: () => void; readonly onBusyChange: (busy: boolean) => void; readonly disabled?: boolean };
+type Props = { readonly request: LocalReviewRequest; readonly onChanged: () => void; readonly onBusyChange: (busy: boolean) => void; readonly disabled?: boolean; readonly compact?: boolean };
 
-export function LocalReviewIndex({ request, onChanged, onBusyChange, disabled = false }: Props) {
+export function LocalReviewIndex({ request, onChanged, onBusyChange, disabled = false, compact = false }: Props) {
   const { t } = useT("issues");
   const errorId = useId();
   const userId = useAuthStore((state) => state.user?.id);
@@ -52,19 +52,20 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, disabled = 
   const busy = disabled || query.isFetching || writing;
   const error = operation.error ?? query.error ?? lease.error;
   const invalidMessage = !message.trim() || new TextEncoder().encode(message).length > 8000;
-  return <section className="space-y-2 rounded border p-3 text-caption">
+  return <section className={compact ? "space-y-2 text-caption" : "space-y-2 rounded border p-3 text-caption"}>
     <div className="flex items-center justify-between gap-2"><span className="break-all font-mono">{data?.status.branch}</span><Button variant="outline" disabled={busy} onClick={() => { setConfirm(false); void query.refetch(); }}>{t(($) => $.local_review.refresh)}</Button></div>
     {query.isPending && <p role="status">{t(($) => $.local_review.loading)}</p>}
     {error && <LocalReviewError error={error} id={errorId} />}
     {data && <>
       <p className="text-muted-foreground">{t(($) => $.local_review.index_hint)}</p>
-      <div className="grid max-h-48 gap-3 overflow-auto md:grid-cols-2">
+      {compact && <p className="font-semibold">{t(($) => $.local_review.staged)} · {staged.length} / {t(($) => $.local_review.unstaged)} · {unstaged.length}</p>}
+      {!compact && <div className="grid max-h-48 gap-3 overflow-auto md:grid-cols-2">
         {([{ action: "stage", files: unstaged, title: t(($) => $.local_review.unstaged) }, { action: "unstage", files: staged, title: t(($) => $.local_review.staged) }] as const).map((group) => <div key={group.action}>
           <h4 className="mb-1 font-semibold">{group.title} · {group.files.length}</h4>
           {group.files.slice(0, visible).map((file) => <div key={file.path} className="flex items-start gap-2 py-1"><span className="min-w-0 flex-1 break-all font-mono">{file.path}{(file.conflicted || file.unsupported) && <span className="block text-warning">{t(($) => $.local_review.index_unavailable)}</span>}</span><Button variant="ghost" disabled={busy || confirm || file.conflicted || file.unsupported} aria-label={group.action === "stage" ? t(($) => $.local_review.stage_file, { path: file.path }) : t(($) => $.local_review.unstage_file, { path: file.path })} onClick={() => operation.mutate({ action: group.action, paths: [file.path] })}>{group.action === "stage" ? t(($) => $.local_review.stage) : t(($) => $.local_review.unstage)}</Button></div>)}
           {group.files.length > visible && <Button variant="ghost" onClick={() => setVisible(visible + 100)}>{t(($) => $.local_review.load_more_files)}</Button>}
         </div>)}
-      </div>
+      </div>}
       <Input aria-label={t(($) => $.local_review.commit_message)} placeholder={t(($) => $.local_review.commit_message)} value={message} disabled={busy || confirm} maxLength={8000} onChange={(event) => setMessage(event.target.value)} />
       {!confirm ? <Button disabled={busy || !staged.length || invalidMessage || staged.some((file) => file.conflicted || file.unsupported)} onClick={() => setConfirm(true)}>{t(($) => $.local_review.create_commit)}</Button> : <div className="flex flex-wrap gap-2"><Button disabled={busy} onClick={() => operation.mutate({ action: "commit" })}>{t(($) => $.local_review.confirm_commit, { count: staged.length })}</Button><Button variant="outline" disabled={busy} onClick={() => setConfirm(false)}>{t(($) => $.local_review.cancel_commit)}</Button></div>}
     </>}
