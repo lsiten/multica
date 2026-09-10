@@ -57,5 +57,10 @@ export function runtimeListOptions(wsId: string, owner?: "me", wsSlug?: string) 
   return queryOptions({
     queryKey: owner === "me" ? runtimeKeys.listMine(wsId) : runtimeKeys.list(wsId),
     queryFn: () => api.listRuntimes({ workspace_id: wsId, owner }, wsSlug),
+    // Presence must recover even when a lifecycle event is missed. Poll only
+    // observed, foreground queries and refresh stale data when focus returns.
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 }
