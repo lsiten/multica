@@ -86,6 +86,10 @@ func TestSelectedMergeConflictLeavesTargetUnchanged(t *testing.T) {
 	if !errors.Is(err, ErrSelectedMergeConflict) || prepared {
 		t.Fatal("conflict was not stopped before preparation", err)
 	}
+	var conflict *SelectedMergeConflictError
+	if !errors.As(err, &conflict) || len(conflict.Files) != 1 || conflict.Files[0] != "app.txt" {
+		t.Fatalf("conflict paths missing: %v", err)
+	}
 	if run(t, target, "rev-parse", "HEAD") != head || run(t, target, "show", "HEAD:app.txt") != "target conflict" {
 		t.Fatal("conflict modified target")
 	}

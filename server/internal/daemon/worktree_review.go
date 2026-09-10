@@ -141,7 +141,7 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 			return
 		}
 		var request worktreeReviewRequest
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&request); err != nil || request.TaskID == "" || request.WorkspaceID == "" || !filepath.IsAbs(request.Path) || len(request.Comment) > 8000 || len(request.CommandID) > 128 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&request); err != nil || request.TaskID == "" || request.WorkspaceID == "" || !filepath.IsAbs(request.Path) || len(request.Comment) > 8000 || len(request.CommandID) > 128 || len(request.Paths) > 10000 || len(request.Message) > 8000 {
 			http.Error(w, "task, workspace and absolute repository path are required", http.StatusBadRequest)
 			return
 		}
@@ -300,6 +300,10 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 		}
 		if protocol.IsLocalIndexMutation(request.Action) {
 			d.localIndexMutation(w, r, pagedReviewContext{request: request, path: path, root: root})
+			return
+		}
+		if request.Action == "merge_selected" {
+			d.selectedReviewMutation(w, r, pagedReviewContext{request: request, path: path, root: root})
 			return
 		}
 		if request.VersionID != "" && !isReadReviewAction(request.Action) {

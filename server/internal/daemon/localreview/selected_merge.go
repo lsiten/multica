@@ -72,11 +72,11 @@ func (s *BlobStore) MergeSelectedPrepared(ctx context.Context, request SelectedM
 	if err != nil {
 		return "", err
 	}
-	merged, err := tx.git(ctx, nil, "merge-tree", "--write-tree", h.TargetHead, selected)
+	merged, err := tx.git(ctx, nil, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", h.TargetHead, selected)
 	if err != nil {
-		return "", errors.Join(ErrSelectedMergeConflict, err)
+		return "", selectedConflict(merged)
 	}
-	mergedTree := strings.Split(merged, "\n")[0]
+	mergedTree := strings.Split(merged, "\x00")[0]
 	if !validGitObjectID(mergedTree) {
 		return "", ErrInvalidReviewVersion
 	}

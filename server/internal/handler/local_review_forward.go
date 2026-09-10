@@ -43,7 +43,7 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		Comment    string   `json:"comment"`
 		CommandID  string   `json:"command_id"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&input) != nil || (input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
 		writeError(w, http.StatusBadRequest, "task and target branch required")
 		return
 	}
@@ -52,6 +52,17 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		input.Action = "read"
 	case "branches":
 	case "index":
+	case "merge_selected":
+		if input.CommandID == "" || len(input.CommandID) > 128 || len(input.VersionID) != 64 || input.SnapshotID != input.VersionID || len(input.Paths) == 0 || len(input.Paths) > 10000 || strings.TrimSpace(input.Message) == "" || len(input.Message) > 8000 {
+			writeError(w, http.StatusBadRequest, "valid reviewed selection required")
+			return
+		}
+		for _, path := range input.Paths {
+			if path == "" || len(path) > 4096 {
+				writeError(w, http.StatusBadRequest, "invalid selected file")
+				return
+			}
+		}
 	case "stage", "unstage", "commit":
 		if input.CommandID == "" || len(input.CommandID) > 128 || len(input.VersionID) != 64 || len(input.IndexID) != 64 || input.Branch == "" || len(input.Branch) > 250 || (len(input.Head) != 40 && len(input.Head) != 64) || len(input.Message) > 8000 || len(input.Paths) > 1000 {
 			writeError(w, http.StatusBadRequest, "valid index operation identity required")
@@ -110,7 +121,7 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "only the runtime owner can review this run")
 		return
 	}
-	if (input.Action == "merge" || protocol.IsLocalIndexMutation(input.Action)) && uuidToString(runtime.OwnerID) != user {
+	if (input.Action == "merge" || input.Action == "merge_selected" || protocol.IsLocalIndexMutation(input.Action)) && uuidToString(runtime.OwnerID) != user {
 		writeError(w, http.StatusForbidden, "only the runtime owner can modify Git")
 		return
 	}

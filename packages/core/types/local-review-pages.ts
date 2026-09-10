@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { localReviewEventSchema } from "./local-review";
+import { selectedMergeResultSchema, type SelectedMergeResult } from "./local-review-selection";
 import { isLocalIndexAction, isLocalIndexMutation, parseLocalIndexResponse, type LocalIndexView, type LocalIndexResult } from "./local-review-index";
 
 const digest = z.string().regex(/^[0-9a-f]{64}$/);
@@ -9,15 +10,15 @@ const preview = z.enum(["text", "binary", "too_large", "uncached", "unsupported"
 export const pagedReviewCapabilitySchema = z.object({ local_review_paging_supported: z.boolean().optional().catch(false) });
 
 export function isPagedReviewDecision(action: string): boolean {
-  return ["submit", "approve", "request_changes", "merge"].includes(action) || isLocalIndexMutation(action);
+  return ["submit", "approve", "request_changes", "merge", "merge_selected"].includes(action) || isLocalIndexMutation(action);
 }
 
 export const pagedReviewRequestSchema = z.object({
   task_id: z.string().min(1), workspace_id: z.string().min(1), runtime_id: z.string().optional(),
   path: z.string().min(1).max(4096), target: z.string().max(250).default(""),
-  action: z.enum(["index", "stage", "unstage", "commit", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
+  action: z.enum(["merge_selected", "index", "stage", "unstage", "commit", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
   index_id: digest.optional(), head: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(), branch: z.string().max(250).optional(),
-  paths: z.array(z.string().min(1).max(4096)).max(1000).optional(), message: z.string().max(8000).optional(),
+  paths: z.array(z.string().min(1).max(4096)).max(10000).optional(), message: z.string().max(8000).optional(),
   version_id: digest.optional(), file_path: z.string().min(1).max(4096).optional(),
   side: z.enum(["old", "new"]).default("new"),
   offset: count.default(0), limit: count.min(1).max(65536).default(100),
@@ -30,9 +31,11 @@ export const pagedReviewRequestSchema = z.object({
   if (request.action !== "content" && request.limit > 500) context.addIssue({ code: "custom", message: "Review page limit exceeded" });
   if (isPagedReviewDecision(request.action) && (!request.command_id || request.snapshot_id !== request.version_id)) context.addIssue({ code: "custom", message: "Matching reviewed version and operation identity required" });
   if (isLocalIndexMutation(request.action)) {
+    if ((request.paths?.length ?? 0) > 1000) context.addIssue({ code: "custom", message: "Index selection limit exceeded" });
     if (!request.index_id || !request.head || !request.branch) context.addIssue({ code: "custom", message: "Reviewed index identity required" });
     if (request.action === "commit" ? !request.message?.trim() : !request.paths?.length) context.addIssue({ code: "custom", message: "Selected files or commit message required" });
   }
+  if (request.action === "merge_selected" && (!request.paths?.length || !request.message?.trim() || new Set(request.paths).size !== request.paths.length)) context.addIssue({ code: "custom", message: "Unique selected files and message required" });
 });
 
 export const reviewVersionFileSchema = z.object({
@@ -80,9 +83,14 @@ export const reviewLeaseSchema = z.object({ version_id: digest, runtime_id: z.st
 export type PagedReviewRequest = z.infer<typeof pagedReviewRequestSchema>;
 export type ReviewManifest = z.infer<typeof reviewManifestSchema>;
 export type ReviewFilePage = z.infer<typeof reviewFilePageSchema>;
-export type PagedReviewResponse = LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof reviewLeaseSchema>;
+export type PagedReviewResponse = SelectedMergeResult | LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof reviewLeaseSchema>;
 
 export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unknown): PagedReviewResponse {
+  if (request.action === "merge_selected") {
+    const result = selectedMergeResultSchema.parse(raw);
+    if (result.version_id !== request.version_id || result.target !== request.target || JSON.stringify([...result.paths].sort()) !== JSON.stringify([...(request.paths ?? [])].sort()) || (request.runtime_id && result.runtime_id && request.runtime_id !== result.runtime_id)) throw new Error("Selected merge identity mismatch");
+    return result;
+  }
   if (isLocalIndexAction(request.action)) return parseLocalIndexResponse(request, raw);
   if (request.action === "lease") {
     const result = reviewLeaseSchema.parse(raw);
