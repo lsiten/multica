@@ -7,6 +7,7 @@ import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { Button } from "@multica/ui/components/ui/button";
 import { localReviewInventoryPage } from "../../platform/local-review";
 import { LocalReviewDialog } from "./local-review-dialog";
+import { LocalReviewEntry } from "./local-review-entry";
 import { useT } from "../../i18n";
 
 export function LocalWorktreeReviews({ workspaceId, agentId }: { workspaceId: string; agentId?: string }) {
@@ -32,7 +33,7 @@ function LocalWorktreeReviewList({ workspaceId, agentId }: { workspaceId: string
     {!inventory.isPending && !rows.length && <p className="text-caption text-muted-foreground">{t(($) => $.local_review.no_worktrees)}</p>}
     {rows.flatMap((row) => row.repositories.map((path) => <div key={row.taskId + path} className="flex items-center gap-2">
       <span className="min-w-0 flex-1 break-all text-caption">{row.taskName} · {row.runtimeId.slice(0, 8)}<br />{path}</span>
-      <Button variant="outline" size="sm" disabled={!row.taskId} onClick={() => setRequest({ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: "main" })}>{t(($) => $.local_review.open)}</Button>
+      <LocalReviewEntry className="max-w-64" request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: "main" }} onOpen={setRequest} />
     </div>))}
     {inventory.hasNextPage && <Button variant="outline" disabled={inventory.isFetchingNextPage} onClick={() => void inventory.fetchNextPage()}>{t(($) => $.local_review.load_more)}</Button>}
     {request && rows.some((row) => row.taskId === request.task_id && row.repositories.includes(request.path)) && <LocalReviewDialog key={request.path} request={request} onClose={() => setRequest(null)} />}
