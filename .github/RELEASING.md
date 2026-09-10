@@ -1,5 +1,41 @@
 # Release runbook
 
+## lsiten/multica fork releases
+
+Push a new `vX.Y.Z` tag on the commit to release. `fork-images.yml` publishes
+the backend/web images, and `fork-desktop.yml` builds desktop installers from
+the same tag. Prerelease tags such as `vX.Y.Z-rc.1` create GitHub prereleases;
+dirty tags are rejected. The upstream `release.yml` stays disabled for this fork.
+
+The desktop matrix builds both x64 and arm64 on macOS, Windows, and Linux:
+
+- macOS: DMG and ZIP.
+- Windows: NSIS EXE.
+- Linux: AppImage, DEB, and RPM.
+
+Every build includes the matching Go CLI. Installers, blockmaps, and update
+metadata are retained as workflow artifacts for seven days. Only after every
+platform passes its checks and builds successfully does the publish job upload
+all assets to a draft GitHub Release, then make it public. A failed upload leaves
+a draft that can be retried; already public releases are never overwritten.
+
+Desktop update checks and the notification's changelog link target
+`lsiten/multica`. Install a build containing this configuration once to switch
+an existing installation from the upstream update source.
+
+Signing is optional for producing packages. Configure these repository Actions
+secrets for signed releases:
+
+- macOS: `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` (Developer ID certificate and
+  password), plus `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`
+  for notarization.
+- Windows: `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` (code-signing certificate and
+  password).
+
+Without those credentials, packages lack a trusted publisher signature and
+macOS notarization. macOS automatic installation requires a properly signed app;
+publishing update metadata alone does not satisfy the OS signature checks.
+
 ## Normal release
 
 Release from a reviewed commit on `main` by creating and pushing a new semantic
