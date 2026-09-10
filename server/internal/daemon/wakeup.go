@@ -129,7 +129,7 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	// is direct, exactly as before.
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
-		Proxy:            http.ProxyFromEnvironment,
+		Proxy:            taskWakeupProxy,
 	}
 	conn, _, err := dialer.DialContext(ctx, wsURL, headers)
 	if err != nil {
