@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -90,4 +90,41 @@ test("installer validation accepts actual Linux package architecture names and r
 
   rmSync(join(directory, "apps/desktop/dist/linux-arm64/multica-desktop-1.2.3-linux-aarch64.rpm"));
   assert.notEqual(check().status, 0, "Missing RPM must block release");
+});
+
+test("release ignores duplicate builder diagnostics while preserving distributable collision checks", (t) => {
+  for (const duplicateInstaller of [false, true]) {
+    const directory = fixtureDirectory(t);
+    for (const arch of ["x64", "arm64"]) {
+      const output = join(directory, "artifacts", `mac-${arch}`);
+      mkdirSync(output, { recursive: true });
+      writeFileSync(join(output, "builder-debug.yml"), "build diagnostics\n");
+      const installerArch = duplicateInstaller ? "arm64" : arch;
+      writeFileSync(join(output, `multica-desktop-1.2.3-mac-${installerArch}.zip`), "installer fixture");
+      writeFileSync(join(output, arch === "x64" ? "latest-x64-mac.yml" : "latest-mac.yml"), "version: 1.2.3\n");
+    }
+    const calls = join(directory, "github-calls");
+    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", `
+gh() { printf '%s\\n' "$2" >> "$GH_TEST_LOG"; [[ "$2" != view ]]; }
+${stepScript("Publish complete desktop release")}
+`], {
+      cwd: directory,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GH_TEST_LOG: calls.replaceAll("\\", "/"),
+        GH_REPO: "test/desktop",
+        RELEASE_TAG: "v1.2.3",
+        PRERELEASE: "false",
+        GITHUB_STEP_SUMMARY: join(directory, "summary").replaceAll("\\", "/"),
+      },
+    });
+    if (duplicateInstaller) {
+      assert.notEqual(result.status, 0, "Duplicate installer must block publication");
+    } else {
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["view", "create", "upload", "edit"]);
+      assert.equal(existsSync(join(directory, "release-assets/builder-debug.yml")), false);
+    }
+  }
 });
