@@ -170,6 +170,14 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 				return
 			}
 		}
+		if !forwarded {
+			directoryTask, err := d.reviewDirectoryTask(r.Context(), request)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+			request.TaskID = directoryTask
+		}
 		if !forwarded && !isReadReviewAction(request.Action) {
 			_, root, err := d.resolveReviewRoot(r.Context(), request)
 			if err != nil {

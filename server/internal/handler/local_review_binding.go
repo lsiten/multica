@@ -23,6 +23,18 @@ func (h *Handler) GetLocalReviewRuntimeBinding(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, "task does not belong to this runtime")
 		return
 	}
+	if directoryTaskID := r.URL.Query().Get("directory_task_id"); directoryTaskID != "" {
+		ownerID, ok := parseUUIDOrBadRequest(w, directoryTaskID, "directory_task_id")
+		if !ok {
+			return
+		}
+		owner, err := h.Queries.GetAgentTaskInWorkspace(r.Context(), db.GetAgentTaskInWorkspaceParams{ID: ownerID, WorkspaceID: runtime.WorkspaceID})
+		if err != nil || !reviewTasksShareDirectory(task, owner, r.URL.Query().Get("path")) {
+			writeError(w, http.StatusForbidden, "directory reuse is not verified for this run")
+			return
+		}
+		task = owner
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, protocol.LocalReviewRuntimeBinding{
 		WorkspaceID: uuidToString(runtime.WorkspaceID), RuntimeID: uuidToString(runtime.ID), TaskID: uuidToString(task.ID), AgentID: uuidToString(task.AgentID),
