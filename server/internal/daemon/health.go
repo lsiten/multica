@@ -39,13 +39,14 @@ type HealthResponse struct {
 	// pre-#6694 daemon that cannot identify itself at all. Callers key off
 	// the field's presence, so collapsing the two would make every default
 	// daemon look unidentifiable.
-	Profile                    string `json:"profile"`
-	DaemonID                   string `json:"daemon_id"`
-	DeviceName                 string `json:"device_name"`
-	ServerURL                  string `json:"server_url"`
-	CLIVersion                 string `json:"cli_version"`
-	LocalReviewPagingSupported bool   `json:"local_review_paging_supported"`
-	LocalReviewIndexSupported  bool   `json:"local_review_index_supported"`
+	Profile                           string `json:"profile"`
+	DaemonID                          string `json:"daemon_id"`
+	DeviceName                        string `json:"device_name"`
+	ServerURL                         string `json:"server_url"`
+	CLIVersion                        string `json:"cli_version"`
+	LocalReviewPagingSupported        bool   `json:"local_review_paging_supported"`
+	LocalReviewIndexSupported         bool   `json:"local_review_index_supported"`
+	LocalReviewSelectedMergeSupported bool   `json:"local_review_selected_merge_supported"`
 	// LaunchedBy is "desktop" when the Electron app spawned this daemon, empty
 	// for a standalone one. Already reported to the server on registration;
 	// surfaced here so `daemon status` can say who manages the daemon instead
@@ -326,23 +327,24 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 		}
 
 		resp := HealthResponse{
-			Status:                     status,
-			PID:                        os.Getpid(),
-			OS:                         runtime.GOOS,
-			Uptime:                     time.Since(startedAt).Truncate(time.Second).String(),
-			Profile:                    d.cfg.Profile,
-			LaunchedBy:                 d.cfg.LaunchedBy,
-			DaemonID:                   d.cfg.DaemonID,
-			DeviceName:                 d.cfg.DeviceName,
-			ServerURL:                  d.cfg.ServerBaseURL,
-			CLIVersion:                 d.cfg.CLIVersion,
-			LocalReviewPagingSupported: true,
-			LocalReviewIndexSupported:  true,
-			ActiveTaskCount:            d.activeTasks.Load(),
-			RunningTaskCount:           d.runningTasks.Load(),
-			ResourceWaitTaskCount:      d.resourceWaitTasks.Load(),
-			Agents:                     agents,
-			SkippedAgents:              d.skippedAgentsSnapshot(),
+			Status:                            status,
+			PID:                               os.Getpid(),
+			OS:                                runtime.GOOS,
+			Uptime:                            time.Since(startedAt).Truncate(time.Second).String(),
+			Profile:                           d.cfg.Profile,
+			LaunchedBy:                        d.cfg.LaunchedBy,
+			DaemonID:                          d.cfg.DaemonID,
+			DeviceName:                        d.cfg.DeviceName,
+			ServerURL:                         d.cfg.ServerBaseURL,
+			CLIVersion:                        d.cfg.CLIVersion,
+			LocalReviewPagingSupported:        true,
+			LocalReviewIndexSupported:         true,
+			LocalReviewSelectedMergeSupported: true,
+			ActiveTaskCount:                   d.activeTasks.Load(),
+			RunningTaskCount:                  d.runningTasks.Load(),
+			ResourceWaitTaskCount:             d.resourceWaitTasks.Load(),
+			Agents:                            agents,
+			SkippedAgents:                     d.skippedAgentsSnapshot(),
 
 			ReloadPendingReason: d.reloadPending(),
 			Workspaces:          wsList,

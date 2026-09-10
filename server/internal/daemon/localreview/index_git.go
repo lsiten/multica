@@ -20,7 +20,7 @@ func (tx *indexTransaction) git(ctx context.Context, input io.Reader, args ...st
 	output, stderr := &boundedOutput{}, &boundedOutput{}
 	cmd.Stdout, cmd.Stderr = output, stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s while preparing index: %w", args[0], err)
+		return string(output.data), fmt.Errorf("git %s while preparing index: %w", args[0], err)
 	}
 	return strings.TrimSpace(string(output.data)), nil
 }

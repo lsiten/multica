@@ -28,6 +28,7 @@ type Record struct {
 
 // Event preserves decisions on the owning runtime even after the diff changes.
 type Event struct {
+	Paths      []string  `json:"paths,omitempty"`
 	VersionID  string    `json:"version_id,omitempty"`
 	CommandID  string    `json:"command_id,omitempty"`
 	Kind       string    `json:"kind"`

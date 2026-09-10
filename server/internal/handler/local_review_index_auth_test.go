@@ -17,9 +17,9 @@ func TestIndexWritesRequireRuntimeOwner(t *testing.T) {
 	agent := dbfx.Agent(t, "index-agent", runtime)
 	issue := dbfx.Issue(t, "Index authorization")
 	task := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "issue_id": issue, "work_dir": "/runtime/repo", "status": "completed"})
-	for _, action := range []string{"stage", "unstage", "commit"} {
+	for _, action := range []string{"stage", "unstage", "commit", "merge_selected"} {
 		t.Run(action, func(t *testing.T) {
-			input := protocol.LocalReviewCommand{TaskID: task, Path: "/runtime/repo", Target: "main", Action: action, CommandID: "operation", VersionID: strings.Repeat("a", 64), IndexID: strings.Repeat("b", 64), Head: strings.Repeat("c", 40), Branch: "feature", Paths: []string{"app.txt"}, Message: "commit message"}
+			input := protocol.LocalReviewCommand{TaskID: task, Path: "/runtime/repo", Target: "main", Action: action, CommandID: "operation", VersionID: strings.Repeat("a", 64), SnapshotID: strings.Repeat("a", 64), IndexID: strings.Repeat("b", 64), Head: strings.Repeat("c", 40), Branch: "feature", Paths: []string{"app.txt"}, Message: "commit message"}
 			r := newRequestAsUser(member, http.MethodPost, "/api/local-reviews/execute", input)
 			handler := middleware.RequireWorkspaceMember(testHandler.Queries)(http.HandlerFunc(testHandler.ForwardLocalReview))
 			testutil.Call(t, handler.ServeHTTP, r).Want(http.StatusForbidden)

@@ -1,6 +1,7 @@
 import { configStore } from "../config";
 import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewInput } from "../types/local-review-pages";
 import { localIndexCapabilitySchema } from "../types/local-review-index";
+import { selectedMergeCapabilitySchema } from "../types/local-review-selection";
 import { localReviewBranchesSchema, localReviewCapabilitySchema, localReviewRelayResponseSchema, remoteWorktreesSchema } from "../types/local-review";
 import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
@@ -835,6 +836,10 @@ export class ApiClient {
     const timeout = AbortSignal.timeout(15000);
     const config = localIndexCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: signal ? AbortSignal.any([signal, timeout]) : timeout }));
     return config.local_review_index_supported === true;
+  }
+
+  async supportsSelectedMerge(): Promise<boolean> {
+    return selectedMergeCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: AbortSignal.timeout(15000) })).local_review_selected_merge_supported === true;
   }
 
   async listReviewWorktrees(offset = 0, agentId?: string, issueId?: string) {

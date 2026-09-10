@@ -78,7 +78,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	var response worktreeReviewResponse
 	var err error
 	switch command.Action {
-	case "index", "stage", "unstage", "commit", "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes":
+	case "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes":
 		response, err = call(command.Action)
 	case "merge":
 		if command.SnapshotID == "" {
