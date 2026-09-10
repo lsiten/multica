@@ -2,6 +2,17 @@
 
 Status: in progress. This document is an implementation checklist, not completion evidence.
 
+## Confirmed selective-merge requirement
+
+The user clarified and confirmed that historical branch-diff plus buttons should select files for applying to the target branch, not pretend those committed differences can be git-added. Keep this separate from real working/index staging. Provide a pending-merge file selection, preview/removal, explicit commit/target confirmation, and conflict rejection. Operations stay on the owning runtime; no business branch is modified during implementation QA.
+
+### Selective merge core
+
+- Added MergeSelectedPrepared: constructs a private base-tree index, replaces only explicitly selected entries from the pinned source commit, then performs a real three-way merge against the pinned target. Unselected source changes are absent from the comparison tree.
+- The final target commit has only the target as parent, so it does not falsely mark the whole source branch merged. Publication reuses the existing checked-out-target/expected-ref mechanism after mandatory preparation; source index/checkout are not reset.
+- Real temporary-worktree tests prove selected content arrives, conflicting unselected source edits do not overwrite target edits, source ref stays unchanged, and selected-file conflicts stop before receipt preparation/ref publication. Full localreview race suite and vet passed.
+- This is backend groundwork only. Pending-file UI, typed public operations, durable selective-merge receipts, detailed conflict presentation and end-to-end acceptance are still to implement. No user branch, running process or remote deployment was changed.
+
 ## Additional user requirements (2026-09-10)
 
 - Diagnose long-lived dialog getting stuck loading (user screenshot shows 1,054 files).
@@ -36,6 +47,134 @@ Status: in progress. This document is an implementation checklist, not completio
 - Added independent HEAD/index/worktree status reading for staging UI. It is not computed from the MR target diff: historical commits are excluded, mixed staged+unstaged paths retain both flags, untracked filenames preserve spaces/newlines, and renames retain source/destination.
 - Conflicted paths and nested directory entries are identified explicitly. Invalid/path-escaping/truncated Git status records fail closed. Reads check source branch/head stability and use the existing read-only Git transport; mutation preconditions must still pin index/content bytes separately.
 - Real temporary-repository tests verify staged/working separation, rename identities and byte-for-byte unchanged Git index after inspection. Parser regressions cover conflicts, nested directories and malformed records. This is read-only groundwork; no stage/unstage/commit command or UI is exposed yet.
+
+### Atomic index preparation
+
+- Added an internal index transaction that acquires Git's index.lock, copies the original regular-file index into a uniquely named scratch index, and atomically publishes only after checking branch/head and the original index digest. Index copies are bounded to 64 MiB and context-aware.
+- Existing locks are not replaced. Cancellation discards the transaction; external index changes are detected instead of overwritten. Cleanup only removes the held lock if its filesystem identity still matches.
+- Real temporary-repository tests show a selected-path Git add against the scratch index leaves the real index untouched until publication and excludes an unrelated untracked file. Additional tests cover occupied locks, cancellation cleanup and external index replacement.
+- This is an internal primitive only: user-facing stage/unstage APIs still need reviewed-content preconditions, ownership checks and runtime receipts; Commit and UI remain pending. No user repository/index was modified by validation.
+
+### Selected-path stage/unstage operations
+
+- Index status now includes a digest checked before/after inspection. Internal ChangeStaging requires that exact index identity and a HEAD-based, nonhistorical working snapshot; staging revalidates captured working content before preparing changes.
+- Selected staged entries are written from verified captured bytes via hash-object (no filters) and update-index against the scratch index. Deletions remove only the selected entry. Unstage restores selected paths (and rename source where applicable) from HEAD without touching worktree bytes.
+- Conflicts, nested directories, duplicate/invalid paths, stale index identities and moved source content are rejected. These internal operations assume the daemon's ownership/repository locks and have not yet been exposed through API/UI.
+- Real temporary-repository tests pass for stage→unstage, preserving unrelated files and working bytes, and rejecting stale working/index requests without changing staged paths. UI, runtime authorization/receipts, uncached-large-file staging and Commit still remain to implement/verify.
+
+### Staged-tree commit primitive
+
+- Added CommitIndexPrepared: holds the index lock, validates expected branch/head/index, writes only the staged tree, rejects empty staging, creates a commit object and invokes a mandatory durable-preparation callback before CAS-updating the explicitly selected branch. It does not stage working edits, reset the checkout, run hooks or invoke signing helpers.
+- Source/index validation is shared with index publication. The final reference update uses an explicit refs/heads name with no-deref and its exact expected old commit; it never writes through a changed HEAD. Normal checkout changes contend on the held index lock; this does not claim malicious noncooperating HEAD writes are globally serialized.
+- A proposed symref-verify plus branch-update transaction failed in real Git because automatic HEAD bookkeeping made it a duplicate reference update. Reproduced that exact error in isolated throwaway Git probes (removed afterward), then used explicit selected-branch CAS instead.
+- Temporary-repository tests prove staged bytes only, preserved newer unstaged edits, no branch advance when preparation fails, rejection of empty staging, and preservation of a concurrent branch commit. Full localreview race suite passed (10.462s) before final no-deref tightening; focused commit regressions passed afterward. Package vet passed.
+- Persistent runtime receipt handling, public authorization/transport and staging/commit UI remain unimplemented. These internal primitives are not yet user-facing functionality.
+
+### Runtime index-operation receipts
+
+- Added prepared/completed receipts under the existing runtime review-record naming/archival scheme. Canonical request digests bind repository, command ID, actor, action, version/index identities, paths and commit inputs. Reordered identical path selections match; changed actors/inputs cannot reuse an operation ID.
+- Receipts retain the staging version reference so existing cache protection/archival includes required snapshots. Stored result identities are validated when loaded; preparation cannot overwrite an existing operation receipt.
+- A failing-first security regression showed legacy LoadRecord followed symlinks. Record reads now require bounded regular files and matching opened inode identity through os.Root; writes use rooted atomic temp-file publication with the same size bound.
+- Full localreview race suite passed (10.594s) after rooted I/O changes; package vet passed. Focused receipt/archive regressions also run. Git-effect recovery orchestration and public API/UI wiring are still pending; receipt serialization alone is not a completed exactly-once operation.
+
+### Index-operation orchestration and replay
+
+- Stage/unstage now support a prepare callback carrying the resulting scratch-index digest before atomic publication. ExecuteIndexOperation persists that prepared result, applies the Git primitive, then marks completion; the same sequence wraps staged-tree commit preparation.
+- Completed requests return their original result without further Git writes. Prepared stage results are recovered only if the actual index matches; prepared commits are recovered only when present in the selected branch history. Uncertain states fail with a refresh requirement rather than replaying a write.
+- Temporary-repository regressions prove replay does not stage later working edits and lost commit confirmation recovers the original commit without rewriting a later descendant. The coordinator requires caller-owned runtime/task/repository locks; public authorization/transport/UI wiring remains pending.
+
+### Daemon index endpoints and owner-only forwarding
+
+- Added `index`, `stage`, `unstage`, `commit` daemon actions and relay command fields. Index reads create a HEAD-based working snapshot, return separate Git status/index identity, and protect capture against cleanup. Mutations execute only after existing task binding, GC, source and repository locks and use runtime-owned receipts.
+- Server forwarding validates bounded operation identities/files/messages and requires the runtime owner for all three Git writes (not merely issue read access). The cloud continues to relay transient results only.
+- Real temporary daemon scenario passed index-read → stage → reread → commit and checked Git's actual staged paths/content. Related daemon race tests passed (6.857s); daemon/handler vet passed.
+- The new DB authorization test initially omitted the production workspace middleware and failed on absent workspace context; fixed the fixture to include that middleware. Stage/unstage/commit nonowner cases then explicitly RUN/PASS against an isolated migrated database, which was dropped afterward.
+- Typed frontend schemas/API/IPC capability wiring and the Staged/Commit UI are still pending. No production release, local daemon restart or real user-index mutation was performed.
+
+### Typed index transport and capabilities
+
+- Added independent `local_review_index_supported` advertisements to server config and daemon health. Desktop and remote frontend paths check this capability for index actions rather than assuming paging support implies Git-write support.
+- Core schemas validate index status, selected file sets, reviewed index/head/branch identities, operation IDs and commit messages; commit replies must match requested parent/branch/index. API and shared platform helpers now transport index read and stage/unstage/commit actions, with existing cancellation restricted to reads.
+- Core schema tests failed before adding actions, then passed; new tests cover dedicated capability rejection before dispatch and selected-index/file-set preservation through API serialization. Views and desktop-node typechecks passed; server/CLI compilation ran.
+- No Staged/Commit UI is exposed yet, and running binaries/deployed images have not been updated for these capabilities. UI wiring and full authenticated end-to-end operation acceptance remain required.
+
+### Staged/Commit UI wiring
+
+- Added a separate collapsible Git-index panel to the MR dialog. It displays unstaged/staged groups, per-file stage/unstage actions, conflict/unsupported guards, source branch and explicit refresh. Each group initially renders 100 rows with load-more controls.
+- Commit requires a nonblank bounded message and a second confirmation naming the staged file count. Mutations carry the displayed version/index/head/branch; success refreshes index state and MR data. Pending mutations disable competing MR controls and block parent-dialog closure/collapsing the active index panel.
+- Added four-locale labels and a dedicated unsupported-index-capability error. No actual GUI interaction was performed, per user instruction.
+- Component/dialog/locale suites passed 169 tests after correcting the standalone auth-store fixture; views typecheck and targeted ESLint passed. The index component test asserts selected-file scope and no commit before confirmation.
+- Full authenticated index end-to-end, longer-lived index snapshot retention, uncached-large-file staging and broader final regression remain pending. Running daemon/deployed images are still older than this source UI.
+
+### Index retention, real relay scenario and local dev synchronization
+
+- Added independent minute-by-minute lease renewal for the staging snapshot, scoped to its HEAD-based target and resolved runtime. A failing-first timer test proves renewal while mounted and stopping after unmount; targeted index/dialog tests and views checks passed.
+- Extended the real JWT/PostgreSQL/HTTP/separate-runtime-process acceptance with index read → selected stage → commit → commit replay. All three scenarios explicitly passed under race detection: legacy 3.96s, paged 12.52s, index 6.31s (22.79s total). The isolated DB was dropped afterward.
+- User screenshot showed a new renderer sending index actions to an old main-process enum parser. Rebuilt/restarted the current repo's dev desktop with the existing remote API override. Its bundled CLI mismatch recovery replaced the idle old daemon; health now reports PID 32787 and both paging/index capability flags true. The checkout build identified b6f8b52; no commit/push was performed by this step.
+- Direct read-only index API call against the pictured LSIT-17 worktree returned HTTP 200 in 382ms with 0 staged and 0 unstaged files. Its MR branch-vs-production differences are separate from working changes. No user files were staged/committed; no GUI interaction or remote deployment was performed.
+- Uncached-large-file staging, broader final regression and remaining context/edge-case acceptance are still pending; this is not a whole-goal completion claim.
+
+### Left-side staging and staged-diff selection
+
+- User clarified that staging belongs beside left-side files and staged files need their own selectable area with unstage. Added sibling plus/minus controls (not nested inside file-selection buttons), a staged group, and shared mutation tracking with the Commit panel. Fully staged rows leave the ordinary list; partially staged rows remain in both contexts.
+- Added CaptureStaged using an isolated locked index copy and immutable Git tree/object contents. It never creates a commit/ref or writes the real index. Staged preview versions are distinct from working previews and cannot be used as normal MR approval versions. New-side content fallback resolves against the captured index tree.
+- Index replies can carry a staged preview version. Selecting a staged row fetches that version's diff rather than current working bytes; unstage uses the existing selected-path operation. Older endpoints lacking the preview identity show an upgrade error instead of endless loading.
+- Tests prove left-row staging does not hijack selection, staged diff excludes newer working bytes, real index remains unchanged by preview capture, staged-row preview uses the separate version ID, and the unstage control sends the correct path. Focused UI and daemon tests/typechecks passed; this new preview protocol has not been synchronized to running binaries yet.
+- The ordinary MR list remains the target-branch comparison, not a dedicated index-vs-working diff. Additional long-list/preview lease and full replay/UI regression remain to audit. No actual GUI operation or user Git mutation was performed.
+
+### Staged selection/retention follow-up
+
+- Strengthened the real daemon scenario to fetch the staged preview endpoint after changing the working file again; it returns the indexed bytes and still commits only those bytes. The scenario passed under race detection.
+- Added component regression showing a fully staged row appears only in the staged group, then returns to the ordinary list with staging re-enabled when unstage status arrives. Targeted file/index suites passed 14 tests and views typecheck passed.
+- The left-side controller now renews both working and staged snapshot leases, even if the lower Commit panel stays closed. It shares index mutation state with that panel. Staged rows render in explicit 100-row increments instead of all 10,000 possible entries at once.
+- No restart was performed while awaiting the user's answer to the restart question. Current source behavior and currently running binaries remain distinct.
+
+- Added a dedicated left-controller lease test. Partial fake timers initially failed to flush React Query's notification scheduling; using the repository's full fake-timer/act flush pattern proves both snapshot leases renew and stop after unmount. This was a test-clock fixture issue, not claimed as a production fix.
+
+### Combined regression and unstaged semantics
+
+- Combined views/entry tests passed 59, desktop tests passed 35, core tests passed 32. Full localreview and execenv race suites passed (13.636s and 48.397s).
+- Added an internal CaptureUnstaged path that freezes an index tree under the conventional index lock and compares working bytes against that tree. It is separate from both historical target-branch MR diffs and HEAD-to-index staged previews.
+- The new real-Git test proves a partial-stage scenario renders `staged version` → `working version`, not `HEAD before` → `working version`. The read-only preview marker prevents normal MR approval from using this index-relative snapshot.
+- This new unstaged snapshot is not yet wired into index replies and left-side selection. No running process restart or business Git action was performed.
+
+### Unstaged preview wiring
+
+- Index replies now include a separate unstaged preview identity. The left controller loads/renews working authorization, staged preview and unstaged preview versions independently; mutations continue to use the HEAD-based authorization snapshot.
+- Left-side files with unstaged changes use the index-to-working manifest instead of the historical MR manifest. Working files absent from the MR manifest are included; unknown per-file statistics are not displayed as invented zero counts.
+- Staged files continue to use HEAD-to-index previews; clean historical MR entries retain the user's target-branch comparison. Missing preview support returns an explicit upgrade error rather than falling back to the wrong diff source.
+- Tests cover a new working file absent from historical MR data and verify the requested preview identity. Focused component/daemon tests, views typecheck and targeted ESLint passed. Running binaries remain unchanged pending restart confirmation.
+
+### Recreated-path status regression
+
+- Real Git emits two porcelain entries when a tracked file is staged for deletion and recreated as untracked at the same path. A failing-first test reproduced duplicate IndexStatus rows, which can make left-side lookup lose one state.
+- Status parsing now merges that specific legitimate pair into one path with both staged and unstaged/untracked flags; arbitrary duplicate records still fail closed. Full localreview race suite passed.
+- This verifies status normalization only. Net working snapshot/statistics for the same delete/recreate edge still need dedicated end-to-end coverage before claiming that entire scenario complete. No runtime restart or user Git mutation occurred.
+
+### Recreated-path net comparison
+
+- The failing real-Git snapshot test confirmed that staged deletion plus recreated untracked content produced duplicate version paths. CaptureWorking now resolves this special case with a private base-tree index and Git's raw/numstat comparison, with command-producing filters disabled.
+- The private index never replaces the user's index and is removed after use. Changed recreated content becomes one modified file with correct counts; identical-to-base content contributes no invented diff.
+- Real temporary-repository tests cover review and stage of changed recreated content, plus restoring an identical recreated file to the index. Full localreview race suite and vet passed. No runtime restart or business-repository mutation was performed.
+
+### Filtered-list navigation regression
+
+- A failing component test reproduced Next staying on the same file after a fully staged row was filtered from the ordinary list and another metadata page loaded. The code used a filtered-list index against the unfiltered response array.
+- Next now finds the current file by path in the filtered loaded response before selecting its successor. Previous from the first ordinary file can cross back to the staged group's last file.
+- Focused file-browser regression passed 14 tests before the cross-group Previous adjustment; combined file/controller tests and views typecheck passed afterward. No process restart or Git mutation occurred.
+
+### Working-list rendering bounds
+
+- Added a failing-first 150-working-file component test: the old merged list rendered every row immediately. Rendering now starts at 100 working rows, exposes explicit load-more, and keeps a user-selected row visible. Working entries sort ahead of historical branch entries.
+- The metadata pagination counter is now explicitly labeled as branch differences, so it is not presented as the total number of additional working-only files.
+- File-browser tests passed 15 before the label change; file-browser/locale parity tests, typecheck and targeted ESLint passed afterward. No process restart or business Git operation occurred.
+
+## Current handoff boundary
+
+- Latest checks: server/CLI build passed; selected daemon index/review/recovery/read-cancellation race regressions passed (8.189s); shared views/entry suites passed 62 tests; desktop node/web and core typechecks passed.
+- Implemented source covers paged MR review, local/remote routing, owned runtime snapshots/cache/recovery, context-gap expansion, staging/unstaging/commit with receipts, selectable staged/unstaged previews and bounded file lists. Detailed tested boundaries remain in the chronological evidence above; these checks are not a claim of a complete manual UI pass.
+- User declined actual GUI operation, so none is requested or performed. The remaining operational synchronization requires confirmation to restart the actively used dev desktop/daemon; the assistant asked and has not received that confirmation. Do not infer it from automatic goal continuations.
+- No new commit, push, tag, remote deployment or image release is authorized by this synchronization gate. Keep goal completion unclaimed until the requested running-state handoff is resolved.
 
 ## Required behavior
 
