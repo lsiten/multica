@@ -2,5 +2,8 @@
 *.sh text eol=lf
 docker/entrypoint.sh text eol=lf
 
+# Vite must keep imported desktop CLI shebangs at the start of the module.
+apps/desktop/scripts/*.mjs text eol=lf
+
 # Default behavior
 * text=auto

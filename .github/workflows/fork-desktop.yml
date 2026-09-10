@@ -73,6 +73,7 @@ jobs:
       - name: Check desktop types and tests
         shell: bash
         run: |
+          node --test scripts/fork-desktop.test.mjs
           pnpm --filter @multica/desktop typecheck
           pnpm --filter @multica/desktop test
       - name: Verify package version matches release tag
@@ -80,6 +81,7 @@ jobs:
           RELEASE_TAG: ${{ needs.verify.outputs.tag }}
         run: node --input-type=module -e "import { strict as assert } from 'node:assert'; import { deriveVersion } from './apps/desktop/scripts/package.mjs'; assert.equal(deriveVersion(), process.env.RELEASE_TAG.slice(1));"
       - name: Package desktop installers
+        shell: bash
         working-directory: apps/desktop
         env:
           CSC_LINK: ${{ matrix.target == 'mac' && secrets.MAC_CSC_LINK || matrix.target == 'win' && secrets.WIN_CSC_LINK || '' }}
@@ -87,7 +89,12 @@ jobs:
           APPLE_ID: ${{ matrix.target == 'mac' && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.target == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.target == 'mac' && secrets.APPLE_TEAM_ID || '' }}
-        run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish never
+        run: |
+          if [[ -z "$CSC_LINK" ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          pnpm run package -- --${{ matrix.target }} --x64 --arm64 --publish never
       - name: Check installers and update metadata
         shell: bash
         env:
@@ -104,7 +111,17 @@ jobs:
           for arch in x64 arm64; do
             directory="apps/desktop/dist/${TARGET}-${arch}"
             for extension in "${extensions[@]}"; do
-              test -s "$directory/multica-desktop-${RELEASE_TAG#v}-${platform}-${arch}.${extension}"
+              package_arch="$arch"
+              case "$TARGET:$arch:$extension" in
+                linux:x64:deb) package_arch=amd64 ;;
+                linux:x64:*) package_arch=x86_64 ;;
+                linux:arm64:rpm) package_arch=aarch64 ;;
+              esac
+              artifact="$directory/multica-desktop-${RELEASE_TAG#v}-${platform}-${package_arch}.${extension}"
+              if [[ ! -s "$artifact" ]]; then
+                echo "::error::Missing installer: $artifact"
+                exit 1
+              fi
             done
             metadata=("$directory/"*.yml)
             test "${#metadata[@]}" -gt 0
