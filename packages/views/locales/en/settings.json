@@ -1448,7 +1448,8 @@
       "credential_kept": "The credential is stored encrypted. Saving with this field empty keeps the existing credential; typing a new value overwrites it.",
       "add": "Add server",
       "remove": "Remove this server",
-      "needs_turn": "At least one turn: or turns: URL is required to save."
+      "needs_turn": "At least one turn: or turns: URL is required to save.",
+      "urls_placeholder": "turn:turn.example.com:3478?transport=udp"
     },
     "save": "Save",
     "saved": "Mirror network settings saved",

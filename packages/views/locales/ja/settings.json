@@ -1441,7 +1441,8 @@
       "credential_kept": "認証情報は暗号化して保存されます。空欄のまま保存すると既存の値を維持し、新しい値を入力すると上書きします。",
       "add": "サーバーを追加",
       "remove": "このサーバーを削除",
-      "needs_turn": "保存には turn: または turns: URL が少なくとも1つ必要です。"
+      "needs_turn": "保存には turn: または turns: URL が少なくとも1つ必要です。",
+      "urls_placeholder": "turn:turn.example.com:3478?transport=udp"
     },
     "save": "保存",
     "saved": "ミラーネットワーク設定を保存しました",

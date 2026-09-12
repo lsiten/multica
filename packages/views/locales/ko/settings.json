@@ -1441,7 +1441,8 @@
       "credential_kept": "자격 증명은 암호화되어 저장됩니다. 비워둔 채 저장하면 기존 값이 유지되고 새 값을 입력하면 덮어씁니다.",
       "add": "서버 추가",
       "remove": "이 서버 제거",
-      "needs_turn": "저장하려면 turn: 또는 turns: URL이 하나 이상 필요합니다."
+      "needs_turn": "저장하려면 turn: 또는 turns: URL이 하나 이상 필요합니다.",
+      "urls_placeholder": "turn:turn.example.com:3478?transport=udp"
     },
     "save": "저장",
     "saved": "미러 네트워크 설정이 저장되었습니다",

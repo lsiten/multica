@@ -1441,7 +1441,8 @@
       "credential_kept": "凭据已加密保存。留空保存会保留现有凭据，输入新值则覆盖。",
       "add": "添加服务器",
       "remove": "移除该服务器",
-      "needs_turn": "至少需要一个 turn: 或 turns: URL 才能保存。"
+      "needs_turn": "至少需要一个 turn: 或 turns: URL 才能保存。",
+      "urls_placeholder": "turn:turn.example.com:3478?transport=udp"
     },
     "save": "保存",
     "saved": "镜像网络设置已保存",

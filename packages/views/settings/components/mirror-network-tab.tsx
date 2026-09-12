@@ -292,7 +292,9 @@ export function MirrorNetworkTab() {
                       className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-caption focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
                       value={draft.urls}
                       disabled={readOnly}
-                      placeholder={"turn:turn.example.com:3478?transport=udp"}
+                      placeholder={t(
+                        ($) => $.mirror_network.custom.urls_placeholder,
+                      )}
                       onChange={(event) =>
                         setDrafts((current) =>
                           current.map((item, itemIndex) =>
