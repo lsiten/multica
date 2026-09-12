@@ -38,11 +38,17 @@ spec:
               --static-auth-secret="${MULTICA_TURN_SECRET:-${JWT_SECRET}}"
               --min-port="${TURN_MIN_PORT}"
               --max-port="${TURN_MAX_PORT}"
+              --log-file=stdout
+              ${MULTICA_TURN_EXTERNAL_IP:+--external-ip="$MULTICA_TURN_EXTERNAL_IP"}
           env:
             - name: TURN_MIN_PORT
               value: {{ .Values.turn.service.relay.minPort | quote }}
             - name: TURN_MAX_PORT
               value: {{ .Values.turn.service.relay.maxPort | quote }}
+            {{- with .Values.turn.externalIP }}
+            - name: MULTICA_TURN_EXTERNAL_IP
+              value: {{ . | quote }}
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.existingSecret }}

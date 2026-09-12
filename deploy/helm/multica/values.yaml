@@ -18,7 +18,7 @@ images:
     tag: pg17
     pullPolicy: IfNotPresent
   turn:
-    repository: instrumentisto/coturn
+    repository: coturn/coturn
     tag: latest
     pullPolicy: IfNotPresent
 
@@ -89,6 +89,10 @@ turn:
   # allow ingress to 3478/tcp and 3478/udp. TURN cannot be proxied by the HTTP
   # Ingress because WebRTC requires UDP/TCP at this Service.
   publicHost: ""
+  # Public/Elastic IP coturn should advertise when the pod sees only the
+  # node's private address (typical EC2 + EIP). Leave empty when the public
+  # address is on the interface directly.
+  externalIP: ""
   credentialTTL: 1h
   service:
     type: LoadBalancer
