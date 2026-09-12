@@ -104,17 +104,37 @@ func KnownNetworkMode(mode string) bool {
 
 func NormalizeICEURL(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" {
+	schemeEnd := strings.Index(value, ":")
+	if schemeEnd <= 0 {
 		return "", fmt.Errorf("invalid ICE URL %q", raw)
 	}
-	switch parsed.Scheme {
+	scheme := strings.ToLower(value[:schemeEnd])
+	switch scheme {
 	case "stun", "turn", "turns":
 	default:
 		return "", fmt.Errorf("ICE URL %q must use stun, turn, or turns", raw)
 	}
-	if strings.ContainsAny(parsed.Hostname(), " /") {
-		return "", fmt.Errorf("invalid ICE URL host %q", parsed.Hostname())
+	authority := value[schemeEnd+1:]
+	// Strip a "//" authority prefix (allowed but redundant for stun/turn)
+	// and the transport query so the host:port can be validated through a
+	// http(s) URL. url.Parse treats stun:/turn: as opaque identifiers and
+	// leaves Host empty, so it cannot validate these schemes directly.
+	authority = strings.TrimPrefix(authority, "//")
+	hostPort := authority
+	if index := strings.IndexAny(hostPort, "?/#"); index >= 0 {
+		hostPort = hostPort[:index]
+	}
+	if hostPort == "" {
+		return "", fmt.Errorf("invalid ICE URL %q", raw)
+	}
+	// Parse the authority as an https URL purely for host/port validation.
+	parsed, err := url.Parse("https://" + hostPort)
+	if err != nil || parsed.Host == "" {
+		return "", fmt.Errorf("invalid ICE URL %q", raw)
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" || strings.ContainsAny(hostname, " /") {
+		return "", fmt.Errorf("invalid ICE URL host %q", hostname)
 	}
 	return value, nil
 }
