@@ -1191,6 +1191,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 	// turnDone is set before starting the reader goroutine so there is no
 	// race between the lifecycle goroutine writing and the reader reading.
 	turnDone := make(chan bool, 1) // true = aborted
+	var turnCompletionObserved atomic.Bool
 
 	c := &codexClient{
 		cfg:                    b.cfg,
@@ -1238,6 +1239,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 			trySendString(semanticActivityCh, description)
 		},
 		onTurnDone: func(aborted bool) {
+			turnCompletionObserved.Store(true)
 			select {
 			case turnDone <- aborted:
 			default:
@@ -1837,7 +1839,16 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 		// Codex writes token_count events to $CODEX_HOME/sessions/YYYY/MM/DD/*.jsonl;
 		// scan this backend's per-task CODEX_HOME, since sessions are isolated
 		// there rather than in the shared ~/.codex/sessions (MUL-4424).
-		if u.InputTokens == 0 && u.OutputTokens == 0 {
+		if u.InputTokens == 0 && u.OutputTokens == 0 &&
+			(finalStatus != "aborted" || turnCompletionObserved.Load()) {
+			// A forced cancellation without turn/completed has no authoritative
+			// terminal usage by definition. Do not search the ambient/global
+			// Codex history on the Result hot path in that case: when the daemon
+			// configuration omitted a task-local CODEX_HOME, the compatibility
+			// pass may inspect many unrelated rollout files and delay delivering
+			// the aborted result. A native interrupt that did reach completion
+			// still falls through to the rollout scanner for older app-servers
+			// that may write usage only to disk.
 			taskCodexHome := strings.TrimSpace(b.cfg.Env["CODEX_HOME"])
 			if scanned := scanCodexSessionUsage(startTime, taskCodexHome, threadID, resumed); scanned != nil {
 				u = scanned.usage
