@@ -114,10 +114,10 @@
     "read_only": "Read-only",
     "open_mirror": "Open mirror",
     "mirror_reason": {
-      "offline": "The runtime is offline.",
+      "offline": "This device is offline.",
       "linux": "Screen mirroring is not supported on Linux.",
       "platform": "Screen mirroring is not supported on this platform.",
-      "old_daemon": "Update the Multica daemon on this runtime to use screen mirroring."
+      "old_daemon": "Update the Multica daemon on this device to use screen mirroring."
     },
     "delete_button": "Delete runtime",
     "last_seen": "last seen {{when}}",
@@ -205,7 +205,7 @@
     "description": "A direct view of the runtime host. Screen pixels never pass through the Multica API.",
     "frame_label": "Runtime screen",
     "frame_alt": "Live screen from {{runtime}}",
-    "back_to_runtime": "Back to runtime",
+    "back_to_runtime": "Back to device",
     "try_again": "Try again",
     "pin_tooltip": "Pin to sidebar",
     "unpin_tooltip": "Unpin from sidebar",
@@ -216,7 +216,7 @@
       "negotiating": { "title": "Negotiating connection", "description": "The viewer is establishing a private connection with the runtime daemon.", "status": "Negotiating WebRTC connection." },
       "streaming": { "title": "Live runtime screen", "description": "The runtime is sending complete frames to this viewer.", "status": "Streaming." },
       "offline": { "title": "Runtime offline", "description": "The daemon is unavailable, so the mirror cannot start.", "status": "Waiting for the runtime to come online." },
-      "old_daemon": { "title": "Mirror unsupported by this daemon", "description": "Update the Multica daemon on this runtime to use screen mirroring.", "status": "The installed daemon does not support mirroring." },
+      "old_daemon": { "title": "Mirror unsupported by this daemon", "description": "Update the Multica daemon on this device to use screen mirroring.", "status": "The installed daemon does not support mirroring." },
       "linux_unsupported": { "title": "Screen mirroring is not supported on Linux", "description": "The first mirror release supports macOS and Windows primary displays only.", "status": "Linux screen capture is not available." },
       "unsupported_platform": { "title": "Mirror unavailable on this platform", "description": "This runtime platform cannot provide a primary display for mirroring.", "status": "This platform does not support mirroring." },
       "permission_denied": { "title": "Screen recording permission denied", "description": "Grant Screen Recording permission to the Multica daemon on the runtime host, then try again.", "status": "Screen capture permission is required." },

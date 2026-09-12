@@ -110,10 +110,10 @@
     "read_only": "只读",
     "open_mirror": "打开镜像",
     "mirror_reason": {
-      "offline": "运行时当前离线。",
+      "offline": "设备当前离线。",
       "linux": "Linux 暂不支持屏幕镜像。",
       "platform": "当前平台暂不支持屏幕镜像。",
-      "old_daemon": "请更新该运行时上的 Multica 守护进程后使用屏幕镜像。"
+      "old_daemon": "请更新该设备上的 Multica 守护进程后使用屏幕镜像。"
     },
     "delete_button": "删除运行时",
     "last_seen": "最后活跃 {{when}}",
@@ -190,14 +190,14 @@
   },
   "mirror": {
     "title": "运行时镜像", "eyebrow": "运行时镜像", "connection_label": "连接",
-    "description": "直接查看运行时主机。屏幕像素不会经过 Multica API。", "frame_label": "运行时屏幕", "frame_alt": "{{runtime}} 的实时屏幕", "back_to_runtime": "返回运行时", "try_again": "重试", "pin_tooltip": "固定到侧边栏", "unpin_tooltip": "从侧边栏取消固定", "nat_warning": "尚未配置 TURN 服务器。当观看端和运行时处于不同的限制性网络时，镜像可能无法连接。",
+    "description": "直接查看运行时主机。屏幕像素不会经过 Multica API。", "frame_label": "运行时屏幕", "frame_alt": "{{runtime}} 的实时屏幕", "back_to_runtime": "返回设备", "try_again": "重试", "pin_tooltip": "固定到侧边栏", "unpin_tooltip": "从侧边栏取消固定", "nat_warning": "尚未配置 TURN 服务器。当观看端和运行时处于不同的限制性网络时，镜像可能无法连接。",
     "states": {
       "loading": { "title": "正在加载运行时", "description": "正在检查运行时并准备镜像连接。", "status": "加载中。" },
       "preparing": { "title": "正在准备连接", "description": "观看端正在准备安全的镜像会话。", "status": "准备中。" },
       "negotiating": { "title": "正在协商连接", "description": "观看端正在与运行时守护进程建立私有连接。", "status": "正在协商 WebRTC 连接。" },
       "streaming": { "title": "运行时实时屏幕", "description": "运行时正在向此观看端发送完整画面帧。", "status": "正在镜像。" },
       "offline": { "title": "运行时离线", "description": "守护进程当前不可用，镜像无法启动。", "status": "等待运行时恢复在线。" },
-      "old_daemon": { "title": "当前守护进程不支持镜像", "description": "请更新该运行时上的 Multica 守护进程后使用屏幕镜像。", "status": "已安装的守护进程不支持镜像。" },
+      "old_daemon": { "title": "当前守护进程不支持镜像", "description": "请更新该设备上的 Multica 守护进程后使用屏幕镜像。", "status": "已安装的守护进程不支持镜像。" },
       "linux_unsupported": { "title": "Linux 暂不支持屏幕镜像", "description": "首个镜像版本仅支持 macOS 和 Windows 的主显示器。", "status": "当前不支持 Linux 屏幕采集。" },
       "unsupported_platform": { "title": "当前平台不支持镜像", "description": "该运行时平台无法提供可镜像的主显示器。", "status": "当前平台不支持镜像。" },
       "permission_denied": { "title": "屏幕录制权限被拒绝", "description": "请在运行时主机上向 Multica 守护进程授予屏幕录制权限，然后重试。", "status": "需要屏幕采集权限。" },

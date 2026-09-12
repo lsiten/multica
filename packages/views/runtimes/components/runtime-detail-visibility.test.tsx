@@ -214,7 +214,7 @@ describe("RuntimeDetail visibility section", () => {
     expect(screen.getByText("Public")).toBeInTheDocument();
   });
 
-  it("explains when screen mirroring is unavailable on an unknown platform", () => {
+  it("does not duplicate the device-level mirror action inside nested runtime settings", () => {
     renderDetail(makeRuntime({
       daemon_id: "daemon-1",
       status: "online",
@@ -222,8 +222,11 @@ describe("RuntimeDetail visibility section", () => {
     }));
 
     expect(
-      screen.getByText("Screen mirroring is not supported on this platform."),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Open mirror" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Screen mirroring is not supported on this platform."),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps daemon CLI version details without rendering update controls", () => {
