@@ -156,6 +156,10 @@ type Config struct {
 	MirrorICE mirror.ICEPlan
 	// MirrorBuiltinTURN describes the coturn service bundled with the deployment.
 	MirrorBuiltinTURN mirror.BuiltinTURNConfig
+	// MirrorCloudflareTURN mints short-lived credentials for Cloudflare Realtime
+	// TURN. When configured it is the default relay and takes precedence over
+	// the bundled coturn service; nil disables it.
+	MirrorCloudflareTURN *mirror.CloudflareTURNProvider
 	// MirrorNetworkSecretBox encrypts workspace-provided custom TURN credentials.
 	MirrorNetworkSecretBox *secretbox.Box
 }
@@ -414,8 +418,9 @@ type Handler struct {
 	// trigger is a no-op) when GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY are unset,
 	// so the feature degrades cleanly on deployments without a private key.
 	// Wired in cmd/server/router.go after New.
-	PRRefresh *ghsnapshot.Manager
-	cfg       Config
+	PRRefresh               *ghsnapshot.Manager
+	cfg                     Config
+	cloudflareTURNProviders *cloudflareProviderCache
 }
 
 func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
@@ -514,8 +519,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 			BaseURL: cfg.CloudURL,
 			Timeout: cfg.CloudTimeout,
 		}),
-		LLM: llmClient,
-		cfg: cfg,
+		LLM:                     llmClient,
+		cfg:                     cfg,
+		cloudflareTURNProviders: newCloudflareProviderCache(24 * time.Hour),
 	}
 	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
 	// The default passthrough scheduler reports sweeper-race recoveries so the

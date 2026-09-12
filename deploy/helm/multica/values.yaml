@@ -33,7 +33,8 @@ images:
 #     --from-literal=GOOGLE_CLIENT_SECRET="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
 #     --from-literal=MULTICA_DEV_VERIFICATION_CODE="" \
-#     --from-literal=MULTICA_TURN_SECRET=""
+#     --from-literal=MULTICA_TURN_SECRET="" \
+#     --from-literal=MULTICA_CLOUDFLARE_TURN_API_TOKEN=""
 #
 # External postgres (postgres.external.enabled=true):
 #   Replace POSTGRES_PASSWORD with DATABASE_URL pointing at your external cluster.
@@ -97,6 +98,13 @@ turn:
   # address is on the interface directly.
   externalIP: ""
   credentialTTL: 1h
+  # Cloudflare Realtime TURN is a managed relay: no coturn pod and no public
+  # UDP range required. Set keyId here and put MULTICA_CLOUDFLARE_TURN_API_TOKEN
+  # in the existingSecret. Workspaces can also configure their own key in
+  # Settings -> Screen mirroring without any values here.
+  cloudflare:
+    keyId: ""
+    credentialTTL: 24h
   service:
     type: LoadBalancer
     port: 3478

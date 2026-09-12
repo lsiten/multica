@@ -22,6 +22,12 @@ function settings(over: Partial<MirrorNetworkSettings> = {}): MirrorNetworkSetti
     can_manage: true,
     turn_configured: true,
     mode: "builtin",
+    cloudflare: {
+      enabled: false,
+      available: false,
+      healthy: false,
+      has_api_token: false,
+    },
     builtin: {
       enabled: true,
       available: true,

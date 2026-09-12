@@ -1425,8 +1425,8 @@
     },
     "modes": {
       "builtin_label": "내장 TURN(권장)",
-      "builtin_description": "이 Multica 배포에 번들된 coturn 릴레이이며 단기 자격 증명이 자동으로 발급됩니다.",
-      "builtin_unavailable_description": "이 배포에서는 내장 TURN 서비스가 활성화되지 않았습니다. 관리자에게 MULTICA_TURN_ENABLED 및 공개 호스트 이름 설정을 요청하거나 사용자 정의 서버를 사용하세요.",
+      "builtin_description": "자격 증명이 자동 발급되는 Cloudflare Realtime TURN 또는 이 배포에 포함된 coturn 릴레이를 사용합니다.",
+      "builtin_unavailable_description": "내장 릴레이가 구성되지 않았습니다. 아래에서 Cloudflare Realtime TURN 키를 추가하거나 관리자에게 서버 구성을 요청하거나 사용자 정의 서버를 사용하세요.",
       "custom_label": "사용자 정의 서버",
       "custom_description": "자체 STUN/TURN 서버를 사용합니다. turn: 또는 turns: URL이 하나 이상 필요합니다.",
       "disabled_label": "비활성화",
@@ -1449,6 +1449,22 @@
     "errors": {
       "requires_turn": "사용자 정의 모드에는 turn: 또는 turns: URL을 가진 서버가 하나 이상 필요합니다",
       "save": "저장에 실패했습니다. 나중에 다시 시도해 주세요"
+    },
+    "cloudflare": {
+      "status_label": "Cloudflare TURN",
+      "status_healthy": "Cloudflare Realtime TURN이 미러 트래픽을 중계하고 있으며 자격 증명이 자동 갱신됩니다.",
+      "status_pending": "Cloudflare TURN 키가 저장되었으며 자격 증명을 생성 중입니다.",
+      "status_unset": "Cloudflare TURN 키가 구성되지 않았습니다",
+      "key_id_label": "키 …{{id}}",
+      "deployment_key": "서버 구성 키",
+      "editor_description": "Cloudflare Realtime TURN(월 1000 GB 무료)을 사용합니다. Cloudflare 대시보드(Realtime → TURN)에서 TURN 키를 만든 뒤 TURN 키 ID와 API 토큰을 아래에 붙여넣으세요. Multica가 단기 자격 증명을 자동으로 발급합니다. API 토큰은 암호화 저장되며 브라우저로 전송되지 않습니다.",
+      "key_id": "TURN 키 ID",
+      "key_id_placeholder": "32자 키 ID",
+      "api_token": "API 토큰",
+      "api_token_placeholder": "64자 API 토큰",
+      "token_saved": "저장됨 — 비워두면 유지",
+      "remove": "Cloudflare 키 제거",
+      "removed": "Cloudflare TURN 키가 제거되었습니다"
     }
   }
 }

@@ -1425,8 +1425,8 @@
     },
     "modes": {
       "builtin_label": "内置 TURN（推荐）",
-      "builtin_description": "由当前 Multica 部署提供的 coturn 中继，自动签发短期凭据。",
-      "builtin_unavailable_description": "此部署尚未启用内置 TURN 服务，请联系管理员设置 MULTICA_TURN_ENABLED 与公网主机名，或改用自定义服务器。",
+      "builtin_description": "优先使用 Cloudflare Realtime TURN（凭据自动生成），或本部署自带的 coturn 中继。",
+      "builtin_unavailable_description": "尚未配置内置中继。可在下方填写 Cloudflare Realtime TURN 密钥、请管理员在服务器端配置，或使用自定义服务器。",
       "custom_label": "自定义服务器",
       "custom_description": "使用你自己的 STUN/TURN 服务器。至少需要包含一个 turn: 或 turns: 地址。",
       "disabled_label": "关闭",
@@ -1449,6 +1449,22 @@
     "errors": {
       "requires_turn": "自定义模式至少需要一个包含 turn: 或 turns: URL 的服务器",
       "save": "保存失败，请稍后重试"
+    },
+    "cloudflare": {
+      "status_label": "Cloudflare TURN",
+      "status_healthy": "Cloudflare Realtime TURN 正在中继镜像流量，凭据自动轮换。",
+      "status_pending": "已保存 Cloudflare TURN 密钥，正在生成凭据。",
+      "status_unset": "未配置 Cloudflare TURN 密钥",
+      "key_id_label": "密钥 …{{id}}",
+      "deployment_key": "服务器配置的密钥",
+      "editor_description": "使用 Cloudflare Realtime TURN（每月免费 1000 GB）。在 Cloudflare 控制台（Realtime → TURN）创建 TURN 密钥，把 TURN 密钥 ID 和 API 令牌粘贴到下面。Multica 会自动生成短期凭据；API 令牌加密存储，绝不会下发到浏览器。",
+      "key_id": "TURN 密钥 ID",
+      "key_id_placeholder": "32 位密钥 ID",
+      "api_token": "API 令牌",
+      "api_token_placeholder": "64 位 API 令牌",
+      "token_saved": "已保存——留空则保持不变",
+      "remove": "移除 Cloudflare 密钥",
+      "removed": "已移除 Cloudflare TURN 密钥"
     }
   }
 }

@@ -1432,8 +1432,8 @@
     },
     "modes": {
       "builtin_label": "Built-in TURN (recommended)",
-      "builtin_description": "The coturn relay bundled with this Multica deployment, with automatically minted short-lived credentials.",
-      "builtin_unavailable_description": "The built-in TURN service is not enabled for this deployment. Ask an administrator to set MULTICA_TURN_ENABLED and a public hostname, or use custom servers.",
+      "builtin_description": "Cloudflare Realtime TURN with credentials minted automatically, or the coturn relay bundled with this deployment.",
+      "builtin_unavailable_description": "No built-in relay is configured. Add a Cloudflare Realtime TURN key below, ask an administrator to set it server-side, or use custom servers.",
       "custom_label": "Custom servers",
       "custom_description": "Use your own STUN/TURN servers. At least one turn: or turns: URL is required.",
       "disabled_label": "Disabled",
@@ -1456,6 +1456,22 @@
     "errors": {
       "requires_turn": "Custom mode requires at least one server with a turn: or turns: URL",
       "save": "Save failed, please try again later"
+    },
+    "cloudflare": {
+      "status_label": "Cloudflare TURN",
+      "status_healthy": "Cloudflare Realtime TURN is relaying mirror traffic with auto-rotated credentials.",
+      "status_pending": "Cloudflare TURN key saved; credentials are being minted.",
+      "status_unset": "No Cloudflare TURN key configured",
+      "key_id_label": "Key …{{id}}",
+      "deployment_key": "Server-configured key",
+      "editor_description": "Use Cloudflare Realtime TURN (free 1000 GB/month). Create a TURN key in the Cloudflare dashboard (Realtime → TURN) and paste the TURN key ID and API token below. Multica mints short-lived credentials automatically; the API token is stored encrypted and never sent to browsers.",
+      "key_id": "TURN key ID",
+      "key_id_placeholder": "32-character key ID",
+      "api_token": "API token",
+      "api_token_placeholder": "64-character API token",
+      "token_saved": "Saved — leave empty to keep",
+      "remove": "Remove Cloudflare key",
+      "removed": "Cloudflare TURN key removed"
     }
   }
 }

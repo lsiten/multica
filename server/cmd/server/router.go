@@ -439,6 +439,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		ServerVersion:            normalizeServerVersion(version),
 		MirrorICE:                handler.LoadMirrorICEPlanFromEnv(),
 		MirrorBuiltinTURN:        loadBuiltinTURNConfig(),
+		MirrorCloudflareTURN:     newCloudflareTURNProviderFromEnv(),
 		MirrorNetworkSecretBox:   loadMirrorNetworkSecretBox(),
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)

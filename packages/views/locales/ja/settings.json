@@ -1425,8 +1425,8 @@
     },
     "modes": {
       "builtin_label": "内蔵 TURN（推奨）",
-      "builtin_description": "この Multica デプロイに同梱された coturn リレーで、短期認証情報が自動発行されます。",
-      "builtin_unavailable_description": "このデプロイでは内蔵 TURN サービスが有効になっていません。管理者に MULTICA_TURN_ENABLED と公開ホスト名の設定を依頼するか、カスタムサーバーを使用してください。",
+      "builtin_description": "認証情報を自動発行する Cloudflare Realtime TURN、またはこのデプロイに同梱の coturn リレーを使用します。",
+      "builtin_unavailable_description": "内蔵リレーが構成されていません。下で Cloudflare Realtime TURN キーを追加するか、管理者によるサーバー設定、またはカスタムサーバーを使用してください。",
       "custom_label": "カスタムサーバー",
       "custom_description": "独自の STUN/TURN サーバーを使用します。turn: または turns: URL が少なくとも1つ必要です。",
       "disabled_label": "無効",
@@ -1449,6 +1449,22 @@
     "errors": {
       "requires_turn": "カスタムモードには turn: または turns: URL を持つサーバーが少なくとも1つ必要です",
       "save": "保存に失敗しました。後でもう一度お試しください"
+    },
+    "cloudflare": {
+      "status_label": "Cloudflare TURN",
+      "status_healthy": "Cloudflare Realtime TURN がミラー通信を中継中。認証情報は自動ローテーションされます。",
+      "status_pending": "Cloudflare TURN キーを保存しました。認証情報を生成中です。",
+      "status_unset": "Cloudflare TURN キーが未構成です",
+      "key_id_label": "キー …{{id}}",
+      "deployment_key": "サーバー構成のキー",
+      "editor_description": "Cloudflare Realtime TURN（月間 1000 GB 無料）を使用します。Cloudflare ダッシュボード（Realtime → TURN）で TURN キーを作成し、TURN キー ID と API トークンを貼り付けてください。Multica が短期認証情報を自動発行します。API トークンは暗号化保存され、ブラウザには送信されません。",
+      "key_id": "TURN キー ID",
+      "key_id_placeholder": "32 文字のキー ID",
+      "api_token": "API トークン",
+      "api_token_placeholder": "64 文字の API トークン",
+      "token_saved": "保存済み — 空欄で維持",
+      "remove": "Cloudflare キーを削除",
+      "removed": "Cloudflare TURN キーを削除しました"
     }
   }
 }

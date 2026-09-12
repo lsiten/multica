@@ -141,12 +141,27 @@ export const BuiltinMirrorNetworkSchema = z.object({
   credential_ttl_seconds: z.number().int().positive().optional(),
 }).loose();
 
+export const CloudflareMirrorNetworkSchema = z.object({
+  enabled: z.boolean().default(false),
+  available: z.boolean().default(false),
+  healthy: z.boolean().default(false),
+  key_id: z.string().optional(),
+  has_api_token: z.boolean().default(false),
+  credential_ttl_seconds: z.number().int().positive().optional(),
+}).loose();
+
 export const MirrorNetworkSettingsSchema = z.object({
   source: z.string().default("builtin_unavailable"),
   locked: z.boolean().default(false),
   can_manage: z.boolean().default(false),
   turn_configured: z.boolean().default(false),
   mode: z.enum(["builtin", "custom", "disabled"]).default("builtin"),
+  cloudflare: CloudflareMirrorNetworkSchema.default({
+    enabled: false,
+    available: false,
+    healthy: false,
+    has_api_token: false,
+  }),
   builtin: BuiltinMirrorNetworkSchema.default({
     enabled: false,
     available: false,
@@ -166,6 +181,12 @@ export const EMPTY_MIRROR_NETWORK_SETTINGS: MirrorNetworkSettings = {
   can_manage: false,
   turn_configured: false,
   mode: "builtin",
+  cloudflare: {
+    enabled: false,
+    available: false,
+    healthy: false,
+    has_api_token: false,
+  },
   builtin: { enabled: false, available: false },
   custom: [],
 };

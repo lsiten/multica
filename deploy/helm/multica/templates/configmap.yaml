@@ -25,6 +25,8 @@ data:
   MULTICA_TURN_PUBLIC_HOST: {{ .Values.turn.publicHost | quote }}
   MULTICA_TURN_PORT: {{ .Values.turn.service.port | quote }}
   MULTICA_TURN_CREDENTIAL_TTL: {{ .Values.turn.credentialTTL | quote }}
+  MULTICA_CLOUDFLARE_TURN_KEY_ID: {{ .Values.turn.cloudflare.keyId | quote }}
+  MULTICA_CLOUDFLARE_TURN_TTL: {{ .Values.turn.cloudflare.credentialTTL | quote }}
   MULTICA_CLOUD_URL: {{ .Values.backend.config.cloud.url | quote }}
   GOOGLE_CLIENT_ID: {{ .Values.backend.config.googleClientId | quote }}
   GOOGLE_REDIRECT_URI: {{ .Values.backend.config.googleRedirectUri | quote }}

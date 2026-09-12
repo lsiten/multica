@@ -14,9 +14,17 @@ type mirrorNetworkServerRequest struct {
 	Credential *string         `json:"credential"`
 }
 
+type updateMirrorCloudflareRequest struct {
+	KeyID    *string `json:"key_id"`
+	APIToken *string `json:"api_token"`
+	// Remove wipes the stored workspace key.
+	Remove bool `json:"remove"`
+}
+
 type updateMirrorNetworkRequest struct {
-	Mode    string                       `json:"mode"`
-	Servers []mirrorNetworkServerRequest `json:"servers"`
+	Mode       string                         `json:"mode"`
+	Servers    []mirrorNetworkServerRequest   `json:"servers"`
+	Cloudflare *updateMirrorCloudflareRequest `json:"cloudflare,omitempty"`
 }
 
 func (h *Handler) normalizeMirrorNetworkRequest(req updateMirrorNetworkRequest, current mirror.NetworkSettings) (mirror.NetworkSettings, error) {
@@ -25,6 +33,17 @@ func (h *Handler) normalizeMirrorNetworkRequest(req updateMirrorNetworkRequest, 
 		return mirror.NetworkSettings{}, errors.New("mode must be builtin, custom, or disabled")
 	}
 	next := mirror.NetworkSettings{Mode: mode, Servers: []mirror.StoredICEServer{}}
+	if req.Cloudflare != nil {
+		cloudflare, err := h.normalizeCloudflareRequest(req.Cloudflare, current.Cloudflare)
+		if err != nil {
+			return mirror.NetworkSettings{}, err
+		}
+		next.Cloudflare = cloudflare
+	} else if current.Cloudflare != nil {
+		// Keep a configured key when saving any other change so editing
+		// custom servers or switching modes does not wipe it.
+		next.Cloudflare = current.Cloudflare
+	}
 	if mode != mirror.NetworkModeCustom {
 		return next, nil
 	}
@@ -104,4 +123,43 @@ func normalizeMirrorNetworkURLs(values []string) ([]string, error) {
 
 func storedServerKey(server mirror.StoredICEServer) string {
 	return strings.Join(server.URLs, "\n") + "\x00" + server.Username
+}
+
+func (h *Handler) normalizeCloudflareRequest(req *updateMirrorCloudflareRequest, current *mirror.StoredCloudflareTURN) (*mirror.StoredCloudflareTURN, error) {
+	if req.Remove {
+		return nil, nil
+	}
+	keyID := ""
+	if req.KeyID != nil {
+		keyID = strings.TrimSpace(*req.KeyID)
+	} else if current != nil {
+		keyID = current.KeyID
+	}
+
+	tokenProvided := req.APIToken != nil && strings.TrimSpace(*req.APIToken) != ""
+	sealedToken := ""
+	if current != nil {
+		sealedToken = current.APITokenEncrypted
+	}
+	if tokenProvided {
+		if h.cfg.MirrorNetworkSecretBox == nil {
+			return nil, errors.New("Cloudflare TURN credentials require the server encryption key (JWT_SECRET)")
+		}
+		sealed, err := h.cfg.MirrorNetworkSecretBox.Seal([]byte(strings.TrimSpace(*req.APIToken)))
+		if err != nil {
+			return nil, errors.New("failed to encrypt Cloudflare TURN API token")
+		}
+		sealedToken = encodeSecret(sealed)
+	}
+
+	if keyID == "" && sealedToken == "" {
+		return nil, nil
+	}
+	if keyID == "" || sealedToken == "" {
+		return nil, errors.New("Cloudflare TURN requires both the TURN key ID and API token")
+	}
+	if len(keyID) > 128 {
+		return nil, errors.New("invalid Cloudflare TURN key ID")
+	}
+	return &mirror.StoredCloudflareTURN{KeyID: keyID, APITokenEncrypted: sealedToken}, nil
 }
