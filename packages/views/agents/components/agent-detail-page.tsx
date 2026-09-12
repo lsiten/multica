@@ -37,7 +37,11 @@ import {
   memberListOptions,
   workspaceKeys,
 } from "@multica/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
+import {
+  isRuntimeUsableForUser,
+  runtimeDisplayLabel,
+  runtimeListOptions,
+} from "@multica/core/runtimes";
 import { useAgentPermissions } from "@multica/core/permissions";
 import { Button } from "@multica/ui/components/ui/button";
 import { CapabilityBanner } from "@multica/ui/components/common/capability-banner";
@@ -302,6 +306,9 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   const runtime = runtimeBound
     ? runtimes.find((r) => r.id === agent.runtime_id) ?? null
     : null;
+  const canReadRuntime = runtime
+    ? isRuntimeUsableForUser(runtime, currentUser?.id ?? null)
+    : false;
   const owner = agent.owner_id
     ? members.find((m) => m.user_id === agent.owner_id) ?? null
     : null;
@@ -354,6 +361,11 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         onAssign={handleAssign}
         onArchive={
           agent.system_key ? undefined : () => setConfirmArchive(true)
+        }
+        mirrorHref={
+          canReadRuntime && runtime
+            ? paths.runtimeMirror(runtime.id)
+            : undefined
         }
       />
 
@@ -482,6 +494,7 @@ function DetailHeader({
   onDm,
   onAssign,
   onArchive,
+  mirrorHref,
 }: {
   agent: Agent;
   runtime: AgentRuntime | null;
@@ -498,6 +511,7 @@ function DetailHeader({
   /** Absent for Multica's built-in agents, which the server refuses to
    *  archive — the menu hides the action rather than offering a failure. */
   onArchive?: () => void;
+  mirrorHref?: string;
 }) {
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
@@ -583,6 +597,17 @@ function DetailHeader({
               <Button type="button" size="sm" onClick={onAssign}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 {t(($) => $.detail.assign_work)}
+              </Button>
+            )}
+            {mirrorHref && (
+              <Button
+                variant="outline"
+                size="sm"
+                render={<AppLink href={mirrorHref} />}
+                nativeButton={false}
+              >
+                <Server className="h-4 w-4" aria-hidden="true" />
+                {t(($) => $.detail.open_runtime_mirror)}
               </Button>
             )}
             {!isArchived && canArchive && hasMoreActions ? (

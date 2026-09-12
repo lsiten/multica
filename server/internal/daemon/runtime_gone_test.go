@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/pkg/agent"
 )
 
@@ -32,6 +33,7 @@ func freshDaemon(serverURL string) *Daemon {
 		runtimeGoneInflight:       make(map[string]struct{}),
 		reregisterNextAttempt:     make(map[string]time.Time),
 		reregisterLastCompletedAt: make(map[string]time.Time),
+		runtimeMirrors:            make(map[string]*mirror.RuntimeMirror),
 	}
 }
 
@@ -86,6 +88,65 @@ func TestRemoveStaleRuntime_PrunesAllLocalState(t *testing.T) {
 	}
 	if _, ok := d.wsHBLastAck["rt-2"]; ok {
 		t.Fatalf("wsHBLastAck still contains rt-2")
+	}
+}
+
+func TestRemoveStaleRuntime_ClosesAndDetachesMirror(t *testing.T) {
+	t.Parallel()
+
+	d := freshDaemon("")
+	d.workspaces["ws-1"] = &workspaceState{workspaceID: "ws-1", runtimeIDs: []string{"rt-1"}}
+	d.runtimeIndex["rt-1"] = Runtime{ID: "rt-1"}
+	runtimeMirror := mirror.NewRuntimeMirror(mirror.NativeCapturer{}, time.Hour)
+	d.runtimeMirrors["rt-1"] = runtimeMirror
+
+	_, removed := d.removeStaleRuntime("rt-1")
+	if !removed {
+		t.Fatal("removeStaleRuntime: removed=false, want true")
+	}
+	if _, ok := d.runtimeMirrors["rt-1"]; ok {
+		t.Fatal("runtime mirror was not detached")
+	}
+
+	_, err := runtimeMirror.Answer(context.Background(), "viewer-1", mirror.SessionDescription{
+		Type: "offer",
+		SDP:  "v=0\r\n",
+	}, mirror.ICEConfig{})
+	if !errors.Is(err, mirror.ErrMirrorClosed) {
+		t.Fatalf("Answer after runtime removal error = %v, want %v", err, mirror.ErrMirrorClosed)
+	}
+}
+
+func TestApplyRegisterResponseInPlace_ClosesDroppedRuntimeMirror(t *testing.T) {
+	t.Parallel()
+
+	d := freshDaemon("")
+	d.workspaces["ws-1"] = &workspaceState{workspaceID: "ws-1", runtimeIDs: []string{"rt-old"}}
+	d.runtimeIndex["rt-old"] = Runtime{ID: "rt-old"}
+	runtimeMirror := mirror.NewRuntimeMirror(mirror.NativeCapturer{}, time.Hour)
+	d.runtimeMirrors["rt-old"] = runtimeMirror
+
+	newIDs, droppedIDs, ok := d.applyRegisterResponseInPlace("ws-1", &RegisterResponse{
+		Runtimes: []Runtime{{ID: "rt-new"}},
+	}, "", nil)
+	if !ok {
+		t.Fatal("applyRegisterResponseInPlace: ok=false, want true")
+	}
+	if len(newIDs) != 1 || newIDs[0] != "rt-new" {
+		t.Fatalf("newIDs = %v, want [rt-new]", newIDs)
+	}
+	if len(droppedIDs) != 1 || droppedIDs[0] != "rt-old" {
+		t.Fatalf("droppedIDs = %v, want [rt-old]", droppedIDs)
+	}
+	if _, exists := d.runtimeMirrors["rt-old"]; exists {
+		t.Fatal("dropped runtime mirror was not detached")
+	}
+	_, err := runtimeMirror.Answer(context.Background(), "viewer-1", mirror.SessionDescription{
+		Type: "offer",
+		SDP:  "v=0\r\n",
+	}, mirror.ICEConfig{})
+	if !errors.Is(err, mirror.ErrMirrorClosed) {
+		t.Fatalf("Answer after runtime drift error = %v, want %v", err, mirror.ErrMirrorClosed)
 	}
 }
 

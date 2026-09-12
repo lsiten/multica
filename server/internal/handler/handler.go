@@ -36,6 +36,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/notificationbot"
 	"github.com/multica-ai/multica/server/internal/realtime"
 	"github.com/multica-ai/multica/server/internal/seatcapacity"
@@ -150,6 +151,9 @@ type Config struct {
 	// Surfaced through /api/config so self-hosted operators can confirm which
 	// server build is deployed. Empty in dev builds.
 	ServerVersion string
+	// MirrorICE supplies deployment-configured STUN/TURN servers for screen
+	// mirror peer connections.
+	MirrorICE mirror.ICEPlan
 }
 
 type cloudRuntimeProxy interface {
@@ -199,6 +203,8 @@ type Handler struct {
 	TxStarter              txStarter
 	Hub                    *realtime.Hub
 	DaemonHub              *daemonws.Hub
+	MirrorSessions         *mirror.SessionStore
+	MirrorViewers          *mirror.ViewerTracker
 	DaemonProfileRefresh   RuntimeProfileRefreshNotifier
 	DaemonWorkspaceRefresh WorkspaceSetRefreshNotifier
 	DaemonRuntimeGone      RuntimeGoneNotifier
@@ -475,6 +481,8 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		TxStarter:                    txStarter,
 		Hub:                          hub,
 		DaemonHub:                    daemonHub,
+		MirrorSessions:               mirror.NewSessionStore(mirror.SessionStoreOptions{}),
+		MirrorViewers:                mirror.NewViewerTracker(),
 		DaemonProfileRefresh:         daemonProfileRefresh,
 		DaemonWorkspaceRefresh:       daemonWorkspaceRefresh,
 		DaemonRuntimeGone:            daemonRuntimeGone,

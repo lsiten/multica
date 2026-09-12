@@ -90,6 +90,218 @@ func TestRPCDispatch_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestMirrorAnswerDispatch_forAuthorizedRuntime(t *testing.T) {
+	// Given
+	hub := NewHub()
+	answers := make(chan protocol.MirrorAnswerPayload, 1)
+	hub.SetMirrorAnswerHandler(func(ctx context.Context, identity ClientIdentity, payload protocol.MirrorAnswerPayload) error {
+		answers <- payload
+		return nil
+	})
+	conn := dialRPCTestConn(t, hub, ClientIdentity{DaemonID: "daemon-1", RuntimeIDs: []string{"rt-1"}})
+	payload := protocol.MirrorAnswerPayload{
+		SessionID:   "session-1",
+		WorkspaceID: "ws-1",
+		RuntimeID:   "rt-1",
+		UserID:      "user-1",
+		DaemonID:    "daemon-1",
+		ViewerID:    "viewer-1",
+		Answer:      protocol.MirrorSessionDescription{Type: "answer", SDP: "answer-sdp"},
+		ExpiresAt:   time.Now().Add(time.Minute),
+	}
+	frame, err := json.Marshal(protocol.Message{Type: protocol.EventMirrorAnswer, Payload: mustMarshalRaw(payload)})
+	if err != nil {
+		t.Fatalf("marshal answer: %v", err)
+	}
+
+	// When
+	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
+		t.Fatalf("write answer: %v", err)
+	}
+
+	// Then
+	select {
+	case got := <-answers:
+		if got.SessionID != payload.SessionID || got.WorkspaceID != payload.WorkspaceID || got.RuntimeID != payload.RuntimeID || got.UserID != payload.UserID || got.DaemonID != payload.DaemonID || got.ViewerID != payload.ViewerID || got.Answer != payload.Answer || !got.ExpiresAt.Equal(payload.ExpiresAt) {
+			t.Fatalf("answer = %+v, want %+v", got, payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("mirror answer handler was not called")
+	}
+}
+
+func TestMirrorAnswerDispatchAcceptsMaximumAnswerSDP(t *testing.T) {
+	// Given
+	hub := NewHub()
+	answers := make(chan protocol.MirrorAnswerPayload, 1)
+	hub.SetMirrorAnswerHandler(func(_ context.Context, _ ClientIdentity, payload protocol.MirrorAnswerPayload) error {
+		answers <- payload
+		return nil
+	})
+	conn := dialRPCTestConn(t, hub, ClientIdentity{DaemonID: "daemon-1", RuntimeIDs: []string{"rt-1"}})
+	payload := protocol.MirrorAnswerPayload{
+		SessionID:   "session-1",
+		WorkspaceID: "ws-1",
+		RuntimeID:   "rt-1",
+		UserID:      "user-1",
+		DaemonID:    "daemon-1",
+		ViewerID:    "viewer-1",
+		Answer: protocol.MirrorSessionDescription{
+			Type: "answer",
+			SDP:  strings.Repeat("a", protocol.MaxMirrorSDPBytes),
+		},
+		ExpiresAt: time.Now().Add(time.Minute),
+	}
+	frame, err := json.Marshal(protocol.Message{Type: protocol.EventMirrorAnswer, Payload: mustMarshalRaw(payload)})
+	if err != nil {
+		t.Fatalf("marshal maximum answer: %v", err)
+	}
+
+	// When
+	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
+		t.Fatalf("write maximum answer: %v", err)
+	}
+
+	// Then
+	select {
+	case got := <-answers:
+		if len(got.Answer.SDP) != protocol.MaxMirrorSDPBytes {
+			t.Fatalf("answer SDP length = %d, want %d", len(got.Answer.SDP), protocol.MaxMirrorSDPBytes)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("maximum-size mirror answer was rejected by the daemon websocket read limit")
+	}
+}
+
+func TestMirrorAnswerFailureDispatchRuntimeScope(t *testing.T) {
+	// Given
+	hub := NewHub()
+	failures := make(chan protocol.MirrorAnswerFailurePayload, 1)
+	hub.SetMirrorAnswerFailureHandler(func(_ context.Context, _ ClientIdentity, payload protocol.MirrorAnswerFailurePayload) error {
+		failures <- payload
+		return nil
+	})
+	authorized := &client{
+		hub:      hub,
+		identity: ClientIdentity{DaemonID: "daemon-1", WorkspaceIDs: []string{"ws-1"}},
+		runtimes: map[string]struct{}{"rt-1": {}},
+		ctx:      context.Background(),
+	}
+	payload := validMirrorAnswerFailurePayload("rt-1")
+
+	// When
+	authorized.handleMirrorAnswerFailureFrame(mustMarshalRaw(payload))
+
+	// Then
+	select {
+	case got := <-failures:
+		if got.SessionID != payload.SessionID ||
+			got.WorkspaceID != payload.WorkspaceID ||
+			got.RuntimeID != payload.RuntimeID ||
+			got.UserID != payload.UserID ||
+			got.DaemonID != payload.DaemonID ||
+			got.ViewerID != payload.ViewerID ||
+			got.Reason != payload.Reason ||
+			!got.ExpiresAt.Equal(payload.ExpiresAt) {
+			t.Fatalf("failure = %+v, want %+v", got, payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("authorized mirror answer failure handler was not called")
+	}
+
+	// Given
+	foreign := &client{
+		hub:      hub,
+		identity: ClientIdentity{DaemonID: "daemon-1", WorkspaceIDs: []string{"ws-1"}},
+		runtimes: map[string]struct{}{"rt-2": {}},
+		ctx:      context.Background(),
+	}
+
+	// When
+	foreign.handleMirrorAnswerFailureFrame(mustMarshalRaw(payload))
+
+	// Then
+	select {
+	case got := <-failures:
+		t.Fatalf("foreign runtime invoked failure handler: %+v", got)
+	default:
+	}
+}
+
+func validMirrorAnswerFailurePayload(runtimeID string) protocol.MirrorAnswerFailurePayload {
+	return protocol.MirrorAnswerFailurePayload{
+		SessionID:   "session-1",
+		WorkspaceID: "ws-1",
+		RuntimeID:   runtimeID,
+		UserID:      "user-1",
+		DaemonID:    "daemon-1",
+		ViewerID:    "viewer-1",
+		Reason:      protocol.MirrorAnswerFailureNegotiation,
+		ExpiresAt:   time.Now().Add(time.Minute),
+	}
+}
+
+func TestMirrorViewerDispatchForAuthorizedRuntime(t *testing.T) {
+	// Given
+	hub := NewHub()
+	viewerStates := make(chan protocol.MirrorViewerPayload, 1)
+	hub.SetMirrorViewerHandler(func(ctx context.Context, identity ClientIdentity, payload protocol.MirrorViewerPayload) error {
+		viewerStates <- payload
+		return nil
+	})
+	conn := dialRPCTestConn(t, hub, ClientIdentity{DaemonID: "daemon-1", RuntimeIDs: []string{"rt-1"}})
+	payload := protocol.MirrorViewerPayload{
+		WorkspaceID: "ws-1",
+		RuntimeID:   "rt-1",
+		DaemonID:    "daemon-1",
+		Active:      true,
+	}
+	frame, err := json.Marshal(protocol.Message{Type: protocol.EventMirrorViewer, Payload: mustMarshalRaw(payload)})
+	if err != nil {
+		t.Fatalf("marshal viewer state: %v", err)
+	}
+
+	// When
+	if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
+		t.Fatalf("write viewer state: %v", err)
+	}
+
+	// Then
+	select {
+	case got := <-viewerStates:
+		if got != payload {
+			t.Fatalf("viewer payload = %+v, want %+v", got, payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("mirror viewer handler was not called")
+	}
+}
+
+func TestDaemonDisconnectHandlerReceivesIdentity(t *testing.T) {
+	// Given
+	hub := NewHub()
+	disconnected := make(chan ClientIdentity, 1)
+	hub.SetDisconnectHandler(func(_ context.Context, identity ClientIdentity) {
+		disconnected <- identity
+	})
+	conn := dialRPCTestConn(t, hub, ClientIdentity{DaemonID: "daemon-1", RuntimeIDs: []string{"rt-1"}})
+
+	// When
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close connection: %v", err)
+	}
+
+	// Then
+	select {
+	case identity := <-disconnected:
+		if identity.DaemonID != "daemon-1" || len(identity.RuntimeIDs) != 1 || identity.RuntimeIDs[0] != "rt-1" {
+			t.Fatalf("identity = %+v, want daemon-1/rt-1", identity)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("disconnect handler was not called")
+	}
+}
+
 // TestRPCDispatch_HandlerError maps a handler error to a non-2xx response so
 // the daemon can fall back to HTTP.
 func TestRPCDispatch_HandlerError(t *testing.T) {

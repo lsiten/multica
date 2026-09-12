@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   RuntimeDetailPage as SharedRuntimeDetailPage,
   RuntimeSettingsPage as SharedRuntimeSettingsPage,
+  RuntimeMirrorPage as SharedRuntimeMirrorPage,
 } from "@multica/views/runtimes";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { runtimeDisplayLabel } from "@multica/core/runtimes";
@@ -46,4 +47,12 @@ export function RuntimeSettingsPage() {
 
   if (!id || !runtimeId) return null;
   return <SharedRuntimeSettingsPage machineId={id} runtimeId={runtimeId} />;
+}
+
+export function RuntimeMirrorPage() {
+  const { id } = useParams<{ id: string }>();
+  useDocumentTitle("Runtime mirror");
+
+  if (!id) return null;
+  return <SharedRuntimeMirrorPage runtimeId={id} />;
 }

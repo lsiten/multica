@@ -153,6 +153,7 @@
     "agent_restored_toast": "已恢复智能体",
     "restore_failed_toast": "恢复智能体失败",
     "dm": "私信",
+    "open_runtime_mirror": "打开运行时镜像",
     "dm_no_permission_toast": "你没有权限与该智能体聊天。",
     "runtime_required_toast": "请先绑定运行时，再运行该智能体。",
     "assign_work": "分配工作",

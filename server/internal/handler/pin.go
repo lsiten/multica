@@ -10,6 +10,8 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
+const pinnedItemTypeRuntimeMirror = "runtime_mirror"
+
 // PinnedItemResponse carries pin metadata only. Title / status / identifier /
 // icon are intentionally NOT included — clients derive them from their own
 // issue / project query cache so that an `issue:updated` event flows naturally
@@ -72,11 +74,14 @@ func (h *Handler) ListPins(w http.ResponseWriter, r *http.Request) {
 	// contract would let an old Desktop DESTROY the user's view pins just by
 	// opening the sidebar — so view rows only ship to clients that declare
 	// they understand them (?include=view).
-	includeViews := strings.Contains(r.URL.Query().Get("include"), "view")
+	include := r.URL.Query().Get("include")
+	includeViews := strings.Contains(include, "view")
+	includeRuntimeMirrors := strings.Contains(include, pinnedItemTypeRuntimeMirror)
 
 	resp := make([]PinnedItemResponse, 0, len(pins))
 	for _, p := range pins {
-		if p.ItemType == "view" && !includeViews {
+		if (p.ItemType == "view" && !includeViews) ||
+			(p.ItemType == pinnedItemTypeRuntimeMirror && !includeRuntimeMirrors) {
 			continue
 		}
 		resp = append(resp, pinnedItemToResponse(p))
@@ -96,8 +101,9 @@ func (h *Handler) CreatePin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.ItemType != "issue" && req.ItemType != "project" && req.ItemType != "view" {
-		writeError(w, http.StatusBadRequest, "item_type must be 'issue', 'project' or 'view'")
+	if req.ItemType != "issue" && req.ItemType != "project" && req.ItemType != "view" &&
+		req.ItemType != pinnedItemTypeRuntimeMirror {
+		writeError(w, http.StatusBadRequest, "item_type must be 'issue', 'project', 'view' or 'runtime_mirror'")
 		return
 	}
 	if req.ItemID == "" {
@@ -139,6 +145,22 @@ func (h *Handler) CreatePin(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil || !canReadIssueView(view, parseUUID(userID)) {
 			writeError(w, http.StatusNotFound, "view not found")
+			return
+		}
+	case pinnedItemTypeRuntimeMirror:
+		runtime, err := h.Queries.GetAgentRuntimeForWorkspace(r.Context(), db.GetAgentRuntimeForWorkspaceParams{
+			ID:          itemUUID,
+			WorkspaceID: wsUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "runtime not found")
+			return
+		}
+		member, ok := h.workspaceMember(w, r, workspaceID)
+		if !ok || !canUseRuntimeForAgent(member, runtime) {
+			if ok {
+				writeError(w, http.StatusNotFound, "runtime not found")
+			}
 			return
 		}
 	}

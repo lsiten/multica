@@ -70,12 +70,19 @@ func (h *Handler) buildDaemonWebSocketIdentity(w http.ResponseWriter, r *http.Re
 			return daemonws.ClientIdentity{}, false
 		}
 		rt := rows[index]
-		if identity.DaemonID != "" && rt.DaemonID.Valid && rt.DaemonID.String != identity.DaemonID {
-			writeError(w, http.StatusNotFound, "runtime not found")
-			return daemonws.ClientIdentity{}, false
-		}
 		workspaceID := uuidToString(rt.WorkspaceID)
 		if !h.requireDaemonWorkspaceAccess(w, r, workspaceID) {
+			return daemonws.ClientIdentity{}, false
+		}
+		rowDaemonID := strings.TrimSpace(rt.DaemonID.String)
+		if !rt.DaemonID.Valid || rowDaemonID == "" {
+			writeError(w, http.StatusConflict, "runtime is not connected to a daemon")
+			return daemonws.ClientIdentity{}, false
+		}
+		if identity.DaemonID == "" {
+			identity.DaemonID = rowDaemonID
+		} else if identity.DaemonID != rowDaemonID {
+			writeError(w, http.StatusNotFound, "runtime not found")
 			return daemonws.ClientIdentity{}, false
 		}
 		if workspaceID != "" {

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/remotemcp"
@@ -200,7 +201,7 @@ func daemonHTTPClientCapabilities() string {
 }
 
 func daemonCommonCapabilities() []string {
-	return []string{
+	capabilities := []string{
 		protocol.DaemonCapabilitySkillBundlesV1,
 		protocol.DaemonCapabilityCoalescedCommentsV1,
 		protocol.DaemonCapabilityExecutionManifestV1,
@@ -212,6 +213,10 @@ func daemonCommonCapabilities() []string {
 		protocol.DaemonCapabilityPlatformSkillV1,
 		protocol.DaemonCapabilityCheckoutKeepsWorkV1,
 	}
+	if mirror.NativeCaptureSupported() {
+		capabilities = append(capabilities, protocol.DaemonCapabilityScreenMirrorV1)
+	}
+	return capabilities
 }
 
 // SetToken sets the auth token for authenticated requests.

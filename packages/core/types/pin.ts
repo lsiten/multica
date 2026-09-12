@@ -1,4 +1,4 @@
-export type PinnedItemType = "issue" | "project" | "view";
+export type PinnedItemType = "issue" | "project" | "view" | "runtime_mirror";
 
 /**
  * Pin metadata only. Title / status / identifier / icon are NOT here —

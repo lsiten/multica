@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/multica-ai/multica/server/internal/mirror"
 )
 
 // agentDiscoveryInterval is how often a running daemon re-checks which agent
@@ -549,6 +551,7 @@ func (d *Daemon) demoteUnusableRuntimes(ctx context.Context, causes map[string]r
 	d.mu.Lock()
 	var demoted []string
 	var installWaits []dshInstallWait
+	var detachedMirrors []*mirror.RuntimeMirror
 	// Grouped per workspace because the cleanup below has to run under each
 	// workspace's register lock — see deregisterDroppedRuntimes.
 	demotedByWorkspace := make(map[string][]string)
@@ -572,6 +575,7 @@ func (d *Daemon) demoteUnusableRuntimes(ctx context.Context, causes map[string]r
 				continue
 			}
 			delete(d.runtimeIndex, rid)
+			detachedMirrors = append(detachedMirrors, d.detachRuntimeMirrorsLocked([]string{rid})...)
 			demoted = append(demoted, rid)
 			demotedByWorkspace[workspaceID] = append(demotedByWorkspace[workspaceID], rid)
 			demotedProviders[rt.Provider] = cause.reason
@@ -604,6 +608,7 @@ func (d *Daemon) demoteUnusableRuntimes(ctx context.Context, causes map[string]r
 	d.markProvidersDemotedLocked(causes)
 	d.dshInstallWaits = append(d.dshInstallWaits, installWaits...)
 	d.mu.Unlock()
+	d.closeDetachedRuntimeMirrors(detachedMirrors)
 
 	if len(demoted) == 0 {
 		return

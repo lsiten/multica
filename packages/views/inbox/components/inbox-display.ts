@@ -56,6 +56,13 @@ export function isAutopilotQuotaNotice(type: InboxItem["type"]): boolean {
   return type === "autopilot_quota_exceeded";
 }
 
+export function isRuntimeMirrorViewerNotice(type: InboxItem["type"]): boolean {
+  return (
+    type === "runtime_mirror_viewer_started" ||
+    type === "runtime_mirror_viewer_stopped"
+  );
+}
+
 export function getQuickCreateOutcomeDetail(item: InboxItem): string {
   const details = item.details ?? {};
   return singleLine(details.error) || singleLine(item.body);

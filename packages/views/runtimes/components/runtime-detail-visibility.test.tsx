@@ -78,22 +78,18 @@ vi.mock("@multica/core/auth", () => ({
 // runtime access from, so the real implementation is kept rather than stubbed —
 // a stub here would just re-derive the rule this test is meant to pin down.
 vi.mock("@multica/core/runtimes", async () => ({
-  isRuntimeUsableForUser: (
-    await vi.importActual<typeof import("@multica/core/runtimes")>(
-      "@multica/core/runtimes",
-    )
-  ).isRuntimeUsableForUser,
-  deriveRuntimeHealth: () => "online",
-  runtimeDisplayName: (rt: { name: string; custom_name?: string | null }) =>
-    rt.custom_name?.trim() || rt.name,
+  ...(await vi.importActual<typeof import("@multica/core/runtimes")>(
+    "@multica/core/runtimes",
+  )),
   runtimeProfileListOptions: (wsId: string) => ({
     queryKey: ["runtime-profiles", wsId],
   }),
-  parseRuntimeProfileBoundConflict: () => null,
   useDeleteRuntimeProfile: () => ({
     mutate: vi.fn(),
     isPending: false,
-    mutateAsync: (...args: unknown[]) => mockDeleteRuntimeProfile(...args),
+    mutateAsync: async (profileId: string) => {
+      await mockDeleteRuntimeProfile(profileId);
+    },
   }),
 }));
 
@@ -105,6 +101,7 @@ vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     runtimes: () => "/runtimes",
     agentDetail: () => "/agents",
+    runtimeMirror: (id: string) => `/runtimes/${id}/mirror`,
   }),
 }));
 
@@ -215,6 +212,18 @@ describe("RuntimeDetail visibility section", () => {
     expect(screen.getByText("Visibility")).toBeInTheDocument();
     expect(screen.getByText("Private")).toBeInTheDocument();
     expect(screen.getByText("Public")).toBeInTheDocument();
+  });
+
+  it("explains when screen mirroring is unavailable on an unknown platform", () => {
+    renderDetail(makeRuntime({
+      daemon_id: "daemon-1",
+      status: "online",
+      metadata: { client_os: "plan9" },
+    }));
+
+    expect(
+      screen.getByText("Screen mirroring is not supported on this platform."),
+    ).toBeInTheDocument();
   });
 
   it("keeps daemon CLI version details without rendering update controls", () => {

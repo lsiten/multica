@@ -3,7 +3,23 @@ version: 2
 project_name: multica
 
 builds:
-  - id: multica
+  - id: multica-darwin
+    main: ./cmd/multica
+    dir: server
+    binary: multica
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+  - id: multica-portable
     main: ./cmd/multica
     dir: server
     binary: multica
@@ -15,7 +31,6 @@ builds:
     env:
       - CGO_ENABLED=0
     goos:
-      - darwin
       - linux
       - windows
     goarch:
@@ -27,6 +42,9 @@ archives:
   # looks for `multica_{os}_{arch}.{ext}`) can keep self-updating. Remove
   # once those versions are no longer in use.
   - id: legacy
+    ids:
+      - multica-darwin
+      - multica-portable
     files:
       - LICENSE*
       - README*
@@ -41,6 +59,9 @@ archives:
   # Versioned archive name used by current CLI / install scripts /
   # desktop bootstrap going forward.
   - id: versioned
+    ids:
+      - multica-darwin
+      - multica-portable
     files:
       - LICENSE*
       - README*
