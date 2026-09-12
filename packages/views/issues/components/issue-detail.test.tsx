@@ -19,6 +19,26 @@ const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
 const mockViewport = vi.hoisted(() => ({ isMobile: false }));
 
+// GoalModeSection branches on the typed ApiError class. This test replaces
+// @multica/core/api with a manual mock, so provide the same runtime identity
+// instead of making unrelated issue-detail renders fail during a 404 query.
+const ApiError = vi.hoisted(() => {
+  class ApiError extends Error {
+    readonly status: number;
+    readonly statusText: string;
+    readonly body?: unknown;
+
+    constructor(message: string, status: number, statusText = "", body?: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.statusText = statusText;
+      this.body = body;
+    }
+  }
+  return ApiError;
+});
+
 // Counts MockContentEditor mounts. This pins the description to exactly one
 // eager editor per issue and catches stale editor reuse across issue switches.
 const contentEditorMounts = vi.hoisted(() => ({ count: 0 }));
@@ -328,6 +348,7 @@ const mockApiObj = vi.hoisted(() => ({
 
 vi.mock("@multica/core/api", () => ({
   api: mockApiObj,
+  ApiError,
   getApi: () => mockApiObj,
   setApiInstance: vi.fn(),
   errorCode: (error: unknown) =>

@@ -6,13 +6,18 @@ import { renderWithI18n } from "../../test/i18n";
 import { reviewFileFixture, reviewManifestFixture } from "../../test/local-review-pages";
 import { LocalReviewDialog } from "./local-review-dialog";
 import { readLocalReviewBranches } from "../../platform/local-review";
-import { readReviewCommits, readReviewFile, readReviewManifest, readReviewRepositories, renewReviewLease } from "../../platform/local-review-pages";
+import { readLocalIndex, readReviewCommits, readReviewFile, readReviewManifest, readReviewRepositories, renewReviewLease } from "../../platform/local-review-pages";
 
 vi.mock("../../platform/local-review", () => ({ readLocalReviewBranches: vi.fn() }));
 vi.mock("@multica/core/auth", () => { const state = { user: { id: "viewer" } }; return { useAuthStore: Object.assign((select: (value: typeof state) => unknown) => select(state), { getState: () => state }) }; });
-vi.mock("../../platform/local-review-pages", () => ({ readReviewManifest: vi.fn(), readReviewFile: vi.fn(), readReviewRepositories: vi.fn(), readReviewCommits: vi.fn(), renewReviewLease: vi.fn() }));
+vi.mock("../../platform/local-review-pages", () => ({ changeLocalIndex: vi.fn(), readLocalIndex: vi.fn(), readReviewManifest: vi.fn(), readReviewFile: vi.fn(), readReviewRepositories: vi.fn(), readReviewCommits: vi.fn(), renewReviewLease: vi.fn() }));
 beforeEach(() => {
   vi.mocked(readLocalReviewBranches).mockResolvedValue(["main", "release", "test"]);
+  vi.mocked(readLocalIndex).mockResolvedValue({
+    kind: "index",
+    version_id: "",
+    status: { branch: "feature", head: "1".repeat(40), index_id: "e".repeat(64), files: [] },
+  });
   vi.mocked(readReviewRepositories).mockResolvedValue({ repositories: ["/repo/feature", "/repo/other"], runtime_id: "discovered" });
   vi.mocked(readReviewManifest).mockImplementation(async (input) => reviewManifestFixture(input));
   vi.mocked(readReviewFile).mockImplementation(async (input) => reviewFileFixture(input));
@@ -33,7 +38,7 @@ async function chooseTarget(branch: string) {
 
 describe("paged local MR dialog", () => {
   it("renews the displayed version while open and stops on unmount", async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     mount();
     await act(async () => { for (let tick = 0; tick < 10; tick++) await vi.advanceTimersByTimeAsync(10); });
     const initial = vi.mocked(renewReviewLease).mock.calls.length;
