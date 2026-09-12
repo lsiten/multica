@@ -228,6 +228,10 @@ VALUES ($1, 'head-a', 0, 'backend', 'completed', 'success', false)
 		"creator_type": "member",
 		"creator_id":   testUserID,
 	})
+	dbfx.Exec(t, `
+INSERT INTO issue_goal (issue_id, objective)
+VALUES ($1, 'Workspace delete goal')
+`, issueID)
 
 	autopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
 		"workspace_id":    wsID,
@@ -345,6 +349,12 @@ VALUES ($1, $2, gen_random_uuid(), gen_random_uuid(), 's3://workspace-delete/sou
 	dbfx.QueryRow(t, `SELECT COUNT(*) FROM issue_property WHERE id = $1`, propertyID).Scan(&propertyCount)
 	if propertyCount != 0 {
 		t.Fatalf("issue properties were not cleaned up for deleted workspace: %d", propertyCount)
+	}
+
+	var goalCount int
+	dbfx.QueryRow(t, `SELECT COUNT(*) FROM issue_goal WHERE issue_id = $1`, issueID).Scan(&goalCount)
+	if goalCount != 0 {
+		t.Fatalf("issue goals were not cleaned up for deleted workspace: %d", goalCount)
 	}
 
 	for _, table := range []string{

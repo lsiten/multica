@@ -53,6 +53,19 @@ func (q *Queries) DeleteIssueGoal(ctx context.Context, issueID pgtype.UUID) erro
 	return err
 }
 
+const deleteIssueGoalsForWorkspace = `-- name: DeleteIssueGoalsForWorkspace :exec
+DELETE FROM issue_goal
+WHERE issue_id IN (
+    SELECT id FROM issue WHERE workspace_id = $1::uuid
+)
+`
+
+// issue_goal has no workspace_id or foreign key; resolve ownership through issue.
+func (q *Queries) DeleteIssueGoalsForWorkspace(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteIssueGoalsForWorkspace, workspaceID)
+	return err
+}
+
 const getIssueGoal = `-- name: GetIssueGoal :one
 SELECT issue_id, objective, completed_at, completed_by_type, completed_by_id, created_at, updated_at
 FROM issue_goal
