@@ -27,10 +27,15 @@ type mirrorSessionResponse struct {
 
 func (h *Handler) GetMirrorICEConfig(w http.ResponseWriter, r *http.Request) {
 	runtimeID := chi.URLParam(r, "runtimeId")
-	if _, _, ok := h.requireRuntimeReadAccess(w, r, "mirror_ice_config", runtimeID); !ok {
+	rt, _, ok := h.requireRuntimeReadAccess(w, r, "mirror_ice_config", runtimeID)
+	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, h.cfg.MirrorICE.Protocol())
+	plan, ok := h.runtimeMirrorPlan(w, r, rt)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, plan.Protocol())
 }
 
 func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +68,10 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 		DaemonID:    rt.DaemonID.String,
 		ViewerID:    strings.TrimSpace(req.ViewerID),
 	}
+	icePlan, ok := h.runtimeMirrorPlan(w, r, rt)
+	if !ok {
+		return
+	}
 	session, err := h.MirrorSessions.Create(r.Context(), mirror.CreateSessionInput{Identity: identity, Offer: req.Offer})
 	if err != nil {
 		if errors.Is(err, protocol.ErrMirrorSDPTooLarge) || errors.Is(err, protocol.ErrInvalidMirrorDescription) || errors.Is(err, mirror.ErrInvalidSessionInput) {
@@ -81,7 +90,7 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 	payload := protocol.MirrorOfferPayload{
 		SessionID: session.ID, WorkspaceID: session.WorkspaceID, RuntimeID: session.RuntimeID,
 		UserID: session.UserID, DaemonID: session.DaemonID, ViewerID: session.ViewerID,
-		Offer: offer, ICEConfig: h.cfg.MirrorICE.Protocol(), ExpiresAt: session.ExpiresAt,
+		Offer: offer, ICEConfig: icePlan.Protocol(), ExpiresAt: session.ExpiresAt,
 	}
 	if !h.DaemonHub.SendMirrorOffer(runtimeID, payload) {
 		_ = h.MirrorSessions.Close(r.Context(), session.ID, identity)
@@ -90,13 +99,14 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, mirrorSessionResponse{
 		SessionMetadata: session.Metadata(),
-		ICEConfig:       h.cfg.MirrorICE.Protocol(),
+		ICEConfig:       icePlan.Protocol(),
 	})
 }
 
 func (h *Handler) GetMirrorSession(w http.ResponseWriter, r *http.Request) {
 	runtimeID := chi.URLParam(r, "runtimeId")
-	if _, _, ok := h.requireRuntimeReadAccess(w, r, "mirror_session_status", runtimeID); !ok {
+	rt, _, ok := h.requireRuntimeReadAccess(w, r, "mirror_session_status", runtimeID)
+	if !ok {
 		return
 	}
 	metadata, err := h.MirrorSessions.MetadataByID(r.Context(), chi.URLParam(r, "sessionId"))
@@ -108,7 +118,11 @@ func (h *Handler) GetMirrorSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "mirror session not found")
 		return
 	}
-	response := mirrorSessionResponse{SessionMetadata: metadata, ICEConfig: h.cfg.MirrorICE.Protocol()}
+	icePlan, ok := h.runtimeMirrorPlan(w, r, rt)
+	if !ok {
+		return
+	}
+	response := mirrorSessionResponse{SessionMetadata: metadata, ICEConfig: icePlan.Protocol()}
 	if metadata.State == mirror.SessionStateAnswered {
 		answer, answerErr := h.MirrorSessions.Answer(r.Context(), metadata.ID, mirror.SessionIdentity{
 			WorkspaceID: metadata.WorkspaceID, RuntimeID: metadata.RuntimeID, UserID: metadata.UserID,

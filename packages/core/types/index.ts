@@ -99,6 +99,13 @@ export type {
   MirrorSession,
   MirrorSessionResponse,
   CreateMirrorSessionRequest,
+  MirrorNetworkMode,
+  MirrorNetworkSource,
+  MirrorNetworkServerInput,
+  MirrorNetworkServer,
+  BuiltinMirrorNetwork,
+  MirrorNetworkSettings,
+  UpdateMirrorNetworkRequest,
 } from "./mirror";
 export type {
   PluginInstallation,

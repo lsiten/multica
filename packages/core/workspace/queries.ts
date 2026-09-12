@@ -21,6 +21,8 @@ export const workspaceKeys = {
   skills: (wsId: string) => ["workspaces", wsId, "skills"] as const,
   assigneeFrequency: (wsId: string) => ["workspaces", wsId, "assignee-frequency"] as const,
   mcpServers: (wsId: string) => ["workspaces", wsId, "mcp-servers"] as const,
+  mirrorNetwork: (wsId: string) =>
+    ["workspaces", wsId, "mirror-network"] as const,
 };
 
 export function workspaceListOptions() {
@@ -200,6 +202,19 @@ export function workspaceMcpServersOptions(wsId: string) {
   return queryOptions({
     queryKey: workspaceKeys.mcpServers(wsId),
     queryFn: () => api.listWorkspaceMcpServers(wsId),
+    enabled: wsId !== "",
+  });
+}
+
+/**
+ * Screen-mirror ICE/TURN configuration for the workspace. Members can read
+ * it so the mirror screen can explain the active relay; owner/admin get
+ * can_manage=true and an editor in settings.
+ */
+export function workspaceMirrorNetworkOptions(wsId: string) {
+  return queryOptions({
+    queryKey: workspaceKeys.mirrorNetwork(wsId),
+    queryFn: () => api.getWorkspaceMirrorNetwork(wsId),
     enabled: wsId !== "",
   });
 }
