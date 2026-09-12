@@ -18,6 +18,7 @@ import { constants } from "node:fs";
 import { execFileSync, execSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cgoEnabledForGoos } from "./bundle-cli-env.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..", "..");
@@ -132,7 +133,7 @@ if (hasGo()) {
       stdio: "inherit",
       env: {
         ...process.env,
-        CGO_ENABLED: "0",
+        CGO_ENABLED: cgoEnabledForGoos(goos),
         GOOS: goos,
         GOARCH: goarch,
       },

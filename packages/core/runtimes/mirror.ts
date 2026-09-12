@@ -1,4 +1,5 @@
 import type { RuntimeDevice } from "../types";
+import { isRuntimeUsableForUser } from "./access";
 
 export const SCREEN_MIRROR_CAPABILITY_V1 = "screen-mirror-v1";
 
@@ -47,4 +48,26 @@ export function runtimeMirrorAvailability(
     default:
       return { kind: RUNTIME_MIRROR_AVAILABILITY.unsupportedPlatform, enabled: false };
   }
+}
+
+export function selectRuntimeForMirror(
+  runtimes: readonly RuntimeDevice[],
+  currentUserId: string | null,
+): RuntimeDevice | null {
+  const readableRuntimes = runtimes.filter((runtime) =>
+    isRuntimeUsableForUser(runtime, currentUserId),
+  );
+  if (readableRuntimes.length === 0) return null;
+
+  const onlineRuntimes = readableRuntimes.filter(
+    (runtime) => runtime.status === "online" && !!runtime.daemon_id,
+  );
+  return (
+    onlineRuntimes.find(
+      (runtime) => runtimeMirrorAvailability(runtime).enabled,
+    ) ??
+    onlineRuntimes[0] ??
+    readableRuntimes[0] ??
+    null
+  );
 }

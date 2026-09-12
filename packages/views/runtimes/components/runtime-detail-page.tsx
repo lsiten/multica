@@ -28,6 +28,7 @@ import { RenameMachineDialog } from "./rename-machine-dialog";
 import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
 import { pendingRuntimesForProfiles } from "./pending-runtime";
 import { MachineCliSection } from "./machine-cli-section";
+import { MachineMirrorAction } from "./runtime-mirror-action";
 import { HealthIcon, useHealthLabel } from "./shared";
 import { useT, useTimeAgo } from "../../i18n";
 
@@ -276,6 +277,7 @@ export function RuntimeDetailPage({
             </div>
 
             <div className="flex shrink-0 items-center gap-2 self-end lg:self-start">
+              <MachineMirrorAction runtimes={machine.runtimes} />
               {renameTarget && (
                 <Button
                   type="button"
