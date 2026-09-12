@@ -117,3 +117,34 @@ func TestParseAndMarshalNetworkSettingsPreservesOtherSettings(t *testing.T) {
 		t.Fatalf("mirror settings = %#v", document["mirror_network"])
 	}
 }
+
+func TestNormalizeICEURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"stun host port", "stun:stun.example.com:3478", false},
+		{"turn udp transport", "turn:turn.example.com:3478?transport=udp", false},
+		{"turn tcp transport", "turn:turn.example.com:3478?transport=tcp", false},
+		{"turns tls", "turns:turn.example.com:5349?transport=tcp", false},
+		{"double slash authority", "turn://turn.example.com:3478", false},
+		{"bare domain without scheme", "turn.example.com:3478", true},
+		{"http scheme rejected", "http://turn.example.com:3478", true},
+		{"missing host", "turn:", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizeICEURL(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("NormalizeICEURL(%q) = %q, want error", tc.raw, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizeICEURL(%q): %v", tc.raw, err)
+			}
+		})
+	}
+}
