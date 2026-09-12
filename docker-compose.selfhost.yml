@@ -58,6 +58,11 @@ services:
       retries: 5
 
   turn:
+    # Opt-in only. The relay is not started by default. Enable it by setting
+    # COMPOSE_PROFILES=turn (or running `docker compose --profile turn up -d`)
+    # together with MULTICA_TURN_ENABLED=true in .env.
+    profiles:
+      - turn
     image: ${MULTICA_TURN_IMAGE:-coturn/coturn}:${MULTICA_TURN_IMAGE_TAG:-latest}
     pull_policy: always
     command:
@@ -150,7 +155,7 @@ services:
       APP_ENV: ${APP_ENV:-production}
       MULTICA_DEV_VERIFICATION_CODE: ${MULTICA_DEV_VERIFICATION_CODE:-}
       MULTICA_APP_URL: ${MULTICA_APP_URL:-http://localhost:3000}
-      MULTICA_TURN_ENABLED: ${MULTICA_TURN_ENABLED:-true}
+      MULTICA_TURN_ENABLED: ${MULTICA_TURN_ENABLED:-false}
       MULTICA_TURN_PUBLIC_HOST: ${MULTICA_TURN_PUBLIC_HOST:-}
       MULTICA_TURN_PORT: ${TURN_PORT:-3478}
       MULTICA_TURN_SECRET: ${MULTICA_TURN_SECRET:-${JWT_SECRET}}

@@ -82,7 +82,10 @@ postgres:
 # Built-in coturn TURN relay for screen mirroring
 # -----------------------------------------------------------------------------
 turn:
-  enabled: true
+  # Opt-in. Set true and configure publicHost (and externalIP on EC2) to
+  # deploy the bundled coturn relay; otherwise mirroring relies on direct
+  # connections or per-workspace custom ICE servers.
+  enabled: false
   # Public DNS name or IP advertised to browser and daemon WebRTC peers.
   # Leave empty to derive the host from backend.config.appUrl; localhost is
   # never usable across networks. Cloud firewalls and security groups must
