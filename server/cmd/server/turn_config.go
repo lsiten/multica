@@ -1,0 +1,79 @@
+package main
+
+import (
+	"crypto/sha256"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/multica-ai/multica/server/internal/mirror"
+	"github.com/multica-ai/multica/server/internal/util/secretbox"
+)
+
+func loadBuiltinTURNConfig() mirror.BuiltinTURNConfig {
+	port := envPositiveInt("MULTICA_TURN_PORT", 3478)
+	ttl := envDuration("MULTICA_TURN_CREDENTIAL_TTL", time.Hour)
+	secret := strings.TrimSpace(os.Getenv("MULTICA_TURN_SECRET"))
+	if secret == "" {
+		secret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	}
+	return mirror.BuiltinTURNConfig{
+		// Docker Compose and the Helm chart set this explicitly. Default to off
+		// for bare-metal/managed API processes that do not run the bundled coturn
+		// container; otherwise the advertised hostname would look configured
+		// even though no relay was deployed.
+		Enabled:    strings.EqualFold(strings.TrimSpace(os.Getenv("MULTICA_TURN_ENABLED")), "true"),
+		Host:       turnPublicHost(),
+		Port:       port,
+		Secret:     secret,
+		TTL:        ttl,
+		Transports: []string{"udp", "tcp"},
+	}
+}
+
+func turnPublicHost() string {
+	for _, value := range []string{
+		os.Getenv("MULTICA_TURN_PUBLIC_HOST"),
+		os.Getenv("MULTICA_PUBLIC_URL"),
+		appURLFromEnv(),
+	} {
+		host := turnHostFromValue(value)
+		if host != "" {
+			return host
+		}
+	}
+	return ""
+}
+
+func turnHostFromValue(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	if !strings.Contains(value, "://") {
+		// url.Parse treats a bare turn.example.com as a path rather than a host.
+		value = "https://" + value
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Hostname())
+}
+
+func loadMirrorNetworkSecretBox() *secretbox.Box {
+	material := strings.TrimSpace(os.Getenv("MULTICA_MIRROR_NETWORK_SECRET_KEY"))
+	if material == "" {
+		material = strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	}
+	if material == "" {
+		return nil
+	}
+	sum := sha256.Sum256([]byte("mirror-network:" + material))
+	box, err := secretbox.New(sum[:])
+	if err != nil {
+		return nil
+	}
+	return box
+}

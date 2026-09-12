@@ -379,7 +379,8 @@
       "quick_actions": "クイックアクション",
       "plugins": "Plugins",
       "mcp": "MCP",
-      "billing": "請求とプラン"
+      "billing": "請求とプラン",
+      "mirror_network": "画面ミラーリング"
     },
     "groups": {
       "personal": "個人設定",
@@ -1397,5 +1398,56 @@
     "status_loading": "確認中...",
     "status_unknown": "状態を取得できません",
     "channel_hint": "{{channel}} でエージェントと会話し、タスクを作成します。"
+  },
+  "mirror_network": {
+    "title": "画面ミラーリング",
+    "description": "閲覧者とランタイム間の WebRTC 接続に使う STUN/TURN リレーを設定します。両者が異なる制限的なネットワークにある場合、接続を保証するには TURN サーバーが必要です。",
+    "status_title": "現在の状態",
+    "active_source": "有効な設定",
+    "turn_ready": "TURN を利用できます",
+    "turn_missing": "TURN 未設定",
+    "builtin_host": "内蔵 TURN サービス",
+    "builtin_host_unset": "公開ホスト名が未設定です",
+    "builtin_available": "利用可能",
+    "builtin_unavailable": "利用不可",
+    "locked_title": "デプロイ設定でロックされています",
+    "locked_description": "サーバーが環境変数 MULTICA_MIRROR_ICE_SERVERS でミラーリレーを固定しているため、ワークスペース設定は読み取り専用です。",
+    "no_turn_title": "現在利用可能な TURN サーバーがありません",
+    "no_turn_description": "閲覧者とランタイムが異なる制限的なネットワークにいる場合、ミラーリングが接続できないことがあります。内蔵 TURN を有効にするか、カスタム TURN サーバーを設定してください。",
+    "mode_title": "リレーモード",
+    "mode_description": "既定ではこのデプロイに同梱された内蔵 TURN を使用します。独自サーバーへの変更や完全無効化もできます。",
+    "sources": {
+      "env": "デプロイ環境変数で固定",
+      "builtin": "内蔵 TURN サービスを使用中",
+      "custom": "ワークスペースのカスタムサーバーを使用中",
+      "disabled": "無効、直接接続のみ",
+      "builtin_unavailable": "内蔵 TURN は準備できていません"
+    },
+    "modes": {
+      "builtin_label": "内蔵 TURN（推奨）",
+      "builtin_description": "この Multica デプロイに同梱された coturn リレーで、短期認証情報が自動発行されます。",
+      "builtin_unavailable_description": "このデプロイでは内蔵 TURN サービスが有効になっていません。管理者に MULTICA_TURN_ENABLED と公開ホスト名の設定を依頼するか、カスタムサーバーを使用してください。",
+      "custom_label": "カスタムサーバー",
+      "custom_description": "独自の STUN/TURN サーバーを使用します。turn: または turns: URL が少なくとも1つ必要です。",
+      "disabled_label": "無効",
+      "disabled_description": "ミラーセッションに STUN/TURN サーバーを提供しません。ピア同士が直接接続できるネットワークでのみ機能します。"
+    },
+    "custom": {
+      "server_index": "サーバー {{index}}",
+      "urls": "ICE URL（1行に1つ、またはカンマ区切り）",
+      "username": "ユーザー名（任意）",
+      "credential": "認証情報（任意）",
+      "credential_saved": "保存済み — 空欄で維持",
+      "credential_kept": "認証情報は暗号化して保存されます。空欄のまま保存すると既存の値を維持し、新しい値を入力すると上書きします。",
+      "add": "サーバーを追加",
+      "remove": "このサーバーを削除",
+      "needs_turn": "保存には turn: または turns: URL が少なくとも1つ必要です。"
+    },
+    "save": "保存",
+    "saved": "ミラーネットワーク設定を保存しました",
+    "errors": {
+      "requires_turn": "カスタムモードには turn: または turns: URL を持つサーバーが少なくとも1つ必要です",
+      "save": "保存に失敗しました。後でもう一度お試しください"
+    }
   }
 }

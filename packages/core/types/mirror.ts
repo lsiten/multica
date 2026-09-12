@@ -44,3 +44,50 @@ export interface CreateMirrorSessionRequest {
   viewer_id: string;
   offer: MirrorSessionDescription;
 }
+
+export type MirrorNetworkMode = "builtin" | "custom" | "disabled";
+
+export type MirrorNetworkSource =
+  | "env"
+  | "builtin"
+  | "custom"
+  | "disabled"
+  | "builtin_unavailable"
+  | string;
+
+export interface MirrorNetworkServerInput {
+  readonly urls: string | readonly string[];
+  readonly username?: string;
+  readonly credential?: string;
+}
+
+/** A stored custom ICE server as returned by the API — the secret is never echoed. */
+export interface MirrorNetworkServer {
+  readonly urls: readonly string[];
+  readonly username?: string;
+  readonly has_credential: boolean;
+}
+
+export interface BuiltinMirrorNetwork {
+  readonly enabled: boolean;
+  readonly available: boolean;
+  readonly host?: string;
+  readonly port?: number;
+  readonly transports?: readonly string[];
+  readonly credential_ttl_seconds?: number;
+}
+
+export interface MirrorNetworkSettings {
+  readonly source: MirrorNetworkSource;
+  readonly locked: boolean;
+  readonly can_manage: boolean;
+  readonly turn_configured: boolean;
+  readonly mode: MirrorNetworkMode;
+  readonly builtin: BuiltinMirrorNetwork;
+  readonly custom: readonly MirrorNetworkServer[];
+}
+
+export interface UpdateMirrorNetworkRequest {
+  readonly mode: MirrorNetworkMode;
+  readonly servers?: readonly MirrorNetworkServerInput[];
+}

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Workspace } from "../types";
+import type { UpdateMirrorNetworkRequest, Workspace } from "../types";
 import { api } from "../api";
 import { defaultStorage } from "../platform/storage";
 import { clearWorkspaceStorage } from "../platform/storage-cleanup";
@@ -92,6 +92,22 @@ export function useDeleteWorkspace() {
  * Adds a server to the workspace library. It is assigned to no agent: an
  * agent owner gives it to their agent separately.
  */
+/** Updates the workspace screen-mirror ICE/TURN plan (owner/admin only). */
+export function useUpdateWorkspaceMirrorNetwork(wsId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UpdateMirrorNetworkRequest) =>
+      api.updateWorkspaceMirrorNetwork(wsId, payload),
+    onSuccess: (data) => {
+      queryClient.setQueryData(workspaceKeys.mirrorNetwork(wsId), data);
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: workspaceKeys.mirrorNetwork(wsId),
+      }),
+  });
+}
+
 export function useCreateWorkspaceMcpServer(wsId: string) {
   const queryClient = useQueryClient();
   return useMutation({

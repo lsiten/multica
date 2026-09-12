@@ -229,6 +229,8 @@ import type {
   CreateCommentSubIssueAgentRequest,
   CreateCommentSubIssueRequest,
   CreateMirrorSessionRequest,
+  MirrorNetworkSettings,
+  UpdateMirrorNetworkRequest,
   MirrorICEConfig,
   MirrorSessionResponse,
 } from "../types";
@@ -461,6 +463,8 @@ import {
   EMPTY_MIRROR_SESSION_RESPONSE,
   MirrorICEConfigSchema,
   EMPTY_MIRROR_ICE_CONFIG,
+  MirrorNetworkSettingsSchema,
+  EMPTY_MIRROR_NETWORK_SETTINGS,
   PinnedItemSchema,
   PinnedItemListSchema,
   EMPTY_PINNED_ITEM,
@@ -1823,6 +1827,50 @@ export class ApiClient {
     await this.fetchRaw(
       `/api/runtimes/${encodeURIComponent(runtimeId)}/mirror/sessions/${encodeURIComponent(sessionId)}?viewer_id=${encodeURIComponent(viewerId)}`,
       { method: "DELETE" },
+    );
+  }
+
+  async getWorkspaceMirrorNetwork(
+    workspaceId: string,
+  ): Promise<MirrorNetworkSettings> {
+    try {
+      const res = await this.fetchRaw(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/mirror/network`,
+      );
+      const data: unknown = await res.json().catch((): unknown => null);
+      return parseWithFallback(
+        data,
+        MirrorNetworkSettingsSchema,
+        EMPTY_MIRROR_NETWORK_SETTINGS,
+        { endpoint: "GET /api/workspaces/:id/mirror/network" },
+      );
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+        // Older self-hosted backends do not ship the endpoint. Do not pretend
+        // the bundled relay is available: render the read-only unavailable state.
+        return EMPTY_MIRROR_NETWORK_SETTINGS;
+      }
+      throw error;
+    }
+  }
+
+  async updateWorkspaceMirrorNetwork(
+    workspaceId: string,
+    payload: UpdateMirrorNetworkRequest,
+  ): Promise<MirrorNetworkSettings> {
+    const res = await this.fetchRaw(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/mirror/network`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+        extraHeaders: { "Content-Type": "application/json" },
+      },
+    );
+    return parseWithFallback(
+      await res.json() as unknown,
+      MirrorNetworkSettingsSchema,
+      EMPTY_MIRROR_NETWORK_SETTINGS,
+      { endpoint: "PATCH /api/workspaces/:id/mirror/network" },
     );
   }
 

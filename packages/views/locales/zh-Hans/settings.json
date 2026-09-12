@@ -379,7 +379,8 @@
       "quick_actions": "快捷操作",
       "plugins": "Plugins",
       "mcp": "MCP",
-      "billing": "账单与套餐"
+      "billing": "账单与套餐",
+      "mirror_network": "屏幕镜像"
     },
     "groups": {
       "personal": "个人设置",
@@ -1397,5 +1398,56 @@
     "status_loading": "正在检查...",
     "status_unknown": "状态暂不可用",
     "channel_hint": "在 {{channel}} 中与智能体对话、创建任务。"
+  },
+  "mirror_network": {
+    "title": "屏幕镜像",
+    "description": "配置观看端与运行时建立 WebRTC 连接时使用的 STUN/TURN 中继。处于不同限制性网络时，必须有可用的 TURN 服务器才能保证连接。",
+    "status_title": "当前状态",
+    "active_source": "当前生效配置",
+    "turn_ready": "TURN 已就绪",
+    "turn_missing": "未配置 TURN",
+    "builtin_host": "内置 TURN 服务",
+    "builtin_host_unset": "未设置公网主机名",
+    "builtin_available": "可用",
+    "builtin_unavailable": "不可用",
+    "locked_title": "已由部署配置锁定",
+    "locked_description": "服务器通过环境变量 MULTICA_MIRROR_ICE_SERVERS 固定了镜像中继配置，工作区设置为只读。",
+    "no_turn_title": "当前没有可用的 TURN 服务器",
+    "no_turn_description": "当观看端和运行时处于不同的限制性网络时，镜像可能无法连接。请启用内置 TURN 或填写自定义 TURN 服务器。",
+    "mode_title": "中继模式",
+    "mode_description": "默认使用当前部署自带的内置 TURN；也可以改为自定义服务器或完全关闭。",
+    "sources": {
+      "env": "由部署环境变量固定",
+      "builtin": "使用部署内置的 TURN 服务",
+      "custom": "使用工作区自定义服务器",
+      "disabled": "已关闭，仅允许直连",
+      "builtin_unavailable": "内置 TURN 未就绪"
+    },
+    "modes": {
+      "builtin_label": "内置 TURN（推荐）",
+      "builtin_description": "由当前 Multica 部署提供的 coturn 中继，自动签发短期凭据。",
+      "builtin_unavailable_description": "此部署尚未启用内置 TURN 服务，请联系管理员设置 MULTICA_TURN_ENABLED 与公网主机名，或改用自定义服务器。",
+      "custom_label": "自定义服务器",
+      "custom_description": "使用你自己的 STUN/TURN 服务器。至少需要包含一个 turn: 或 turns: 地址。",
+      "disabled_label": "关闭",
+      "disabled_description": "不向镜像会话提供任何 STUN/TURN 服务器，仅在同一直连网络下可用。"
+    },
+    "custom": {
+      "server_index": "服务器 {{index}}",
+      "urls": "ICE URL（每行一个，或用逗号分隔）",
+      "username": "用户名（可选）",
+      "credential": "凭据（可选）",
+      "credential_saved": "已保存，留空保持不变",
+      "credential_kept": "凭据已加密保存。留空保存会保留现有凭据，输入新值则覆盖。",
+      "add": "添加服务器",
+      "remove": "移除该服务器",
+      "needs_turn": "至少需要一个 turn: 或 turns: URL 才能保存。"
+    },
+    "save": "保存",
+    "saved": "镜像网络设置已保存",
+    "errors": {
+      "requires_turn": "自定义模式至少需要一个包含 turn: 或 turns: URL 的服务器",
+      "save": "保存失败，请稍后重试"
+    }
   }
 }

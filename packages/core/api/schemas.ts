@@ -87,6 +87,8 @@ import type {
   WebhookDelivery,
   WorkspaceMcpServer,
   MirrorSessionResponse,
+  MirrorNetworkSettings,
+  MirrorNetworkMode,
   PinnedItem,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
@@ -116,6 +118,59 @@ export const MirrorICEConfigSchema = z.object({
 }).loose();
 
 export const EMPTY_MIRROR_ICE_CONFIG = { ice_servers: [], turn_configured: false };
+
+const MIRROR_NETWORK_URL_LIST_SCHEMA = z.array(z.unknown()).transform((urls) =>
+  urls.filter((value): value is string => typeof value === "string" && value.trim() !== ""),
+);
+
+export const MirrorNetworkServerSchema = z.object({
+  urls: z.union([
+    z.string().transform((value) => (value.trim() ? [value.trim()] : [])),
+    MIRROR_NETWORK_URL_LIST_SCHEMA,
+  ]),
+  username: z.string().optional(),
+  has_credential: z.boolean().default(false),
+}).loose();
+
+export const BuiltinMirrorNetworkSchema = z.object({
+  enabled: z.boolean().default(false),
+  available: z.boolean().default(false),
+  host: z.string().optional(),
+  port: z.number().int().positive().optional(),
+  transports: z.array(z.string()).optional(),
+  credential_ttl_seconds: z.number().int().positive().optional(),
+}).loose();
+
+export const MirrorNetworkSettingsSchema = z.object({
+  source: z.string().default("builtin_unavailable"),
+  locked: z.boolean().default(false),
+  can_manage: z.boolean().default(false),
+  turn_configured: z.boolean().default(false),
+  mode: z.enum(["builtin", "custom", "disabled"]).default("builtin"),
+  builtin: BuiltinMirrorNetworkSchema.default({
+    enabled: false,
+    available: false,
+  }),
+  // Drop malformed server entries individually rather than white-screening.
+  custom: z.array(z.unknown()).transform((servers) =>
+    servers.flatMap((server) => {
+      const parsed = MirrorNetworkServerSchema.safeParse(server);
+      return parsed.success && parsed.data.urls.length > 0 ? [parsed.data] : [];
+    }),
+  ),
+}).loose();
+
+export const EMPTY_MIRROR_NETWORK_SETTINGS: MirrorNetworkSettings = {
+  source: "builtin_unavailable",
+  locked: false,
+  can_manage: false,
+  turn_configured: false,
+  mode: "builtin",
+  builtin: { enabled: false, available: false },
+  custom: [],
+};
+
+export type { MirrorNetworkMode };
 
 const MirrorAnswerSchema = z.object({
   type: z.literal("answer"),

@@ -17,6 +17,10 @@ images:
     repository: pgvector/pgvector
     tag: pg17
     pullPolicy: IfNotPresent
+  turn:
+    repository: instrumentisto/coturn
+    tag: latest
+    pullPolicy: IfNotPresent
 
 # -----------------------------------------------------------------------------
 # Pre-created Secret with sensitive values. Create it before `helm install`:
@@ -28,7 +32,8 @@ images:
 #     --from-literal=RESEND_API_KEY="" \
 #     --from-literal=GOOGLE_CLIENT_SECRET="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
-#     --from-literal=MULTICA_DEV_VERIFICATION_CODE=""
+#     --from-literal=MULTICA_DEV_VERIFICATION_CODE="" \
+#     --from-literal=MULTICA_TURN_SECRET=""
 #
 # External postgres (postgres.external.enabled=true):
 #   Replace POSTGRES_PASSWORD with DATABASE_URL pointing at your external cluster.
@@ -69,6 +74,41 @@ postgres:
       cpu: 1000m
       memory: 1Gi
   # Standard Kubernetes scheduling constraints for the postgres Deployment.
+  affinity: {}
+  tolerations: []
+
+
+# -----------------------------------------------------------------------------
+# Built-in coturn TURN relay for screen mirroring
+# -----------------------------------------------------------------------------
+turn:
+  enabled: true
+  # Public DNS name or IP advertised to browser and daemon WebRTC peers.
+  # Leave empty to derive the host from backend.config.appUrl; localhost is
+  # never usable across networks. Cloud firewalls and security groups must
+  # allow ingress to 3478/tcp and 3478/udp. TURN cannot be proxied by the HTTP
+  # Ingress because WebRTC requires UDP/TCP at this Service.
+  publicHost: ""
+  credentialTTL: 1h
+  service:
+    type: LoadBalancer
+    port: 3478
+    loadBalancerIP: ""
+    externalTrafficPolicy: Cluster
+    # Relay media ports for symmetric-NAT peers. The whole UDP range is
+    # exposed on the Service; some cloud load balancers cap the number of
+    # ports per Service, so tighten the range there if provision fails.
+    relay:
+      enabled: true
+      minPort: 49160
+      maxPort: 49260
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
   affinity: {}
   tolerations: []
 

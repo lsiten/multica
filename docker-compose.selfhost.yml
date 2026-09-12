@@ -1,6 +1,9 @@
-# Self-hosting Docker Compose — starts PostgreSQL, backend, and frontend.
+# Self-hosting Docker Compose — starts PostgreSQL, coturn, backend, and frontend.
 #
-# Services bind to 127.0.0.1 only. For cross-machine or public access, front
+# Web/API services bind to 127.0.0.1 only. The built-in TURN service is the
+# deliberate exception: it must publish UDP/TCP 3478 and the relay UDP port
+# range publicly for peers across restrictive NATs. For cross-machine or
+# public access, front
 # them with a reverse proxy (Caddy / nginx / Cloudflare Tunnel) that terminates
 # TLS and forwards to 127.0.0.1:8080 (backend) and 127.0.0.1:3000 (frontend).
 # Do NOT change these bindings to 0.0.0.0 — Docker bypasses host firewalls
@@ -54,6 +57,37 @@ services:
       timeout: 5s
       retries: 5
 
+  turn:
+    image: ${MULTICA_TURN_IMAGE:-instrumentisto/coturn}:${MULTICA_TURN_IMAGE_TAG:-latest}
+    pull_policy: always
+    command:
+      - sh
+      - -c
+      - >-
+        exec turnserver
+        -c /etc/coturn/turnserver.conf
+        --realm="$${MULTICA_TURN_REALM}"
+        --use-auth-secret
+        --static-auth-secret="$${MULTICA_TURN_SECRET:-$${JWT_SECRET}}"
+        --min-port=$${TURN_MIN_PORT}
+        --max-port=$${TURN_MAX_PORT}
+    environment:
+      MULTICA_TURN_REALM: ${MULTICA_TURN_PUBLIC_HOST:-}
+      MULTICA_TURN_SECRET: ${MULTICA_TURN_SECRET:-${JWT_SECRET}}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value — generate one with 'openssl rand -hex 32'}
+      TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
+      TURN_MAX_PORT: ${TURN_MAX_PORT:-49260}
+    ports:
+      # TURN is a public UDP/TCP relay and intentionally does not bind to
+      # 127.0.0.1 unlike the web/API ports. Open 3478/udp, 3478/tcp and the
+      # whole relay UDP range in the cloud firewall and security group.
+      - "${TURN_PORT:-3478}:3478/tcp"
+      - "${TURN_PORT:-3478}:3478/udp"
+      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49260}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49260}/udp"
+    volumes:
+      - ./deploy/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    restart: unless-stopped
+
   backend:
     image: ${MULTICA_BACKEND_IMAGE:-ghcr.io/lsiten/multica-backend}:${MULTICA_IMAGE_TAG:-latest}
     pull_policy: always
@@ -103,6 +137,11 @@ services:
       APP_ENV: ${APP_ENV:-production}
       MULTICA_DEV_VERIFICATION_CODE: ${MULTICA_DEV_VERIFICATION_CODE:-}
       MULTICA_APP_URL: ${MULTICA_APP_URL:-http://localhost:3000}
+      MULTICA_TURN_ENABLED: ${MULTICA_TURN_ENABLED:-true}
+      MULTICA_TURN_PUBLIC_HOST: ${MULTICA_TURN_PUBLIC_HOST:-}
+      MULTICA_TURN_PORT: ${TURN_PORT:-3478}
+      MULTICA_TURN_SECRET: ${MULTICA_TURN_SECRET:-${JWT_SECRET}}
+      MULTICA_TURN_CREDENTIAL_TTL: ${MULTICA_TURN_CREDENTIAL_TTL:-1h}
       MULTICA_NOTIFICATION_SECRET_KEY: ${MULTICA_NOTIFICATION_SECRET_KEY:-}
       MULTICA_DATABASE_STARTUP_TIMEOUT: ${MULTICA_DATABASE_STARTUP_TIMEOUT:-3m}
       MULTICA_DATABASE_CONNECT_TIMEOUT: ${MULTICA_DATABASE_CONNECT_TIMEOUT:-5s}

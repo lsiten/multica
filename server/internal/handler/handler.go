@@ -151,9 +151,13 @@ type Config struct {
 	// Surfaced through /api/config so self-hosted operators can confirm which
 	// server build is deployed. Empty in dev builds.
 	ServerVersion string
-	// MirrorICE supplies deployment-configured STUN/TURN servers for screen
-	// mirror peer connections.
+	// MirrorICE supplies deployment-locked STUN/TURN servers for screen mirror
+	// peer connections. When set, workspace mirror network settings are read-only.
 	MirrorICE mirror.ICEPlan
+	// MirrorBuiltinTURN describes the coturn service bundled with the deployment.
+	MirrorBuiltinTURN mirror.BuiltinTURNConfig
+	// MirrorNetworkSecretBox encrypts workspace-provided custom TURN credentials.
+	MirrorNetworkSecretBox *secretbox.Box
 }
 
 type cloudRuntimeProxy interface {

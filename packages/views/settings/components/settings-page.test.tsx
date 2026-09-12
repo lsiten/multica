@@ -31,6 +31,8 @@ vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
+vi.mock("./mcp-tab", stub("McpTab"));
+vi.mock("./mirror-network-tab", stub("MirrorNetworkTab"));
 
 vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
@@ -116,6 +118,19 @@ describe("SettingsPage nav trigger", () => {
       screen.queryByRole("button", { name: "Toggle left sidebar" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
+  });
+});
+
+describe("SettingsPage screen mirroring tab", () => {
+  it("exposes the mirror network entry under workspace settings", () => {
+    navigationState.search = "tab=mirror-network";
+
+    renderWithI18n(<SettingsPage />);
+
+    expect(
+      screen.getByRole("link", { name: "Screen mirroring" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("MirrorNetworkTab")).toBeInTheDocument();
   });
 });
 

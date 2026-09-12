@@ -379,7 +379,8 @@
       "quick_actions": "Quick Actions",
       "plugins": "Plugins",
       "mcp": "MCP",
-      "billing": "Billing"
+      "billing": "Billing",
+      "mirror_network": "Screen mirroring"
     },
     "groups": {
       "personal": "Personal",
@@ -1404,5 +1405,56 @@
     "status_loading": "Checking...",
     "status_unknown": "Status unavailable",
     "channel_hint": "Chat with agents and create issues from {{channel}}."
+  },
+  "mirror_network": {
+    "title": "Screen mirroring",
+    "description": "Configure the STUN/TURN relays used for WebRTC connections between viewers and runtimes. A reachable TURN server is required when the two peers sit behind different restrictive networks.",
+    "status_title": "Current status",
+    "active_source": "Active configuration",
+    "turn_ready": "TURN ready",
+    "turn_missing": "No TURN configured",
+    "builtin_host": "Built-in TURN service",
+    "builtin_host_unset": "No public hostname configured",
+    "builtin_available": "Available",
+    "builtin_unavailable": "Unavailable",
+    "locked_title": "Locked by deployment configuration",
+    "locked_description": "This server pins mirror relays with the MULTICA_MIRROR_ICE_SERVERS environment variable, so workspace settings are read-only.",
+    "no_turn_title": "No TURN server is currently available",
+    "no_turn_description": "When the viewer and runtime are on different restrictive networks, mirroring may fail to connect. Enable the built-in TURN service or provide custom TURN servers.",
+    "mode_title": "Relay mode",
+    "mode_description": "Use the TURN relay bundled with this deployment by default, or switch to your own servers or disable relays entirely.",
+    "sources": {
+      "env": "Pinned by deployment environment variable",
+      "builtin": "Using the built-in TURN service",
+      "custom": "Using workspace custom servers",
+      "disabled": "Disabled, direct connections only",
+      "builtin_unavailable": "Built-in TURN is not ready"
+    },
+    "modes": {
+      "builtin_label": "Built-in TURN (recommended)",
+      "builtin_description": "The coturn relay bundled with this Multica deployment, with automatically minted short-lived credentials.",
+      "builtin_unavailable_description": "The built-in TURN service is not enabled for this deployment. Ask an administrator to set MULTICA_TURN_ENABLED and a public hostname, or use custom servers.",
+      "custom_label": "Custom servers",
+      "custom_description": "Use your own STUN/TURN servers. At least one turn: or turns: URL is required.",
+      "disabled_label": "Disabled",
+      "disabled_description": "No STUN/TURN servers are offered to mirror sessions; this only works on networks that allow direct peer connections."
+    },
+    "custom": {
+      "server_index": "Server {{index}}",
+      "urls": "ICE URLs (one per line, or comma-separated)",
+      "username": "Username (optional)",
+      "credential": "Credential (optional)",
+      "credential_saved": "Saved — leave empty to keep",
+      "credential_kept": "The credential is stored encrypted. Saving with this field empty keeps the existing credential; typing a new value overwrites it.",
+      "add": "Add server",
+      "remove": "Remove this server",
+      "needs_turn": "At least one turn: or turns: URL is required to save."
+    },
+    "save": "Save",
+    "saved": "Mirror network settings saved",
+    "errors": {
+      "requires_turn": "Custom mode requires at least one server with a turn: or turns: URL",
+      "save": "Save failed, please try again later"
+    }
   }
 }
