@@ -630,6 +630,48 @@ func attachDaemonTestClient(hub *Hub, runtimeID string) *client {
 	return c
 }
 
+func TestSendMirrorOfferTargetsNewestConnectionPerDaemon(t *testing.T) {
+	hub := NewHub()
+	const runtimeID = "runtime-1"
+
+	older := &client{
+		hub:          hub,
+		send:         make(chan []byte, 4),
+		identity:     ClientIdentity{DaemonID: "daemon-1"},
+		registeredAt: time.Unix(1, 0),
+		runtimes:     map[string]struct{}{runtimeID: {}},
+	}
+	newer := &client{
+		hub:          hub,
+		send:         make(chan []byte, 4),
+		identity:     ClientIdentity{DaemonID: "daemon-1"},
+		registeredAt: time.Unix(2, 0),
+		runtimes:     map[string]struct{}{runtimeID: {}},
+	}
+	hub.register(older)
+	hub.register(newer)
+
+	payload := protocol.MirrorOfferPayload{
+		SessionID:   "session-1",
+		WorkspaceID: "workspace-1",
+		RuntimeID:   runtimeID,
+		UserID:      "user-1",
+		DaemonID:    "daemon-1",
+		ViewerID:    "viewer-1",
+		Offer:       protocol.MirrorSessionDescription{Type: "offer", SDP: "v=0"},
+		ExpiresAt:   time.Now().Add(time.Minute),
+	}
+	if !hub.SendMirrorOffer(runtimeID, payload) {
+		t.Fatal("expected offer delivery to the newest daemon connection")
+	}
+	if got := len(older.send); got != 0 {
+		t.Fatalf("stale daemon connection received %d offer frames, want 0", got)
+	}
+	if got := len(newer.send); got != 1 {
+		t.Fatalf("newest daemon connection received %d offer frames, want 1", got)
+	}
+}
+
 func attachDaemonWorkspaceTestClient(hub *Hub, workspaceID string) *client {
 	c := &client{
 		send:     make(chan []byte, 2),

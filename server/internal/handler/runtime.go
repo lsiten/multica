@@ -958,6 +958,13 @@ func (h *Handler) DeleteAgentRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete runtime")
 		return
 	}
+	if err := qtx.DeletePinnedItemsByItem(r.Context(), db.DeletePinnedItemsByItemParams{
+		ItemType: pinnedItemTypeRuntimeMirror,
+		ItemID:   rt.ID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete runtime pins")
+		return
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete runtime")
 		return
@@ -1169,6 +1176,13 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 	// Finally delete the runtime row itself.
 	if err := qtx.DeleteAgentRuntime(r.Context(), rt.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete runtime")
+		return
+	}
+	if err := qtx.DeletePinnedItemsByItem(r.Context(), db.DeletePinnedItemsByItemParams{
+		ItemType: pinnedItemTypeRuntimeMirror,
+		ItemID:   rt.ID,
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete runtime pins")
 		return
 	}
 

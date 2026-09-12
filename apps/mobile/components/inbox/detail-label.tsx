@@ -56,6 +56,8 @@ const TYPE_LABEL: Record<InboxItemType, string> = {
   quick_create_unconfirmed: "Quick-create needs a check",
   autopilot_paused: "Autopilot paused",
   autopilot_quota_exceeded: "Autopilot run limit reached",
+  runtime_mirror_viewer_started: "Screen mirroring started",
+  runtime_mirror_viewer_stopped: "Screen mirroring ended",
 };
 
 // due_date is a calendar day — format timezone-safely (no offset day shift).

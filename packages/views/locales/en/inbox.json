@@ -76,7 +76,9 @@
     "quick_create_failed": "Create with agent failed",
     "quick_create_unconfirmed": "Create with agent unconfirmed",
     "autopilot_paused": "Autopilot paused",
-    "autopilot_quota_exceeded": "Autopilot run limit reached"
+    "autopilot_quota_exceeded": "Autopilot run limit reached",
+    "runtime_mirror_viewer_started": "Screen mirroring started",
+    "runtime_mirror_viewer_stopped": "Screen mirroring ended"
   },
   "labels": {
     "set_status_to": "Set status to",
@@ -90,7 +92,9 @@
     "reacted_to_comment": "Reacted {{emoji}} to your comment",
     "created_with_agent": "Created with agent: {{identifier}}",
     "failed_with_detail": "Failed: {{detail}}",
-    "autopilot_quota_blocked": "Run blocked because the limit was reached"
+    "autopilot_quota_blocked": "Run blocked because the limit was reached",
+    "mirror_viewing_started": "{{runtime}} is being viewed.",
+    "mirror_viewing_stopped": "Screen mirroring for {{runtime}} has ended."
   },
   "toasts": {
     "source_context_retry_started": "Retry started with the original context",

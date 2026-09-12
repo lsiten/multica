@@ -133,6 +133,9 @@ function PinRow({
       <IssuePinRow pin={pin} wsId={wsId} wsSlug={wsSlug} />
     );
   }
+  if (pin.item_type === "runtime_mirror") {
+    return <MissingPinRow itemType="runtime_mirror" itemId={pin.item_id} />;
+  }
   return <ProjectPinRow pin={pin} wsId={wsId} wsSlug={wsSlug} />;
 }
 
@@ -211,7 +214,7 @@ function MissingPinRow({
   itemType,
   itemId,
 }: {
-  itemType: "issue" | "project";
+  itemType: "issue" | "project" | "runtime_mirror";
   itemId: string;
 }) {
   const { colorScheme } = useColorScheme();
@@ -220,7 +223,7 @@ function MissingPinRow({
     <Pressable
       onPress={() => deletePin.mutate({ itemType, itemId })}
       className="px-4 py-3 flex-row items-center gap-3 active:bg-secondary opacity-60"
-      accessibilityLabel={`Unavailable ${itemType}, tap to unpin`}
+      accessibilityLabel={`Unavailable ${itemType.replaceAll("_", " ")} pin, tap to unpin`}
     >
       <Ionicons
         name="alert-circle-outline"
@@ -228,7 +231,7 @@ function MissingPinRow({
         color={THEME[colorScheme].mutedForeground}
       />
       <Text className="flex-1 text-sm text-muted-foreground" numberOfLines={1}>
-        Unavailable {itemType} — tap to unpin
+        Unavailable {itemType.replaceAll("_", " ")} pin — tap to unpin
       </Text>
     </Pressable>
   );

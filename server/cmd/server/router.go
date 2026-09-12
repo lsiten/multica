@@ -437,6 +437,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		LLMDefaultModel:          strings.TrimSpace(os.Getenv("MULTICA_LLM_DEFAULT_MODEL")),
 		LLMMaxRetries:            opts.LLMMaxRetries,
 		ServerVersion:            normalizeServerVersion(version),
+		MirrorICE:                handler.LoadMirrorICEPlanFromEnv(),
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)
 	invitationRateLimits := handler.DefaultInvitationRateLimits()
@@ -1279,6 +1280,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// WS-first claim (MUL-4257): route daemon:rpc_request frames (e.g.
 	// tasks.claim) through the same handlers as the HTTP endpoints.
 	daemonHub.SetRPCHandler(h.DaemonRPCHandler)
+	daemonHub.SetMirrorAnswerHandler(h.HandleDaemonMirrorAnswer)
+	daemonHub.SetMirrorAnswerFailureHandler(h.HandleDaemonMirrorAnswerFailure)
+	daemonHub.SetMirrorViewerHandler(h.HandleDaemonMirrorViewer)
+	daemonHub.SetDisconnectHandler(h.HandleDaemonMirrorDisconnect)
 	health := newServerHealth(pool)
 
 	r := chi.NewRouter()
@@ -2187,6 +2192,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/local-skills/{requestId}", h.GetLocalSkillListRequest)
 					r.Post("/local-skills/import", h.InitiateImportLocalSkill)
 					r.Get("/local-skills/import/{requestId}", h.GetLocalSkillImportRequest)
+					r.Get("/mirror/config", h.GetMirrorICEConfig)
+					r.Post("/mirror/sessions", h.CreateMirrorSession)
+					r.Get("/mirror/sessions/{sessionId}", h.GetMirrorSession)
+					r.Delete("/mirror/sessions/{sessionId}", h.CloseMirrorSession)
 					r.Delete("/", h.DeleteAgentRuntime)
 					// Confirmed variant of DELETE: unbind every agent bound to
 					// this runtime (they keep their configuration and chats and

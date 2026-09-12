@@ -162,6 +162,7 @@
     "agent_restored_toast": "Agent restored",
     "restore_failed_toast": "Failed to restore agent",
     "dm": "DM",
+    "open_runtime_mirror": "Open runtime mirror",
     "dm_no_permission_toast": "You don't have access to chat with this agent.",
     "runtime_required_toast": "Bind a runtime before running this agent.",
     "assign_work": "Assign work",

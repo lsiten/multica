@@ -11,6 +11,7 @@ import { MemberDetailPage } from "./pages/member-detail-page";
 import {
   RuntimeDetailPage,
   RuntimeSettingsPage,
+  RuntimeMirrorPage,
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@multica/views/issues/components";
@@ -176,6 +177,11 @@ export const appRoutes: RouteObject[] = [
             path: "runtimes/:id/runtime/:runtimeId",
             element: <RuntimeSettingsPage />,
             handle: { title: "Runtime" },
+          },
+          {
+            path: "runtimes/:id/mirror",
+            element: <RuntimeMirrorPage />,
+            handle: { title: "Runtime mirror" },
           },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
           {

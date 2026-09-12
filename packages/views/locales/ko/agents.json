@@ -153,6 +153,7 @@
     "agent_restored_toast": "에이전트를 복원했습니다",
     "restore_failed_toast": "에이전트를 복원하지 못했습니다",
     "dm": "DM",
+    "open_runtime_mirror": "런타임 미러 열기",
     "dm_no_permission_toast": "이 에이전트와 채팅할 권한이 없습니다.",
     "runtime_required_toast": "이 에이전트를 실행하기 전에 런타임을 연결하세요.",
     "assign_work": "작업 할당",

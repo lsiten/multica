@@ -473,6 +473,7 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		metadata, _ := json.Marshal(map[string]any{
 			"version":      runtime.Version,
 			"cli_version":  req.CLIVersion,
+			"client_os":    strings.TrimSpace(r.Header.Get("X-Client-OS")),
 			"launched_by":  req.LaunchedBy,
 			"capabilities": requestClientCapabilities(r),
 		})
@@ -679,6 +680,7 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 				metadata, _ := json.Marshal(map[string]any{
 					"version":                            "",
 					"cli_version":                        req.CLIVersion,
+					"client_os":                          strings.TrimSpace(r.Header.Get("X-Client-OS")),
 					"launched_by":                        req.LaunchedBy,
 					"capabilities":                       requestClientCapabilities(r),
 					"runtime_profile_registration_error": true,

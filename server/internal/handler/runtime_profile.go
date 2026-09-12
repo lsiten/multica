@@ -471,6 +471,15 @@ func (h *Handler) DeleteRuntimeProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to clean up runtime instances")
 		return
 	}
+	for _, runtime := range deletedRuntimes {
+		if err := qtx.DeletePinnedItemsByItem(r.Context(), db.DeletePinnedItemsByItemParams{
+			ItemType: pinnedItemTypeRuntimeMirror,
+			ItemID:   runtime.ID,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to delete runtime pins")
+			return
+		}
+	}
 	if !profileMissing {
 		if err := qtx.DeleteRuntimeProfile(r.Context(), db.DeleteRuntimeProfileParams{
 			ID:          profileUUID,

@@ -5,6 +5,7 @@ import {
   getInboxDisplayTitle,
   getQuickCreateOutcomeDetail,
   isAutopilotQuotaNotice,
+  isRuntimeMirrorViewerNotice,
   isQuickCreateOutcome,
   resolveDetailItem,
   stripQuickCreatePrefix,
@@ -108,6 +109,12 @@ describe("inbox display helpers", () => {
   it("keeps paused autopilot title and body on the same server fallback path", () => {
     expect(isAutopilotQuotaNotice("autopilot_paused")).toBe(false);
     expect(isAutopilotQuotaNotice("autopilot_quota_exceeded")).toBe(true);
+  });
+
+  it("recognizes runtime mirror viewer lifecycle notifications", () => {
+    expect(isRuntimeMirrorViewerNotice("runtime_mirror_viewer_started")).toBe(true);
+    expect(isRuntimeMirrorViewerNotice("runtime_mirror_viewer_stopped")).toBe(true);
+    expect(isRuntimeMirrorViewerNotice("new_comment")).toBe(false);
   });
 });
 

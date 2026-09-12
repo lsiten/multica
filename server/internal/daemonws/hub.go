@@ -17,6 +17,10 @@ const (
 	writeWait  = 10 * time.Second
 	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10
+
+	// Mirror answers may carry a complete 256 KiB SDP. Reserve envelope room for
+	// the surrounding identity fields, matching the HTTP signaling body limit.
+	daemonInboundFrameLimit = protocol.MaxMirrorSDPBytes + 64*1024
 )
 
 // ClientIdentity captures the already-authenticated daemon connection scope.
@@ -148,12 +152,16 @@ func (i ClientIdentity) AllowsWorkspace(workspaceID string) bool {
 }
 
 type client struct {
-	hub       *Hub
-	conn      *websocket.Conn
-	send      chan []byte
-	identity  ClientIdentity
-	runtimeMu sync.RWMutex
-	runtimes  map[string]struct{}
+	hub      *Hub
+	conn     *websocket.Conn
+	send     chan []byte
+	identity ClientIdentity
+	// registeredAt orders duplicate daemon connections (reconnect overlap or
+	// two local processes sharing one daemon ID) so single-responder fanout
+	// such as mirror offers always targets the newest socket.
+	registeredAt time.Time
+	runtimeMu    sync.RWMutex
+	runtimes     map[string]struct{}
 
 	// ctx is cancelled when the connection tears down, so async RPC handlers
 	// stop instead of running against a dead socket. cancel is invoked from
@@ -295,6 +303,13 @@ type HeartbeatHandler func(ctx context.Context, identity ClientIdentity, runtime
 // goroutine, so it must not assume it owns the read pump.
 type RPCHandler func(ctx context.Context, identity ClientIdentity, method string, body json.RawMessage) (status int, respBody json.RawMessage, err error)
 
+// MirrorAnswerHandler processes an authenticated daemon mirror answer.
+type MirrorAnswerHandler func(ctx context.Context, identity ClientIdentity, payload protocol.MirrorAnswerPayload) error
+
+// MirrorAnswerFailureHandler processes an authenticated daemon mirror
+// answer failure without SDP or internal error details.
+type MirrorAnswerFailureHandler func(ctx context.Context, identity ClientIdentity, payload protocol.MirrorAnswerFailurePayload) error
+
 // maxInFlightRPCPerClient bounds concurrent RPC handlers per connection so a
 // single daemon cannot fan out unbounded goroutines / DB work over one socket.
 const maxInFlightRPCPerClient = 8
@@ -327,6 +342,16 @@ type Hub struct {
 
 	rpcMu sync.RWMutex
 	onRPC RPCHandler
+
+	mirrorMu              sync.RWMutex
+	onMirrorAnswer        MirrorAnswerHandler
+	onMirrorAnswerFailure MirrorAnswerFailureHandler
+
+	mirrorViewerMu sync.RWMutex
+	onMirrorViewer MirrorViewerHandler
+
+	disconnectMu sync.RWMutex
+	onDisconnect DisconnectHandler
 
 	kindMu       sync.RWMutex
 	kindRecorder MessageKindRecorder
@@ -388,6 +413,36 @@ func (h *Hub) rpcHandler() RPCHandler {
 	return h.onRPC
 }
 
+func (h *Hub) SetMirrorAnswerHandler(fn MirrorAnswerHandler) {
+	if h == nil {
+		return
+	}
+	h.mirrorMu.Lock()
+	h.onMirrorAnswer = fn
+	h.mirrorMu.Unlock()
+}
+
+func (h *Hub) mirrorAnswerHandler() MirrorAnswerHandler {
+	h.mirrorMu.RLock()
+	defer h.mirrorMu.RUnlock()
+	return h.onMirrorAnswer
+}
+
+func (h *Hub) SetMirrorAnswerFailureHandler(fn MirrorAnswerFailureHandler) {
+	if h == nil {
+		return
+	}
+	h.mirrorMu.Lock()
+	h.onMirrorAnswerFailure = fn
+	h.mirrorMu.Unlock()
+}
+
+func (h *Hub) mirrorAnswerFailureHandler() MirrorAnswerFailureHandler {
+	h.mirrorMu.RLock()
+	defer h.mirrorMu.RUnlock()
+	return h.onMirrorAnswerFailure
+}
+
 // SetMessageKindRecorder installs an optional callback fired exactly once per
 // inbound daemon WebSocket frame. Used by the metrics layer to count traffic
 // by handler kind without hard-coupling the hub to any specific collector.
@@ -428,12 +483,13 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, identity C
 		}
 	}
 	c := &client{
-		hub:      h,
-		conn:     conn,
-		send:     make(chan []byte, 16),
-		identity: identity,
-		runtimes: runtimes,
-		rpcSem:   make(chan struct{}, maxInFlightRPCPerClient),
+		hub:          h,
+		conn:         conn,
+		send:         make(chan []byte, 16),
+		identity:     identity,
+		registeredAt: time.Now(),
+		runtimes:     runtimes,
+		rpcSem:       make(chan struct{}, maxInFlightRPCPerClient),
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	h.register(c)
@@ -473,6 +529,62 @@ func (h *Hub) NotifyPendingWork(runtimeID, kind string) {
 // when this best-effort notification is missed.
 func (h *Hub) NotifyRuntimeGone(runtimeID string) {
 	h.notifyRuntimeGone(runtimeID, "")
+}
+
+// SendMirrorOffer sends one SDP offer to exactly one authenticated daemon
+// connection currently authorized for runtimeID. When several sockets share
+// the same daemon ID (reconnect overlap, or two local processes using one
+// profile), only the newest one receives the offer; otherwise both daemons
+// would answer the same offer and the second answer would be rejected as a
+// replay, leaving the viewer racing against an unrelated peer connection.
+// SDP is never logged or persisted here.
+func (h *Hub) SendMirrorOffer(runtimeID string, payload protocol.MirrorOfferPayload) bool {
+	if h == nil || strings.TrimSpace(runtimeID) == "" {
+		return false
+	}
+	if err := payload.Validate(); err != nil {
+		return false
+	}
+	data, err := json.Marshal(protocol.Message{
+		Type:    protocol.EventMirrorOffer,
+		Payload: mustMarshalRaw(payload),
+	})
+	if err != nil {
+		return false
+	}
+	h.mu.RLock()
+	clients := h.byRuntime[runtimeID]
+	// Group eligible sockets by daemon ID and fan out only to the newest
+	// connection per daemon. Sockets without a daemon ID fall back to direct
+	// delivery so test/legacy callers keep their current behavior.
+	newestByDaemon := make(map[string]*client)
+	var standalone []*client
+	for c := range clients {
+		if !c.allowsRuntime(runtimeID) {
+			continue
+		}
+		if c.identity.DaemonID == "" {
+			standalone = append(standalone, c)
+			continue
+		}
+		current := newestByDaemon[c.identity.DaemonID]
+		if current == nil || c.registeredAt.After(current.registeredAt) {
+			newestByDaemon[c.identity.DaemonID] = c
+		}
+	}
+	delivered := false
+	for _, c := range standalone {
+		if c.trySend(data) {
+			delivered = true
+		}
+	}
+	for _, c := range newestByDaemon {
+		if c.trySend(data) {
+			delivered = true
+		}
+	}
+	h.mu.RUnlock()
+	return delivered
 }
 
 func (h *Hub) notifyTaskAvailable(runtimeID, taskID, eventID string) {
@@ -928,6 +1040,9 @@ func (h *Hub) unregister(c *client) {
 		"runtimes", c.runtimeCount(),
 		"total_clients", total,
 	)
+	if handler := h.disconnectHandler(); handler != nil {
+		go handler(context.Background(), c.identity)
+	}
 }
 
 func (c *client) readPump() {
@@ -939,9 +1054,9 @@ func (c *client) readPump() {
 		c.conn.Close()
 	}()
 
-	// Read limit sized for daemon:rpc_request frames carrying a machine's full
-	// runtime_id set (MUL-4257), well above the tiny heartbeat/wakeup frames.
-	c.conn.SetReadLimit(64 * 1024)
+	// Read limit admits daemon:rpc_request frames carrying a machine's full
+	// runtime_id set and the largest allowed mirror answer SDP plus its envelope.
+	c.conn.SetReadLimit(daemonInboundFrameLimit)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -981,10 +1096,66 @@ func (c *client) handleFrame(raw []byte) {
 		c.handleHeartbeatFrame(msg.Payload)
 	case protocol.EventDaemonRPCRequest:
 		c.handleRPCFrame(msg.Payload)
+	case protocol.EventMirrorAnswer:
+		c.handleMirrorAnswerFrame(msg.Payload)
+	case protocol.EventMirrorAnswerFailure:
+		c.handleMirrorAnswerFailureFrame(msg.Payload)
+	case protocol.EventMirrorViewer:
+		c.handleMirrorViewerFrame(msg.Payload)
 	default:
 		// Unknown app messages are intentionally ignored for forward
 		// compatibility with future daemon → server message types.
 	}
+}
+
+func (c *client) handleMirrorAnswerFailureFrame(raw json.RawMessage) {
+	var payload protocol.MirrorAnswerFailurePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		slog.Debug("daemon websocket mirror answer failure invalid payload", "error", err, "daemon_id", c.identity.DaemonID)
+		return
+	}
+	if err := payload.Validate(); err != nil {
+		slog.Debug("daemon websocket mirror answer failure rejected", "error", err, "daemon_id", c.identity.DaemonID)
+		return
+	}
+	if !c.allowsRuntime(payload.RuntimeID) {
+		slog.Warn("daemon websocket mirror answer failure for unauthorized runtime", "daemon_id", c.identity.DaemonID, "runtime_id", payload.RuntimeID)
+		return
+	}
+	handler := c.hub.mirrorAnswerFailureHandler()
+	if handler == nil {
+		return
+	}
+	go func() {
+		if err := handler(c.ctx, c.identity, payload); err != nil {
+			slog.Debug("daemon websocket mirror answer failure handler failed", "error", err, "daemon_id", c.identity.DaemonID, "runtime_id", payload.RuntimeID)
+		}
+	}()
+}
+
+func (c *client) handleMirrorAnswerFrame(raw json.RawMessage) {
+	var payload protocol.MirrorAnswerPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		slog.Debug("daemon websocket mirror answer invalid payload", "error", err, "daemon_id", c.identity.DaemonID)
+		return
+	}
+	if err := payload.Validate(); err != nil {
+		slog.Debug("daemon websocket mirror answer rejected", "error", err, "daemon_id", c.identity.DaemonID)
+		return
+	}
+	if !c.allowsRuntime(payload.RuntimeID) {
+		slog.Warn("daemon websocket mirror answer for unauthorized runtime", "daemon_id", c.identity.DaemonID, "runtime_id", payload.RuntimeID)
+		return
+	}
+	handler := c.hub.mirrorAnswerHandler()
+	if handler == nil {
+		return
+	}
+	go func() {
+		if err := handler(c.ctx, c.identity, payload); err != nil {
+			slog.Debug("daemon websocket mirror answer handler failed", "error", err, "daemon_id", c.identity.DaemonID, "runtime_id", payload.RuntimeID)
+		}
+	}()
 }
 
 // handleRPCFrame processes a generic daemon:rpc_request (MUL-4257): it runs the

@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@multica/core/api";
+import type { PinnedItem } from "@multica/core/types";
 import { renderWithI18n } from "../test/i18n";
 import { AppSidebar } from "./app-sidebar";
 
-const { appForeground, chatSessions, chatStore, detail, deletePin, inboxItems, navigation, pins, sidebarState, summary, workspaces } = vi.hoisted(() => ({
+const { appForeground, chatSessions, chatStore, detail, deletePin, inboxItems, navigation, pins, runtimes, runtimeQuery, sidebarState, summary, workspaces } = vi.hoisted(() => ({
   appForeground: { current: true },
   sidebarState: { setOpenMobile: vi.fn() },
   chatSessions: { current: [] as { id?: string; unread_count?: number }[] },
@@ -28,7 +29,25 @@ const { appForeground, chatSessions, chatStore, detail, deletePin, inboxItems, n
         position: 0,
         created_at: "2026-05-06T00:00:00Z",
       },
-    ],
+    ] as PinnedItem[],
+  },
+  runtimes: {
+    current: [] as Array<{
+      id: string;
+      name: string;
+      custom_name: string | null;
+      provider: string;
+      owner_id: string;
+      visibility: "private" | "public";
+    }>,
+  },
+  runtimeQuery: {
+    current: {
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      error: null as unknown,
+    },
   },
 }));
 
@@ -138,8 +157,17 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
     settings: () => "/acme/settings",
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,
+    runtimeMirror: (id: string) => `/acme/runtimes/${id}/mirror`,
   }),
 }));
+vi.mock("@multica/core/runtimes", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@multica/core/runtimes")>();
+  return {
+    ...actual,
+    runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
+  };
+});
 vi.mock("@multica/core/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@multica/core/api")>();
   return {
@@ -181,6 +209,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useMutation: () => ({ isPending: false, mutate: vi.fn() }),
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
     if (queryKey[0] === "pins") return { data: pins.current };
+    if (queryKey[0] === "runtimes") return { data: runtimes.current, ...runtimeQuery.current };
     if (queryKey[0] === "issue") return detail.current;
     if (queryKey[0] === "inbox" && queryKey[1] === "unread-summary") return { data: summary.current };
     if (queryKey[0] === "inbox") return { data: inboxItems.current };
@@ -198,6 +227,13 @@ describe("PinRow", () => {
     detail.current = { isPending: false, isError: false, data: null, error: null };
     summary.current = [];
     workspaces.current = [];
+    runtimes.current = [];
+    runtimeQuery.current = {
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      error: null,
+    };
   });
 
   it("unpins missing details", async () => {
@@ -235,6 +271,104 @@ describe("PinRow", () => {
       "true",
     );
     expect(container.querySelector('button[data-href="/acme/issues"]')).not.toHaveAttribute("data-active");
+  });
+
+  it("renders a runtime mirror pin from runtime query data", () => {
+    const originalPins = pins.current;
+    pins.current = [{
+      id: "pin-runtime",
+      workspace_id: "ws-1",
+      user_id: "user-1",
+      item_type: "runtime_mirror" as const,
+      item_id: "runtime-1",
+      position: 1,
+      created_at: "2026-09-12T00:00:00Z",
+    }];
+    runtimes.current = [{
+      id: "runtime-1",
+      name: "Studio Mac",
+      custom_name: null,
+      provider: "codex",
+      owner_id: "user-1",
+      visibility: "private",
+    }];
+
+    try {
+      render(<AppSidebar />);
+      const row = screen.getByRole("button", { name: /Studio Mac/ });
+      expect(row).toHaveAttribute("data-href", "/acme/runtimes/runtime-1/mirror");
+    } finally {
+      pins.current = originalPins;
+    }
+  });
+
+  it("unpins an inaccessible runtime mirror after the runtime list succeeds", async () => {
+    const originalPins = pins.current;
+    pins.current = [{
+      id: "pin-runtime",
+      workspace_id: "ws-1",
+      user_id: "user-1",
+      item_type: "runtime_mirror" as const,
+      item_id: "runtime-private",
+      position: 1,
+      created_at: "2026-09-12T00:00:00Z",
+    }];
+    runtimes.current = [{
+      id: "runtime-private",
+      name: "Private Mac",
+      custom_name: null,
+      provider: "codex",
+      owner_id: "other-user",
+      visibility: "private",
+    }];
+
+    try {
+      renderWithI18n(<AppSidebar />);
+      expect(screen.queryByText("Private Mac")).not.toBeInTheDocument();
+      await waitFor(() => expect(deletePin).toHaveBeenCalledTimes(1));
+      expect(deletePin).toHaveBeenCalledWith({
+        itemType: "runtime_mirror",
+        itemId: "runtime-private",
+      });
+    } finally {
+      pins.current = originalPins;
+    }
+  });
+
+  it("keeps a runtime mirror pin while its list is pending or failed", () => {
+    const originalPins = pins.current;
+    pins.current = [{
+      id: "pin-runtime",
+      workspace_id: "ws-1",
+      user_id: "user-1",
+      item_type: "runtime_mirror" as const,
+      item_id: "runtime-missing",
+      position: 1,
+      created_at: "2026-09-12T00:00:00Z",
+    }];
+
+    try {
+      runtimeQuery.current = {
+        isPending: true,
+        isError: false,
+        isSuccess: false,
+        error: null,
+      };
+      const { rerender, unmount } = renderWithI18n(<AppSidebar />);
+      expect(deletePin).not.toHaveBeenCalled();
+
+      runtimeQuery.current = {
+        isPending: false,
+        isError: true,
+        isSuccess: false,
+        error: new ApiError("missing", 500, "Server Error"),
+      };
+      rerender(<AppSidebar />);
+      expect(deletePin).not.toHaveBeenCalled();
+      unmount();
+    } finally {
+      pins.current = originalPins;
+    }
   });
 
   it("keeps the parent route active until a hidden pin is expanded", () => {

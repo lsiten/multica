@@ -228,6 +228,9 @@ import type {
   CreateCommentSubIssueManualRequest,
   CreateCommentSubIssueAgentRequest,
   CreateCommentSubIssueRequest,
+  CreateMirrorSessionRequest,
+  MirrorICEConfig,
+  MirrorSessionResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
@@ -454,6 +457,14 @@ import {
   EMPTY_SHARE_LINK,
   EMPTY_SHARE_LINK_INFO,
   EMPTY_JOIN_SHARE_LINK_RESPONSE,
+  MirrorSessionResponseSchema,
+  EMPTY_MIRROR_SESSION_RESPONSE,
+  MirrorICEConfigSchema,
+  EMPTY_MIRROR_ICE_CONFIG,
+  PinnedItemSchema,
+  PinnedItemListSchema,
+  EMPTY_PINNED_ITEM,
+  EMPTY_PIN_LIST,
   type IssueView,
   type IssueViewPreference,
   type CreateIssueViewRequest,
@@ -1748,6 +1759,71 @@ export class ApiClient {
     return this.fetch(`/api/runtimes?${search}`, {
       headers: workspaceHeader(workspaceSlug),
     });
+  }
+
+  async getMirrorICEConfig(
+    runtimeId: string,
+  ): Promise<MirrorICEConfig> {
+    try {
+      const res = await this.fetchRaw(
+        `/api/runtimes/${encodeURIComponent(runtimeId)}/mirror/config`,
+      );
+      const data: unknown = await res.json().catch((): unknown => null);
+      return parseWithFallback(
+        data,
+        MirrorICEConfigSchema,
+        EMPTY_MIRROR_ICE_CONFIG,
+        { endpoint: "GET /api/runtimes/:runtimeId/mirror/config" },
+      );
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+        return EMPTY_MIRROR_ICE_CONFIG;
+      }
+      throw error;
+    }
+  }
+
+  async createMirrorSession(
+    runtimeId: string,
+    data: CreateMirrorSessionRequest,
+  ): Promise<MirrorSessionResponse> {
+    const res = await this.fetchRaw(`/api/runtimes/${encodeURIComponent(runtimeId)}/mirror/sessions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+      extraHeaders: { "Content-Type": "application/json" },
+    });
+    return parseWithFallback(
+      await res.json() as unknown,
+      MirrorSessionResponseSchema,
+      EMPTY_MIRROR_SESSION_RESPONSE,
+      { endpoint: "POST /api/runtimes/:runtimeId/mirror/sessions" },
+    );
+  }
+
+  async getMirrorSession(
+    runtimeId: string,
+    sessionId: string,
+  ): Promise<MirrorSessionResponse> {
+    const res = await this.fetchRaw(
+      `/api/runtimes/${encodeURIComponent(runtimeId)}/mirror/sessions/${encodeURIComponent(sessionId)}`,
+    );
+    return parseWithFallback(
+      await res.json() as unknown,
+      MirrorSessionResponseSchema,
+      EMPTY_MIRROR_SESSION_RESPONSE,
+      { endpoint: "GET /api/runtimes/:runtimeId/mirror/sessions/:sessionId" },
+    );
+  }
+
+  async closeMirrorSession(
+    runtimeId: string,
+    sessionId: string,
+    viewerId: string,
+  ): Promise<void> {
+    await this.fetchRaw(
+      `/api/runtimes/${encodeURIComponent(runtimeId)}/mirror/sessions/${encodeURIComponent(sessionId)}?viewer_id=${encodeURIComponent(viewerId)}`,
+      { method: "DELETE" },
+    );
   }
 
   async listCloudRuntimeNodes(
@@ -4139,17 +4215,29 @@ export class ApiClient {
 
   // Pins
   async listPins(): Promise<PinnedItem[]> {
-    // include=view is the capability opt-in: the server withholds view pins
-    // from clients that don't declare support (old builds treated any
-    // non-issue pin as a project pin and auto-deleted it on 404).
-    return this.fetch("/api/pins?include=view");
+    // The comma-separated include list is the capability opt-in. The server
+    // withholds newer pin types from builds that may misclassify them.
+    const res = await this.fetchRaw("/api/pins?include=view,runtime_mirror");
+    return parseWithFallback(
+      await res.json() as unknown,
+      PinnedItemListSchema,
+      EMPTY_PIN_LIST,
+      { endpoint: "GET /api/pins" },
+    );
   }
 
   async createPin(data: CreatePinRequest): Promise<PinnedItem> {
-    return this.fetch("/api/pins", {
+    const res = await this.fetchRaw("/api/pins", {
       method: "POST",
       body: JSON.stringify(data),
+      extraHeaders: { "Content-Type": "application/json" },
     });
+    return parseWithFallback(
+      await res.json() as unknown,
+      PinnedItemSchema,
+      EMPTY_PINNED_ITEM,
+      { endpoint: "POST /api/pins" },
+    );
   }
 
   async deletePin(itemType: PinnedItemType, itemId: string): Promise<void> {

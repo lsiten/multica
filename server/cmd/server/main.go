@@ -711,6 +711,7 @@ func main() {
 	// Queued work now expires on the same runtime-liveness signal as in-flight
 	// work, so there is no separate queue TTL to tune: a busy runtime keeps its
 	// backlog, and a departed one retires everything it owned at once.
+	go h.MirrorSessions.RunPurgeLoop(sweepCtx, time.Minute)
 	go runRuntimeSweeper(sweepCtx, queries, liveness, taskSvc, bus, runtimeReconnectGrace)
 	go runDelegatedFailureRecoverySweeper(sweepCtx, taskSvc)
 	// Seven-day runtime retention does not share the 30-second liveness tick:

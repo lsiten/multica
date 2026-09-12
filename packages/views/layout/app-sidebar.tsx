@@ -23,6 +23,7 @@ import { Layers,
   LogOut,
   Plus,
   Check,
+  Monitor,
   SquarePen,
   X,
 } from "lucide-react";
@@ -75,6 +76,11 @@ import { api, ApiError } from "@multica/core/api";
 import { useConfigStore } from "@multica/core/config";
 import { pinListOptions } from "@multica/core/pins/queries";
 import { useDeletePin, useReorderPins } from "@multica/core/pins/mutations";
+import {
+  isRuntimeUsableForUser,
+  runtimeDisplayLabel,
+  runtimeListOptions,
+} from "@multica/core/runtimes";
 import { issueDetailOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import type { PinnedItem } from "@multica/core/types";
@@ -292,8 +298,11 @@ function PinRow({
 }) {
   const isIssue = pin.item_type === "issue";
   const isView = pin.item_type === "view";
+  const isRuntimeMirror = pin.item_type === "runtime_mirror";
   const p = useWorkspacePaths();
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const setActiveView = useActiveIssueViewStore((s) => s.setActive);
+  const activeViewByContainer = useActiveIssueViewStore((s) => s.active);
   const issueQuery = useQuery({
     ...issueDetailOptions(wsId, pin.item_id),
     enabled: isIssue,
@@ -306,6 +315,10 @@ function PinRow({
     ...issueViewDetailOptions(wsId, pin.item_id),
     enabled: isView,
   });
+  const runtimeQuery = useQuery({
+    ...runtimeListOptions(wsId),
+    enabled: isRuntimeMirror,
+  });
 
   const triggeredRef = useRef(false);
   useEffect(() => {
@@ -314,14 +327,59 @@ function PinRow({
     // every view pin — auto-unpinning would permanently delete them all.
     // A deleted view's row simply hides instead.
     if (isView) return;
+    if (isRuntimeMirror) {
+      const runtime = runtimeQuery.data?.find((candidate) => candidate.id === pin.item_id);
+      if (
+        runtimeQuery.isSuccess &&
+        (!runtime || !isRuntimeUsableForUser(runtime, currentUserId)) &&
+        !triggeredRef.current
+      ) {
+        triggeredRef.current = true;
+        onUnpin();
+      }
+      return;
+    }
     const err = isIssue ? issueQuery.error : projectQuery.error;
     if (err instanceof ApiError && err.status === 404 && !triggeredRef.current) {
       triggeredRef.current = true;
       onUnpin();
     }
-  }, [isIssue, isView, issueQuery.error, onUnpin, projectQuery.error]);
+  }, [
+    currentUserId,
+    isIssue,
+    isRuntimeMirror,
+    isView,
+    issueQuery.error,
+    onUnpin,
+    pin.item_id,
+    projectQuery.error,
+    runtimeQuery.data,
+    runtimeQuery.isSuccess,
+  ]);
 
-  const activeViewByContainer = useActiveIssueViewStore((s) => s.active);
+  if (isRuntimeMirror) {
+    if (runtimeQuery.isPending) return <PinSkeleton />;
+    const runtime = runtimeQuery.data?.find((candidate) => candidate.id === pin.item_id);
+    if (
+      runtimeQuery.isError ||
+      !runtime ||
+      !isRuntimeUsableForUser(runtime, currentUserId)
+    ) {
+      return null;
+    }
+
+    return (
+      <SortablePinItem
+        pin={pin}
+        href={href}
+        pathname={pathname}
+        onUnpin={onUnpin}
+        label={runtimeDisplayLabel(runtime)}
+        iconNode={<Monitor aria-hidden="true" className="!size-3.5 shrink-0" />}
+      />
+    );
+  }
+
   if (isView) {
     if (viewQuery.isPending) return <PinSkeleton />;
     if (viewQuery.isError || !viewQuery.data) return null;
@@ -521,6 +579,8 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         ? p.issueDetail(pin.item_id)
         : pin.item_type === "project"
           ? p.projectDetail(pin.item_id)
+          : pin.item_type === "runtime_mirror"
+            ? p.runtimeMirror(pin.item_id)
           // Views know their target only after their detail loads — the row
           // resolves its own href; this placeholder never renders as a link.
           : "",

@@ -115,6 +115,32 @@ describe("InboxDetailLabel quick-create outcomes", () => {
 });
 
 describe("InboxDetailLabel localized values", () => {
+  it("renders localized runtime mirror viewing details", () => {
+    const { container } = render(
+      <InboxDetailLabel
+        item={item({
+          type: "runtime_mirror_viewer_started",
+          details: { runtime_name: "Prod Box", state: "started" },
+        })}
+      />,
+    );
+
+    expect(container.textContent).toBe("Prod Box is being viewed.");
+  });
+
+  it("renders localized runtime mirror ended details", () => {
+    const { container } = render(
+      <InboxDetailLabel
+        item={item({
+          type: "runtime_mirror_viewer_stopped",
+          details: { runtime_name: "Prod Box", state: "ended" },
+        })}
+      />,
+    );
+
+    expect(container.textContent).toBe("Screen mirroring for Prod Box has ended.");
+  });
+
   it("uses the localized built-in status instead of the English catalog seed", () => {
     const { container } = render(
       <InboxDetailLabel

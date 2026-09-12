@@ -28,6 +28,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/cli"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/selfexec"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/redact"
@@ -495,6 +496,16 @@ type Daemon struct {
 	// detached, callers fall back to HTTP.
 	wsRPC *wsRPCClient
 
+	// runtimeMirrors owns one shared capture source per registered runtime.
+	// Access is guarded by d.mu; entries are removed when a runtime is removed
+	// or when the daemon shuts down.
+	runtimeMirrors map[string]*mirror.RuntimeMirror
+	// mirrorControlGeneration identifies the live daemon control WebSocket.
+	// mirrorControlCancel cancels negotiation owned by the previous connection
+	// when a replacement connects; both are guarded by d.mu.
+	mirrorControlGeneration mirrorControlGeneration
+	mirrorControlCancel     context.CancelFunc
+
 	// batchClaimUnsupported is set once a batch claim gets a 404 from the
 	// server (no /api/daemon/tasks/claim route — an un-upgraded server), so
 	// subsequent polls skip WS+batch and use the legacy per-runtime claim
@@ -648,6 +659,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		logger:                    logger,
 		workspaces:                make(map[string]*workspaceState),
 		runtimeIndex:              make(map[string]Runtime),
+		runtimeMirrors:            make(map[string]*mirror.RuntimeMirror),
 		profileLaunchSpecs:        make(map[string]profileLaunchSpec),
 		runtimeSet:                newRuntimeSetWatcher(),
 		agentVersions:             make(map[string]string),
@@ -1349,11 +1361,13 @@ func (d *Daemon) removeStaleRuntime(runtimeID string) (string, bool) {
 		return "", false
 	}
 	delete(d.runtimeIndex, runtimeID)
+	detachedMirrors := d.detachRuntimeMirrorsLocked([]string{runtimeID})
 	d.mu.Unlock()
 
 	d.wsHBMu.Lock()
 	delete(d.wsHBLastAck, runtimeID)
 	d.wsHBMu.Unlock()
+	d.closeDetachedRuntimeMirrors(detachedMirrors)
 
 	return workspaceID, true
 }
@@ -1427,11 +1441,12 @@ func (d *Daemon) workspaceNeedsRuntimeRecovery(workspaceID string) bool {
 // it.
 func (d *Daemon) applyRegisterResponseInPlace(workspaceID string, resp *RegisterResponse, profileSig string, preserveProviders map[string]string) (newIDs, droppedIDs []string, ok bool) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	ws, exists := d.workspaces[workspaceID]
 	if !exists {
+		d.mu.Unlock()
 		return nil, nil, false
 	}
+	var detachedMirrors []*mirror.RuntimeMirror
 	// Reject entries for providers demoted since this register was sent. The
 	// payload predates the verdict, so the response carries the provider as if
 	// it were healthy; indexing it here would undo demoteBelowMinimumRuntimes.
@@ -1447,6 +1462,7 @@ func (d *Daemon) applyRegisterResponseInPlace(workspaceID string, resp *Register
 		if rt.ProfileID == "" && d.providerDemotedLocked(rt.Provider) {
 			rejected[rt.ID] = struct{}{}
 			droppedIDs = append(droppedIDs, rt.ID)
+			detachedMirrors = append(detachedMirrors, d.detachRuntimeMirrorsLocked([]string{rt.ID})...)
 			continue
 		}
 		newIDs = append(newIDs, rt.ID)
@@ -1466,6 +1482,7 @@ func (d *Daemon) applyRegisterResponseInPlace(workspaceID string, resp *Register
 			// already in droppedIDs; drop the index entry without recording it
 			// a second time.
 			delete(d.runtimeIndex, oldID)
+			detachedMirrors = append(detachedMirrors, d.detachRuntimeMirrorsLocked([]string{oldID})...)
 			continue
 		}
 		if rt, tracked := d.runtimeIndex[oldID]; tracked && rt.ProfileID == "" {
@@ -1475,6 +1492,7 @@ func (d *Daemon) applyRegisterResponseInPlace(workspaceID string, resp *Register
 			}
 		}
 		delete(d.runtimeIndex, oldID)
+		detachedMirrors = append(detachedMirrors, d.detachRuntimeMirrorsLocked([]string{oldID})...)
 		droppedIDs = append(droppedIDs, oldID)
 	}
 	for _, rt := range resp.Runtimes {
@@ -1502,6 +1520,8 @@ func (d *Daemon) applyRegisterResponseInPlace(workspaceID string, resp *Register
 	if profileSig != "" {
 		ws.profileSetSig = profileSig
 	}
+	d.mu.Unlock()
+	d.closeDetachedRuntimeMirrors(detachedMirrors)
 	return newIDs, droppedIDs, true
 }
 
@@ -1533,11 +1553,12 @@ func (d *Daemon) applyRegisterResponseInPlace(workspaceID string, resp *Register
 // rather than accumulating a duplicate heartbeat.
 func (d *Daemon) mergeBuiltinRegisterResponse(workspaceID string, resp *RegisterResponse) (newIDs []string, revived revivedRuntimes, ok bool) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	ws, exists := d.workspaces[workspaceID]
 	if !exists {
+		d.mu.Unlock()
 		return nil, revivedRuntimes{}, false
 	}
+	var detachedMirrors []*mirror.RuntimeMirror
 
 	// Index the workspace's current built-in runtimes by provider so a rotated
 	// ID replaces its predecessor instead of doubling it.
@@ -1579,6 +1600,7 @@ func (d *Daemon) mergeBuiltinRegisterResponse(workspaceID string, resp *Register
 				}
 			}
 			delete(d.runtimeIndex, oldID)
+			detachedMirrors = append(detachedMirrors, d.detachRuntimeMirrorsLocked([]string{oldID})...)
 			delete(present, oldID)
 		} else {
 			kept = append(kept, rt.ID)
@@ -1596,6 +1618,8 @@ func (d *Daemon) mergeBuiltinRegisterResponse(workspaceID string, resp *Register
 	if len(resp.Settings) > 0 {
 		ws.settings = resp.Settings
 	}
+	d.mu.Unlock()
+	d.closeDetachedRuntimeMirrors(detachedMirrors)
 	return newIDs, revived, true
 }
 
@@ -2037,6 +2061,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Deregister runtimes on shutdown (uses a fresh context since ctx will be cancelled).
 	defer d.deregisterRuntimes()
+	defer d.closeRuntimeMirrors()
 
 	// Start workspace sync loop to discover newly created workspaces.
 	go d.workspaceSyncLoop(ctx)
@@ -2122,6 +2147,52 @@ func (d *Daemon) allRuntimeIDs() []string {
 		ids = append(ids, ws.runtimeIDs...)
 	}
 	return ids
+}
+
+func (d *Daemon) closeRuntimeMirrors() {
+	d.mu.Lock()
+	mirrors := make([]*mirror.RuntimeMirror, 0, len(d.runtimeMirrors))
+	for runtimeID, runtimeMirror := range d.runtimeMirrors {
+		mirrors = append(mirrors, runtimeMirror)
+		delete(d.runtimeMirrors, runtimeID)
+	}
+	d.mu.Unlock()
+	for _, runtimeMirror := range mirrors {
+		d.closeDetachedRuntimeMirrors([]*mirror.RuntimeMirror{runtimeMirror})
+	}
+}
+
+// detachRuntimeMirrorsLocked removes and returns mirror owners for runtime IDs
+// that are leaving the tracked set. Callers must hold d.mu and close the
+// returned mirrors after releasing it.
+func (d *Daemon) detachRuntimeMirrorsLocked(runtimeIDs []string) []*mirror.RuntimeMirror {
+	if len(runtimeIDs) == 0 || len(d.runtimeMirrors) == 0 {
+		return nil
+	}
+	detached := make([]*mirror.RuntimeMirror, 0, len(runtimeIDs))
+	for _, runtimeID := range runtimeIDs {
+		runtimeMirror, ok := d.runtimeMirrors[runtimeID]
+		if !ok {
+			continue
+		}
+		delete(d.runtimeMirrors, runtimeID)
+		detached = append(detached, runtimeMirror)
+	}
+	return detached
+}
+
+func (d *Daemon) closeDetachedRuntimeMirrors(runtimeMirrors []*mirror.RuntimeMirror) {
+	for _, runtimeMirror := range runtimeMirrors {
+		if runtimeMirror == nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := runtimeMirror.Close(ctx)
+		cancel()
+		if err != nil {
+			d.logger.Debug("runtime mirror close failed", "error", err)
+		}
+	}
 }
 
 // findRuntime looks up a Runtime by its ID.
@@ -3603,6 +3674,7 @@ func (d *Daemon) convergeWorkspaceRuntimesToZero(ctx context.Context, workspaceI
 	// (removeStaleRuntime keeps the same rule).
 	kept := ws.runtimeIDs[:0:0]
 	var dropped []string
+	var detachedMirrors []*mirror.RuntimeMirror
 	for _, rid := range ws.runtimeIDs {
 		if rt, tracked := d.runtimeIndex[rid]; tracked && rt.ProfileID == "" {
 			if _, preserve := preserveProviders[rt.Provider]; preserve {
@@ -3614,6 +3686,7 @@ func (d *Daemon) convergeWorkspaceRuntimesToZero(ctx context.Context, workspaceI
 			delete(ws.builtinVersions, rt.Provider)
 		}
 		delete(d.runtimeIndex, rid)
+		detachedMirrors = append(detachedMirrors, d.detachRuntimeMirrorsLocked([]string{rid})...)
 		dropped = append(dropped, rid)
 	}
 	ws.runtimeIDs = kept
@@ -3623,6 +3696,7 @@ func (d *Daemon) convergeWorkspaceRuntimesToZero(ctx context.Context, workspaceI
 		ws.profileSetSig = profileSig
 	}
 	d.mu.Unlock()
+	d.closeDetachedRuntimeMirrors(detachedMirrors)
 
 	d.logger.Info("custom runtime profile drift converged to zero; clearing local tracking",
 		"workspace_id", workspaceID, "deregistered_runtime_ids", dropped,
@@ -4048,13 +4122,17 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context, reconcileProfiles bo
 	for id := range currentIDs {
 		if _, ok := apiIDs[id]; !ok {
 			d.mu.Lock()
+			var detachedMirrors []*mirror.RuntimeMirror
 			if ws, exists := d.workspaces[id]; exists {
-				for _, rid := range ws.runtimeIDs {
+				runtimeIDs := append([]string(nil), ws.runtimeIDs...)
+				for _, rid := range runtimeIDs {
 					delete(d.runtimeIndex, rid)
 				}
+				detachedMirrors = d.detachRuntimeMirrorsLocked(runtimeIDs)
 			}
 			delete(d.workspaces, id)
 			d.mu.Unlock()
+			d.closeDetachedRuntimeMirrors(detachedMirrors)
 			d.logger.Info("stopped watching workspace", "workspace_id", id)
 			removed++
 		}

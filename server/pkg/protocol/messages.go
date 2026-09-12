@@ -30,6 +30,10 @@ const (
 	// Gated so only daemons+servers that both support it route claim over WS;
 	// everyone else keeps using the HTTP claim endpoint.
 	DaemonCapabilityRPCV1 = "rpc-v1"
+	// DaemonCapabilityScreenMirrorV1 advertises native primary-display capture
+	// and the mirror WebRTC offer/answer implementation. Linux stays unadvertised
+	// in the first version instead of failing during capture.
+	DaemonCapabilityScreenMirrorV1 = "screen-mirror-v1"
 	// DaemonCapabilityClaimPollHintsV1 advertises that the daemon understands
 	// the batch-claim response's safety-poll metadata. The server only performs
 	// the extra deferred-task lookup for clients that opt in, and an older

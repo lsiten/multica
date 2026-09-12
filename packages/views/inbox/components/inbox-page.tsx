@@ -89,10 +89,11 @@ import { InboxList } from "./inbox-list";
 import { InboxFilterMenu } from "./inbox-filter-menu";
 import { InboxContextMenuProvider } from "./inbox-context-menu";
 import { ARCHIVED_VIEW_PARAM, type InboxView } from "./inbox-view";
-import { useTypeLabels } from "./inbox-detail-label";
+import { InboxDetailLabel, useTypeLabels } from "./inbox-detail-label";
 import {
   getInboxDisplayTitle,
   isAutopilotQuotaNotice,
+  isRuntimeMirrorViewerNotice,
   isQuickCreateOutcome,
   resolveDetailItem,
 } from "./inbox-display";
@@ -716,7 +717,8 @@ export function InboxPage() {
   ) : detailItem ? (
     <div className="p-6">
       <h2 className="text-title font-semibold">
-        {isAutopilotQuotaNotice(detailItem.type)
+        {(isAutopilotQuotaNotice(detailItem.type) ||
+          isRuntimeMirrorViewerNotice(detailItem.type))
           ? typeLabels[detailItem.type]
           : getInboxDisplayTitle(detailItem)}
       </h2>
@@ -728,6 +730,10 @@ export function InboxPage() {
           item={detailItem}
           onOpenRecovery={showAutopilotQuotaRecoveryPrompt}
         />
+      ) : isRuntimeMirrorViewerNotice(detailItem.type) ? (
+        <div className="mt-4 text-body leading-relaxed text-foreground">
+          <InboxDetailLabel item={detailItem} />
+        </div>
       ) : detailItem.body ? (
         <div className="mt-4 whitespace-pre-wrap text-body leading-relaxed text-foreground">
           {detailItem.body}

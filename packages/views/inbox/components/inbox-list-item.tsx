@@ -13,6 +13,7 @@ import { InboxDetailLabel, useTypeLabels } from "./inbox-detail-label";
 import {
   getInboxDisplayTitle,
   isAutopilotQuotaNotice,
+  isRuntimeMirrorViewerNotice,
 } from "./inbox-display";
 import { useInboxContextMenu } from "./inbox-context-menu";
 import { useStatusLabel } from "../../issues/utils/status-label";
@@ -72,9 +73,11 @@ export function InboxListItem({
       ? paths.workspace(slug).issueDetail(item.issue_id)
       : null;
   const intentNavigate = useIntentNavigate();
-  const displayTitle = isAutopilotQuotaNotice(item.type)
-    ? typeLabels[item.type]
-    : getInboxDisplayTitle(item);
+  const displayTitle =
+    (isAutopilotQuotaNotice(item.type) ||
+      isRuntimeMirrorViewerNotice(item.type))
+      ? typeLabels[item.type]
+      : getInboxDisplayTitle(item);
   const isArchivedView = view === "archived";
   // Archiving deliberately leaves `read` untouched so unarchiving restores the
   // real unread state, so archived rows would otherwise keep an unread marker

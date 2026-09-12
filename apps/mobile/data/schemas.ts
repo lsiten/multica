@@ -537,7 +537,7 @@ export const PinnedItemSchema: z.ZodType<PinnedItem> = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
   user_id: z.string().default(""),
-  item_type: z.enum(["issue", "project"]).catch("issue"),
+  item_type: z.enum(["issue", "project", "runtime_mirror"]).catch("issue"),
   item_id: z.string(),
   position: z.number().default(0),
   created_at: z.string().default(""),

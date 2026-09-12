@@ -61,6 +61,81 @@ func TestBuildDaemonWebSocketIdentitySeedsBatchRuntimeLeases(t *testing.T) {
 	}
 }
 
+func TestBuildDaemonWebSocketIdentityDerivesDaemonIDFromUserRuntimeLeases(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	const daemonID = "user-lease-daemon"
+	runtimeID := dbfx.Runtime(t, "WS user lease runtime", testutil.Cols{
+		"workspace_id": testWorkspaceID,
+		"daemon_id":    daemonID,
+		"provider":     "ws-user-lease",
+		"device_info":  "WS user lease runtime",
+	})
+	req := newRequestAsUser(testUserID, http.MethodGet, "/api/daemon/ws", nil)
+	w := httptest.NewRecorder()
+
+	identity, ok := testHandler.buildDaemonWebSocketIdentity(w, req, []string{runtimeID}, testUserID)
+	if !ok {
+		t.Fatalf("buildDaemonWebSocketIdentity rejected authorized user runtime lease: %d %s", w.Code, w.Body.String())
+	}
+	if identity.DaemonID != daemonID {
+		t.Fatalf("identity daemon ID = %q, want %q", identity.DaemonID, daemonID)
+	}
+	if identity.UserID != testUserID || identity.WorkspaceID != testWorkspaceID {
+		t.Fatalf("identity scope = user %q workspace %q", identity.UserID, identity.WorkspaceID)
+	}
+}
+
+func TestBuildDaemonWebSocketIdentityRejectsUserLeasesFromMultipleDaemons(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	runtimeIDs := []string{
+		dbfx.Runtime(t, "WS user lease daemon 1", testutil.Cols{
+			"workspace_id": testWorkspaceID,
+			"daemon_id":    "user-lease-daemon-1",
+			"provider":     "ws-user-lease-1",
+			"device_info":  "WS user lease daemon 1",
+		}),
+		dbfx.Runtime(t, "WS user lease daemon 2", testutil.Cols{
+			"workspace_id": testWorkspaceID,
+			"daemon_id":    "user-lease-daemon-2",
+			"provider":     "ws-user-lease-2",
+			"device_info":  "WS user lease daemon 2",
+		}),
+	}
+	req := newRequestAsUser(testUserID, http.MethodGet, "/api/daemon/ws", nil)
+	w := httptest.NewRecorder()
+
+	if _, ok := testHandler.buildDaemonWebSocketIdentity(w, req, runtimeIDs, testUserID); ok {
+		t.Fatal("runtime leases from multiple daemons unexpectedly authorized")
+	}
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestBuildDaemonWebSocketIdentityRejectsUserRuntimeWithoutDaemon(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	runtimeID := dbfx.Runtime(t, "WS user lease without daemon", testutil.Cols{
+		"workspace_id": testWorkspaceID,
+		"provider":     "ws-user-lease-no-daemon",
+		"device_info":  "WS user lease without daemon",
+	})
+	req := newRequestAsUser(testUserID, http.MethodGet, "/api/daemon/ws", nil)
+	w := httptest.NewRecorder()
+
+	if _, ok := testHandler.buildDaemonWebSocketIdentity(w, req, []string{runtimeID}, testUserID); ok {
+		t.Fatal("runtime without a daemon unexpectedly authorized")
+	}
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestBuildDaemonWebSocketIdentityFailsClosedForMissingRuntime(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

@@ -108,6 +108,13 @@
   "detail": {
     "all_runtimes": "모든 런타임",
     "read_only": "읽기 전용",
+    "open_mirror": "미러 열기",
+    "mirror_reason": {
+      "offline": "런타임이 현재 오프라인입니다.",
+      "linux": "Linux에서는 화면 미러를 사용할 수 없습니다.",
+      "platform": "이 플랫폼에서는 화면 미러를 사용할 수 없습니다.",
+      "old_daemon": "화면 미러를 사용하려면 이 런타임의 Multica 데몬을 업데이트하세요."
+    },
     "delete_button": "런타임 삭제",
     "last_seen": "마지막 확인 {{when}}",
     "never_seen": "연결 기록 없음",
@@ -180,6 +187,25 @@
     "toast_delete_failed": "런타임을 삭제하지 못했습니다",
     "running_chip_other": "· 실행 중 {{count}}개",
     "queued_chip_other": "· 대기 중 {{count}}개"
+  },
+  "mirror": {
+    "title": "런타임 미러", "eyebrow": "런타임 미러", "connection_label": "연결",
+    "description": "런타임 호스트를 직접 확인합니다. 화면 픽셀은 Multica API를 통과하지 않습니다.", "frame_label": "런타임 화면", "frame_alt": "{{runtime}}의 실시간 화면", "back_to_runtime": "런타임으로 돌아가기", "try_again": "다시 시도", "pin_tooltip": "사이드바에 고정", "unpin_tooltip": "사이드바 고정 해제", "nat_warning": "TURN 서버가 구성되지 않았습니다. 뷰어와 런타임이 서로 다른 제한 네트워크에 있으면 미러가 연결되지 않을 수 있습니다.",
+    "states": {
+      "loading": { "title": "런타임 로드 중", "description": "런타임을 확인하고 미러 연결을 준비하는 중입니다.", "status": "로드 중입니다." },
+      "preparing": { "title": "연결 준비 중", "description": "뷰어가 안전한 미러 세션을 준비하고 있습니다.", "status": "준비 중입니다." },
+      "negotiating": { "title": "연결 협상 중", "description": "뷰어가 런타임 데몬과 비공개 연결을 설정하고 있습니다.", "status": "WebRTC 연결을 협상하는 중입니다." },
+      "streaming": { "title": "런타임 실시간 화면", "description": "런타임이 완성된 프레임을 이 뷰어로 보내고 있습니다.", "status": "스트리밍 중입니다." },
+      "offline": { "title": "런타임 오프라인", "description": "데몬을 사용할 수 없어 미러를 시작할 수 없습니다.", "status": "런타임이 다시 온라인될 때까지 기다리고 있습니다." },
+      "old_daemon": { "title": "이 데몬은 미러를 지원하지 않습니다", "description": "화면 미러를 사용하려면 이 런타임의 Multica 데몬을 업데이트하세요.", "status": "설치된 데몬이 미러를 지원하지 않습니다." },
+      "linux_unsupported": { "title": "Linux에서는 화면 미러를 사용할 수 없습니다", "description": "첫 번째 미러 릴리스는 macOS와 Windows의 주 디스플레이만 지원합니다.", "status": "Linux 화면 캡처를 사용할 수 없습니다." },
+      "unsupported_platform": { "title": "이 플랫폼에서는 미러를 사용할 수 없습니다", "description": "이 런타임 플랫폼은 미러용 주 디스플레이를 제공할 수 없습니다.", "status": "이 플랫폼은 미러를 지원하지 않습니다." },
+      "permission_denied": { "title": "화면 기록 권한이 거부되었습니다", "description": "런타임 호스트의 Multica 데몬에 화면 기록 권한을 부여한 뒤 다시 시도하세요.", "status": "화면 캡처 권한이 필요합니다." },
+      "capture_unavailable": { "title": "화면 캡처를 사용할 수 없습니다", "description": "런타임에 사용 가능한 주 디스플레이가 없거나 캡처 서비스를 시작할 수 없습니다.", "status": "화면 캡처 서비스를 사용할 수 없습니다." },
+      "transport_failed": { "title": "연결 실패", "description": "WebRTC 연결을 설정하지 못했습니다. 네트워크 제한이나 TURN 서버 누락이 연결을 막을 수 있습니다.", "status": "미러 전송에 실패했습니다." },
+      "unavailable": { "title": "미러를 사용할 수 없음", "description": "런타임이 오프라인이거나 지원되지 않거나 접근 권한이 없습니다.", "status": "사용 가능한 미러 연결이 없습니다." },
+      "failed": { "title": "연결 실패", "description": "런타임이 미러 연결을 완료하지 못했습니다. 데몬을 확인한 뒤 다시 시도하세요.", "status": "미러 연결에 실패했습니다." }
+    }
   },
   "detail_page": {
     "not_found_title": "런타임을 찾을 수 없습니다",

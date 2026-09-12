@@ -108,6 +108,13 @@
   "detail": {
     "all_runtimes": "すべてのランタイム",
     "read_only": "読み取り専用",
+    "open_mirror": "ミラーを開く",
+    "mirror_reason": {
+      "offline": "ランタイムは現在オフラインです。",
+      "linux": "Linux では画面ミラーを利用できません。",
+      "platform": "このプラットフォームでは画面ミラーを利用できません。",
+      "old_daemon": "画面ミラーを使うには、このランタイムの Multica デーモンを更新してください。"
+    },
     "delete_button": "ランタイムを削除",
     "last_seen": "最終確認 {{when}}",
     "never_seen": "未接続",
@@ -180,6 +187,25 @@
     "toast_delete_failed": "ランタイムを削除できませんでした",
     "running_chip_other": "· 実行中 {{count}} 件",
     "queued_chip_other": "· キュー待ち {{count}} 件"
+  },
+  "mirror": {
+    "title": "ランタイムミラー", "eyebrow": "ランタイムミラー", "connection_label": "接続",
+    "description": "ランタイムホストを直接表示します。画面のピクセルは Multica API を経由しません。", "frame_label": "ランタイム画面", "frame_alt": "{{runtime}} のライブ画面", "back_to_runtime": "ランタイムに戻る", "try_again": "再試行", "pin_tooltip": "サイドバーにピン留め", "unpin_tooltip": "サイドバーのピン留めを解除", "nat_warning": "TURN サーバーが設定されていません。ビューアーとランタイムが異なる制限の厳しいネットワークにある場合、ミラーが接続できない可能性があります。",
+    "states": {
+      "loading": { "title": "ランタイムを読み込み中", "description": "ランタイムを確認し、ミラー接続を準備しています。", "status": "読み込み中です。" },
+      "preparing": { "title": "接続を準備中", "description": "ビューアーが安全なミラーセッションを準備しています。", "status": "準備中です。" },
+      "negotiating": { "title": "接続をネゴシエート中", "description": "ビューアーがランタイムデーモンとのプライベート接続を確立しています。", "status": "WebRTC 接続をネゴシエート中です。" },
+      "streaming": { "title": "ランタイムのライブ画面", "description": "ランタイムが完全なフレームをこのビューアーへ送信しています。", "status": "ストリーミング中です。" },
+      "offline": { "title": "ランタイムがオフライン", "description": "デーモンを利用できないため、ミラーを開始できません。", "status": "ランタイムの再接続を待っています。" },
+      "old_daemon": { "title": "このデーモンはミラーに非対応です", "description": "画面ミラーを使うには、このランタイムの Multica デーモンを更新してください。", "status": "インストール済みのデーモンはミラーに対応していません。" },
+      "linux_unsupported": { "title": "Linux では画面ミラーを利用できません", "description": "初回リリースのミラーは macOS と Windows のプライマリディスプレイのみに対応します。", "status": "Linux の画面キャプチャは利用できません。" },
+      "unsupported_platform": { "title": "このプラットフォームではミラーを利用できません", "description": "このランタイムのプラットフォームは、ミラー用のプライマリディスプレイを提供できません。", "status": "このプラットフォームはミラーに対応していません。" },
+      "permission_denied": { "title": "画面収録の権限がありません", "description": "ランタイムホストの Multica デーモンに画面収録権限を付与し、再試行してください。", "status": "画面キャプチャ権限が必要です。" },
+      "capture_unavailable": { "title": "画面キャプチャを利用できません", "description": "ランタイムに利用可能なプライマリディスプレイがないか、キャプチャサービスを開始できません。", "status": "画面キャプチャサービスを利用できません。" },
+      "transport_failed": { "title": "接続に失敗しました", "description": "WebRTC 接続を確立できませんでした。ネットワーク制限または TURN サーバーの未設定が原因の可能性があります。", "status": "ミラー転送に失敗しました。" },
+      "unavailable": { "title": "ミラーを利用できません", "description": "ランタイムがオフライン、非対応、またはアクセス権がありません。", "status": "利用できるミラー接続がありません。" },
+      "failed": { "title": "接続に失敗しました", "description": "ランタイムがミラー接続を完了できませんでした。デーモンを確認して再試行してください。", "status": "ミラー接続に失敗しました。" }
+    }
   },
   "detail_page": {
     "not_found_title": "ランタイムが見つかりません",

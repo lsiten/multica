@@ -24,7 +24,9 @@ import {
   deriveRuntimeHealth,
   isRuntimeUsableForUser,
   runtimeDisplayName,
+  runtimeMirrorAvailability,
   runtimeProfileListOptions,
+  RUNTIME_MIRROR_AVAILABILITY,
 } from "@multica/core/runtimes";
 import {
   type AgentPresenceDetail,
@@ -121,6 +123,7 @@ export function RuntimeDetail({
   const isRuntimeOwner = user && runtime.owner_id === user.id;
   const canEditRuntime = isAdmin || isRuntimeOwner;
   const canReadRuntime = isRuntimeUsableForUser(runtime, user?.id ?? null);
+  const mirrorAvailability = runtimeMirrorAvailability(runtime);
   const runtimeProfile: RuntimeProfile | null = runtime.profile_id
     ? profiles.find((p) => p.id === runtime.profile_id) ?? null
     : null;
@@ -169,12 +172,47 @@ export function RuntimeDetail({
           </span>
         }
         actions={
-          !canEditRuntime ? (
-            <span className="inline-flex items-center gap-1 text-caption text-muted-foreground">
-              <Lock className="h-3 w-3" />
-              {t(($) => $.detail.read_only)}
-            </span>
-          ) : null
+          <div className="flex items-center gap-2">
+            {canReadRuntime ? (
+              <span className="inline-flex items-center gap-2">
+                {mirrorAvailability.enabled ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    render={<AppLink href={paths.runtimeMirror(runtime.id)} />}
+                    nativeButton={false}
+                  >
+                    <Globe aria-hidden="true" className="h-3.5 w-3.5" />
+                    {t(($) => $.detail.open_mirror)}
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled type="button">
+                    <Globe aria-hidden="true" className="h-3.5 w-3.5" />
+                    {t(($) => $.detail.open_mirror)}
+                  </Button>
+                )}
+                {!mirrorAvailability.enabled && (
+                  <span className="text-caption text-muted-foreground">
+                    {mirrorAvailability.kind === RUNTIME_MIRROR_AVAILABILITY.offline
+                      ? t(($) => $.detail.mirror_reason.offline)
+                      : mirrorAvailability.kind === RUNTIME_MIRROR_AVAILABILITY.linuxUnsupported
+                        ? t(($) => $.detail.mirror_reason.linux)
+                        : mirrorAvailability.kind === RUNTIME_MIRROR_AVAILABILITY.unsupportedPlatform
+                          ? t(($) => $.detail.mirror_reason.platform)
+                          : t(($) => $.detail.mirror_reason.old_daemon)}
+                  </span>
+                )}
+              </span>
+            ) : (
+              null
+            )}
+            {!canEditRuntime && (
+              <span className="inline-flex items-center gap-1 text-caption text-muted-foreground">
+                <Lock className="h-3 w-3" />
+                {t(($) => $.detail.read_only)}
+              </span>
+            )}
+          </div>
         }
       />
 

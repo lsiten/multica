@@ -137,6 +137,8 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	}
 	connectedAt := time.Now()
 	uptime := func() time.Duration { return time.Since(connectedAt) }
+	mirrorGeneration, mirrorCtx, cancelMirrorControl := d.beginMirrorControlConnection(ctx)
+	defer cancelMirrorControl()
 	defer conn.Close()
 	// HTTP heartbeats resume the moment WS detaches so the freshness window
 	// from a previous connection cannot keep them silenced past disconnect.
@@ -178,7 +180,7 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	// close(writes), and the sender holds sendMu across its non-blocking send.
 	var sendMu sync.Mutex
 	sendClosed := false
-	wsRPCGeneration := d.wsRPC.attach(func(frame []byte) (*wsOutbound, error) {
+	enqueue := func(frame []byte) (*wsOutbound, error) {
 		sendMu.Lock()
 		defer sendMu.Unlock()
 		if sendClosed {
@@ -191,7 +193,9 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 		default:
 			return nil, errWSRPCWriteBufferFull
 		}
-	})
+	}
+	wsRPCGeneration := d.wsRPC.attach(enqueue)
+	d.replayActiveMirrorViewerStates(enqueue, mirrorGeneration)
 	// A (re)connect may be a freshly-upgraded server: re-probe the batch claim
 	// route rather than staying on the legacy fallback forever (MUL-4257).
 	d.batchClaimUnsupported.Store(false)
@@ -204,8 +208,15 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	}()
 
 	errCh := make(chan error, 1)
+	reader := taskWakeupReader{
+		conn:                    conn,
+		taskWakeups:             taskWakeups,
+		wsRPCGeneration:         wsRPCGeneration,
+		mirrorControlGeneration: mirrorGeneration,
+		enqueue:                 enqueue,
+	}
 	go func() {
-		errCh <- d.readTaskWakeupMessagesForConnection(conn, taskWakeups, wsRPCGeneration)
+		errCh <- d.readTaskWakeupMessagesForConnectionAndWriter(mirrorCtx, reader)
 	}()
 
 	// Defer cleanup must shut goroutines down in this order:
@@ -375,7 +386,32 @@ func (d *Daemon) readTaskWakeupMessages(conn *websocket.Conn, taskWakeups chan<-
 	return d.readTaskWakeupMessagesForConnection(conn, taskWakeups, d.wsRPC.currentGeneration())
 }
 
+type taskWakeupReader struct {
+	conn                    *websocket.Conn
+	taskWakeups             chan<- taskWakeup
+	wsRPCGeneration         uint64
+	mirrorControlGeneration mirrorControlGeneration
+	enqueue                 func([]byte) (*wsOutbound, error)
+}
+
 func (d *Daemon) readTaskWakeupMessagesForConnection(conn *websocket.Conn, taskWakeups chan<- taskWakeup, wsRPCGeneration uint64) error {
+	d.mu.Lock()
+	mirrorGeneration := d.mirrorControlGeneration
+	d.mu.Unlock()
+	return d.readTaskWakeupMessagesForConnectionAndWriter(context.Background(), taskWakeupReader{
+		conn:                    conn,
+		taskWakeups:             taskWakeups,
+		wsRPCGeneration:         wsRPCGeneration,
+		mirrorControlGeneration: mirrorGeneration,
+	})
+}
+
+func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Context, reader taskWakeupReader) error {
+	conn := reader.conn
+	taskWakeups := reader.taskWakeups
+	wsRPCGeneration := reader.wsRPCGeneration
+	mirrorGeneration := reader.mirrorControlGeneration
+	enqueue := reader.enqueue
 	d.configureTaskWakeupReadLiveness(conn)
 	for {
 		_, raw, err := conn.ReadMessage()
@@ -445,6 +481,12 @@ func (d *Daemon) readTaskWakeupMessagesForConnection(conn *websocket.Conn, taskW
 				continue
 			}
 			d.wsRPC.deliver(resp)
+		case protocol.EventMirrorOffer:
+			d.handleMirrorOffer(ctx, mirrorOfferMessage{
+				raw:               msg.Payload,
+				enqueue:           enqueue,
+				controlGeneration: mirrorGeneration,
+			})
 		}
 	}
 }

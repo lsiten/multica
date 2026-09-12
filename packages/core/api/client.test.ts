@@ -3,7 +3,12 @@ import { createAuthStore } from "../auth";
 import { configStore } from "../config";
 import type { StorageAdapter, User } from "../types";
 import { ApiClient, ApiError, CHAT_DRAFT_RESTORE_CAPABILITY, clientErrorMessage } from "./client";
-import { EMPTY_PLUGIN_PACKAGE_LIST, EMPTY_PLUGIN_PREVIEW, EMPTY_PLUGIN_SURFACE_LAUNCH } from "./schemas";
+import {
+  EMPTY_MIRROR_ICE_CONFIG,
+  EMPTY_PLUGIN_PACKAGE_LIST,
+  EMPTY_PLUGIN_PREVIEW,
+  EMPTY_PLUGIN_SURFACE_LAUNCH,
+} from "./schemas";
 
 afterEach(() => {
   configStore.getState().setAgentConversationStartersSupported(false);
@@ -141,6 +146,88 @@ describe("ApiClient edit guards", () => {
     expect(parsedLegacy).toMatchObject({ issues: [{ id: "issue-1" }], total: 1 });
     expect(parsedLegacy.issues[0]).not.toHaveProperty("revision");
     await expect(client.listIssues()).resolves.toEqual({ issues: [], total: 0 });
+  });
+});
+
+describe("ApiClient pin compatibility", () => {
+  it("requests runtime mirror pins with the capability include list", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await client.listPins();
+
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    expect(url).toBe("https://api.example.test/api/pins?include=view,runtime_mirror");
+  });
+});
+
+describe("ApiClient runtime mirror ICE compatibility", () => {
+  const endpoint = "https://api.example.test/api/runtimes/runtime-1/mirror/config";
+
+  it("parses deployment ICE configuration", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        turn_configured: true,
+        ice_servers: [{ urls: ["turn:turn.example.com:3478"], username: "viewer", credential: "secret" }],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const config = await new ApiClient("https://api.example.test").getMirrorICEConfig("runtime-1");
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(endpoint);
+    expect(config).toEqual({
+      turn_configured: true,
+      ice_servers: [{ urls: ["turn:turn.example.com:3478"], username: "viewer", credential: "secret" }],
+    });
+  });
+
+  it.each([404, 501])("uses empty ICE configuration when an older backend replies %i", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "not found" }), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+
+    await expect(
+      new ApiClient("https://api.example.test").getMirrorICEConfig("runtime-1"),
+    ).resolves.toEqual(EMPTY_MIRROR_ICE_CONFIG);
+  });
+
+  it.each([401, 403, 500])("does not hide a %i API failure", async (status) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "request failed" }), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+
+    await expect(
+      new ApiClient("https://api.example.test").getMirrorICEConfig("runtime-1"),
+    ).rejects.toMatchObject({ status });
+  });
+
+  it("uses empty ICE configuration when the response body is malformed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response("not-json", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+
+    await expect(
+      new ApiClient("https://api.example.test").getMirrorICEConfig("runtime-1"),
+    ).resolves.toEqual(EMPTY_MIRROR_ICE_CONFIG);
   });
 });
 

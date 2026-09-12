@@ -86,9 +86,108 @@ import type {
   User,
   WebhookDelivery,
   WorkspaceMcpServer,
+  MirrorSessionResponse,
+  PinnedItem,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
+
+export const MirrorSessionDescriptionSchema = z.object({
+  type: z.string(),
+  sdp: z.string(),
+}).loose();
+
+export const MirrorICEServerSchema = z.object({
+  urls: z.union([z.string(), z.array(z.string())]),
+  username: z.string().optional(),
+  credential: z.string().optional(),
+}).loose();
+
+const MIRROR_ICE_SERVER_LIST_SCHEMA = z.array(z.unknown()).transform((servers) =>
+  servers.flatMap((server) => {
+    const parsed = MirrorICEServerSchema.safeParse(server);
+    return parsed.success ? [parsed.data] : [];
+  }),
+);
+
+export const MirrorICEConfigSchema = z.object({
+  ice_servers: MIRROR_ICE_SERVER_LIST_SCHEMA.default([]),
+  turn_configured: z.boolean().default(false),
+}).loose();
+
+export const EMPTY_MIRROR_ICE_CONFIG = { ice_servers: [], turn_configured: false };
+
+const MirrorAnswerSchema = z.object({
+  type: z.literal("answer"),
+  sdp: z.string().min(1),
+}).loose();
+
+export const MirrorSessionResponseSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  runtime_id: z.string(),
+  user_id: z.string(),
+  daemon_id: z.string(),
+  viewer_id: z.string(),
+  created_at: z.string(),
+  expires_at: z.string(),
+  state: z.string(),
+  failure_reason: z
+    .preprocess((reason) => (typeof reason === "string" ? reason : undefined), z.string().optional())
+    .optional(),
+  answer: z
+    .preprocess((answer) => {
+      if (answer === undefined || answer === null) return undefined;
+      const parsed = MirrorAnswerSchema.safeParse(answer);
+      return parsed.success ? parsed.data : undefined;
+    }, MirrorSessionDescriptionSchema.optional())
+    .optional(),
+  ice_config: z
+    .preprocess((config) => (typeof config === "object" && config !== null ? config : undefined), MirrorICEConfigSchema)
+    .default(EMPTY_MIRROR_ICE_CONFIG),
+}).loose();
+
+export const EMPTY_MIRROR_SESSION_RESPONSE: MirrorSessionResponse = {
+  id: "",
+  workspace_id: "",
+  runtime_id: "",
+  user_id: "",
+  daemon_id: "",
+  viewer_id: "",
+  created_at: "",
+  expires_at: "",
+  state: "failed",
+  ice_config: EMPTY_MIRROR_ICE_CONFIG,
+};
+
+export const PinnedItemSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  user_id: z.string().default(""),
+  item_type: z.enum(["issue", "project", "view", "runtime_mirror"]),
+  item_id: z.string(),
+  position: z.number().default(0),
+  created_at: z.string().default(""),
+}).loose();
+
+export const PinnedItemListSchema = z.array(z.unknown()).transform((items) =>
+  items.flatMap((item) => {
+    const parsed = PinnedItemSchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  }),
+);
+
+export const EMPTY_PINNED_ITEM: PinnedItem = {
+  id: "",
+  workspace_id: "",
+  user_id: "",
+  item_type: "issue",
+  item_id: "",
+  position: 0,
+  created_at: "",
+};
+
+export const EMPTY_PIN_LIST: PinnedItem[] = [];
 
 export const PluginConfigFieldSchema = z.object({
   key: z.string(),

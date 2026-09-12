@@ -45,6 +45,8 @@ import {
   IssueTriggerPreviewSchema,
   ListIssuesResponseSchema,
   ListPropertiesResponseSchema,
+  MirrorSessionResponseSchema,
+  PinnedItemListSchema,
   MALFORMED_RUNTIME_MODEL_LIST_REQUEST,
   RuntimeModelListRequestSchema,
   SearchProjectsResponseSchema,
@@ -2106,5 +2108,105 @@ describe("issue status catalog schemas", () => {
       { endpoint: "POST /api/issue-statuses" },
     );
     expect(parsed).toEqual(EMPTY_ISSUE_STATUS_ENTRY);
+  });
+});
+
+describe("runtime mirror session schema", () => {
+  const baseSession = {
+    id: "session-1",
+    workspace_id: "ws-1",
+    runtime_id: "runtime-1",
+    user_id: "user-1",
+    daemon_id: "daemon-1",
+    viewer_id: "viewer-1",
+    created_at: "2026-09-12T00:00:00Z",
+    expires_at: "2026-09-12T00:00:30Z",
+    state: "offered",
+  };
+
+  it("parses a complete session", () => {
+    const parsed = MirrorSessionResponseSchema.parse({
+      ...baseSession,
+      answer: { type: "answer", sdp: "answer-sdp" },
+      ice_config: {
+        ice_servers: [{ urls: "stun:stun.example" }],
+        turn_configured: true,
+      },
+    });
+
+    expect(parsed.answer).toEqual({ type: "answer", sdp: "answer-sdp" });
+    expect(parsed.ice_config.turn_configured).toBe(true);
+    expect(parsed.ice_config.ice_servers[0]?.urls).toBe("stun:stun.example");
+  });
+
+  it("drops a malformed answer or ICE server without dropping the session", () => {
+    const parsed = MirrorSessionResponseSchema.parse({
+      ...baseSession,
+      answer: { type: "offer", sdp: "answer-sdp" },
+      ice_config: {
+        ice_servers: [
+          { urls: ["stun:valid.example"] },
+          { urls: 42 },
+        ],
+        turn_configured: false,
+      },
+    });
+
+    expect(parsed.answer).toBeUndefined();
+    expect(parsed.ice_config.ice_servers).toEqual([
+      { urls: ["stun:valid.example"] },
+    ]);
+  });
+
+  it("parses a failed session and drops a malformed failure reason", () => {
+    const failed = MirrorSessionResponseSchema.parse({
+      ...baseSession,
+      state: "failed",
+      failure_reason: "permission-denied",
+    });
+    const malformedReason = MirrorSessionResponseSchema.parse({
+      ...baseSession,
+      state: "failed",
+      failure_reason: 42,
+    });
+
+    expect(failed.state).toBe("failed");
+    expect(failed.failure_reason).toBe("permission-denied");
+    expect(malformedReason.state).toBe("failed");
+    expect(malformedReason.failure_reason).toBeUndefined();
+  });
+
+  it("defaults missing ICE configuration", () => {
+    const parsed = MirrorSessionResponseSchema.parse(baseSession);
+
+    expect(parsed.ice_config).toEqual({
+      ice_servers: [],
+      turn_configured: false,
+    });
+  });
+});
+
+describe("pin schemas", () => {
+  it("keeps valid pins and drops malformed rows", () => {
+    const parsed = PinnedItemListSchema.parse([
+      {
+        id: "pin-1",
+        workspace_id: "ws-1",
+        user_id: "user-1",
+        item_type: "runtime_mirror",
+        item_id: "runtime-1",
+        position: 1,
+        created_at: "2026-09-12T00:00:00Z",
+      },
+      { id: "broken-pin", item_type: "runtime_mirror" },
+    ]);
+
+    expect(parsed).toEqual([
+      expect.objectContaining({
+        id: "pin-1",
+        item_type: "runtime_mirror",
+        item_id: "runtime-1",
+      }),
+    ]);
   });
 });

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
 	"log/slog"
 	"net"
 	"net/http"
@@ -14,8 +15,18 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/pion/webrtc/v4"
 )
+
+type staticMirrorCapturer struct {
+	image image.Image
+}
+
+func (c staticMirrorCapturer) Capture(context.Context) (image.Image, error) {
+	return c.image, nil
+}
 
 func TestTaskWakeupURL(t *testing.T) {
 	tests := []struct {
@@ -58,6 +69,292 @@ func TestTaskWakeupURL(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("taskWakeupURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRuntimeMirrorIsReusedPerRuntime(t *testing.T) {
+	// Given
+	d := New(Config{}, slog.Default())
+	_, _, cancelControl := d.beginMirrorControlConnection(context.Background())
+	defer cancelControl()
+	d.runtimeIndex["runtime-1"] = Runtime{ID: "runtime-1"}
+	d.runtimeIndex["runtime-2"] = Runtime{ID: "runtime-2"}
+
+	// When
+	first, ok := d.runtimeMirror("runtime-1")
+	if !ok {
+		t.Fatal("first runtime mirror was not created")
+	}
+	second, ok := d.runtimeMirror("runtime-1")
+	if !ok {
+		t.Fatal("existing runtime mirror was not reused")
+	}
+	other, ok := d.runtimeMirror("runtime-2")
+	if !ok {
+		t.Fatal("other runtime mirror was not created")
+	}
+
+	// Then
+	if first != second {
+		t.Fatal("same runtime received multiple mirror sources")
+	}
+	if first == other {
+		t.Fatal("different runtimes shared one mirror source")
+	}
+	if err := first.Close(context.Background()); err != nil {
+		t.Fatalf("close first mirror: %v", err)
+	}
+	if err := other.Close(context.Background()); err != nil {
+		t.Fatalf("close other mirror: %v", err)
+	}
+}
+
+func TestRuntimeMirrorForOfferRejectsStaleControlConnection(t *testing.T) {
+	// Given
+	d := New(Config{}, slog.Default())
+	d.runtimeIndex["runtime-1"] = Runtime{ID: "runtime-1"}
+	firstGeneration, firstOfferCtx, cancelFirst := d.beginMirrorControlConnection(context.Background())
+	defer cancelFirst()
+	first, created, ok := d.runtimeMirrorForOffer("runtime-1", firstGeneration)
+	if !ok || !created || first == nil {
+		t.Fatalf("first offer acquisition = (%v, %v, %v), want a new mirror", first, created, ok)
+	}
+	currentGeneration, currentOfferCtx, cancelCurrent := d.beginMirrorControlConnection(context.Background())
+	defer cancelCurrent()
+	select {
+	case <-firstOfferCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("replacement control connection did not cancel stale offer negotiation")
+	}
+	select {
+	case <-currentOfferCtx.Done():
+		t.Fatal("current mirror control context was canceled")
+	default:
+	}
+
+	// When
+	current, currentCreated, currentOK := d.runtimeMirrorForOffer("runtime-1", currentGeneration)
+	stale, staleCreated, staleOK := d.runtimeMirrorForOffer("runtime-1", firstGeneration)
+
+	// Then
+	if !currentOK || currentCreated || current != first {
+		t.Fatalf("current offer acquisition = (%v, %v, %v), want the existing mirror", current, currentCreated, currentOK)
+	}
+	if staleOK || staleCreated || stale != nil {
+		t.Fatalf("stale offer acquisition = (%v, %v, %v), want no mirror", stale, staleCreated, staleOK)
+	}
+	if err := first.Close(context.Background()); err != nil {
+		t.Fatalf("close mirror: %v", err)
+	}
+}
+
+func TestRuntimeMirrorIsNotRecreatedForUntrackedRuntime(t *testing.T) {
+	d := New(Config{}, slog.Default())
+	_, _, cancelControl := d.beginMirrorControlConnection(context.Background())
+	defer cancelControl()
+	runtimeMirror, ok := d.runtimeMirror("runtime-gone")
+	if ok {
+		t.Fatalf("runtime mirror created for untracked runtime: %v", runtimeMirror)
+	}
+}
+
+func TestSendMirrorViewerState(t *testing.T) {
+	// Given
+	d := New(Config{DaemonID: "daemon-1"}, slog.Default())
+	var got protocol.Message
+
+	// When
+	_, err := d.sendMirrorViewerState(func(frame []byte) (*wsOutbound, error) {
+		if err := json.Unmarshal(frame, &got); err != nil {
+			t.Fatalf("unmarshal frame: %v", err)
+		}
+		return &wsOutbound{}, nil
+	}, "ws-1", "runtime-1", "viewer-1", true)
+	if err != nil {
+		t.Fatalf("send viewer state: %v", err)
+	}
+
+	// Then
+	if got.Type != protocol.EventMirrorViewer {
+		t.Fatalf("frame type = %q, want %q", got.Type, protocol.EventMirrorViewer)
+	}
+	var payload protocol.MirrorViewerPayload
+	if err := json.Unmarshal(got.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.WorkspaceID != "ws-1" || payload.RuntimeID != "runtime-1" || payload.DaemonID != "daemon-1" || payload.ViewerID != "viewer-1" || !payload.Active {
+		t.Fatalf("payload = %+v, want active viewer state", payload)
+	}
+}
+
+func TestReplayActiveMirrorViewerStatesReplaysActiveAndThenIdle(t *testing.T) {
+	// Given
+	d := New(Config{DaemonID: "daemon-1"}, slog.Default())
+	d.workspaces["ws-1"] = &workspaceState{workspaceID: "ws-1", runtimeIDs: []string{"runtime-1"}}
+	d.runtimeIndex["runtime-1"] = Runtime{ID: "runtime-1"}
+	runtimeMirror := mirror.NewRuntimeMirror(
+		staticMirrorCapturer{image: image.NewRGBA(image.Rect(0, 0, 1, 1))},
+		time.Hour,
+	)
+	d.runtimeMirrors["runtime-1"] = runtimeMirror
+	t.Cleanup(func() {
+		if err := runtimeMirror.Close(context.Background()); err != nil {
+			t.Fatalf("close runtime mirror: %v", err)
+		}
+	})
+
+	browser, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("create browser peer: %v", err)
+	}
+	t.Cleanup(func() { _ = browser.Close() })
+	ordered := true
+	channel, err := browser.CreateDataChannel("mirror", &webrtc.DataChannelInit{Ordered: &ordered})
+	if err != nil {
+		t.Fatalf("create mirror data channel: %v", err)
+	}
+	channelOpen := make(chan struct{})
+	channel.OnOpen(func() { close(channelOpen) })
+
+	offer, err := browser.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("create offer: %v", err)
+	}
+	offerGathered := webrtc.GatheringCompletePromise(browser)
+	if err := browser.SetLocalDescription(offer); err != nil {
+		t.Fatalf("set local offer: %v", err)
+	}
+	<-offerGathered
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	answer, err := runtimeMirror.Answer(ctx, "viewer-replay", mirror.SessionDescriptionFromPion(*browser.LocalDescription()), mirror.ICEConfig{})
+	if err != nil {
+		t.Fatalf("answer mirror offer: %v", err)
+	}
+	if err := browser.SetRemoteDescription(answer.Pion()); err != nil {
+		t.Fatalf("set remote answer: %v", err)
+	}
+	select {
+	case <-channelOpen:
+	case <-time.After(5 * time.Second):
+		t.Fatal("mirror data channel did not open")
+	}
+	waitForMirrorViewers(t, runtimeMirror, true)
+
+	frames := make(chan protocol.MirrorViewerPayload, 2)
+	enqueue := func(frame []byte) (*wsOutbound, error) {
+		var message protocol.Message
+		if err := json.Unmarshal(frame, &message); err != nil {
+			t.Fatalf("unmarshal viewer frame: %v", err)
+		}
+		var payload protocol.MirrorViewerPayload
+		if err := json.Unmarshal(message.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal viewer payload: %v", err)
+		}
+		frames <- payload
+		return &wsOutbound{}, nil
+	}
+
+	// When
+	generation, _, cancelControl := d.beginMirrorControlConnection(context.Background())
+	defer cancelControl()
+	d.replayActiveMirrorViewerStates(enqueue, generation)
+
+	// Then
+	select {
+	case payload := <-frames:
+		if !payload.Active || payload.WorkspaceID != "ws-1" || payload.RuntimeID != "runtime-1" || payload.DaemonID != "daemon-1" || payload.ViewerID != "viewer-replay" {
+			t.Fatalf("replayed payload = %+v, want active runtime mirror state", payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("active mirror viewer state was not replayed")
+	}
+
+	if err := channel.Close(); err != nil {
+		t.Fatalf("close browser data channel: %v", err)
+	}
+	waitForMirrorViewers(t, runtimeMirror, false)
+	select {
+	case payload := <-frames:
+		if payload.Active || payload.ViewerID != "viewer-replay" {
+			t.Fatalf("final payload = %+v, want inactive", payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("idle mirror viewer state was not sent to the rebound writer")
+	}
+}
+
+func waitForMirrorViewers(t *testing.T, runtimeMirror *mirror.RuntimeMirror, wantViewers bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtimeMirror.HasViewers() == wantViewers {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("runtime mirror viewers = %v, want %v", runtimeMirror.HasViewers(), wantViewers)
+}
+
+func TestSendMirrorAnswerFailure(t *testing.T) {
+	// Given
+	d := New(Config{DaemonID: "daemon-1"}, slog.Default())
+	offer := protocol.MirrorOfferPayload{
+		SessionID:   "session-1",
+		WorkspaceID: "ws-1",
+		RuntimeID:   "runtime-1",
+		UserID:      "user-1",
+		DaemonID:    "daemon-1",
+		ViewerID:    "viewer-1",
+		ExpiresAt:   time.Now().Add(time.Minute),
+	}
+	var got protocol.Message
+
+	// When
+	err := d.sendMirrorAnswerFailure(func(frame []byte) (*wsOutbound, error) {
+		if err := json.Unmarshal(frame, &got); err != nil {
+			t.Fatalf("unmarshal frame: %v", err)
+		}
+		return &wsOutbound{}, nil
+	}, offer, protocol.MirrorAnswerFailurePermissionDenied)
+
+	// Then
+	if err != nil {
+		t.Fatalf("send answer failure: %v", err)
+	}
+	if got.Type != protocol.EventMirrorAnswerFailure {
+		t.Fatalf("frame type = %q, want %q", got.Type, protocol.EventMirrorAnswerFailure)
+	}
+	var payload protocol.MirrorAnswerFailurePayload
+	if err := json.Unmarshal(got.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.SessionID != offer.SessionID || payload.RuntimeID != offer.RuntimeID || payload.DaemonID != offer.DaemonID ||
+		payload.Reason != protocol.MirrorAnswerFailurePermissionDenied || !payload.ExpiresAt.Equal(offer.ExpiresAt) {
+		t.Fatalf("payload = %+v, want matching offer with permission-denied reason", payload)
+	}
+}
+
+func TestMirrorAnswerFailureReason(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "permission denied", err: mirror.ErrCapturePermissionDenied, want: protocol.MirrorAnswerFailurePermissionDenied},
+		{name: "unsupported", err: mirror.ErrCaptureUnsupported, want: protocol.MirrorAnswerFailureUnsupported},
+		{name: "no display", err: mirror.ErrNoDisplay, want: protocol.MirrorAnswerFailureNoDisplay},
+		{name: "capture unavailable", err: mirror.ErrCaptureUnavailable, want: protocol.MirrorAnswerFailureCaptureUnavailable},
+		{name: "negotiation", err: errors.New("webrtc failed"), want: protocol.MirrorAnswerFailureNegotiation},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mirrorAnswerFailureReason(tt.err); got != tt.want {
+				t.Fatalf("mirrorAnswerFailureReason() = %q, want %q", got, tt.want)
 			}
 		})
 	}

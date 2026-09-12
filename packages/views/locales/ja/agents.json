@@ -145,6 +145,7 @@
     "agent_restored_toast": "エージェントを復元しました",
     "restore_failed_toast": "エージェントを復元できませんでした",
     "dm": "DM",
+    "open_runtime_mirror": "ランタイムミラーを開く",
     "dm_no_permission_toast": "このエージェントとチャットする権限がありません。",
     "runtime_required_toast": "このエージェントを実行する前にランタイムを設定してください。",
     "assign_work": "作業を割り当てる",

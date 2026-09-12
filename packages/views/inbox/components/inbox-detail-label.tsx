@@ -37,6 +37,8 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     quick_create_unconfirmed: t(($) => $.types.quick_create_unconfirmed),
     autopilot_paused: t(($) => $.types.autopilot_paused),
     autopilot_quota_exceeded: t(($) => $.types.autopilot_quota_exceeded),
+    runtime_mirror_viewer_started: t(($) => $.types.runtime_mirror_viewer_started),
+    runtime_mirror_viewer_stopped: t(($) => $.types.runtime_mirror_viewer_stopped),
   };
 }
 
@@ -135,6 +137,14 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
     }
     case "autopilot_quota_exceeded":
       return <span>{t(($) => $.labels.autopilot_quota_blocked)}</span>;
+    case "runtime_mirror_viewer_started": {
+      const runtime = details.runtime_name || typeLabels[item.type];
+      return <span>{t(($) => $.labels.mirror_viewing_started, { runtime })}</span>;
+    }
+    case "runtime_mirror_viewer_stopped": {
+      const runtime = details.runtime_name || typeLabels[item.type];
+      return <span>{t(($) => $.labels.mirror_viewing_stopped, { runtime })}</span>;
+    }
     default:
       return <span>{typeLabels[item.type] ?? item.type}</span>;
   }

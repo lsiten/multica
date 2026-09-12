@@ -28,7 +28,9 @@ export type InboxItemType =
   // System notifications are intentionally issue-less. Keep them in the
   // same Inbox model so read/archive/realtime behavior remains consistent.
   | "autopilot_paused"
-  | "autopilot_quota_exceeded";
+  | "autopilot_quota_exceeded"
+  | "runtime_mirror_viewer_started"
+  | "runtime_mirror_viewer_stopped";
 
 /**
  * One workspace's unread inbox count in the cross-workspace summary
