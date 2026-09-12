@@ -58,7 +58,7 @@ services:
       retries: 5
 
   turn:
-    image: ${MULTICA_TURN_IMAGE:-instrumentisto/coturn}:${MULTICA_TURN_IMAGE_TAG:-latest}
+    image: ${MULTICA_TURN_IMAGE:-coturn/coturn}:${MULTICA_TURN_IMAGE_TAG:-latest}
     pull_policy: always
     command:
       - sh
@@ -71,9 +71,16 @@ services:
         --static-auth-secret="$${MULTICA_TURN_SECRET:-$${JWT_SECRET}}"
         --min-port=$${TURN_MIN_PORT}
         --max-port=$${TURN_MAX_PORT}
+        --log-file=stdout
+        $${MULTICA_TURN_EXTERNAL_IP:+--external-ip="$$MULTICA_TURN_EXTERNAL_IP"}
     environment:
       MULTICA_TURN_REALM: ${MULTICA_TURN_PUBLIC_HOST:-}
       MULTICA_TURN_SECRET: ${MULTICA_TURN_SECRET:-${JWT_SECRET}}
+      # Set to the instance's Elastic/Public IP when coturn sees only the
+      # private ENI address (EC2 without a public IP on the interface) so
+      # relay candidates advertise a routable address. Leave empty when the
+      # host already has the public IP on its interface (host networking).
+      MULTICA_TURN_EXTERNAL_IP: ${MULTICA_TURN_EXTERNAL_IP:-}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value — generate one with 'openssl rand -hex 32'}
       TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
       TURN_MAX_PORT: ${TURN_MAX_PORT:-49260}
