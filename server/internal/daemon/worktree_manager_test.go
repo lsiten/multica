@@ -69,7 +69,9 @@ func createWorktreeTestRepo(t *testing.T) string {
 	t.Helper()
 	path := t.TempDir()
 	worktreeTestGit(t, path, "init", "-b", "main")
-	worktreeTestGit(t, path, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "base")
+	worktreeTestGit(t, path, "config", "user.name", "Test")
+	worktreeTestGit(t, path, "config", "user.email", "test@example.com")
+	worktreeTestGit(t, path, "commit", "--allow-empty", "-m", "base")
 	return path
 }
 
