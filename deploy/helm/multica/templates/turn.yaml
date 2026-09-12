@@ -105,8 +105,11 @@ spec:
     # coturn relays media for symmetric-NAT peers from this UDP range. A
     # cloud LoadBalancer forwards the whole range; restrict it via
     # .Values.turn.service.relay.minPort/maxPort if your provider caps the
-    # number of Service ports.
-    {{- range $port := untilStep (int .Values.turn.service.relay.minPort) (add1 (int .Values.turn.service.relay.maxPort)) 1 }}
+    # number of Service ports. sprig's add1 returns int64 but untilStep
+    # requires int, so wrap the exclusive upper bound back through int.
+    {{- $relayStart := int .Values.turn.service.relay.minPort }}
+    {{- $relayStop := int (add1 .Values.turn.service.relay.maxPort) }}
+    {{- range $port := untilStep $relayStart $relayStop 1 }}
     - name: "relay-{{ $port }}"
       port: {{ $port }}
       targetPort: {{ $port }}
