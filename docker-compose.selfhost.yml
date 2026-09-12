@@ -63,7 +63,14 @@ services:
     command:
       - sh
       - -c
+      # The official image's CMD passes "--external-ip=$(detect-external-ip)"
+      # via its entrypoint eval. Our command override must replicate that,
+      # otherwise coturn advertises the Docker bridge (172.x) address as its
+      # relay candidate and public peers can never reach the relay: ICE stays
+      # in "checking" and then fails. An explicit MULTICA_TURN_EXTERNAL_IP
+      # (e.g. an EC2 Elastic IP) always takes precedence.
       - >-
+        EXTERNAL_IP="$${MULTICA_TURN_EXTERNAL_IP:-$$(detect-external-ip --ipv4 2>/dev/null || true)}";
         exec turnserver
         -c /etc/coturn/turnserver.conf
         --realm="$${MULTICA_TURN_REALM}"
@@ -72,14 +79,13 @@ services:
         --min-port=$${TURN_MIN_PORT}
         --max-port=$${TURN_MAX_PORT}
         --log-file=stdout
-        $${MULTICA_TURN_EXTERNAL_IP:+--external-ip="$$MULTICA_TURN_EXTERNAL_IP"}
+        $${EXTERNAL_IP:+--external-ip="$$EXTERNAL_IP"}
     environment:
       MULTICA_TURN_REALM: ${MULTICA_TURN_PUBLIC_HOST:-}
       MULTICA_TURN_SECRET: ${MULTICA_TURN_SECRET:-${JWT_SECRET}}
-      # Set to the instance's Elastic/Public IP when coturn sees only the
-      # private ENI address (EC2 without a public IP on the interface) so
-      # relay candidates advertise a routable address. Leave empty when the
-      # host already has the public IP on its interface (host networking).
+      # Optional explicit public/Elastic IP advertised in relay candidates.
+      # Leave empty to auto-detect the instance's public IPv4 via DNS; set it
+      # manually only when auto-detection returns an unreachable address.
       MULTICA_TURN_EXTERNAL_IP: ${MULTICA_TURN_EXTERNAL_IP:-}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value — generate one with 'openssl rand -hex 32'}
       TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
