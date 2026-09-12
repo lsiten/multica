@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -18,7 +19,7 @@ func loadBuiltinTURNConfig() mirror.BuiltinTURNConfig {
 	if secret == "" {
 		secret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
 	}
-	return mirror.BuiltinTURNConfig{
+	config := mirror.BuiltinTURNConfig{
 		// Docker Compose and the Helm chart set this explicitly. Default to off
 		// for bare-metal/managed API processes that do not run the bundled coturn
 		// container; otherwise the advertised hostname would look configured
@@ -30,6 +31,10 @@ func loadBuiltinTURNConfig() mirror.BuiltinTURNConfig {
 		TTL:        ttl,
 		Transports: []string{"udp", "tcp"},
 	}
+	if config.Enabled && !config.Configured() {
+		slog.Warn("screen mirror built-in TURN is enabled but unusable: set MULTICA_TURN_PUBLIC_HOST to the server's public hostname or IP (localhost is ignored) so peers across restrictive networks can relay")
+	}
+	return config
 }
 
 func turnPublicHost() string {

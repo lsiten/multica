@@ -30,7 +30,12 @@ spec:
           command:
             - sh
             - -c
+            # An explicit turn.externalIP wins; otherwise auto-detect the
+            # egress public IPv4 via DNS, matching the upstream image default.
+            # Without either flag coturn advertises the pod IP and relay
+            # candidates are unreachable from outside the cluster.
             - >-
+              EXTERNAL_IP="${MULTICA_TURN_EXTERNAL_IP:-$(detect-external-ip --ipv4 2>/dev/null || true)}";
               exec turnserver
               -c /etc/coturn/turnserver.conf
               --realm="${MULTICA_TURN_PUBLIC_HOST}"
@@ -39,7 +44,7 @@ spec:
               --min-port="${TURN_MIN_PORT}"
               --max-port="${TURN_MAX_PORT}"
               --log-file=stdout
-              ${MULTICA_TURN_EXTERNAL_IP:+--external-ip="$MULTICA_TURN_EXTERNAL_IP"}
+              ${EXTERNAL_IP:+--external-ip="$EXTERNAL_IP"}
           env:
             - name: TURN_MIN_PORT
               value: {{ .Values.turn.service.relay.minPort | quote }}
