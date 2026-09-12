@@ -7,6 +7,13 @@ WHERE issue_id = $1;
 DELETE FROM issue_goal
 WHERE issue_id = $1;
 
+-- name: DeleteIssueGoalsForWorkspace :exec
+-- issue_goal has no workspace_id or foreign key; resolve ownership through issue.
+DELETE FROM issue_goal
+WHERE issue_id IN (
+    SELECT id FROM issue WHERE workspace_id = sqlc.arg('workspace_id')::uuid
+);
+
 -- name: UpsertIssueGoal :one
 INSERT INTO issue_goal (issue_id, objective)
 VALUES ($1, $2)
