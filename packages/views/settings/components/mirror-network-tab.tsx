@@ -82,6 +82,9 @@ export function MirrorNetworkTab() {
 
   const [mode, setMode] = useState<MirrorNetworkMode>("builtin");
   const [drafts, setDrafts] = useState<CustomServerDraft[]>([emptyCustomDraft()]);
+  const [cloudflareKeyID, setCloudflareKeyID] = useState("");
+  const [cloudflareAPIToken, setCloudflareAPIToken] = useState("");
+  const [cloudflareSaving, setCloudflareSaving] = useState(false);
 
   // Re-seed the editor whenever the server state changes (initial load and
   // every successful save). Do not derive render state directly from the
@@ -90,6 +93,8 @@ export function MirrorNetworkTab() {
     if (!settings) return;
     setMode(settings.mode);
     setDrafts(settingsToDraft(settings));
+    setCloudflareKeyID(settings.cloudflare.key_id ?? "");
+    setCloudflareAPIToken("");
   }, [settings]);
 
   const readOnly = !settings || settings.locked || !settings.can_manage;
@@ -124,7 +129,20 @@ export function MirrorNetworkTab() {
         }
         await update.mutateAsync({ mode, servers });
       } else {
-        await update.mutateAsync({ mode });
+        await update.mutateAsync({
+          mode,
+          cloudflare:
+            cloudflareKeyID.trim() || cloudflareAPIToken
+              ? {
+                  ...(cloudflareKeyID.trim()
+                    ? { key_id: cloudflareKeyID.trim() }
+                    : {}),
+                  ...(cloudflareAPIToken
+                    ? { api_token: cloudflareAPIToken }
+                    : {}),
+                }
+              : undefined,
+        });
       }
       toast.success(t(($) => $.mirror_network.saved));
     } catch (error) {
@@ -216,6 +234,41 @@ export function MirrorNetworkTab() {
         </SettingsCard>
       </SettingsSection>
 
+          <SettingsRow
+            label={t(($) => $.mirror_network.cloudflare.status_label)}
+            description={
+              settings.cloudflare.available
+                ? (settings.cloudflare.healthy
+                    ? t(($) => $.mirror_network.cloudflare.status_healthy)
+                    : t(($) => $.mirror_network.cloudflare.status_pending))
+                : t(($) => $.mirror_network.cloudflare.status_unset)
+            }
+          >
+            {settings.cloudflare.available ? (
+              <Badge
+                variant="secondary"
+                className={
+                  settings.cloudflare.healthy ? "gap-1 text-success" : "gap-1"
+                }
+              >
+                {settings.cloudflare.healthy ? (
+                  <Check className="size-3" />
+                ) : (
+                  <AlertTriangle className="size-3" />
+                )}
+                {settings.cloudflare.key_id
+                  ? t(($) => $.mirror_network.cloudflare.key_id_label, {
+                      id: settings.cloudflare.key_id,
+                    })
+                  : t(($) => $.mirror_network.cloudflare.deployment_key)}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                <AlertTriangle className="size-3" />
+                {t(($) => $.mirror_network.cloudflare.status_unset)}
+              </Badge>
+            )}
+          </SettingsRow>
       <SettingsSection
         title={t(($) => $.mirror_network.mode_title)}
         description={t(($) => $.mirror_network.mode_description)}
@@ -239,6 +292,80 @@ export function MirrorNetworkTab() {
               aria-label={t(($) => $.mirror_network.modes.builtin_label)}
             />
           </SettingsRow>
+          {mode === "builtin" ? (
+            <div className="space-y-3 px-4 py-4">
+              <p className="text-caption text-muted-foreground">
+                {t(($) => $.mirror_network.cloudflare.editor_description)}
+              </p>
+              <div className="space-y-1">
+                <Label className="text-caption text-muted-foreground">
+                  {t(($) => $.mirror_network.cloudflare.key_id)}
+                </Label>
+                <Input
+                  value={cloudflareKeyID}
+                  disabled={readOnly || cloudflareSaving}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={
+                    settings.cloudflare.key_id
+                      ? settings.cloudflare.key_id
+                      : t(($) => $.mirror_network.cloudflare.key_id_placeholder)
+                  }
+                  aria-label={t(($) => $.mirror_network.cloudflare.key_id)}
+                  onChange={(event) => setCloudflareKeyID(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-caption text-muted-foreground">
+                  {t(($) => $.mirror_network.cloudflare.api_token)}
+                </Label>
+                <Input
+                  type="password"
+                  value={cloudflareAPIToken}
+                  disabled={readOnly || cloudflareSaving}
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  placeholder={
+                    settings.cloudflare.has_api_token
+                      ? t(($) => $.mirror_network.cloudflare.token_saved)
+                      : t(($) => $.mirror_network.cloudflare.api_token_placeholder)
+                  }
+                  aria-label={t(($) => $.mirror_network.cloudflare.api_token)}
+                  onChange={(event) => setCloudflareAPIToken(event.target.value)}
+                />
+              </div>
+              {settings.cloudflare.available ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={readOnly || cloudflareSaving}
+                  onClick={async () => {
+                    setCloudflareSaving(true);
+                    try {
+                      await update.mutateAsync({
+                        mode,
+                        cloudflare: { remove: true },
+                      });
+                      setCloudflareKeyID("");
+                      setCloudflareAPIToken("");
+                      toast.success(t(($) => $.mirror_network.cloudflare.removed));
+                    } catch (error) {
+                      toast.error(
+                        clientErrorMessage(error) ??
+                          t(($) => $.mirror_network.errors.save),
+                      );
+                    } finally {
+                      setCloudflareSaving(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="size-4" />
+                  {t(($) => $.mirror_network.cloudflare.remove)}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           <SettingsRow
             label={t(($) => $.mirror_network.modes.custom_label)}
             description={t(($) => $.mirror_network.modes.custom_description)}

@@ -17,6 +17,15 @@ type mirrorNetworkServerResponse struct {
 	HasCredential bool     `json:"has_credential"`
 }
 
+type mirrorCloudflareNetworkResponse struct {
+	Enabled              bool   `json:"enabled"`
+	Available            bool   `json:"available"`
+	Healthy              bool   `json:"healthy"`
+	KeyID                string `json:"key_id,omitempty"`
+	HasAPIToken          bool   `json:"has_api_token"`
+	CredentialTTLSeconds int64  `json:"credential_ttl_seconds,omitempty"`
+}
+
 type mirrorBuiltinNetworkResponse struct {
 	Enabled              bool     `json:"enabled"`
 	Available            bool     `json:"available"`
@@ -27,13 +36,14 @@ type mirrorBuiltinNetworkResponse struct {
 }
 
 type mirrorNetworkResponse struct {
-	Source         string                        `json:"source"`
-	Locked         bool                          `json:"locked"`
-	CanManage      bool                          `json:"can_manage"`
-	TURNConfigured bool                          `json:"turn_configured"`
-	Mode           string                        `json:"mode"`
-	Builtin        mirrorBuiltinNetworkResponse  `json:"builtin"`
-	Custom         []mirrorNetworkServerResponse `json:"custom"`
+	Source         string                          `json:"source"`
+	Locked         bool                            `json:"locked"`
+	CanManage      bool                            `json:"can_manage"`
+	TURNConfigured bool                            `json:"turn_configured"`
+	Mode           string                          `json:"mode"`
+	Cloudflare     mirrorCloudflareNetworkResponse `json:"cloudflare"`
+	Builtin        mirrorBuiltinNetworkResponse    `json:"builtin"`
+	Custom         []mirrorNetworkServerResponse   `json:"custom"`
 }
 
 func (h *Handler) GetWorkspaceMirrorNetwork(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +77,16 @@ func (h *Handler) UpdateWorkspaceMirrorNetwork(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	// Verify a newly supplied Cloudflare key eagerly against Cloudflare's API
+	// so a typo is reported on save instead of surfacing as a failed mirror
+	// session. Only checked when the request carries the key fields.
+	if req.Cloudflare != nil && next.Cloudflare != nil {
+		provider := h.workspaceCloudflareProvider(next.Cloudflare)
+		if provider == nil || len(provider.Plan(time.Now(), "").ICEServers) == 0 {
+			writeError(w, http.StatusBadRequest, "Cloudflare TURN key ID or API token was rejected")
+			return
+		}
 	}
 	merged, err := mirror.MarshalNetworkSettings(ws.Settings, next)
 	if err != nil {
@@ -111,12 +131,14 @@ func (h *Handler) loadMirrorNetworkSettings(w http.ResponseWriter, r *http.Reque
 func (h *Handler) mirrorNetworkResponse(settings mirror.NetworkSettings, canManage bool) mirrorNetworkResponse {
 	custom := h.decryptMirrorNetworkServers(settings.Servers)
 	source := h.mirrorNetworkSource(settings, custom)
+	cloudflare := h.cloudflareStatus(settings)
 	return mirrorNetworkResponse{
 		Source:         source,
 		Locked:         len(h.cfg.MirrorICE.ICEServers) > 0,
 		CanManage:      canManage && len(h.cfg.MirrorICE.ICEServers) == 0,
 		TURNConfigured: h.mirrorNetworkConfigured(source, custom),
 		Mode:           settings.Mode,
+		Cloudflare:     cloudflare,
 		Builtin: mirrorBuiltinNetworkResponse{
 			Enabled:              h.cfg.MirrorBuiltinTURN.Enabled,
 			Available:            h.cfg.MirrorBuiltinTURN.Configured(),
@@ -151,7 +173,7 @@ func (h *Handler) mirrorNetworkSource(settings mirror.NetworkSettings, custom []
 	if settings.Mode == mirror.NetworkModeDisabled {
 		return mirror.NetworkSourceDisabled
 	}
-	if h.cfg.MirrorBuiltinTURN.Configured() {
+	if h.builtinNetwork(settings).Configured() {
 		return mirror.NetworkSourceBuiltin
 	}
 	return mirror.NetworkSourceBuiltinUnavailable
@@ -186,4 +208,37 @@ func mirrorNetworkTransports(values []string) []string {
 		return nil
 	}
 	return append([]string(nil), values...)
+}
+
+func (h *Handler) cloudflareStatus(settings mirror.NetworkSettings) mirrorCloudflareNetworkResponse {
+	if provider := h.workspaceCloudflareProvider(settings.Cloudflare); provider != nil {
+		return mirrorCloudflareNetworkResponse{
+			Enabled:              true,
+			Available:            provider.Configured(),
+			Healthy:              provider.Healthy(),
+			KeyID:                maskCloudflareKeyID(settings.Cloudflare.KeyID),
+			HasAPIToken:          true,
+			CredentialTTLSeconds: int64(provider.TTL() / time.Second),
+		}
+	}
+	if h.cfg.MirrorCloudflareTURN != nil && h.cfg.MirrorCloudflareTURN.Configured() {
+		return mirrorCloudflareNetworkResponse{
+			Enabled:              true,
+			Available:            true,
+			Healthy:              h.cfg.MirrorCloudflareTURN.Healthy(),
+			HasAPIToken:          true,
+			CredentialTTLSeconds: int64(h.cfg.MirrorCloudflareTURN.TTL() / time.Second),
+		}
+	}
+	return mirrorCloudflareNetworkResponse{}
+}
+
+// maskCloudflareKeyID shows the last 6 chars of the 32-char key id only,
+// enough for an operator to confirm which key is configured without exposing
+// it in browser network panels or support screenshots.
+func maskCloudflareKeyID(keyID string) string {
+	if len(keyID) <= 6 {
+		return ""
+	}
+	return "…" + keyID[len(keyID)-6:]
 }

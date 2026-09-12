@@ -77,17 +77,34 @@ export interface BuiltinMirrorNetwork {
   readonly credential_ttl_seconds?: number;
 }
 
+export interface CloudflareMirrorNetwork {
+  readonly enabled: boolean;
+  readonly available: boolean;
+  readonly healthy: boolean;
+  readonly key_id?: string;
+  readonly has_api_token: boolean;
+  readonly credential_ttl_seconds?: number;
+}
+
 export interface MirrorNetworkSettings {
   readonly source: MirrorNetworkSource;
   readonly locked: boolean;
   readonly can_manage: boolean;
   readonly turn_configured: boolean;
   readonly mode: MirrorNetworkMode;
+  readonly cloudflare: CloudflareMirrorNetwork;
   readonly builtin: BuiltinMirrorNetwork;
   readonly custom: readonly MirrorNetworkServer[];
+}
+
+export interface CloudflareMirrorNetworkInput {
+  readonly key_id?: string;
+  readonly api_token?: string;
+  readonly remove?: boolean;
 }
 
 export interface UpdateMirrorNetworkRequest {
   readonly mode: MirrorNetworkMode;
   readonly servers?: readonly MirrorNetworkServerInput[];
+  readonly cloudflare?: CloudflareMirrorNetworkInput;
 }

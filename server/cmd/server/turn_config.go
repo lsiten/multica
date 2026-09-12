@@ -37,6 +37,16 @@ func loadBuiltinTURNConfig() mirror.BuiltinTURNConfig {
 	return config
 }
 
+func loadCloudflareTURNConfig() mirror.CloudflareTURNConfig {
+	ttl := envDuration("MULTICA_CLOUDFLARE_TURN_TTL", 24*time.Hour)
+	return mirror.CloudflareTURNConfig{
+		KeyID:    strings.TrimSpace(os.Getenv("MULTICA_CLOUDFLARE_TURN_KEY_ID")),
+		APIToken: strings.TrimSpace(os.Getenv("MULTICA_CLOUDFLARE_TURN_API_TOKEN")),
+		TTL:      ttl,
+		Endpoint: strings.TrimSpace(os.Getenv("MULTICA_CLOUDFLARE_TURN_ENDPOINT")),
+	}
+}
+
 func turnPublicHost() string {
 	for _, value := range []string{
 		os.Getenv("MULTICA_TURN_PUBLIC_HOST"),
@@ -81,4 +91,12 @@ func loadMirrorNetworkSecretBox() *secretbox.Box {
 		return nil
 	}
 	return box
+}
+
+func newCloudflareTURNProviderFromEnv() *mirror.CloudflareTURNProvider {
+	config := loadCloudflareTURNConfig()
+	if !config.Configured() {
+		return nil
+	}
+	return mirror.NewCloudflareTURNProvider(config)
 }

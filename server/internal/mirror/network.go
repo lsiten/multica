@@ -28,8 +28,17 @@ const (
 )
 
 type NetworkSettings struct {
-	Mode    string            `json:"mode"`
-	Servers []StoredICEServer `json:"servers"`
+	Mode       string                `json:"mode"`
+	Servers    []StoredICEServer     `json:"servers"`
+	Cloudflare *StoredCloudflareTURN `json:"cloudflare,omitempty"`
+}
+
+// StoredCloudflareTURN holds a workspace-managed Cloudflare Realtime TURN key.
+// The long-lived API token is encrypted at rest with the deployment secret
+// box; only short-lived ICE credentials ever leave the backend.
+type StoredCloudflareTURN struct {
+	KeyID             string `json:"key_id"`
+	APITokenEncrypted string `json:"api_token_enc,omitempty"`
 }
 
 type StoredICEServer struct {
@@ -183,7 +192,7 @@ func (config BuiltinTURNConfig) Plan(now time.Time, identity string) ICEPlan {
 	}
 }
 
-func ResolveNetworkPlan(settings NetworkSettings, deployment ICEPlan, builtin BuiltinTURNConfig, custom []ICEServer, now time.Time, identity string) (ICEPlan, string) {
+func ResolveNetworkPlan(settings NetworkSettings, deployment ICEPlan, builtin BuiltinNetwork, custom []ICEServer, now time.Time, identity string) (ICEPlan, string) {
 	if len(deployment.ICEServers) > 0 {
 		return deployment, NetworkSourceEnv
 	}
