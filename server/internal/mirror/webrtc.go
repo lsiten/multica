@@ -13,6 +13,8 @@ import (
 
 const defaultMirrorPeerAttachTimeout = 30 * time.Second
 
+const relayCandidateGrace = 1500 * time.Millisecond
+
 var (
 	ErrInvalidOffer    = errors.New("mirror: invalid offer")
 	ErrDuplicateViewer = errors.New("mirror: viewer is already connected")
@@ -212,12 +214,27 @@ func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer Sessi
 		return Negotiation{}, fmt.Errorf("mirror: create answer: %w", err)
 	}
 	gathered := webrtc.GatheringCompletePromise(pc)
+	// Resolve shortly after the first relay candidate: on networks that block
+	// UDP TURN, gathering "complete" only arrives after the blocked transports
+	// exhaust retransmissions (>10s), while the usable TCP/TLS relay candidate
+	// arrives within ~1s. Waiting for completion could exceed the session TTL.
+	relaySeen := make(chan struct{})
+	var relayOnce sync.Once
+	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+		if c.Typ == webrtc.ICECandidateTypeRelay {
+			relayOnce.Do(func() { close(relaySeen) })
+		}
+	})
 	if err := pc.SetLocalDescription(answer); err != nil {
 		_ = cleanup()
 		return Negotiation{}, fmt.Errorf("mirror: set local description: %w", err)
 	}
 	select {
 	case <-gathered:
+	case <-waitRelayGrace(ctx, relaySeen):
 	case <-ctx.Done():
 		_ = cleanup()
 		return Negotiation{}, fmt.Errorf("mirror: gather answer: %w", ctx.Err())
@@ -283,4 +300,26 @@ func (n Negotiation) Abandon() error {
 type peerRef struct {
 	viewerID string
 	peer     *mirrorPeer
+}
+
+// waitRelayGrace returns a channel that closes after a short grace window
+// following the first relay candidate, giving cheap host/srflx candidates a
+// chance to arrive without waiting for blocked TURN transports to give up.
+func waitRelayGrace(ctx context.Context, relaySeen <-chan struct{}) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-relaySeen:
+		case <-ctx.Done():
+			return
+		}
+		timer := time.NewTimer(relayCandidateGrace)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+		}
+	}()
+	return done
 }

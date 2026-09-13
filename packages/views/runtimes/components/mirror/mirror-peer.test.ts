@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   peerConfiguration,
   peerIceServers,
-  waitForIceGatheringComplete,
+  waitForUsableIceCandidates,
 } from "./mirror-peer";
 
 class FakePeer extends EventTarget {
@@ -36,7 +36,7 @@ describe("mirror peer ICE helpers", () => {
 
   it("resolves when candidate gathering completes", async () => {
     const peer = new FakePeer();
-    const waiting = waitForIceGatheringComplete(peer);
+    const waiting = waitForUsableIceCandidates(peer, () => false);
 
     peer.iceGatheringState = "complete";
     peer.dispatchEvent(new Event("icegatheringstatechange"));
@@ -44,10 +44,24 @@ describe("mirror peer ICE helpers", () => {
     await expect(waiting).resolves.toBeUndefined();
   });
 
+  it("resolves shortly after a relay candidate without waiting for completion", async () => {
+    vi.useFakeTimers();
+    const peer = new FakePeer();
+    let hasRelay = false;
+    const waiting = waitForUsableIceCandidates(peer, () => hasRelay, 20_000);
+
+    hasRelay = true;
+    peer.dispatchEvent(new Event("icecandidate"));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(waiting).resolves.toBeUndefined();
+    vi.useRealTimers();
+  });
+
   it("fails when candidate gathering does not complete before the deadline", async () => {
     vi.useFakeTimers();
     const peer = new FakePeer();
-    const waiting = waitForIceGatheringComplete(peer, 20);
+    const waiting = waitForUsableIceCandidates(peer, () => false, 20);
     const rejection = expect(waiting).rejects.toThrow("ICE gathering timed out");
 
     await vi.advanceTimersByTimeAsync(20);
