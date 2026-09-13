@@ -170,3 +170,15 @@ func (h *Handler) normalizeCloudflareRequest(req *updateMirrorCloudflareRequest,
 	}
 	return &mirror.StoredCloudflareTURN{KeyID: keyID, APITokenEncrypted: sealedToken}, nil
 }
+
+// cloudflareRequestCarriesNewMaterial reports whether the save submits fresh
+// Cloudflare key material that deserves eager validation against the mint API.
+// Empty/omitted fields and removals do not; the stored key is simply inherited
+// or wiped.
+func cloudflareRequestCarriesNewMaterial(req *updateMirrorCloudflareRequest) bool {
+	if req == nil || req.Remove {
+		return false
+	}
+	return (req.KeyID != nil && strings.TrimSpace(*req.KeyID) != "") ||
+		(req.APIToken != nil && strings.TrimSpace(*req.APIToken) != "")
+}
