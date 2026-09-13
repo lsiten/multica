@@ -21,6 +21,10 @@ import { fileURLToPath } from "node:url";
 import { cgoEnabledForGoos } from "./bundle-cli-env.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// Stable codesign identifier for the bundled daemon; keep in sync with the
+// macOS packaging step. Screen Recording permission is bound to this identity.
+const DAEMON_SIGN_IDENTIFIER = "ai.multica.daemon";
 const repoRoot = resolve(here, "..", "..", "..");
 const serverDir = join(repoRoot, "server");
 
@@ -162,12 +166,19 @@ await copyFile(srcBinary, destBinary);
 await chmod(destBinary, 0o755);
 
 // macOS: ad-hoc sign so Gatekeeper doesn't complain when the parent app
-// (which itself may be unsigned in dev) spawns the child.
+// (which itself may be unsigned in dev) spawns the child. A STABLE identifier
+// is critical: TCC keys Screen Recording permission on the executable's
+// signing identity. Without --identifier the ad-hoc identity is a cdhash
+// (multica-<hash>), so every Go rebuild looked like a brand-new program and
+// macOS re-prompted even though the user had already granted permission.
+// ai.multica.daemon stays constant across builds and matches the value the
+// release packaging uses.
 if (process.platform === "darwin") {
   try {
-    execSync(`codesign -s - --force ${JSON.stringify(destBinary)}`, {
-      stdio: "pipe",
-    });
+    execSync(
+      `codesign -s - --force --identifier ${JSON.stringify(DAEMON_SIGN_IDENTIFIER)} ${JSON.stringify(destBinary)}`,
+      { stdio: "pipe" },
+    );
   } catch {
     // Non-fatal. Unsigned binaries still run when the parent app is trusted.
   }
