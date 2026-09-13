@@ -831,6 +831,7 @@
       "agent_fallback_message": "エージェントがフォールバックメッセージを返しました",
       "codex_resume_oversized": "セッションが大きすぎて再開できません",
       "idle_watchdog": "エージェントが長時間応答しなかったため停止しました",
+      "startup_timeout": "エージェント起動後に出力がなく、実行を停止しました（未ログインまたはネットワーク不通の可能性）",
       "local_directory_error": "ローカルディレクトリエラー",
       "cancelled": "システムによってキャンセルされました",
       "agent_error": "エージェント実行エラー",

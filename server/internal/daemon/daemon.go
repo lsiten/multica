@@ -8642,6 +8642,25 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			FailureReason: failureReason,
 			Usage:         usageEntries,
 		}, nil
+	case "startup_timeout":
+		// The startup watchdog force-stopped a run that emitted zero output
+		// since launch (missing CLI credentials, model API unreachable from
+		// the GUI environment, first-run prompt). A dedicated failure_reason
+		// distinguishes "never started" from a mid-run hang and the inline
+		// diagnosis was already posted to the transcript by the watchdog.
+		comment := result.Error
+		if comment == "" {
+			comment = buildStartupDiagnosis(env.CodexHome, d.cfg.AgentStartupTimeout)
+		}
+		return TaskResult{
+			Status:        "blocked",
+			Comment:       comment,
+			SessionID:     result.SessionID,
+			WorkDir:       env.WorkDir,
+			EnvRoot:       env.RootDir,
+			FailureReason: "startup_timeout",
+			Usage:         usageEntries,
+		}, nil
 	case "idle_watchdog":
 		// The idle watchdog force-stopped the run because the backend
 		// went silent (e.g. claude blocked on a tool call against a
@@ -9005,6 +9024,14 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// message also trips the watchdog.
 	var lastActivityAt atomic.Int64
 	lastActivityAt.Store(time.Now().UnixNano())
+	// outputReceived flips permanently once the backend has emitted ANY
+	// output-grade message (text / thinking / tool call / error). The startup
+	// watchdog below only exists while this is false: its job is failing a
+	// dead-on-arrival run (missing CLI credentials, model API unreachable
+	// from a GUI-launched process, first-run prompt) in minutes instead of
+	// letting the 2h idle watchdog own the slot with a perpetual spinner.
+	var outputReceived atomic.Bool
+	var startupWatchdogFired atomic.Bool
 	// inFlightTools counts tool_use messages that haven't yet been paired
 	// with a matching tool_result. A non-zero count means the agent is
 	// legitimately waiting on a tool (e.g. `npm install`, `docker build`)
@@ -9055,6 +9082,28 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	defer stopWatchdog()
 	if idleWindow > 0 {
 		go d.runIdleWatchdog(watchdogCtx, idleWindow, d.cfg.AgentToolWatchdog, &lastActivityAt, watchdogToolCount, &idleWatchdogFired, &idleWatchdogThreshold, agentCancel, session.Messages, session.InterruptBackgroundTools, terminalObserved, taskLog)
+	}
+
+	// Startup watchdog: zero output since launch. Unlike the idle watchdog
+	// it disarms for good as soon as the first real message lands, so a
+	// legitimately quiet turn afterwards is bounded only by the idle/tool
+	// windows. On fire it posts a diagnostic "error" transcript row inline
+	// (users otherwise see only a spinner for two hours), then cancels on
+	// the same agentCtx the idle watchdog uses.
+	startupThreshold := d.cfg.AgentStartupTimeout
+	if startupThreshold > 0 {
+		go d.runStartupWatchdog(watchdogCtx, startupThreshold, &outputReceived, &startupWatchdogFired, agentCancel, session.Messages, func(diagnosis string) {
+			seq := msgSeq.Add(1)
+			postCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := d.client.ReportTaskMessages(postCtx, taskID, []TaskMessageData{{
+				Seq:     int(seq),
+				Type:    "error",
+				Content: diagnosis,
+			}}); err != nil {
+				taskLog.Debug("failed to report startup diagnosis", "error", err)
+			}
+		}, codexHome, taskLog)
 	}
 
 	// drainFinished closes after the drain goroutine has flushed the last
@@ -9129,6 +9178,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 					goto drainDone
 				}
 				if isTaskOutputReceived(msg) {
+					outputReceived.Store(true)
 					phaseRecorder.Mark(taskPhaseFirstOutputReceived)
 				}
 				if isTaskToolUse(msg) {
@@ -9300,7 +9350,12 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		// terminalObserved outranks a watchdog that fired anyway: if the backend
 		// had already read its authoritative result, this is the real outcome and
 		// re-tagging it would report a completed run as a hang.
-		if idleWatchdogFired.Load() && !terminalObserved() {
+		if startupWatchdogFired.Load() && !terminalObserved() {
+			result.Status = "startup_timeout"
+			if result.Error == "" {
+				result.Error = buildStartupDiagnosis(codexHome, d.cfg.AgentStartupTimeout)
+			}
+		} else if idleWatchdogFired.Load() && !terminalObserved() {
 			// The backend's wait goroutine (e.g. claude.go) translates the
 			// SIGKILL we delivered via agentCancel into Status="aborted".
 			// Re-tag it as "idle_watchdog" so runTask routes the
@@ -9322,6 +9377,12 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		// context.Canceled. Check this BEFORE the generic cancelled/timeout
 		// classifiers so a watchdog-induced stop isn't misreported as
 		// "task cancelled by server".
+		if startupWatchdogFired.Load() {
+			return agent.Result{
+				Status: "startup_timeout",
+				Error:  buildStartupDiagnosis(codexHome, d.cfg.AgentStartupTimeout),
+			}, toolCount.Load(), nil
+		}
 		if idleWatchdogFired.Load() {
 			// For a backend that publishes a terminal boundary, enter the
 			// hand-off without asking terminalObserved first. Reading a flag and

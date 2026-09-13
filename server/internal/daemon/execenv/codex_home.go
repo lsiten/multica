@@ -317,6 +317,17 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	return nil
 }
 
+// SharedCodexAuthPresent reports whether the shared Codex home carries an
+// auth.json that a per-task CODEX_HOME would symlink. Used for startup
+// failure diagnostics only — the file is never read, so its contents and
+// token shape stay out of the daemon logs. A symlink (even dangling) counts
+// as present because prepareCodexHomeWithOpts links whatever is there and
+// logs the resulting state independently.
+func SharedCodexAuthPresent() bool {
+	fi, err := os.Lstat(filepath.Join(resolveSharedCodexHome(), "auth.json"))
+	return err == nil && !fi.IsDir()
+}
+
 // resolveSharedCodexHome returns the path to the user's shared Codex home.
 // Checks $CODEX_HOME first, falls back to ~/.codex.
 func resolveSharedCodexHome() string {

@@ -839,6 +839,7 @@
       "agent_fallback_message": "에이전트가 대체 메시지를 반환함",
       "codex_resume_oversized": "세션이 너무 커서 재개할 수 없음",
       "idle_watchdog": "에이전트가 장시간 응답하지 않아 중지됨",
+      "startup_timeout": "에이전트 시작 후 출력이 없어 실행을 중지했습니다 (로그인 필요 또는 네트워크 차단 가능)",
       "local_directory_error": "로컬 디렉터리 오류",
       "cancelled": "시스템에서 취소함",
       "agent_error": "에이전트 실행 오류",
