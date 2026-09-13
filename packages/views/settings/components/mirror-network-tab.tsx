@@ -97,7 +97,11 @@ function MirrorNetworkPanel() {
     if (!settings) return;
     setMode(settings.mode);
     setDrafts(settingsToDraft(settings));
-    setCloudflareKeyID(settings.cloudflare.key_id ?? "");
+    // Never prefill the stored key ID into the editable field: the saved
+    // key is already shown as a badge above. Prefilling made every unrelated
+    // save (e.g. toggling notifications) resubmit the key and trip the
+    // server's eager Cloudflare validation. Leave the field for NEW input.
+    setCloudflareKeyID("");
     setCloudflareAPIToken("");
     setViewerNotifications(settings.viewer_notifications_enabled);
   }, [settings]);
@@ -309,11 +313,9 @@ function MirrorNetworkPanel() {
                   disabled={readOnly || cloudflareSaving}
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder={
-                    settings.cloudflare.key_id
-                      ? settings.cloudflare.key_id
-                      : t(($) => $.mirror_network.cloudflare.key_id_placeholder)
-                  }
+                  placeholder={t(
+                    ($) => $.mirror_network.cloudflare.key_id_placeholder,
+                  )}
                   aria-label={t(($) => $.mirror_network.cloudflare.key_id)}
                   onChange={(event) => setCloudflareKeyID(event.target.value)}
                 />

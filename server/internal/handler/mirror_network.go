@@ -79,10 +79,12 @@ func (h *Handler) UpdateWorkspaceMirrorNetwork(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Verify a newly supplied Cloudflare key eagerly against Cloudflare's API
-	// so a typo is reported on save instead of surfacing as a failed mirror
-	// session. Only checked when the request carries the key fields.
-	if req.Cloudflare != nil && next.Cloudflare != nil {
+	// Verify newly supplied Cloudflare credentials eagerly against Cloudflare's
+	// API so a typo is reported on save instead of surfacing as a failed mirror
+	// session. Only run when the request actually carries new key material:
+	// an unrelated save (notification toggle, mode switch) merely inherits the
+	// stored key and must not fail because a background mint call was rejected.
+	if cloudflareRequestCarriesNewMaterial(req.Cloudflare) && next.Cloudflare != nil {
 		provider := h.workspaceCloudflareProvider(next.Cloudflare)
 		if provider == nil || len(provider.Plan(time.Now(), "").ICEServers) == 0 {
 			writeError(w, http.StatusBadRequest, "Cloudflare TURN key ID or API token was rejected")

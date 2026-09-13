@@ -166,3 +166,29 @@ func TestUpdateWorkspaceMirrorNetworkRejectsLockedDeployment(t *testing.T) {
 		mirrorNetworkRequest(t, http.MethodPatch, map[string]any{"mode": "disabled"}),
 	).Want(http.StatusConflict)
 }
+
+func TestCloudflareRequestCarriesNewMaterial(t *testing.T) {
+	id := "key-id"
+	token := "api-token"
+	empty := " "
+
+	cases := []struct {
+		name string
+		req  *updateMirrorCloudflareRequest
+		want bool
+	}{
+		{"nil", nil, false},
+		{"remove", &updateMirrorCloudflareRequest{Remove: true, KeyID: &id, APIToken: &token}, false},
+		{"empty both", &updateMirrorCloudflareRequest{KeyID: &empty, APIToken: &empty}, false},
+		{"key id only", &updateMirrorCloudflareRequest{KeyID: &id}, true},
+		{"token only", &updateMirrorCloudflareRequest{APIToken: &token}, true},
+		{"both", &updateMirrorCloudflareRequest{KeyID: &id, APIToken: &token}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cloudflareRequestCarriesNewMaterial(tc.req); got != tc.want {
+				t.Fatalf("cloudflareRequestCarriesNewMaterial = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
