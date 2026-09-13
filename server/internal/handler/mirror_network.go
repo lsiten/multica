@@ -36,14 +36,15 @@ type mirrorBuiltinNetworkResponse struct {
 }
 
 type mirrorNetworkResponse struct {
-	Source         string                          `json:"source"`
-	Locked         bool                            `json:"locked"`
-	CanManage      bool                            `json:"can_manage"`
-	TURNConfigured bool                            `json:"turn_configured"`
-	Mode           string                          `json:"mode"`
-	Cloudflare     mirrorCloudflareNetworkResponse `json:"cloudflare"`
-	Builtin        mirrorBuiltinNetworkResponse    `json:"builtin"`
-	Custom         []mirrorNetworkServerResponse   `json:"custom"`
+	Source                     string                          `json:"source"`
+	Locked                     bool                            `json:"locked"`
+	CanManage                  bool                            `json:"can_manage"`
+	TURNConfigured             bool                            `json:"turn_configured"`
+	Mode                       string                          `json:"mode"`
+	ViewerNotificationsEnabled bool                            `json:"viewer_notifications_enabled"`
+	Cloudflare                 mirrorCloudflareNetworkResponse `json:"cloudflare"`
+	Builtin                    mirrorBuiltinNetworkResponse    `json:"builtin"`
+	Custom                     []mirrorNetworkServerResponse   `json:"custom"`
 }
 
 func (h *Handler) GetWorkspaceMirrorNetwork(w http.ResponseWriter, r *http.Request) {
@@ -133,12 +134,13 @@ func (h *Handler) mirrorNetworkResponse(settings mirror.NetworkSettings, canMana
 	source := h.mirrorNetworkSource(settings, custom)
 	cloudflare := h.cloudflareStatus(settings)
 	return mirrorNetworkResponse{
-		Source:         source,
-		Locked:         len(h.cfg.MirrorICE.ICEServers) > 0,
-		CanManage:      canManage && len(h.cfg.MirrorICE.ICEServers) == 0,
-		TURNConfigured: h.mirrorNetworkConfigured(source, custom),
-		Mode:           settings.Mode,
-		Cloudflare:     cloudflare,
+		Source:                     source,
+		Locked:                     len(h.cfg.MirrorICE.ICEServers) > 0,
+		CanManage:                  canManage && len(h.cfg.MirrorICE.ICEServers) == 0,
+		TURNConfigured:             h.mirrorNetworkConfigured(source, custom),
+		Mode:                       settings.Mode,
+		ViewerNotificationsEnabled: settings.ViewerNotifications(),
+		Cloudflare:                 cloudflare,
 		Builtin: mirrorBuiltinNetworkResponse{
 			Enabled:              h.cfg.MirrorBuiltinTURN.Enabled,
 			Available:            h.cfg.MirrorBuiltinTURN.Configured(),

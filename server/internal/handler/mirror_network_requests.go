@@ -22,9 +22,10 @@ type updateMirrorCloudflareRequest struct {
 }
 
 type updateMirrorNetworkRequest struct {
-	Mode       string                         `json:"mode"`
-	Servers    []mirrorNetworkServerRequest   `json:"servers"`
-	Cloudflare *updateMirrorCloudflareRequest `json:"cloudflare,omitempty"`
+	Mode                       string                         `json:"mode"`
+	Servers                    []mirrorNetworkServerRequest   `json:"servers"`
+	Cloudflare                 *updateMirrorCloudflareRequest `json:"cloudflare,omitempty"`
+	ViewerNotificationsEnabled *bool                          `json:"viewer_notifications_enabled,omitempty"`
 }
 
 func (h *Handler) normalizeMirrorNetworkRequest(req updateMirrorNetworkRequest, current mirror.NetworkSettings) (mirror.NetworkSettings, error) {
@@ -33,6 +34,12 @@ func (h *Handler) normalizeMirrorNetworkRequest(req updateMirrorNetworkRequest, 
 		return mirror.NetworkSettings{}, errors.New("mode must be builtin, custom, or disabled")
 	}
 	next := mirror.NetworkSettings{Mode: mode, Servers: []mirror.StoredICEServer{}}
+	if req.ViewerNotificationsEnabled != nil {
+		enabled := *req.ViewerNotificationsEnabled
+		next.ViewerNotificationsEnabled = &enabled
+	} else {
+		next.ViewerNotificationsEnabled = current.ViewerNotificationsEnabled
+	}
 	if req.Cloudflare != nil {
 		cloudflare, err := h.normalizeCloudflareRequest(req.Cloudflare, current.Cloudflare)
 		if err != nil {

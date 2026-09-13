@@ -97,6 +97,8 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "runtime daemon is unavailable")
 		return
 	}
+	h.recordMirrorEvent(r.Context(), rt.WorkspaceID, rt.ID, mirrorRuntimeNoticeName(rt),
+		mirrorEventSessionStarted, "", strings.TrimSpace(req.ViewerID))
 	writeJSON(w, http.StatusCreated, mirrorSessionResponse{
 		SessionMetadata: session.Metadata(),
 		ICEConfig:       icePlan.Protocol(),
@@ -158,10 +160,15 @@ func (h *Handler) HandleDaemonMirrorAnswer(ctx context.Context, identity daemonw
 	if len(identity.RuntimeIDs) > 0 && !mirrorContainsString(identity.RuntimeIDs, payload.RuntimeID) {
 		return mirror.ErrSessionIdentityMismatch
 	}
-	return h.MirrorSessions.SetAnswer(ctx, payload.SessionID, mirror.SessionIdentity{
+	if err := h.MirrorSessions.SetAnswer(ctx, payload.SessionID, mirror.SessionIdentity{
 		WorkspaceID: payload.WorkspaceID, RuntimeID: payload.RuntimeID, UserID: payload.UserID,
 		DaemonID: payload.DaemonID, ViewerID: payload.ViewerID,
-	}, payload.Answer)
+	}, payload.Answer); err != nil {
+		return err
+	}
+	h.recordMirrorEventForRuntime(ctx, payload.WorkspaceID, payload.RuntimeID,
+		mirrorEventSessionAnswered, "", strings.TrimSpace(payload.ViewerID))
+	return nil
 }
 
 func (h *Handler) HandleDaemonMirrorAnswerFailure(ctx context.Context, identity daemonws.ClientIdentity, payload protocol.MirrorAnswerFailurePayload) error {
@@ -171,13 +178,18 @@ func (h *Handler) HandleDaemonMirrorAnswerFailure(ctx context.Context, identity 
 	if len(identity.RuntimeIDs) > 0 && !mirrorContainsString(identity.RuntimeIDs, payload.RuntimeID) {
 		return mirror.ErrSessionIdentityMismatch
 	}
-	return h.MirrorSessions.SetFailure(ctx, payload.SessionID, mirror.SessionIdentity{
+	if err := h.MirrorSessions.SetFailure(ctx, payload.SessionID, mirror.SessionIdentity{
 		WorkspaceID: payload.WorkspaceID,
 		RuntimeID:   payload.RuntimeID,
 		UserID:      payload.UserID,
 		DaemonID:    payload.DaemonID,
 		ViewerID:    payload.ViewerID,
-	}, payload.Reason)
+	}, payload.Reason); err != nil {
+		return err
+	}
+	h.recordMirrorEventForRuntime(ctx, payload.WorkspaceID, payload.RuntimeID,
+		mirrorEventSessionFailed, strings.TrimSpace(payload.Reason), strings.TrimSpace(payload.ViewerID))
+	return nil
 }
 
 func (h *Handler) writeMirrorSessionError(w http.ResponseWriter, err error) {

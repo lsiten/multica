@@ -106,6 +106,9 @@ export type {
   BuiltinMirrorNetwork,
   MirrorNetworkSettings,
   UpdateMirrorNetworkRequest,
+  MirrorEvent,
+  MirrorEventType,
+  MirrorEventsResponse,
 } from "./mirror";
 export type {
   PluginInstallation,

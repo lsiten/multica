@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS runtime_mirror_event_workspace_time_idx;

@@ -1484,6 +1484,32 @@
       "token_saved": "保存済み — 空欄で維持",
       "remove": "Cloudflare キーを削除",
       "removed": "Cloudflare TURN キーを削除しました"
+    },
+    "subtab_network": "ネットワーク",
+    "subtab_log": "ログ",
+    "notifications_title": "通知",
+    "notifications_description": "画面ミラーリングの受信トレイ通知を管理します。",
+    "notifications_inbox_label": "受信トレイ通知",
+    "notifications_inbox_description": "ランタイム画面の視聴が開始または終了されたときに受信トレイへ通知します。",
+    "log": {
+      "title": "ミラーログ",
+      "description": "最近のミラーセッション、応答、失敗、視聴アクティビティ。",
+      "clear": "ログを消去",
+      "cleared": "ミラーログを消去しました",
+      "clear_failed": "ミラーログの消去に失敗しました",
+      "clear_confirm_title": "すべてのミラーログを消去しますか？",
+      "clear_confirm_description": "このワークスペースのすべてのミラーイベントが完全に削除され、元に戻せません。",
+      "clear_cancel": "キャンセル",
+      "clear_confirm_action": "ログを消去",
+      "empty": "ミラーのアクティビティはまだありません。",
+      "unknown_runtime": "不明なランタイム",
+      "events": {
+        "session_started": "セッション開始",
+        "session_answered": "セッション応答",
+        "session_failed": "セッション失敗",
+        "viewer_started": "視聴開始",
+        "viewer_stopped": "視聴終了"
+      }
     }
   }
 }

@@ -10,6 +10,8 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { Switch } from "@multica/ui/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@multica/ui/components/ui/tabs";
 import {
   clientErrorMessage,
 } from "@multica/core/api";
@@ -22,6 +24,7 @@ import type {
 import { workspaceMirrorNetworkOptions } from "@multica/core/workspace/queries";
 import { useUpdateWorkspaceMirrorNetwork } from "@multica/core/workspace/mutations";
 import { useT } from "../../i18n";
+import { MirrorLogPanel } from "./mirror-log-panel";
 import {
   SettingsCard,
   SettingsRow,
@@ -72,7 +75,7 @@ function collectServers(drafts: CustomServerDraft[]): MirrorNetworkServerInput[]
   return servers;
 }
 
-export function MirrorNetworkTab() {
+function MirrorNetworkPanel() {
   const { t } = useT("settings");
   const workspace = useCurrentWorkspace();
   const wsId = workspace?.id ?? "";
@@ -85,6 +88,7 @@ export function MirrorNetworkTab() {
   const [cloudflareKeyID, setCloudflareKeyID] = useState("");
   const [cloudflareAPIToken, setCloudflareAPIToken] = useState("");
   const [cloudflareSaving, setCloudflareSaving] = useState(false);
+  const [viewerNotifications, setViewerNotifications] = useState(true);
 
   // Re-seed the editor whenever the server state changes (initial load and
   // every successful save). Do not derive render state directly from the
@@ -95,6 +99,7 @@ export function MirrorNetworkTab() {
     setDrafts(settingsToDraft(settings));
     setCloudflareKeyID(settings.cloudflare.key_id ?? "");
     setCloudflareAPIToken("");
+    setViewerNotifications(settings.viewer_notifications_enabled);
   }, [settings]);
 
   const readOnly = !settings || settings.locked || !settings.can_manage;
@@ -112,11 +117,7 @@ export function MirrorNetworkTab() {
   );
 
   if (networkQuery.isLoading || !settings) {
-    return (
-      <SettingsTab title={t(($) => $.mirror_network.title)}>
-        <Skeleton className="h-40 w-full" />
-      </SettingsTab>
-    );
+    return <Skeleton className="h-40 w-full" />;
   }
 
   const save = async () => {
@@ -127,10 +128,15 @@ export function MirrorNetworkTab() {
           toast.error(t(($) => $.mirror_network.errors.requires_turn));
           return;
         }
-        await update.mutateAsync({ mode, servers });
+        await update.mutateAsync({
+          mode,
+          servers,
+          viewer_notifications_enabled: viewerNotifications,
+        });
       } else {
         await update.mutateAsync({
           mode,
+          viewer_notifications_enabled: viewerNotifications,
           cloudflare:
             cloudflareKeyID.trim() || cloudflareAPIToken
               ? {
@@ -168,10 +174,7 @@ export function MirrorNetworkTab() {
   })();
 
   return (
-    <SettingsTab
-      title={t(($) => $.mirror_network.title)}
-      description={t(($) => $.mirror_network.description)}
-    >
+    <div className="space-y-8">
       {settings.locked ? (
         <Alert>
           <AlertTriangle />
@@ -345,6 +348,7 @@ export function MirrorNetworkTab() {
                     try {
                       await update.mutateAsync({
                         mode,
+                        viewer_notifications_enabled: viewerNotifications,
                         cloudflare: { remove: true },
                       });
                       setCloudflareKeyID("");
@@ -519,6 +523,25 @@ export function MirrorNetworkTab() {
         </SettingsCard>
       </SettingsSection>
 
+      <SettingsSection
+        title={t(($) => $.mirror_network.notifications_title)}
+        description={t(($) => $.mirror_network.notifications_description)}
+      >
+        <SettingsCard>
+          <SettingsRow
+            label={t(($) => $.mirror_network.notifications_inbox_label)}
+            description={t(($) => $.mirror_network.notifications_inbox_description)}
+          >
+            <Switch
+              checked={viewerNotifications}
+              disabled={readOnly}
+              onCheckedChange={setViewerNotifications}
+              aria-label={t(($) => $.mirror_network.notifications_inbox_label)}
+            />
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
+
       {!readOnly ? (
         <div className="flex items-center gap-3">
           <Button onClick={save} disabled={update.isPending}>
@@ -531,6 +554,33 @@ export function MirrorNetworkTab() {
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+export function MirrorNetworkTab() {
+  const { t } = useT("settings");
+  return (
+    <SettingsTab
+      title={t(($) => $.mirror_network.title)}
+      description={t(($) => $.mirror_network.description)}
+    >
+      <Tabs defaultValue="network">
+        <TabsList>
+          <TabsTrigger value="network">
+            {t(($) => $.mirror_network.subtab_network)}
+          </TabsTrigger>
+          <TabsTrigger value="log">
+            {t(($) => $.mirror_network.subtab_log)}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="network">
+          <MirrorNetworkPanel />
+        </TabsContent>
+        <TabsContent value="log">
+          <MirrorLogPanel />
+        </TabsContent>
+      </Tabs>
     </SettingsTab>
   );
 }

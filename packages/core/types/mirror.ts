@@ -92,6 +92,7 @@ export interface MirrorNetworkSettings {
   readonly can_manage: boolean;
   readonly turn_configured: boolean;
   readonly mode: MirrorNetworkMode;
+  readonly viewer_notifications_enabled: boolean;
   readonly cloudflare: CloudflareMirrorNetwork;
   readonly builtin: BuiltinMirrorNetwork;
   readonly custom: readonly MirrorNetworkServer[];
@@ -107,4 +108,27 @@ export interface UpdateMirrorNetworkRequest {
   readonly mode: MirrorNetworkMode;
   readonly servers?: readonly MirrorNetworkServerInput[];
   readonly cloudflare?: CloudflareMirrorNetworkInput;
+  readonly viewer_notifications_enabled?: boolean;
+}
+
+export type MirrorEventType =
+  | "session_started"
+  | "session_answered"
+  | "session_failed"
+  | "viewer_started"
+  | "viewer_stopped"
+  | string;
+
+export interface MirrorEvent {
+  readonly id: string;
+  readonly runtime_id: string;
+  readonly runtime_name: string;
+  readonly event: MirrorEventType;
+  readonly failure_reason?: string;
+  readonly viewer_id?: string;
+  readonly created_at: string;
+}
+
+export interface MirrorEventsResponse {
+  readonly events: readonly MirrorEvent[];
 }

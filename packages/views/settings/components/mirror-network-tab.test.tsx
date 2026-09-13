@@ -22,6 +22,7 @@ function settings(over: Partial<MirrorNetworkSettings> = {}): MirrorNetworkSetti
     can_manage: true,
     turn_configured: true,
     mode: "builtin",
+    viewer_notifications_enabled: true,
     cloudflare: {
       enabled: false,
       available: false,
@@ -108,7 +109,12 @@ describe("MirrorNetworkTab", () => {
   it("saves the built-in mode", async () => {
     render(<MirrorNetworkTab />, { wrapper: Wrapper });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(mockMutate).toHaveBeenCalledWith({ mode: "builtin" }));
+    await waitFor(() =>
+      expect(mockMutate).toHaveBeenCalledWith({
+        mode: "builtin",
+        viewer_notifications_enabled: true,
+      }),
+    );
   });
 
   it("sends custom servers with at least one TURN url", async () => {
@@ -142,6 +148,7 @@ describe("MirrorNetworkTab", () => {
             credential: "secret",
           },
         ],
+        viewer_notifications_enabled: true,
       }),
     );
   });
@@ -188,7 +195,20 @@ describe("MirrorNetworkTab", () => {
           username: "viewer",
         },
       ],
+      viewer_notifications_enabled: true,
     });
+  });
+
+  it("saves the viewer notification preference", async () => {
+    render(<MirrorNetworkTab />, { wrapper: Wrapper });
+    fireEvent.click(screen.getByRole("switch", { name: "Inbox notifications" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockMutate).toHaveBeenCalledWith({
+        mode: "builtin",
+        viewer_notifications_enabled: false,
+      }),
+    );
   });
 
   it("is fully read-only when deployment-locked", () => {

@@ -73,11 +73,35 @@ func (h *Handler) HandleDaemonMirrorViewer(ctx context.Context, identity daemonw
 	if !changed {
 		return nil
 	}
-	if err := h.createMirrorViewerNotice(ctx, rt, payload.Active); err != nil {
-		slog.Warn("mirror viewer inbox write failed", "runtime_id", payload.RuntimeID, "active", payload.Active, "error", err)
-		return err
+	h.recordMirrorEvent(ctx, rt.WorkspaceID, rt.ID, mirrorRuntimeNoticeName(rt),
+		viewerEventName(payload.Active), "", strings.TrimSpace(payload.ViewerID))
+	return h.notifyMirrorViewer(ctx, rt, payload.Active)
+}
+
+// notifyMirrorViewerNotice writes the viewer inbox item unless the workspace
+// explicitly disabled mirror viewer notifications. Settings parse failures
+// fall back to notifying (legacy behaviour).
+func (h *Handler) notifyMirrorViewer(ctx context.Context, rt db.AgentRuntime, active bool) error {
+	ws, wsErr := h.Queries.GetWorkspace(ctx, rt.WorkspaceID)
+	if wsErr != nil {
+		slog.Warn("mirror viewer: load workspace settings failed", "runtime_id", util.UUIDToString(rt.ID), "error", wsErr)
+		return nil
+	}
+	wsSettings, parseErr := mirror.ParseNetworkSettings(ws.Settings)
+	if parseErr != nil || wsSettings.ViewerNotifications() {
+		if err := h.createMirrorViewerNotice(ctx, rt, active); err != nil {
+			slog.Warn("mirror viewer inbox write failed", "runtime_id", util.UUIDToString(rt.ID), "active", active, "error", err)
+			return err
+		}
 	}
 	return nil
+}
+
+func viewerEventName(active bool) string {
+	if active {
+		return mirrorEventViewerStarted
+	}
+	return mirrorEventViewerStopped
 }
 
 // HandleDaemonMirrorDisconnect closes active viewer state only when no other
@@ -121,7 +145,9 @@ func (h *Handler) HandleDaemonMirrorDisconnect(ctx context.Context, identity dae
 			if !rt.DaemonID.Valid || rt.DaemonID.String != identity.DaemonID || !rt.OwnerID.Valid {
 				continue
 			}
-			if err := h.createMirrorViewerNotice(ctx, rt, false); err != nil {
+			h.recordMirrorEvent(ctx, rt.WorkspaceID, rt.ID, mirrorRuntimeNoticeName(rt),
+				mirrorEventViewerStopped, "", "")
+			if err := h.notifyMirrorViewer(ctx, rt, false); err != nil {
 				slog.Warn("mirror viewer disconnect inbox write failed", "runtime_id", runtimeID, "error", err)
 			}
 		}
