@@ -302,6 +302,7 @@ var concurrentIndexCleanups = map[string]string{
 	"452_notification_bot_owner_index":                          "notification_bot_owner_idx",
 	"453_notification_bot_delivery_unique":                      "notification_bot_delivery_unique_idx",
 	"454_notification_bot_delivery_ready":                       "notification_bot_delivery_ready_idx",
+	"459_runtime_mirror_event_index":                            "runtime_mirror_event_workspace_time_idx",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
