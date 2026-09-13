@@ -874,6 +874,16 @@ func TestLoadConfig_ToolWatchdogDefaultsToIdleWatchdog(t *testing.T) {
 	if cfg.AgentIdleWatchdog != DefaultAgentIdleWatchdog {
 		t.Fatalf("AgentIdleWatchdog = %s, want default %s", cfg.AgentIdleWatchdog, DefaultAgentIdleWatchdog)
 	}
+	if cfg.AgentStartupTimeout != DefaultAgentStartupTimeout {
+		t.Fatalf("AgentStartupTimeout = %s, want default %s", cfg.AgentStartupTimeout, DefaultAgentStartupTimeout)
+	}
+
+	// Zero disables the startup watchdog independently of the idle suite.
+	t.Setenv("MULTICA_AGENT_STARTUP_TIMEOUT", "0")
+	startupCfg := load(t)
+	if startupCfg.AgentStartupTimeout != 0 {
+		t.Fatalf("AgentStartupTimeout = %s, want 0 from env", startupCfg.AgentStartupTimeout)
+	}
 	if cfg.AgentToolWatchdog != cfg.AgentIdleWatchdog {
 		t.Fatalf("AgentToolWatchdog = %s, want it to track AgentIdleWatchdog %s", cfg.AgentToolWatchdog, cfg.AgentIdleWatchdog)
 	}

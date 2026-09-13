@@ -62,7 +62,20 @@ const (
 	// real work short, so this is 2h.
 	//
 	// Set MULTICA_AGENT_IDLE_WATCHDOG=0 to disable the whole watchdog suite.
-	DefaultAgentIdleWatchdog              = 2 * time.Hour
+	DefaultAgentIdleWatchdog = 2 * time.Hour
+	// DefaultAgentStartupTimeout bounds a run that has not emitted a SINGLE
+	// output message (text / thinking / tool call / error) since launch. The
+	// generic idle watchdog answers "how long may a legitimate step stay
+	// silent" (2h); this one answers a different question: "did the agent
+	// process ever start working at all?". A backend that registers with the
+	// server and claims tasks but hangs before its first event — missing CLI
+	// credentials, model API unreachable from a GUI-launched process, a
+	// first-run interactive prompt — otherwise pins a concurrency slot and
+	// shows a perpetual "thinking" spinner for two hours. 3 minutes is well
+	// past every healthy cold start while failing the dead-on-arrival class
+	// fast. MULTICA_AGENT_STARTUP_TIMEOUT=0 disables it and restores the
+	// historical behaviour where only the 2h idle watchdog fires.
+	DefaultAgentStartupTimeout            = 3 * time.Minute
 	DefaultRuntimeName                    = "Local Agent"
 	DefaultWorkspaceBootstrapSyncInterval = 30 * time.Second
 	DefaultWorkspaceLegacySyncInterval    = 5 * time.Minute
@@ -152,6 +165,7 @@ type Config struct {
 	OpenCodeIdleWatchdog        time.Duration // OpenCode-specific no-message window; 0 falls back to AgentIdleWatchdog and values above it cannot extend the global bound
 	AgentIdleWatchdog           time.Duration // force-stop a run when the backend goes silent this long with an empty queue (0 = disabled)
 	AgentToolWatchdog           time.Duration // force-stop a run when a single tool call stays in flight (silent) this long (0 = never force-stop during a tool call, which now also covers a live Cursor background shell); defaults to AgentIdleWatchdog, so operators tune one number unless they deliberately want a wider tool budget
+	AgentStartupTimeout         time.Duration // force-stop a run that has emitted zero output messages since launch (0 = disabled, rely on the idle watchdog only)
 	ClaudeArgs                  []string
 	CodexArgs                   []string
 	CodebuddyArgs               []string
@@ -372,6 +386,15 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// MULTICA_AGENT_TIMEOUT, which is itself 0 by default. Operators who want a
 	// stalled background shell bounded must leave this non-zero.
 	agentToolWatchdog, err := durationFromEnv("MULTICA_AGENT_TOOL_WATCHDOG", agentIdleWatchdog)
+	if err != nil {
+		return Config{}, err
+	}
+
+	// MULTICA_AGENT_STARTUP_TIMEOUT bounds a run with ZERO output since
+	// launch (missing CLI credentials, model API unreachable from a GUI
+	// process, first-run interactive prompt). 0 disables it and leaves only
+	// the idle watchdog's 2h backstop.
+	agentStartupTimeout, err := durationFromEnv("MULTICA_AGENT_STARTUP_TIMEOUT", DefaultAgentStartupTimeout)
 	if err != nil {
 		return Config{}, err
 	}
@@ -662,6 +685,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		OpenCodeIdleWatchdog:            openCodeIdleWatchdog,
 		AgentIdleWatchdog:               agentIdleWatchdog,
 		AgentToolWatchdog:               agentToolWatchdog,
+		AgentStartupTimeout:             agentStartupTimeout,
 		ClaudeArgs:                      claudeArgs,
 		CodexArgs:                       codexArgs,
 		CodebuddyArgs:                   codebuddyArgs,

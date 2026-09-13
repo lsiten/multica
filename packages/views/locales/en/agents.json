@@ -948,6 +948,7 @@
       "agent_fallback_message": "Agent returned a fallback message",
       "codex_resume_oversized": "Session too large to resume",
       "idle_watchdog": "Agent stopped after inactivity",
+      "startup_timeout": "Agent produced no output after starting; run stopped (possibly not signed in or unreachable)",
       "local_directory_error": "Local directory error",
       "cancelled": "Cancelled by the system",
       "agent_error": "Agent execution error",
