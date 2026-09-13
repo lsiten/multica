@@ -78,6 +78,7 @@ func ParseNetworkSettings(raw []byte) (NetworkSettings, error) {
 	}
 	settings.Mode = envelope.MirrorNetwork.Mode
 	settings.Servers = envelope.MirrorNetwork.Servers
+	settings.Cloudflare = envelope.MirrorNetwork.Cloudflare
 	if !KnownNetworkMode(settings.Mode) {
 		return DefaultNetworkSettings(), fmt.Errorf("unknown mirror network mode %q", settings.Mode)
 	}
