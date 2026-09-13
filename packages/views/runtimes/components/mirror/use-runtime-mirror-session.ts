@@ -5,7 +5,7 @@ import { ApiError, api } from "@multica/core/api";
 import { MirrorFrameReassembler } from "./frame-reassembler";
 import {
   peerConfiguration,
-  waitForIceGatheringComplete,
+  waitForUsableIceCandidates,
 } from "./mirror-peer";
 import {
   mirrorSessionFailureReason,
@@ -114,6 +114,7 @@ export function useRuntimeMirrorSession({
     let sessionId: string | null = null;
     const currentViewerId = viewerId();
     const reassembler = new MirrorFrameReassembler();
+    let sawRelayCandidate = false;
 
     const fail = (error: unknown) => {
       if (disposed || failed) return;
@@ -144,6 +145,11 @@ export function useRuntimeMirrorSession({
         const iceConfig = await api.getMirrorICEConfig(runtimeId);
         setTurnConfigured(iceConfig.turn_configured);
         peer = new RTCPeerConnection(peerConfiguration(iceConfig));
+        peer.onicecandidate = (event) => {
+          if (event.candidate?.type === "relay") {
+            sawRelayCandidate = true;
+          }
+        };
         const channel = peer.createDataChannel("mirror", { ordered: true });
         channel.binaryType = "arraybuffer";
 
@@ -187,7 +193,7 @@ export function useRuntimeMirrorSession({
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
         try {
-          await waitForIceGatheringComplete(peer);
+          await waitForUsableIceCandidates(peer, () => sawRelayCandidate);
         } catch {
           throw new MirrorConnectionError("transport");
         }
