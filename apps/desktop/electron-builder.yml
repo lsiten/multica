@@ -35,6 +35,9 @@ protocols:
       - multica
 asarUnpack:
   - resources/**
+# Re-pin the bundled daemon's identifier-based TCC identity after
+# electron-builder's own signing (ad-hoc fork builds reset it to a cdhash).
+afterSign: build/after-sign.cjs
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   target:

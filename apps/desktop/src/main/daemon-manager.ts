@@ -481,10 +481,25 @@ function findCliOnPath(): string | null {
  */
 function bundledCliPath(): string {
   const binName = process.platform === "win32" ? "multica.exe" : "multica";
-  return join(app.getAppPath(), "resources", "bin", binName).replace(
+  const resourcesRoot = join(app.getAppPath(), "resources").replace(
     "app.asar",
     "app.asar.unpacked",
   );
+  // On macOS the daemon ships inside its own MulticaDaemon.app bundle so TCC
+  // can attach Screen Recording permission to a stable bundle identity and
+  // list it under System Settings -> Screen Recording. The bare binary in
+  // bin/ remains as a fallback for older packaged layouts.
+  if (process.platform === "darwin") {
+    const bundledApp = join(
+      resourcesRoot,
+      "MulticaDaemon.app",
+      "Contents",
+      "MacOS",
+      binName,
+    );
+    if (existsSync(bundledApp)) return bundledApp;
+  }
+  return join(resourcesRoot, "bin", binName);
 }
 
 async function probeCliBinary(
