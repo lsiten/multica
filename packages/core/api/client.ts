@@ -231,6 +231,8 @@ import type {
   CreateMirrorSessionRequest,
   MirrorNetworkSettings,
   UpdateMirrorNetworkRequest,
+  MirrorEvent,
+  MirrorEventsResponse,
   MirrorICEConfig,
   MirrorSessionResponse,
 } from "../types";
@@ -464,6 +466,7 @@ import {
   MirrorICEConfigSchema,
   EMPTY_MIRROR_ICE_CONFIG,
   MirrorNetworkSettingsSchema,
+  MirrorEventsResponseSchema,
   EMPTY_MIRROR_NETWORK_SETTINGS,
   PinnedItemSchema,
   PinnedItemListSchema,
@@ -1872,6 +1875,42 @@ export class ApiClient {
       EMPTY_MIRROR_NETWORK_SETTINGS,
       { endpoint: "PATCH /api/workspaces/:id/mirror/network" },
     );
+  }
+
+  async getWorkspaceMirrorEvents(
+    workspaceId: string,
+  ): Promise<MirrorEventsResponse> {
+    try {
+      const raw = await this.fetch<unknown>(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/mirror/events?limit=500`,
+      );
+      return parseWithFallback(raw, MirrorEventsResponseSchema, { events: [] }, {
+        endpoint: "GET /api/workspaces/:id/mirror/events",
+      });
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 501)) {
+        // Older self-hosted backends do not ship the event log.
+        return { events: [] };
+      }
+      throw error;
+    }
+  }
+
+  async clearWorkspaceMirrorEvents(
+    workspaceId: string,
+  ): Promise<MirrorEvent[]> {
+    const res = await this.fetchRaw(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/mirror/events`,
+      { method: "DELETE" },
+    );
+    const data: unknown = await res.json().catch((): unknown => null);
+    const parsed = parseWithFallback(
+      data,
+      MirrorEventsResponseSchema,
+      { events: [] },
+      { endpoint: "DELETE /api/workspaces/:id/mirror/events" },
+    );
+    return [...parsed.events];
   }
 
   async listCloudRuntimeNodes(

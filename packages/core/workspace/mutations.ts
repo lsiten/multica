@@ -108,6 +108,21 @@ export function useUpdateWorkspaceMirrorNetwork(wsId: string) {
   });
 }
 
+/** Clears all screen-mirror event log entries for the workspace. */
+export function useClearWorkspaceMirrorEvents(wsId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.clearWorkspaceMirrorEvents(wsId),
+    onSuccess: (events) => {
+      queryClient.setQueryData(workspaceKeys.mirrorEvents(wsId), { events });
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({
+        queryKey: workspaceKeys.mirrorEvents(wsId),
+      }),
+  });
+}
+
 export function useCreateWorkspaceMcpServer(wsId: string) {
   const queryClient = useQueryClient();
   return useMutation({

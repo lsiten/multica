@@ -23,6 +23,8 @@ export const workspaceKeys = {
   mcpServers: (wsId: string) => ["workspaces", wsId, "mcp-servers"] as const,
   mirrorNetwork: (wsId: string) =>
     ["workspaces", wsId, "mirror-network"] as const,
+  mirrorEvents: (wsId: string) =>
+    ["workspaces", wsId, "mirror-events"] as const,
 };
 
 export function workspaceListOptions() {
@@ -215,6 +217,15 @@ export function workspaceMirrorNetworkOptions(wsId: string) {
   return queryOptions({
     queryKey: workspaceKeys.mirrorNetwork(wsId),
     queryFn: () => api.getWorkspaceMirrorNetwork(wsId),
+    enabled: wsId !== "",
+  });
+}
+
+/** Recent screen-mirror session/viewer events for the workspace. */
+export function workspaceMirrorEventsOptions(wsId: string) {
+  return queryOptions({
+    queryKey: workspaceKeys.mirrorEvents(wsId),
+    queryFn: () => api.getWorkspaceMirrorEvents(wsId),
     enabled: wsId !== "",
   });
 }

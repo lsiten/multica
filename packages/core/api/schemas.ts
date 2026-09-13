@@ -156,6 +156,7 @@ export const MirrorNetworkSettingsSchema = z.object({
   can_manage: z.boolean().default(false),
   turn_configured: z.boolean().default(false),
   mode: z.enum(["builtin", "custom", "disabled"]).default("builtin"),
+  viewer_notifications_enabled: z.boolean().default(true),
   cloudflare: CloudflareMirrorNetworkSchema.default({
     enabled: false,
     available: false,
@@ -181,6 +182,7 @@ export const EMPTY_MIRROR_NETWORK_SETTINGS: MirrorNetworkSettings = {
   can_manage: false,
   turn_configured: false,
   mode: "builtin",
+  viewer_notifications_enabled: true,
   cloudflare: {
     enabled: false,
     available: false,
@@ -192,6 +194,26 @@ export const EMPTY_MIRROR_NETWORK_SETTINGS: MirrorNetworkSettings = {
 };
 
 export type { MirrorNetworkMode };
+
+export const MirrorEventSchema = z.object({
+  id: z.string(),
+  runtime_id: z.string().default(""),
+  runtime_name: z.string().default(""),
+  event: z.string(),
+  failure_reason: z.string().optional(),
+  viewer_id: z.string().optional(),
+  created_at: z.string(),
+}).loose();
+
+export const MirrorEventsResponseSchema = z.object({
+  events: z.array(z.unknown()).transform((rows) =>
+    rows.flatMap((row) => {
+      const parsed = MirrorEventSchema.safeParse(row);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  ),
+}).loose();
+
 
 const MirrorAnswerSchema = z.object({
   type: z.literal("answer"),

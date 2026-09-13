@@ -1465,6 +1465,32 @@
       "token_saved": "저장됨 — 비워두면 유지",
       "remove": "Cloudflare 키 제거",
       "removed": "Cloudflare TURN 키가 제거되었습니다"
+    },
+    "subtab_network": "네트워크",
+    "subtab_log": "로그",
+    "notifications_title": "알림",
+    "notifications_description": "화면 미러링으로 생성되는 받은편지함 알림을 관리합니다.",
+    "notifications_inbox_label": "받은편지함 알림",
+    "notifications_inbox_description": "런타임 화면 보기가 시작되거나 종료될 때 받은편지함 알림을 보냅니다.",
+    "log": {
+      "title": "미러링 로그",
+      "description": "최근 미러링 세션, 응답, 실패 및 시청 활동입니다.",
+      "clear": "로그 지우기",
+      "cleared": "미러링 로그를 지웠습니다",
+      "clear_failed": "미러링 로그 지우기에 실패했습니다",
+      "clear_confirm_title": "모든 미러링 로그를 지울까요?",
+      "clear_confirm_description": "이 워크스페이스의 모든 미러링 이벤트가 영구 삭제되며 되돌릴 수 없습니다.",
+      "clear_cancel": "취소",
+      "clear_confirm_action": "로그 지우기",
+      "empty": "아직 미러링 활동이 없습니다.",
+      "unknown_runtime": "알 수 없는 런타임",
+      "events": {
+        "session_started": "세션 시작",
+        "session_answered": "세션 수락",
+        "session_failed": "세션 실패",
+        "viewer_started": "시청 시작",
+        "viewer_stopped": "시청 종료"
+      }
     }
   }
 }
