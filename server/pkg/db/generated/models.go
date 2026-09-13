@@ -1337,6 +1337,17 @@ type QuickAction struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type RuntimeMirrorEvent struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	RuntimeID     pgtype.UUID        `json:"runtime_id"`
+	RuntimeName   string             `json:"runtime_name"`
+	Event         string             `json:"event"`
+	FailureReason string             `json:"failure_reason"`
+	ViewerID      string             `json:"viewer_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type RuntimeProfile struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
