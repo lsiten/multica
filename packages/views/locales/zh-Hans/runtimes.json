@@ -200,7 +200,7 @@
       "old_daemon": { "title": "当前守护进程不支持镜像", "description": "请更新该设备上的 Multica 守护进程后使用屏幕镜像。", "status": "已安装的守护进程不支持镜像。" },
       "linux_unsupported": { "title": "Linux 暂不支持屏幕镜像", "description": "首个镜像版本仅支持 macOS 和 Windows 的主显示器。", "status": "当前不支持 Linux 屏幕采集。" },
       "unsupported_platform": { "title": "当前平台不支持镜像", "description": "该运行时平台无法提供可镜像的主显示器。", "status": "当前平台不支持镜像。" },
-      "permission_denied": { "title": "屏幕录制权限被拒绝", "description": "请在运行时主机上向 Multica 守护进程授予屏幕录制权限，然后重试。", "status": "需要屏幕采集权限。" },
+      "permission_denied": { "title": "屏幕录制权限被拒绝", "description": "运行时主机上的 Multica 守护进程需要屏幕录制权限。首次打开镜像时系统会自动弹出授权提示；若已关闭弹窗，请在「系统设置 → 隐私与安全性 → 屏幕录制」中开启 Multica 守护进程，然后重试。", "status": "需要屏幕采集权限。" },
       "capture_unavailable": { "title": "屏幕采集不可用", "description": "运行时没有可用的主显示器，或采集服务无法启动。", "status": "屏幕采集服务不可用。" },
       "transport_failed": { "title": "连接失败", "description": "WebRTC 连接未能建立，可能受到网络限制或缺少 TURN 服务器影响。", "status": "镜像传输失败。" },
       "unavailable": { "title": "镜像不可用", "description": "运行时已离线、不支持镜像，或你已无法访问它。", "status": "没有可用的镜像连接。" },
