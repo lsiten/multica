@@ -18,6 +18,11 @@ func (NativeCapturer) Capture(context.Context) (image.Image, error) {
 	if !NativeCaptureSupported() {
 		return nil, ErrUnsupportedPlatform
 	}
+	if runtime.GOOS == "darwin" && !EnsureScreenCapturePermission() {
+		// EnsureScreenCapturePermission also triggers the one-time system
+		// prompt so the daemon appears in the Screen Recording list.
+		return nil, ErrCapturePermissionDenied
+	}
 	if screenshot.NumActiveDisplays() == 0 {
 		return nil, ErrNoDisplay
 	}

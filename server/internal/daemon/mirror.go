@@ -45,6 +45,15 @@ func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessa
 		}
 		return
 	}
+	if !mirror.EnsureScreenCapturePermission() {
+		// macOS: this also raises the system Screen Recording prompt and
+		// registers the daemon binary in the TCC list the first time.
+		d.logger.Info("mirror offer rejected: screen recording permission missing", "runtime_id", offer.RuntimeID)
+		if err := d.sendMirrorAnswerFailure(enqueue, offer, protocol.MirrorAnswerFailurePermissionDenied); err != nil {
+			d.logger.Debug("mirror answer failure dropped", "runtime_id", offer.RuntimeID, "error", err)
+		}
+		return
+	}
 	go func() {
 		runtimeMirror, created, ok := d.runtimeMirrorForOffer(offer.RuntimeID, controlGeneration)
 		if !ok {
