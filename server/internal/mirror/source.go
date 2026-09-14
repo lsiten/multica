@@ -43,6 +43,7 @@ type Source struct {
 
 	mu                        sync.Mutex
 	viewers                   map[string]*sourceViewer
+	videoViewers              map[string]struct{}
 	cancel                    context.CancelFunc
 	done                      chan struct{}
 	closeDone                 chan struct{}
@@ -63,9 +64,10 @@ func NewSource(capturer Capturer, interval time.Duration) *Source {
 		interval = 500 * time.Millisecond
 	}
 	return &Source{
-		capturer: capturer,
-		interval: interval,
-		viewers:  make(map[string]*sourceViewer),
+		capturer:     capturer,
+		interval:     interval,
+		viewers:      make(map[string]*sourceViewer),
+		videoViewers: make(map[string]struct{}),
 	}
 }
 
@@ -128,12 +130,15 @@ func (s *Source) SetViewerStateHook(hook func(ViewerStateChange), generation uin
 	}
 	s.viewerStateHookGeneration = generation
 	s.viewerStateHook = hook
-	active := len(s.viewers) > 0
+	active := len(s.viewers)+len(s.videoViewers) > 0
 	if !active || hook == nil {
 		return active
 	}
 	viewerIDs := make([]string, 0, len(s.viewers))
 	for viewerID := range s.viewers {
+		viewerIDs = append(viewerIDs, viewerID)
+	}
+	for viewerID := range s.videoViewers {
 		viewerIDs = append(viewerIDs, viewerID)
 	}
 	sort.Strings(viewerIDs)
@@ -156,7 +161,7 @@ func (s *Source) SetCaptureFailureHandler(handler func(error)) {
 func (s *Source) HasViewers() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.viewers) > 0
+	return len(s.viewers)+len(s.videoViewers) > 0
 }
 
 // Close stops capture and waits for the capture loop to terminate.
