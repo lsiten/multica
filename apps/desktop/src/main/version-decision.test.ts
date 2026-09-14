@@ -86,4 +86,20 @@ describe("decideVersionAction", () => {
       decideVersionAction(bundled, { ...base, active_task_count: 0 }),
     ).toBe("restart");
   });
+
+  it("refreshes an orphaned macOS daemon even when its version matches", () => {
+    const running = { status: "running", cli_version: "v1.2.3", active_task_count: 0 };
+    expect(decideVersionAction("v1.2.3", running, true)).toBe("restart");
+  });
+
+  it("waits for tasks to drain before refreshing the recording permission context", () => {
+    const running = { status: "running", cli_version: "v1.2.3", active_task_count: 2 };
+    expect(decideVersionAction("v1.2.3", running, true)).toBe("defer");
+  });
+
+  it("does not replace a permission context without a known idle task count", () => {
+    expect(decideVersionAction("v1.2.3", {
+      status: "running", cli_version: "v1.2.3",
+    }, true)).toBe("defer");
+  });
 });
