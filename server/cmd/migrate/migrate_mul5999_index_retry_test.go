@@ -8,11 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/multica-ai/multica/server/internal/migrations"
 )
 
 var concurrentIndexNamePattern = regexp.MustCompile(
@@ -105,7 +105,7 @@ func TestEveryPGBigmConcurrentDownBuildHasCondition(t *testing.T) {
 		if !pgBigmConcurrentIndexPattern.Match(stripSQLLineComments(body)) {
 			continue
 		}
-		version := strings.TrimSuffix(filepath.Base(path), ".down.sql")
+		version := migrations.ExtractVersion(path)
 		if downMigrationConditions[version] == nil {
 			t.Errorf("%s: builds a pg_bigm index concurrently on down but has no down condition", version)
 		}
@@ -133,7 +133,7 @@ func assertEveryConcurrentBuildHasCleanup(t *testing.T, direction string, cleanu
 		if len(matches) == 0 {
 			continue
 		}
-		version := strings.TrimSuffix(filepath.Base(path), suffix)
+		version := migrations.ExtractVersion(path)
 		if len(matches) != 1 {
 			t.Errorf("%s: has %d concurrent index builds; cleanup registration supports exactly one", version, len(matches))
 			continue
@@ -157,8 +157,16 @@ func assertConcurrentIndexCleanupsMatchTheirMigrations(
 	direction string,
 ) {
 	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "migrations", "*."+direction+".sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pathsByVersion := make(map[string]string, len(files))
+	for _, file := range files {
+		pathsByVersion[migrations.ExtractVersion(file)] = file
+	}
 	for version, indexName := range cleanups {
-		path := filepath.Join("..", "..", "migrations", version+"."+direction+".sql")
+		path := pathsByVersion[version]
 		body, err := os.ReadFile(path)
 		if err != nil {
 			t.Errorf("%s: read migration: %v", version, err)
