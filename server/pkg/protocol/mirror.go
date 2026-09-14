@@ -75,27 +75,39 @@ func (d MirrorSessionDescription) Validate(expectedType string) error {
 
 // MirrorOfferPayload is sent to a daemon to start one viewer-bound handshake.
 type MirrorOfferPayload struct {
-	SessionID   string                   `json:"session_id"`
-	WorkspaceID string                   `json:"workspace_id"`
-	RuntimeID   string                   `json:"runtime_id"`
-	UserID      string                   `json:"user_id"`
-	DaemonID    string                   `json:"daemon_id"`
-	ViewerID    string                   `json:"viewer_id"`
-	Offer       MirrorSessionDescription `json:"offer"`
-	ICEConfig   MirrorICEConfig          `json:"ice_config"`
-	ExpiresAt   time.Time                `json:"expires_at"`
+	ProtocolVersion  int                      `json:"protocol_version,omitempty"`
+	Transport        string                   `json:"transport,omitempty"`
+	Source           *MirrorSource            `json:"source,omitempty"`
+	SourceGeneration string                   `json:"source_generation,omitempty"`
+	NativeEpoch      string                   `json:"native_epoch,omitempty"`
+	ViewerGrant      *MirrorViewerGrant       `json:"viewer_grant,omitempty"`
+	SessionID        string                   `json:"session_id"`
+	WorkspaceID      string                   `json:"workspace_id"`
+	RuntimeID        string                   `json:"runtime_id"`
+	UserID           string                   `json:"user_id"`
+	DaemonID         string                   `json:"daemon_id"`
+	ViewerID         string                   `json:"viewer_id"`
+	Offer            MirrorSessionDescription `json:"offer"`
+	ICEConfig        MirrorICEConfig          `json:"ice_config"`
+	ExpiresAt        time.Time                `json:"expires_at"`
 }
 
 // MirrorAnswerPayload is sent from a daemon after consuming a single offer.
 type MirrorAnswerPayload struct {
-	SessionID   string                   `json:"session_id"`
-	WorkspaceID string                   `json:"workspace_id"`
-	RuntimeID   string                   `json:"runtime_id"`
-	UserID      string                   `json:"user_id"`
-	DaemonID    string                   `json:"daemon_id"`
-	ViewerID    string                   `json:"viewer_id"`
-	Answer      MirrorSessionDescription `json:"answer"`
-	ExpiresAt   time.Time                `json:"expires_at"`
+	ProtocolVersion  int                      `json:"protocol_version,omitempty"`
+	Transport        string                   `json:"transport,omitempty"`
+	Source           *MirrorSource            `json:"source,omitempty"`
+	SourceGeneration string                   `json:"source_generation,omitempty"`
+	NativeEpoch      string                   `json:"native_epoch,omitempty"`
+	ViewerGrant      *MirrorViewerGrant       `json:"viewer_grant,omitempty"`
+	SessionID        string                   `json:"session_id"`
+	WorkspaceID      string                   `json:"workspace_id"`
+	RuntimeID        string                   `json:"runtime_id"`
+	UserID           string                   `json:"user_id"`
+	DaemonID         string                   `json:"daemon_id"`
+	ViewerID         string                   `json:"viewer_id"`
+	Answer           MirrorSessionDescription `json:"answer"`
+	ExpiresAt        time.Time                `json:"expires_at"`
 }
 
 // MirrorAnswerFailurePayload reports that a daemon could not answer one
@@ -123,6 +135,9 @@ type MirrorViewerPayload struct {
 }
 
 func (p MirrorOfferPayload) Validate() error {
+	if err := p.validateSourceContract(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(p.SessionID) == "" || strings.TrimSpace(p.WorkspaceID) == "" || strings.TrimSpace(p.RuntimeID) == "" || strings.TrimSpace(p.UserID) == "" || strings.TrimSpace(p.DaemonID) == "" || strings.TrimSpace(p.ViewerID) == "" {
 		return fmt.Errorf("%w: mirror offer identity is incomplete", ErrInvalidMirrorDescription)
 	}
@@ -136,6 +151,9 @@ func (p MirrorOfferPayload) Validate() error {
 }
 
 func (p MirrorAnswerPayload) Validate() error {
+	if err := (MirrorOfferPayload{ProtocolVersion: p.ProtocolVersion, Transport: p.Transport, Source: p.Source, SourceGeneration: p.SourceGeneration, NativeEpoch: p.NativeEpoch, ViewerGrant: p.ViewerGrant, SessionID: p.SessionID, WorkspaceID: p.WorkspaceID, RuntimeID: p.RuntimeID, UserID: p.UserID, ViewerID: p.ViewerID}).validateSourceContract(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(p.SessionID) == "" || strings.TrimSpace(p.WorkspaceID) == "" || strings.TrimSpace(p.RuntimeID) == "" || strings.TrimSpace(p.UserID) == "" || strings.TrimSpace(p.DaemonID) == "" || strings.TrimSpace(p.ViewerID) == "" {
 		return fmt.Errorf("%w: mirror answer identity is incomplete", ErrInvalidMirrorDescription)
 	}
