@@ -7,6 +7,7 @@ import (
 )
 
 type peerCloseOptions struct {
+	guard            func(*mirrorPeer) bool
 	fromCallback     bool
 	onlyUnattached   bool
 	includeCommitted bool
@@ -44,12 +45,19 @@ func (m *RuntimeMirror) closePeer(viewerID string, peer *mirrorPeer, opts peerCl
 		peer.mu.Unlock()
 		return false, err
 	}
+	if opts.guard != nil && !opts.guard(peer) {
+		peer.mu.Unlock()
+		return false, nil
+	}
 	committed := peer.negotiationCommitted
 	if opts.onlyUnattached && (peer.detach != nil || (!opts.includeCommitted && committed)) {
 		peer.mu.Unlock()
 		return false, nil
 	}
 	peer.closed = true
+	if peer.grant != nil && peer.grant.timer != nil {
+		peer.grant.timer.Stop()
+	}
 	if peer.attachTimer != nil {
 		peer.attachTimer.Stop()
 	}
@@ -63,6 +71,11 @@ func (m *RuntimeMirror) closePeer(viewerID string, peer *mirrorPeer, opts peerCl
 	}
 
 	peer.closeOnce.Do(func() {
+		if closeErr := peer.pc.Close(); closeErr != nil {
+			peer.mu.Lock()
+			peer.closeErr = fmt.Errorf("mirror: close viewer %q: %w", viewerID, closeErr)
+			peer.mu.Unlock()
+		}
 		if detach != nil {
 			detach()
 		}
@@ -71,11 +84,6 @@ func (m *RuntimeMirror) closePeer(viewerID string, peer *mirrorPeer, opts peerCl
 			delete(m.peers, viewerID)
 		}
 		m.mu.Unlock()
-		if closeErr := peer.pc.Close(); closeErr != nil {
-			peer.mu.Lock()
-			peer.closeErr = fmt.Errorf("mirror: close viewer %q: %w", viewerID, closeErr)
-			peer.mu.Unlock()
-		}
 		close(peer.done)
 	})
 	peer.mu.Lock()

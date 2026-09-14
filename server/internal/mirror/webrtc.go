@@ -69,6 +69,7 @@ func (description SessionDescription) Pion() webrtc.SessionDescription {
 
 type RuntimeMirror struct {
 	source *Source
+	hub    *CaptureHub
 
 	mu                sync.Mutex
 	closed            bool
@@ -79,7 +80,9 @@ type RuntimeMirror struct {
 }
 
 type mirrorPeer struct {
-	pc *webrtc.PeerConnection
+	pc    *webrtc.PeerConnection
+	video *videoPeer
+	grant *viewerGrant
 
 	mu                     sync.Mutex
 	attachTimer            *time.Timer
@@ -128,6 +131,10 @@ func (m *RuntimeMirror) HasViewers() bool {
 // Answer negotiates one browser offer and returns the daemon answer. Every
 // viewer owns an independent PeerConnection, while all viewers share source.
 func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer SessionDescription, ice ICEConfig) (Negotiation, error) {
+	return m.answer(ctx, viewerID, offer, ice, nil, "")
+}
+
+func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer SessionDescription, ice ICEConfig, setup func(*mirrorPeer) error, videoFmtp string) (Negotiation, error) {
 	viewerID = strings.TrimSpace(viewerID)
 	if viewerID == "" {
 		return Negotiation{}, fmt.Errorf("%w: viewer id is required", ErrInvalidOffer)
@@ -148,7 +155,13 @@ func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer Sessi
 		m.mu.Unlock()
 		return Negotiation{}, ErrDuplicateViewer
 	}
-	pc, err := webrtc.NewPeerConnection(ice.Pion())
+	var pc *webrtc.PeerConnection
+	var err error
+	if setup != nil {
+		pc, err = newVideoPeerConnection(ice, videoFmtp)
+	} else {
+		pc, err = webrtc.NewPeerConnection(ice.Pion())
+	}
 	if err != nil {
 		m.mu.Unlock()
 		return Negotiation{}, fmt.Errorf("mirror: create peer connection: %w", err)
@@ -171,7 +184,31 @@ func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer Sessi
 	peer.mu.Lock()
 	peer.stopNegotiationCleanup = stopCancelCleanup
 	peer.mu.Unlock()
+	if setup != nil {
+		if err := setup(peer); err != nil {
+			_ = cleanup()
+			return Negotiation{}, err
+		}
+	}
 	pc.OnDataChannel(func(channel *webrtc.DataChannel) {
+		if peer.video != nil {
+			if (channel.Label() == "mirror" || channel.Label() == "mirror-control") && channel.Ordered() {
+				peer.mu.Lock()
+				if !peer.closed {
+					peer.video.control = channel
+				}
+				peer.mu.Unlock()
+				channel.OnOpen(func() {
+					if err := m.sendVideoMetadata(peer, 0, true); err != nil {
+						_ = cleanup()
+					}
+				})
+				channel.OnClose(func() { _ = cleanup() })
+				return
+			}
+			_ = channel.Close()
+			return
+		}
 		if channel.Label() != "mirror" || !channel.Ordered() {
 			_ = channel.Close()
 			return
@@ -199,6 +236,9 @@ func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer Sessi
 		channel.OnClose(func() { _ = cleanup() })
 	})
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateConnected && peer.video != nil {
+			peer.attachOnce.Do(func() { m.attachVideo(viewerID, peer) })
+		}
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
 			_ = cleanup()
 		}
@@ -232,9 +272,11 @@ func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer Sessi
 		_ = cleanup()
 		return Negotiation{}, fmt.Errorf("mirror: set local description: %w", err)
 	}
+	gatherCtx, stopGather := context.WithCancel(ctx)
+	defer stopGather()
 	select {
 	case <-gathered:
-	case <-waitRelayGrace(ctx, relaySeen):
+	case <-waitRelayGrace(gatherCtx, relaySeen):
 	case <-ctx.Done():
 		_ = cleanup()
 		return Negotiation{}, fmt.Errorf("mirror: gather answer: %w", ctx.Err())
@@ -249,7 +291,7 @@ func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer Sessi
 		return Negotiation{}, fmt.Errorf("mirror: answer after negotiation: %w", err)
 	}
 	peer.mu.Lock()
-	if !peer.closed {
+	if !peer.closed && peer.detach == nil {
 		peer.attachTimer = time.AfterFunc(m.peerAttachTimeout, func() {
 			_ = m.removePeer(viewerID, peer, true)
 		})
@@ -267,6 +309,7 @@ func (m *RuntimeMirror) Answer(ctx context.Context, viewerID string, offer Sessi
 // proven deliverable to its control WebSocket. Abandon closes only this exact
 // peer, never a replacement that reused the same viewer ID after reconnect.
 type Negotiation struct {
+	VideoQuality *VideoQuality `json:"video_quality,omitempty"`
 	SessionDescription
 	runtimeMirror *RuntimeMirror
 	viewerID      string
