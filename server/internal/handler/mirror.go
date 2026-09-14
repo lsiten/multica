@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/daemonws"
@@ -15,11 +16,16 @@ import (
 )
 
 type createMirrorSessionRequest struct {
-	ViewerID string                            `json:"viewer_id"`
-	Offer    protocol.MirrorSessionDescription `json:"offer"`
+	ViewerID         string                            `json:"viewer_id"`
+	ProtocolVersion  int                               `json:"protocol_version,omitempty"`
+	Transport        string                            `json:"transport,omitempty"`
+	Source           *protocol.MirrorSource            `json:"source,omitempty"`
+	SourceGeneration string                            `json:"source_generation,omitempty"`
+	Offer            protocol.MirrorSessionDescription `json:"offer"`
 }
 
 type mirrorSessionResponse struct {
+	ViewerGrant *protocol.MirrorViewerGrant `json:"viewer_grant,omitempty"`
 	mirror.SessionMetadata
 	Answer    *protocol.MirrorSessionDescription `json:"answer,omitempty"`
 	ICEConfig protocol.MirrorICEConfig           `json:"ice_config"`
@@ -63,7 +69,7 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 	}
 	identity := mirror.SessionIdentity{
 		WorkspaceID: uuidToString(rt.WorkspaceID),
-		RuntimeID:   runtimeID,
+		RuntimeID:   uuidToString(rt.ID),
 		UserID:      requestUserID(r),
 		DaemonID:    rt.DaemonID.String,
 		ViewerID:    strings.TrimSpace(req.ViewerID),
@@ -92,7 +98,19 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 		UserID: session.UserID, DaemonID: session.DaemonID, ViewerID: session.ViewerID,
 		Offer: offer, ICEConfig: icePlan.Protocol(), ExpiresAt: session.ExpiresAt,
 	}
-	if !h.DaemonHub.SendMirrorOffer(runtimeID, payload) {
+	generation, configured := h.configureMirrorGrant(w, r, rt, req, &payload)
+	if !configured {
+		_ = h.MirrorSessions.Close(r.Context(), session.ID, identity)
+		return
+	}
+	sent := false
+	if generation != "" {
+		sent = h.DaemonHub.SendManagedMirrorOffer(identity.RuntimeID, generation, payload)
+	} else {
+		sent = h.DaemonHub.SendMirrorOffer(identity.RuntimeID, payload)
+	}
+	if !sent {
+		h.MirrorGrants.Remove(session.ID)
 		_ = h.MirrorSessions.Close(r.Context(), session.ID, identity)
 		writeError(w, http.StatusServiceUnavailable, "runtime daemon is unavailable")
 		return
@@ -101,6 +119,7 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 		mirrorEventSessionStarted, "", strings.TrimSpace(req.ViewerID))
 	writeJSON(w, http.StatusCreated, mirrorSessionResponse{
 		SessionMetadata: session.Metadata(),
+		ViewerGrant:     payload.ViewerGrant,
 		ICEConfig:       icePlan.Protocol(),
 	})
 }
@@ -125,6 +144,9 @@ func (h *Handler) GetMirrorSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := mirrorSessionResponse{SessionMetadata: metadata, ICEConfig: icePlan.Protocol()}
+	if record, err := h.MirrorGrants.Lookup(metadata.ID, metadata.UserID, metadata.RuntimeID, time.Now()); err == nil {
+		response.ViewerGrant = &record.Grant
+	}
 	if metadata.State == mirror.SessionStateAnswered {
 		answer, answerErr := h.MirrorSessions.Answer(r.Context(), metadata.ID, mirror.SessionIdentity{
 			WorkspaceID: metadata.WorkspaceID, RuntimeID: metadata.RuntimeID, UserID: metadata.UserID,
@@ -146,6 +168,21 @@ func (h *Handler) CloseMirrorSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	identity := h.mirrorIdentityFromRequest(r, rt)
+	if record, err := h.MirrorGrants.Lookup(chi.URLParam(r, "sessionId"), requestUserID(r), uuidToString(rt.ID), time.Now()); err == nil {
+		if record.Grant.ViewerID != identity.ViewerID {
+			h.writeMirrorSessionError(w, mirror.ErrSessionNotFound)
+			return
+		}
+		if err := h.MirrorSessions.Close(r.Context(), record.Grant.SessionID, identity); err != nil && !errors.Is(err, mirror.ErrSessionNotFound) && !errors.Is(err, mirror.ErrSessionExpired) {
+			h.writeMirrorSessionError(w, err)
+			return
+		}
+		if removed, ok := h.MirrorGrants.Remove(record.Grant.SessionID); ok {
+			h.sendViewerRevoke(removed)
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if err := h.MirrorSessions.Close(r.Context(), chi.URLParam(r, "sessionId"), identity); err != nil {
 		h.writeMirrorSessionError(w, err)
 		return

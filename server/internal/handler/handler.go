@@ -212,6 +212,7 @@ type Handler struct {
 	Hub                    *realtime.Hub
 	DaemonHub              *daemonws.Hub
 	MirrorSessions         *mirror.SessionStore
+	MirrorGrants           *mirror.ViewerGrantStore
 	MirrorViewers          *mirror.ViewerTracker
 	DaemonProfileRefresh   RuntimeProfileRefreshNotifier
 	DaemonWorkspaceRefresh WorkspaceSetRefreshNotifier
@@ -491,6 +492,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		Hub:                          hub,
 		DaemonHub:                    daemonHub,
 		MirrorSessions:               mirror.NewSessionStore(mirror.SessionStoreOptions{}),
+		MirrorGrants:                 mirror.NewViewerGrantStore(),
 		MirrorViewers:                mirror.NewViewerTracker(),
 		DaemonProfileRefresh:         daemonProfileRefresh,
 		DaemonWorkspaceRefresh:       daemonWorkspaceRefresh,

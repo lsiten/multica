@@ -202,6 +202,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 						return
 					}
 					r.Header.Set("X-User-ID", userID)
+					r = r.WithContext(withViewerCredential(r.Context(), ViewerCredential{Kind: "pat", Hash: hash, UserID: userID}))
 					next.ServeHTTP(w, r)
 					return
 				}
@@ -231,6 +232,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 					expiresAt = pat.ExpiresAt.Time
 				}
 				patCache.Set(r.Context(), hash, userID, auth.TTLForExpiry(time.Now(), expiresAt))
+				r = r.WithContext(withViewerCredential(r.Context(), ViewerCredential{Kind: "pat", Hash: hash, UserID: userID, ExpiresAt: expiresAt}))
 
 				// Cache miss = TTL expired (or first use after revoke /
 				// process restart). Refresh last_used_at; subsequent hits
@@ -272,6 +274,9 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				return
 			}
 			r.Header.Set("X-User-ID", sub)
+			if expiry, expiryErr := claims.GetExpirationTime(); expiryErr == nil && expiry != nil {
+				r = r.WithContext(withViewerCredential(r.Context(), ViewerCredential{Kind: "jwt", Hash: auth.HashToken(tokenString), UserID: sub, ExpiresAt: expiry.Time}))
+			}
 			if email != "" {
 				r.Header.Set("X-User-Email", email)
 			}
