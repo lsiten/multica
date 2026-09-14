@@ -32,6 +32,8 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	// AppKit requires the initial OS thread for the internal native host.
+	runtime.LockOSThread()
 	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built: %s)\ngo: %s, os/arch: %s/%s", version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	rootCmd.SetVersionTemplate("multica {{.Version}}\n")
 
@@ -97,6 +99,14 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-host" {
+		if err := runVscreenHost(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	runtime.UnlockOSThread()
 	if len(os.Args) == 2 && os.Args[1] == execenv.PreparationHelperArg {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 		if err := execenv.RunPreparationHelper(os.Stdin, os.Stdout, logger); err != nil {
