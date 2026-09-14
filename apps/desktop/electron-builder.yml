@@ -22,6 +22,7 @@ files:
   # because the first arch writes into dist/ mid-run before the second is
   # packaged.
   - "!dist/**"
+  - "!resources/MulticaDaemon.app/**"
 # Ship the license and attribution notices inside the packaged app, so the
 # NOTICE obligations travel with the installer rather than only the git repo.
 extraResources:
@@ -35,8 +36,7 @@ protocols:
       - multica
 asarUnpack:
   - resources/**
-# Re-pin the bundled daemon's identifier-based TCC identity after
-# electron-builder's own signing (ad-hoc fork builds reset it to a cdhash).
+# Keep the containing app's TCC identity stable in ad-hoc fork builds.
 afterSign: build/after-sign.cjs
 mac:
   entitlementsInherit: build/entitlements.mac.plist

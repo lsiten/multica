@@ -24,11 +24,18 @@ export type VersionAction = "restart" | "defer" | "ok" | "not_running";
 export function decideVersionAction(
   bundled: string | null,
   running: VersionCheckHealth | null,
+  refreshPermissionContext = false,
 ): VersionAction {
   if (!running || running.status !== "running") return "not_running";
 
   const runningVersion = running.cli_version;
   if (!bundled || !runningVersion) return "ok";
+  // Reattach an idle macOS daemon from a previous Desktop launch before reusing
+  // its recording context. Never infer idle from an absent/malformed counter
+  // for this extra restart.
+  if (refreshPermissionContext) {
+    return running.active_task_count === 0 ? "restart" : "defer";
+  }
   if (runningVersion === bundled) return "ok";
 
   const activeTasks = running.active_task_count ?? 0;

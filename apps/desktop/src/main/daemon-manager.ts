@@ -31,6 +31,7 @@ import { requestReviewInventory } from "./local-review-inventory";
 import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
+import { readDaemonParentPid, startMacDaemon } from "./daemon-launch";
 import {
   deriveProfileName,
   healthPortForProfile,
@@ -485,20 +486,8 @@ function bundledCliPath(): string {
     "app.asar",
     "app.asar.unpacked",
   );
-  // On macOS the daemon ships inside its own MulticaDaemon.app bundle so TCC
-  // can attach Screen Recording permission to a stable bundle identity and
-  // list it under System Settings -> Screen Recording. The bare binary in
-  // bin/ remains as a fallback for older packaged layouts.
-  if (process.platform === "darwin") {
-    const bundledApp = join(
-      resourcesRoot,
-      "MulticaDaemon.app",
-      "Contents",
-      "MacOS",
-      binName,
-    );
-    if (existsSync(bundledApp)) return bundledApp;
-  }
+  // The macOS executable is an ordinary helper of Multica.app, so recording
+  // consent belongs to Multica rather than a separate daemon application.
   return join(resourcesRoot, "bin", binName);
 }
 
@@ -638,7 +627,7 @@ async function getCliBinaryVersion(): Promise<string | null> {
  *
  * Restart is only fired when ALL of:
  *   - a daemon is actually running on the active profile's port
- *   - both sides report a version and the strings differ
+ *   - versions differ, or a macOS helper outlived its launching Desktop
  *   - `active_task_count` is 0 (no in-flight agent work would be killed)
  *
  * On a confirmed mismatch while the daemon is busy, `pendingVersionRestart`
@@ -661,7 +650,16 @@ async function ensureRunningDaemonVersionMatches(): Promise<
   }
 
   const bundled = await getCliBinaryVersion();
-  const action = decideVersionAction(bundled, running);
+  // New helpers remain direct children. PPID 1 identifies a daemon left by
+  // an earlier Desktop launch (including the old background-start path).
+  // Do not take over a helper still owned by another live Desktop instance.
+  const refreshPermissionContext = process.platform === "darwin"
+    && running?.status === "running"
+    && await readDaemonParentPid(running.pid) === 1;
+  const action = decideVersionAction(bundled, running, refreshPermissionContext);
+  const restartReason = refreshPermissionContext
+    ? "refreshing macOS recording permission context after Desktop relaunch"
+    : `CLI version mismatch (bundled=${bundled} running=${running?.cli_version})`;
 
   switch (action) {
     case "not_running":
@@ -674,7 +672,7 @@ async function ensureRunningDaemonVersionMatches(): Promise<
       if (!pendingVersionRestart) {
         const activeTasks = running?.active_task_count ?? 0;
         console.log(
-          `[daemon] CLI version mismatch (bundled=${bundled} running=${running?.cli_version}); deferring restart until ${activeTasks} active task(s) finish`,
+          `[daemon] ${restartReason}; deferring restart until the daemon is idle (active tasks=${activeTasks})`,
         );
       }
       pendingVersionRestart = true;
@@ -682,7 +680,7 @@ async function ensureRunningDaemonVersionMatches(): Promise<
     }
     case "restart":
       console.log(
-        `[daemon] CLI version mismatch (bundled=${bundled} running=${running?.cli_version}) — restarting daemon`,
+        `[daemon] ${restartReason} — restarting daemon`,
       );
       pendingVersionRestart = false;
       await restartDaemon();
@@ -1019,6 +1017,7 @@ async function startDaemon(
       existing?.os,
       normalizeHostOS(process.platform),
     );
+    if (process.platform === "darwin") pendingVersionRestart = true;
     scheduleStatusRefresh();
     return { success: true };
   }
@@ -1041,6 +1040,27 @@ async function startDaemon(
   authProbeDone = false;
   authExpired = false;
   sendStatus({ state: "starting" });
+
+  if (process.platform === "darwin") {
+    try {
+      await startMacDaemon({
+        binary: bin,
+        profile: active.name,
+        directory: profileDir(active.name),
+        env: desktopSpawnEnv(),
+        isReady: async (pid, signal) => {
+          const health = await fetchHealthAtPort(active.port, HEALTH_PROBE_TIMEOUT_MS, signal);
+          return health?.pid === pid && health.status === "running";
+        },
+      });
+      scheduleStatusRefresh();
+      return { success: true };
+    } catch (error) {
+      currentState = "stopped";
+      sendStatus({ state: "stopped" });
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
 
   const args = ["daemon", "start", ...profileArgs(active.name)];
 
