@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -152,10 +153,11 @@ func (i ClientIdentity) AllowsWorkspace(workspaceID string) bool {
 }
 
 type client struct {
-	hub      *Hub
-	conn     *websocket.Conn
-	send     chan []byte
-	identity ClientIdentity
+	vscreenGeneration string
+	hub               *Hub
+	conn              *websocket.Conn
+	send              chan []byte
+	identity          ClientIdentity
 	// registeredAt orders duplicate daemon connections (reconnect overlap or
 	// two local processes sharing one daemon ID) so single-responder fanout
 	// such as mirror offers always targets the newest socket.
@@ -325,7 +327,8 @@ type MessageKindRecorder interface {
 // Hub keeps daemon WebSocket connections indexed by runtime ID. Messages are
 // best-effort wakeup hints; the daemon still uses HTTP claim for correctness.
 type Hub struct {
-	upgrader websocket.Upgrader
+	vscreenPending map[string]*vscreenPending
+	upgrader       websocket.Upgrader
 
 	mu          sync.RWMutex
 	clients     map[*client]bool
@@ -483,13 +486,14 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, identity C
 		}
 	}
 	c := &client{
-		hub:          h,
-		conn:         conn,
-		send:         make(chan []byte, 16),
-		identity:     identity,
-		registeredAt: time.Now(),
-		runtimes:     runtimes,
-		rpcSem:       make(chan struct{}, maxInFlightRPCPerClient),
+		hub:               h,
+		conn:              conn,
+		send:              make(chan []byte, 16),
+		identity:          identity,
+		registeredAt:      time.Now(),
+		vscreenGeneration: uuid.NewString(),
+		runtimes:          runtimes,
+		rpcSem:            make(chan struct{}, maxInFlightRPCPerClient),
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	h.register(c)
@@ -1092,6 +1096,10 @@ func (c *client) handleFrame(raw []byte) {
 		rec.RecordDaemonWSMessageReceived(kind)
 	}
 	switch msg.Type {
+	case protocol.EventVscreenResult:
+		c.handleVscreenReceipt(msg.Payload)
+	case protocol.EventVscreenQueryResult:
+		c.handleVscreenQueryResult(msg.Payload)
 	case protocol.EventDaemonHeartbeat:
 		c.handleHeartbeatFrame(msg.Payload)
 	case protocol.EventDaemonRPCRequest:

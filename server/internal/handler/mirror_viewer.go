@@ -67,6 +67,14 @@ func (h *Handler) HandleDaemonMirrorViewer(ctx context.Context, identity daemonw
 			)
 		}
 	}
+	h.MirrorGrants.SetActive(payload.DaemonID, payload.RuntimeID, payload.ViewerID, payload.Active)
+	if !payload.Active {
+		for _, record := range h.MirrorGrants.Records() {
+			if record.DaemonID == payload.DaemonID && record.Grant.RuntimeID == payload.RuntimeID && record.Grant.ViewerID == payload.ViewerID {
+				h.revokeViewerGrant(record)
+			}
+		}
+	}
 	changed := h.MirrorViewers.SetViewerActiveIf(payload.RuntimeID, payload.ViewerID, payload.Active, func() bool {
 		return h.DaemonHub != nil && h.DaemonHub.RuntimeConnectionCount(payload.RuntimeID) > 0
 	})
