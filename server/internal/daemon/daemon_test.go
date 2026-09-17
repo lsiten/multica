@@ -3529,6 +3529,8 @@ func TestShouldRetryWithFreshSession_UnresumableHistoryIsBackendAgnostic(t *test
 }
 
 func TestExecuteAndDrain_CodexInactivityReportsMCPToolResultTranscript(t *testing.T) {
+	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("shell-script fixture is POSIX-only")
 	}
@@ -3545,10 +3547,11 @@ func TestExecuteAndDrain_CodexInactivityReportsMCPToolResultTranscript(t *testin
 		`echo '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr-drain","turn":{"id":"turn-drain"}}}'` + "\n" +
 		`echo '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Multica news"},"status":"inProgress"}}}'` + "\n" +
 		`echo '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Multica news"},"status":"completed","durationMs":1627,"result":{"content":[{"type":"text","text":"private provider payload"}]}}}}'` + "\n" +
-		`sleep 5` + "\n"
-	if err := os.WriteFile(fakePath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake codex: %v", err)
-	}
+		// Then go silent until the daemon starts tearing the turn down — its
+		// interrupt request or stdin EOF — so the inactivity watchdog always
+		// fires first, however long the box takes to get there.
+		`read line` + "\n"
+	writeTestExecutable(t, fakePath, []byte(script))
 	if err := os.Chmod(fakePath, 0o755); err != nil {
 		t.Fatalf("chmod fake codex: %v", err)
 	}
@@ -4402,6 +4405,19 @@ func TestEnsureRepoReadyReportsSyncFailure(t *testing.T) {
 	}
 }
 
+// repoRefreshWaitContext reports when ensureRepoReady reaches the cancellable
+// lock wait, after recording whether the repo was cached on entry.
+type repoRefreshWaitContext struct {
+	context.Context
+	once    sync.Once
+	waiting chan<- struct{}
+}
+
+func (c *repoRefreshWaitContext) Done() <-chan struct{} {
+	c.once.Do(func() { c.waiting <- struct{}{} })
+	return c.Context.Done()
+}
+
 func TestEnsureRepoReadyConcurrentMissRefreshesOnce(t *testing.T) {
 	t.Parallel()
 
@@ -4419,18 +4435,46 @@ func TestEnsureRepoReadyConcurrentMissRefreshesOnce(t *testing.T) {
 			ReposVersion: "v2",
 		})
 	})
-	d.workspaces["ws-1"] = newWorkspaceState("ws-1", nil, "", nil, nil)
+	ws := newWorkspaceState("ws-1", nil, "", nil, nil)
+	d.workspaces["ws-1"] = ws
 
+	// Keep the cache cold until every caller has recorded a miss and reached
+	// the lock. Merely starting goroutines also permits late warm-cache calls,
+	// which intentionally refresh settings again.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := ws.repoRefreshMu.Lock(ctx); err != nil {
+		t.Fatal(err)
+	}
+	unlock := sync.OnceFunc(ws.repoRefreshMu.Unlock)
 	const concurrency = 8
+	waiting := make(chan struct{}, concurrency)
 	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		unlock()
+		wg.Wait()
+	}()
 	errCh := make(chan error, concurrency)
 	for range concurrency {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errCh <- d.ensureRepoReady(context.Background(), "ws-1", sourceRepo)
+			waitCtx := &repoRefreshWaitContext{Context: ctx, waiting: waiting}
+			errCh <- d.ensureRepoReady(waitCtx, "ws-1", sourceRepo)
 		}()
 	}
+	for range concurrency {
+		select {
+		case <-waiting:
+		case <-ctx.Done():
+			t.Fatal("ensureRepoReady callers did not all reach the cold-cache lock wait")
+		}
+	}
+	if got := refreshCalls.Load(); got != 0 {
+		t.Fatalf("expected no refresh before releasing cold-cache callers, got %d", got)
+	}
+	unlock()
 	wg.Wait()
 	close(errCh)
 
