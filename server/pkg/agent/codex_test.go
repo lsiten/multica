@@ -4095,6 +4095,20 @@ func executeFakeCodexCollectingMessages(t *testing.T, fakePath string, opts Exec
 func executeFakeCodexCollectingMessagesWithConfig(t *testing.T, fakePath string, cfg Config, opts ExecOptions, budget time.Duration) (Result, []Message) {
 	t.Helper()
 	cfg.ExecutablePath = fakePath
+	// Fake app-server runs must never scan the user's real rollout history
+	// while recovering terminal usage. Keep explicit fixture homes unchanged.
+	if cfg.Env["CODEX_HOME"] == "" {
+		home := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(home, "sessions"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		env := make(map[string]string, len(cfg.Env)+1)
+		for key, value := range cfg.Env {
+			env[key] = value
+		}
+		env["CODEX_HOME"] = home
+		cfg.Env = env
+	}
 	backend, err := New("codex", cfg)
 	if err != nil {
 		t.Fatalf("new codex backend: %v", err)
