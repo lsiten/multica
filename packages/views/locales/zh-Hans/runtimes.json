@@ -531,7 +531,16 @@
       "granted": "已授权",
       "not_granted": "未授权",
       "unknown": "未检查",
-      "permissions": "自动化权限：辅助功能{{accessibility}} · 屏幕录制{{screenRecording}}"
+      "permissions": "自动化权限：辅助功能{{accessibility}} · 屏幕录制{{screenRecording}}",
+      "selection_help": "选择已打开的应用窗口。确认后窗口留在当前屏幕，处理完再归还虚拟屏。",
+      "list_windows": "列出本机窗口",
+      "window": "应用窗口",
+      "choose_window": "选择窗口",
+      "no_windows": "暂无可选窗口。请在此 Mac 上打开应用，再刷新列表。",
+      "windows_truncated": "部分窗口未列出。如有需要，请关闭无关窗口后刷新。",
+      "adopt_window": "确认选中窗口",
+      "selection_expired": "选择已过期或窗口发生变化，请刷新列表后重新选择。",
+      "ax_required": "列出和选择应用窗口需要辅助功能权限。"
     }
   }
 }
