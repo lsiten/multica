@@ -153,6 +153,7 @@ func (i ClientIdentity) AllowsWorkspace(workspaceID string) bool {
 }
 
 type client struct {
+	vscreenLifecycle  chan struct{}
 	vscreenGeneration string
 	hub               *Hub
 	conn              *websocket.Conn
@@ -327,10 +328,11 @@ type MessageKindRecorder interface {
 // Hub keeps daemon WebSocket connections indexed by runtime ID. Messages are
 // best-effort wakeup hints; the daemon still uses HTTP claim for correctness.
 type Hub struct {
-	vscreenPending map[string]*vscreenPending
-	interventionMu sync.RWMutex
-	onIntervention VscreenInterventionHandler
-	upgrader       websocket.Upgrader
+	vscreenPending    map[string]*vscreenPending
+	interventionMu    sync.RWMutex
+	onIntervention    VscreenInterventionHandler
+	onVscreenDisabled VscreenDisabledHandler
+	upgrader          websocket.Upgrader
 
 	mu          sync.RWMutex
 	clients     map[*client]bool

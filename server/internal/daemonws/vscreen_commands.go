@@ -34,7 +34,7 @@ func (h *Hub) SubmitVscreenCommand(workspaceID, runtimeID, daemonID, userID, com
 	if h.vscreenPending == nil {
 		h.vscreenPending = make(map[string]*vscreenPending)
 	}
-	h.vscreenPending[envelope.RequestID] = &vscreenPending{client: c, envelope: envelope, receipt: receipt, userID: userID, expires: time.Now().Add(30 * time.Minute)}
+	h.vscreenPending[envelope.RequestID] = &vscreenPending{client: c, envelope: envelope, receipt: receipt, kind: string(kind), userID: userID, expires: time.Now().Add(30 * time.Minute)}
 	if !c.trySend(mustMarshalRaw(protocol.Message{Type: protocol.EventVscreenCommand, Payload: mustMarshalRaw(command)})) {
 		delete(h.vscreenPending, envelope.RequestID)
 		return protocol.VscreenCommandReceipt{}, ErrVscreenUnavailable
@@ -80,7 +80,22 @@ func (c *client) handleVscreenReceipt(raw json.RawMessage) {
 		return
 	}
 	switch p.receipt.State {
-	case protocol.VscreenReceiptSucceeded, protocol.VscreenReceiptFailed, protocol.VscreenReceiptUnknown:
+	case protocol.VscreenReceiptSucceeded:
+		if p.kind == string(protocol.VscreenCommandDisable) && p.receipt.ReceiptID == receipt.ReceiptID && receipt.State == protocol.VscreenReceiptSucceeded {
+			c.trySend(mustMarshalRaw(protocol.Message{Type: protocol.EventVscreenResult, Payload: mustMarshalRaw(p.receipt)}))
+		}
+		return
+	case protocol.VscreenReceiptFailed, protocol.VscreenReceiptUnknown:
+		return
+	}
+	if p.kind == string(protocol.VscreenCommandDisable) && receipt.State == protocol.VscreenReceiptSucceeded {
+		if p.cleanupStarted {
+			return
+		}
+		p.cleanupStarted = true
+		p.receipt = receipt
+		p.receipt.State = protocol.VscreenReceiptRunning
+		go c.finishVscreenDisable(receipt)
 		return
 	}
 	if p.receipt.State == protocol.VscreenReceiptRunning && receipt.State == protocol.VscreenReceiptPending {
