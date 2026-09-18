@@ -70,7 +70,8 @@ type appHost struct {
 func newAppHost(conn net.Conn, build, epoch string, captures *captureHost) *appHost {
 	h := &appHost{conn: conn, build: build, epoch: epoch, captures: captures, resources: make(map[protocol.ResourceKey]resourceDisplay), catalog: make(sourceCatalog), leases: make(map[protocol.ResourceKey]*appLease), flights: make(map[string]appFlight), done: make(chan struct{}), snapshotUsed: make(map[string]bool), humanUsed: make(map[string]bool)}
 	h.readDisplay = describeDisplay
-	h.controller, h.controllerErr = appcontrol.New(appcontrol.Config{Authorize: h.authorize, AuthorizeHuman: h.authorizeHuman})
+	policy := appcontrol.ProductionPIDInputPolicy()
+	h.controller, h.controllerErr = appcontrol.New(appcontrol.Config{Authorize: h.authorize, AuthorizeHuman: h.authorizeHuman, CertifiedPIDInput: policy.Decide, PIDInputVerification: policy.Verification})
 	return h
 }
 func appRefusal(code string) error { return &appcontrol.Error{Reason: code} }

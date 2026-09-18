@@ -16,7 +16,11 @@ NSString *ACReadWindow(ACWindow *w, CGRect *r) {
 id ACCopy(AXUIElementRef e, CFStringRef a, ACRequest *r) { return @[@"only-window"]; }
 NSString *ACInputQuiescent(ACSession *s, NSDictionary *r) { return nil; }
 #define STUB(name) NSDictionary *name(ACSession *s, ACRequest *r, NSDictionary *i, NSString **e) { *e=@"probe_unexpected"; return nil; }
-STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserve) STUB(ACAction)
+STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserve) STUB(ACAction) STUB(ACAdoptWindow)
+NSDictionary *ACListApps(ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
+NSDictionary *ACListWindows(ACSession *s, ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
+NSDictionary *ACPIDProcess(pid_t pid) {return @{@"PID":@(pid),@"Start":@"1:0"};}
+NSString *ACInputSourceID(void) {return @"synthetic-layout";}
 #include "guard-source.inc"
 static NSString *resume(ACSession *s, NSDictionary *display, uintptr_t r) {
  NSData *raw=[NSJSONSerialization dataWithJSONObject:@{@"Operation":@"resume",@"Input":display} options:0 error:nil]; char *out=NULL; size_t size=0;

@@ -66,10 +66,14 @@ func (c *Controller) Act(ctx context.Context, request protocol.VscreenActionRequ
 	if w.window.SnapshotRevision != t.SnapshotRevision || request.Sequence != c.sequence[binding]+1 || len(c.actions) >= 4096 {
 		return Result{}, refusal("stale_snapshot")
 	}
-	certified := c.config.CertifiedPIDInput != nil && c.config.CertifiedPIDInput(w.window.Process, request.Action)
+	identity := c.pidIdentity(ctx, w.window.Process)
+	decision := PIDInputDecision{}
+	if c.config.CertifiedPIDInput != nil {
+		decision = c.config.CertifiedPIDInput(identity, request.Action)
+	}
 	var result Result
 	c.sequence[binding] = request.Sequence
-	err = c.backend.call(ctx, "action", map[string]any{"Window": w.window, "Display": d, "Action": request.Action, "CertifiedPID": certified}, &result)
+	err = c.backend.call(ctx, "action", map[string]any{"Window": w.window, "Display": d, "Action": request.Action, "CertifiedPID": decision.Certified, "CertifiedInputSource": decision.InputSourceID, "CertifiedProcess": identity}, &result)
 	if err != nil || ctx.Err() != nil || result.Outcome != protocol.VscreenActionVerified && result.Outcome != protocol.VscreenActionDispatched {
 		c.freeze(a.Resource)
 		result.Outcome = protocol.VscreenActionUncertain
@@ -152,4 +156,19 @@ func (c *Controller) HumanTransfer(ctx context.Context, request HumanRequest) (W
 		w.display = destination
 	}
 	return moved, nil
+}
+
+// pidIdentity is optional certification metadata, not a requirement for semantic AX.
+func (c *Controller) pidIdentity(ctx context.Context, expected Process) Process {
+	if c.config.CertifiedPIDInput == nil && c.config.PIDInputVerification == nil {
+		return Process{}
+	}
+	var live Process
+	if c.backend.call(ctx, "pid_identity", expected, &live) != nil {
+		return Process{}
+	}
+	if live.PID != expected.PID || live.UID != expected.UID || live.Start != expected.Start || live.BundleID != expected.BundleID || live.OSBuild != expected.OSBuild {
+		return Process{}
+	}
+	return live
 }

@@ -58,10 +58,12 @@ type Display struct {
 }
 
 // Process is independently read from proc_pidinfo and NSRunningApplication.
+// Optional code metadata is populated only by the private PID-policy identity read.
 type Process struct {
-	PID                      int
-	UID                      uint32
-	Start, BundleID, OSBuild string
+	PID                                                       int
+	UID                                                       uint32
+	Start, BundleID, OSBuild                                  string
+	ExecutablePath, SigningID, CodeHash, AppVersion, AppBuild string
 }
 
 // Window binds an opaque handle to an OS process incarnation and window identifier.
@@ -84,12 +86,14 @@ type Element struct {
 type Observation struct {
 	// PIDInputCertificationConfigured is policy availability, not support for a particular action.
 	PIDInputCertificationConfigured bool
-	Display                         Display
-	Window                          Window
-	Elements                        []Element
-	PNG                             []byte
-	Width, Height                   uint32
-	Truncated                       bool
+	// PIDInputVerification is none or verified_variants; an exact action still needs authorization.
+	PIDInputVerification string
+	Display              Display
+	Window               Window
+	Elements             []Element
+	PNG                  []byte
+	Width, Height        uint32
+	Truncated            bool
 }
 
 // LaunchRequest permits only an installed bundle ID and explicit local file paths.
@@ -116,7 +120,9 @@ type Config struct {
 	AuthorizeHuman func(context.Context, HumanRequest) (Display, error)
 	// CertifiedPIDInput is populated only from an independently verified app/OS/action matrix.
 	// Nil denies per-PID input while retaining semantic AX actions.
-	CertifiedPIDInput func(Process, protocol.VscreenAction) bool
+	CertifiedPIDInput func(Process, protocol.VscreenAction) PIDInputDecision
+	// PIDInputVerification reports evidence presence independently of hook configuration.
+	PIDInputVerification func(Process) string
 }
 
 // Permissions reports current TCC state without requesting or prompting for access.
