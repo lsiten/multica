@@ -34,27 +34,29 @@ type WindowBounds struct {
 	Height float64 `json:"height"`
 }
 type State struct {
-	DisplayID    uint32       `json:"display_id"`
-	Bounds       WindowBounds `json:"bounds"`
-	HumanStage   uint64       `json:"human_stage"`
-	Nonce        string       `json:"nonce"`
-	PID          int          `json:"pid"`
-	ProcessStart string       `json:"process_start"`
-	WindowID     uint32       `json:"window_id"`
-	Presses      uint64       `json:"presses"`
-	Text         string       `json:"text"`
-	Keys         uint64       `json:"keys"`
-	Scrolls      uint64       `json:"scrolls"`
-	Drags        uint64       `json:"drags"`
-	Closed       bool         `json:"closed"`
+	Marker       *PerformanceMarker `json:"marker,omitempty"`
+	DisplayID    uint32             `json:"display_id"`
+	Bounds       WindowBounds       `json:"bounds"`
+	HumanStage   uint64             `json:"human_stage"`
+	Nonce        string             `json:"nonce"`
+	PID          int                `json:"pid"`
+	ProcessStart string             `json:"process_start"`
+	WindowID     uint32             `json:"window_id"`
+	Presses      uint64             `json:"presses"`
+	Text         string             `json:"text"`
+	Keys         uint64             `json:"keys"`
+	Scrolls      uint64             `json:"scrolls"`
+	Drags        uint64             `json:"drags"`
+	Closed       bool               `json:"closed"`
 }
 type configuration struct {
-	Nonce        string `json:"nonce"`
-	BundleID     string `json:"bundle_id"`
-	Directory    string `json:"directory"`
-	OwnerPID     int    `json:"owner_pid"`
-	OwnerStart   string `json:"owner_start"`
-	BinarySHA256 string `json:"binary_sha256"`
+	Performance  *PerformanceMode `json:"performance,omitempty"`
+	Nonce        string           `json:"nonce"`
+	BundleID     string           `json:"bundle_id"`
+	Directory    string           `json:"directory"`
+	OwnerPID     int              `json:"owner_pid"`
+	OwnerStart   string           `json:"owner_start"`
+	BinarySHA256 string           `json:"binary_sha256"`
 }
 
 // App identifies only the private, unique fixture created for this one invocation.
@@ -169,6 +171,9 @@ func Run() error {
 	var cfg configuration
 	if json.Unmarshal(raw, &cfg) != nil || len(cfg.Nonce) != 32 || cfg.BundleID != "ai.multica.smoke."+cfg.Nonce || cfg.Directory != filepath.Dir(filepath.Dir(contents)) || cfg.OwnerPID <= 0 || cfg.OwnerStart == "" {
 		return errors.New("invalid_fixture_config")
+	}
+	if cfg.Performance != nil && (cfg.Performance.SourceTag == 0 || cfg.Performance.LifetimeMS < 1000 || cfg.Performance.LifetimeMS > 2700000) {
+		return errors.New("invalid_performance_fixture_mode")
 	}
 	file, err := os.Open(executable)
 	if err != nil {

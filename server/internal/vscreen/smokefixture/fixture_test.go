@@ -89,3 +89,20 @@ func TestFixtureHumanStageIsPrivateNonceRequestOnly(t *testing.T) {
 		t.Fatal("human-stage nonce mismatch", err)
 	}
 }
+
+func TestPerformanceFixtureModeRemainsExplicitAndOptIn(t *testing.T) {
+	t.Setenv(guiEnvironment, "0")
+	mode := PerformanceMode{SourceTag: 1, LifetimeMS: 2700000}
+	if _, err := PreparePerformance("/not-a-helper", t.TempDir(), mode); err != ErrUnauthorized {
+		t.Fatal(err)
+	}
+	for _, mode := range []PerformanceMode{{SourceTag: 0, LifetimeMS: 1000}, {SourceTag: 1, LifetimeMS: 2700001}} {
+		if _, err := PreparePerformance("/not-a-helper", t.TempDir(), mode); err == nil {
+			t.Fatal("invalid mode accepted")
+		}
+	}
+	var cfg configuration
+	if err := json.Unmarshal([]byte(`{"nonce":"synthetic"}`), &cfg); err != nil || cfg.Performance != nil {
+		t.Fatal("standard input mode changed", err)
+	}
+}
