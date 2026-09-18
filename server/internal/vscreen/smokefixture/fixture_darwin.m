@@ -7,6 +7,8 @@
 #include <libproc.h>
 #include <sys/proc_info.h>
 #include <unistd.h>
+#include <mach/mach_time.h>
+#include "performance_marker.h"
 
 static NSString *processStart(int pid) {
   struct proc_bsdinfo info = {0};
@@ -53,6 +55,22 @@ char *multica_smoke_fixture_foreground(void) {
 @interface MVSSmokeCanvas : NSView
 @property(weak) MVSSmokeApp *owner;
 @end
+@interface MVSPerformanceCanvas : NSView
+@property uint32_t sourceTag, sequence;
+@end
+@implementation MVSPerformanceCanvas
+- (BOOL)isFlipped { return YES; }
+- (void)drawRect:(NSRect)dirty {
+  mach_timebase_info_data_t timebase; mach_timebase_info(&timebase);
+  uint64_t stamp=(uint64_t)((__uint128_t)mach_continuous_time()*timebase.numer/timebase.denom);
+  uint32_t sequence=++self.sequence;
+  [[NSColor colorWithCalibratedRed:(sequence%127)/127.0 green:0.25 blue:0.6 alpha:1] setFill];NSRectFill(self.bounds);
+  [[NSColor whiteColor] setFill];NSRectFill(NSMakeRect((sequence*7)%MAX(1,(int)self.bounds.size.width),110,80,100));
+  uint8_t bytes[20];multica_performance_marker(bytes,self.sourceTag,sequence,stamp);
+  CGContextSetShouldAntialias(NSGraphicsContext.currentContext.CGContext,false);
+  for(int i=0;i<160;i++){[((bytes[i/8]>>(7-i%8))&1)?NSColor.whiteColor:NSColor.blackColor setFill];NSRectFill(NSMakeRect(16+(i%20)*8,16+(i/20)*8,8,8));}
+}
+@end
 @interface MVSSmokeApp : NSObject
 @property NSDictionary *config;
 @property NSWindow *window;
@@ -91,7 +109,8 @@ char *multica_smoke_fixture_foreground(void) {
     }
   }
   NSNumber *displayID = self.closed ? @0 : self.window.screen.deviceDescription[@"NSScreenNumber"];
-  NSDictionary *state = @{@"display_id":displayID ?: @0, @"bounds":@{@"x":@(bounds.origin.x),@"y":@(bounds.origin.y),@"width":@(bounds.size.width),@"height":@(bounds.size.height)}, @"human_stage":@(self.humanStage), @"nonce":self.config[@"nonce"], @"pid":@(getpid()), @"process_start":processStart(getpid()) ?: @"", @"window_id":@(self.closed ? 0 : MAX(0, self.window.windowNumber)), @"presses":@(self.presses), @"text":self.text.stringValue ?: @"", @"keys":@(self.keys), @"scrolls":@(self.scrolls), @"drags":@(self.drags), @"closed":@(self.closed)};
+  NSMutableDictionary *state = [@{@"display_id":displayID ?: @0, @"bounds":@{@"x":@(bounds.origin.x),@"y":@(bounds.origin.y),@"width":@(bounds.size.width),@"height":@(bounds.size.height)}, @"human_stage":@(self.humanStage), @"nonce":self.config[@"nonce"], @"pid":@(getpid()), @"process_start":processStart(getpid()) ?: @"", @"window_id":@(self.closed ? 0 : MAX(0, self.window.windowNumber)), @"presses":@(self.presses), @"text":self.text.stringValue ?: @"", @"keys":@(self.keys), @"scrolls":@(self.scrolls), @"drags":@(self.drags), @"closed":@(self.closed)} mutableCopy];
+  if (self.config[@"performance"] && !self.closed) {NSRect frame=self.window.frame,content=[self.window contentRectForFrameRect:frame];state[@"marker"]=@{@"x":@(bounds.origin.x+content.origin.x-frame.origin.x+16),@"y":@(bounds.origin.y+NSMaxY(frame)-NSMaxY(content)+16),@"cell_size":@8,@"columns":@20,@"source_tag":self.config[@"performance"][@"source_tag"]};}
   NSData *json = [NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
   if (json && [json isEqualToData:self.lastPublished]) return;
   self.lastPublished = json;
@@ -132,8 +151,16 @@ int multica_smoke_fixture_run(const char *configuration) {
       else fixture.drags++;
       [fixture publish]; return event;
     }];
+    NSTimer *animation=nil;
+    if(config[@"performance"]) {
+      [fixture.window setContentSize:NSMakeSize(1600,900)];
+      MVSPerformanceCanvas *performance=[[MVSPerformanceCanvas alloc] initWithFrame:fixture.window.contentView.bounds];
+      performance.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;performance.sourceTag=[config[@"performance"][@"source_tag"] unsignedIntValue];
+      [fixture.window.contentView.subviews makeObjectsPerformSelector:@selector(removeFromSuperview)];[fixture.window.contentView addSubview:performance];
+      animation=[NSTimer scheduledTimerWithTimeInterval:1.0/30.0 repeats:YES block:^(NSTimer *timer){[performance setNeedsDisplay:YES];}];
+    }
     [fixture.window orderBack:nil]; [fixture publish];
-    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:90];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:config[@"performance"] ? [config[@"performance"][@"lifetime_ms"] doubleValue]/1000.0 : 90];
     NSTimer *watchdog = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
       NSString *stop = [NSString stringWithContentsOfFile:stopPath encoding:NSUTF8StringEncoding error:nil];
       NSString *human = [NSString stringWithContentsOfFile:[config[@"directory"] stringByAppendingPathComponent:@"human-stage"] encoding:NSUTF8StringEncoding error:nil];
@@ -141,7 +168,7 @@ int multica_smoke_fixture_run(const char *configuration) {
       [fixture publish];
       if (fixture.writeFailed || deadline.timeIntervalSinceNow <= 0 || [stop isEqual:config[@"nonce"]] || ![processStart([config[@"owner_pid"] intValue]) isEqual:config[@"owner_start"]]) { [timer invalidate]; [fixture finish]; }
     }];
-    [NSApp run]; [watchdog invalidate]; [NSEvent removeMonitor:monitor];
+    [NSApp run]; [animation invalidate]; [watchdog invalidate]; [NSEvent removeMonitor:monitor];
     if (!fixture.closed) { fixture.closed = YES; [fixture.window close]; [fixture publish]; }
     return fixture.writeFailed ? 1 : 0;
   }

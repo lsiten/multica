@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/multica-ai/multica/server/internal/vscreen/native/capture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -59,17 +60,18 @@ type Display struct {
 
 // Response binds every successful resource operation to the current host epoch.
 type Response struct {
-	Version   int                   `json:"version"`
-	Build     string                `json:"build"`
-	ID        string                `json:"id"`
-	Error     string                `json:"error,omitempty"`
-	Epoch     protocol.VscreenEpoch `json:"epoch"`
-	Display   *Display              `json:"display,omitempty"`
-	Displays  []Display             `json:"displays,omitempty"`
-	Sources   []SourceDescriptor    `json:"sources,omitempty"`
-	Capture   *CaptureDescriptor    `json:"capture,omitempty"`
-	App       *AppResponse          `json:"app,omitempty"`
-	Quiescent bool                  `json:"quiescent"`
+	LiveResources *capture.LiveResourceStats `json:"live_resources,omitempty"`
+	Version       int                        `json:"version"`
+	Build         string                     `json:"build"`
+	ID            string                     `json:"id"`
+	Error         string                     `json:"error,omitempty"`
+	Epoch         protocol.VscreenEpoch      `json:"epoch"`
+	Display       *Display                   `json:"display,omitempty"`
+	Displays      []Display                  `json:"displays,omitempty"`
+	Sources       []SourceDescriptor         `json:"sources,omitempty"`
+	Capture       *CaptureDescriptor         `json:"capture,omitempty"`
+	App           *AppResponse               `json:"app,omitempty"`
+	Quiescent     bool                       `json:"quiescent"`
 }
 
 // ReadMessage decodes one length-bounded frame and rejects unknown fields.

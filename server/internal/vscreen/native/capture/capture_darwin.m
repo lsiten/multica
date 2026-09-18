@@ -4,8 +4,10 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #include <stdatomic.h>
+#include "live_resources.h"
 
 static atomic_uint liveCaptures = 0;
+uint32_t vs_capture_live_count(void) {return atomic_load(&liveCaptures);}
 
 @interface VSCapture : NSObject <SCStreamOutput, SCStreamDelegate> {
   SCStream *_stream;
@@ -130,6 +132,8 @@ static atomic_uint liveCaptures = 0;
 - (void)stream:(SCStream *)stream
     didOutputSampleBuffer:(CMSampleBufferRef)sample
                    ofType:(SCStreamOutputType)type {
+  BOOL counted=vs_live_enter(VS_LIVE_CALLBACK);
+  @try {
   if (type != SCStreamOutputTypeScreen || !CMSampleBufferIsValid(sample) ||
       !CMSampleBufferDataIsReady(sample))
     return;
@@ -153,6 +157,8 @@ static atomic_uint liveCaptures = 0;
   [_encoder enqueueBuffer:buffer
                       pts:CMSampleBufferGetPresentationTimeStamp(sample)
                  duration:CMSampleBufferGetDuration(sample)];
+  } @finally {if(counted)vs_live_exit(VS_LIVE_CALLBACK);}
+
 }
 - (void)stream:(SCStream *)stream didStopWithError:(NSError *)error {
   [_encoder fail:CGPreflightScreenCaptureAccess() ? 7 : 2];
