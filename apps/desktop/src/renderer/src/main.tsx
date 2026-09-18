@@ -1,5 +1,7 @@
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import { lazy, Suspense } from "react";
+const RuntimeMirrorApp = lazy(() => import("./components/runtime-mirror-window").then((module) => ({ default: module.RuntimeMirrorApp })));
+const App = lazy(() => import("./App"));
 import { AppCrashBoundary } from "./components/app-crash-boundary";
 // Inter variable font covers all weights (100-900) in a single file.
 // CJK is handled by system font fallback (see globals.css --font-sans chain).
@@ -40,6 +42,6 @@ if (import.meta.env.DEV && import.meta.env.VITE_REACT_GRAB) {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <AppCrashBoundary>
-    <App />
+    <Suspense fallback={null}>{window.runtimeMirrorAPI ? <RuntimeMirrorApp /> : <App />}</Suspense>
   </AppCrashBoundary>,
 );

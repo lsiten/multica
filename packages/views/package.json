@@ -34,6 +34,7 @@
     "./members": "./members/index.ts",
     "./inbox": "./inbox/index.ts",
     "./runtimes": "./runtimes/index.ts",
+    "./runtimes/mirror": "./runtimes/mirror.ts",
     "./billing": "./billing/index.ts",
     "./dashboard": "./dashboard/index.ts",
     "./squads": "./squads/index.ts",

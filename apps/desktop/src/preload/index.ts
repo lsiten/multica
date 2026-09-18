@@ -1,3 +1,5 @@
+import { exposeRuntimeMirrorAPI } from "./runtime-mirror";
+import { RUNTIME_MIRROR_ARGUMENT, RUNTIME_MIRROR_CHANNEL, type RuntimeMirrorWindowRequest } from "../shared/runtime-mirror-window";
 import { contextBridge, ipcRenderer } from "electron";
 import { electronAPI } from "@electron-toolkit/preload";
 import type { RuntimeConfigResult } from "../shared/runtime-config";
@@ -103,6 +105,7 @@ function subscribeToMainRendererChannel<T>(
 }
 
 const desktopAPI = {
+  openRuntimeMirror: (request: RuntimeMirrorWindowRequest): Promise<boolean> => ipcRenderer.invoke(RUNTIME_MIRROR_CHANNEL, "open", request),
   /** App version + normalized OS. Read once at preload time so the renderer
    *  can use it synchronously when initializing the API client. */
   appInfo,
@@ -342,7 +345,9 @@ const updaterAPI = {
     ipcRenderer.invoke("updater:check"),
 };
 
-if (process.contextIsolated) {
+if (process.argv.some((argument) => argument.startsWith(RUNTIME_MIRROR_ARGUMENT))) {
+  exposeRuntimeMirrorAPI();
+} else if (process.contextIsolated) {
   contextBridge.exposeInMainWorld("electron", electronAPI);
   contextBridge.exposeInMainWorld("desktopAPI", desktopAPI);
   contextBridge.exposeInMainWorld("daemonAPI", daemonAPI);
