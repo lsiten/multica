@@ -36,6 +36,9 @@ func Start(ctx context.Context, config Config) (*Client, error) {
 	if !stat.Mode().IsRegular() || stat.Mode().Perm()&0111 == 0 {
 		return nil, native.ErrProtocol
 	}
+	if config.AppControl {
+		config.Media = true
+	}
 	if config.StartupTimeout <= 0 {
 		config.StartupTimeout = 5 * time.Second
 	}
@@ -93,11 +96,28 @@ func Start(ctx context.Context, config Config) (*Client, error) {
 		defer mediaChild.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, mediaChild)
 	}
+	var appConn net.Conn
+	if config.AppControl {
+		var appChild *os.File
+		appConn, appChild, err = mediaSocketPair()
+		if err != nil {
+			if media != nil {
+				media.Close()
+			}
+			conn.Close()
+			return nil, err
+		}
+		defer appChild.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, appChild)
+	}
 	cmd.WaitDelay = config.ShutdownTimeout
 	// Discard child diagnostics: hostile/native stderr never becomes a secret log
 	// or an unbounded buffer, and stdout cannot corrupt the control stream.
 	cmd.Stderr, cmd.Stdout = io.Discard, io.Discard
 	if err := cmd.Start(); err != nil {
+		if appConn != nil {
+			appConn.Close()
+		}
 		if media != nil {
 			media.Close()
 		}
@@ -107,6 +127,11 @@ func Start(ctx context.Context, config Config) (*Client, error) {
 	child.Close()
 	bootstrap.Close()
 	c := &Client{media: media, streams: make(map[string]*Stream), mediaDone: make(chan struct{}), conn: conn, cmd: cmd, build: config.Build, timeout: config.CallTimeout, shutdownTimeout: config.ShutdownTimeout, gate: make(chan struct{}, 1), closed: make(chan struct{}), exited: make(chan struct{})}
+	c.snapshots = make(map[string]*pendingSnapshot)
+	c.snapshotUsed = make(map[string]bool)
+	if appConn != nil {
+		c.apps = &appChannel{conn: appConn, pending: make(map[string]chan native.Response), done: make(chan struct{})}
+	}
 	c.gate <- struct{}{}
 	if media != nil {
 		go c.readMedia()
@@ -134,11 +159,23 @@ func Start(ctx context.Context, config Config) (*Client, error) {
 			return nil, errors.Join(err, c.Close())
 		}
 	}
-	response, err := c.exchange(ctx, native.Request{Operation: "hello", Token: token[:], Media: config.Media})
+	if appConn != nil {
+		deadline, _ := ctx.Deadline()
+		if err := appConn.SetWriteDeadline(deadline); err != nil {
+			return nil, errors.Join(err, c.Close())
+		}
+		if _, err := appConn.Write(token[:]); err != nil {
+			return nil, errors.Join(err, c.Close())
+		}
+	}
+	response, err := c.exchange(ctx, native.Request{Operation: "hello", Token: token[:], Media: config.Media, AppControl: config.AppControl})
 	if err != nil {
 		return nil, errors.Join(err, c.Close())
 	}
 	c.epoch = response.Epoch.NativeEpoch
+	if c.apps != nil {
+		go c.readApps()
+	}
 	return c, nil
 }
 
