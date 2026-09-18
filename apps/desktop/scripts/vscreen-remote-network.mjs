@@ -4,7 +4,7 @@ const hash = (s) => /^[a-f0-9]{64}$/.test(s ?? "");
 const direct = (c) => c?.candidate_type === "host" && c.protocol === "udp" && isIP(c.address) > 0 && !["::1", "0.0.0.0", "::"].includes(c.address) && !c.address.startsWith("127.") && Number.isInteger(c.port) && c.port > 0 && c.port < 65536;
 const equal = (a, b) => a?.address === b?.address && a?.port === b?.port && a?.protocol === b?.protocol;
 function routeMatches(route, local, remote) {
-  return local && remote && route?.available === true && route.kind === "lan" && typeof route.method === "string" && route.method.length > 0 && typeof route.interface_name === "string" && !/^(lo|utun|tun|tap|wg|tailscale|docker|veth|br|bridge)/.test(route.interface_name) && route.local_address === local?.address && route.destination === remote?.address && route.interface_addresses?.includes(local.address);
+  return local && remote && route?.available === true && route.kind === "lan" && typeof route.method === "string" && route.method.length > 0 && typeof route.interface_name === "string" && !/^(lo|utun|tun|tap|wg|tailscale|docker|veth|br|bridge)/.test(route.interface_name) && route.local_address === local?.address && route.destination === remote?.address && Array.isArray(route.interface_addresses) && route.interface_addresses.some((address) => { if(typeof address!=="string")return false; const [ip,prefix,...rest]=address.split("/"); return ip===local.address && rest.length===0 && (prefix===undefined || /^\d+$/.test(prefix) && Number(prefix)<=(isIP(ip)===6?128:32)); });
 }
 function connectionReasons(native, browser, viewer) {
   if(!native || !browser)return ["lan_viewer_missing"];
