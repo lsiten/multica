@@ -57,7 +57,7 @@ static void releaseInterrupted(ACSession *s, ACWindow *w) {
       continue;
     pid_t pid = [pressed.process[@"PID"] intValue];
     if (!ACProcessEnded(pressed.process)) {
-      if ([ACProcess(pid) isEqual:pressed.process] &&
+      if (pressed.certifiedProcess && [ACPIDProcess(pid) isEqual:pressed.certifiedProcess] &&
           CGPreflightPostEventAccess())
         CGEventPostToPid(pid, (__bridge CGEventRef)pressed.releaseEvent);
       // Posting has no delivery acknowledgement. Do not call an attempted
@@ -101,7 +101,15 @@ static NSString *post(ACSession *s, ACRequest *r, ACWindow *w, NSDictionary *d,
                       CGEventRef event) {
   if (!event)
     return @"native_unavailable";
-  NSString *error = ACGuard(s, w, d, r, YES);
+  NSString *error = nil;
+  if (!w.certifiedProcess || ![ACPIDProcess([w.process[@"PID"] intValue]) isEqual:w.certifiedProcess])
+    error = @"stale_window";
+  CGEventType inputType = CGEventGetType(event);
+  if (!error && (inputType == kCGEventKeyDown || inputType == kCGEventKeyUp) &&
+      (!w.certifiedInputSource.length || ![ACInputSourceID() isEqual:w.certifiedInputSource]))
+    error = @"needs_intervention";
+  if (!error)
+    error = ACGuard(s, w, d, r, YES);
   CGRect bounds;
   if (!error)
     error = ACReadWindow(w, &bounds);
@@ -125,6 +133,7 @@ static NSString *post(ACSession *s, ACRequest *r, ACWindow *w, NSDictionary *d,
       CGEventSetFlags(up, 0);
       ACPressed *pressed = [ACPressed new];
       pressed.process = w.process;
+      pressed.certifiedProcess = w.certifiedProcess;
       pressed.resource = w.resource;
       pressed.releaseEvent = CFBridgingRelease(up);
       s.pressed[key] = pressed;

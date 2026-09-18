@@ -4,7 +4,7 @@ package appcontrol
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc -fblocks
-#cgo LDFLAGS: -framework AppKit -framework ApplicationServices -framework ScreenCaptureKit -framework ImageIO -framework UniformTypeIdentifiers
+#cgo LDFLAGS: -framework AppKit -framework Security -framework Carbon -framework ApplicationServices -framework ScreenCaptureKit -framework ImageIO -framework UniformTypeIdentifiers
 #include "bridge.h"
 */
 import "C"

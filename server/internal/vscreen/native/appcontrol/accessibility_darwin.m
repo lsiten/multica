@@ -242,7 +242,11 @@ NSDictionary *ACAction(ACSession *s, ACRequest *r, NSDictionary *input,
         return nil;
       }
     }
+    w.certifiedInputSource = input[@"CertifiedInputSource"];
+    w.certifiedProcess = input[@"CertifiedProcess"];
     *error = ACPIDAction(s, r, w, d, action);
+    w.certifiedInputSource = nil;
+    w.certifiedProcess = nil;
   }
   [w.elements removeAllObjects];
   w.snapshotValid = NO;

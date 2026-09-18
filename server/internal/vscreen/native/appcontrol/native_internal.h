@@ -20,6 +20,8 @@
 @property(strong) NSDictionary *resource;
 @property(strong) NSMutableDictionary<NSString *, id> *elements;
 @property(strong) NSString *handle;
+@property(strong) NSString *certifiedInputSource;
+@property(strong) NSDictionary *certifiedProcess;
 @property CGRect original;
 @property CGRect lastBounds;
 @property uint32_t windowID;
@@ -33,6 +35,7 @@
 @end
 @interface ACPressed : NSObject
 @property(strong) NSDictionary *process;
+@property(strong) NSDictionary *certifiedProcess;
 @property(strong) NSDictionary *resource;
 @property(strong) id releaseEvent;
 @end
@@ -82,3 +85,7 @@ NSDictionary *ACListApps(ACRequest *r, NSString **error);
 
 NSDictionary *ACListWindows(ACSession *, ACRequest *, NSString **);
 NSDictionary *ACAdoptWindow(ACSession *, ACRequest *, NSDictionary *, NSString **);
+
+NSString *ACInputSourceID(void);
+
+NSDictionary *ACPIDProcess(pid_t);

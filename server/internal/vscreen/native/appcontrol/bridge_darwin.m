@@ -113,7 +113,11 @@ int ac_call(uintptr_t handle, uintptr_t request, const char *bytes,
         @"ScreenRecording" :
             [NSNumber numberWithBool:CGPreflightScreenCaptureAccess()]
       };
-    else if ([op isEqual:@"list_apps"])
+    else if ([op isEqual:@"pid_identity"]) {
+      value = ACPIDProcess([input[@"PID"] intValue]);
+      if (!value)
+        error = @"stale_window";
+    } else if ([op isEqual:@"list_apps"])
       value = ACListApps(r, &error);
     else if ([op isEqual:@"quiesce"]) {
       if (dispatch_group_wait(
