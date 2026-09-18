@@ -1,7 +1,7 @@
 import { shell, type BrowserWindow } from "electron";
 
 // True when the URL parses and uses http/https — the only schemes we let
-// reach `shell.openExternal`. Scheme comparison is safe because the WHATWG
+// reach `shell.openExternal` from URL input. Scheme comparison is safe because the WHATWG
 // URL parser lowercases the protocol field.
 export function isSafeExternalHttpUrl(url: string): boolean {
   return getHttpProtocol(url) !== null;
@@ -17,6 +17,16 @@ export function openExternalSafely(url: string): Promise<void> | void {
     return;
   }
   return shell.openExternal(url);
+}
+
+// Permission settings use fixed main-process targets, never a caller-provided URL.
+export function openVscreenPermissionSettings(permission: "accessibility" | "screenRecording"): Promise<void> | void {
+  switch (permission) {
+    case "accessibility":
+      return shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+    case "screenRecording":
+      return shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+  }
 }
 
 // Canonical wrapper around webContents.downloadURL. All renderer-controlled

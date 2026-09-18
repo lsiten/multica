@@ -6,7 +6,7 @@ vi.mock("electron", () => ({
 }));
 
 import { shell } from "electron";
-import { isSafeExternalHttpUrl, openExternalSafely } from "./external-url";
+import { isSafeExternalHttpUrl, openExternalSafely, openVscreenPermissionSettings } from "./external-url";
 
 describe("isSafeExternalHttpUrl", () => {
   it("allows http and https URLs", () => {
@@ -69,6 +69,25 @@ describe("openExternalSafely", () => {
     openExternalSafely("file:///etc/passwd");
     openExternalSafely("javascript:alert(1)");
     openExternalSafely("not a url");
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+describe("openVscreenPermissionSettings", () => {
+  beforeEach(() => vi.mocked(shell.openExternal).mockClear());
+  it.each([
+    ["accessibility", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
+    ["screenRecording", "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"],
+  ] as const)("opens only the fixed %s settings target", async (permission, target) => {
+    await openVscreenPermissionSettings(permission);
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith(target);
+  });
+  it.each(["https://example.com", "file:///tmp/test", "javascript:alert(1)", "x-apple.systempreferences:arbitrary", "constructor", "__proto__"])("rejects arbitrary permission input %s", async (input) => {
+    await openVscreenPermissionSettings(input as Parameters<typeof openVscreenPermissionSettings>[0]);
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+  it("does not permit settings URLs through the generic external URL wrapper", () => {
+    openExternalSafely("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
     expect(shell.openExternal).not.toHaveBeenCalled();
   });
 });
