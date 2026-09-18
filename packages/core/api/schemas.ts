@@ -1,3 +1,4 @@
+import { MirrorViewerGrantSchema } from "./vscreen-schemas";
 import { z } from "zod";
 import { normalizeIssueStatusCategory } from "../issues/config/status";
 import type {
@@ -223,6 +224,7 @@ const MirrorAnswerSchema = z.object({
 }).loose();
 
 export const MirrorSessionResponseSchema = z.object({
+  viewer_grant: MirrorViewerGrantSchema.optional().catch(undefined),
   id: z.string(),
   workspace_id: z.string(),
   runtime_id: z.string(),

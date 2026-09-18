@@ -3,6 +3,8 @@ import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue
 import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSchema } from "./schemas";
 import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
+import { createVscreenApi, VscreenScopeError } from "./vscreen";
+import type { VscreenScope } from "../types/vscreen";
 import { configStore } from "../config";
 import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewInput } from "../types/local-review-pages";
 import { localIndexCapabilitySchema } from "../types/local-review-index";
@@ -767,6 +769,8 @@ function isReplayableBody(body: BodyInit | null | undefined): boolean {
 export class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
+  private credentialRevision = 0;
+  private vscreenAccountId: string | null = null;
   private logger: Logger;
   private options: ApiClientOptions;
 
@@ -781,6 +785,7 @@ export class ApiClient {
   }
 
   setToken(token: string | null) {
+    if (this.token !== token) this.credentialRevision++;
     this.token = token;
   }
 
@@ -826,6 +831,23 @@ export class ApiClient {
   }
 
   private readCookie(name: string): string | null {
+
+  invalidateVscreenRequests(): void {
+    this.credentialRevision++;
+  }
+
+  vscreen(scope: VscreenScope) {
+    if (this.vscreenAccountId !== null && this.vscreenAccountId !== scope.accountId) this.invalidateVscreenRequests();
+    this.vscreenAccountId = scope.accountId;
+    const revision = this.credentialRevision;
+    if (this.baseUrl && this.baseUrl !== scope.backendIdentity) throw new VscreenScopeError();
+    return createVscreenApi(scope, async (path, init) => {
+      if (this.credentialRevision !== revision) throw new VscreenScopeError();
+      const response = await this.fetchRaw(path, init);
+      if (this.credentialRevision !== revision) throw new VscreenScopeError();
+      return response;
+    }, () => this.credentialRevision === revision);
+  }
     if (typeof document === "undefined") return null;
     const prefix = `${name}=`;
     const match = document.cookie.split("; ").find((c) => c.startsWith(prefix));
@@ -864,7 +886,7 @@ export class ApiClient {
       this.logger.info("ignoring 401 for a credential that has since been replaced");
       return;
     }
-    this.token = null;
+    this.setToken(null);
     // Workspace id is owned by the URL-driven workspace-storage singleton
     // (set by [workspaceSlug]/layout.tsx). On 401, the auth flow navigates
     // to /login which leaves the workspace route, and the next workspace
