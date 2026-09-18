@@ -515,6 +515,8 @@ func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Contex
 			if reader.vscreenReporter != nil {
 				reader.vscreenReporter.OnAck(reader.vscreenReportBinding, msg.Payload)
 			}
+		case protocol.EventVscreenResult:
+			d.handleVscreenCleanupAck(mirrorOfferMessage{raw: msg.Payload, controlGeneration: mirrorGeneration})
 		case protocol.EventVscreenQuery:
 			d.handleVscreenQuery(ctx, mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventVscreenCommand:

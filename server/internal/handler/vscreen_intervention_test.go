@@ -21,17 +21,19 @@ import (
 )
 
 type interventionFixture struct {
-	h        Handler
-	report   protocol.VscreenIntervention
-	mu       sync.Mutex
-	snapshot protocol.VscreenStateSnapshot
+	h             Handler
+	report        protocol.VscreenIntervention
+	mu            sync.Mutex
+	snapshot      protocol.VscreenStateSnapshot
+	cleanupResult protocol.VscreenReceiptState
+	cleanupAcks   chan protocol.VscreenCommandReceipt
 }
 
 func newInterventionFixture(t *testing.T, scope string) *interventionFixture {
 	t.Helper()
 	daemonID := uuid.NewString()
 	runtimeID := dbfx.Runtime(t, "intervention", testutil.Cols{"daemon_id": daemonID})
-	agentID := dbfx.Agent(t, "intervention", runtimeID)
+	agentID := dbfx.Agent(t, "intervention-"+uuid.NewString(), runtimeID)
 	cols := testutil.Cols{"runtime_id": runtimeID, "status": "failed", "completed_at": testutil.Raw("now()"), "failure_reason": "gui_human_intervention", "session_id": "exact-source-session", "work_dir": "/tmp/test-owned-workdir"}
 	switch scope {
 	case "issue":
@@ -64,6 +66,44 @@ func newInterventionFixture(t *testing.T, scope string) *interventionFixture {
 			var frame protocol.Message
 			if conn.ReadJSON(&frame) != nil {
 				return
+			}
+			if frame.Type == protocol.EventVscreenCommand {
+				var command protocol.VscreenCommand
+				if json.Unmarshal(frame.Payload, &command) != nil {
+					return
+				}
+				f.mu.Lock()
+				result := f.cleanupResult
+				if result == protocol.VscreenReceiptSucceeded {
+					f.snapshot.State = protocol.VscreenStateDisabled
+					f.snapshot.ControlState = protocol.VscreenControlIdle
+					f.snapshot.ActiveTaskID = nil
+				}
+				f.mu.Unlock()
+				if result == "" {
+					continue
+				}
+				receipt := protocol.VscreenCommandReceipt{VscreenEnvelope: command.VscreenEnvelope, CommandID: command.CommandID, ReceiptID: uuid.NewString(), State: result}
+				if result == protocol.VscreenReceiptFailed {
+					receipt.Reason = protocol.VscreenActionUncertainReason
+				}
+				if conn.WriteJSON(protocol.Message{Type: protocol.EventVscreenResult, Payload: marshalInterventionFixture(receipt)}) != nil {
+					return
+				}
+				continue
+			}
+			if frame.Type == protocol.EventVscreenResult {
+				var receipt protocol.VscreenCommandReceipt
+				if json.Unmarshal(frame.Payload, &receipt) != nil {
+					return
+				}
+				f.mu.Lock()
+				acks := f.cleanupAcks
+				f.mu.Unlock()
+				if acks != nil {
+					acks <- receipt
+				}
+				continue
 			}
 			if frame.Type != protocol.EventVscreenQuery {
 				continue
@@ -234,3 +274,5 @@ func TestVscreenInterventionResumeSafety(t *testing.T) {
 		t.Fatal("intervention falsely poisons source")
 	}
 }
+
+func marshalInterventionFixture(value any) json.RawMessage { raw, _ := json.Marshal(value); return raw }

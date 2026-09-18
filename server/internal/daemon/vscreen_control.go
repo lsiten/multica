@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -111,6 +112,12 @@ func (d *Daemon) handleVscreenCommand(ctx context.Context, msg mirrorOfferMessag
 		receipt.State = protocol.VscreenReceiptFailed
 		receipt.Reason = vscreenReason(err)
 	}
+	if err == nil && command.Kind == protocol.VscreenCommandDisable {
+		if persistErr := d.retainVscreenCleanup(s, receipt); persistErr != nil {
+			receipt.State = protocol.VscreenReceiptFailed
+			receipt.Reason = protocol.VscreenNativeUnavailable
+		}
+	}
 	state, stateErr := d.vscreenSnapshot(ctx, command.WorkspaceID, command.RuntimeID)
 	if stateErr == nil && state.DisplayGeneration != "" {
 		receipt.Epoch = &protocol.VscreenEpoch{NativeEpoch: state.NativeEpoch, DisplayGeneration: state.DisplayGeneration, GeometryRevision: state.GeometryRevision}
@@ -162,6 +169,13 @@ func (d *Daemon) executeVscreenCommand(ctx context.Context, c protocol.VscreenCo
 	nativeCtx := context.WithoutCancel(ctx)
 	switch c.Kind {
 	case protocol.VscreenCommandEnable:
+		s.interventions.mu.Lock()
+		record := s.interventions.records[c.RuntimeID]
+		blocked := record != nil && (record.CleanupReceipt != nil || record.Report.State != protocol.VscreenInterventionContinued)
+		s.interventions.mu.Unlock()
+		if blocked || a.Status().Stopping && a.Status().Ready {
+			return &vscreen.Error{Reason: protocol.VscreenActionUncertainReason}
+		}
 		if err = d.startVscreenHost(nativeCtx, s); err != nil {
 			return err
 		}
@@ -176,7 +190,11 @@ func (d *Daemon) executeVscreenCommand(ctx context.Context, c protocol.VscreenCo
 		}
 		s.enabled[key] = true
 	case protocol.VscreenCommandDisable:
+		ownerTaskID := a.Status().Lease.TaskID
 		if err = a.Dispose(nativeCtx); err != nil {
+			return err
+		}
+		if err = d.stopDisposedVscreenExecution(nativeCtx, s, ownerTaskID); err != nil {
 			return err
 		}
 		delete(s.enabled, key)

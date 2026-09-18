@@ -8,6 +8,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 type vscreenAppInput struct {
@@ -33,6 +34,9 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.enabled[key] {
+		if task.VscreenContinuation != nil {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenResumeUnavailable}
+		}
 		return nil, nil, nil, nil
 	}
 	if !providerSupportsRemoteMCPBroker(provider) {
@@ -52,8 +56,10 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 		return nil, nil, nil, err
 	}
 	execution := newVscreenExecution(ctx, task, actor, s.client, func(cause error) {
-		if err := d.beginVscreenIntervention(task, actor, cause); err != nil {
-			d.logger.Warn("virtual screen intervention persistence failed")
+		if errors.Is(cause, errVscreenIntervention) {
+			if err := d.beginVscreenIntervention(task, actor, cause); err != nil {
+				d.logger.Warn("virtual screen intervention persistence failed")
+			}
 		}
 		stop(cause)
 	})
