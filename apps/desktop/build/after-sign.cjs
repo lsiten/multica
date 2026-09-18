@@ -27,6 +27,9 @@ function signatureInfo(appPath) {
   const result = spawnSync(CODESIGN, ["-dv", "--verbose=2", appPath], {
     encoding: "utf8",
   });
+  if (!result.error && result.status === 1 && /: code object is not signed at all\r?\n?$/.test(result.stderr ?? "")) {
+    return null;
+  }
   if (result.error || result.status !== 0) {
     throw new Error(`Cannot inspect signature for ${appPath}: ${result.error?.message ?? result.stderr}`);
   }
@@ -35,7 +38,7 @@ function signatureInfo(appPath) {
 
 async function pinDesktopIdentity(outerAppPath) {
   const signature = signatureInfo(outerAppPath);
-  if (!/^Signature=adhoc\r?$/m.test(signature)) {
+  if (signature !== null && !/^Signature=adhoc\r?$/m.test(signature)) {
     if (/^Authority=.+$/m.test(signature)) {
       log(`certificate signature on ${outerAppPath}, leaving signed code untouched`);
       return;
@@ -51,6 +54,13 @@ async function pinDesktopIdentity(outerAppPath) {
   }
 
   const entitlements = join(__dirname, "entitlements.mac.plist");
+  if (signature === null) {
+    // Fork x64 builds can skip electron-builder signing entirely. Seal nested
+    // code first, retaining each bundle's own identifier; only the outer app
+    // receives the stable development requirement below.
+    run(["--force", "--deep", "--sign", "-", "--options", "runtime", "--entitlements", entitlements, outerAppPath]);
+    log(`added ad-hoc signatures to unsigned app tree ${outerAppPath}`);
+  }
   run([
     "--force",
     "--sign",
