@@ -4,7 +4,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { ApiClient } from "./client";
 import { setApiInstance } from "./index";
@@ -85,11 +85,13 @@ describe("Vscreen HTTP client", () => {
     expect(headers["x-workspace-slug"]).toBe("");
     expect(path).toBe("/api/runtimes/runtime-1/vscreen");
     expect(result?.state.stateRevision).toBe(3);
+    const evidence = new URL(
+      "../../../.omo/evidence/runtime-vscreen/wave3/task-10-api-fixture.json",
+      import.meta.url,
+    );
+    await mkdir(new URL(".", evidence), { recursive: true });
     await writeFile(
-      new URL(
-        "../../../.omo/evidence/runtime-vscreen/wave3/task-10-api-fixture.json",
-        import.meta.url,
-      ),
+      evidence,
       JSON.stringify(
         {
           request: {
