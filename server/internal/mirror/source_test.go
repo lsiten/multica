@@ -87,8 +87,8 @@ func TestSourceReportsTerminalCaptureErrorToViewers(t *testing.T) {
 		frames: make(chan Frame, 1),
 		errors: make(chan ControlMessage, 1),
 	}
-	remove := source.AddViewer("viewer-1", sink)
-	defer remove()
+	// Exercise this single broadcast without a concurrent automatic capture.
+	source.viewers["viewer-1"] = &sourceViewer{sink: sink}
 
 	// When
 	err := source.captureAndBroadcast(context.Background())
@@ -429,12 +429,29 @@ func TestSourceStaleDetachDoesNotRemoveReplacementViewer(t *testing.T) {
 	first := testSink{frames: make(chan Frame, 2)}
 	second := testSink{frames: make(chan Frame, 2)}
 	removeFirst := source.AddViewer("viewer-1", first)
+	source.mu.Lock()
+	firstDone := source.done
+	source.mu.Unlock()
 	removeFirst()
+	// Join the cancelled loop before the replacement starts its initial capture.
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("first capture loop did not stop")
+	}
 	removeSecond := source.AddViewer("viewer-1", second)
+	defer removeSecond()
+	select {
+	case <-second.frames:
+	case <-time.After(time.Second):
+		t.Fatal("replacement viewer did not receive its initial frame")
+	}
 
 	// When
 	removeFirst()
-	source.captureAndBroadcast(context.Background())
+	if err := source.captureAndBroadcast(context.Background()); err != nil {
+		t.Fatalf("capture after stale detach: %v", err)
+	}
 
 	// Then
 	select {
