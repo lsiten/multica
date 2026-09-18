@@ -171,3 +171,49 @@ describe("bundle-bound native smoke (test-owned fixtures; no native execution)",
     expect(f.calls).toEqual([]);
   });
 });
+
+describe("complete takeover smoke evidence", () => {
+  it.each(["pass", "single transfer", "same task", "no receipt", "old action", "no fresh observation", "wrong geometry", "no human change", "cleanup failed", "missing image", "same pixels"])("checks bundle-bound lifecycle evidence: %s", async (mode) => {
+    let f;
+    f = await fixture({ command: async (command, args) => {
+      if (args[0] !== "internal-vscreen-smoke") return null;
+      const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+      const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==", "base64");
+      const images = [];
+      for (const [index, name] of ["takeover-source.png", "takeover-return.png", "takeover-continuation.png"].entries()) {
+        const path = join(f.options.evidence, name); await writeFile(path, png);
+        images.push({ artifact: path, sha256: hash(png), pixel_sha256: String(index + 1).repeat(64) });
+      }
+      const source = { display_id: 42, x: 2000, y: 0, logical_width: 1600, logical_height: 900, source: { kind: "virtual" } };
+      const physical = { display_id: 1, x: 0, y: 0, logical_width: 1600, logical_height: 900, source: { kind: "physical" } };
+      const takeover = {
+        scope: "owned-fixture-scripted-local-owner-loopback-backend-not-db-ui", fixture_bundle_id: `ai.multica.smoke.${"a".repeat(32)}`, fixture_binary_sha256: hash(await readFile(f.helper)),
+        source_task_id: "source", continuation_task_id: "continuation", intervention_id: "intervention", return_receipt_id: "actual-native-return-receipt",
+        provider_stopped: true, transcript_drained: true, terminal_reported: true, stopped_ack: true, human_ack: true, return_ack: true, fresh_observe_before_input: true, old_lease_refused: true, old_action_refused: true, continuation_completed: true, cleanup_ack: true, fixture_closed: true, disposed: true, host_closed: true,
+        physical_source: physical, images,
+        stages: ["source-observed", "provider-stopped", "terminal-http", "awaiting_takeover-ack", "human-ack", "ready_to_continue-ack", "continuation-observed", "continuation-input"],
+        placements: ["source", "human", "return", "continuation"].map((stage, index) => ({ stage, pid: 123, window_id: 9, process_start: "owned-start", display_id: index === 1 ? 1 : 42, bounds: { x: index === 1 ? 10 : 2010, y: 10, width: 640, height: 440 }, human_stage: index ? 1 : 0, text: index === 0 ? "" : index === 3 ? "Multica continuation verified" : "Multica scripted human handoff" })),
+      };
+      if (mode === "single transfer") takeover.stages = ["human-ack"];
+      if (mode === "same task") takeover.continuation_task_id = takeover.source_task_id;
+      if (mode === "no receipt") takeover.return_receipt_id = "";
+      if (mode === "old action") takeover.old_action_refused = false;
+      if (mode === "no fresh observation") takeover.fresh_observe_before_input = false;
+      if (mode === "wrong geometry") takeover.placements[1].display_id = 42;
+      if (mode === "no human change") takeover.placements[1].human_stage = 0;
+      if (mode === "cleanup failed") takeover.cleanup_ack = false;
+      if (mode === "missing image") takeover.images = [];
+      if (mode === "same pixels") takeover.images[1].pixel_sha256 = takeover.images[0].pixel_sha256;
+      return { exitCode: 0, stderr: "", stdout: JSON.stringify({ scenario: "takeover", executable: command, version: "v1.2.3-dirty", commit: "abc1234", status: "passed", gui_exercised: true, disposed: true, host_closed: true, display: { display_id: 42 }, source, takeover }) };
+    } });
+    const report = await runSmoke({ ...f.options, scenario: "takeover", allowGui: true }, f.dependencies);
+    expect(report.status).toBe(mode === "pass" ? "passed" : "blocked");
+    if (mode === "pass") expect(report.limitations.join(" ")).toContain("scripted owned-App human stage");
+  });
+
+  it.each(["performance", "all"])("keeps the unimplemented %s gate closed", async (scenario) => {
+    const f = await fixture();
+    expect(await runSmoke({ ...f.options, scenario, allowGui: true }, f.dependencies)).toMatchObject({ status: "blocked", gui_exercised: false, error: { code: "scenario_not_implemented" } });
+    expect(f.calls.some((call) => call.args[0] === "internal-vscreen-smoke")).toBe(false);
+  });
+});
