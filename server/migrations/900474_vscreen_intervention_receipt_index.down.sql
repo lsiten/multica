@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS runtime_vscreen_intervention_receipt_idx;

@@ -1373,6 +1373,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// WS-first claim (MUL-4257): route daemon:rpc_request frames (e.g.
 	// tasks.claim) through the same handlers as the HTTP endpoints.
 	daemonHub.SetRPCHandler(h.DaemonRPCHandler)
+	daemonHub.SetVscreenInterventionHandler(h.DaemonVscreenIntervention)
 	daemonHub.SetMirrorAnswerHandler(h.HandleDaemonMirrorAnswer)
 	daemonHub.SetMirrorAnswerFailureHandler(h.HandleDaemonMirrorAnswerFailure)
 	daemonHub.SetMirrorViewerHandler(h.HandleDaemonMirrorViewer)
@@ -1551,6 +1552,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/tasks/{id}/plugin-mcp/{contributionId}/credential", h.ResolvePluginMCPCredential)
 
 		r.Post("/runtimes/{runtimeId}/tasks/claim", h.ClaimTaskByRuntime)
+		r.Post("/runtimes/{runtimeId}/vscreen/interventions", h.ReportVscreenIntervention)
 		// Canonical machine-level batch claim (MUL-4257). `/claim` is a
 		// transitional alias; the daemon coordinator targets the canonical
 		// path.
@@ -2041,6 +2043,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Task messages (user-facing, not daemon auth)
 			r.Get("/api/tasks/{taskId}/messages", h.ListTaskMessagesByUser)
+			r.Get("/api/tasks/{taskId}/vscreen/interventions/{id}", h.GetVscreenIntervention)
+			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/vscreen/interventions/{id}/continue", h.ContinueVscreenIntervention)
+			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/vscreen/interventions/{id}/cancel", h.CancelVscreenIntervention)
 			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/retry-source-context", h.RetrySourceContextQuickCreate)
 
 			// Issue quick actions (definitions; running one lives under
@@ -2307,6 +2312,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/local-skills/import/{requestId}", h.GetLocalSkillImportRequest)
 					r.Get("/mirror/config", h.GetMirrorICEConfig)
 					r.Get("/vscreen", h.GetVscreen)
+					r.Get("/vscreen/interventions", h.ListVscreenInterventions)
 					r.Get("/mirror/sources", h.GetMirrorSources)
 					r.Post("/vscreen/commands", h.CreateVscreenCommand)
 					r.Get("/vscreen/commands/{commandId}", h.GetVscreenCommand)

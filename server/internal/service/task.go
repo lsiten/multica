@@ -1940,7 +1940,7 @@ func (s *TaskService) enqueueChatTask(
 	task, err := s.enqueueChatTaskTx(
 		ctx, s.Queries.WithTx(tx), chatSession, initiatorUserID,
 		forceFreshSession, contextRevision, requireDelivery,
-		expectedBindingID, expectedRouteRevision, prepared,
+		expectedBindingID, expectedRouteRevision, prepared, pgtype.UUID{},
 	)
 	if err != nil {
 		return db.AgentTaskQueue{}, err
@@ -1969,7 +1969,7 @@ func (s *TaskService) EnqueuePreparedChannelChatTaskInTx(
 	}
 	return s.enqueueChatTaskTx(
 		ctx, s.Queries.WithTx(tx), chatSession, initiatorUserID,
-		forceFreshSession, contextRevision, true, pgtype.UUID{}, 0, prepared,
+		forceFreshSession, contextRevision, true, pgtype.UUID{}, 0, prepared, pgtype.UUID{},
 	)
 }
 
@@ -1984,6 +1984,7 @@ func (s *TaskService) enqueueChatTaskTx(
 	expectedBindingID pgtype.UUID,
 	expectedRouteRevision int64,
 	prepared PreparedChatTaskEnqueue,
+	sourceInputOwner pgtype.UUID,
 ) (db.AgentTaskQueue, error) {
 	currentSession, err := qtx.LockChatSessionForEnqueue(ctx, chatSession.ID)
 	if err != nil {
@@ -2091,23 +2092,26 @@ func (s *TaskService) enqueueChatTaskTx(
 		}
 	}
 
-	task, err = qtx.SetChatTaskInputOwnerSelf(ctx, task.ID)
-	if err != nil {
-		return db.AgentTaskQueue{}, fmt.Errorf("set channel chat task input owner: %w", err)
+	if !sourceInputOwner.Valid {
+		task, err = qtx.SetChatTaskInputOwnerSelf(ctx, task.ID)
+		if err != nil {
+			return db.AgentTaskQueue{}, fmt.Errorf("set channel chat task input owner: %w", err)
+		}
+		if err := qtx.LinkUnownedChannelChatMessagesToTask(
+			ctx, db.LinkUnownedChannelChatMessagesToTaskParams{
+				TaskID: task.ID, ChatSessionID: chatSession.ID,
+			},
+		); err != nil {
+			return db.AgentTaskQueue{}, fmt.Errorf("seal channel chat task input: %w", err)
+		}
+		switch corrected, err := qtx.DeferChatTaskForSealedPendingMedia(ctx, task.ID); {
+		case err == nil:
+			task = corrected
+		case !errors.Is(err, pgx.ErrNoRows):
+			return db.AgentTaskQueue{}, fmt.Errorf("defer chat task for sealed pending media: %w", err)
+		}
 	}
-	if err := qtx.LinkUnownedChannelChatMessagesToTask(
-		ctx, db.LinkUnownedChannelChatMessagesToTaskParams{
-			TaskID: task.ID, ChatSessionID: chatSession.ID,
-		},
-	); err != nil {
-		return db.AgentTaskQueue{}, fmt.Errorf("seal channel chat task input: %w", err)
-	}
-	switch corrected, err := qtx.DeferChatTaskForSealedPendingMedia(ctx, task.ID); {
-	case err == nil:
-		task = corrected
-	case !errors.Is(err, pgx.ErrNoRows):
-		return db.AgentTaskQueue{}, fmt.Errorf("defer chat task for sealed pending media: %w", err)
-	}
+
 	if pendingFresh {
 		if err := qtx.ClearChannelChatContextPendingFresh(
 			ctx, db.ClearChannelChatContextPendingFreshParams{
@@ -5950,6 +5954,9 @@ func (s *TaskService) RecoverOrphanedTasksForRuntime(ctx context.Context, runtim
 // non-chat tasks keep their existing behavior.
 func (s *TaskService) CancelTasksForArchivedAgent(ctx context.Context, agentID pgtype.UUID) ([]db.AgentTaskQueue, error) {
 	cancelled, err := s.terminateTasksInTx(ctx, func(qtx *db.Queries) ([]db.AgentTaskQueue, error) {
+		if err := qtx.CancelVscreenInterventionsByAgent(ctx, agentID); err != nil {
+			return nil, err
+		}
 		return qtx.CancelAgentTasksByAgent(ctx, agentID)
 	})
 	if err != nil {

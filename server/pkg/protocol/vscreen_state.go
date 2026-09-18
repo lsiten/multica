@@ -33,22 +33,41 @@ type VscreenPermissions struct {
 
 // VscreenStateSnapshot is a daemon-authoritative monotonic projection for clients.
 type VscreenStateSnapshot struct {
-	RuntimeID         string              `json:"runtime_id"`
-	State             VscreenState        `json:"state"`
-	NativeEpoch       string              `json:"native_epoch"`
-	DisplayGeneration string              `json:"display_generation"`
-	GeometryRevision  uint64              `json:"geometry_revision"`
-	ControlState      VscreenControlState `json:"control_state"`
-	ActiveTaskID      *string             `json:"active_task_id"`
-	InterventionID    *string             `json:"intervention_id"`
-	Permissions       VscreenPermissions  `json:"permissions"`
-	StateRevision     uint64              `json:"state_revision"`
+	RuntimeID         string                   `json:"runtime_id"`
+	State             VscreenState             `json:"state"`
+	NativeEpoch       string                   `json:"native_epoch"`
+	DisplayGeneration string                   `json:"display_generation"`
+	GeometryRevision  uint64                   `json:"geometry_revision"`
+	ControlState      VscreenControlState      `json:"control_state"`
+	ActiveTaskID      *string                  `json:"active_task_id"`
+	InterventionID    *string                  `json:"intervention_id"`
+	Permissions       VscreenPermissions       `json:"permissions"`
+	ReturnReceiptID   string                   `json:"return_receipt_id,omitempty"`
+	InterventionState VscreenInterventionState `json:"intervention_state,omitempty"`
+	StateRevision     uint64                   `json:"state_revision"`
 }
 
 // Validate rejects absent control authority and incomplete active display generations.
 func (s VscreenStateSnapshot) Validate() error {
 	if !vscreenIdentity(s.RuntimeID) || s.StateRevision == 0 {
 		return fmt.Errorf("%w: incomplete state identity", ErrInvalidVscreenContract)
+	}
+	if s.ReturnReceiptID != "" || s.InterventionState != "" {
+		if s.InterventionID == nil || !vscreenIdentity(*s.InterventionID) {
+			return ErrInvalidVscreenContract
+		}
+		switch s.InterventionState {
+		case VscreenInterventionAwaitingTakeover, VscreenInterventionHuman:
+			if s.ReturnReceiptID != "" {
+				return ErrInvalidVscreenContract
+			}
+		case VscreenInterventionReadyToContinue:
+			if !vscreenIdentity(s.ReturnReceiptID) {
+				return ErrInvalidVscreenContract
+			}
+		default:
+			return ErrInvalidVscreenContract
+		}
 	}
 	switch s.State {
 	case VscreenStateReady, VscreenStateSuspended, VscreenStateStopping:

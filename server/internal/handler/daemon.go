@@ -3139,7 +3139,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			}
 		}
 		projectCtx.applyTo(&resp)
-		if !task.ForceFreshSession && !task.ChannelContextRevision.Valid {
+		if !task.RerunOfTaskID.Valid && !task.ForceFreshSession && !task.ChannelContextRevision.Valid {
 			// Resume chat sessions only when the stored pointer was produced
 			// by the same runtime as the claiming task. When the chat_session
 			// pointer is missing (legacy NULL runtime_id), stale (last task
@@ -3197,7 +3197,11 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// Input ownership is the claim's fail-closed boundary. Resume-history
 		// reads belong after it: a task that cannot load its input is preserved
 		// for redelivery and must not spend two more queries before returning.
-		if !task.ForceFreshSession {
+		if task.RerunOfTaskID.Valid {
+			if err := h.applyExactChatRerun(r.Context(), *task, &resp); err != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "rerun source", uuidToString(task.RerunOfTaskID))
+			}
+		} else if !task.ForceFreshSession {
 			contextRevision := pgtype.Int8{}
 			if task.ChannelContextRevision.Valid {
 				contextRevision = task.ChannelContextRevision
@@ -3307,6 +3311,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			}
 		}
 		resp.ChatMessage = strings.Join(parts, "\n\n")
+		if task.RerunOfTaskID.Valid && task.HandoffNote.Valid {
+			resp.ChatMessage += "\n\n" + task.HandoffNote.String
+		}
 
 		// Fail closed: a task-owned direct task that resolves to no user text
 		// (and is not the agent's proactive intro) must never dispatch an
@@ -3667,6 +3674,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
+	if err := h.applyInterventionClaim(r.Context(), *task, &resp); err != nil {
+		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "intervention source", uuidToString(task.RerunOfTaskID))
+	}
 	return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, nil
 }
 

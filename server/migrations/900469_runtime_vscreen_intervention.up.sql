@@ -1,0 +1,21 @@
+CREATE TABLE runtime_vscreen_intervention (
+ id uuid NOT NULL,
+ workspace_id uuid NOT NULL,
+ runtime_id uuid NOT NULL,
+ agent_id uuid NOT NULL,
+ source_task_id uuid NOT NULL,
+ reason text NOT NULL,
+ state text NOT NULL CHECK (state IN ('awaiting_takeover','human','ready_to_continue','continued','cancelled','stale')),
+ native_epoch text NOT NULL,
+ display_generation text NOT NULL,
+ geometry_revision bigint NOT NULL CHECK (geometry_revision > 0),
+ return_receipt_id text NOT NULL DEFAULT '',
+ last_action_id text NOT NULL DEFAULT '',
+ human_summary text NOT NULL DEFAULT '' CHECK (octet_length(human_summary) <= 2048),
+ created_by_user_id uuid NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ resolved_at timestamptz,
+ continuation_task_id uuid,
+ version bigint NOT NULL DEFAULT 1
+);

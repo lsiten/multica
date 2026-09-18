@@ -831,6 +831,11 @@ export class ApiClient {
   }
 
   private readCookie(name: string): string | null {
+    if (typeof document === "undefined") return null;
+    const prefix = `${name}=`;
+    const match = document.cookie.split("; ").find((c) => c.startsWith(prefix));
+    return match ? match.slice(prefix.length) || null : null;
+  }
 
   invalidateVscreenRequests(): void {
     this.credentialRevision++;
@@ -847,11 +852,6 @@ export class ApiClient {
       if (this.credentialRevision !== revision) throw new VscreenScopeError();
       return response;
     }, () => this.credentialRevision === revision);
-  }
-    if (typeof document === "undefined") return null;
-    const prefix = `${name}=`;
-    const match = document.cookie.split("; ").find((c) => c.startsWith(prefix));
-    return match ? match.slice(prefix.length) || null : null;
   }
 
   private authHeaders(): Record<string, string> {
