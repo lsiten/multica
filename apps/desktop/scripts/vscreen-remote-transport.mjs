@@ -54,7 +54,7 @@ export async function startRemoteViewers(ready, options, rpc, dependencies = {})
   const abort = () => { gate.stop(); channel.close(); child.stdin.end(); child.kill("SIGTERM"); };
   options.signal?.addEventListener("abort", abort, { once: true });
   const close = async () => {
-    let confirmed = false; try { confirmed = (await channel.request("close", { run_id: runID })).cleanup_confirmed === true; } catch {} finally { gate.stop(); channel.close(); child.stdin.end(); options.signal?.removeEventListener("abort", abort); }
+    let confirmed = false; try { confirmed = (await channel.request("close", { run_id: runID })).cleanup_confirmed === true; } catch { confirmed = false; } finally { gate.stop(); channel.close(); child.stdin.end(); options.signal?.removeEventListener("abort", abort); }
     await Promise.race([exit, new Promise((resolve) => { const timer = setTimeout(resolve, 5000); exit.then(() => clearTimeout(timer)); })]);
     await rm(privateDirectory, { recursive: true, force: true });
     if (!exited) { child.kill("SIGTERM"); throw new Error("remote_exit_unconfirmed"); }

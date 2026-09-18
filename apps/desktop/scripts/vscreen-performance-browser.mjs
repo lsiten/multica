@@ -27,15 +27,16 @@ export async function startPerformanceViewer(page, config, relay) {
     await page.unroute(viewerURL, shell);
   }
   return {
-    sample:()=>page.evaluate(()=>window.__vscreenPerformance.sample()),
-    switchSource:(source,phase)=>page.evaluate(({source,phase})=>window.__vscreenPerformance.switchSource(source,phase),{source,phase}),
-    close:()=>page.evaluate(()=>window.__vscreenPerformance.close()),
+    sample:()=>page.evaluate(()=>globalThis.__vscreenPerformance.sample()),
+    switchSource:(source,phase)=>page.evaluate(({source,phase})=>globalThis.__vscreenPerformance.switchSource(source,phase),{source,phase}),
+    close:()=>page.evaluate(()=>globalThis.__vscreenPerformance.close()),
   };
 }
 
 // All measurements below are taken from actual decoded video frames. DataChannel
 // metadata is not frame-synchronous and is intentionally never used for latency.
 async function browserPerformanceProbe(config) {
+  const { document, window, RTCPeerConnection, RTCRtpReceiver, MediaStream } = globalThis;
   const prepareReceiveOffer = (0,eval)(`(${config.receiveOfferSource})`);
   const codecOnly = (sdp) => sdp.split(/\r?\n/).filter((line)=>/^(m=video|a=recvonly|a=rtpmap:|a=fmtp:)/.test(line));
   const decode = (0,eval)(`(${config.decodeSource})`);

@@ -22,8 +22,8 @@ it.skipIf(process.env.VSCREEN_RUN_HEADLESS_SMOKE!=="1")("actual local stdio work
   calls.push(path);
   if(path==="/clock"){const now=String(BigInt(Math.round((nodeClock.timeOrigin+nodeClock.now())*1e6)));return{host_receive_ns:now,host_send_ns:now,clock_epoch:"synthetic-clock"};}
   const page=senders.get(body.viewer_id);
-  if(path==="/offer"){const answer=await page.evaluate(({offer,source})=>window.ownedSyntheticSender.offer(offer,source),{offer:body.offer,source:body.source_id});return{answer,source_tag:body.source_id==="source-a"?1:2,marker:{x:8,y:8,cell_size:8,columns:20},negotiated:{width:640,height:360,fps:30}};}
-  if(path==="/viewer/close")await page.evaluate(()=>window.ownedSyntheticSender.close());
+  if(path==="/offer"){const answer=await page.evaluate(({offer,source})=>globalThis.ownedSyntheticSender.offer(offer,source),{offer:body.offer,source:body.source_id});return{answer,source_tag:body.source_id==="source-a"?1:2,marker:{x:8,y:8,cell_size:8,columns:20},negotiated:{width:640,height:360,fps:30}};}
+  if(path==="/viewer/close")await page.evaluate(()=>globalThis.ownedSyntheticSender.close());
   return{};
  });
  const channel=remoteChannel(child.stdout,child.stdin,{signal:gate.signal});let evidence;

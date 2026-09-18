@@ -10,7 +10,7 @@ export function remoteChannel(input, output, handlers, { timeoutMs = 15000, onCl
   const processLine = async (line) => {
     let value; try { value = JSON.parse(line); } catch { close(); return; }
     if (!value || value.v !== 1 || typeof value.id !== "string" || value.id.length > 80) { close(); return; }
-    if (value.type === "reply") { const item = pending.get(value.id); if (!item) { close(); return; } pending.delete(value.id); clearTimeout(item.timer); value.ok === true ? item.resolve(value.result) : item.reject(new Error("remote_request_refused")); return; }
+    if (value.type === "reply") { const item = pending.get(value.id); if (!item) { close(); return; } pending.delete(value.id); clearTimeout(item.timer); if (value.ok === true) item.resolve(value.result); else item.reject(new Error("remote_request_refused")); return; }
     if (value.type !== "request" || !Object.hasOwn(handlers, value.method) || typeof handlers[value.method] !== "function" || active >= 8) { close(); return; }
     active++;
     try { const result = await handlers[value.method](value.body); send({ v: 1, type: "reply", id: value.id, ok: true, result }); }

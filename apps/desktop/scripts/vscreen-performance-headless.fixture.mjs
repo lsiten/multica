@@ -1,5 +1,6 @@
 export async function installSyntheticSender(page) {
   await page.evaluate(() => {
+      const { document, window, RTCPeerConnection } = globalThis;
       const canvas = document.createElement("canvas"); canvas.width = 640; canvas.height = 360; document.body.append(canvas);
       const drawing = canvas.getContext("2d"); let peer = null, timer = null, stream = null, frame = 0, tag = 1;
       const draw = () => {

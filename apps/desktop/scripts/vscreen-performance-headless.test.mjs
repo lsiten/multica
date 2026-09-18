@@ -35,10 +35,10 @@ it.skipIf(process.env.VSCREEN_RUN_HEADLESS_SMOKE !== "1")("real Chromium uses pr
       }
       const chunks = []; for await (const chunk of req) chunks.push(chunk); const body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
       if (req.url === "/offer") {
-        const answer = await sender.evaluate(async ({ offer, source }) => window.ownedSyntheticSender.offer(offer, source), { offer: body.offer, source: body.source_id });
+        const answer = await sender.evaluate(async ({ offer, source }) => globalThis.ownedSyntheticSender.offer(offer, source), { offer: body.offer, source: body.source_id });
         res.end(JSON.stringify({ answer, source_id: body.source_id, source_tag: body.source_id === "source-a" ? 1 : 2, marker: { x: 8, y: 8, cell_size: 8, columns: 20 }, negotiated: { width: declaredWidth, height: 360, fps: 30 } })); return;
       }
-      if (req.url === "/viewer/close") { await sender.evaluate(() => window.ownedSyntheticSender.close()); res.end('{"ok":true}'); return; }
+      if (req.url === "/viewer/close") { await sender.evaluate(() => globalThis.ownedSyntheticSender.close()); res.end('{"ok":true}'); return; }
       if (req.url === "/renew") { res.end('{"ok":true}'); return; }
       res.writeHead(404); res.end("{}");
     } catch (error) { console.log("Owned synthetic sender error:", error.message); if (!res.headersSent) res.writeHead(500); res.end("{}"); }
@@ -57,13 +57,13 @@ it.skipIf(process.env.VSCREEN_RUN_HEADLESS_SMOKE !== "1")("real Chromium uses pr
     let switched;
     await expect.poll(async () => { switched = await producer.sample(); return switched.frames.some((frame) => frame.sourceTag === 2); }, { timeout: 10000 }).toBe(true);
     expect(switched.switchFirstDecodedMs).toHaveLength(1); expect(switched.switchFirstDecodedMs[0]).toBeGreaterThan(0);
-    const codec = await viewerPage.evaluate(async () => { const video = document.querySelector("video"); return { width: video.videoWidth, height: video.videoHeight }; });
+    const codec = await viewerPage.evaluate(async () => { const video = globalThis.document.querySelector("video"); return { width: video.videoWidth, height: video.videoHeight }; });
     expect(codec).toEqual({ width: 640, height: 360 });
     expect(requests.filter((r) => r.path === "/clock" && r.method === "GET").length).toBeGreaterThan(0);
     expect(requests.filter((r) => r.path === "/offer" && r.method === "POST")).toHaveLength(2);
     expect(requests.filter((r) => r.method !== "OPTIONS").every((r) => r.authenticated)).toBe(true);
     expect(requests.every((r) => r.origin === "" || r.origin === baseURL)).toBe(true);
-    expect(await viewerPage.evaluate(() => location.origin)).toBe(baseURL);
+    expect(await viewerPage.evaluate(() => globalThis.location.origin)).toBe(baseURL);
     declaredWidth = 800;
     await producer.switchSource({ source_id: "source-a" }, "switch");
     await expect.poll(async () => (await producer.sample()).failure, { timeout: 10000 }).toBe("decoded_dimensions_mismatch");
@@ -71,12 +71,14 @@ it.skipIf(process.env.VSCREEN_RUN_HEADLESS_SMOKE !== "1")("real Chromium uses pr
     console.log(`SYNTHETIC ONLY: real headless Chromium H264 decode/rVFC/CRC ${steady.renderedFrames} frames over ${steady.observedDurationMs.toFixed(1)} ms; two valid source offers and explicit negotiated-size mismatch rejection, private fetch auth and same-origin policy verified; no native capture or latency acceptance.`);
   } catch (error) {
     console.log("Owned wire trace:", JSON.stringify(requests));
-    if(producer){const last=await producer.sample();console.log("Owned viewer counters:",JSON.stringify({...last,frames:last.frames.length,clockSamples:last.clockSamples.length}));console.log("Owned decoded size:",await viewerPage.evaluate(()=>({width:document.querySelector("video").videoWidth,height:document.querySelector("video").videoHeight})));}
+    if(producer){const last=await producer.sample();console.log("Owned viewer counters:",JSON.stringify({...last,frames:last.frames.length,clockSamples:last.clockSamples.length}));console.log("Owned decoded size:",await viewerPage.evaluate(()=>({width:globalThis.document.querySelector("video").videoWidth,height:globalThis.document.querySelector("video").videoHeight})));}
     throw error;
   } finally {
-    if (producer) { try { await producer.close(); } catch {} }
+    let peerCloseFailed = false;
+    if (producer) { try { await producer.close(); } catch { peerCloseFailed = true; } }
     await viewerContext.close(); await producerContext.close(); await browser.close();
     await new Promise((resolve) => server.close(resolve));
+    expect(peerCloseFailed).toBe(false);
   }
   if (process.env.VSCREEN_SYNTHETIC_EVIDENCE) await writeFile(process.env.VSCREEN_SYNTHETIC_EVIDENCE, JSON.stringify({ ...observedEvidence, cleanupConfirmed: true }, null, 2) + "\n", { mode: 0o600 });
 }, 35000);
