@@ -41,6 +41,14 @@ func (h *appHost) serve() {
 			return
 		}
 		h.lastID = id
+		if h.qualification != nil {
+			if e := h.qualification.check(r); e != nil {
+				if h.reply(r, nil, e) != nil {
+					return
+				}
+				continue
+			}
+		}
 		if r.Operation != "app_probe" && (r.Resource.Validate() != nil || r.Epoch.NativeEpoch != h.epoch || r.App.Authority.Resource != r.Resource || r.App.Authority.Epoch != r.Epoch) {
 			if h.reply(r, nil, appRefusal("stale_authority")) != nil {
 				return
@@ -122,6 +130,9 @@ func (h *appHost) serve() {
 			h.snapshotUsed[r.App.SnapshotID] = true
 		}
 		deadline := time.Now().Add(3 * time.Second)
+		if h.qualification != nil && h.qualification.expires.Before(deadline) && r.Operation != "app_revoke" && r.Operation != "app_quiesce" && r.Operation != "app_dispose" {
+			deadline = h.qualification.expires
+		}
 		if l := h.leases[r.Resource]; l != nil && r.Operation == "app_observe" && r.App.Authority.ObserverGrant != "" && l.observerExpiry.Before(deadline) {
 			deadline = l.observerExpiry
 		}

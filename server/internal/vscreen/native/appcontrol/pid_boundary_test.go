@@ -8,7 +8,7 @@ import (
 )
 
 func TestPIDDecisionRejectsChangedOrMissingMetadata(t *testing.T) {
-	for _, tc := range []string{"valid", "pid_reuse", "missing_signature", "metadata_error"} {
+	for _, tc := range []string{"valid", "pid_reuse", "missing_signature", "missing_version", "missing_build", "metadata_error"} {
 		t.Run(tc, func(t *testing.T) {
 			c, b, _, r := controlFixture(t)
 			policy, p, action := policyFixture(t)
@@ -30,6 +30,10 @@ func TestPIDDecisionRejectsChangedOrMissingMetadata(t *testing.T) {
 						live.Start = "reused"
 					case "missing_signature":
 						live = base
+					case "missing_version":
+						live.AppVersion = ""
+					case "missing_build":
+						live.AppBuild = ""
 					case "metadata_error":
 						return refusal("native_unavailable")
 					}

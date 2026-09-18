@@ -47,21 +47,25 @@ static NSDictionary *ACExecutableIdentity(pid_t pid, NSString *bundle) {
   NSString *path = [[NSString stringWithUTF8String:executable] stringByResolvingSymlinksInPath];
   if (![identifier isKindOfClass:NSString.class] || ![identifier length] ||
       ![hash isKindOfClass:NSData.class] || ([hash length] != 20 && [hash length] != 32) ||
-      ![plist isKindOfClass:NSDictionary.class] ||
       ![signedExecutable isKindOfClass:NSURL.class] ||
-      ![[signedExecutable path].stringByResolvingSymlinksInPath isEqual:path] ||
-      ![plist[@"CFBundleIdentifier"] isEqual:bundle])
-    return @{};
-  id version = plist[@"CFBundleShortVersionString"], build = plist[@"CFBundleVersion"];
-  if (![version isKindOfClass:NSString.class] || ![version length] ||
-      ![build isKindOfClass:NSString.class] || ![build length])
+      ![[signedExecutable path].stringByResolvingSymlinksInPath isEqual:path])
     return @{};
   NSMutableString *codeHash = [NSMutableString new];
   const unsigned char *bytes = [hash bytes];
   for (NSUInteger i = 0; i < [hash length]; i++)
     [codeHash appendFormat:@"%02x", bytes[i]];
-  return @{ @"ExecutablePath": path, @"SigningID": identifier, @"CodeHash": codeHash,
-            @"AppVersion": version, @"AppBuild": build };
+  // A verified standalone executable has code identity, but no App certificate.
+  // Production policy still requires matching App version/build metadata.
+  NSDictionary *base = @{ @"ExecutablePath": path, @"SigningID": identifier, @"CodeHash": codeHash };
+  if (![plist isKindOfClass:NSDictionary.class] || ![plist[@"CFBundleIdentifier"] isEqual:bundle])
+    return base;
+  id version = plist[@"CFBundleShortVersionString"], build = plist[@"CFBundleVersion"];
+  if (![version isKindOfClass:NSString.class] || ![version length] ||
+      ![build isKindOfClass:NSString.class] || ![build length])
+    return base;
+  NSMutableDictionary *identity = [base mutableCopy];
+  identity[@"AppVersion"] = version; identity[@"AppBuild"] = build;
+  return identity;
 }
 
 NSDictionary *ACProcess(pid_t pid) {
@@ -98,6 +102,9 @@ NSDictionary *ACPIDProcess(pid_t pid) {
   if (!before)
     return nil;
   NSMutableDictionary *identity = [before mutableCopy];
+  // Go Process serializes every optional string, including absent App metadata.
+  // Keep rich identity dictionaries canonical without changing ACProcess guards.
+  [identity addEntriesFromDictionary:@{@"ExecutablePath":@"", @"SigningID":@"", @"CodeHash":@"", @"AppVersion":@"", @"AppBuild":@""}];
   [identity addEntriesFromDictionary:ACExecutableIdentity(pid, before[@"BundleID"])];
   if (![ACProcess(pid) isEqual:before])
     return nil;
