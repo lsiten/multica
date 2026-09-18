@@ -24,3 +24,19 @@ describe("Floating mirror geometry", () => {
     );
   });
 });
+
+import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
+import { RuntimeMirrorWindowManager } from "./runtime-mirror-window-manager";
+it("local handoff accepts only registered top-frame current account/backend context",()=>{
+  const frame={url:"https://desktop.test/"};const webContents={mainFrame:frame};const main={webContents} as unknown as BrowserWindow;
+  let account="owner",generation=1;
+  const manager=new RuntimeMirrorWindowManager({mainWindow:()=>main,accountId:()=>account,generation:()=>generation,backendIdentity:()=>"https://backend.test",rendererURL:()=>"https://desktop.test/",preloadPath:"/fixture/preload",register:()=>{},unregister:()=>{}});
+  const scope={backendIdentity:"https://backend.test",accountId:"owner",workspaceId:"workspace",runtimeId:"runtime"};
+  const event={sender:webContents,senderFrame:frame} as unknown as IpcMainInvokeEvent;
+  expect(manager.localContext(event,scope)?.generation).toBe(1);
+  expect(manager.localContext({...event,senderFrame:{url:frame.url}} as IpcMainInvokeEvent,scope)).toBeNull();
+  expect(manager.localContext({...event,sender:{}} as IpcMainInvokeEvent,scope)).toBeNull();
+  expect(manager.localContext(event,{...scope,backendIdentity:"https://remote.test"})).toBeNull();
+  account="other";expect(manager.localContext(event,scope)).toBeNull();account="owner";generation=2;
+  expect(manager.localContext(event,scope)?.generation).not.toBe(1);
+});

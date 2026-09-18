@@ -67,11 +67,11 @@ func (c *Client) NativeEpoch() string { return c.epoch }
 // stream because its mutation outcome may be unknown; cancelling a queued call does not.
 func (c *Client) Call(ctx context.Context, request native.Request) (native.Response, error) {
 	switch request.Operation {
-	case "list", "ensure", "describe", "quiesce", "dispose", "sources", "start_capture", "stop_capture", "force_keyframe", "capture_status":
+	case "update_exclusions", "list", "ensure", "describe", "quiesce", "dispose", "sources", "start_capture", "stop_capture", "force_keyframe", "capture_status":
 	default:
 		return native.Response{}, native.ErrProtocol
 	}
-	if request.Operation != "list" {
+	if request.Operation != "list" && request.Operation != "update_exclusions" {
 		if err := request.Resource.Validate(); err != nil {
 			return native.Response{}, err
 		}
@@ -153,7 +153,7 @@ func (c *Client) exchange(ctx context.Context, request native.Request) (native.R
 		}
 		return response, nil
 	}
-	if request.Operation != "hello" && request.Operation != "list" {
+	if request.Operation != "hello" && request.Operation != "list" && request.Operation != "update_exclusions" {
 		if err := response.Epoch.Validate(); err != nil {
 			c.abort()
 			return native.Response{}, native.ErrProtocol
@@ -233,4 +233,13 @@ func (c *Client) Close() error {
 		}
 	})
 	return c.stopErr
+}
+
+// UpdateExclusions updates Desktop-owned window exclusions without replacing video sessions.
+func (c *Client) UpdateExclusions(ctx context.Context, ids []uint32) error {
+	if len(ids) > 32 {
+		return native.ErrProtocol
+	}
+	_, err := c.Call(context.WithoutCancel(ctx), native.Request{Operation: "update_exclusions", ExcludedWindowIDs: append([]uint32(nil), ids...)})
+	return err
 }

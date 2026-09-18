@@ -505,6 +505,36 @@
     "legacy": "기존 화면 미러",
     "select_runtime": "런타임 선택",
     "resize": "화면 크기 조절",
-    "retry": "다시 연결"
+    "retry": "다시 연결",
+    "handoff": {
+      "title": "사람에게 제어 넘기기",
+      "awaiting": "로컬 제어 대기 중",
+      "human": "앱을 제어하고 있습니다",
+      "ready": "반환 완료 · 계속 가능",
+      "continued": "새 실행으로 계속됨",
+      "stale": "더 이상 유효하지 않은 개입입니다",
+      "cancelled": "취소됨",
+      "remote": "런타임 소유자에게 호스트에서 제어하도록 요청하세요.",
+      "source_run": "원본 실행",
+      "child_run": "후속 실행",
+      "destination": "이동할 화면",
+      "move_here": "앱 이동",
+      "summary": "변경한 내용",
+      "summary_limit": "최대 2 KiB. 다음 실행에 공유됩니다.",
+      "return": "가상 화면으로 반환",
+      "continue": "실행 계속",
+      "fresh": "새 세션 시작",
+      "cancel": "개입 취소",
+      "report_pending": "서버 확인을 기다리는 중입니다. 다음 작업 전에 상태를 새로고침하세요.",
+      "resume_unavailable": "이전 세션을 재개할 수 없습니다. 새 세션을 선택할 수 있습니다.",
+      "failed": "작업이 완료되지 않았습니다. 상태를 새로고침한 뒤 다시 시도하세요.",
+      "refresh": "상태 새로고침",
+      "screen_settings": "화면 기록 설정",
+      "ax_settings": "손쉬운 사용 설정",
+      "granted": "허용됨",
+      "not_granted": "허용되지 않음",
+      "unknown": "확인하지 않음",
+      "permissions": "자동화 권한: 손쉬운 사용 {{accessibility}} · 화면 기록 {{screenRecording}}"
+    }
   }
 }

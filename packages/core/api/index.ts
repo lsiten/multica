@@ -50,3 +50,5 @@ export const api = new Proxy({} as ApiClientType, {
 export { VscreenContractError, VscreenScopeError, vscreenErrorReason } from "./vscreen";
 export type { VscreenApi } from "./vscreen";
 export { parseVscreenVideoMetadata, matchesMirrorBinding } from "./vscreen-mirror";
+
+export type { VscreenIntervention } from "./vscreen-interventions";

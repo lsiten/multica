@@ -37,16 +37,7 @@ export function MirrorCommandControls({
       >
         {t(($) => $.vscreen.disable)}
       </Button>
-      {access.canRequestTakeover && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={state.pending || state.uncertain}
-          onClick={() => onCommand("request_takeover")}
-        >
-          {t(($) => $.vscreen.takeover)}
-        </Button>
-      )}
+
       {state.attempted && (
         <span role="status" className="text-caption text-muted-foreground">
           {state.pending

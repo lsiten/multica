@@ -345,3 +345,54 @@ func TestDisposeReleasesOnlySelectedRuntimeClaim(t *testing.T) {
 	}
 	t.Log("runtime A restored/forgotten/released; runtime B window and real flock retained")
 }
+
+func TestHumanReturnAllowsFreshObservationButOldInputRemainsFrozen(t *testing.T) {
+	c, b, a, action := controlFixture(t)
+	virtual := c.windows["owned"].display
+	c.config.AuthorizeHuman = func(_ context.Context, r HumanRequest) (Display, error) {
+		d := virtual
+		if r.Direction == "to_real" {
+			d.Virtual = false
+			d.ID = 1
+			d.Bounds = Bounds{0, 0, 1600, 900}
+		}
+		return d, nil
+	}
+	b.run = func(_ context.Context, op string, input, output any) error {
+		if op == "move" {
+			args := input.(map[string]any)
+			w := args["Window"].(Window)
+			d := args["Display"].(Display)
+			w.DisplayID = d.ID
+			w.Bounds = Bounds{d.Bounds.X + 20, d.Bounds.Y + 20, 500, 400}
+			*output.(*Window) = w
+		}
+		if op == "observe" {
+			w := c.windows["owned"].window
+			w.SnapshotRevision++
+			*output.(*Observation) = Observation{Window: w, Width: 500, Height: 400}
+		}
+		return nil
+	}
+	if err := c.Quiesce(t.Context(), a.Resource); err != nil {
+		t.Fatal(err)
+	}
+	observer := Authority{Resource: a.Resource, Epoch: a.Epoch, ObserverGrant: "separate-observer"}
+	human := HumanRequest{Resource: a.Resource, Grant: "local-one-use", WindowHandle: "owned", Direction: "to_real"}
+	if _, err := c.HumanTransfer(t.Context(), human); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Observe(t.Context(), observer, "owned", false); err == nil {
+		t.Fatal("read a window still on real display")
+	}
+	human.Direction = "to_virtual"
+	if _, err := c.HumanTransfer(t.Context(), human); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Observe(t.Context(), observer, "owned", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Act(t.Context(), action); err == nil {
+		t.Fatal("old input lease thawed on return")
+	}
+}

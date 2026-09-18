@@ -9,6 +9,7 @@ static atomic_uint liveCaptures = 0;
 
 @interface VSCapture : NSObject <SCStreamOutput, SCStreamDelegate> {
   SCStream *_stream;
+  uint32_t _displayID;
   VSEncoder *_encoder;
   dispatch_queue_t _deliveryQueue;
   NSCondition *_condition;
@@ -19,6 +20,7 @@ static atomic_uint liveCaptures = 0;
                        content:(SCShareableContent *)content
                        display:(SCDisplay *)display
                         status:(int *)status;
+- (int)updateExclusions:(NSArray<NSNumber *> *)ids timeout:(uint32_t)milliseconds;
 - (int)start;
 - (int)next:(VSEncodedSample *)sample timeout:(uint32_t)milliseconds;
 - (int)forceKeyframe;
@@ -40,6 +42,7 @@ static atomic_uint liveCaptures = 0;
     *status = 7;
     return nil;
   }
+  _displayID = config.display_id;
   _condition = [NSCondition new];
   _deliveryQueue = dispatch_queue_create("ai.multica.vscreen.capture",
                                          DISPATCH_QUEUE_SERIAL);
@@ -53,6 +56,11 @@ static atomic_uint liveCaptures = 0;
         [excluded addObject:window];
         break;
       }
+  if (excluded.count != config.excluded_count) {
+    [_encoder close:5000];
+    *status = 3;
+    return nil;
+  }
   SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:display
                                                     excludingWindows:excluded];
   SCStreamConfiguration *settings = [SCStreamConfiguration new];
@@ -157,6 +165,39 @@ static atomic_uint liveCaptures = 0;
 }
 - (int)forceKeyframe {
   return [_encoder forceKeyframe];
+}
+- (int)updateExclusions:(NSArray<NSNumber *> *)ids timeout:(uint32_t)milliseconds {
+  [_condition lock];
+  BOOL closing = _closing;
+  [_condition unlock];
+  if (closing) return 6;
+  dispatch_semaphore_t ready = dispatch_semaphore_create(0);
+  __block int status = 7;
+  __block BOOL abandoned = NO;
+  NSObject *guard = [NSObject new];
+  [SCShareableContent getShareableContentExcludingDesktopWindows:YES onScreenWindowsOnly:NO completionHandler:^(SCShareableContent *content, NSError *error) {
+    @synchronized(guard) {
+      if (abandoned) return;
+      SCDisplay *display = nil;
+      for (SCDisplay *candidate in content.displays) if (candidate.displayID == self->_displayID) { display = candidate; break; }
+      if (error || !display) { status = 3; dispatch_semaphore_signal(ready); return; }
+      NSMutableArray<SCWindow *> *windows = [NSMutableArray new];
+      for (SCWindow *window in content.windows) if ([ids containsObject:@(window.windowID)]) [windows addObject:window];
+      if (windows.count != ids.count) { status = 3; dispatch_semaphore_signal(ready); return; }
+      SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:display excludingWindows:windows];
+      [self->_stream updateContentFilter:filter completionHandler:^(NSError *updateError) {
+        @synchronized(guard) { status = updateError ? 7 : 0; }
+        dispatch_semaphore_signal(ready);
+      }];
+    }
+  }];
+  if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, milliseconds * NSEC_PER_MSEC)) != 0) {
+    @synchronized(guard) { abandoned = YES; }
+    [_condition lock]; _closing = YES; [_condition unlock];
+    [_encoder fail:5];
+    return 5;
+  }
+  @synchronized(guard) { return status; }
 }
 - (int)close:(uint32_t)milliseconds {
   NSDate *deadline =
@@ -300,4 +341,15 @@ int vs_capture_stats(uintptr_t handle, VSStreamStats *stats) {
 }
 int vs_capture_permission(void) {
   return CGPreflightScreenCaptureAccess() ? 0 : 2;
+}
+
+int vs_capture_update_exclusions(uintptr_t handle, const uint32_t *ids, uint32_t count, uint32_t timeout_ms) {
+  @autoreleasepool {
+    if (!handle || count > 32 || !timeout_ms) return 8;
+    id object = (__bridge id)(void *)handle;
+    if (![object isKindOfClass:[VSCapture class]]) return 8;
+    NSMutableArray<NSNumber *> *windows = [NSMutableArray new];
+    for (uint32_t i = 0; i < count; i++) [windows addObject:@(ids[i])];
+    return [(VSCapture *)object updateExclusions:windows timeout:timeout_ms];
+  }
 }

@@ -90,6 +90,16 @@ export class RuntimeMirrorWindowManager {
       : null;
   }
 
+  localContext(event: WindowEvent, value: unknown): RuntimeMirrorWindowContext | null {
+    const floating = this.contextFor(event);
+    const request = parseRuntimeMirrorWindowRequest({ scope: value, title: "" });
+    if (!request) return null;
+    if (floating) return runtimeMirrorWindowKey(floating.scope) === runtimeMirrorWindowKey(request.scope) ? floating : null;
+    const main = this.host.mainWindow();
+    if (!main || !this.trusted(event, main) || request.scope.accountId !== this.host.accountId() || request.scope.backendIdentity !== this.host.backendIdentity()) return null;
+    return { ...request, kind: "runtime-mirror", generation: this.host.generation() };
+  }
+
   async open(event: WindowEvent, value: unknown): Promise<boolean> {
     const main = this.host.mainWindow();
     const request = parseRuntimeMirrorWindowRequest(value);
@@ -101,8 +111,7 @@ export class RuntimeMirrorWindowManager {
       request.scope.backendIdentity !== this.host.backendIdentity()
     )
       return false;
-    this.create(request, true);
-    return true;
+    return this.create(request, true) !== null;
   }
 
   /** Automatic callers supply already-authenticated scope and never activate the window. */
@@ -124,6 +133,7 @@ export class RuntimeMirrorWindowManager {
       }
       return existing.window;
     }
+    if (this.windows.size >= 32) return null;
     const main = this.host.mainWindow();
     const display = main
       ? screen.getDisplayMatching(main.getBounds())
@@ -169,6 +179,7 @@ export class RuntimeMirrorWindowManager {
       if (context.generation !== this.host.generation()) window.close();
       else if (userInitiated) window.show();
       else window.showInactive();
+      this.publishExclusions();
     });
     window.on("closed", () => {
       this.windows.delete(key);

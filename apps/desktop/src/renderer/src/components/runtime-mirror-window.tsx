@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { CoreProvider } from "@multica/core/platform";
 import { pickLocale } from "@multica/core/i18n";
 import { useAuthStore } from "@multica/core/auth";
@@ -8,6 +8,8 @@ import {
   runtimeListOptions,
   runtimeDisplayLabel,
 } from "@multica/core/runtimes";
+import { DragStrip } from "@multica/views/platform";
+import { MirrorPlatformProvider } from "@multica/views/runtimes/mirror";
 import { MirrorSurface } from "@multica/views/runtimes/mirror";
 import { RESOURCES } from "@multica/views/locales";
 import { useT } from "@multica/views/i18n";
@@ -118,7 +120,9 @@ function FloatingMirrorContent({
       className="flex h-dvh min-h-0 flex-col bg-background text-foreground"
       data-runtime-mirror-window="true"
     >
+      <DragStrip />
       <header
+        style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
         className="flex shrink-0 items-center gap-2 border-b px-2 py-1"
         onPointerDown={(event) => {
           if (
@@ -162,12 +166,12 @@ function FloatingMirrorContent({
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {runtime && scope ? (
-          <MirrorSurface
+          <MirrorPlatformProvider value={{ localControl: (scope, operation) => bridge.vscreenDesktop({ scope, operation }) }}><MirrorSurface
             key={JSON.stringify(scope)}
             scope={scope}
             runtime={runtime}
             compact
-          />
+          /></MirrorPlatformProvider>
         ) : (
           <p className="p-4 text-caption text-muted-foreground" role="status">
             {t(($) => $.vscreen.preparing)}
