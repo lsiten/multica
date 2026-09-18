@@ -62,7 +62,7 @@ export function MirrorWindowSelection({ scope, interventionId, disabled, control
     <Button size="sm" variant="outline" disabled={disabled || pending} aria-busy={pending} onClick={() => void execute(false)}>{t(($) => $.vscreen.handoff.list_windows)}</Button>
     {candidates && <>
       {candidates.windows.length ? <label className="block text-caption">{t(($) => $.vscreen.handoff.window)}
-        <select className="mt-1 block max-w-full rounded border bg-background p-1" value={selected} disabled={disabled || pending} onChange={(event) => setSelected(event.target.value)}>
+        <select className="mt-1 block max-w-full rounded-sm border bg-background p-1" value={selected} disabled={disabled || pending} onChange={(event) => setSelected(event.target.value)}>
           <option value="">{t(($) => $.vscreen.handoff.choose_window)}</option>
           {candidates.windows.map((window) => <option key={window.handle} value={window.handle}>{window.title ? `${window.title} · ${window.bundleId}` : window.bundleId}</option>)}
         </select>

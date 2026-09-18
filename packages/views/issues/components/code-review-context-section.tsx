@@ -51,12 +51,12 @@ export function CodeReviewContextSection({ issueId }: { issueId: string }) {
   return <section className="space-y-2 rounded-lg border bg-card p-3">
     <h3 className="text-caption font-medium">{t(($) => $.local_review.title)}</h3>
     {inventory.isPending || checking ? <p role="status" className="text-caption text-muted-foreground">{t(($) => $.local_review.loading)}</p> : inventory.error ? <p role="alert" className="text-caption text-destructive">{inventory.error.message}</p> : !task ? <p role="status" className="text-caption text-muted-foreground">{unavailable ? t(($) => $.local_review.entry_failed) : t(($) => $.local_review.entry_empty)}</p> : <>
-      <select aria-label={t(($) => $.local_review.run)} value={task.id} onChange={(event) => { setSelected(event.target.value); setOpen(false); }} className="w-full rounded border bg-background p-1 text-caption">
+      <select aria-label={t(($) => $.local_review.run)} value={task.id} onChange={(event) => { setSelected(event.target.value); setOpen(false); }} className="w-full rounded-sm border bg-background p-1 text-caption">
         {candidates.map((row) => <option key={row.id} value={row.id}>{row.branch_name || row.id.slice(0, 8)} · {row.status}</option>)}
       </select>
       <p className="break-all font-mono text-caption">{task.branch_name ?? "—"}</p>
       <p className="break-all text-caption text-muted-foreground">{task.work_dir || task.durable_work_dir}</p>
-      {repositories.length > 1 && <select className="w-full rounded border bg-background p-1 text-caption" aria-label={t(($) => $.local_review.repository)} value={path} onChange={(event) => { setRepository(event.target.value); setOpen(false); }}>{repositories.map((path) => <option key={path} value={path}>{path}</option>)}</select>}
+      {repositories.length > 1 && <select className="w-full rounded-sm border bg-background p-1 text-caption" aria-label={t(($) => $.local_review.repository)} value={path} onChange={(event) => { setRepository(event.target.value); setOpen(false); }}>{repositories.map((path) => <option key={path} value={path}>{path}</option>)}</select>}
       {task.durable_work_dir && <p className="text-caption text-muted-foreground">{t(($) => $.local_review.delivery_notice)}</p>}
       {path && <LocalReviewEntry request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target: "main" }} onOpen={() => { setSelected(task.id); setRepository(path); setOpen(true); }} />}
       {open && path && selected === task.id && repository === path && <LocalReviewDialog key={task.id + path} request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target: "main" }} onClose={() => setOpen(false)} />}

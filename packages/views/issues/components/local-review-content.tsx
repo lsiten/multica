@@ -21,7 +21,7 @@ export function LocalReviewContent({ request, manifest, filePath, onBack, naviga
     retry: false, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false, networkMode: "always",
   });
   const content = query.data?.content;
-  return <section className="flex min-h-0 flex-col overflow-hidden rounded border">
+  return <section className="flex min-h-0 flex-col overflow-hidden rounded-sm border">
     <header className="flex shrink-0 flex-wrap items-center gap-2 border-b p-2">
       <p className="min-w-0 flex-1 break-all font-mono text-caption">{filePath}</p>
       <Button variant="ghost" onClick={onBack}>{t(($) => $.local_review.back_to_diff)}</Button>
