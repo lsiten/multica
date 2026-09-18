@@ -113,6 +113,8 @@ int ac_call(uintptr_t handle, uintptr_t request, const char *bytes,
         @"ScreenRecording" :
             [NSNumber numberWithBool:CGPreflightScreenCaptureAccess()]
       };
+    else if ([op isEqual:@"managed_windows"])
+      value = ACManagedWindows(s, r, input, &error);
     else if ([op isEqual:@"list_apps"])
       value = ACListApps(r, &error);
     else if ([op isEqual:@"quiesce"]) {

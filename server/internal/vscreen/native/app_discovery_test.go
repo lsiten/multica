@@ -83,3 +83,43 @@ func TestAppHumanSelectionGrantScopeAndQuiescence(t *testing.T) {
 		})
 	}
 }
+
+func (f *fakeAppController) ManagedWindows(context.Context, appcontrol.Authority) ([]appcontrol.ManagedWindow, error) {
+	return []appcontrol.ManagedWindow{}, nil
+}
+
+func TestManagedWindowRPCRequiresCurrentControlLease(t *testing.T) {
+	for _, scenario := range []string{"valid", "observer", "other-task", "other-resource", "old-epoch", "revoked"} {
+		t.Run(scenario, func(t *testing.T) {
+			h, a, _ := appFixture(t)
+			if err := h.grant(appReq("app_grant", a)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.execute(t.Context(), appReq("app_resume", a)); err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "observer":
+				a.ObserverGrant = "observer"
+			case "other-task":
+				a.TaskID = "other"
+			case "other-resource":
+				a.Resource.RuntimeID = "other"
+			case "old-epoch":
+				a.Epoch.GeometryRevision++
+			case "revoked":
+				h.mu.Lock()
+				h.fenceLocked(a.Resource)
+				h.mu.Unlock()
+			}
+			out, err := h.execute(t.Context(), appReq("app_managed_windows", a))
+			if scenario == "valid" {
+				if err != nil || out.ManagedWindows == nil {
+					t.Fatal(err)
+				}
+			} else if err == nil {
+				t.Fatal("unscoped directory accepted")
+			}
+		})
+	}
+}

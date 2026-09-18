@@ -539,7 +539,7 @@
       "list_windows": "列出本机窗口",
       "window": "应用窗口",
       "choose_window": "选择窗口",
-      "no_windows": "暂无可选窗口。请在此 Mac 上打开应用，再刷新列表。",
+      "no_windows": "暂无可安全选择的窗口，请检查应用窗口后刷新列表。",
       "windows_truncated": "部分窗口未列出。如有需要，请关闭无关窗口后刷新。",
       "adopt_window": "确认选中窗口",
       "selection_expired": "选择已过期或窗口发生变化，请刷新列表后重新选择。",

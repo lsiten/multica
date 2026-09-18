@@ -564,7 +564,7 @@
       "list_windows": "List local windows",
       "window": "App window",
       "choose_window": "Choose a window",
-      "no_windows": "No eligible windows. Open the app on this Mac, then refresh this list.",
+      "no_windows": "No safely selectable window. Check the app’s windows and refresh the list.",
       "windows_truncated": "Some windows were omitted. Close unrelated windows and refresh if needed.",
       "adopt_window": "Confirm selected window",
       "selection_expired": "The selection expired or changed. Refresh the window list and select again.",

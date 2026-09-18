@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -20,12 +21,14 @@ import (
 )
 
 type vscreenToolFixture struct {
-	display   vscreen.Display
-	revision  uint64
-	value     string
-	uncertain bool
-	grants    int
-	revoked   bool
+	windows        []appcontrol.ManagedWindow
+	observeFailure bool
+	display        vscreen.Display
+	revision       uint64
+	value          string
+	uncertain      bool
+	grants         int
+	revoked        bool
 }
 
 func (f *vscreenToolFixture) Ensure(context.Context, vscreen.ResourceKey) (vscreen.Display, error) {
@@ -53,11 +56,18 @@ func (f *vscreenToolFixture) Revoke(context.Context, appcontrol.Authority) error
 	f.revoked = true
 	return nil
 }
-func (f *vscreenToolFixture) ResumeApps(context.Context, appcontrol.Authority) error { return nil }
-func (f *vscreenToolFixture) LaunchApp(context.Context, appcontrol.Authority, appcontrol.LaunchRequest) (appcontrol.Window, error) {
-	return appcontrol.Window{Handle: "window"}, nil
+func (f *vscreenToolFixture) ResumeApps(context.Context, appcontrol.Authority) error {
+	f.revoked = false
+	return nil
 }
-func (f *vscreenToolFixture) ObserveApp(context.Context, appcontrol.Authority, string, bool) (appcontrol.Observation, error) {
+func (f *vscreenToolFixture) LaunchApp(_ context.Context, _ appcontrol.Authority, r appcontrol.LaunchRequest) (appcontrol.Window, error) {
+	f.windows = []appcontrol.ManagedWindow{{Handle: "window", BundleID: r.BundleID}}
+	return appcontrol.Window{Handle: "window", Process: appcontrol.Process{BundleID: r.BundleID}}, nil
+}
+func (f *vscreenToolFixture) ObserveApp(_ context.Context, _ appcontrol.Authority, handle string, _ bool) (appcontrol.Observation, error) {
+	if f.observeFailure {
+		return appcontrol.Observation{}, errors.New("fixture screenshot failed")
+	}
 	f.revision++
 	im := image.NewRGBA(image.Rect(0, 0, 2, 1))
 	im.Set(0, 0, color.RGBA{R: 255, A: 255})
@@ -66,7 +76,7 @@ func (f *vscreenToolFixture) ObserveApp(context.Context, appcontrol.Authority, s
 	}
 	var buf bytes.Buffer
 	_ = png.Encode(&buf, im)
-	return appcontrol.Observation{Display: appcontrol.Display{Epoch: f.display.Epoch}, Window: appcontrol.Window{Handle: "window", SnapshotRevision: f.revision}, PNG: buf.Bytes(), Width: 2, Height: 1, Elements: []appcontrol.Element{{Handle: "entry", Value: f.value}}}, nil
+	return appcontrol.Observation{Display: appcontrol.Display{Epoch: f.display.Epoch}, Window: appcontrol.Window{Handle: handle, SnapshotRevision: f.revision}, PNG: buf.Bytes(), Width: 2, Height: 1, Elements: []appcontrol.Element{{Handle: "entry", Value: f.value}}}, nil
 }
 func newVscreenToolFixture(t *testing.T) (*vscreenToolFixture, *vscreen.Actor) {
 	t.Helper()
@@ -237,6 +247,7 @@ func TestVscreenMCPQueuedTaskCancellation(t *testing.T) {
 func TestVscreenMCPUnknownActionStopsAfterRevocation(t *testing.T) {
 	f, a := newVscreenToolFixture(t)
 	f.uncertain = true
+	f.windows = []appcontrol.ManagedWindow{{Handle: "window", BundleID: "fixture"}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stopped := false
@@ -261,4 +272,8 @@ func TestVscreenMCPUnknownActionStopsAfterRevocation(t *testing.T) {
 	if !stopped {
 		t.Fatal("uncertain native action did not stop provider")
 	}
+}
+
+func (f *vscreenToolFixture) ManagedAppWindows(context.Context, appcontrol.Authority) ([]appcontrol.ManagedWindow, error) {
+	return append([]appcontrol.ManagedWindow{}, f.windows...), nil
 }
