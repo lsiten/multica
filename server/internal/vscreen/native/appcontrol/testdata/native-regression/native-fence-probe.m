@@ -15,7 +15,7 @@ id ACCopy(AXUIElementRef e, CFStringRef a, ACRequest *r) { return reviewWindows=
 STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserve) STUB(ACAction) STUB(ACAdoptWindow) STUB(ACManagedWindows)
 NSDictionary *ACListApps(ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
 NSDictionary *ACListWindows(ACSession *s, ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
-NSDictionary *ACPIDProcess(pid_t pid) {return @{@"PID":@(pid),@"Start":@"1:0"};}
+NSDictionary *ACPIDProcess(pid_t pid) {return @{@"PID":@(pid),@"Start":@"1:0",@"UID":@501,@"BundleID":@"synthetic",@"OSBuild":@"test"};}
 NSString *ACInputSourceID(void) {return @"synthetic-layout";}
 #include "guard-source.inc"
 
@@ -47,12 +47,15 @@ int ReviewKill(pid_t p,int s) { errno=reviewLookupMode==1?ESRCH:EPERM; return -1
 #include "ended-source.inc"
 int main(void) { @autoreleasepool {
  ACSession *s=[ACSession new]; s.windows=[NSMutableDictionary new]; s.blockedPIDs=[NSMutableSet new]; s.lock=[NSLock new]; s.pending=dispatch_group_create(); s.pressed=[NSMutableDictionary new]; s.uncertainInput=[NSMutableDictionary new];
- NSDictionary *owner=@{@"RuntimeID":@"A"}, *other=@{@"RuntimeID":@"B"}, *process=@{@"PID":@100001,@"Start":@"1:0"}; s.uncertainInput[@"fence"]=@{@"Process":process,@"Resource":owner};
+ NSDictionary *owner=@{@"RuntimeID":@"A"}, *other=@{@"RuntimeID":@"B"}, *process=@{@"PID":@100001,@"Start":@"1:0",@"UID":@501,@"BundleID":@"synthetic",@"OSBuild":@"test"}; s.uncertainInput[@"fence"]=@{@"Process":process,@"Resource":owner};
  BOOL unknownBlocked=ACInputQuiescent(s,owner)!=nil, siblingClear=ACInputQuiescent(s,other)==nil;
  reviewLookupMode=1; BOOL exitedClear=ACInputQuiescent(s,owner)==nil;
  s.uncertainInput[@"fence"]=@{@"Process":process,@"Resource":owner}; reviewLookupMode=2; BOOL reusedClear=ACInputQuiescent(s,owner)==nil;
- ACWindow *w=[ACWindow new]; w.process=process; w.certifiedProcess=process; w.resource=owner; w.frameWidth=500; w.frameHeight=400; w.lastBounds=CGRectMake(20,20,500,400);
- NSDictionary *d=@{@"ID":@1,@"Bounds":@{@"X":@0,@"Y":@0,@"Width":@1600,@"Height":@900},@"Virtual":@YES}; uintptr_t handle=ac_request_new(3); ACRequest *r=(__bridge ACRequest *)(void *)handle;
+ ACWindow *w=[ACWindow new]; w.handle=@"owned";w.windowID=7;w.displayID=1;w.revision=1;w.snapshotValid=YES;w.process=process; w.certifiedProcess=process; w.resource=owner; w.frameWidth=500; w.frameHeight=400; w.lastBounds=CGRectMake(20,20,500,400);
+ NSDictionary *d=@{@"ID":@1,@"Bounds":@{@"X":@0,@"Y":@0,@"Width":@1600,@"Height":@900},@"Virtual":@YES}; NSDictionary *epoch=@{@"native_epoch":@"native",@"display_generation":@"display",@"geometry_revision":@1};
+ NSMutableDictionary *bound=[d mutableCopy];bound[@"Resource"]=owner;bound[@"Epoch"]=epoch;d=bound;
+ w.completionContext=@{@"Token":@"0123456789abcdef",@"Target":@{@"resource":owner,@"epoch":epoch,@"task_id":@"task",@"transaction_id":@"tx",@"lease_epoch":@1,@"window_handle":@"owned",@"snapshot_revision":@1},@"ActionID":@"scroll",@"Sequence":@1,@"Process":process,@"WindowID":@7};
+  uintptr_t handle=ac_request_new(3); ACRequest *r=(__bridge ACRequest *)(void *)handle;
  reviewWindows=2; BOOL multiwindowBlocked=ACGuard(s,w,d,r,YES)!=nil; reviewWindows=1;
  NSString *scrollError=ACPIDAction(s,r,w,d,@{@"kind":@"scroll",@"scroll":@{@"position":@{@"x":@10,@"y":@10},@"delta_y":@4,@"delta_x":@0}});
  NSDictionary *result=@{@"boundary":@"original input_darwin.m and exact ACProcessEnded/ACGuard with deterministic OS readback and intercepted post; no events delivered",@"unknown_lookup_retains_fence":@(unknownBlocked),@"other_resource_clear":@(siblingClear),@"confirmed_exit_clears":@(exitedClear),@"start_reuse_clears":@(reusedClear),@"multiple_windows_blocked":@(multiwindowBlocked),@"scroll_error":scrollError?:@"",@"scroll_event_source_state":@(reviewPostedSource),@"requested_source_state":@(reviewRequestedSource),@"created_source_state":@(reviewCreatedSource),@"scroll_uses_created_source":@(reviewScrollUsesSource),@"posted_pid":@(reviewPostedPID)};

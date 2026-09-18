@@ -22,6 +22,8 @@
 @property(strong) NSString *handle;
 @property(strong) NSString *certifiedInputSource;
 @property(strong) NSDictionary *certifiedProcess;
+@property(strong) NSDictionary *completionContext;
+@property BOOL pidDispatched;
 @property CGRect original;
 @property CGRect lastBounds;
 @property uint32_t windowID;
@@ -40,6 +42,8 @@
 @property(strong) id releaseEvent;
 @end
 @interface ACSession : NSObject
+@property(strong) NSMutableDictionary<NSString *, NSDictionary *> *pendingPIDInputs;
+@property(strong) NSMutableSet<NSString *> *usedPIDTokens;
 @property(strong) NSMutableDictionary<NSString *, ACWindow *> *windows;
 @property(strong) NSMutableSet<NSNumber *> *blockedPIDs;
 @property(strong) NSLock *lock;
@@ -90,3 +94,8 @@ NSString *ACInputSourceID(void);
 
 NSDictionary *ACPIDProcess(pid_t);
 NSDictionary *ACManagedWindows(ACSession *s, ACRequest *r, NSDictionary *display, NSString **error);
+
+uint64_t ACPIDCompletionToken(NSDictionary *);
+NSString *ACPreparePIDCompletion(ACSession *,ACWindow *,NSDictionary *,ACRequest *);
+void ACRegisterPIDCompletion(ACSession *,ACWindow *);
+NSDictionary *ACCompletePIDInput(ACSession *,ACRequest *,NSDictionary *,NSString **);

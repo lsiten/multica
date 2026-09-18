@@ -86,6 +86,8 @@ type Element struct {
 type Observation struct {
 	// PIDInputCertificationConfigured is policy availability, not support for a particular action.
 	PIDInputCertificationConfigured bool
+	// PIDInputCompletionAvailable reports verifier wiring, not a per-action acknowledgement.
+	PIDInputCompletionAvailable bool
 	// PIDInputVerification is none or verified_variants; an exact action still needs authorization.
 	PIDInputVerification string
 	Display              Display
@@ -110,7 +112,11 @@ type HumanRequest struct {
 }
 
 // Result distinguishes an observed effect from mere delivery or uncertainty.
-type Result struct{ Outcome protocol.VscreenActionOutcome }
+type Result struct {
+	Outcome            protocol.VscreenActionOutcome
+	Mechanism          string
+	CompletionVerified bool
+}
 
 // Config callbacks are native-host obligations: authenticate/fence the parent connection,
 // registry epochs, task/transaction and lease generations. They do not query a daemon Actor
@@ -119,8 +125,12 @@ type Config struct {
 	Authorize      func(context.Context, Authority, Access) (Display, error)
 	AuthorizeHuman func(context.Context, HumanRequest) (Display, error)
 	// CertifiedPIDInput is populated only from an independently verified app/OS/action matrix.
+	// Production hosts use only the verified policy. An isolated qualification factory may
+	// install invocation-scoped test-fixture checks without advertising production verification.
 	// Nil denies per-PID input while retaining semantic AX actions.
 	CertifiedPIDInput func(Process, protocol.VscreenAction) PIDInputDecision
+	// VerifyPIDCompletion is code-owned; no receipt or completion switch is accepted over RPC.
+	VerifyPIDCompletion func(context.Context, PIDCompletion) (PIDCompletionReceipt, error)
 	// PIDInputVerification reports evidence presence independently of hook configuration.
 	PIDInputVerification func(Process) string
 }

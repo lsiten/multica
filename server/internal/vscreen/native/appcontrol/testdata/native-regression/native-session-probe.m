@@ -20,6 +20,7 @@ STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserv
 NSDictionary *ACListApps(ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
 NSDictionary *ACListWindows(ACSession *s, ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
 NSDictionary *ACPIDProcess(pid_t pid) {return @{@"PID":@(pid),@"Start":@"1:0"};}
+NSDictionary *ACProcess(pid_t pid) {return ACPIDProcess(pid);}
 NSString *ACInputSourceID(void) {return @"synthetic-layout";}
 #include "guard-source.inc"
 static NSString *resume(ACSession *s, NSDictionary *display, uintptr_t r) {
