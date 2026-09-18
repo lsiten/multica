@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, lstat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { startPerformanceViewer, correlateRenderedBatch, loadPerformanceChromium } from "./vscreen-performance-browser.mjs";
+import { startPerformanceViewer, correlateRenderedBatch, launchPerformanceChromium } from "./vscreen-performance-browser.mjs";
 import { evaluatePerformance, PERFORMANCE_REQUIREMENTS } from "./vscreen-performance-metrics.mjs";
 
 const delay=(ms,signal)=>new Promise((resolve,reject)=>{if(signal?.aborted){reject(signal.reason??new Error("aborted"));return;}const abort=()=>{clearTimeout(timer);reject(signal.reason??new Error("aborted"));};const timer=setTimeout(()=>{signal?.removeEventListener("abort",abort);resolve();},ms);signal?.addEventListener("abort",abort,{once:true});});
@@ -32,8 +32,7 @@ export async function drivePerformanceSession(ready,options,dependencies={}){
       peers.push(...remote.peers);evidence.networkScope="remote-lan-candidate";evidence.networkEvidence=remote.evidence;evidence.limitations=evidence.limitations.filter((value)=>!value.startsWith("Local loopback"));
       for(let index=0;index<2;index++)evidence.viewers.push({viewerID:`performance-${index}`,sourceID:ready.sources[0].source_id,latencyUpperBoundsMs:[],maxClockUncertaintyMs:0,latencyMethod:"fixture-draw-to-browser-observed-upper-bound",switchFirstDecodedMs:[]});
     }else{
-    const chromium=dependencies.chromium??loadPerformanceChromium();
-    browser=await chromium.launch({headless:true});
+    browser=await launchPerformanceChromium(dependencies.chromium);
     for(let index=0;index<2;index++){
       const context=await browser.newContext({viewport:{width:1700,height:1000}});contexts.push(context);
       const peer=await startPerformanceViewer(await context.newPage(),{baseURL:ready.base_url,nonce:ready.nonce,viewerID:`performance-${index}`,source:ready.sources[0]});peers.push(peer);

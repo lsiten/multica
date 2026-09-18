@@ -2,7 +2,7 @@ import { remoteRoute } from "./vscreen-remote-route.mjs";
 import { pathToFileURL } from "node:url";
 import { remoteChannel } from "./vscreen-remote-protocol.mjs";
 import { machineIdentity, remoteWorkerHash } from "./vscreen-remote-identity.mjs";
-import { loadPerformanceChromium, startPerformanceViewer } from "./vscreen-performance-browser.mjs";
+import { launchPerformanceChromium, startPerformanceViewer } from "./vscreen-performance-browser.mjs";
 
 export function runRemoteViewerWorker(input, output, dependencies = {}) {
   let runID = null, browser = null, starting = false, stopped = false, sources = [];
@@ -15,7 +15,7 @@ export function runRemoteViewerWorker(input, output, dependencies = {}) {
       scope(body); if (browser || starting || !Array.isArray(body.sources) || body.sources.length !== 2 || body.sources.some((s) => typeof s.source_id !== "string" || s.source_id.length > 256 || !Number.isInteger(s.source_tag))) throw new Error("remote_start_invalid");
       starting = true; sources = body.sources;
       try {
-        browser = await (dependencies.chromium ?? loadPerformanceChromium()).launch({ headless: true });
+        browser = await launchPerformanceChromium(dependencies.chromium);
         if (stopped) throw new Error("remote_stopped");
         for (let index = 0; index < 2; index++) {
           const viewerID = `performance-${index}`, context = await browser.newContext({ viewport: { width: 1700, height: 1000 } });

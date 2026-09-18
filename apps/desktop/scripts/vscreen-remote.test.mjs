@@ -54,3 +54,7 @@ it("asynchronous byte totals and one bounded stall are valid, but prolonged stal
  const stalled=lanEvidence();for(const group of stalled.evidence.observations){group.producer.viewers[0].selected_pair.bytes_sent=1000;group.browsers[0].selected_pair.bytes_received=1000;}expect(evaluateRemoteNetwork(stalled.evidence,stalled.viewers,1800000).reasons).toContain("lan_counters_not_progressing");
 });
 it.each(["epoch","frame","certificate","source"])("switch evidence refuses stale %s binding",kind=>{const f=lanEvidence(),item=f.evidence.switch_observations[0];if(kind==="epoch")item.producer_epoch="old";if(kind==="frame")item.frame_source_tag=999;if(kind==="certificate")item.browser.dtls.remote.fingerprint="0".repeat(64);if(kind==="source")item.native.source_id="foreign";expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(false);});
+it("accepts Go interface CIDR only when its address exactly owns the selected endpoint",()=>{
+ const f=lanEvidence();for(const group of f.evidence.observations)for(const viewer of group.producer.viewers)viewer.route.interface_addresses=viewer.route.interface_addresses.map(address=>address+"/24");for(const item of f.evidence.switch_observations)item.native.route.interface_addresses=item.native.route.interface_addresses.map(address=>address+"/24");expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(true);
+ f.evidence.observations[0].producer.viewers[0].route.interface_addresses=["192.168.1.0/24"];expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(false);
+});

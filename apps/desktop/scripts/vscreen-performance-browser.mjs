@@ -3,6 +3,10 @@ import { clockBounds, decodeFrameMarker, frameLatencyBound } from "./vscreen-per
 
 const requireRootTool = createRequire(new URL("../../../package.json", import.meta.url));
 export function loadPerformanceChromium() { return requireRootTool("@playwright/test").chromium; }
+// Only fresh benchmark profiles expose host ICE addresses for two-sided evidence.
+export function launchPerformanceChromium(chromium = loadPerformanceChromium()) {
+  return chromium.launch({ headless: true, args: ["--disable-features=WebRtcHideLocalIpsWithMdns"] });
+}
 
 // Requires a caller-owned Playwright page. This module never launches or attaches
 // a native capture process and has no ambient browser/account lookup.
