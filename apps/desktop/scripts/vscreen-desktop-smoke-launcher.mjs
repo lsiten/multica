@@ -6,7 +6,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
-const scenarios = ["diagnostics", "lifecycle", "source", "video", "input", "takeover", "performance"];
+const scenarios = ["diagnostics", "lifecycle", "source", "video", "input", "takeover", "performance", "input-qualification"];
 async function hash(path) { const digest=createHash("sha256");for await (const chunk of createReadStream(path)) digest.update(chunk);return digest.digest("hex"); }
 async function inside(app,path) { const actual=await realpath(path);const child=relative(app,actual);if(!child||child===".."||child.startsWith(`..${sep}`)||isAbsolute(child)||!(await stat(actual)).isFile())throw new Error("bundle_path_escape");return actual; }
 
@@ -14,9 +14,10 @@ async function inside(app,path) { const actual=await realpath(path);const child=
  * @typedef {Object} DesktopNativeSmokeOptions
  * @property {string} app Absolute selected .app path; never a renderer-supplied helper path.
  * @property {string} evidence Absolute artifact directory. A private invocation subdirectory is created.
- * @property {"diagnostics"|"lifecycle"|"source"|"video"|"input"|"takeover"|"performance"} scenario
+ * @property {"diagnostics"|"lifecycle"|"source"|"video"|"input"|"takeover"|"performance"|"input-qualification"} scenario
  * @property {{version:string,commit:string,sha256:string}} expectedHelper Validated selected-bundle identity from the outer runner.
  * @property {boolean} [allowGui=false] Explicit user authorization; diagnostics are always nonprompt/read-only.
+ * @property {boolean} [interactive=false] Qualification-only explicit local human typing phase.
  * @property {number} [timeoutMs=180000] Child operation budget, 1..180 seconds, or up to 2700 seconds for performance.
  * @property {(context:{directory:string,signal:AbortSignal})=>Promise<{status:"passed"|"blocked",[key:string]:unknown}>} [onReady] Performance-only private-file control hook; never return nonce/token/authorization/base_url fields.
  * @property {AbortSignal} [signal] Cancellation makes the result blocked even after a clean exit.
@@ -33,6 +34,7 @@ async function inside(app,path) { const actual=await realpath(path);const child=
 export async function launchDesktopNativeSmoke(options, dependencies = {}) {
   if ((dependencies.platform ?? process.platform) !== "darwin") throw new Error("macos_required");
   if (!isAbsolute(options.app) || !options.app.endsWith(".app") || !isAbsolute(options.evidence) || !scenarios.includes(options.scenario)) throw new Error("invalid_desktop_smoke_options");
+  if (options.interactive !== undefined && (typeof options.interactive !== "boolean" || (options.interactive && options.scenario !== "input-qualification"))) throw new Error("invalid_interactive_scenario");
   if (options.scenario !== "diagnostics" && options.allowGui !== true) throw new Error("gui_not_authorized");
   if (options.signal?.aborted) throw new Error("desktop_smoke_cancelled");
   const timeout = options.timeoutMs ?? (options.scenario === "performance" ? 2700000 : 180000);
@@ -51,7 +53,7 @@ export async function launchDesktopNativeSmoke(options, dependencies = {}) {
   const evidence = await realpath(options.evidence);
   const directory = await mkdtemp(join(evidence,"desktop-invocation-"));
   const userData = join(directory,"user-data");await mkdir(userData,{mode:0o700});
-  const config = {schema:1,nonce:randomBytes(32).toString("hex"),parentPID:process.pid,app,mainSHA256:await hash(executable),entrySHA256:entry.sha256,helper:options.expectedHelper,scenario:options.scenario,allowGui:options.allowGui===true,expiresAt:Date.now()+600000,timeoutMs:timeout};
+  const config = {schema:1,nonce:randomBytes(32).toString("hex"),parentPID:process.pid,app,mainSHA256:await hash(executable),entrySHA256:entry.sha256,helper:options.expectedHelper,scenario:options.scenario,interactive:options.interactive===true,allowGui:options.allowGui===true,expiresAt:Date.now()+600000,timeoutMs:timeout};
   const raw = JSON.stringify(config);const invocation = join(directory,"invocation.json");await writeFile(invocation,raw,{mode:0o600,flag:"wx"});
   const env = {PATH:"/usr/bin:/bin:/usr/sbin:/sbin",LANG:"en_US.UTF-8",MULTICA_DESKTOP_NATIVE_SMOKE_FILE:invocation,...(options.allowGui ? {MULTICA_RUN_VSCREEN_GUI_SMOKE:"1"}: {})};
   const lifetime = new AbortController();

@@ -14,7 +14,7 @@ import { canonicalSmokeScenario, nativeSmokeScenario, runSmokeSuite } from "./vs
 import { runBundlePerformance, readPerformanceReady, drivePerformanceSession } from "./vscreen-performance-session.mjs";
 
 const execute = promisify(execFile);
-const guiScenarios = ["lifecycle", "sources", "source", "video", "background-input", "input", "takeover", "performance", "all"];
+const guiScenarios = ["lifecycle", "sources", "source", "video", "background-input", "input", "takeover", "performance", "input-qualification", "all"];
 const scenarios = ["package", "diagnostics", ...guiScenarios];
 
 export function parseArguments(args, env = process.env) {
@@ -22,6 +22,7 @@ export function parseArguments(args, env = process.env) {
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
     if (flag === "--allow-gui") options.allowGui = true;
+    else if (flag === "--interactive") options.interactive = true;
     else if (["--app", "--scenario", "--evidence", "--expect-commit", "--launcher"].includes(flag)) {
       const value = args[++index];
       if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}`);
@@ -30,6 +31,8 @@ export function parseArguments(args, env = process.env) {
   }
   if (!options.app || !isAbsolute(options.app) || !options.app.endsWith(".app")) throw new Error("--app must name an absolute .app path");
   if (!options.evidence || !isAbsolute(options.evidence)) throw new Error("--evidence must name an absolute directory");
+  if (options.interactive && options.scenario !== "input-qualification") throw new Error("--interactive requires input-qualification");
+  if (options.scenario === "input-qualification" && options.launcher !== "desktop") throw new Error("input-qualification requires --launcher desktop");
   if (!scenarios.includes(options.scenario)) throw new Error(`--scenario must be one of: ${scenarios.join(", ")}`);
   if (!["bundle-helper", "desktop"].includes(options.launcher)) throw new Error("--launcher must be bundle-helper or desktop");
   return options;
@@ -151,7 +154,7 @@ export async function runSmoke(options, dependencies = {}) {
     if (options.expectCommit && version[2] !== options.expectCommit) fail("commit_mismatch", "Selected helper commit differs from --expect-commit");
     const desktopLaunch = async (scenario, onReady) => {
       const launch = dependencies.launchDesktopNativeSmoke ?? (await import("./vscreen-desktop-smoke-launcher.mjs")).launchDesktopNativeSmoke;
-      return launch({app:report.app,evidence:join(options.evidence,`desktop-${scenario}`),scenario,expectedHelper:{version:version[1],commit:version[2],sha256:report.helper.sha256},allowGui:options.allowGui,timeoutMs:scenario==="performance"?2700000:undefined,onReady});
+      return launch({app:report.app,evidence:join(options.evidence,`desktop-${scenario}`),scenario,interactive:scenario==="input-qualification"&&options.interactive===true,expectedHelper:{version:version[1],commit:version[2],sha256:report.helper.sha256},allowGui:options.allowGui,timeoutMs:scenario==="performance"?2700000:undefined,onReady});
     };
     if (options.scenario !== "package") {
       let probe;
@@ -192,17 +195,25 @@ export async function runSmoke(options, dependencies = {}) {
         report.gui = { disposed: performanceResult.nativeResult?.cleanup_confirmed === true, host_closed: performanceResult.nativeResult?.cleanup_confirmed === true };
         if (performanceResult.assessment.status !== "passed") fail("performance_gate_failed", "Performance coverage is incomplete; inspect localMeasurement and planCoverage");
       } else {
-      if (!["lifecycle", "source", "video", "input", "takeover"].includes(nativeScenario)) fail("scenario_not_implemented", "No bundle-bound GUI harness is implemented for this scenario; no GUI was started");
+      if (!["lifecycle", "source", "video", "input", "takeover", "input-qualification"].includes(nativeScenario)) fail("scenario_not_implemented", "No bundle-bound GUI harness is implemented for this scenario; no GUI was started");
+      if(nativeScenario==="input-qualification" && options.launcher!=="desktop") fail("desktop_launcher_required", "Input qualification requires --launcher desktop");
       let smoke; let nativeEvidenceDir=options.evidence;
       report.gui_attempted=true;
       if(options.launcher === "desktop") {
         const launched=await desktopLaunch(nativeScenario);nativeEvidenceDir=dirname(launched.reportPath);report.desktop_gui={report:launched.reportPath,status:launched.status};
+        if(nativeScenario==="input-qualification") report.qualification=launched.report?.qualification;
         smoke={exitCode:launched.status==="passed"?0:1,stdout:JSON.stringify(launched.report?.native??{})};
       }else{smoke=await command("native-gui-smoke", helper, ["internal-vscreen-smoke", nativeScenario, options.evidence], { timeout: options.scenario === "takeover" ? 120_000 : nativeScenario === "input" ? 90_000 : 45_000, env: { ...process.env, MULTICA_RUN_VSCREEN_GUI_SMOKE: "1" } });}
       try { report.gui = JSON.parse(smoke.stdout); } catch { fail("gui_result_invalid", "Bundled helper did not return a GUI result; cleanup is unconfirmed"); }
       report.gui_exercised = report.gui.gui_exercised === true;
       if (smoke.exitCode !== 0 || report.gui.status !== "passed") fail("gui_smoke_failed", "Bundled native GUI scenario failed; inspect its result and cleanup flags");
       if (report.gui.executable !== helper || report.gui.version !== version[1] || report.gui.commit !== version[2] || report.gui.scenario !== nativeScenario || !report.gui_exercised || report.gui.disposed !== true || report.gui.host_closed !== true || !report.gui.display?.display_id || report.gui.source?.display_id !== report.gui.display.display_id) fail("gui_result_invalid", "GUI result lacks selected-binary identity, display/source readback, or successful cleanup");
+      if (nativeScenario === "input-qualification") {
+        const qualification=report.qualification;
+        if(qualification?.scope!=="experimental-same-bundle-disposable-fixture" || qualification.production_certified!==false || qualification.effects_verified!==true || qualification.completion_verified!==true || qualification.fixture_closed!==true || qualification.control_revoked!==true || qualification.old_lease_refused!==true || typeof qualification.foreground_continuity!=="string" || !qualification.manual) fail("qualification_result_invalid", "Experimental fixture effects or cleanup evidence is incomplete");
+        report.planCoverage={positivePIDActions:"experimental-fixture-only",userAppCompatibility:"unverified",continuousForegroundTyping:qualification.foreground_continuity};
+        report.limitations.push("Experimental disposable-fixture qualification does not certify production App input or satisfy aggregate all coverage. Manual foreground evidence is retained with its original scope.");
+      }
       if (options.scenario === "video") {
         const videoPath = join(nativeEvidenceDir, "virtual-screen.h264");
         if (report.gui.video?.artifact !== videoPath || report.gui.video.samples?.length !== 3 || (await readFile(videoPath)).length === 0 || await hashFile(videoPath) !== report.gui.video.sha256) fail("video_artifact_invalid", "Captured H264 artifact is missing or does not match the helper result");
@@ -225,7 +236,7 @@ export async function runSmoke(options, dependencies = {}) {
         if (input.before.sha256 === input.after.sha256) fail("input_artifact_invalid", "Fixture pixels did not change");
         report.planCoverage = { positivePIDActions: "refusal-only", userAppCompatibility: "fixture-only", continuousForegroundTyping: "unverified" };
         report.limitations.push("Input proves only this copied-helper test fixture's external AX press/value behavior and refusal of uncertified PID input. It does not certify installed user apps, per-PID input support, IME, continuous foreground typing, or final Desktop TCC attribution.");
-      } else if (options.scenario !== "takeover") {
+      } else if (!["takeover", "input-qualification"].includes(options.scenario)) {
         report.limitations.push("Native smoke does not verify renderer playback, human handoff, input, or end-to-end latency. H264 checks cover Annex-B framing/parameter sets and timestamps, not visual decoding.");
       }
     }
