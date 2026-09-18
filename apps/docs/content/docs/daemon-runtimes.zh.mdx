@@ -132,9 +132,50 @@ GUI 场景必须显式传入 `--allow-gui` 或设置 `MULTICA_RUN_VSCREEN_GUI_SM
 
 `sources` 和 `background-input` 是规范名称；`source` 和 `input` 仍可作为别名。交互式资格实验不会替用户写入挑战文本，也不会自动激活输入窗口。它的人工测试结果不认证任意已安装应用，也不能替代生产证据。
 
-正式性能验收至少需要运行 30 分钟并完成 30 次生命周期循环。短时或调试运行不算验收。当前会话使用同机回环连接：`localMeasurement` 可以通过，但缺少局域网证据时，总体评估仍会阻塞。
+正式性能验收至少需要运行 30 分钟并完成 30 次生命周期循环。短时或调试运行不算验收。默认会话使用同机回环连接：`localMeasurement` 可以通过，但缺少局域网证据时，总体评估仍会阻塞。
 
 `all` 执行从 `lifecycle` 到 `performance` 的六个必需场景，不包含实验性 `input-qualification`。它的 `missingCoverage` 门禁独立于各测试应用结果：生产 PID 正向动作、实际应用兼容性、前台连续输入、Desktop 界面、数据库、人工接管与局域网覆盖都需要单独证据。清理无法确认时，不会继续启动后续 GUI 场景。打包、诊断或某个测试场景通过，不代表这些剩余门禁也已通过。
+
+
+#### 受控远程性能观看端
+
+远程观看仅用于 `performance` 和 `all`，必须同时提供 `--remote-viewer-config` 和 `--allow-remote-viewer`，并保留宿主的 GUI 显式许可。`all` 中只有性能子场景会读取此配置或启动远程进程；其他覆盖门禁仍独立判断。执行前，需要分别获得第二台机器和宿主原生 GUI 操作的授权。
+
+配置必须是绝对路径指向的 JSON 普通文件，由当前用户拥有，权限为 `0600`，不是符号链接、只有一个硬链接，且不超过 64 KiB。仅接受以下全部必需字段：
+
+| 字段 | 要求 |
+| --- | --- |
+| `schema_version` | `1`。 |
+| `host` | 明确的 DNS 名称或 IPv4 地址，不接受 SSH 别名、通配符或 IPv6 地址。 |
+| `port` | 1 到 65535 的整数。 |
+| `user` | 明确的 SSH 账户；首字符为 ASCII 字母、数字或下划线，其余字符可含字母、数字、下划线、点和连字符，最长 64 个字符。 |
+| `known_hosts_file` | 独立文件的绝对路径，只包含一条三字段的主机公钥记录，不含注释、别名或哈希主机名。端口 22 使用与 `host` 完全相同的名称，其他端口使用 `[host]:port`。支持 `ssh-ed25519`、`ecdsa-sha2-nistp256` 和 `ssh-rsa`。 |
+| `host_key_sha256` | 与该主机公钥匹配的 `SHA256:` 指纹，不含 base64 填充。 |
+| `identity_file` | 用于非交互认证的已有私钥文件绝对路径。 |
+| `remote_node` | 远端已有 Node 可执行文件的 Unix 绝对路径。 |
+| `remote_repo` | 远端匹配版本仓库的 Unix 绝对路径。 |
+| `worker_hash` | 下方 worker 命令生成的匹配 SHA-256，长度为 64 个小写十六进制字符。 |
+
+两个被引用的本地文件也必须由当前用户拥有，权限为 `0600`，是非符号链接、单硬链接的普通文件，且不超过 64 KiB。远端 Node 与仓库路径仅允许 ASCII 字母、数字、`_`、`.`、`/` 和 `-`；拒绝 `..` 路径段、空格、`~` 和 shell 语法。SSH 只使用指定私钥与固定主机公钥记录的私有快照，不使用 SSH agent、密码提示、已有 SSH 配置、全局 known_hosts 备用记录或转发。
+
+远端 Mac 或 Linux 机器必须已有匹配的 worker 源码、仓库根目录声明的 `@playwright/test` 依赖及 Chromium。工具不会发现或安装这些前置条件。在两端仓库根目录分别运行并比较 worker 哈希；此命令不会启动 SSH 或浏览器：
+
+```bash
+node apps/desktop/scripts/vscreen-remote-worker.mjs --hash
+```
+
+准备好私有配置，以及包含匹配画面发送端与观看端实现的新安装包后：
+
+```bash
+pnpm --filter @multica/desktop exec node scripts/vscreen-native-smoke.mjs \
+  --app /absolute/path/Multica.app --scenario performance --launcher desktop \
+  --allow-gui --remote-viewer-config /absolute/path/private-remote-viewer.json \
+  --allow-remote-viewer --evidence /absolute/path/new-remote-evidence
+```
+
+画面发送端的授权 nonce 留在宿主，不要加入配置或命令行；信令请求由宿主转发给发送端。worker 启动全新的无头 Chromium 上下文，不接入用户浏览器配置。
+
+远程源码支持不等于局域网验收通过。通过还需要观测到不同机器身份、匹配的来源与证书及会话证据、实际选中的直连 UDP 连接对，以及两端已确认的实体网卡直连网段路由，并满足原有时长、资源和清理门禁。缺少系统工具、路由未知、回环、隧道或中继都会阻塞。机器身份属于对系统的信任证据，不是硬件证明。本机无头测试不能证明局域网覆盖；仍需要真实两机与原生操作授权，以及通过实际观测。
 
 ## 自定义运行时配置
 

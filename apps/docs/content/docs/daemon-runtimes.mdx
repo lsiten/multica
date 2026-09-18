@@ -132,9 +132,50 @@ GUI scenarios require explicit `--allow-gui` or `MULTICA_RUN_VSCREEN_GUI_SMOKE=1
 
 `sources` and `background-input` are the canonical names; `source` and `input` remain aliases. The interactive qualification stage never writes the challenge text for the user or automatically activates the scratch window. Its manual-fixture result does not certify arbitrary installed apps or replace production evidence.
 
-Formal performance acceptance requires at least 30 minutes and 30 lifecycle cycles. Short/debug runs are not acceptance. The current session uses same-host loopback: `localMeasurement` may pass while the overall assessment remains blocked for missing LAN evidence.
+Formal performance acceptance requires at least 30 minutes and 30 lifecycle cycles. Short/debug runs are not acceptance. The default session uses same-host loopback: `localMeasurement` may pass while the overall assessment remains blocked for missing LAN evidence.
 
 `all` runs the six required scenarios from `lifecycle` through `performance` (excluding experimental `input-qualification`). Its `missingCoverage` gate is independent of individual fixture results: positive production PID actions, installed-app compatibility, continuous foreground typing, Desktop UI/database/manual handoff and LAN coverage remain separately required. Unconfirmed cleanup prevents further GUI launches. Passing packaging, diagnostics or a fixture scenario does not satisfy these remaining gates.
+
+
+#### Controlled remote performance viewer
+
+Remote viewing is available to `performance` and `all` only, with both `--remote-viewer-config` and `--allow-remote-viewer`, in addition to the host GUI opt-in. In `all`, only the performance child reads this configuration or starts a remote process; other coverage gates remain independent. Authorize the second machine and host native GUI work separately before running it.
+
+The configuration must be an absolute path to an owned, single-link, non-symlink regular JSON file, mode `0600`, at most 64 KiB. It accepts exactly these required fields:
+
+| Field | Requirement |
+| --- | --- |
+| `schema_version` | `1`. |
+| `host` | Explicit DNS name or IPv4 address, not an SSH alias, wildcard or IPv6 address. |
+| `port` | Integer from 1 to 65535. |
+| `user` | Explicit SSH account; ASCII letters/digits/underscore initially, then letters/digits/underscore/dot/hyphen, at most 64 characters. |
+| `known_hosts_file` | Absolute path to a separate file containing exactly one three-field public host-key entry, without comments, aliases or hashed host names. Use the exact `host` for port 22, otherwise `[host]:port`. Supported key types are `ssh-ed25519`, `ecdsa-sha2-nistp256` and `ssh-rsa`. |
+| `host_key_sha256` | Matching host-key fingerprint in `SHA256:` form, without base64 padding. |
+| `identity_file` | Absolute path to the existing private key used for noninteractive authentication. |
+| `remote_node` | Absolute Unix path to the existing remote Node executable. |
+| `remote_repo` | Absolute Unix path to the matching remote repository checkout. |
+| `worker_hash` | Matching 64-character lowercase SHA-256 from the worker command below. |
+
+Both referenced local files must also be owned, single-link, non-symlink regular files, mode `0600`, at most 64 KiB. Remote Node/repository paths allow only ASCII letters, digits, `_`, `.`, `/` and `-`; `..` components, spaces, `~` and shell syntax are rejected. SSH uses only the declared key and a private snapshot of the pinned host-key entry: no agent, password prompt, ambient SSH configuration, global known-host fallback or forwarding is used.
+
+The remote Mac or Linux machine must already have the matching worker sources, the repository-root `@playwright/test` installation and Chromium. Nothing discovers or installs these prerequisites. From the repository root on each machine, obtain and compare the worker hash without starting SSH or a browser:
+
+```bash
+node apps/desktop/scripts/vscreen-remote-worker.mjs --hash
+```
+
+After preparing the private configuration and a freshly packaged App with the matching producer/viewer implementation:
+
+```bash
+pnpm --filter @multica/desktop exec node scripts/vscreen-native-smoke.mjs \
+  --app /absolute/path/Multica.app --scenario performance --launcher desktop \
+  --allow-gui --remote-viewer-config /absolute/path/private-remote-viewer.json \
+  --allow-remote-viewer --evidence /absolute/path/new-remote-evidence
+```
+
+The producer authorization nonce stays on the host; do not add it to the configuration or command line. Host-side signaling relays requests to the producer. The worker starts fresh headless Chromium contexts, not a user browser profile.
+
+Remote source support is not a LAN acceptance result. A pass requires observed distinct machine identities, matching source/certificate/session evidence, selected direct UDP pairs and confirmed physical on-link routes on both ends, plus all existing duration, resource and cleanup gates. Missing OS tools, unknown routes, loopback, tunnels or relays block the result. Machine identity is trusted-OS evidence, not hardware attestation. Local headless tests cannot establish LAN coverage; real two-machine/native authorization and successful observations are still required.
 
 ## Custom runtime profiles
 
