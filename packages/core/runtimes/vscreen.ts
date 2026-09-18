@@ -58,9 +58,7 @@ export function deriveVscreenAccess(input: {
     canEnable:
       ownerAuthorized &&
       knownState &&
-      state.state === "disabled" &&
-      screenRecordingGranted &&
-      accessibilityGranted,
+      state.state === "disabled",
     canDisable:
       ownerAuthorized &&
       knownState &&
@@ -72,7 +70,7 @@ export function deriveVscreenAccess(input: {
       state.controlState === "agent",
     screenRecordingGranted,
     accessibilityGranted,
-    // Task 7 has not published an intervention endpoint or local-resume contract.
+    // Returning control requires the separate intervention receipt, not display state.
     canReturnToAgent: false,
   };
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,16 +15,26 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
+type nativeCaptureStream interface {
+	Next(context.Context) (capture.Sample, error)
+	Close(context.Context) error
+	ForceKeyframe(context.Context) error
+	Stats() (capture.Stats, error)
+	UpdateExclusions(context.Context, []uint32) error
+}
+
 type capturedStream struct {
+	exclusions []uint32
 	descriptor CaptureDescriptor
 	options    CaptureOptions
-	stream     *capture.Stream
+	stream     nativeCaptureStream
 	cancel     context.CancelFunc
 	done       chan struct{}
 	err        error
 	closeErr   error
 }
 type captureHost struct {
+	exclusions  []uint32
 	enabled     bool
 	token       [32]byte
 	media       net.Conn
@@ -92,6 +103,12 @@ func (h *captureHost) start(request Request, sources []SourceDescriptor) (*Captu
 		h.media = connection
 		clear(h.token[:])
 	}
+	requestedOptions := options
+	if source.Source.Kind != protocol.MirrorSourceVirtual {
+		options.ExcludedWindowIDs = append([]uint32(nil), h.exclusions...)
+	} else {
+		options.ExcludedWindowIDs = nil
+	}
 	width, height, fps, bitrate := options.Width, options.Height, options.FPS, options.Bitrate
 	if width == 0 {
 		width = 1600
@@ -115,7 +132,7 @@ func (h *captureHost) start(request Request, sources []SourceDescriptor) (*Captu
 		cancel()
 		return nil, err
 	}
-	current := &capturedStream{descriptor: CaptureDescriptor{StreamID: options.StreamID, Source: source, Layout: layout, FPS: fps, Bitrate: bitrate, MaxLevelIDC: options.MaxLevelIDC}, options: options, stream: stream, cancel: cancel, done: make(chan struct{})}
+	current := &capturedStream{descriptor: CaptureDescriptor{StreamID: options.StreamID, Source: source, Layout: layout, FPS: fps, Bitrate: bitrate, MaxLevelIDC: options.MaxLevelIDC}, options: requestedOptions, exclusions: append([]uint32(nil), options.ExcludedWindowIDs...), stream: stream, cancel: cancel, done: make(chan struct{})}
 	h.streams[options.StreamID] = current
 	h.used[options.StreamID] = true
 	go h.deliver(ctx, current, epoch)
@@ -276,4 +293,39 @@ func (h *captureHost) close() error {
 	}
 	clear(h.token[:])
 	return result
+}
+
+func (h *captureHost) updateExclusions(ctx context.Context, ids []uint32) error {
+	if len(ids) > 32 {
+		return ErrProtocol
+	}
+	seen := make(map[uint32]bool)
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			return ErrProtocol
+		}
+		seen[id] = true
+	}
+	h.exclusions = append([]uint32(nil), ids...)
+	for _, current := range h.streams {
+		if current.descriptor.Source.Source.Kind == protocol.MirrorSourceVirtual {
+			continue
+		}
+		select {
+		case <-current.done:
+			continue
+		default:
+		}
+		if slices.Equal(current.exclusions, ids) {
+			continue
+		}
+		if err := current.stream.UpdateExclusions(ctx, ids); err != nil {
+			if errors.Is(err, capture.ErrClosed) {
+				continue
+			}
+			return err
+		}
+		current.exclusions = append([]uint32(nil), ids...)
+	}
+	return nil
 }

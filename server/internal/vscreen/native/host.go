@@ -1,6 +1,7 @@
 package native
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -140,7 +141,13 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 		if request.Version != ProtocolVersion || request.Build != build || request.ID == "" || len(request.Token) > 0 || request.Media || request.AppControl || request.App != nil {
 			return ErrProtocol
 		}
-		if request.Operation == "list" {
+		if request.Operation == "update_exclusions" {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			if err := captures.updateExclusions(ctx, request.ExcludedWindowIDs); err != nil {
+				response.Error = "capture_update_failed"
+			}
+			cancel()
+		} else if request.Operation == "list" {
 			displays, err := listDisplays()
 			response.Displays = displays
 			if err != nil {

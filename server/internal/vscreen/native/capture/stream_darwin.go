@@ -175,3 +175,30 @@ func PermissionGranted() (bool, error) {
 	}
 	return status == 0, nativeError(status)
 }
+
+// UpdateExclusions changes the filter on the existing stream and waits for native acknowledgement.
+func (s *Stream) UpdateExclusions(ctx context.Context, ids []uint32) error {
+	if len(ids) > 32 {
+		return ErrConfig
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.handle == 0 {
+		return ErrClosed
+	}
+	timeout := 2 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = min(timeout, time.Until(deadline))
+	}
+	if timeout <= 0 {
+		return ErrTimeout
+	}
+	var pointer *C.uint32_t
+	if len(ids) > 0 {
+		pointer = (*C.uint32_t)(unsafe.Pointer(&ids[0]))
+	}
+	return nativeError(C.vs_capture_update_exclusions(s.handle, pointer, C.uint32_t(len(ids)), C.uint32_t(timeout.Milliseconds())))
+}

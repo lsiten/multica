@@ -92,6 +92,10 @@ func vscreenTestHost() int {
 		display := native.Display{ID: 2, UUID: virtual.Source.SourceID, Width: 1600, Height: 900, LogicalWidth: 1600, LogicalHeight: 900, Scale: 1, ScreenRecording: false}
 		var sample *native.MediaSample
 		switch request.Operation {
+		case "update_exclusions":
+			if len(request.ExcludedWindowIDs) > 32 {
+				response.Error = "capture_update_failed"
+			}
 		case "ensure":
 			enabled[request.Resource] = true
 			response.Display = &display

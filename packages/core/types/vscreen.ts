@@ -175,3 +175,5 @@ export interface VscreenVideoMetadata {
     readonly maxLevelIdc: number;
   };
 }
+
+export type { VscreenDesktopAction as VscreenLocalOperation, VscreenDesktopResult as VscreenLocalResult } from "./vscreen-desktop";

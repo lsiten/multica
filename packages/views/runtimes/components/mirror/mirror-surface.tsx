@@ -1,4 +1,5 @@
 "use client";
+import { MirrorHandoff } from "./mirror-handoff";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Monitor, PictureInPicture2, RefreshCw } from "lucide-react";
@@ -247,6 +248,7 @@ export function MirrorSurface({
           onRefresh={() => void receipt.refetch()}
         />
       )}
+      <MirrorHandoff permissions={state.data?.state.permissions} canRequest={access.canRequestTakeover && !commandPending && !commandUncertain} scope={scope} owner={runtime.owner_id === scope.accountId} online={online} catalog={catalog} onRequest={() => runCommand("request_takeover")} />
     </section>
   );
 }

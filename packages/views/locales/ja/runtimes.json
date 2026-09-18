@@ -505,6 +505,36 @@
     "legacy": "従来の画面ミラー",
     "select_runtime": "実行環境を選択",
     "resize": "画面サイズを変更",
-    "retry": "再接続"
+    "retry": "再接続",
+    "handoff": {
+      "title": "人による引き継ぎ",
+      "awaiting": "ローカルでの引き継ぎ待ち",
+      "human": "アプリを操作中",
+      "ready": "返却済み・続行可能",
+      "continued": "新しい実行で続行済み",
+      "stale": "この介入は無効です",
+      "cancelled": "キャンセル済み",
+      "remote": "ホスト上のランタイム所有者に引き継ぎを依頼してください。",
+      "source_run": "元の実行",
+      "child_run": "続行した実行",
+      "destination": "移動先の画面",
+      "move_here": "アプリを移動",
+      "summary": "変更内容",
+      "summary_limit": "最大 2 KiB。次の実行に共有されます。",
+      "return": "仮想画面に返却",
+      "continue": "実行を続行",
+      "fresh": "新しいセッションで開始",
+      "cancel": "介入をキャンセル",
+      "report_pending": "サーバーの確認待ちです。次の操作の前に状態を更新してください。",
+      "resume_unavailable": "元のセッションは再開できません。新しいセッションを選択できます。",
+      "failed": "操作が完了しませんでした。状態を更新してから再試行してください。",
+      "refresh": "状態を更新",
+      "screen_settings": "画面収録の設定",
+      "ax_settings": "アクセシビリティ設定",
+      "granted": "許可済み",
+      "not_granted": "未許可",
+      "unknown": "未確認",
+      "permissions": "自動操作の権限：アクセシビリティ {{accessibility}} · 画面収録 {{screenRecording}}"
+    }
   }
 }

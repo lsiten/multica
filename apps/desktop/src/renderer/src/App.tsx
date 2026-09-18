@@ -378,7 +378,7 @@ function handleSessionExpired() {
   tearDownOnSessionExpiry(sessionTeardown);
 }
 
-const mirrorPlatform: MirrorPlatform = { openFloating: async (scope, title) => {
+const mirrorPlatform: MirrorPlatform = { localControl: (scope, operation) => window.desktopAPI.vscreenDesktop({ scope, operation }), openFloating: async (scope, title) => {
   const opened = await window.desktopAPI.openRuntimeMirror({ scope, title });
   if (!opened) throw new Error("Runtime mirror window request rejected");
 } };

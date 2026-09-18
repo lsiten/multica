@@ -30,3 +30,5 @@ typedef struct {
 } VSStreamStats;
 int vs_capture_stats(uintptr_t handle, VSStreamStats *stats);
 int vs_capture_permission(void);
+
+int vs_capture_update_exclusions(uintptr_t handle, const uint32_t *ids, uint32_t count, uint32_t timeout_ms);

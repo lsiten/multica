@@ -1,3 +1,4 @@
+import type { VscreenDesktopRequest, VscreenDesktopResult } from "../shared/vscreen-desktop";
 import type { RuntimeMirrorWindowRequest } from "../shared/runtime-mirror-window";
 import type { RuntimeMirrorPreloadAPI } from "./runtime-mirror";
 import { ElectronAPI } from "@electron-toolkit/preload";
@@ -23,6 +24,7 @@ import type {
 import type { TabSelectionShortcutKey } from "../shared/main-renderer-messages";
 
 interface DesktopAPI {
+  vscreenDesktop: (request: VscreenDesktopRequest) => Promise<VscreenDesktopResult>;
   openRuntimeMirror: (request: RuntimeMirrorWindowRequest) => Promise<boolean>;
   /** App version + normalized OS, captured synchronously at preload time. */
   appInfo: {

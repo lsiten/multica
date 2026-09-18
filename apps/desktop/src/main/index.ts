@@ -1,3 +1,5 @@
+import { VSCREEN_DESKTOP_CHANNEL, vscreenDesktopActionSchema } from "../shared/vscreen-desktop";
+import { ownedMirrorWindowIDs } from "./vscreen-exclusions";
 import { RuntimeMirrorWindowManager } from "./runtime-mirror-window-manager";
 import { RUNTIME_MIRROR_CHANNEL } from "../shared/runtime-mirror-window";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
@@ -7,7 +9,7 @@ import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import fixPath from "fix-path";
 import { setupAutoUpdater } from "./updater";
-import { setupDaemonManager } from "./daemon-manager";
+import { setupDaemonManager, performVscreenDesktop, updateVscreenWindowExclusions } from "./daemon-manager";
 import { setupLocalDirectory } from "./local-directory";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
@@ -155,6 +157,7 @@ let runtimeConfigResult: RuntimeConfigResult = {
   error: { message: "Runtime config has not loaded yet" },
 };
 
+let exclusionUpdates: Promise<void> = Promise.resolve();
 const runtimeMirrorWindows = new RuntimeMirrorWindowManager({
   mainWindow: () => mainWindow,
   accountId: () => authSessionCoordinator.currentUserId(),
@@ -163,6 +166,12 @@ const runtimeMirrorWindows = new RuntimeMirrorWindowManager({
   rendererURL: () => is.dev && process.env["ELECTRON_RENDERER_URL"] ? process.env["ELECTRON_RENDERER_URL"] : pathToFileURL(join(__dirname, "../renderer/index.html")).toString(),
   preloadPath: join(__dirname, "../preload/index.js"),
   systemLocale: getSystemLocale,
+  mediaSourceChanged: (sources) => {
+    const accountId = authSessionCoordinator.currentUserId(); const generation = authSessionGeneration;
+    if (!accountId) return;
+    const ids = ownedMirrorWindowIDs(sources);
+    exclusionUpdates = exclusionUpdates.catch(() => undefined).then(() => updateVscreenWindowExclusions(ids, accountId, () => generation === authSessionGeneration && accountId === authSessionCoordinator.currentUserId())).catch(() => { console.warn("Runtime mirror window exclusion update failed"); });
+  },
   register: (window) => authSessionCoordinator.registerChildWindow(window),
   unregister: (window) => authSessionCoordinator.unregisterChildWindow(window),
 });
@@ -769,6 +778,15 @@ if (!gotTheLock) {
 
     // Account identity is the only cross-renderer auth signal. Main remains
     // authoritative and closes issue windows instead of copying credentials.
+    ipcMain.handle(VSCREEN_DESKTOP_CHANNEL, async (event, value: unknown) => {
+      if (!value || typeof value !== "object" || !("scope" in value) || !("operation" in value)) return { ok: false, local: false, reason: "local_owner_required" };
+      const context = runtimeMirrorWindows.localContext(event, value.scope);
+      const operation = vscreenDesktopActionSchema.safeParse(value.operation);
+      if (!context || !operation.success) return { ok: false, local: false, reason: "local_owner_required" };
+      const current = () => runtimeMirrorWindows.localContext(event, context.scope)?.generation === context.generation;
+      return performVscreenDesktop(context.scope, operation.data, current);
+    });
+
     ipcMain.handle(RUNTIME_MIRROR_CHANNEL, (event, action: unknown, payload: unknown) => {
       switch (action) {
         case "open": return runtimeMirrorWindows.open(event, payload);
