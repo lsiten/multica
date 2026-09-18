@@ -250,3 +250,18 @@ describe("explicit Desktop launcher integration",()=>{
     const report=await runSmoke({...f.options,scenario:"performance",launcher:"desktop",allowGui:true},f.dependencies);expect(report.status).toBe("blocked");expect(returned.status).toBe("blocked");expect(JSON.stringify(returned)).not.toMatch(/nonce|base_url|frames/);expect(report.performance.assessment.localMeasurement.status).toBe("passed");
   });
 });
+
+it("requires explicit Desktop qualification routing and interactive choice",()=>{
+ const args=["--app","/Multica.app","--evidence","/tmp/owned","--scenario","input-qualification"];
+ expect(()=>parseArguments(args,{})).toThrow("--launcher desktop");
+ expect(parseArguments([...args,"--launcher","desktop"],{}).interactive).toBeUndefined();
+ expect(parseArguments([...args,"--launcher","desktop","--interactive"],{})).toMatchObject({interactive:true,allowGui:false});
+ expect(()=>parseArguments(["--app","/Multica.app","--evidence","/tmp/owned","--interactive"],{})).toThrow("requires input-qualification");
+});
+it.each([false,true])("retains experimental qualification coverage interactive=%s",async(interactive)=>{
+ const f=await fixture();const launches=[];
+ const qualification={scope:"experimental-same-bundle-disposable-fixture",production_certified:false,effects_verified:true,completion_verified:true,fixture_closed:true,control_revoked:true,old_lease_refused:true,foreground_continuity:interactive?"verified_manual_fixture_challenge":"unverified_requires_human_typing_phase",manual:{status:interactive?"verified_manual_fixture_challenge":"unverified"}};
+ f.dependencies.launchDesktopNativeSmoke=async(options)=>{launches.push(options);return {status:"passed",reportPath:join(f.options.evidence,"desktop-result.json"),report:{qualification,desktop_launch_verified:true,cleanup_confirmed:true,native:options.scenario==="diagnostics"?{version:"v1.2.3-dirty",commit:"abc1234",os:"darwin",arch:"arm64",native_supported:true,permissions:{accessibility:true,screen_recording:true}}:{scenario:"input-qualification",executable:f.helper,version:"v1.2.3-dirty",commit:"abc1234",status:"passed",gui_exercised:true,disposed:true,host_closed:true,display:{display_id:42},source:{display_id:42}}}};};
+ const report=await runSmoke({...f.options,scenario:"input-qualification",launcher:"desktop",allowGui:true,interactive},f.dependencies);
+ expect(report.status).toBe("passed");expect(launches.at(-1)).toMatchObject({scenario:"input-qualification",interactive});expect(report.qualification).toEqual(qualification);expect(report.planCoverage.positivePIDActions).toBe("experimental-fixture-only");expect(report.planCoverage.userAppCompatibility).toBe("unverified");
+});
