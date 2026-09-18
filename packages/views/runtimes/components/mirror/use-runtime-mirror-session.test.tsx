@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
+import { useMemo } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MirrorICEConfig, MirrorSessionResponse } from "@multica/core/types";
+import type { MirrorICEConfig, MirrorSessionResponse, VscreenScope } from "@multica/core/types";
 import { useRuntimeMirrorSession } from "./use-runtime-mirror-session";
 
 const mocks = vi.hoisted(() => ({
@@ -10,10 +11,12 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSession: vi.fn(),
   closeSession: vi.fn(),
+  scopedClient: vi.fn(),
   peers: [] as FakePeer[],
 }));
 
 vi.mock("@multica/core/api", () => ({
+  getApi: () => ({ vscreen: mocks.scopedClient }),
   api: {
     getMirrorICEConfig: mocks.getICEConfig,
     createMirrorSession: mocks.createSession,
@@ -109,6 +112,7 @@ describe("useRuntimeMirrorSession", () => {
     mocks.createSession.mockReset();
     mocks.getSession.mockReset();
     mocks.closeSession.mockReset();
+    mocks.scopedClient.mockReset();
     mocks.peers.length = 0;
     mocks.getICEConfig.mockResolvedValue(emptyICEConfig);
     mocks.closeSession.mockResolvedValue(undefined);
@@ -180,5 +184,98 @@ describe("useRuntimeMirrorSession", () => {
 
     unmount();
     expect(mocks.closeSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+const scope: VscreenScope = {
+  backendIdentity: "https://fixture.test",
+  accountId: "user-1",
+  workspaceId: "ws-1",
+  runtimeId: "runtime-1",
+};
+
+function scopedClient() {
+  return {
+    legacy: {
+      getIceConfig: vi.fn().mockResolvedValue(emptyICEConfig),
+      createSession: vi.fn().mockResolvedValue(session({})),
+      getSession: vi.fn().mockResolvedValue(session({ state: "answered", answer: { type: "answer", sdp: "remote-answer" } })),
+      closeSession: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
+function renderScopedSession() {
+  return renderHook(({ accountId, enabled }) => {
+    const currentScope = useMemo(() => ({ ...scope, accountId }), [accountId]);
+    return useRuntimeMirrorSession({ runtimeId: scope.runtimeId, enabled, scope: currentScope });
+  }, { initialProps: { accountId: scope.accountId, enabled: true } });
+}
+
+describe("legacy scoped session teardown", () => {
+  beforeEach(() => {
+    mocks.scopedClient.mockReset();
+    mocks.peers.length = 0;
+    vi.stubGlobal("RTCPeerConnection", FakePeer);
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("does not create an old peer when ICE resolves after account replacement", async () => {
+    const pending = deferred<MirrorICEConfig>();
+    const first = scopedClient();
+    const second = scopedClient();
+    first.legacy.getIceConfig.mockReturnValue(pending.promise);
+    mocks.scopedClient.mockImplementation((value: VscreenScope) => value.accountId === scope.accountId ? first : second);
+    const { rerender, unmount } = renderScopedSession();
+    rerender({ accountId: "user-2", enabled: true });
+    await waitForPeer();
+    await act(async () => pending.resolve(emptyICEConfig));
+    expect(mocks.peers).toHaveLength(1);
+    expect(first.legacy.createSession).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("closes a late-created viewer through its original scoped client", async () => {
+    const pending = deferred<MirrorSessionResponse>();
+    const first = scopedClient();
+    const second = scopedClient();
+    first.legacy.createSession.mockReturnValue(pending.promise);
+    mocks.scopedClient.mockImplementation((value: VscreenScope) => value.accountId === scope.accountId ? first : second);
+    const { rerender, unmount } = renderScopedSession();
+    const peer = await waitForPeer();
+    await completeIceGathering(peer);
+    await waitFor(() => expect(first.legacy.createSession).toHaveBeenCalledOnce());
+    const viewerId = first.legacy.createSession.mock.calls[0]?.[0]?.viewer_id;
+    rerender({ accountId: "user-2", enabled: true });
+    await act(async () => pending.resolve(session({ id: "old-session" })));
+    expect(first.legacy.closeSession).toHaveBeenCalledExactlyOnceWith({ sessionId: "old-session", viewerId });
+    expect(second.legacy.closeSession).not.toHaveBeenCalled();
+    expect(first.legacy.getSession).not.toHaveBeenCalled();
+    expect(peer.close).toHaveBeenCalled();
+    unmount();
+  });
+
+  it("does not apply a late answer after account replacement", async () => {
+    const pending = deferred<MirrorSessionResponse>();
+    const first = scopedClient();
+    const second = scopedClient();
+    first.legacy.getSession.mockReturnValue(pending.promise);
+    mocks.scopedClient.mockImplementation((value: VscreenScope) => value.accountId === scope.accountId ? first : second);
+    const { rerender, unmount } = renderScopedSession();
+    const peer = await waitForPeer();
+    await completeIceGathering(peer);
+    await waitFor(() => expect(first.legacy.getSession).toHaveBeenCalledOnce());
+    rerender({ accountId: "user-2", enabled: true });
+    await act(async () => pending.resolve(session({ state: "answered", answer: { type: "answer", sdp: "late-answer" } })));
+    expect(peer.setRemoteDescription).not.toHaveBeenCalled();
+    expect(first.legacy.closeSession).toHaveBeenCalledOnce();
+    unmount();
   });
 });

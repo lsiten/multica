@@ -1,3 +1,5 @@
+import { RuntimeMirrorWindowManager } from "./runtime-mirror-window-manager";
+import { RUNTIME_MIRROR_CHANNEL } from "../shared/runtime-mirror-window";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
 import { homedir } from "os";
 import { join } from "path";
@@ -149,6 +151,18 @@ let runtimeConfigResult: RuntimeConfigResult = {
   ok: false,
   error: { message: "Runtime config has not loaded yet" },
 };
+
+const runtimeMirrorWindows = new RuntimeMirrorWindowManager({
+  mainWindow: () => mainWindow,
+  accountId: () => authSessionCoordinator.currentUserId(),
+  generation: () => authSessionGeneration,
+  backendIdentity: () => runtimeConfigResult.ok ? runtimeConfigResult.config.apiUrl.replace(/\/$/, "") : null,
+  rendererURL: () => is.dev && process.env["ELECTRON_RENDERER_URL"] ? process.env["ELECTRON_RENDERER_URL"] : pathToFileURL(join(__dirname, "../renderer/index.html")).toString(),
+  preloadPath: join(__dirname, "../preload/index.js"),
+  systemLocale: getSystemLocale,
+  register: (window) => authSessionCoordinator.registerChildWindow(window),
+  unregister: (window) => authSessionCoordinator.unregisterChildWindow(window),
+});
 
 // --- Deep link helpers ---------------------------------------------------
 
@@ -752,10 +766,21 @@ if (!gotTheLock) {
 
     // Account identity is the only cross-renderer auth signal. Main remains
     // authoritative and closes issue windows instead of copying credentials.
+    ipcMain.handle(RUNTIME_MIRROR_CHANNEL, (event, action: unknown, payload: unknown) => {
+      switch (action) {
+        case "open": return runtimeMirrorWindows.open(event, payload);
+        case "close": return runtimeMirrorWindows.close(event);
+        case "resize": return runtimeMirrorWindows.resize(event, payload);
+        case "move": return runtimeMirrorWindows.move(event, payload);
+        case "media-source": return runtimeMirrorWindows.mediaSourceId(event);
+        default: return false;
+      }
+    });
+
     ipcMain.on(AUTH_SESSION_STATE_CHANNEL, (event, value: unknown) => {
       const sourceWindow = BrowserWindow.fromWebContents(event.sender);
       const userId = parseAuthSessionUserId(value);
-      if (!sourceWindow || userId === undefined) return;
+      if (!sourceWindow || userId === undefined || event.senderFrame !== sourceWindow.webContents.mainFrame) return;
 
       if (sourceWindow === mainWindow) {
         const accountInvalidated = authSessionCoordinator.reportMain(userId);
@@ -763,6 +788,10 @@ if (!gotTheLock) {
           authSessionGeneration += 1;
           mainRendererMessages.clear("inbox:open");
         }
+        return;
+      }
+      if (runtimeMirrorWindows.owns(sourceWindow) && runtimeMirrorWindows.contextFor(event)) {
+        authSessionCoordinator.reportChild(sourceWindow, userId);
         return;
       }
       if (issueWindows.has(sourceWindow)) {
