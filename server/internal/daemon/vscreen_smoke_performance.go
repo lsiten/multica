@@ -54,6 +54,7 @@ type performancePeer struct {
 	sourceID    string
 }
 type performanceProducer struct {
+	readNetworkRoute                   func(context.Context, mirror.SelectedICEPair) performanceRouteEvidence
 	systemGPU                          performanceSystemGPU
 	readGPU                            func() (performanceGPUSample, error)
 	finishedOnce                       sync.Once
