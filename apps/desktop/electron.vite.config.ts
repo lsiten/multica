@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   main: {
+    build: { rollupOptions: { preserveEntrySignatures: "strict", external: ["electron"], input: { index: resolve("src/main/index.ts"), "normal-startup": resolve("src/main/normal-startup.ts") }, output: { strictExecutionOrder: true, hoistTransitiveImports: false, format: "cjs", entryFileNames: "[name].js" } } },
     // Workspace packages export TypeScript source, not Node-loadable bundles.
     plugins: [externalizeDepsPlugin({ exclude: ["@multica/core"] })],
   },
