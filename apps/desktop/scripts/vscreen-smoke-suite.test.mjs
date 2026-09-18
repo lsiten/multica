@@ -1,0 +1,13 @@
+// @vitest-environment node
+import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, expect, it } from "vitest";
+import { REQUIRED_SMOKE_SCENARIOS, aggregateSmokeResults, canonicalSmokeScenario, nativeSmokeScenario, runSmokeSuite } from "./vscreen-smoke-suite.mjs";
+const directories=[];afterEach(async()=>{await Promise.all(directories.splice(0).map((d)=>rm(d,{recursive:true,force:true})));});
+async function directory(){const d=await mkdtemp(join(tmpdir(),"vscreen-suite-"));directories.push(d);return d;}
+it("reconciles documented names without renaming native operations",()=>{expect(canonicalSmokeScenario("source")).toBe("sources");expect(canonicalSmokeScenario("input")).toBe("background-input");expect(nativeSmokeScenario("sources")).toBe("source");expect(nativeSmokeScenario("background-input")).toBe("input");});
+it("cannot inherit refusal-only or scripted passes as full coverage",()=>{const children=REQUIRED_SMOKE_SCENARIOS.map((scenario)=>({scenario,status:"passed"}));const result=aggregateSmokeResults(children);expect(result.status).toBe("blocked");expect(result.missingCoverage.map((g)=>g.gate)).toEqual(expect.arrayContaining(["positivePIDActions","userAppCompatibility","continuousForegroundTyping","manualHandoff","productionDB","desktopUI","lanAcceptance"]));});
+it("requires every unique required scenario",()=>{expect(aggregateSmokeResults([{scenario:"video",status:"passed"}]).missing).toContain("performance");expect(aggregateSmokeResults([{scenario:"video",status:"passed"},{scenario:"video",status:"passed"}]).status).toBe("blocked");});
+it("records every gate and does not launch after unconfirmed cleanup",async()=>{const evidence=await directory();const calls=[];const result=await runSmokeSuite({evidence,allowGui:true},async(options)=>{calls.push(options.scenario);return {scenario:options.scenario,status:"blocked",gui_exercised:true,gui:{disposed:false,host_closed:false},error:{code:"cleanup_unconfirmed"}};});expect(calls).toEqual(["lifecycle"]);expect(result.children).toHaveLength(6);expect(result.children.slice(1).every((c)=>c.error.code==="not_attempted_cleanup_unconfirmed")).toBe(true);expect(JSON.parse(await readFile(join(evidence,"report.json"),"utf8")).status).toBe("blocked");});
+it("never starts children without GUI opt-in",async()=>{const result=await runSmokeSuite({evidence:await directory(),allowGui:false},()=>{throw new Error("must not launch");});expect(result.status).toBe("blocked");expect(result.children).toHaveLength(6);});
