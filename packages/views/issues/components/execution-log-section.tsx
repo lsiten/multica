@@ -564,7 +564,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
                   aria-label={t(($) => $.execution_log.review_changes_aria)}
                 />
               }
-              className="flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center justify-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               {reviewing ? <Loader2 className="size-3.5 animate-spin" /> : <Code2 className="size-3.5" />}
             </TooltipTrigger>

@@ -52,7 +52,7 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, disabled = 
   const busy = disabled || query.isFetching || writing;
   const error = operation.error ?? query.error ?? lease.error;
   const invalidMessage = !message.trim() || new TextEncoder().encode(message).length > 8000;
-  return <section className={compact ? "space-y-2 text-caption" : "space-y-2 rounded border p-3 text-caption"}>
+  return <section className={compact ? "space-y-2 text-caption" : "space-y-2 rounded-sm border p-3 text-caption"}>
     <div className="flex items-center justify-between gap-2"><span className="break-all font-mono">{data?.status.branch}</span><Button variant="outline" disabled={busy} onClick={() => { setConfirm(false); void query.refetch(); }}>{t(($) => $.local_review.refresh)}</Button></div>
     {query.isPending && <p role="status">{t(($) => $.local_review.loading)}</p>}
     {error && <LocalReviewError error={error} id={errorId} />}
