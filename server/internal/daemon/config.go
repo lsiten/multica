@@ -115,6 +115,9 @@ var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
 type Config struct {
+	NativeHostExecutable           string // Trusted same-binary absolute path; empty disables managed native work.
+	NativeHostBuild                string // Version/commit identity; never read from renderer or PATH.
+	NativeVscreenPreferencesPath   string // Profile-private enabled preference file.
 	ServerBaseURL                  string
 	DaemonID                       string
 	LegacyDaemonIDs                []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows

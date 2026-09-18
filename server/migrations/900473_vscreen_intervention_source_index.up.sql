@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY runtime_vscreen_intervention_source_idx ON runtime_vscreen_intervention (source_task_id);

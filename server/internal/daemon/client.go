@@ -93,9 +93,10 @@ func isRuntimeNotFoundError(err error) bool {
 
 // Client handles HTTP communication with the Multica server daemon API.
 type Client struct {
-	baseURL string
-	token   string
-	client  *http.Client
+	managedVscreen bool
+	baseURL        string
+	token          string
+	client         *http.Client
 
 	// bundleClient downloads skill bundles. Unlike client it carries no fixed
 	// Timeout: bundles can be large and slow on jittery links, so the caller
@@ -179,7 +180,13 @@ func (c *Client) setIdentityHeaders(req *http.Request) {
 	if c.os != "" {
 		req.Header.Set("X-Client-OS", c.os)
 	}
-	req.Header.Set("X-Client-Capabilities", daemonHTTPClientCapabilities())
+	capabilities := daemonHTTPClientCapabilities()
+	if c.managedVscreen {
+		if managed := managedVscreenCapabilities(); len(managed) > 0 {
+			capabilities += "," + strings.Join(managed, ",")
+		}
+	}
+	req.Header.Set("X-Client-Capabilities", capabilities)
 }
 
 // daemonClientCapabilities is the X-Client-Capabilities value the daemon

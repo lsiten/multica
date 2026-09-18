@@ -1301,6 +1301,28 @@ type RuntimeProfile struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type RuntimeVscreenIntervention struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	AgentID            pgtype.UUID        `json:"agent_id"`
+	SourceTaskID       pgtype.UUID        `json:"source_task_id"`
+	Reason             string             `json:"reason"`
+	State              string             `json:"state"`
+	NativeEpoch        string             `json:"native_epoch"`
+	DisplayGeneration  string             `json:"display_generation"`
+	GeometryRevision   int64              `json:"geometry_revision"`
+	ReturnReceiptID    string             `json:"return_receipt_id"`
+	LastActionID       string             `json:"last_action_id"`
+	HumanSummary       string             `json:"human_summary"`
+	CreatedByUserID    pgtype.UUID        `json:"created_by_user_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ResolvedAt         pgtype.Timestamptz `json:"resolved_at"`
+	ContinuationTaskID pgtype.UUID        `json:"continuation_task_id"`
+	Version            int64              `json:"version"`
+}
+
 type SeatCapacityOutbox struct {
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
 	OperationToken pgtype.UUID        `json:"operation_token"`

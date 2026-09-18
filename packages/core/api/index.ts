@@ -24,6 +24,7 @@ import type { ApiClient as ApiClientType } from "./client";
 let _api: ApiClientType | null = null;
 
 export function setApiInstance(instance: ApiClientType) {
+  if (_api !== instance) _api?.invalidateVscreenRequests?.();
   _api = instance;
 }
 
@@ -45,3 +46,9 @@ export const api = new Proxy({} as ApiClientType, {
     return typeof value === "function" ? value.bind(_api) : value;
   },
 });
+
+export { VscreenContractError, VscreenScopeError, vscreenErrorReason } from "./vscreen";
+export type { VscreenApi } from "./vscreen";
+export { parseVscreenVideoMetadata, matchesMirrorBinding } from "./vscreen-mirror";
+
+export type { VscreenIntervention } from "./vscreen-interventions";

@@ -27,6 +27,14 @@ export class AuthSessionCoordinator<T> {
     this.issueUserIds.delete(window);
   }
 
+  currentUserId(): string | null {
+    return this.mainUserId ?? null;
+  }
+
+  registerChildWindow(window: T): void { this.registerIssueWindow(window); }
+  unregisterChildWindow(window: T): void { this.unregisterIssueWindow(window); }
+  reportChild(window: T, userId: AuthSessionUserId): void { this.reportIssue(window, userId); }
+
   hasActiveMainSession(): boolean {
     return typeof this.mainUserId === "string";
   }

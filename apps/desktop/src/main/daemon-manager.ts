@@ -1,3 +1,6 @@
+import { requestVscreenDesktop } from "./vscreen-desktop-request";
+import type { VscreenScope } from "@multica/core/types";
+import type { VscreenDesktopAction, VscreenDesktopResult } from "../shared/vscreen-desktop";
 import { app, ipcMain, BrowserWindow, shell } from "electron";
 import { execFile } from "child_process";
 import {
@@ -1256,6 +1259,9 @@ async function pollOnce(): Promise<void> {
   try {
     const status = await fetchHealth();
     currentState = status.state;
+    if (status.state === "running" && desiredVscreenExclusions) {
+      await flushVscreenWindowExclusions().catch(() => { console.warn("Runtime mirror exclusion synchronization failed"); });
+    }
     observeDaemonBoundary(status);
     const decision = recoveryDecision(status);
     sendStatus(
@@ -1617,4 +1623,36 @@ export function setupDaemonManager(
       }
     });
   });
+}
+
+export async function performVscreenDesktop(scope: VscreenScope, operation: VscreenDesktopAction, isCurrent: () => boolean): Promise<VscreenDesktopResult> {
+  const active = await ensureActiveProfile();
+  if (!active || targetApiBaseUrl?.replace(/\/$/, "") !== scope.backendIdentity || process.platform !== "darwin") return { ok: false, local: false, reason: "local_owner_required" };
+  const current = () => isCurrent() && activeProfile?.name === active.name && targetApiBaseUrl?.replace(/\/$/, "") === scope.backendIdentity;
+  const body = operation.action === "takeover" ? { action: operation.action, intervention_id: operation.interventionId, destination_source_id: operation.destinationSourceId } : operation.action === "return" ? { action: operation.action, intervention_id: operation.interventionId, summary: operation.summary } : operation.action === "list_windows" ? { action: operation.action, intervention_id: operation.interventionId } : operation.action === "adopt_window" ? { action: operation.action, intervention_id: operation.interventionId, window_handle: operation.windowHandle } : { action: "status" };
+  try {
+    const result = await requestVscreenDesktop({ directory: profileDir(active.name), port: active.port, profile: active.name, backend: scope.backendIdentity, accountId: scope.accountId, workspaceId: scope.workspaceId, runtimeId: scope.runtimeId, body, isCurrent: current, profileAccount: () => readProfileUserId(active.name) });
+    if (result.ok && operation.action === "settings" && current()) await shell.openExternal(operation.permission === "accessibility" ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" : "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+    return result;
+  } catch { return { ok: false, local: false, reason: "local_owner_required" }; }
+}
+let desiredVscreenExclusions: { ids: readonly number[]; accountId: string; isCurrent: () => boolean } | null = null;
+let vscreenExclusionWork: Promise<void> = Promise.resolve();
+export function updateVscreenWindowExclusions(ids: readonly number[], accountId: string, isCurrent: () => boolean): Promise<void> {
+  desiredVscreenExclusions = { ids: [...ids], accountId, isCurrent };
+  return flushVscreenWindowExclusions();
+}
+function flushVscreenWindowExclusions(): Promise<void> {
+  const operation = vscreenExclusionWork.catch(() => undefined).then(async () => {
+    const entry = desiredVscreenExclusions;
+    if (!entry || !entry.isCurrent()) return;
+    const { ids, accountId } = entry;
+    const isCurrent = () => entry === desiredVscreenExclusions && entry.isCurrent();
+  const active = await ensureActiveProfile(); const backend = targetApiBaseUrl?.replace(/\/$/, "");
+  if (!active || !backend || process.platform !== "darwin") return;
+  const result = await requestVscreenDesktop({ directory: profileDir(active.name), port: active.port, profile: active.name, backend, accountId, body: { action: "exclusions", excluded_window_ids: ids }, isCurrent: () => isCurrent() && activeProfile?.name === active.name, profileAccount: () => readProfileUserId(active.name) });
+  if (!result.ok) throw new Error(result.reason ?? "capture_update_failed");
+  });
+  vscreenExclusionWork = operation;
+  return operation;
 }

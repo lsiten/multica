@@ -5,16 +5,16 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   main: {
+    build: { rollupOptions: { preserveEntrySignatures: "strict", external: ["electron"], input: { index: resolve("src/main/index.ts"), "normal-startup": resolve("src/main/normal-startup.ts") }, output: { strictExecutionOrder: true, hoistTransitiveImports: false, format: "cjs", entryFileNames: "[name].js" } } },
     // Workspace packages export TypeScript source, not Node-loadable bundles.
     plugins: [externalizeDepsPlugin({ exclude: ["@multica/core"] })],
   },
   preload: {
-    // `@electron-toolkit/preload` must be bundled INTO the preload script:
-    // the renderer windows run with `sandbox: true`, and a sandboxed preload's
-    // `require` can only load `electron` plus a couple of node builtins — an
-    // externalized `require("@electron-toolkit/preload")` would throw and
-    // every contextBridge API would vanish. electron-vite emits preload as a
-    // single CJS bundle, which is exactly what the sandbox requires.
+    // One CJS bundle keeps sandboxed preload imports local; window context limits exposed APIs.
+    build: {
+      lib: { entry: resolve("src/preload/index.ts"), formats: ["cjs"], fileName: () => "index.js" },
+      rollupOptions: { external: ["electron"], output: { codeSplitting: false } },
+    },
     plugins: [externalizeDepsPlugin({ exclude: ["@electron-toolkit/preload"] })],
   },
   renderer: {

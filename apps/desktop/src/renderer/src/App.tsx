@@ -1,3 +1,4 @@
+import { MirrorPlatformProvider, type MirrorPlatform } from "@multica/views/runtimes/mirror";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CoreProvider } from "@multica/core/platform";
@@ -377,6 +378,11 @@ function handleSessionExpired() {
   tearDownOnSessionExpiry(sessionTeardown);
 }
 
+const mirrorPlatform: MirrorPlatform = { localControl: (scope, operation) => window.desktopAPI.vscreenDesktop({ scope, operation }), openFloating: async (scope, title) => {
+  const opened = await window.desktopAPI.openRuntimeMirror({ scope, title });
+  if (!opened) throw new Error("Runtime mirror window request rejected");
+} };
+
 export default function App() {
   const { version, os } = window.desktopAPI.appInfo;
   const systemLocale = window.desktopAPI.systemLocale;
@@ -477,11 +483,11 @@ export default function App() {
               apiUrl={runtimeConfigResult.config.apiUrl}
             />
           )}
-          {windowContext.kind === "issue" ? (
+          <MirrorPlatformProvider value={mirrorPlatform}>{windowContext.kind === "issue" ? (
             <IssueWindowContent />
           ) : (
             <AppContent />
-          )}
+          )}</MirrorPlatformProvider>
         </CoreProvider>
       ) : (
         <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />

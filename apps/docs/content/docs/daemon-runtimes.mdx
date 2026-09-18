@@ -79,6 +79,104 @@ A local runtime is **private** by default: only the runtime owner can create age
 
 Only the runtime owner can make it **public** — workspace admins can rename or delete a runtime, but sharing one is the owner's decision. Other workspace members can then select this runtime as well; that does not share the underlying AI coding tool's login credentials — it only lets members route their agents' runs to this computer.
 
+## Runtime virtual screen
+
+On a supported Mac, a runtime can own one managed virtual screen. Enable or disable it in that runtime's screen controls. The display belongs to the runtime, not an individual run or viewer; closing a mirror window leaves it enabled in the background. Runs on that runtime queue for exclusive GUI control while ordinary coding work can continue independently.
+
+The mirror is view-only. Switching between the runtime's virtual screen and a physical display changes what you watch; it does not give an agent control of the physical display. Viewing another computer also does not grant local takeover rights.
+
+### Permissions and supported apps
+
+The native host is part of the bundled Multica executable on macOS arm64 and Intel. It requires available macOS virtual-display APIs, Screen Recording for capture, and Accessibility for app control. Creating a display alone does not establish capture or app-control permission. There is no separate driver or helper app to install. Linux, Windows, a build without native support, or a Mac missing the required APIs cannot provide this virtual-screen capability. Upgrading only the client does not add capabilities to an old daemon.
+
+Grant permissions yourself in macOS **System Settings → Privacy & Security** for the installed Multica identity shown by the system. A permission shown for a development terminal or a different build is not proof that the installed Desktop has access. Diagnostics never request or reset permissions. An unknown permission, denied permission, unavailable source, or disconnected runtime is not ready for GUI work.
+
+Managed tools can discover installed apps and list windows already managed by the runtime. A later run can reuse a managed window, including one returned after human intervention, but must obtain a fresh observation before acting. Discovery alone does not launch, move or take control of a window.
+
+Managed tools use Accessibility actions supported by the target app. Production PID-targeted input requires reviewed evidence for the app, OS and action variant (including the input source for keyboard actions), plus a code-owned verifier of target processing and the resulting effect. The current production policy has no enabled PID variants; dispatch returning successfully is not a completion acknowledgement. An app that cannot stay within the managed screen or safely accept background input requires human intervention. These guarantees cover managed tools, not every command or external MCP an agent could invoke. This is not an OS sandbox.
+
+The view-only mirror and agent observations have different data paths. An agent's observation can include a screenshot and Accessibility content supplied to its AI provider. Do not place sensitive content in a managed app unless that use is intended.
+
+### Human handoff and cleanup
+
+When a run needs help, its GUI actions are frozen and the original run is stopped. The owner on the same computer can explicitly take over, complete the required step, and return control. Continue creates a linked follow-up run after the return is verified; it does not resume the original run in place. The follow-up must observe the current window before taking another action. If continuation is unavailable, starting a fresh run requires an explicit choice.
+
+If launch failed before a window was managed, the local owner can list safely selectable windows and explicitly confirm adoption. Adoption registers the selected window without automatically moving or activating it; candidate titles stay on the local Desktop. Returning it to the virtual screen requires a fresh observation and verified return receipt before Continue. Missing report acknowledgements keep the handoff waiting. A remote viewer can request help but cannot select local candidates or perform the local handoff.
+
+Disable the virtual screen when you no longer need it. Disabling waits for input and capture to stop before disposing of the display. Closing the viewer only ends viewing. If cleanup, return, or display identity cannot be confirmed, keep the state blocked and inspect the reported failure; do not treat a timeout as successful cleanup or replay an uncertain action. After a restart or permission change, check the current runtime state again.
+
+### Inspecting a packaged build
+
+From a source checkout, inspect the exact app you intend to use:
+
+```bash
+pnpm --filter @multica/desktop exec node scripts/vscreen-native-smoke.mjs \
+  --app /absolute/path/Multica.app --scenario package \
+  --evidence /absolute/path/new-evidence-directory
+```
+
+The `package` report records bundle identity, helper path and SHA-256, architecture, linked frameworks, version/commit and signature verification. An ad-hoc signature is labelled as such; it is not evidence of notarization. `diagnostics` performs a nonprompting native/permission preflight. Its default direct-helper launch records that invocation's permissions, not Desktop's TCC attribution. Missing permissions or an older helper without diagnostics returns a nonzero result.
+
+Add `--launcher desktop` to run diagnostics or a supported GUI scenario through the selected App's isolated main process and its verified bundled helper. This starts an actual App instance without loading the normal account/session startup. `desktop_launch_verified` confirms the process chain; it does not establish `tcc_attribution_verified`. Neither launcher requests, grants or resets permissions.
+
+GUI scenarios require explicit `--allow-gui` or `MULTICA_RUN_VSCREEN_GUI_SMOKE=1`. They use disposable test resources and do not record the main physical screen by default. Each report retains its own scope and cleanup results:
+
+| Scenario | What it exercises | What a pass does not establish |
+| --- | --- | --- |
+| `lifecycle`, `sources` | Create a test-owned display, match display/source identities and verify disposal. | App input or renderer playback. |
+| `video` | Capture three H264 samples from the virtual display, with parameter sets, timestamps and hashes. | Renderer playback or end-to-end latency. |
+| `background-input` | AX press/value changes in a copied-helper fixture, fresh readback and refusal of uncertified PID input. | Installed-app compatibility, positive PID actions, IME or continuous foreground typing. |
+| `takeover` | Stop/revoke, local-owner transfer, virtual return, fresh observation, receipt and follow-up observation through an owned provider and loopback fixture backend. | Real database or Desktop UI acceptance, a real model, or manual human handoff; the fixture's human stage is scripted. |
+| `input-qualification` | Experimental PID click, Unicode, key, scroll and drag effects in a same-bundle disposable fixture, with target completion ACKs and fresh observations. Requires `--launcher desktop`. | Production app certification. Foreground typing stays unverified unless `--interactive` is explicitly selected and the user completes the separate scratch-window challenge. |
+| `performance` | Dynamic virtual content, two Chromium viewers, rendering/latency observations, resource samples and cleanup cycles. | Physical scanout latency, benchmark-specific GPU attribution or LAN acceptance from a local loopback run. |
+
+`sources` and `background-input` are the canonical names; `source` and `input` remain aliases. The interactive qualification stage never writes the challenge text for the user or automatically activates the scratch window. Its manual-fixture result does not certify arbitrary installed apps or replace production evidence.
+
+Formal performance acceptance requires at least 30 minutes and 30 lifecycle cycles. Short/debug runs are not acceptance. The default session uses same-host loopback: `localMeasurement` may pass while the overall assessment remains blocked for missing LAN evidence.
+
+`all` runs the six required scenarios from `lifecycle` through `performance` (excluding experimental `input-qualification`). Its `missingCoverage` gate is independent of individual fixture results: positive production PID actions, installed-app compatibility, continuous foreground typing, Desktop UI/database/manual handoff and LAN coverage remain separately required. Unconfirmed cleanup prevents further GUI launches. Passing packaging, diagnostics or a fixture scenario does not satisfy these remaining gates.
+
+
+#### Controlled remote performance viewer
+
+Remote viewing is available to `performance` and `all` only, with both `--remote-viewer-config` and `--allow-remote-viewer`, in addition to the host GUI opt-in. In `all`, only the performance child reads this configuration or starts a remote process; other coverage gates remain independent. Authorize the second machine and host native GUI work separately before running it.
+
+The configuration must be an absolute path to an owned, single-link, non-symlink regular JSON file, mode `0600`, at most 64 KiB. It accepts exactly these required fields:
+
+| Field | Requirement |
+| --- | --- |
+| `schema_version` | `1`. |
+| `host` | Explicit DNS name or IPv4 address, not an SSH alias, wildcard or IPv6 address. |
+| `port` | Integer from 1 to 65535. |
+| `user` | Explicit SSH account; ASCII letters/digits/underscore initially, then letters/digits/underscore/dot/hyphen, at most 64 characters. |
+| `known_hosts_file` | Absolute path to a separate file containing exactly one three-field public host-key entry, without comments, aliases or hashed host names. Use the exact `host` for port 22, otherwise `[host]:port`. Supported key types are `ssh-ed25519`, `ecdsa-sha2-nistp256` and `ssh-rsa`. |
+| `host_key_sha256` | Matching host-key fingerprint in `SHA256:` form, without base64 padding. |
+| `identity_file` | Absolute path to the existing private key used for noninteractive authentication. |
+| `remote_node` | Absolute Unix path to the existing remote Node executable. |
+| `remote_repo` | Absolute Unix path to the matching remote repository checkout. |
+| `worker_hash` | Matching 64-character lowercase SHA-256 from the worker command below. |
+
+Both referenced local files must also be owned, single-link, non-symlink regular files, mode `0600`, at most 64 KiB. Remote Node/repository paths allow only ASCII letters, digits, `_`, `.`, `/` and `-`; `..` components, spaces, `~` and shell syntax are rejected. SSH uses only the declared key and a private snapshot of the pinned host-key entry: no agent, password prompt, ambient SSH configuration, global known-host fallback or forwarding is used.
+
+The remote Mac or Linux machine must already have the matching worker sources, the repository-root `@playwright/test` installation and Chromium. Nothing discovers or installs these prerequisites. From the repository root on each machine, obtain and compare the worker hash without starting SSH or a browser:
+
+```bash
+node apps/desktop/scripts/vscreen-remote-worker.mjs --hash
+```
+
+After preparing the private configuration and a freshly packaged App with the matching producer/viewer implementation:
+
+```bash
+pnpm --filter @multica/desktop exec node scripts/vscreen-native-smoke.mjs \
+  --app /absolute/path/Multica.app --scenario performance --launcher desktop \
+  --allow-gui --remote-viewer-config /absolute/path/private-remote-viewer.json \
+  --allow-remote-viewer --evidence /absolute/path/new-remote-evidence
+```
+
+The producer authorization nonce stays on the host; do not add it to the configuration or command line. Host-side signaling relays requests to the producer. The worker starts fresh headless Chromium contexts, not a user browser profile.
+
+Remote source support is not a LAN acceptance result. A pass requires observed distinct machine identities, matching source/certificate/session evidence, selected direct UDP pairs and confirmed physical on-link routes on both ends, plus all existing duration, resource and cleanup gates. Missing OS tools, unknown routes, loopback, tunnels or relays block the result. Machine identity is trusted-OS evidence, not hardware attestation. Local headless tests cannot establish LAN coverage; real two-machine/native authorization and successful observations are still required.
+
 ## Custom runtime profiles
 
 If your team uses an internal wrapper, a version-pinned executable, or needs fixed extra arguments for a compatible tool, create a **custom runtime profile**.

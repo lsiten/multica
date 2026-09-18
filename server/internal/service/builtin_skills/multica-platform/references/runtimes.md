@@ -5,6 +5,7 @@ processes and claims queued tasks from the server.
 
 - [Core model](#core-model)
 - [CLI](#cli)
+- [Managed virtual screen](#managed-virtual-screen)
 - [Task CLI boundary](#task-cli-boundary)
 - [Debugging an agent that did not run](#debugging-an-agent-that-did-not-run)
 - [Repos](#repos)
@@ -102,6 +103,46 @@ absent, you are not in the normal agent checkout path. When a project
 `github_repo` resource has `resource_ref.ref`, `repo checkout <url>` uses that
 ref by default for the current task; an explicit
 `repo checkout <url> --ref <branch-or-sha>` overrides it.
+
+## Managed virtual screen
+
+A supported, enabled runtime owns one virtual screen across runs. Only one GUI
+transaction controls it at a time; other runs queue. Closing a mirror viewer does
+not disable the display. The viewer is read-only, and choosing a physical screen
+as a viewing source never grants agent input authority over it.
+
+Use the injected task-local `multica-vscreen` MCP for GUI work. Its current tools
+are `vscreen_status`, `vscreen_acquire`, `vscreen_release`,
+`vscreen_list_apps`, `vscreen_launch_app`, `vscreen_observe`, `vscreen_click`, `vscreen_drag`,
+`vscreen_scroll`, `vscreen_type`, and `vscreen_key`. Read each tool's schema rather
+than inventing arguments. Identity comes from the active task binding, not a
+caller-supplied workspace, runtime, task, PID, or display ID.
+
+1. Check status and acquire a transaction before app operations. Wait for a
+   queued acquisition; never replace it with global desktop automation.
+2. Discover installed bundle IDs with `vscreen_list_apps`, then launch through
+   the managed tool and observe its returned window handle. Discovery covers
+   standard Applications folders and does not certify background input. Running
+   apps require explicit local-owner window selection during intervention.
+   Observations can contain screenshots and Accessibility content sent to the
+   AI provider. Do not claim screen content never reaches a model.
+3. Use the current snapshot revision, action ID, sequence, and transaction.
+   Reobserve after changes. A dispatched action is not a verified outcome.
+4. Release when finished. Never replay an uncertain action, reuse a stale
+   snapshot, or target an arbitrary PID to bypass a refusal.
+
+Background Accessibility actions depend on the app. PID-directed input is only
+allowed for certified app/action/OS combinations; no universal app support or
+OS-wide isolation is implied. If the tools are missing, permissions are denied,
+or native capability is unavailable, report GUI work as unavailable. Coding and
+text work may continue; shell or other MCP automation is not a GUI fallback.
+
+Human intervention freezes GUI actions and stops the source run. Only the local
+owner explicitly takes over and returns control. A verified return allows one
+linked continuation run; it does not restart the old run. The continuation must
+observe fresh state before acting. Remote viewing does not authorize local
+handoff. Disabling the screen waits for quiescence and disposal; a timeout or
+uncertain cleanup is a failure, not permission to start new input.
 
 ## Task CLI boundary
 

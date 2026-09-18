@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import type { AgentRuntime } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { MachineMirrorAction } from "./runtime-mirror-action";
@@ -81,6 +81,17 @@ describe("MachineMirrorAction", () => {
         "Update the Multica daemon on this device to use screen mirroring.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("requires an explicit runtime choice when a machine has multiple readable runtimes", () => {
+    // Given
+    const metadata = { capabilities: ["screen-mirror-video-v2", "mirror-viewer-grant-v1"] };
+    renderWithI18n(<MachineMirrorAction runtimes={[runtime({ id: "runtime-1", metadata }), runtime({ id: "runtime-2", metadata })]} />);
+    expect(screen.queryByRole("link", { name: /Open mirror/i })).not.toBeInTheDocument();
+    // When
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "runtime-2" } });
+    // Then
+    expect(screen.getByRole("link", { name: /Open mirror/i })).toHaveAttribute("href", "/acme/runtimes/runtime-2/mirror");
   });
 
   it("does not offer mirroring for cloud devices", () => {

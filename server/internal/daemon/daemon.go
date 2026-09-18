@@ -540,7 +540,14 @@ type Daemon struct {
 	// runtimeMirrors owns one shared capture source per registered runtime.
 	// Access is guarded by d.mu; entries are removed when a runtime is removed
 	// or when the daemon shuts down.
-	runtimeMirrors map[string]*mirror.RuntimeMirror
+	vscreenLocalOwner       func(context.Context, string) bool
+	vscreenReporter         *vscreenReporter
+	vscreenMu               sync.Mutex
+	vscreen                 *vscreenRuntime
+	vscreenInput            VscreenInputHandler
+	vscreenTakeover         VscreenTakeoverHandler
+	vscreenServerGeneration string
+	runtimeMirrors          map[string]*mirror.RuntimeMirror
 	// mirrorControlGeneration identifies the live daemon control WebSocket.
 	// mirrorControlCancel cancels negotiation owned by the previous connection
 	// when a replacement connects; both are guarded by d.mu.
@@ -696,6 +703,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	cacheRoot := filepath.Join(cfg.WorkspacesRoot, ".repos")
 	skillCacheRoot := filepath.Join(cfg.WorkspacesRoot, ".skill-cache", "v1")
 	client := NewClient(cfg.ServerBaseURL)
+	client.managedVscreen = cfg.NativeHostExecutable != ""
 	// Tag every daemon HTTP request with the daemon's CLI version so the
 	// server can split logs/metrics by client version (parallel to the CLI).
 	client.SetVersion(cfg.CLIVersion)
@@ -1419,6 +1427,7 @@ func (d *Daemon) removeStaleRuntime(runtimeID string) (string, bool) {
 	delete(d.wsHBLastAck, runtimeID)
 	d.wsHBMu.Unlock()
 	d.closeDetachedRuntimeMirrors(detachedMirrors)
+	d.closeVscreenRuntime(runtimeID)
 
 	return workspaceID, true
 }
@@ -2151,6 +2160,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Deregister runtimes on shutdown (uses a fresh context since ctx will be cancelled).
 	defer d.deregisterRuntimes()
+	defer d.closeVscreenReporter()
+	defer d.closeVscreens()
 	defer d.closeRuntimeMirrors()
 
 	// Start workspace sync loop to discover newly created workspaces.
@@ -2215,6 +2226,7 @@ func (d *Daemon) resolveAuth() error {
 		return fmt.Errorf("load CLI config: %w", err)
 	}
 	if cfg.Token == "" {
+		d.closeVscreens()
 		loginHint := "'multica login'"
 		if d.cfg.Profile != "" {
 			loginHint = fmt.Sprintf("'multica login --profile %s'", d.cfg.Profile)
@@ -2272,6 +2284,7 @@ func (d *Daemon) detachRuntimeMirrorsLocked(runtimeIDs []string) []*mirror.Runti
 }
 
 func (d *Daemon) closeDetachedRuntimeMirrors(runtimeMirrors []*mirror.RuntimeMirror) {
+	defer d.pruneVscreens()
 	for _, runtimeMirror := range runtimeMirrors {
 		if runtimeMirror == nil {
 			continue
@@ -4159,6 +4172,7 @@ func (d *Daemon) tryRenewToken(ctx context.Context) {
 	resp, err := d.client.RenewToken(reqCtx)
 	if err != nil {
 		if isUnauthorizedError(err) {
+			d.closeVscreens()
 			loginHint := "'multica login'"
 			if d.cfg.Profile != "" {
 				loginHint = fmt.Sprintf("'multica login --profile %s'", d.cfg.Profile)
@@ -6398,6 +6412,10 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			retiredSessionID:      result.RetiredSessionID,
 		}); err != nil {
 			taskLog.Error("report failed task failed", "error", err)
+		} else if failureReason == "gui_human_intervention" {
+			if err := d.markVscreenInterventionStopped(ctx, taskID); err != nil {
+				taskLog.Warn("virtual screen intervention report pending")
+			}
 		}
 	}
 }
@@ -7660,6 +7678,10 @@ func qualifyTaskModel(
 }
 
 func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot int, taskLog *slog.Logger) (taskResult TaskResult, returnErr error) {
+	parentCtx := ctx
+	ctx, cancelVscreen := context.WithCancelCause(ctx)
+	defer cancelVscreen(nil)
+	defer func() { finalizeVscreenStop(parentCtx, ctx, &taskResult, &returnErr) }()
 	phaseRecorder := taskPhaseRecorderFromContext(ctx)
 	phaseRecorder.Mark(taskPhasePrepareStarted)
 	// A claim carries the task-row agent id both at the top level and inside
@@ -7941,6 +7963,32 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		if provider == "cursor" {
 			cursorMcpAuthSource = strings.TrimSpace(task.Agent.CustomEnv[execenv.CursorMcpAuthSourceEnv])
+		}
+	}
+	vscreenConfig, vscreenBroker, vscreenExecution, vscreenErr := d.startTaskVscreen(ctx, task, provider, cancelVscreen)
+	if errors.Is(vscreenErr, errVscreenProviderUnavailable) && task.VscreenContinuation == nil {
+		taskCtx.AgentInstructions += "\nManaged GUI tools are unavailable for this provider. Report GUI work as unavailable; do not use shell or other desktop automation as a fallback. Non-GUI work may continue."
+	} else if vscreenErr != nil {
+		return TaskResult{}, vscreenErr
+	}
+	if vscreenBroker != nil {
+		taskCtx.AgentInstructions += vscreenExecutionInstructions
+		if task.VscreenContinuation != nil {
+			taskCtx.AgentInstructions += "\nNew run after human intervention: acquire and freshly observe before acting. Human handoff summary: " + task.VscreenContinuation.HumanSummary
+		}
+		defer vscreenExecution.Close()
+		defer vscreenBroker.Close()
+		// Loading an explicit base preserves inherited runtime MCP servers even when the Agent has no managed entries.
+		if len(effectiveMcpConfig) == 0 || string(effectiveMcpConfig) == "null" {
+			effectiveMcpConfig = json.RawMessage(`{"mcpServers":{}}`)
+		}
+		effectiveMcpConfig, vscreenErr = mergeRuntimeAndAgentMcpConfig(provider, effectiveMcpConfig)
+		if vscreenErr != nil {
+			return TaskResult{}, vscreenErr
+		}
+		effectiveMcpConfig, vscreenErr = mergeVscreenMCP(effectiveMcpConfig, vscreenConfig)
+		if vscreenErr != nil {
+			return TaskResult{}, vscreenErr
 		}
 	}
 	// Decode openclaw-specific runtime_config knobs once so reuse / prepare /
@@ -9314,6 +9362,9 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		// cmd.Start() failure arrives here, so diagnosing ENOEXEC at this point
 		// covers claude, opencode and any CLI added later without a wrap in
 		// each backend (MUL-6164).
+		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+			return agent.Result{}, 0, errors.Join(errVscreenStopUnconfirmed, err)
+		}
 		err = agent.ExplainExecError(err)
 		taskLog.Debug("backend execute returned error", "error", err)
 		return agent.Result{}, 0, err
@@ -9436,6 +9487,10 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// message batch, so the result hand-off below can wait for the transcript
 	// tail to be persisted.
 	drainFinished := make(chan struct{})
+	forcedDrainStop := make(chan struct{})
+	var forceDrainOnce sync.Once
+	forceDrainStop := func() { forceDrainOnce.Do(func() { close(forcedDrainStop) }) }
+	defer forceDrainStop()
 	go func() {
 		defer close(drainFinished)
 		var mu sync.Mutex
@@ -9517,6 +9572,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		}()
 
 		var sessionPinned atomic.Bool
+		drainInterrupted := drainCtx.Done()
 		for {
 			select {
 			case msg, ok := <-session.Messages:
@@ -9595,7 +9651,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 						// credential) to a peer that does not scrub nested
 						// values yet. Deployment order is not a control we
 						// have, so this side has to be safe on its own.
-						Input: redact.InputMap(msg.Input),
+						Input: redact.InputMap(vscreenTranscriptInput(msg.Tool, msg.Input)),
 					})
 					mu.Unlock()
 				case agent.MessageToolResult:
@@ -9619,6 +9675,10 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 					toolName := msg.Tool
 					if toolName == "" && msg.CallID != "" {
 						toolName = callIDToTool[msg.CallID]
+					}
+					if isVscreenToolName(toolName) {
+						output = "Managed virtual screen tool returned; native observation and input omitted."
+						outputTruncated = false
 					}
 					s := msgSeq.Add(1)
 					taskLog.Info("tool_result observed", "seq", s, "tool", toolName, "call_id", msg.CallID)
@@ -9655,7 +9715,15 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 					})
 					mu.Unlock()
 				}
-			case <-drainCtx.Done():
+			case <-drainInterrupted:
+				if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+					// GUI stop cancels the provider first; keep consuming its owned cleanup
+					// messages until the backend closes the stream or the drain budget expires.
+					drainInterrupted = nil
+					continue
+				}
+				goto drainDone
+			case <-forcedDrainStop:
 				goto drainDone
 			}
 		}
@@ -9682,6 +9750,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		select {
 		case <-drainFinished:
 		case <-time.After(10 * time.Second):
+			forceDrainStop()
 			drainCancel()
 			select {
 			case <-drainFinished:
@@ -9695,6 +9764,13 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	case result := <-session.Result:
 		stopWatchdog()
 		waitForDrain()
+		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+			select {
+			case <-drainFinished:
+			default:
+				return result, toolCount.Load(), errVscreenStopUnconfirmed
+			}
+		}
 		// terminalObserved outranks a watchdog that fired anyway: if the backend
 		// had already read its authoritative result, this is the real outcome and
 		// re-tagging it would report a completed run as a hang.
@@ -9716,6 +9792,24 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		}
 		return result, toolCount.Load(), nil
 	case <-drainCtx.Done():
+		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+			// A cancelled context is not proof that the owned provider and tools have stopped.
+			select {
+			case result, ok := <-session.Result:
+				if !ok {
+					return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
+				}
+				waitForDrain()
+				select {
+				case <-drainFinished:
+				default:
+					return result, toolCount.Load(), errVscreenStopUnconfirmed
+				}
+				return result, toolCount.Load(), nil
+			case <-time.After(terminalResultHandoffBudget):
+				return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
+			}
+		}
 		// The drain loop is exiting on this same Done signal; wait for its
 		// final flush so the timeout/watchdog/cancel terminals below cannot
 		// hand back (and let runTask fail-and-broadcast) a still-flushing

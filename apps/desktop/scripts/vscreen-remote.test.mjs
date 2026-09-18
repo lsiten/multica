@@ -1,0 +1,70 @@
+import { lanEvidence } from "./vscreen-remote.fixture.mjs";
+// @vitest-environment node
+import { PassThrough } from "node:stream";
+import { afterEach, expect, it } from "vitest";
+import { mkdtemp, writeFile, rm, chmod } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { remoteChannel, REMOTE_MAX_BYTES } from "./vscreen-remote-protocol.mjs";
+import { readRemoteConfig, remoteSSHArguments, viewerSignalGate } from "./vscreen-remote-transport.mjs";
+import { machineIdentity, remoteWorkerHash } from "./vscreen-remote-identity.mjs";
+import { evaluateRemoteNetwork } from "./vscreen-remote-network.mjs";
+import { remoteRoute } from "./vscreen-remote-route.mjs";
+import { runRemoteViewerWorker } from "./vscreen-remote-worker.mjs";
+import { parseArguments } from "./vscreen-native-smoke.mjs";
+// Explicit private-file/SSH fixtures require POSIX ownership and mode bits.
+const posixSecurity = process.platform !== "win32" && typeof process.getuid === "function";
+const cleanups=[];afterEach(async()=>{for(const cleanup of cleanups.splice(0))await cleanup();});
+function channels(left={},right={}){const a=new PassThrough(),b=new PassThrough();const host=remoteChannel(b,a,left,{timeoutMs:30}),worker=remoteChannel(a,b,right,{timeoutMs:30});cleanups.push(()=>{host.close();worker.close();a.destroy();b.destroy();});return{host,worker,a,b};}
+it("bounded stdio correlates only matching replies and rejects EOF, unknown verbs and oversized frames",async()=>{
+ const c=channels({clock:()=>({stamp:1})},{hello:async()=>({clock:await c.worker.request("clock",{})})});expect(await c.host.request("hello",{})).toEqual({clock:{stamp:1}});
+ c.a.write(Buffer.alloc(REMOTE_MAX_BYTES+1));expect(c.worker.closed).toBe(true);
+ const d=channels();await expect(d.host.request("unknown",{})).rejects.toThrow();
+ const e=channels({}, {hang:()=>new Promise(()=>{})});const waiting=e.host.request("hang",{});e.b.end();await expect(waiting).rejects.toThrow("closed");
+});
+it("missing replies time out and invalidate the channel",async()=>{const c=channels({}, {hang:()=>new Promise(()=>{})});await expect(c.host.request("hang",{})).rejects.toThrow("timeout");expect(c.host.closed).toBe(true);});
+it("signal authority derives exact run/viewer/source and never forwards finish/metrics or identities",async()=>{
+ const calls=[];const gate=viewerSignalGate("run",[{source_id:"source"}],async(...args)=>{calls.push(args);return{};});
+ const request=(path,body)=>({run_id:"run",viewer_id:"performance-0",path,body});
+ for(const value of [{...request("/clock"),run_id:"old"},request("/finish",{}),request("/offer",{viewer_id:"foreign",source_id:"source"}),request("/offer",{viewer_id:"performance-0",source_id:"foreign",offer:{type:"offer",sdp:"owned"}})])await expect(gate.signal(value)).rejects.toThrow();
+ await gate.signal(request("/offer",{viewer_id:"performance-0",source_id:"source",offer:{type:"offer",sdp:"owned"}}));await gate.signal(request("/renew",{viewer_id:"performance-0"}));await gate.signal(request("/viewer/close",{viewer_id:"performance-0"}));expect(calls.map(c=>c[0])).toEqual(["/offer","/renew","/viewer/close"]);gate.stop();await expect(gate.signal(request("/clock"))).rejects.toThrow();
+});
+async function configFixture(){const dir=await mkdtemp(join(tmpdir(),"owned-remote-config-"));cleanups.push(()=>rm(dir,{recursive:true,force:true}));const key=Buffer.from("synthetic-public-key");const config={schema_version:1,host:"owned.example",port:22,user:"fixture",known_hosts_file:join(dir,"known_hosts"),host_key_sha256:"SHA256:"+createHash("sha256").update(key).digest("base64").replace(/=+$/,""),identity_file:join(dir,"key"),remote_node:"/usr/bin/node",remote_repo:"/owned/repo",worker_hash:await remoteWorkerHash()};await writeFile(config.known_hosts_file,`owned.example ssh-ed25519 ${key.toString("base64")}\n`,{mode:0o600});await writeFile(config.identity_file,"test-only-never-used",{mode:0o600});const path=join(dir,"config.json");await writeFile(path,JSON.stringify(config),{mode:0o600});return{path,config};}
+it.runIf(posixSecurity)("private explicit config enforces POSIX ownership and permissions",async()=>{const f=await configFixture();await readRemoteConfig(f.path);await chmod(f.path,0o644);await expect(readRemoteConfig(f.path)).rejects.toThrow("private");});
+it.runIf(posixSecurity).each(["host_key_sha256","worker_hash","remote_node","networkVerified"])("rejects untrusted config field %s",async(key)=>{const f=await configFixture();f.config[key]=key==="remote_node"?"/node;touch /tmp/no":key==="networkVerified"?true:"f".repeat(64);await writeFile(f.path,JSON.stringify(f.config));await expect(readRemoteConfig(f.path)).rejects.toThrow();});
+it("CLI needs both remote authorization and explicit absolute config, only on performance",()=>{const base=["--app","/owned.app","--evidence","/owned/e","--scenario","performance"];expect(()=>parseArguments([...base,"--remote-viewer-config","/private/config"],{})).toThrow();expect(parseArguments([...base,"--remote-viewer-config","/private/config","--allow-remote-viewer"],{})).toMatchObject({allowRemoteViewer:true,remoteViewerConfig:"/private/config",allowGui:false});});
+it("machine evidence is challenge-scoped, OS-read, and unsupported systems fail",async()=>{const one=await machineIdentity("a".repeat(64),{platform:"linux",readFile:async()=>"1".repeat(32)}),two=await machineIdentity("b".repeat(64),{platform:"linux",readFile:async()=>"1".repeat(32)});expect(one.machine_id_hash).not.toBe(two.machine_id_hash);expect(JSON.stringify(one)).not.toContain("1".repeat(32));await expect(machineIdentity("a".repeat(64),{platform:"win32"})).rejects.toThrow("unsupported");});
+it("worker rejects old run, wrong source and EOF without launching a browser",async()=>{const input=new PassThrough(),output=new PassThrough();let launched=0;const w=runRemoteViewerWorker(input,output,{machineIdentity:async(challenge)=>({challenge,machine_id_hash:"c".repeat(64)}),chromium:{launch:()=>{launched++;throw Error();}}});const host=remoteChannel(output,input,{});cleanups.push(()=>{host.close();w.channel.close();input.destroy();output.destroy();});const run="a".repeat(64);await host.request("hello",{run_id:run,worker_hash:await remoteWorkerHash()});await expect(host.request("start",{run_id:"old",sources:[]})).rejects.toThrow();await expect(host.request("start",{run_id:run,sources:[]})).rejects.toThrow();expect(launched).toBe(0);input.end();});
+
+it("LAN verdict is derived from independent identity, two-sided active pairs, DTLS, route and coverage",()=>{const f=lanEvidence();expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(true);});
+it.each(["same-machine","epoch","pair","dtls","route","counter","cleanup","gap","missing-viewer"])("LAN rejects %s evidence",(kind)=>{const f=lanEvidence(),o=f.evidence.observations[1];if(kind==="same-machine")f.evidence.remote_identity=f.evidence.host_identity;if(kind==="epoch")o.clock_epoch="old";if(kind==="pair")o.browsers[0].selected_pair.local.port=3;if(kind==="dtls")o.browsers[0].dtls.remote.fingerprint="3".repeat(64);if(kind==="route")o.browsers[0].route.kind="tunnel";if(kind==="counter")o.browsers[0].selected_pair.bytes_received=1;if(kind==="cleanup")f.evidence.cleanup_confirmed=false;if(kind==="gap")o.elapsed_ms=40000;if(kind==="missing-viewer")o.browsers.pop();expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(false);});
+it("Linux physical on-link route requires sysfs device and rejects gateway/same host",async()=>{const pair={local:{address:"192.168.1.11"},remote:{address:"192.168.1.10"}};const deps={platform:"linux",networkInterfaces:()=>({eth0:[{address:pair.local.address,internal:false,cidr:pair.local.address+"/24"}]}),lstat:async()=>({isSymbolicLink:()=>true}),readFile:async(path)=>path.endsWith("/type")?"1":"0x3",execute:async()=>({stdout:JSON.stringify([{dev:"eth0",prefsrc:pair.local.address}])})};expect((await remoteRoute(pair,deps)).kind).toBe("lan");expect((await remoteRoute({...pair,remote:pair.local},deps)).available).toBe(false);expect((await remoteRoute(pair,{...deps,execute:async()=>({stdout:JSON.stringify([{dev:"eth0",prefsrc:pair.local.address,gateway:"192.168.1.1"}])})})).available).toBe(false);});
+it.runIf(posixSecurity).each([false,true])("owned fake stdio transport preserves scope and rejects same-machine=%s",async(sameMachine)=>{
+ const {EventEmitter}=await import("node:events"),{startRemoteViewers}=await import("./vscreen-remote-transport.mjs");const f=await configFixture();const nonce="must-stay-host-"+"n".repeat(64);let wire="",closed=false,worker;
+ const child=new EventEmitter();child.stdin=new PassThrough();child.stdout=new PassThrough();child.stderr=new PassThrough();child.kill=()=>{child.emit("close",1);};child.stdin.on("data",chunk=>{wire+=chunk.toString();});child.stdin.once("finish",()=>{closed=true;child.emit("close",0);worker.close();});
+ let run,started=false;const ids=["performance-0","performance-1"];worker=remoteChannel(child.stdin,child.stdout,{hello:body=>{run=body.run_id;return{run_id:run,worker_hash:body.worker_hash,identity:{challenge:run,machine_id_hash:"c".repeat(64),os:"linux",method:"etc-machine-id",assurance:"trusted-os-report-not-hardware-attestation"}};},start:async()=>{started=true;for(const id of ids)await worker.request("signal",{run_id:run,viewer_id:id,path:"/offer",body:{viewer_id:id,source_id:"a",offer:{type:"offer",sdp:"synthetic"}}});return{fresh_contexts:2,viewer_ids:ids,browser_version:"fake"};},sample:()=>({owned:true}),close:async()=>{for(const id of started?ids:[])await worker.request("signal",{run_id:run,viewer_id:id,path:"/viewer/close",body:{viewer_id:id}});return{cleanup_confirmed:true};}});
+ const rpcCalls=[];const operation=startRemoteViewers({nonce,sources:[{source_id:"a",source_tag:1},{source_id:"b",source_tag:2}]},{evidence:join(f.path,".."),allowRemoteViewer:true,remoteViewerConfig:f.path},async(path)=>{rpcCalls.push(path);return{};},{machineIdentity:async(challenge)=>({challenge,machine_id_hash:(sameMachine?"c":"d").repeat(64)}),spawn:(file,args)=>{expect(file).toBe("/usr/bin/ssh");expect(args.some(v=>v.includes("remote-private-"))).toBe(true);return child;}});
+ if(sameMachine){await expect(operation).rejects.toThrow("remote_machine_not_independent");expect(started).toBe(false);expect(closed).toBe(true);return;}const remote=await operation;
+ expect(await remote.peers[0].sample()).toEqual({owned:true});await remote.close();expect(closed).toBe(true);expect(rpcCalls).toEqual(["/offer","/offer","/viewer/close","/viewer/close"]);expect(wire).not.toContain(nonce);expect(wire).not.toContain("base_url");expect(wire).not.toContain("identity_file");
+});
+it("asynchronous byte totals and one bounded stall are valid, but prolonged stalling and old switch grants fail",()=>{
+ const f=lanEvidence();for(const group of f.evidence.observations)for(const b of group.browsers)b.selected_pair.bytes_received+=17;
+ const before=f.evidence.observations[0],next=f.evidence.observations[1];next.producer.viewers[0].selected_pair.bytes_sent=before.producer.viewers[0].selected_pair.bytes_sent;next.browsers[0].selected_pair.bytes_received=before.browsers[0].selected_pair.bytes_received;
+ expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(true);
+ f.evidence.switch_observations[0].native.grant_id="performance-0";expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).reasons).toContain("lan_switch_old_grant");
+ const stalled=lanEvidence();for(const group of stalled.evidence.observations){group.producer.viewers[0].selected_pair.bytes_sent=1000;group.browsers[0].selected_pair.bytes_received=1000;}expect(evaluateRemoteNetwork(stalled.evidence,stalled.viewers,1800000).reasons).toContain("lan_counters_not_progressing");
+});
+it.each(["epoch","frame","certificate","source"])("switch evidence refuses stale %s binding",kind=>{const f=lanEvidence(),item=f.evidence.switch_observations[0];if(kind==="epoch")item.producer_epoch="old";if(kind==="frame")item.frame_source_tag=999;if(kind==="certificate")item.browser.dtls.remote.fingerprint="0".repeat(64);if(kind==="source")item.native.source_id="foreign";expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(false);});
+it("accepts Go interface CIDR only when its address exactly owns the selected endpoint",()=>{
+ const f=lanEvidence();for(const group of f.evidence.observations)for(const viewer of group.producer.viewers)viewer.route.interface_addresses=viewer.route.interface_addresses.map(address=>address+"/24");for(const item of f.evidence.switch_observations)item.native.route.interface_addresses=item.native.route.interface_addresses.map(address=>address+"/24");expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(true);
+ f.evidence.observations[0].producer.viewers[0].route.interface_addresses=["192.168.1.0/24"];expect(evaluateRemoteNetwork(f.evidence,f.viewers,1800000).verified).toBe(false);
+});
+
+it("refuses a private remote config without POSIX ownership instead of weakening its guard",async()=>{
+ const f=await configFixture(),descriptor=Object.getOwnPropertyDescriptor(process,"getuid");
+ try{Object.defineProperty(process,"getuid",{configurable:true,value:undefined});await expect(readRemoteConfig(f.path)).rejects.toThrow("remote_file_not_private");}
+ finally{if(descriptor)Object.defineProperty(process,"getuid",descriptor);else delete process.getuid;}
+});
+
+it("fixed SSH argv ignores user config and forwarding on every platform",async()=>{const f=await configFixture();const args=remoteSSHArguments(f.config);expect(args).toContain("BatchMode=yes");expect(args).toContain("IdentityAgent=none");expect(args).toContain("StrictHostKeyChecking=yes");expect(args.slice(0,3)).toEqual(["-F","/dev/null","-T"]);expect(args.at(-1)).toBe('/usr/bin/env -i PATH=/usr/bin:/bin LANG=C HOME="$HOME" /usr/bin/node /owned/repo/apps/desktop/scripts/vscreen-remote-worker.mjs --stdio');});

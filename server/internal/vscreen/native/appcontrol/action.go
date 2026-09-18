@@ -1,0 +1,206 @@
+package appcontrol
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+
+	"github.com/multica-ai/multica/server/pkg/protocol"
+)
+
+type grantBinding struct {
+	Resource              protocol.ResourceKey
+	Epoch                 protocol.VscreenEpoch
+	TaskID, TransactionID string
+	LeaseEpoch            uint64
+}
+type actionIdentity struct {
+	Grant grantBinding
+	ID    string
+}
+
+type actionRecord struct {
+	digest [32]byte
+	result Result
+	err    error
+}
+
+// Act rechecks trusted authority before dispatch; identical retries never emit input again.
+func (c *Controller) Act(ctx context.Context, request protocol.VscreenActionRequest) (Result, error) {
+	if request.Validate() != nil {
+		return Result{}, refusal("invalid_action")
+	}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return Result{}, err
+	}
+	var copyRequest protocol.VscreenActionRequest
+	if err = json.Unmarshal(raw, &copyRequest); err != nil {
+		return Result{}, err
+	}
+	request = copyRequest
+	ctx, leave, err := c.enter(ctx, request.Target.Resource)
+	if err != nil {
+		return Result{}, err
+	}
+	defer leave()
+	t := request.Target
+	a := Authority{Resource: t.Resource, Epoch: t.Epoch, TaskID: t.TaskID, TransactionID: t.TransactionID, LeaseEpoch: t.LeaseEpoch}
+	d, err := c.authorize(ctx, a, ControlAccess)
+	if err != nil {
+		return Result{}, err
+	}
+	binding := grantBinding{Resource: a.Resource, Epoch: a.Epoch, TaskID: a.TaskID, TransactionID: a.TransactionID, LeaseEpoch: a.LeaseEpoch}
+	id := actionIdentity{Grant: binding, ID: request.ActionID}
+	digest := sha256.Sum256(raw)
+	if cached, ok := c.actions[id]; ok {
+		if cached.digest != digest {
+			return Result{}, refusal("action_conflict")
+		}
+		return cached.result, cached.err
+	}
+	w, err := c.owned(t.WindowHandle, d)
+	if err != nil {
+		return Result{}, err
+	}
+	if w.window.SnapshotRevision != t.SnapshotRevision || request.Sequence != c.sequence[binding]+1 || len(c.actions) >= 4096 {
+		return Result{}, refusal("stale_snapshot")
+	}
+	identity := Process{}
+	decision := PIDInputDecision{}
+	if c.config.CertifiedPIDInput != nil && c.config.VerifyPIDCompletion != nil {
+		identity = c.pidIdentity(ctx, w.window.Process)
+		decision = c.config.CertifiedPIDInput(identity, request.Action)
+	}
+	decision.Certified = decision.Certified && c.config.VerifyPIDCompletion != nil
+	input := map[string]any{"Window": w.window, "Display": d, "Action": request.Action, "CertifiedPID": decision.Certified, "CertifiedInputSource": decision.InputSourceID, "CertifiedProcess": identity}
+	var completion PIDCompletion
+	if decision.Certified {
+		completion, err = newPIDCompletion(request, w.window)
+		if err != nil {
+			return Result{}, refusal("native_unavailable")
+		}
+		input["Completion"] = completion.native()
+	}
+	var result Result
+	c.sequence[binding] = request.Sequence
+	err = c.backend.call(ctx, "action", input, &result)
+	result.CompletionVerified = false
+	if err == nil && result.Mechanism == "pid" {
+		if !decision.Certified {
+			err = refusal("action_uncertain")
+		} else {
+			err = c.verifyPIDCompletion(ctx, a, completion, d)
+		}
+		if err == nil {
+			result.Outcome = protocol.VscreenActionVerified
+			result.CompletionVerified = true
+		}
+	}
+	if err == nil && result.Mechanism != "ax" && result.Mechanism != "pid" {
+		err = refusal("action_uncertain")
+	}
+
+	if err != nil || ctx.Err() != nil || result.Outcome != protocol.VscreenActionVerified && result.Outcome != protocol.VscreenActionDispatched {
+		c.freeze(a.Resource)
+		result.Outcome = protocol.VscreenActionUncertain
+		if err == nil {
+			err = refusal("action_uncertain")
+		}
+	}
+	w.window.SnapshotRevision = 0
+	c.actions[id] = actionRecord{digest: digest, result: result, err: err}
+	return result, err
+}
+
+// Resume is only for a host-verified fresh grant after explicit recovery or transaction handoff.
+// Its verifier must reject stale/cancelled task generations, including disconnected parents.
+func (c *Controller) Resume(ctx context.Context, a Authority) error {
+	if a.Resource.Validate() != nil || a.Epoch.Validate() != nil || a.TaskID == "" || a.TransactionID == "" || a.LeaseEpoch == 0 {
+		return refusal("stale_authority")
+	}
+	ctx, leave, err := c.enter(ctx, a.Resource)
+	if err != nil {
+		return err
+	}
+	defer leave()
+	d, err := c.config.Authorize(ctx, a, ControlAccess)
+	if err != nil {
+		return err
+	}
+	if d.Resource != a.Resource || d.Epoch != a.Epoch || !d.Virtual || a.LeaseEpoch == 0 {
+		return refusal("stale_authority")
+	}
+	if err = c.backend.call(ctx, "quiesce", map[string]any{"Resource": a.Resource}, nil); err != nil {
+		return err
+	}
+	if err = c.backend.call(ctx, "resume", d, nil); err != nil {
+		return err
+	}
+	for _, owned := range c.windows {
+		if owned.display.Resource == a.Resource && owned.display.Epoch == a.Epoch {
+			owned.window.SnapshotRevision = 0
+		}
+	}
+	c.mu.Lock()
+	delete(c.frozen, a.Resource)
+	c.mu.Unlock()
+	return nil
+}
+
+// HumanTransfer moves only a registered window after the separate local owner grant and barrier.
+func (c *Controller) HumanTransfer(ctx context.Context, request HumanRequest) (Window, error) {
+	if request.Grant == "" || request.Resource.Validate() != nil || request.Direction != "to_real" && request.Direction != "to_virtual" {
+		return Window{}, refusal("human_grant_required")
+	}
+	ctx, leave, err := c.enter(ctx, request.Resource)
+	if err != nil {
+		return Window{}, err
+	}
+	defer leave()
+	w := c.windows[request.WindowHandle]
+	if w == nil || w.display.Resource != request.Resource {
+		return Window{}, refusal("stale_window")
+	}
+	if err = c.backend.call(ctx, "quiesce", map[string]any{"Resource": request.Resource}, nil); err != nil {
+		return Window{}, err
+	}
+	destination, err := c.config.AuthorizeHuman(ctx, request)
+	if err != nil {
+		return Window{}, err
+	}
+	if destination.Resource != request.Resource || destination.Epoch.Validate() != nil || destination.Epoch.NativeEpoch != w.display.Epoch.NativeEpoch || destination.ID == 0 || !destination.Bounds.valid() || destination.Virtual != (request.Direction == "to_virtual") {
+		return Window{}, refusal("human_grant_required")
+	}
+	c.mu.Lock()
+	c.frozen[request.Resource] = true
+	c.mu.Unlock()
+	var moved Window
+	if err = c.backend.call(ctx, "move", map[string]any{"Window": w.window, "Display": destination, "Background": false, "Activate": request.Direction == "to_real"}, &moved); err != nil {
+		return Window{}, err
+	}
+	if !validWindowReply(moved, w.window, destination) {
+		return Window{}, refusal("stale_window")
+	}
+	w.window = moved
+	w.human = request.Direction == "to_real"
+	if !w.human {
+		w.display = destination
+	}
+	return moved, nil
+}
+
+// pidIdentity is optional certification metadata, not a requirement for semantic AX.
+func (c *Controller) pidIdentity(ctx context.Context, expected Process) Process {
+	if c.config.CertifiedPIDInput == nil && c.config.PIDInputVerification == nil {
+		return Process{}
+	}
+	var live Process
+	if c.backend.call(ctx, "pid_identity", expected, &live) != nil {
+		return Process{}
+	}
+	if live.PID != expected.PID || live.UID != expected.UID || live.Start != expected.Start || live.BundleID != expected.BundleID || live.OSBuild != expected.OSBuild {
+		return Process{}
+	}
+	return live
+}

@@ -770,6 +770,10 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to remove chat session agent label assignments")
 		return
 	}
+	if err := qtx.CancelVscreenInterventionsByAgent(r.Context(), session.AgentID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to cancel interventions")
+		return
+	}
 	if err := qtx.DeleteSystemAgentByID(r.Context(), session.AgentID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to clean up chat session agent")
 		return

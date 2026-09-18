@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,7 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/multica-ai/multica/server/internal/daemon"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 )
 
 var (
@@ -32,6 +35,8 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	// AppKit requires the initial OS thread for the internal native host.
+	runtime.LockOSThread()
 	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built: %s)\ngo: %s, os/arch: %s/%s", version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	rootCmd.SetVersionTemplate("multica {{.Version}}\n")
 
@@ -97,6 +102,60 @@ func init() {
 }
 
 func main() {
+	if handleInputQualificationEntrypoint() {
+		return
+	}
+	if len(os.Args) >= 3 && os.Args[1] == daemon.VscreenSmokeProviderCommand {
+		runtime.UnlockOSThread()
+		if err := daemon.RunVscreenSmokeProvider(context.Background(), os.Args[2], os.Args[3:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 3 && os.Args[1] == daemon.VscreenTakeoverCoordinatorCommand {
+		if err := daemon.RunVscreenTakeoverSmokeChild(context.Background(), os.Args[2], version+"/"+commit, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if smokefixture.IsFixtureExecutable() {
+		if err := smokefixture.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" && os.Args[2] == "performance" {
+		if err := runVscreenPerformanceSmoke(os.Stdout, os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" {
+		if err := runVscreenSmoke(os.Stdout, os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-diagnostics" {
+		if err := runVscreenDiagnostics(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-host" {
+		if err := runVscreenHost(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	runtime.UnlockOSThread()
 	if len(os.Args) == 2 && os.Args[1] == execenv.PreparationHelperArg {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 		if err := execenv.RunPreparationHelper(os.Stdin, os.Stdout, logger); err != nil {
