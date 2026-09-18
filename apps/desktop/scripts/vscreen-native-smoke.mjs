@@ -156,8 +156,8 @@ export async function runSmoke(options, dependencies = {}) {
     }
     if (guiScenarios.includes(options.scenario)) {
       if (!options.allowGui) fail("gui_not_authorized", "GUI smoke requires explicit --allow-gui or MULTICA_RUN_VSCREEN_GUI_SMOKE=1");
-      if (!["lifecycle", "source", "video", "input"].includes(options.scenario)) fail("scenario_not_implemented", "No bundle-bound GUI harness is implemented for this scenario; no GUI was started");
-      const smoke = await command("native-gui-smoke", helper, ["internal-vscreen-smoke", options.scenario, options.evidence], { timeout: options.scenario === "input" ? 90_000 : 45_000, env: { ...process.env, MULTICA_RUN_VSCREEN_GUI_SMOKE: "1" } });
+      if (!["lifecycle", "source", "video", "input", "takeover"].includes(options.scenario)) fail("scenario_not_implemented", "No bundle-bound GUI harness is implemented for this scenario; no GUI was started");
+      const smoke = await command("native-gui-smoke", helper, ["internal-vscreen-smoke", options.scenario, options.evidence], { timeout: options.scenario === "takeover" ? 120_000 : options.scenario === "input" ? 90_000 : 45_000, env: { ...process.env, MULTICA_RUN_VSCREEN_GUI_SMOKE: "1" } });
       try { report.gui = JSON.parse(smoke.stdout); } catch { fail("gui_result_invalid", "Bundled helper did not return a GUI result; cleanup is unconfirmed"); }
       report.gui_exercised = report.gui.gui_exercised === true;
       if (smoke.exitCode !== 0 || report.gui.status !== "passed") fail("gui_smoke_failed", "Bundled native GUI scenario failed; inspect its result and cleanup flags");
@@ -165,6 +165,10 @@ export async function runSmoke(options, dependencies = {}) {
       if (options.scenario === "video") {
         const videoPath = join(options.evidence, "virtual-screen.h264");
         if (report.gui.video?.artifact !== videoPath || report.gui.video.samples?.length !== 3 || (await readFile(videoPath)).length === 0 || await hashFile(videoPath) !== report.gui.video.sha256) fail("video_artifact_invalid", "Captured H264 artifact is missing or does not match the helper result");
+      }
+      if (options.scenario === "takeover") {
+        await verifyTakeoverEvidence(report.gui, options.evidence, report.helper.sha256);
+        report.limitations.push("Takeover uses a same-binary owned provider, a loopback fixture backend and scripted owned-App human stage. It does not prove real model, real DB, Desktop UI/manual human acceptance, installed user apps, TCC attribution, or performance.");
       }
       if (options.scenario === "input") {
         const input = report.gui.input;
@@ -178,7 +182,7 @@ export async function runSmoke(options, dependencies = {}) {
         }
         if (input.before.sha256 === input.after.sha256) fail("input_artifact_invalid", "Fixture pixels did not change");
         report.limitations.push("Input proves only this copied-helper test fixture's external AX press/value behavior and refusal of uncertified PID input. It does not certify installed user apps, per-PID input support, IME, continuous foreground typing, or final Desktop TCC attribution.");
-      } else {
+      } else if (options.scenario !== "takeover") {
         report.limitations.push("Native smoke does not verify renderer playback, human handoff, input, or end-to-end latency. H264 checks cover Annex-B framing/parameter sets and timestamps, not visual decoding.");
       }
     }
@@ -201,4 +205,33 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.error(error.message);
     process.exitCode = 2;
   }
+}
+
+
+export async function verifyTakeoverEvidence(gui, directory, helperHash) {
+  const takeover = gui.takeover;
+  if (takeover?.scope !== "owned-fixture-scripted-local-owner-loopback-backend-not-db-ui" || takeover.fixture_binary_sha256 !== helperHash || !/^ai\.multica\.smoke\.[a-f0-9]{32}$/.test(takeover.fixture_bundle_id ?? "")) fail("takeover_result_invalid", "Takeover fixture/bundle provenance is missing");
+  for (const key of ["provider_stopped", "transcript_drained", "terminal_reported", "stopped_ack", "human_ack", "return_ack", "fresh_observe_before_input", "old_lease_refused", "old_action_refused", "continuation_completed", "cleanup_ack", "fixture_closed", "disposed", "host_closed"]) {
+    if (takeover[key] !== true) fail("takeover_result_invalid", `Takeover missing confirmed ${key}`);
+  }
+  if (!takeover.source_task_id || !takeover.continuation_task_id || takeover.source_task_id === takeover.continuation_task_id || !takeover.intervention_id || !takeover.return_receipt_id) fail("takeover_result_invalid", "Distinct continuation and native return receipt are required");
+  const expectedStages = ["source-observed", "provider-stopped", "terminal-http", "awaiting_takeover-ack", "human-ack", "ready_to_continue-ack", "continuation-observed", "continuation-input"];
+  if (JSON.stringify(takeover.stages) !== JSON.stringify(expectedStages)) fail("takeover_result_invalid", "Takeover lifecycle ordering is incomplete");
+  const phases = ["source", "human", "return", "continuation"];
+  if (takeover.placements?.length !== phases.length || takeover.physical_source?.source?.kind !== "physical" || takeover.physical_source.display_id === gui.display.display_id) fail("takeover_result_invalid", "Physical/virtual placement evidence is missing");
+  const first = takeover.placements[0];
+  if (!Number.isInteger(first.pid) || first.pid <= 0 || !Number.isInteger(first.window_id) || first.window_id <= 0 || !first.process_start) fail("takeover_result_invalid", "Owned fixture process/window identity is missing");
+  for (const [index, place] of takeover.placements.entries()) {
+    const source = index === 1 ? takeover.physical_source : gui.source;
+    const b = place.bounds;
+    if (place.stage !== phases[index] || place.pid !== first.pid || place.window_id !== first.window_id || place.process_start !== first.process_start || place.display_id !== source.display_id || !b || ![b.x,b.y,b.width,b.height,source.x,source.y,source.logical_width,source.logical_height].every(Number.isFinite) || b.width <= 0 || b.height <= 0 || b.x < source.x || b.y < source.y || b.x+b.width > source.x+source.logical_width || b.y+b.height > source.y+source.logical_height || place.human_stage !== (index === 0 ? 0 : 1)) fail("takeover_result_invalid", "Placement is not verified by the owned window readback");
+  }
+  if (takeover.placements[1].text !== "Multica scripted human handoff" || takeover.placements[2].text !== "Multica scripted human handoff" || takeover.placements[3].text !== "Multica continuation verified") fail("takeover_result_invalid", "Human/continuation changes were not observed");
+  const names = ["takeover-source.png", "takeover-return.png", "takeover-continuation.png"];
+  if (takeover.images?.length !== names.length) fail("takeover_artifact_invalid", "Native PNG observations are missing");
+  for (const [index, name] of names.entries()) {
+    const image = takeover.images[index]; const path = join(directory, name); const raw = await readFile(path);
+    if (image.artifact !== path || raw.length < 24 || !raw.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || !raw.readUInt32BE(16) || !raw.readUInt32BE(20) || await hashFile(path) !== image.sha256 || !/^[a-f0-9]{64}$/.test(image.pixel_sha256 ?? "")) fail("takeover_artifact_invalid", "Native PNG observation changed or is invalid");
+  }
+  if (takeover.images[0].pixel_sha256 === takeover.images[1].pixel_sha256) fail("takeover_artifact_invalid", "Human stage pixels did not change");
 }

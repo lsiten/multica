@@ -78,9 +78,11 @@ func TestVscreenSmokeFixtureLifecycle(t *testing.T) {
 
 func TestVscreenSmokeRequiresExplicitGUIOptIn(t *testing.T) {
 	t.Setenv("MULTICA_RUN_VSCREEN_GUI_SMOKE", "")
-	var output bytes.Buffer
-	if err := runVscreenSmoke(&output, "lifecycle", t.TempDir()); err == nil || !bytes.Contains(output.Bytes(), []byte("gui_not_authorized")) || bytes.Contains(output.Bytes(), []byte(`"gui_exercised":true`)) {
-		t.Fatalf("error=%v output=%s", err, &output)
+	for _, scenario := range []string{"lifecycle", "takeover"} {
+		var output bytes.Buffer
+		if err := runVscreenSmoke(&output, scenario, t.TempDir()); err == nil || !bytes.Contains(output.Bytes(), []byte("gui_not_authorized")) || bytes.Contains(output.Bytes(), []byte(`"gui_exercised":true`)) {
+			t.Fatalf("scenario=%s error=%v output=%s", scenario, err, &output)
+		}
 	}
 }
 

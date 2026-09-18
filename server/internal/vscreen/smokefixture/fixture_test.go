@@ -64,3 +64,28 @@ func TestFixtureRejectsUnownedOrUnboundedReadback(t *testing.T) {
 		t.Fatal("symlink readback accepted")
 	}
 }
+
+func TestFixtureHumanStageIsPrivateNonceRequestOnly(t *testing.T) {
+	t.Setenv(guiEnvironment, "")
+	directory := t.TempDir()
+	app := &App{Directory: directory, nonce: strings.Repeat("a", 32)}
+	if err := app.MarkHumanStage(); err != ErrUnauthorized {
+		t.Fatal(err)
+	}
+	t.Setenv(guiEnvironment, "1")
+	if err := app.MarkHumanStage(); err == nil {
+		t.Fatal("unlaunched fixture accepted human stage")
+	}
+	app.BeforeLaunch()
+	if err := app.MarkHumanStage(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(directory, "human-stage"))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("human-stage request not private", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, "human-stage"))
+	if err != nil || string(raw) != app.nonce {
+		t.Fatal("human-stage nonce mismatch", err)
+	}
+}
