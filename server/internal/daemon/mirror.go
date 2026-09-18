@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
+	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -19,6 +20,10 @@ type mirrorOfferMessage struct {
 }
 
 func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessage) {
+	if d.cfg.NativeHostExecutable != "" && native.Supported() {
+		d.handleManagedMirrorOffer(ctx, message)
+		return
+	}
 	raw := message.raw
 	enqueue := message.enqueue
 	controlGeneration := message.controlGeneration

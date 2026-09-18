@@ -50,3 +50,6 @@ func EnsureScreenCapturePermission() bool {
 	// The user may grant manually between attempts: re-check before giving up.
 	return C.multica_preflight_screen_capture() != 0
 }
+
+// ScreenCapturePermissionGranted observes current permission without requesting consent.
+func ScreenCapturePermissionGranted() bool { return C.multica_preflight_screen_capture() != 0 }

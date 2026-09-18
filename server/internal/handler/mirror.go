@@ -197,10 +197,10 @@ func (h *Handler) HandleDaemonMirrorAnswer(ctx context.Context, identity daemonw
 	if len(identity.RuntimeIDs) > 0 && !mirrorContainsString(identity.RuntimeIDs, payload.RuntimeID) {
 		return mirror.ErrSessionIdentityMismatch
 	}
-	if err := h.MirrorSessions.SetAnswer(ctx, payload.SessionID, mirror.SessionIdentity{
+	if err := h.MirrorSessions.SetAnswerWithQuality(ctx, payload.SessionID, mirror.SessionIdentity{
 		WorkspaceID: payload.WorkspaceID, RuntimeID: payload.RuntimeID, UserID: payload.UserID,
 		DaemonID: payload.DaemonID, ViewerID: payload.ViewerID,
-	}, payload.Answer); err != nil {
+	}, payload.Answer, payload.VideoQuality); err != nil {
 		return err
 	}
 	h.recordMirrorEventForRuntime(ctx, payload.WorkspaceID, payload.RuntimeID,

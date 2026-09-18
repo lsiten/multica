@@ -473,7 +473,8 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, identity C
 		return
 	}
 
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	generation := uuid.NewString()
+	conn, err := h.upgrader.Upgrade(w, r, http.Header{"X-Daemon-Generation": []string{generation}})
 	if err != nil {
 		slog.Error("daemon websocket upgrade failed", "error", err)
 		return
@@ -491,7 +492,7 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, identity C
 		send:              make(chan []byte, 16),
 		identity:          identity,
 		registeredAt:      time.Now(),
-		vscreenGeneration: uuid.NewString(),
+		vscreenGeneration: generation,
 		runtimes:          runtimes,
 		rpcSem:            make(chan struct{}, maxInFlightRPCPerClient),
 	}

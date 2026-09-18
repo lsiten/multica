@@ -92,6 +92,7 @@ func (h *Handler) configureMirrorGrant(w http.ResponseWriter, r *http.Request, r
 		return "", false
 	}
 	payload.ViewerGrant = &grant
+	payload.DaemonGeneration = catalog.DaemonGeneration
 	if req.ProtocolVersion == 2 {
 		payload.ProtocolVersion = 2
 		payload.Transport = "video"

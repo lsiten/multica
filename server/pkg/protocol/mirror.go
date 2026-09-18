@@ -75,6 +75,7 @@ func (d MirrorSessionDescription) Validate(expectedType string) error {
 
 // MirrorOfferPayload is sent to a daemon to start one viewer-bound handshake.
 type MirrorOfferPayload struct {
+	DaemonGeneration string                   `json:"daemon_generation,omitempty"`
 	ProtocolVersion  int                      `json:"protocol_version,omitempty"`
 	Transport        string                   `json:"transport,omitempty"`
 	Source           *MirrorSource            `json:"source,omitempty"`
@@ -94,6 +95,7 @@ type MirrorOfferPayload struct {
 
 // MirrorAnswerPayload is sent from a daemon after consuming a single offer.
 type MirrorAnswerPayload struct {
+	VideoQuality     *MirrorVideoQuality      `json:"video_quality,omitempty"`
 	ProtocolVersion  int                      `json:"protocol_version,omitempty"`
 	Transport        string                   `json:"transport,omitempty"`
 	Source           *MirrorSource            `json:"source,omitempty"`
@@ -195,6 +197,29 @@ func validMirrorAnswerFailureReason(reason string) bool {
 func (p MirrorViewerPayload) Validate() error {
 	if strings.TrimSpace(p.WorkspaceID) == "" || strings.TrimSpace(p.RuntimeID) == "" || strings.TrimSpace(p.DaemonID) == "" {
 		return fmt.Errorf("%w: mirror viewer identity is incomplete", ErrInvalidMirrorDescription)
+	}
+	return nil
+}
+
+// MirrorVideoQuality is the actual negotiated encoding, independent of display geometry.
+type MirrorVideoQuality struct {
+	Width       int   `json:"width"`
+	Height      int   `json:"height"`
+	FPS         int   `json:"fps"`
+	Bitrate     int   `json:"bitrate"`
+	MaxLevelIDC uint8 `json:"max_level_idc"`
+}
+
+// Validate rejects encoding metadata outside the negotiated level limits.
+func (q MirrorVideoQuality) Validate() error {
+	w, h, b := 1600, 900, 20000000
+	if q.MaxLevelIDC == 31 {
+		w, h, b = 1280, 720, 14000000
+	} else if q.MaxLevelIDC != 40 {
+		return ErrInvalidMirrorDescription
+	}
+	if q.Width < 2 || q.Width > w || q.Width%2 != 0 || q.Height < 2 || q.Height > h || q.Height%2 != 0 || q.FPS < 1 || q.FPS > 30 || q.Bitrate < 1 || q.Bitrate > b {
+		return ErrInvalidMirrorDescription
 	}
 	return nil
 }
