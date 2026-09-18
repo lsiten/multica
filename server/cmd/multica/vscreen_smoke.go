@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/daemon"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
@@ -28,20 +29,21 @@ type smokeNativeClient interface {
 }
 
 type vscreenSmokeResult struct {
-	Scenario     string                   `json:"scenario"`
-	Version      string                   `json:"version"`
-	Commit       string                   `json:"commit"`
-	Executable   string                   `json:"executable"`
-	Status       string                   `json:"status"`
-	GUIExercised bool                     `json:"gui_exercised"`
-	Display      *native.Display          `json:"display,omitempty"`
-	Source       *native.SourceDescriptor `json:"source,omitempty"`
-	Epoch        protocol.VscreenEpoch    `json:"epoch"`
-	Disposed     bool                     `json:"disposed"`
-	HostClosed   bool                     `json:"host_closed"`
-	Input        *smokeInputResult        `json:"input,omitempty"`
-	Video        *smokeVideoResult        `json:"video,omitempty"`
-	Error        string                   `json:"error,omitempty"`
+	Takeover     *daemon.VscreenTakeoverSmokeEvidence `json:"takeover,omitempty"`
+	Scenario     string                               `json:"scenario"`
+	Version      string                               `json:"version"`
+	Commit       string                               `json:"commit"`
+	Executable   string                               `json:"executable"`
+	Status       string                               `json:"status"`
+	GUIExercised bool                                 `json:"gui_exercised"`
+	Display      *native.Display                      `json:"display,omitempty"`
+	Source       *native.SourceDescriptor             `json:"source,omitempty"`
+	Epoch        protocol.VscreenEpoch                `json:"epoch"`
+	Disposed     bool                                 `json:"disposed"`
+	HostClosed   bool                                 `json:"host_closed"`
+	Input        *smokeInputResult                    `json:"input,omitempty"`
+	Video        *smokeVideoResult                    `json:"video,omitempty"`
+	Error        string                               `json:"error,omitempty"`
 }
 
 type smokeVideoResult struct {
@@ -80,7 +82,7 @@ func executeVscreenSmoke(result *vscreenSmokeResult, evidence string) error {
 	if os.Getenv("MULTICA_RUN_VSCREEN_GUI_SMOKE") != "1" {
 		return errors.New("gui_not_authorized")
 	}
-	if result.Scenario != "lifecycle" && result.Scenario != "source" && result.Scenario != "video" && result.Scenario != "input" {
+	if result.Scenario != "lifecycle" && result.Scenario != "source" && result.Scenario != "video" && result.Scenario != "input" && result.Scenario != "takeover" {
 		return errors.New("scenario_not_implemented")
 	}
 	if !native.Supported() {
@@ -95,8 +97,22 @@ func executeVscreenSmoke(result *vscreenSmokeResult, evidence string) error {
 	if result.Scenario == "input" {
 		limit = 60 * time.Second
 	}
+	if result.Scenario == "takeover" {
+		limit = 100 * time.Second
+	}
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
+	if result.Scenario == "takeover" {
+		outcome, err := daemon.LaunchVscreenTakeoverSmoke(ctx, daemon.VscreenTakeoverSmokeConfig{NativeExecutable: result.Executable, NativeBuild: version + "/" + commit, EvidenceDir: evidence})
+		result.Takeover = &outcome
+		result.GUIExercised = outcome.GUIExercised
+		result.Display = outcome.Display
+		result.Source = outcome.Source
+		result.Epoch = outcome.Epoch
+		result.Disposed = outcome.Disposed
+		result.HostClosed = outcome.HostClosed
+		return err
+	}
 	if result.Scenario == "input" {
 		foreground, err := smokefixture.Snapshot()
 		if err != nil {

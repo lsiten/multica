@@ -58,7 +58,8 @@ char *multica_smoke_fixture_foreground(void) {
 @property NSWindow *window;
 @property MVSSmokeText *text;
 @property NSTextField *counter;
-@property NSUInteger presses, keys, scrolls, drags;
+@property NSUInteger presses, keys, scrolls, drags, humanStage;
+@property(strong) NSData *lastPublished;
 @property BOOL closed, writeFailed;
 - (void)publish;
 - (void)increment:(id)sender;
@@ -80,8 +81,20 @@ char *multica_smoke_fixture_foreground(void) {
 @end
 @implementation MVSSmokeApp
 - (void)publish {
-  NSDictionary *state = @{@"nonce":self.config[@"nonce"], @"pid":@(getpid()), @"process_start":processStart(getpid()) ?: @"", @"window_id":@(self.closed ? 0 : MAX(0, self.window.windowNumber)), @"presses":@(self.presses), @"text":self.text.stringValue ?: @"", @"keys":@(self.keys), @"scrolls":@(self.scrolls), @"drags":@(self.drags), @"closed":@(self.closed)};
+  CGRect bounds = CGRectZero;
+  if (!self.closed && self.window.windowNumber > 0) {
+    NSArray *windows = CFBridgingRelease(CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, (CGWindowID)self.window.windowNumber));
+    for (NSDictionary *window in windows) {
+      if ([window[(id)kCGWindowOwnerPID] intValue] == getpid() && [window[(id)kCGWindowNumber] unsignedIntValue] == self.window.windowNumber) {
+        CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)window[(id)kCGWindowBounds], &bounds); break;
+      }
+    }
+  }
+  NSNumber *displayID = self.closed ? @0 : self.window.screen.deviceDescription[@"NSScreenNumber"];
+  NSDictionary *state = @{@"display_id":displayID ?: @0, @"bounds":@{@"x":@(bounds.origin.x),@"y":@(bounds.origin.y),@"width":@(bounds.size.width),@"height":@(bounds.size.height)}, @"human_stage":@(self.humanStage), @"nonce":self.config[@"nonce"], @"pid":@(getpid()), @"process_start":processStart(getpid()) ?: @"", @"window_id":@(self.closed ? 0 : MAX(0, self.window.windowNumber)), @"presses":@(self.presses), @"text":self.text.stringValue ?: @"", @"keys":@(self.keys), @"scrolls":@(self.scrolls), @"drags":@(self.drags), @"closed":@(self.closed)};
   NSData *json = [NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
+  if (json && [json isEqualToData:self.lastPublished]) return;
+  self.lastPublished = json;
   NSString *path = [self.config[@"directory"] stringByAppendingPathComponent:@"readback.json"];
   if (!json || ![json writeToFile:path options:NSDataWritingAtomic error:nil] || ![NSFileManager.defaultManager setAttributes:@{NSFilePosixPermissions:@0600} ofItemAtPath:path error:nil]) self.writeFailed = YES;
 }
@@ -123,6 +136,9 @@ int multica_smoke_fixture_run(const char *configuration) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:90];
     NSTimer *watchdog = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
       NSString *stop = [NSString stringWithContentsOfFile:stopPath encoding:NSUTF8StringEncoding error:nil];
+      NSString *human = [NSString stringWithContentsOfFile:[config[@"directory"] stringByAppendingPathComponent:@"human-stage"] encoding:NSUTF8StringEncoding error:nil];
+      if (fixture.humanStage == 0 && [human isEqual:config[@"nonce"]]) { fixture.humanStage = 1; fixture.text.stringValue = @"Multica scripted human handoff"; }
+      [fixture publish];
       if (fixture.writeFailed || deadline.timeIntervalSinceNow <= 0 || [stop isEqual:config[@"nonce"]] || ![processStart([config[@"owner_pid"] intValue]) isEqual:config[@"owner_start"]]) { [timer invalidate]; [fixture finish]; }
     }];
     [NSApp run]; [watchdog invalidate]; [NSEvent removeMonitor:monitor];

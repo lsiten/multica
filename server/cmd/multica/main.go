@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 	"log/slog"
 	"os"
 	"runtime"
@@ -10,7 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/multica-ai/multica/server/internal/daemon"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 )
 
 var (
@@ -100,6 +102,21 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) >= 3 && os.Args[1] == daemon.VscreenSmokeProviderCommand {
+		runtime.UnlockOSThread()
+		if err := daemon.RunVscreenSmokeProvider(context.Background(), os.Args[2], os.Args[3:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 3 && os.Args[1] == daemon.VscreenTakeoverCoordinatorCommand {
+		if err := daemon.RunVscreenTakeoverSmokeChild(context.Background(), os.Args[2], version+"/"+commit, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if smokefixture.IsFixtureExecutable() {
 		if err := smokefixture.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, err)

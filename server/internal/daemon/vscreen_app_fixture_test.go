@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
+	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -43,6 +45,22 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 		humanWindows := map[string]bool{}
 		revision := uint64(0)
 		value := ""
+		readState := func() smokefixture.State {
+			var state smokefixture.State
+			if path := os.Getenv("VSCREEN_TAKEOVER_OWNED_READBACK"); path != "" {
+				raw, _ := os.ReadFile(path)
+				_ = json.Unmarshal(raw, &state)
+			}
+			return state
+		}
+		writeState := func(state smokefixture.State) {
+			if path := os.Getenv("VSCREEN_TAKEOVER_OWNED_READBACK"); path != "" {
+				raw, _ := json.Marshal(state)
+				_ = os.WriteFile(path+".next", raw, 0600)
+				_ = os.Rename(path+".next", path)
+			}
+		}
+
 		for {
 			var r native.Request
 			if native.ReadMessage(app, &r) != nil {
@@ -117,6 +135,13 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 					delete(humans, r.App.Human.Capability)
 					reply.App.Window = &appcontrol.Window{Handle: r.App.Human.WindowHandle}
 					humanWindows[r.App.Human.WindowHandle] = r.App.Human.Direction == "to_real"
+					state := readState()
+					state.DisplayID = 2
+					if r.App.Human.Direction == "to_real" {
+						state.DisplayID = 1
+					}
+					writeState(state)
+
 				}
 			case "app_managed_windows":
 				if leases[a.Resource] != a || revoked[a.Resource] {
@@ -139,6 +164,8 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 						managed[a.Resource] = map[string]appcontrol.ManagedWindow{}
 					}
 					managed[a.Resource]["wire-window"] = appcontrol.ManagedWindow{Handle: "wire-window", BundleID: r.App.Launch.BundleID}
+					writeState(smokefixture.State{PID: 123, ProcessStart: "owned-fixture-start", WindowID: 9, DisplayID: 2, Bounds: smokefixture.WindowBounds{X: 10, Y: 10, Width: 640, Height: 440}})
+
 				}
 			case "app_action":
 				if leases[a.Resource] != a || revoked[a.Resource] {
@@ -147,6 +174,9 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 					outcome := protocol.VscreenActionVerified
 					if r.App.Action.Action.Type != nil {
 						value = r.App.Action.Action.Type.Text
+						state := readState()
+						state.Text = value
+						writeState(state)
 					} else {
 						outcome = protocol.VscreenActionUncertain
 					}
@@ -162,7 +192,10 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 					break
 				}
 				revision++
-				o := appcontrol.Observation{Display: appcontrol.Display{Resource: a.Resource, Epoch: a.Epoch, ID: 2, Virtual: true}, Window: appcontrol.Window{Handle: r.App.WindowHandle, SnapshotRevision: revision}, Width: 2, Height: 1, Elements: []appcontrol.Element{{Handle: "entry", Value: value}}}
+				if os.Getenv("VSCREEN_TAKEOVER_OWNED_READBACK") != "" {
+					value = readState().Text
+				}
+				o := appcontrol.Observation{Display: appcontrol.Display{Resource: a.Resource, Epoch: a.Epoch, ID: 2, Virtual: true}, Window: appcontrol.Window{Handle: r.App.WindowHandle, SnapshotRevision: revision, WindowID: 9, Process: appcontrol.Process{PID: 123, Start: "owned-fixture-start"}}, Width: 2, Height: 1, Elements: []appcontrol.Element{{Handle: "entry", Title: "Multica smoke text", SetValue: true, Value: value}}}
 				reply.App.Observation = &o
 				if r.App.IncludePNG {
 					pixels := image.NewRGBA(image.Rect(0, 0, 2, 1))

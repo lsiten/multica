@@ -27,17 +27,26 @@ type Foreground struct {
 	CursorX  float64 `json:"cursor_x"`
 	CursorY  float64 `json:"cursor_y"`
 }
+type WindowBounds struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
 type State struct {
-	Nonce        string `json:"nonce"`
-	PID          int    `json:"pid"`
-	ProcessStart string `json:"process_start"`
-	WindowID     uint32 `json:"window_id"`
-	Presses      uint64 `json:"presses"`
-	Text         string `json:"text"`
-	Keys         uint64 `json:"keys"`
-	Scrolls      uint64 `json:"scrolls"`
-	Drags        uint64 `json:"drags"`
-	Closed       bool   `json:"closed"`
+	DisplayID    uint32       `json:"display_id"`
+	Bounds       WindowBounds `json:"bounds"`
+	HumanStage   uint64       `json:"human_stage"`
+	Nonce        string       `json:"nonce"`
+	PID          int          `json:"pid"`
+	ProcessStart string       `json:"process_start"`
+	WindowID     uint32       `json:"window_id"`
+	Presses      uint64       `json:"presses"`
+	Text         string       `json:"text"`
+	Keys         uint64       `json:"keys"`
+	Scrolls      uint64       `json:"scrolls"`
+	Drags        uint64       `json:"drags"`
+	Closed       bool         `json:"closed"`
 }
 type configuration struct {
 	Nonce        string `json:"nonce"`
@@ -236,4 +245,16 @@ func Snapshot() (Foreground, error) {
 		return Foreground{}, err
 	}
 	return snapshot()
+}
+
+// MarkHumanStage changes only the owned fixture through its private nonce file.
+// It is scripted fixture readback, never a claim of manual human input.
+func (a *App) MarkHumanStage() error {
+	if err := authorized(); err != nil {
+		return err
+	}
+	if !a.launchAttempted {
+		return errors.New("fixture_not_launched")
+	}
+	return os.WriteFile(filepath.Join(a.Directory, "human-stage"), []byte(a.nonce), 0600)
 }

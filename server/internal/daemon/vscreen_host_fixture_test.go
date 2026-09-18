@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net"
 	"os"
@@ -18,6 +19,13 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) >= 3 && os.Args[1] == VscreenSmokeProviderCommand {
+		if err := RunVscreenSmokeProvider(context.Background(), os.Args[2], os.Args[3:], os.Stdin, os.Stdout); err != nil {
+			os.Stderr.WriteString(err.Error())
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "vscreen-provider-fixture" {
 		os.Exit(runVscreenProviderFixture())
 	}
@@ -89,12 +97,20 @@ func vscreenTestHost() int {
 		virtual.Source = protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "display:" + request.Resource.RuntimeID}
 		virtual.Primary = false
 		virtual.DisplayID = 2
-		display := native.Display{ID: 2, UUID: virtual.Source.SourceID, Width: 1600, Height: 900, LogicalWidth: 1600, LogicalHeight: 900, Scale: 1, ScreenRecording: false}
+		display := native.Display{ID: 2, Managed: true, UUID: virtual.Source.SourceID, Width: 1600, Height: 900, LogicalWidth: 1600, LogicalHeight: 900, Scale: 1, ScreenRecording: false}
 		var sample *native.MediaSample
 		switch request.Operation {
 		case "update_exclusions":
 			if len(request.ExcludedWindowIDs) > 32 {
 				response.Error = "capture_update_failed"
+			}
+		case "list":
+			response.Displays = []native.Display{}
+			for _, active := range enabled {
+				if active {
+					response.Displays = append(response.Displays, display)
+					break
+				}
 			}
 		case "ensure":
 			enabled[request.Resource] = true
