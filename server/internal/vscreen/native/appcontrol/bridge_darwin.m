@@ -36,6 +36,8 @@ uintptr_t ac_new(void) {
     s.pending = dispatch_group_create();
     s.pressed = [NSMutableDictionary new];
     s.uncertainInput = [NSMutableDictionary new];
+    s.pendingPIDInputs=[NSMutableDictionary new];
+    s.usedPIDTokens=[NSMutableSet new];
     __weak ACSession *weak = s;
     NSNotificationCenter *center =
         NSWorkspace.sharedWorkspace.notificationCenter;
@@ -193,8 +195,20 @@ int ac_call(uintptr_t handle, uintptr_t request, const char *bytes,
       value = ACRestore(s, r, input, &error);
     else if ([op isEqual:@"observe"])
       value = ACObserve(s, r, input, &error);
-    else if ([op isEqual:@"action"])
+    else if ([op isEqual:@"pid_complete"])
+      value = ACCompletePIDInput(s,r,input,&error);
+    else if ([op isEqual:@"action"]) {
+      ACWindow *window=s.windows[input[@"Window"][@"Handle"]];
+      window.completionContext=input[@"Completion"];
+      window.pidDispatched=NO;
       value = ACAction(s, r, input, &error);
+      if (!error && value) {
+        NSMutableDictionary *result=[value mutableCopy];
+        result[@"Mechanism"]=window.pidDispatched?@"pid":@"ax";
+        value=result;
+      }
+      window.completionContext=nil;
+    }
     else
       error = @"needs_intervention";
     NSData *encoded = [NSJSONSerialization dataWithJSONObject:@{

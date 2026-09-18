@@ -21,10 +21,16 @@ type controlledBackend struct {
 
 func (b *controlledBackend) call(ctx context.Context, op string, in, out any) error {
 	b.calls = append(b.calls, op)
+	var err error
 	if b.run != nil {
-		return b.run(ctx, op, in, out)
+		err = b.run(ctx, op, in, out)
 	}
-	return nil
+	if op == "action" && err == nil {
+		if result, ok := out.(*Result); ok && result.Mechanism == "" {
+			result.Mechanism = "ax"
+		}
+	}
+	return err
 }
 func (b *controlledBackend) close() error { return nil }
 func controlFixture(t *testing.T) (*Controller, *controlledBackend, Authority, protocol.VscreenActionRequest) {
@@ -191,6 +197,7 @@ func TestInterruptedDownRetainsClaimAndBlocksHandoff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, b, a, r := controlFixture(t)
 		r.Action = protocol.VscreenAction{Kind: protocol.VscreenActionKey, Key: &protocol.VscreenKeyAction{Key: "A", Modifiers: []string{"meta"}}}
+		c.config.VerifyPIDCompletion = syntheticPIDCompletion
 		c.config.CertifiedPIDInput = func(Process, protocol.VscreenAction) PIDInputDecision {
 			return PIDInputDecision{Certified: true, InputSourceID: "synthetic-layout"}
 		}
