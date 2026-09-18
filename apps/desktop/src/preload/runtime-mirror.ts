@@ -1,3 +1,4 @@
+import { VSCREEN_DESKTOP_CHANNEL, type VscreenDesktopRequest, type VscreenDesktopResult } from "../shared/vscreen-desktop";
 import { contextBridge, ipcRenderer } from "electron";
 import {
   RUNTIME_MIRROR_CHANNEL,
@@ -24,6 +25,7 @@ function runtimeConfig(config: unknown) {
 }
 function createRuntimeMirrorPreloadAPI() {
   return {
+    vscreenDesktop: (request: VscreenDesktopRequest): Promise<VscreenDesktopResult> => ipcRenderer.invoke(VSCREEN_DESKTOP_CHANNEL, request),
     context: readRuntimeMirrorWindowContext(process.argv),
     systemLocale:
       process.argv

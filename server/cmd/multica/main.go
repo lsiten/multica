@@ -99,6 +99,20 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" {
+		if err := runVscreenSmoke(os.Stdout, os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-diagnostics" {
+		if err := runVscreenDiagnostics(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-host" {
 		if err := runVscreenHost(); err != nil {
 			fmt.Fprintln(os.Stderr, err)

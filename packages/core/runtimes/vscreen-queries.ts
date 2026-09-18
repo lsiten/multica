@@ -125,3 +125,9 @@ export function useVscreenCommand(scope: VscreenScope) {
       queryClient.invalidateQueries({ queryKey: vscreenKeys.all(scope) }),
   });
 }
+
+export function vscreenInterventionsOptions(scope: VscreenScope) {
+  const api = getApi().vscreen(scope);
+  return queryOptions({ queryKey: [...vscreenKeys.all(scope), "interventions"] as const,
+    queryFn: ({ signal }) => api.interventions.list(signal), refetchInterval: 2_000, retry: false });
+}

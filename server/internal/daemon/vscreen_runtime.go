@@ -31,6 +31,7 @@ type VscreenTakeoverHandler func(context.Context, protocol.VscreenCommand, *vscr
 
 type vscreenRuntime struct {
 	interventions     vscreenInterventions
+	excludedWindows   []uint32
 	commandMu         sync.Mutex
 	commands          map[string]vscreenCachedCommand
 	grantClosed       bool
@@ -140,6 +141,10 @@ func (d *Daemon) startVscreenHost(ctx context.Context, s *vscreenRuntime) error 
 	}
 	client, err := hostclient.Start(ctx, hostclient.Config{Executable: d.cfg.NativeHostExecutable, Build: d.cfg.NativeHostBuild, Media: true, AppControl: true})
 	if err != nil {
+		return err
+	}
+	if err := client.UpdateExclusions(ctx, s.excludedWindows); err != nil {
+		client.Close()
 		return err
 	}
 	s.client = client

@@ -21,19 +21,20 @@ var ErrUnavailable = errors.New("native display unavailable")
 
 // Request is only accepted over the inherited authenticated parent socket.
 type Request struct {
-	Version    int                   `json:"version"`
-	Build      string                `json:"build"`
-	Token      []byte                `json:"token,omitempty"`
-	AppControl bool                  `json:"app_control,omitempty"`
-	App        *AppRequest           `json:"app,omitempty"`
-	Media      bool                  `json:"media,omitempty"`
-	Capture    *CaptureOptions       `json:"capture,omitempty"`
-	ID         string                `json:"id"`
-	Operation  string                `json:"operation"`
-	Resource   protocol.ResourceKey  `json:"resource"`
-	Epoch      protocol.VscreenEpoch `json:"epoch"`
-	Width      uint32                `json:"width,omitempty"`
-	Height     uint32                `json:"height,omitempty"`
+	ExcludedWindowIDs []uint32              `json:"excluded_window_ids,omitempty"`
+	Version           int                   `json:"version"`
+	Build             string                `json:"build"`
+	Token             []byte                `json:"token,omitempty"`
+	AppControl        bool                  `json:"app_control,omitempty"`
+	App               *AppRequest           `json:"app,omitempty"`
+	Media             bool                  `json:"media,omitempty"`
+	Capture           *CaptureOptions       `json:"capture,omitempty"`
+	ID                string                `json:"id"`
+	Operation         string                `json:"operation"`
+	Resource          protocol.ResourceKey  `json:"resource"`
+	Epoch             protocol.VscreenEpoch `json:"epoch"`
+	Width             uint32                `json:"width,omitempty"`
+	Height            uint32                `json:"height,omitempty"`
 }
 
 // Display contains system readback, never a simulated desktop.

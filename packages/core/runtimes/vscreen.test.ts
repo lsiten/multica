@@ -60,7 +60,7 @@ describe("Vscreen authority derivation", () => {
     });
   });
 
-  it("keeps screen recording separate from accessibility when native permission is denied", () => {
+  it("allows display creation while keeping denied accessibility separate from automation", () => {
     // Given
     const denied = parseVscreenState(
       {
@@ -85,13 +85,13 @@ describe("Vscreen authority derivation", () => {
     // Then
     expect(result).toMatchObject({
       canView: true,
-      canEnable: false,
+      canEnable: true,
       screenRecordingGranted: true,
       accessibilityGranted: false,
     });
   });
 
-  it("enables a disabled screen only when owner authority and native permissions are present", () => {
+  it("enables a disabled screen only when owner authority and display support are present", () => {
     // Given
     const disabled = parseVscreenState(
       {

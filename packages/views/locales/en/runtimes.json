@@ -527,6 +527,36 @@
     "legacy": "Legacy screen mirror",
     "select_runtime": "Choose a runtime",
     "resize": "Resize screen",
-    "retry": "Reconnect"
+    "retry": "Reconnect",
+    "handoff": {
+      "title": "Human takeover",
+      "awaiting": "Waiting for local takeover",
+      "human": "You are controlling the app",
+      "ready": "Returned and ready to continue",
+      "continued": "Continued in a new run",
+      "stale": "This intervention is no longer current",
+      "cancelled": "Cancelled",
+      "remote": "Ask the runtime owner to take over on its host.",
+      "source_run": "Original run",
+      "child_run": "Continuation run",
+      "destination": "Move to display",
+      "move_here": "Move app here",
+      "summary": "What changed?",
+      "summary_limit": "Up to 2 KiB. The summary is shared with the next run.",
+      "return": "Return to virtual screen",
+      "continue": "Continue run",
+      "fresh": "Start a fresh session",
+      "cancel": "Cancel intervention",
+      "report_pending": "Waiting for the server to confirm this stage. Refresh before taking another action.",
+      "resume_unavailable": "The previous session cannot resume. You can explicitly start a fresh session.",
+      "failed": "The operation did not complete. Refresh the status before trying again.",
+      "refresh": "Refresh status",
+      "screen_settings": "Screen recording settings",
+      "ax_settings": "Accessibility settings",
+      "granted": "Granted",
+      "not_granted": "Not granted",
+      "unknown": "Not checked",
+      "permissions": "Automation permissions: Accessibility {{accessibility}} · Screen recording {{screenRecording}}"
+    }
   }
 }

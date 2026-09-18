@@ -79,6 +79,44 @@ A local runtime is **private** by default: only the runtime owner can create age
 
 Only the runtime owner can make it **public** — workspace admins can rename or delete a runtime, but sharing one is the owner's decision. Other workspace members can then select this runtime as well; that does not share the underlying AI coding tool's login credentials — it only lets members route their agents' runs to this computer.
 
+## Runtime virtual screen
+
+On a supported Mac, a runtime can own one managed virtual screen. Enable or disable it in that runtime's screen controls. The display belongs to the runtime, not an individual run or viewer; closing a mirror window leaves it enabled in the background. Runs on that runtime queue for exclusive GUI control while ordinary coding work can continue independently.
+
+The mirror is view-only. Switching between the runtime's virtual screen and a physical display changes what you watch; it does not give an agent control of the physical display. Viewing another computer also does not grant local takeover rights.
+
+### Permissions and supported apps
+
+The native host is part of the bundled Multica executable on macOS arm64 and Intel. It requires available macOS virtual-display APIs, Screen Recording for capture, and Accessibility for app control. There is no separate driver or helper app to install. Linux, Windows, a build without native support, or a Mac missing the required APIs cannot provide this virtual-screen capability. Upgrading only the client does not add capabilities to an old daemon.
+
+Grant permissions yourself in macOS **System Settings → Privacy & Security** for the installed Multica identity shown by the system. A permission shown for a development terminal or a different build is not proof that the installed Desktop has access. Diagnostics never request or reset permissions. An unknown permission, denied permission, unavailable source, or disconnected runtime is not ready for GUI work.
+
+Managed tools use Accessibility actions supported by the target app. PID-targeted input requires a separately certified app/action/OS combination; it is not a general fallback for arbitrary apps. An app that cannot stay within the managed screen or safely accept background input requires human intervention. These guarantees cover managed tools, not every command or external MCP an agent could invoke. This is not an OS sandbox.
+
+The view-only mirror and agent observations have different data paths. An agent's observation can include a screenshot and Accessibility content supplied to its AI provider. Do not place sensitive content in a managed app unless that use is intended.
+
+### Human handoff and cleanup
+
+When a run needs help, its GUI actions are frozen and the original run is stopped. The owner on the same computer can explicitly take over, complete the required step, and return control. Continue creates a linked follow-up run after the return is verified; it does not resume the original run in place. The follow-up must observe the current window before taking another action. A remote viewer cannot perform the local handoff.
+
+Disable the virtual screen when you no longer need it. Disabling waits for input and capture to stop before disposing of the display. Closing the viewer only ends viewing. If cleanup, return, or display identity cannot be confirmed, keep the state blocked and inspect the reported failure; do not treat a timeout as successful cleanup or replay an uncertain action. After a restart or permission change, check the current runtime state again.
+
+### Inspecting a packaged build
+
+From a source checkout, inspect the exact app you intend to use:
+
+```bash
+pnpm --filter @multica/desktop exec node scripts/vscreen-native-smoke.mjs \
+  --app /absolute/path/Multica.app --scenario package \
+  --evidence /absolute/path/new-evidence-directory
+```
+
+The report records the bundle identity, helper path and SHA-256, architecture, linked native frameworks, helper version/commit, and signature verification. An ad-hoc signature is labelled as such; it is not evidence of notarization. Use `--scenario diagnostics` for the bundled helper's nonprompting native and permission preflight. That direct helper invocation records its launcher and cannot certify Desktop's own TCC attribution. Missing permissions or an older helper without the diagnostic command returns a nonzero result.
+
+The `lifecycle` and `source` scenarios create a test-owned display, verify it in the display and capture-source catalogs, then verify disposal. The `video` scenario also records three H264 samples from that virtual display to `virtual-screen.h264`, with parameter-set, timestamp, and hash evidence. These commands create a real display and require explicit `--allow-gui` or `MULTICA_RUN_VSCREEN_GUI_SMOKE=1`. They do not capture a physical screen.
+
+`input`, `takeover`, `performance`, and `all` currently return a nonzero unimplemented-scenario result even with opt-in. Native video sampling does not verify renderer playback or end-to-end latency. Passing packaging or preflight does not verify GUI behaviors.
+
 ## Custom runtime profiles
 
 If your team uses an internal wrapper, a version-pinned executable, or needs fixed extra arguments for a compatible tool, create a **custom runtime profile**.

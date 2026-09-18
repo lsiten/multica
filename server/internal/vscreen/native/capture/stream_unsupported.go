@@ -14,3 +14,5 @@ func (*Stream) Close(context.Context) error          { return ErrUnsupported }
 func (*Stream) Stats() (Stats, error) { return Stats{}, ErrUnsupported }
 
 func PermissionGranted() (bool, error) { return false, ErrUnsupported }
+
+func (*Stream) UpdateExclusions(context.Context, []uint32) error { return ErrUnsupported }

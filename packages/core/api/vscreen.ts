@@ -1,3 +1,4 @@
+import { createVscreenInterventionsApi } from "./vscreen-interventions";
 import type {
   MirrorSourceBinding,
   VscreenCommand,
@@ -64,7 +65,7 @@ export function createVscreenApi(
     init: RequestInit = {},
   ): Promise<unknown> {
     if (!isCurrent()) throw new VscreenScopeError();
-    const response = await transport(`${root}${path}`, {
+    const response = await transport(path.startsWith("/api/") ? path : `${root}${path}`, {
       ...init,
       signal: init.signal
         ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)])
@@ -94,6 +95,7 @@ export function createVscreenApi(
   }
   return {
     legacy: createVscreenLegacyApi(identity, request),
+    interventions: createVscreenInterventionsApi(identity, request),
     async getIceConfig(signal?: AbortSignal) {
       const result = parseWithFallback<MirrorICEConfig | null>(
         await request("/mirror/config", { signal }),
