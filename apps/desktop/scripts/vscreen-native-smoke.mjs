@@ -156,8 +156,8 @@ export async function runSmoke(options, dependencies = {}) {
     }
     if (guiScenarios.includes(options.scenario)) {
       if (!options.allowGui) fail("gui_not_authorized", "GUI smoke requires explicit --allow-gui or MULTICA_RUN_VSCREEN_GUI_SMOKE=1");
-      if (!["lifecycle", "source", "video"].includes(options.scenario)) fail("scenario_not_implemented", "No bundle-bound GUI harness is implemented for this scenario; no GUI was started");
-      const smoke = await command("native-gui-smoke", helper, ["internal-vscreen-smoke", options.scenario, options.evidence], { timeout: 45_000, env: { ...process.env, MULTICA_RUN_VSCREEN_GUI_SMOKE: "1" } });
+      if (!["lifecycle", "source", "video", "input"].includes(options.scenario)) fail("scenario_not_implemented", "No bundle-bound GUI harness is implemented for this scenario; no GUI was started");
+      const smoke = await command("native-gui-smoke", helper, ["internal-vscreen-smoke", options.scenario, options.evidence], { timeout: options.scenario === "input" ? 90_000 : 45_000, env: { ...process.env, MULTICA_RUN_VSCREEN_GUI_SMOKE: "1" } });
       try { report.gui = JSON.parse(smoke.stdout); } catch { fail("gui_result_invalid", "Bundled helper did not return a GUI result; cleanup is unconfirmed"); }
       report.gui_exercised = report.gui.gui_exercised === true;
       if (smoke.exitCode !== 0 || report.gui.status !== "passed") fail("gui_smoke_failed", "Bundled native GUI scenario failed; inspect its result and cleanup flags");
@@ -166,7 +166,21 @@ export async function runSmoke(options, dependencies = {}) {
         const videoPath = join(options.evidence, "virtual-screen.h264");
         if (report.gui.video?.artifact !== videoPath || report.gui.video.samples?.length !== 3 || (await readFile(videoPath)).length === 0 || await hashFile(videoPath) !== report.gui.video.sha256) fail("video_artifact_invalid", "Captured H264 artifact is missing or does not match the helper result");
       }
-      report.limitations.push("Native smoke does not verify renderer playback, human handoff, input, or end-to-end latency. H264 checks cover Annex-B framing/parameter sets and timestamps, not visual decoding.");
+      if (options.scenario === "input") {
+        const input = report.gui.input;
+        if (input?.scope !== "test-owned-fixture-external-ax-only" || input.fixture_binary_sha256 !== report.helper.sha256 || !/^ai\.multica\.smoke\.[a-f0-9]{32}$/.test(input.fixture_bundle_id ?? "") || !Number.isInteger(input.fixture_pid) || input.fixture_pid <= 0 || !Number.isInteger(input.fixture_window_id) || input.fixture_window_id <= 0 || input.fixture_closed !== true || input.control_revoked !== true || input.ax_press_verified !== true || input.ax_text_verified !== true || input.foreground_snapshots_unchanged !== true || input.per_pid_certified !== false) fail("input_result_invalid", "Input result lacks verified fixture identity, semantic readback, isolation, or cleanup");
+        if (input.unsupported_actions?.length !== 3 || ["key", "scroll", "drag"].some((action, index) => input.unsupported_actions[index]?.action !== action || input.unsupported_actions[index]?.reason !== "needs_intervention" || input.unsupported_actions[index]?.old_lease_refused !== true || input.unsupported_actions[index]?.counters_observed !== true || input.unsupported_actions[index]?.delivered_count !== 0)) fail("input_result_invalid", "Uncertified PID input must be refused with no delivered events and an expired old lease");
+        const baseline = input.stages?.[0]?.foreground;
+        if (input.stages?.length !== 9 || !baseline?.pid || !baseline?.window_id || input.stages.some((stage) => JSON.stringify(stage.foreground) !== JSON.stringify(baseline))) fail("input_result_invalid", "Foreground and cursor isolation snapshots are incomplete");
+        for (const [stage, name] of [["before", "input-before.png"], ["after", "input-after.png"]]) {
+          const image = input[stage]; const path = join(options.evidence, name);
+          if (image?.artifact !== path || !(image.width > 0 && image.height > 0) || (await readFile(path)).length === 0 || await hashFile(path) !== image.sha256) fail("input_artifact_invalid", "Fixture PNG evidence is missing or has changed");
+        }
+        if (input.before.sha256 === input.after.sha256) fail("input_artifact_invalid", "Fixture pixels did not change");
+        report.limitations.push("Input proves only this copied-helper test fixture's external AX press/value behavior and refusal of uncertified PID input. It does not certify installed user apps, per-PID input support, IME, continuous foreground typing, or final Desktop TCC attribution.");
+      } else {
+        report.limitations.push("Native smoke does not verify renderer playback, human handoff, input, or end-to-end latency. H264 checks cover Annex-B framing/parameter sets and timestamps, not visual decoding.");
+      }
     }
     report.status = "passed";
   } catch (error) {

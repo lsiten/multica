@@ -8,7 +8,7 @@ func isVscreenToolName(name string) bool {
 		return false
 	}
 	switch name[index:] {
-	case "vscreen_status", "vscreen_acquire", "vscreen_release", "vscreen_launch_app", "vscreen_observe", "vscreen_click", "vscreen_drag", "vscreen_scroll", "vscreen_type", "vscreen_key":
+	case "vscreen_status", "vscreen_acquire", "vscreen_release", "vscreen_list_apps", "vscreen_launch_app", "vscreen_observe", "vscreen_click", "vscreen_drag", "vscreen_scroll", "vscreen_type", "vscreen_key":
 		return true
 	}
 	return false

@@ -1,6 +1,6 @@
 # Native app control
 
-This package is the same-binary macOS input adapter. It is not wired to the private host RPC or daemon input handler yet. Linux, Windows, and builds without cgo return the explicit `unsupported_platform` error.
+This package is the same-binary macOS input adapter. It is wired to the private native-host RPC and task-local daemon MCP. Linux, Windows, and builds without cgo return the explicit `unsupported_platform` error.
 
 ## Host integration contract
 
@@ -10,14 +10,17 @@ Required callbacks:
 
 - `Authorize(ctx, Authority, Access) (Display, error)` must verify the authenticated parent connection, the native display registry, current resource/native/display/geometry identity, and the native host's accepted task/transaction/lease fence. `ControlAccess` requires live task authority. `ObserveAccess` may instead accept a separately issued `ObserverGrant`. These callbacks do not query an in-process daemon Actor: the daemon checks its live actor before IPC, and the native host must implement its own grant/revoke fencing. A callback that always returns a display is not a production authorization implementation.
 - `AuthorizeHuman(ctx, HumanRequest) (Display, error)` must validate and consume a separate opaque local Desktop-owner grant for that exact registered window and direction. It runs after the native quiescence barrier. A task token or ordinary GUI lease cannot replace this grant.
-- Optional `CertifiedPIDInput(Process, protocol.VscreenAction) bool` must authorize only an independently tested application/OS/action combination, including the requested key/modifier or gesture variant. The native process identity contains the installed bundle ID and OS build. No default certification exists. Do not enable this predicate globally or solely because a symbol is available.
+- Optional `CertifiedPIDInput(Process, protocol.VscreenAction) bool` must authorize only an independently tested application/OS/action combination, including the requested key/modifier or gesture variant. The native process identity contains the installed bundle ID and OS build. No default certification exists. Observations report `PIDInputCertificationConfigured` from this host policy, not from native reply metadata; true only means a predicate exists, and each exact action still needs its own check. Do not enable this predicate globally or solely because a symbol is available.
 
 Public operations:
 
+- `ListApps(ctx, Authority)` returns NSWorkspace-resolved bundle IDs, names and running state from bounded standard Applications folders. This inventory is incomplete when truncated and never certifies input support.
 - `Launch(ctx, Authority, LaunchRequest{BundleID, Files}) (Window, error)` resolves an installed bundle through NSWorkspace, rejects running instances it cannot safely adopt, opens only explicit absolute file paths, and moves only the newly identified window. No shell command, caller-selected PID, clipboard content, or new-instance flag is accepted.
 - `Observe(ctx, Authority, windowHandle, includePNG) (Observation, error)` returns up to 128 AX nodes, depth 12, with bounded text and fresh opaque element handles. A nonempty handle selects a registered window. An empty handle captures only the authorized virtual display. PNG is produced by SCScreenshotManager on macOS 14+, without audio/microphone capture. No real-screen fallback exists.
 - `Act(ctx, protocol.VscreenActionRequest) (Result, error)` rechecks authority, window bounds, process incarnation, source geometry and snapshot revision before dispatch. Identical requests are cached without replay; new actions require a fresh observation after a mutation. Input is serialized with a three-second operation budget.
 - `Quiesce(ctx, ResourceKey)` revokes immediately, cancels the matching in-flight request, then waits for native completion. `Resume(ctx, Authority)` is an explicit host-verified fresh grant after quiescence; it is not an automatic retry.
+- `ListWindows(ctx, HumanRequest)` consumes a separate `list_existing` local-owner grant and returns up to 64 opaque, 15-second candidates bound to resource, epoch and intervention. It excludes ambiguous multi-window processes and claimed processes. Titles stay on the private local Desktop transport.
+- `AdoptWindow(ctx, HumanRequest)` consumes an `adopt_existing` grant for the selected candidate, rechecks native identity/geometry and holds the process claim. It registers a human-owned window without moving or activating it. It requires a subsequent explicit `to_virtual` transfer before recovery. Neither operation is an Agent MCP tool.
 - `HumanTransfer(ctx, HumanRequest{Grant, Resource, WindowHandle, Direction})` supports `to_real` and `to_virtual`. Only the authorized `to_real` path activates the app. Return requires fresh observation/recovery before new input.
 - `Dispose(ctx, ResourceKey)` performs scoped quiescence, restoration and claim release for one runtime; sibling runtime windows and claims remain owned.
 - `Close(ctx)` restores only automatically moved windows whose current identity and bounds still match. Missing original displays use a still-visible non-runtime display. User-moved windows are left untouched. Cleanup never closes documents or kills apps; failures retain claims and can be retried.

@@ -77,3 +77,8 @@ NSDictionary *ACObserveDisplay(ACSession *, ACRequest *, NSDictionary *,
                                NSString **);
 NSData *ACScreenshot(ACSession *, ACRequest *, ACWindow *, NSDictionary *,
                      NSString **);
+
+NSDictionary *ACListApps(ACRequest *r, NSString **error);
+
+NSDictionary *ACListWindows(ACSession *, ACRequest *, NSString **);
+NSDictionary *ACAdoptWindow(ACSession *, ACRequest *, NSDictionary *, NSString **);
