@@ -212,6 +212,11 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 			return nil, errWSRPCWriteBufferFull
 		}
 	}
+	var vscreenReportBinding uint64
+	reporter, reporterErr := d.initVscreenReporter(ctx)
+	if reporterErr == nil {
+		vscreenReportBinding = reporter.Bind(response.Header.Get(protocol.DaemonGenerationHeader), enqueue)
+	}
 	wsRPCGeneration := d.wsRPC.attach(enqueue)
 	d.replayActiveMirrorViewerStates(enqueue, mirrorGeneration)
 	// A (re)connect may be a freshly-upgraded server: re-probe the batch claim
@@ -227,6 +232,8 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 
 	errCh := make(chan error, 1)
 	reader := taskWakeupReader{
+		vscreenReporter:         reporter,
+		vscreenReportBinding:    vscreenReportBinding,
 		conn:                    conn,
 		taskWakeups:             taskWakeups,
 		wsRPCGeneration:         wsRPCGeneration,
@@ -260,6 +267,9 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 		// Detach RPC (fails pending → HTTP fallback, now safe since the queued
 		// frame will be dropped), and flip the send-closed flag under sendMu so
 		// any in-flight guarded send finishes before we close writes.
+		if reporter != nil {
+			reporter.Unbind(vscreenReportBinding)
+		}
 		d.wsRPC.attach(nil)
 		// A healthy WS connection lets the claim poller use a longer fallback
 		// interval. Wake it as soon as the connection drops so it immediately
@@ -405,6 +415,8 @@ func (d *Daemon) readTaskWakeupMessages(conn *websocket.Conn, taskWakeups chan<-
 }
 
 type taskWakeupReader struct {
+	vscreenReporter         *vscreenReporter
+	vscreenReportBinding    uint64
 	conn                    *websocket.Conn
 	taskWakeups             chan<- taskWakeup
 	wsRPCGeneration         uint64
@@ -503,6 +515,10 @@ func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Contex
 			d.handleVscreenViewerRenew(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventMirrorViewerRevoke:
 			d.handleVscreenViewerRevoke(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
+		case protocol.EventVscreenInterventionAck:
+			if reader.vscreenReporter != nil {
+				reader.vscreenReporter.OnAck(reader.vscreenReportBinding, msg.Payload)
+			}
 		case protocol.EventVscreenQuery:
 			d.handleVscreenQuery(ctx, mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventVscreenCommand:

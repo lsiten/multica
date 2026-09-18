@@ -30,6 +30,7 @@ type VscreenInputHandler interface {
 type VscreenTakeoverHandler func(context.Context, protocol.VscreenCommand, *vscreen.Actor) error
 
 type vscreenRuntime struct {
+	interventions     vscreenInterventions
 	commandMu         sync.Mutex
 	commands          map[string]vscreenCachedCommand
 	grantClosed       bool
@@ -108,6 +109,7 @@ func (d *Daemon) vscreenRuntime() *vscreenRuntime {
 	if d.vscreen == nil {
 		driver := &vscreenNativeDriver{displays: make(map[protocol.ResourceKey]vscreen.Display), input: d.vscreenInput}
 		d.vscreen = &vscreenRuntime{commands: make(map[string]vscreenCachedCommand), grants: make(map[vscreenGrantKey]vscreenGrantEntry), driver: driver, manager: vscreen.NewManager(driver, vscreen.SystemClock{}), enabled: make(map[protocol.ResourceKey]bool), revisions: make(map[string]uint64)}
+		d.loadVscreenInterventions(d.vscreen)
 		if d.cfg.NativeVscreenPreferencesPath != "" {
 			raw, err := os.ReadFile(d.cfg.NativeVscreenPreferencesPath)
 			if err == nil && len(raw) <= 65536 {
@@ -136,12 +138,15 @@ func (d *Daemon) startVscreenHost(ctx context.Context, s *vscreenRuntime) error 
 	if d.cfg.NativeHostExecutable == "" || d.cfg.NativeHostBuild == "" {
 		return native.ErrUnavailable
 	}
-	client, err := hostclient.Start(ctx, hostclient.Config{Executable: d.cfg.NativeHostExecutable, Build: d.cfg.NativeHostBuild, Media: true})
+	client, err := hostclient.Start(ctx, hostclient.Config{Executable: d.cfg.NativeHostExecutable, Build: d.cfg.NativeHostBuild, Media: true, AppControl: true})
 	if err != nil {
 		return err
 	}
 	s.client = client
 	s.driver.setClient(client)
+	if d.vscreenInput == nil {
+		s.driver.setInput(&vscreenAppInput{client: client})
+	}
 	s.hub = mirror.NewCaptureHub(VscreenCaptureProvider{Client: client})
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	s.runCancel = cancel
@@ -166,8 +171,14 @@ func (d *Daemon) VscreenActor(workspaceID, runtimeID string) (*vscreen.Actor, er
 
 func (d *Daemon) closeVscreenRuntime(runtimeID string) {
 	d.vscreenMu.Lock()
+	reporter := d.vscreenReporter
 	s := d.vscreen
 	d.vscreenMu.Unlock()
+	if reporter != nil {
+		if err := reporter.CancelScope("", runtimeID); err != nil {
+			d.logger.Warn("virtual screen report scope cleanup failed")
+		}
+	}
 	if s == nil {
 		return
 	}

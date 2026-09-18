@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -58,6 +59,14 @@ func vscreenTestHost() int {
 	got := make([]byte, 32)
 	if _, err = io.ReadFull(media, got); err != nil || !bytes.Equal(got, token) {
 		return 7
+	}
+	var mediaMu sync.Mutex
+	if hello.AppControl {
+		stop, err := startVscreenTestAppHost(token, media, &mediaMu)
+		if err != nil {
+			return 8
+		}
+		defer stop()
 	}
 	enabled := map[protocol.ResourceKey]bool{}
 	geometry := map[protocol.ResourceKey]uint64{}
@@ -151,8 +160,13 @@ func vscreenTestHost() int {
 		if native.WriteMessage(control, response) != nil {
 			return 9
 		}
-		if sample != nil && native.WriteMediaSample(media, *sample) != nil {
-			return 10
+		if sample != nil {
+			mediaMu.Lock()
+			writeErr := native.WriteMediaSample(media, *sample)
+			mediaMu.Unlock()
+			if writeErr != nil {
+				return 10
+			}
 		}
 	}
 }
