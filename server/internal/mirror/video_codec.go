@@ -64,22 +64,9 @@ func selectVideoCodec(offer SessionDescription) (string, uint8, error) {
 			if len(fields) != 2 || !h264[fields[0]] {
 				continue
 			}
-			parameters := make(map[string]string)
-			for _, part := range strings.Split(fields[1], ";") {
-				pair := strings.SplitN(strings.TrimSpace(part), "=", 2)
-				if len(pair) == 2 {
-					parameters[pair[0]] = pair[1]
-				}
-			}
-			profile, err := hex.DecodeString(parameters["profile-level-id"])
-			if err == nil && len(profile) == 3 && profile[0] == 0x42 && profile[1]&0x40 != 0 && profile[2] >= 31 && parameters["packetization-mode"] == "1" {
-				level := profile[2]
-				if maximum, err := hex.DecodeString(parameters["max-recv-level"]); err == nil && len(maximum) == 2 && maximum[1] > level {
-					level = maximum[1]
-				}
-				if level > selectedLevel {
-					selected, selectedLevel = fields[1], level
-				}
+			level, ok := videoReceiveLevel(fields[1])
+			if ok && level > selectedLevel {
+				selected, selectedLevel = fields[1], level
 			}
 		}
 	}
@@ -87,4 +74,50 @@ func selectVideoCodec(offer SessionDescription) (string, uint8, error) {
 		return selected, selectedLevel, nil
 	}
 	return "", 0, errors.New("mirror: offer requires receiving constrained baseline h264 level 3.1 or higher with packetization mode 1")
+}
+
+// The selected fmtp is also registered locally and retained in Pion's answer.
+// Consequently asymmetry is bilateral only when this parameter is exactly 1.
+func videoReceiveLevel(fmtp string) (uint8, bool) {
+	parameters := make(map[string]string)
+	for _, part := range strings.Split(fmtp, ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		if !ok || key == "" || value == "" {
+			return 0, false
+		}
+		if _, exists := parameters[key]; exists {
+			return 0, false
+		}
+		parameters[key] = value
+	}
+	profile, err := hex.DecodeString(parameters["profile-level-id"])
+	if err != nil || len(profile) != 3 || profile[0] != 0x42 || profile[1]&0x4f != 0x40 || !videoKnownLevel(profile[2]) || parameters["packetization-mode"] != "1" {
+		return 0, false
+	}
+	asymmetry := parameters["level-asymmetry-allowed"]
+	if asymmetry != "" && asymmetry != "0" && asymmetry != "1" {
+		return 0, false
+	}
+	level := profile[2]
+	if value, present := parameters["max-recv-level"]; present {
+		maximum, err := hex.DecodeString(value)
+		if err != nil || len(maximum) != 2 || maximum[0] != profile[1] || !videoKnownLevel(maximum[1]) || maximum[1] <= level {
+			return 0, false
+		}
+		if asymmetry == "1" {
+			level = maximum[1]
+		}
+	}
+	return level, true
+}
+
+// Levels below 3.1 are outside this encoder path, including the special 1b encoding.
+func videoKnownLevel(level uint8) bool {
+	switch level {
+	case 31, 32, 40, 41, 42, 50, 51, 52, 60, 61, 62:
+		return true
+	default:
+		return false
+	}
 }
