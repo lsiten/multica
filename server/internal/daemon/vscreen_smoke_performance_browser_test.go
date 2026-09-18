@@ -23,6 +23,8 @@ import (
 // This provider replays the existing encoded test fixture, never opens capture.
 type performanceBrowserProvider struct {
 	opens, closes atomic.Int32
+	mu            sync.Mutex
+	formats       []protocol.MirrorVideoQuality
 }
 
 func (p *performanceBrowserProvider) Open(_ context.Context, source mirror.EncodedSource) (mirror.EncodedStream, error) {
@@ -56,6 +58,9 @@ func (p *performanceBrowserProvider) Open(_ context.Context, source mirror.Encod
 			break
 		}
 	}
+	p.mu.Lock()
+	p.formats = append(p.formats, protocol.MirrorVideoQuality{Width: source.Width, Height: source.Height, FPS: source.FPS, Bitrate: source.Bitrate, MaxLevelIDC: source.MaxLevelIDC})
+	p.mu.Unlock()
 	p.opens.Add(1)
 	return &performanceBrowserStream{owner: p, sample: sample, ticker: time.NewTicker(time.Second / 30)}, nil
 }
@@ -138,8 +143,27 @@ func TestPerformanceChromiumPrivateProducerContract(t *testing.T) {
 	p.mu.Lock()
 	remaining := len(p.peers)
 	p.mu.Unlock()
-	if remaining != 0 || provider.opens.Load() != provider.closes.Load() || provider.opens.Load() != 2 {
+	if remaining != 0 || provider.opens.Load() != provider.closes.Load() || provider.opens.Load() != 4 {
 		t.Fatalf("cleanup peers=%d opens=%d closes=%d", remaining, provider.opens.Load(), provider.closes.Load())
+	}
+	provider.mu.Lock()
+	formats := append([]protocol.MirrorVideoQuality(nil), provider.formats...)
+	provider.mu.Unlock()
+	for index, quality := range formats {
+		width, height, level := 1600, 900, uint8(40)
+		if index >= 2 {
+			width, height, level = 1280, 720, 31
+		}
+		if quality.Width != width || quality.Height != height || quality.MaxLevelIDC != level || quality.Bitrate != 12000000 || quality.FPS != 30 {
+			t.Fatalf("provider quality %d: %+v", index, quality)
+		}
+	}
+	raw, err := json.MarshalIndent(formats, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(evidence, "provider-formats.json"), raw, 0600); err != nil {
+		t.Fatal(err)
 	}
 	t.Logf("SYNTHETIC LOCAL ONLY: real Go private HTTP/Pion and Chromium media DTLS/ICE matched; peer cleanup=0 provider opens=%d closes=%d; no native host/capture or LAN acceptance", provider.opens.Load(), provider.closes.Load())
 }

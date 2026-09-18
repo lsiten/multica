@@ -1,3 +1,4 @@
+import { prepareVscreenReceiveOffer } from "../../../packages/core/runtimes/vscreen-receive-offer.mjs";
 import { createRequire } from "node:module";
 import { clockBounds, decodeFrameMarker, frameLatencyBound } from "./vscreen-performance-metrics.mjs";
 
@@ -21,7 +22,7 @@ export async function startPerformanceViewer(page, config, relay) {
   await page.route(viewerURL, shell, { times: 1 });
   try {
     await page.goto(viewerURL, { waitUntil: "domcontentloaded" });
-    await page.evaluate(browserPerformanceProbe, { ...config, relayed: !!relay, decodeSource:decodeFrameMarker.toString() });
+    await page.evaluate(browserPerformanceProbe, { ...config, relayed: !!relay, receiveOfferSource:prepareVscreenReceiveOffer.toString(), decodeSource:decodeFrameMarker.toString() });
   } finally {
     await page.unroute(viewerURL, shell);
   }
@@ -35,11 +36,13 @@ export async function startPerformanceViewer(page, config, relay) {
 // All measurements below are taken from actual decoded video frames. DataChannel
 // metadata is not frame-synchronous and is intentionally never used for latency.
 async function browserPerformanceProbe(config) {
+  const prepareReceiveOffer = (0,eval)(`(${config.receiveOfferSource})`);
+  const codecOnly = (sdp) => sdp.split(/\r?\n/).filter((line)=>/^(m=video|a=recvonly|a=rtpmap:|a=fmtp:)/.test(line));
   const decode = (0,eval)(`(${config.decodeSource})`);
   const video=document.createElement("video");video.autoplay=true;video.muted=true;video.playsInline=true;video.style.width="800px";document.body.append(video);
   const canvas=document.createElement("canvas"), drawing=canvas.getContext("2d",{willReadFrequently:true});
   if(!video.requestVideoFrameCallback || !drawing || !window.RTCPeerConnection)throw new Error("actual_video_frame_api_unavailable");
-  let localCertificate=null, pc=null, source=config.source, negotiated=null, marker=null, sourceTag=null, frameCallback=null, phase="steady", stopped=false;
+  let receiveOfferEvidence=null, localCertificate=null, pc=null, source=config.source, negotiated=null, marker=null, sourceTag=null, frameCallback=null, phase="steady", stopped=false;
   let firstAt=null, latestAt=null, openedAt=performance.now(), rendered=0, invalid=0, stale=0, unique=0, lastFrameID=null, decoded=0, bytes=0, cursor=0;
   let frames=[], clockSamples=[], pendingClock=false, failure=null, switches=[], switchPending=false;
   const request=async(path,body)=>{
@@ -79,12 +82,22 @@ async function browserPerformanceProbe(config) {
     const codecs=RTCRtpReceiver.getCapabilities("video")?.codecs.filter((c)=>c.mimeType.toLowerCase()==="video/h264");
     if(!codecs?.length)throw new Error("chromium_h264_decode_unavailable");transceiver.setCodecPreferences(codecs);
     pc.ontrack=(event)=>{video.srcObject=new MediaStream([event.track]);video.play().catch((error)=>{failure=error.message;});};
-    await pc.setLocalDescription(await pc.createOffer());
+    const originalOffer=await pc.createOffer(),queries=[];
+    const capabilities=navigator.mediaCapabilities;
+    const decodingInfo=typeof capabilities?.decodingInfo==="function"?async(configuration)=>{
+      try{const result=await capabilities.decodingInfo(configuration);queries.push({configuration,supported:result.supported,smooth:result.smooth,powerEfficient:result.powerEfficient});return result;}
+      catch(error){queries.push({configuration,error:error.name});throw error;}
+    }:undefined;
+    const receiveOffer=await prepareReceiveOffer(originalOffer,{decodingInfo});
+    receiveOfferEvidence={queryAvailable:!!decodingInfo,queries,declarationApplied:receiveOffer.sdp!==originalOffer.sdp,originalCodecOnly:codecOnly(originalOffer.sdp)};
+    await pc.setLocalDescription(receiveOffer);
+    receiveOfferEvidence.localCodecOnly=codecOnly(pc.localDescription.sdp);
     await new Promise((resolve,reject)=>{if(pc.iceGatheringState==="complete"){resolve();return;}const timeout=setTimeout(()=>reject(new Error("browser_ice_timeout")),5000);pc.addEventListener("icegatheringstatechange",()=>{if(pc.iceGatheringState==="complete"){clearTimeout(timeout);resolve();}});});
     const answer=await request("/offer",{viewer_id:config.viewerID,source_id:source.source_id,offer:pc.localDescription.toJSON()});
     negotiated=answer.negotiated;marker=answer.marker;sourceTag=answer.source_tag;
     if(!marker||!Number.isInteger(sourceTag))throw new Error("frame_marker_contract_missing");
     await pc.setRemoteDescription(answer.answer);
+    receiveOfferEvidence.answerCodecOnly=codecOnly(answer.answer.sdp);
   };
   await synchronize();await connect(source,"steady");frameCallback=video.requestVideoFrameCallback(onFrame);
   const clockTimer=setInterval(synchronize,10000);
@@ -103,7 +116,7 @@ async function browserPerformanceProbe(config) {
       }
       for(const stat of stats.values())if(stat.type==="inbound-rtp"&&stat.kind==="video"){decoded=stat.framesDecoded??null;bytes=stat.bytesReceived??null;}}
       const batch=frames.slice(cursor);cursor=frames.length;
-      return {viewerID:config.viewerID,sourceID:source.source_id,phase,negotiated,network,frames:batch,clockSamples:[...clockSamples],observedDurationMs:firstAt===null?0:latestAt-firstAt,renderedFrames:rendered,uniqueDynamicFrames:unique,decodedFrames:decoded,bytesReceived:bytes,invalidMarkers:invalid,staleSourceFrames:stale,switchFirstDecodedMs:[...switches],failure};},
+      return {viewerID:config.viewerID,sourceID:source.source_id,phase,negotiated,network,receiveOfferEvidence,actualDecodedSize:{width:video.videoWidth,height:video.videoHeight},frames:batch,clockSamples:[...clockSamples],observedDurationMs:firstAt===null?0:latestAt-firstAt,renderedFrames:rendered,uniqueDynamicFrames:unique,decodedFrames:decoded,bytesReceived:bytes,invalidMarkers:invalid,staleSourceFrames:stale,switchFirstDecodedMs:[...switches],failure};},
     switchSource:connect,
     async close(){stopped=true;clearInterval(clockTimer);clearInterval(renewTimer);if(frameCallback!==null)video.cancelVideoFrameCallback(frameCallback);try{await closePeer();}finally{video.remove();}}
   };
