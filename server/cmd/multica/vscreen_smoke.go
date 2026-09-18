@@ -17,6 +17,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
+	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -38,6 +39,7 @@ type vscreenSmokeResult struct {
 	Epoch        protocol.VscreenEpoch    `json:"epoch"`
 	Disposed     bool                     `json:"disposed"`
 	HostClosed   bool                     `json:"host_closed"`
+	Input        *smokeInputResult        `json:"input,omitempty"`
 	Video        *smokeVideoResult        `json:"video,omitempty"`
 	Error        string                   `json:"error,omitempty"`
 }
@@ -78,7 +80,7 @@ func executeVscreenSmoke(result *vscreenSmokeResult, evidence string) error {
 	if os.Getenv("MULTICA_RUN_VSCREEN_GUI_SMOKE") != "1" {
 		return errors.New("gui_not_authorized")
 	}
-	if result.Scenario != "lifecycle" && result.Scenario != "source" && result.Scenario != "video" {
+	if result.Scenario != "lifecycle" && result.Scenario != "source" && result.Scenario != "video" && result.Scenario != "input" {
 		return errors.New("scenario_not_implemented")
 	}
 	if !native.Supported() {
@@ -89,9 +91,23 @@ func executeVscreenSmoke(result *vscreenSmokeResult, evidence string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	limit := 25 * time.Second
+	if result.Scenario == "input" {
+		limit = 60 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
-	client, err := hostclient.Start(ctx, hostclient.Config{Executable: result.Executable, Build: version + "/" + commit, Media: true})
+	if result.Scenario == "input" {
+		foreground, err := smokefixture.Snapshot()
+		if err != nil {
+			return err
+		}
+		if foreground.PID <= 0 || foreground.WindowID == 0 {
+			return errors.New("foreground_window_unavailable")
+		}
+		result.Input = &smokeInputResult{Scope: "test-owned-fixture-external-ax-only", Stages: []smokeInputStage{{Stage: "before-display", Foreground: foreground}}}
+	}
+	client, err := hostclient.Start(ctx, hostclient.Config{Executable: result.Executable, Build: version + "/" + commit, Media: true, AppControl: result.Scenario == "input"})
 	if err != nil {
 		return err
 	}
@@ -101,9 +117,16 @@ func executeVscreenSmoke(result *vscreenSmokeResult, evidence string) error {
 		return errors.Join(err, client.Close())
 	}
 	key := protocol.ResourceKey{BackendIdentity: "https://vscreen-smoke.invalid", WorkspaceID: "smoke", RuntimeID: hex.EncodeToString(identity[:]), UID: uint32(os.Getuid())}
-	return exerciseSmokeDisplay(ctx, client, key, result, func(source native.SourceDescriptor) (*smokeVideoResult, error) {
+	runErr := exerciseSmokeDisplay(ctx, client, key, result, func(source native.SourceDescriptor) (*smokeVideoResult, error) {
+		if result.Scenario == "input" {
+			return nil, runSmokeInput(ctx, client, key, result, evidence)
+		}
 		return captureSmokeVideo(ctx, client, source, evidence)
 	})
+	if result.Input != nil {
+		runErr = errors.Join(runErr, recordSmokeCleanupForeground(result.Input, smokefixture.Snapshot))
+	}
+	return runErr
 }
 
 func exerciseSmokeDisplay(ctx context.Context, client smokeNativeClient, key protocol.ResourceKey, result *vscreenSmokeResult, video func(native.SourceDescriptor) (*smokeVideoResult, error)) (runErr error) {
@@ -170,7 +193,7 @@ func exerciseSmokeDisplay(ctx context.Context, client smokeNativeClient, key pro
 	if result.Source == nil {
 		return errors.New("created_display_missing_from_capture_sources")
 	}
-	if result.Scenario == "video" {
+	if result.Scenario == "video" || result.Scenario == "input" {
 		result.Video, err = video(*result.Source)
 		return err
 	}

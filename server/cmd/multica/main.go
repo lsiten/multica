@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 	"log/slog"
 	"os"
 	"runtime"
@@ -99,6 +100,13 @@ func init() {
 }
 
 func main() {
+	if smokefixture.IsFixtureExecutable() {
+		if err := smokefixture.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" {
 		if err := runVscreenSmoke(os.Stdout, os.Args[2], os.Args[3]); err != nil {
 			fmt.Fprintln(os.Stderr, err)

@@ -3,6 +3,7 @@
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseArguments, runSmoke } from "./vscreen-native-smoke.mjs";
 
@@ -29,7 +30,7 @@ async function fixture(overrides = {}) {
     host: { platform: "darwin", arch: "arm64", release: "fixture" },
     runCommand: async (command, args, commandOptions) => {
       calls.push({ command, args, guiOptIn: commandOptions?.env?.MULTICA_RUN_VSCREEN_GUI_SMOKE });
-      const replacement = overrides.command?.(command, args);
+      const replacement = await overrides.command?.(command, args);
       if (replacement) return replacement;
       let stdout = "";
       if (command.endsWith("plutil")) stdout = JSON.stringify({ CFBundleIdentifier: "ai.multica.desktop", CFBundleExecutable: "Multica", CFBundleShortVersionString: "1.2.3", CFBundleVersion: "7" });
@@ -114,6 +115,36 @@ describe("bundle-bound native smoke (test-owned fixtures; no native execution)",
   it("refuses to trust video success without a matching H264 artifact", async () => {
     const f = await fixture({ command: (command, args) => args[0] === "internal-vscreen-smoke" ? { exitCode: 0, stderr: "", stdout: JSON.stringify({ scenario: "video", executable: command, version: "v1.2.3-dirty", commit: "abc1234", status: "passed", gui_exercised: true, disposed: true, host_closed: true, display: { display_id: 42 }, source: { display_id: 42 } }) } : null });
     expect(await runSmoke({ ...f.options, scenario: "video", allowGui: true }, f.dependencies)).toMatchObject({ status: "blocked", error: { code: "video_artifact_invalid" } });
+  });
+
+  it.each(["pass", "certified PID", "old lease", "foreground", "fixture cleanup"])("checks fixture-only input evidence: %s", async (mode) => {
+    let f;
+    f = await fixture({ command: async (command, args) => {
+      if (args[0] !== "internal-vscreen-smoke") return null;
+      const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+      const images = {};
+      for (const stage of ["before", "after"]) {
+        const artifact = join(f.options.evidence, `input-${stage}.png`);
+        const bytes = Buffer.from(`test-owned ${stage} PNG artifact fixture`);
+        await writeFile(artifact, bytes);
+        images[stage] = { artifact, sha256: digest(bytes), width: 2, height: 2 };
+      }
+      const foreground = { pid: 7, window_id: 9, cursor_x: 11, cursor_y: 13 };
+      const input = {
+        scope: "test-owned-fixture-external-ax-only", fixture_bundle_id: "ai.multica.smoke." + "a".repeat(32),
+        fixture_binary_sha256: digest(await readFile(f.helper)), fixture_pid: 123, fixture_window_id: 9,
+        fixture_closed: mode !== "fixture cleanup", control_revoked: true, ax_press_verified: true, ax_text_verified: true,
+        foreground_snapshots_unchanged: true, per_pid_certified: mode === "certified PID", ...images,
+        unsupported_actions: ["key", "scroll", "drag"].map((action) => ({ action, reason: "needs_intervention", old_lease_refused: mode !== "old lease", counters_observed: true, delivered_count: 0 })),
+        stages: Array.from({ length: 9 }, () => ({ foreground })),
+      };
+      if (mode === "foreground") input.stages[8] = { foreground: { ...foreground, pid: 8 } };
+      return { exitCode: 0, stderr: "", stdout: JSON.stringify({ scenario: "input", executable: command, version: "v1.2.3-dirty", commit: "abc1234", status: "passed", gui_exercised: true, disposed: true, host_closed: true, display: { display_id: 42 }, source: { display_id: 42 }, input }) };
+    } });
+    const report = await runSmoke({ ...f.options, scenario: "input", allowGui: true }, f.dependencies);
+    expect(report.status).toBe(mode === "pass" ? "passed" : "blocked");
+    if (mode !== "pass") expect(report.error.code).toBe("input_result_invalid");
+    if (mode === "pass") expect(report.limitations.some((line) => line.includes("does not certify installed user apps"))).toBe(true);
   });
 
   it("rejects a helper symlink outside the selected app before executing it", async () => {
