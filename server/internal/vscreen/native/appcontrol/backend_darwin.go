@@ -68,7 +68,7 @@ func (b *nativeBackend) call(ctx context.Context, operation string, input, outpu
 	}
 	if reply.Error != "" {
 		switch reply.Error {
-		case "accessibility_denied", "screen_recording_denied", "needs_intervention", "stale_window", "source_gone", "action_uncertain", "native_unavailable", "invalid_launch", "closed":
+		case "accessibility_denied", "screen_recording_denied", "needs_intervention", "stale_window", "source_gone", "action_uncertain", "native_unavailable", "invalid_launch", "app_claim_conflict", "closed":
 			return refusal(reply.Error)
 		default:
 			return refusal("native_unavailable")

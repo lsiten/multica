@@ -113,6 +113,8 @@ int ac_call(uintptr_t handle, uintptr_t request, const char *bytes,
         @"ScreenRecording" :
             [NSNumber numberWithBool:CGPreflightScreenCaptureAccess()]
       };
+    else if ([op isEqual:@"list_apps"])
+      value = ACListApps(r, &error);
     else if ([op isEqual:@"quiesce"]) {
       if (dispatch_group_wait(
               s.pending, dispatch_time(DISPATCH_TIME_NOW,
@@ -129,6 +131,10 @@ int ac_call(uintptr_t handle, uintptr_t request, const char *bytes,
       value = ACObserveDisplay(s, r, input, &error);
     else if (!AXIsProcessTrusted())
       error = @"accessibility_denied";
+    else if ([op isEqual:@"list_windows"])
+      value = ACListWindows(s, r, &error);
+    else if ([op isEqual:@"adopt_window"])
+      value = ACAdoptWindow(s, r, input, &error);
     else if ([op isEqual:@"resume"]) {
       [s.lock lock];
       NSUInteger generation = s.generation;
