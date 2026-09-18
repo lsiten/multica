@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { platform, arch } from "node:os";
 const execute = promisify(execFile);
-export const REMOTE_WORKER_FILES = ["vscreen-remote-worker.mjs", "vscreen-remote-route.mjs", "vscreen-remote-protocol.mjs", "vscreen-remote-identity.mjs", "vscreen-performance-browser.mjs", "vscreen-performance-metrics.mjs", "vscreen-remote-network.mjs"];
+export const REMOTE_WORKER_FILES = ["vscreen-remote-worker.mjs", "vscreen-remote-route.mjs", "vscreen-remote-protocol.mjs", "vscreen-remote-identity.mjs", "vscreen-performance-browser.mjs", "vscreen-performance-metrics.mjs", "vscreen-remote-network.mjs", "../../../packages/core/runtimes/vscreen-receive-offer.mjs"];
 export async function remoteWorkerHash() {
   const digest = createHash("sha256");
   for (const name of REMOTE_WORKER_FILES) { digest.update(name + "\0"); digest.update(await readFile(new URL(name, import.meta.url))); }
