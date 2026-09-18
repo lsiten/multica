@@ -1,3 +1,4 @@
+import { evaluateRemoteNetwork } from "./vscreen-remote-network.mjs";
 // Pure measurement math. Only the native/browser collectors may assert provenance.
 export const PERFORMANCE_REQUIREMENTS = Object.freeze({ durationMs: 1_800_000, cycles: 30, viewers: 2, width: 1600, height: 900, fps: 30, minRenderedFps: 25, latencyP95Ms: 250, switchP95Ms: 2000, maxClockAgeMs: 30_000 });
 const ns = (value) => { if (typeof value !== "string" || !/^\d+$/.test(value)) throw new Error("invalid_monotonic_ns"); return BigInt(value); };
@@ -71,7 +72,8 @@ export function evaluatePerformance(evidence) {
   require(!evidence.failure,evidence.failure??"execution_failure");
   require(evidence.mode==="acceptance","debug_run_not_acceptance");
   require(evidence.provenance?.native==="selected-bundle" && evidence.provenance?.renderer==="chromium-rvfc-canvas" && evidence.provenance?.synthetic===false,"real_capture_render_provenance_missing");
-  require(evidence.networkScope==="loopback" && evidence.networkEvidence?.kind==="same-host-private-session","network_provenance_unavailable");
+  const remoteNetwork=evidence.networkScope==="remote-lan-candidate"?evaluateRemoteNetwork(evidence.networkEvidence,evidence.viewers??[],evidence.durationMs):null;
+  require(remoteNetwork?.verified===true || evidence.networkScope==="loopback" && evidence.networkEvidence?.kind==="same-host-private-session","network_provenance_unavailable");
   require(evidence.durationMs>=p.durationMs && evidence.workload==="dynamic-owned-fixture","duration_or_dynamic_workload_incomplete");
   require(evidence.requested?.width===p.width && evidence.requested?.height===p.height && evidence.requested?.fps===p.fps,"requested_quality_mismatch");
   const viewers=evidence.viewers ?? [];require(viewers.length===p.viewers,"two_viewers_required");
@@ -104,5 +106,5 @@ export function evaluatePerformance(evidence) {
   const cycles=evidence.cycles ?? [];require(cycles.length>=p.cycles,"thirty_lifecycle_cycles_required");
   require(cycles.length>0 && cycles.every((c)=>c.captureOpened===true&&c.encodedFrameReceived===true&&c.disposed===true&&c.fixtureExited===true&&c.managedDisplaysAfter===0&&c.activeCallbacksAfter===0&&c.activeEncodersAfter===0&&c.fdDelta<=0&&c.measurementsAvailable===true),"cleanup_residue_or_metrics_unavailable");
   require(evidence.cleanupConfirmed===true,"performance_cleanup_unconfirmed");
-  return {status:"blocked",localMeasurement:{status:failed.length?"blocked":"passed",failed:[...new Set(failed)]},scope:"capture-to-browser-observed-upper-bound; physical scanout not measured",networkScope:evidence.networkScope ?? "unavailable",gpuScope:"system-not-attributable-to-benchmark",planCoverage:{lanAcceptance:"unverified",physicalScanout:"unverified",remainingUnit:"independent controlled remote viewer, private signaling relay, verified LAN candidate pair and machine identity"},requirements:p,failed:[...new Set([...failed,"lan_acceptance_unverified"])],viewers:viewerMetrics,memoryTrends:trends};
+  return {status:remoteNetwork?.verified===true && failed.length===0?"passed":"blocked",remoteNetwork,localMeasurement:{status:failed.length?"blocked":"passed",failed:[...new Set(failed)]},scope:"capture-to-browser-observed-upper-bound; physical scanout not measured",networkScope:evidence.networkScope ?? "unavailable",gpuScope:"system-not-attributable-to-benchmark",planCoverage:{lanAcceptance:remoteNetwork?.verified===true?"verified":"unverified",physicalScanout:"unverified",remainingUnit:remoteNetwork?.verified===true?null:"authorized second-machine execution with verified LAN candidate pair and machine identity"},requirements:p,failed:[...new Set([...failed,...(remoteNetwork?.verified===true?[]:["lan_acceptance_unverified"]),...(remoteNetwork?.reasons??[])])],viewers:viewerMetrics,memoryTrends:trends};
 }
