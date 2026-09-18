@@ -2,6 +2,7 @@
 
 #import "encoder_internal.h"
 #import <VideoToolbox/VideoToolbox.h>
+#include "live_resources.h"
 
 static const NSUInteger maxSampleBytes = 8 * 1024 * 1024;
 @interface VSSample : NSObject
@@ -15,6 +16,7 @@ static const NSUInteger maxSampleBytes = 8 * 1024 * 1024;
 
 @interface VSEncoder () {
   VTCompressionSessionRef _session;
+  BOOL _telemetryCounted;
   NSCondition *_condition;
   dispatch_queue_t _queue;
   CVPixelBufferRef _pending;
@@ -35,7 +37,9 @@ static const NSUInteger maxSampleBytes = 8 * 1024 * 1024;
 static void encoded(void *context, void *source, OSStatus status,
                     VTEncodeInfoFlags flags, CMSampleBufferRef sample) {
   @autoreleasepool {
-    [(__bridge VSEncoder *)context output:sample status:status];
+    BOOL counted=vs_live_enter(VS_LIVE_CALLBACK);
+    @try {[(__bridge VSEncoder *)context output:sample status:status];}
+    @finally {if(counted)vs_live_exit(VS_LIVE_CALLBACK);}
   }
 }
 @implementation VSEncoder
@@ -65,6 +69,7 @@ static void encoded(void *context, void *source, OSStatus status,
     *status = 4;
     return nil;
   }
+  _telemetryCounted=vs_live_enter(VS_LIVE_ENCODER);
   NSDictionary *properties = @{
     (__bridge NSString *)kVTCompressionPropertyKey_RealTime : @YES,
     (__bridge NSString *)kVTCompressionPropertyKey_AllowFrameReordering : @NO,
@@ -85,6 +90,7 @@ static void encoded(void *context, void *source, OSStatus status,
     VTCompressionSessionInvalidate(_session);
     CFRelease(_session);
     _session = NULL;
+    if(_telemetryCounted){vs_live_exit(VS_LIVE_ENCODER);_telemetryCounted=NO;}
     *status = 4;
     return nil;
   }
@@ -107,6 +113,7 @@ static void encoded(void *context, void *source, OSStatus status,
   if (_session) {
     VTCompressionSessionInvalidate(_session);
     CFRelease(_session);
+    if(_telemetryCounted){vs_live_exit(VS_LIVE_ENCODER);_telemetryCounted=NO;}
   }
 }
 - (void)fail:(int)status {
@@ -364,6 +371,7 @@ static void encoded(void *context, void *source, OSStatus status,
       VTCompressionSessionInvalidate(self->_session);
       CFRelease(self->_session);
       self->_session = NULL;
+      if(self->_telemetryCounted){vs_live_exit(VS_LIVE_ENCODER);self->_telemetryCounted=NO;}
       [self->_condition lock];
       self->_closed = YES;
       [self->_condition broadcast];

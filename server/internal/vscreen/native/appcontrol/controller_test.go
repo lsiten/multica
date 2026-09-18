@@ -191,7 +191,9 @@ func TestInterruptedDownRetainsClaimAndBlocksHandoff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, b, a, r := controlFixture(t)
 		r.Action = protocol.VscreenAction{Kind: protocol.VscreenActionKey, Key: &protocol.VscreenKeyAction{Key: "A", Modifiers: []string{"meta"}}}
-		c.config.CertifiedPIDInput = func(Process, protocol.VscreenAction) bool { return true }
+		c.config.CertifiedPIDInput = func(Process, protocol.VscreenAction) PIDInputDecision {
+			return PIDInputDecision{Certified: true, InputSourceID: "synthetic-layout"}
+		}
 		directory := filepath.Join(t.TempDir(), "claims")
 		key := appclaim.Key{UID: uint32(os.Getuid()), PID: os.Getpid(), ProcessStartIdentity: "controlled-native-fixture"}
 		claim, err := appclaim.Acquire(directory, key)
@@ -205,6 +207,9 @@ func TestInterruptedDownRetainsClaimAndBlocksHandoff(t *testing.T) {
 		releaseAttempted := false
 		b.run = func(ctx context.Context, op string, input, output any) error {
 			switch op {
+			case "pid_identity":
+				*output.(*Process) = c.windows["owned"].window.Process
+				return nil
 			case "action":
 				if !input.(map[string]any)["CertifiedPID"].(bool) {
 					t.Fatal("test did not exercise enabled route")

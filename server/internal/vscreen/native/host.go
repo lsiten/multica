@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/vscreen/appclaim"
+	"github.com/multica-ai/multica/server/internal/vscreen/native/capture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -148,6 +149,8 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 			}
 			cancel()
 		} else if request.Operation == "list" {
+			resources := capture.LiveResources()
+			response.LiveResources = &resources
 			displays, err := listDisplays()
 			response.Displays = displays
 			if err != nil {

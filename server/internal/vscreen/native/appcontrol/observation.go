@@ -19,7 +19,7 @@ func (c *Controller) Observe(ctx context.Context, a Authority, handle string, pn
 		if err != nil {
 			return Observation{}, err
 		}
-		observation.PIDInputCertificationConfigured = c.config.CertifiedPIDInput != nil
+		c.reportPIDPolicy(ctx, &observation)
 		observation.Display = d
 		return observation, nil
 	}
@@ -38,7 +38,15 @@ func (c *Controller) Observe(ctx context.Context, a Authority, handle string, pn
 		return Observation{}, refusal("stale_window")
 	}
 	observation.Display = d
-	observation.PIDInputCertificationConfigured = c.config.CertifiedPIDInput != nil
+	c.reportPIDPolicy(ctx, &observation)
 	w.window = observation.Window
 	return observation, nil
+}
+
+func (c *Controller) reportPIDPolicy(ctx context.Context, o *Observation) {
+	o.PIDInputCertificationConfigured = c.config.CertifiedPIDInput != nil
+	o.PIDInputVerification = "none"
+	if o.Window.Handle != "" && c.config.PIDInputVerification != nil && c.config.PIDInputVerification(c.pidIdentity(ctx, o.Window.Process)) == "verified_variants" {
+		o.PIDInputVerification = "verified_variants"
+	}
 }
