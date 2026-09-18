@@ -1,0 +1,52 @@
+# Native app control
+
+This package is the same-binary macOS input adapter. It is not wired to the private host RPC or daemon input handler yet. Linux, Windows, and builds without cgo return the explicit `unsupported_platform` error.
+
+## Host integration contract
+
+Create one `Controller` inside the native host with `New(Config)`. The native host must be running its existing AppKit main run loop; NSWorkspace launch is queued there and checks cancellation again before launch. The package does not create another app instance, global input service, or permission prompt.
+
+Required callbacks:
+
+- `Authorize(ctx, Authority, Access) (Display, error)` must verify the authenticated parent connection, the native display registry, current resource/native/display/geometry identity, and the native host's accepted task/transaction/lease fence. `ControlAccess` requires live task authority. `ObserveAccess` may instead accept a separately issued `ObserverGrant`. These callbacks do not query an in-process daemon Actor: the daemon checks its live actor before IPC, and the native host must implement its own grant/revoke fencing. A callback that always returns a display is not a production authorization implementation.
+- `AuthorizeHuman(ctx, HumanRequest) (Display, error)` must validate and consume a separate opaque local Desktop-owner grant for that exact registered window and direction. It runs after the native quiescence barrier. A task token or ordinary GUI lease cannot replace this grant.
+- Optional `CertifiedPIDInput(Process, protocol.VscreenAction) bool` must authorize only an independently tested application/OS/action combination, including the requested key/modifier or gesture variant. The native process identity contains the installed bundle ID and OS build. No default certification exists. Do not enable this predicate globally or solely because a symbol is available.
+
+Public operations:
+
+- `Launch(ctx, Authority, LaunchRequest{BundleID, Files}) (Window, error)` resolves an installed bundle through NSWorkspace, rejects running instances it cannot safely adopt, opens only explicit absolute file paths, and moves only the newly identified window. No shell command, caller-selected PID, clipboard content, or new-instance flag is accepted.
+- `Observe(ctx, Authority, windowHandle, includePNG) (Observation, error)` returns up to 128 AX nodes, depth 12, with bounded text and fresh opaque element handles. A nonempty handle selects a registered window. An empty handle captures only the authorized virtual display. PNG is produced by SCScreenshotManager on macOS 14+, without audio/microphone capture. No real-screen fallback exists.
+- `Act(ctx, protocol.VscreenActionRequest) (Result, error)` rechecks authority, window bounds, process incarnation, source geometry and snapshot revision before dispatch. Identical requests are cached without replay; new actions require a fresh observation after a mutation. Input is serialized with a three-second operation budget.
+- `Quiesce(ctx, ResourceKey)` revokes immediately, cancels the matching in-flight request, then waits for native completion. `Resume(ctx, Authority)` is an explicit host-verified fresh grant after quiescence; it is not an automatic retry.
+- `HumanTransfer(ctx, HumanRequest{Grant, Resource, WindowHandle, Direction})` supports `to_real` and `to_virtual`. Only the authorized `to_real` path activates the app. Return requires fresh observation/recovery before new input.
+- `Dispose(ctx, ResourceKey)` performs scoped quiescence, restoration and claim release for one runtime; sibling runtime windows and claims remain owned.
+- `Close(ctx)` restores only automatically moved windows whose current identity and bounds still match. Missing original displays use a still-visible non-runtime display. User-moved windows are left untouched. Cleanup never closes documents or kills apps; failures retain claims and can be retried.
+- `ProbePermissions(ctx)` reads AXIsProcessTrusted and CGPreflightScreenCaptureAccess only.
+
+The native host must translate full `Window` records into opaque tool-facing handles. Do not permit a tool to send a raw Window/PID record back as authority. Opaque handles and their process/start/window mapping live only in this controller and native session.
+
+## Native safety behavior
+
+Process start time and UID come from `proc_pidinfo`, and claims are held using the existing AppClaim implementation under the OS account's actual home directory, `.multica/native-claims`. HOME overrides cannot split ownership. A window must be the process's sole AX window for background mutation; a frontmost app or a changed/foreign process/window refuses automatic input and movement.
+
+Before each mutating primitive, the native adapter checks cancellation, process identity, the exact live display bounds and window ownership. App activation and login-session changes close native background guards. Window movement/resize/removal is rechecked before every action; propagation of native refusals into daemon/UI events remains part of host integration.
+
+Semantic click uses AXPress only when the current element exposes it. Text uses AXSetValue only when settable, and a matching value readback reports `verified`; AXPress and per-PID event posting report only `dispatched`. Unknown elements never fall back to coordinate or focused-element input.
+
+Certified per-PID code supports key, Unicode, click, scroll and drag using private CGEvent sources and CGEventPostToPid. It never posts to a global tap, warps the cursor, changes the pasteboard or raises a window automatically. Unicode fallback additionally requires the exact selected AX element to remain focused. Named key support is explicit: A–Z, 0–9, Enter/Return, Tab, Space, Escape, Backspace, Delete and ArrowLeft/Right/Up/Down; modifiers are shift/control/alt/meta. Other names return `needs_intervention`. ANSI key codes are not a promise of arbitrary keyboard-layout or IME compatibility.
+
+Every posted down records its matching up and exact process incarnation. Cancellation/error attempts only the owned PID's release when that identity still matches. CGEventPostToPid has no delivery acknowledgement, so an interrupted pair remains uncertain even after a release attempt. Failed AX mutation replies also retain an uncertain native-operation fence because a timeout does not prove the remote app stopped. Quiesce, Resume, automatic cleanup and human transfer refuse while that process incarnation remains uncertain, and AppClaim stays held. Process exit clears the stale operation fence. This does not prevent the user from manually handling their own window; it must not be presented as a completed safe takeover.
+
+## Verification boundaries
+
+The default tests use a controlled backend to cover lease/snapshot guards, cancellation, no replay, separate human authority and claim retention, plus real nonprompt permission preflight and a denied native guard. The hidden fixture in `testdata/AppControlFixture.m` exercises its own explicitly implemented Cocoa accessibility button/value methods without external AX IPC or posted input. `--serve` creates the visible fixture for a later explicitly authorized external acceptance run; it is not part of default tests.
+
+Current environment preflight reports accessibility=false and screen_recording=false. Actual installed-app launch/window movement, external AXPress/AXSetValue, SCScreenshotManager PNG, app-specific Unicode/IME/shortcuts, per-PID click/scroll/drag/key compatibility, foreground typing continuity and real input videos are not accepted yet. The certified matrix remains empty until those actual permission-enabled scenarios pass. Compiled methods and hidden self-observation do not replace that gate.
+
+## Primary references
+
+- [NSWorkspace.OpenConfiguration](https://developer.apple.com/documentation/appkit/nsworkspace/openconfiguration): activates, createsNewApplicationInstance and launch configuration. The installed AppKit header also states Gatekeeper UI is not suppressed by `promptsUserIfNeeded`; this adapter does not claim to bypass OS launch security UI.
+- [AXUIElementSetMessagingTimeout](https://developer.apple.com/documentation/applicationservices/1459345-axuielementsetmessagingtimeout): per-element request timeout, not proof a timed-out target action stopped.
+- [AXObserverCreate](https://developer.apple.com/documentation/applicationservices/1460133-axobservercreate): window-creation notification while identifying a newly launched window.
+- [SCScreenshotManager](https://developer.apple.com/documentation/screencapturekit/scscreenshotmanager): exact-filter, on-demand image capture.
+- Installed SDK `CoreGraphics.framework/Headers/CGEvent.h` defines CGEventPostToPid and CGPreflightPostEventAccess; `CGSession.h` defines the active-console/session keys. `sys/proc_info.h` defines `PROC_PIDTBSDINFO` start-time fields. No private SkyLight input symbols are used.
