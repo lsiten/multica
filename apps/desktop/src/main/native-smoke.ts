@@ -5,12 +5,12 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { spawn } from "node:child_process";
 import { Socket } from "node:net";
 
-const scenarios = ["diagnostics", "lifecycle", "source", "video", "input", "takeover", "performance"] as const;
+const scenarios = ["diagnostics", "lifecycle", "source", "video", "input", "takeover", "performance", "input-qualification"] as const;
 type Scenario = typeof scenarios[number];
 interface Invocation {
   schema: 1; nonce: string; parentPID: number; app: string; mainSHA256: string; entrySHA256: string;
   helper: { version: string; commit: string; sha256: string };
-  scenario: Scenario; allowGui: boolean; expiresAt: number; timeoutMs: number;
+  scenario: Scenario; interactive?: boolean; allowGui: boolean; expiresAt: number; timeoutMs: number;
 }
 interface SmokeApp {
   isPackaged: boolean;
@@ -50,6 +50,7 @@ function parseInvocation(raw: string): Invocation {
   if (!value || typeof value !== "object") throw new Error("invalid_invocation");
   const v = value as Partial<Invocation>;
   if (v.schema !== 1 || typeof v.nonce !== "string" || !/^[a-f0-9]{64}$/.test(v.nonce) || !Number.isSafeInteger(v.parentPID) || !v.parentPID || typeof v.app !== "string" || !isAbsolute(v.app) || !v.app.endsWith(".app") || !/^[a-f0-9]{64}$/.test(v.mainSHA256 ?? "") || !/^[a-f0-9]{64}$/.test(v.entrySHA256 ?? "") || !v.helper || !/^[a-f0-9]{64}$/.test(v.helper.sha256) || typeof v.helper.version !== "string" || typeof v.helper.commit !== "string" || !/^[a-zA-Z0-9.-]{1,128}$/.test(v.helper.commit) || !scenarios.includes(v.scenario as Scenario) || typeof v.allowGui !== "boolean" || typeof v.expiresAt !== "number" || v.expiresAt < Date.now() || v.expiresAt > Date.now() + 600_000 || typeof v.timeoutMs !== "number" || v.timeoutMs < 1000 || v.timeoutMs > (v.scenario === "performance" ? 2_700_000 : 180_000)) throw new Error("invalid_invocation");
+  if (v.interactive !== undefined && (typeof v.interactive !== "boolean" || (v.interactive && v.scenario !== "input-qualification"))) throw new Error("invalid_invocation");
   return v as Invocation;
 }
 
@@ -149,24 +150,24 @@ export async function runDesktopNativeSmoke(app: SmokeApp, path: string | undefi
     report.parent = { entry_sha256: cfg.entrySHA256, platform: deps.platform, arch: process.arch, code_signature_verified: true, pid: deps.pid, parent_pid: deps.parentPID, executable, sha256: cfg.mainSHA256, bundle_id: metadata.CFBundleIdentifier, bundle_version: metadata.CFBundleShortVersionString };
     report.helper = { executable: helper, ...cfg.helper };
     report.scenario = cfg.scenario;
-    const result = await run("native-scenario", helper, cfg.scenario === "diagnostics" ? ["internal-vscreen-diagnostics"] : ["internal-vscreen-smoke", cfg.scenario, directory], cfg.scenario !== "diagnostics", true);
+    const result = await run("native-scenario", helper, cfg.scenario === "diagnostics" ? ["internal-vscreen-diagnostics"] : cfg.scenario === "input-qualification" ? ["internal-vscreen-input-qualification", directory, ...(cfg.interactive ? ["--interactive"] : [])] : ["internal-vscreen-smoke", cfg.scenario, directory], cfg.scenario !== "diagnostics", true);
     let native: unknown;
     if (cfg.scenario === "performance") {
       const lines = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
       const results = lines.filter((line) => line.type === "performance-result");
       if (results.length !== 1 || lines.at(-1) !== results[0] || results[0]?.schema_version !== 1) throw new Error("native_result_mismatch");
-      const readyPath = join(directory, "performance-ready.json");
-      const readyFD = openSync(readyPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-      let ready: Record<string, unknown>;
-      try {
-        const stat = fstatSync(readyFD);
-        if (!stat.isFile() || stat.uid !== deps.uid || (stat.mode & 0o777) !== 0o600 || stat.nlink !== 1 || stat.size > 65536) throw new Error("unsafe_performance_ready");
-        ready = JSON.parse(readFileSync(readyFD, "utf8")) as Record<string, unknown>;
-      } finally { closeSync(readyFD); }
-      if (ready.type !== "performance-ready" || ready.schema_version !== 1 || ready.executable !== helper || ready.version !== cfg.helper.version || ready.commit !== cfg.helper.commit || typeof ready.nonce !== "string" || ready.nonce.length < 32) throw new Error("native_result_mismatch");
+      const readyLines = lines.filter((line) => line.type === "performance-ready");
+      const ready = readyLines[0];
+      if (readyLines.length !== 1 || lines[0] !== ready || ready.schema_version !== 1 || ready.executable !== helper || ready.version !== cfg.helper.version || ready.commit !== cfg.helper.commit || "nonce" in ready) throw new Error("native_result_mismatch");
       native = { ...results[0], version: ready.version, commit: ready.commit, executable: helper, scenario: cfg.scenario };
     } else {
       native = JSON.parse(result.stdout);
+      if (cfg.scenario === "input-qualification") {
+        const qualification = native as Record<string, unknown>;
+        report.qualification = qualification;
+        if (!qualification || qualification.scope !== "experimental-same-bundle-disposable-fixture" || qualification.production_certified !== false || typeof qualification.foreground_continuity !== "string" || !qualification.manual || typeof qualification.manual !== "object") throw new Error("native_result_mismatch");
+        native = qualification.native;
+      }
     }
     if (!native || typeof native !== "object" || !("version" in native) || native.version !== cfg.helper.version || !("commit" in native) || native.commit !== cfg.helper.commit) throw new Error("native_result_mismatch");
     if (cfg.scenario!=="diagnostics" && (!("executable" in native) || native.executable!==helper || !("scenario" in native) || native.scenario!==cfg.scenario)) throw new Error("native_result_mismatch");
@@ -178,6 +179,12 @@ export async function runDesktopNativeSmoke(app: SmokeApp, path: string | undefi
     if (result.code !== 0) throw new Error("native_scenario_failed");
     if (cfg.scenario === "performance" && (!("cleanup_confirmed" in native) || native.cleanup_confirmed !== true || !("errors" in native) || !Array.isArray(native.errors) || native.errors.length !== 0)) throw new Error("native_cleanup_unconfirmed");
     if (cfg.scenario !== "diagnostics" && cfg.scenario !== "performance" && (!("status" in native) || native.status !== "passed" || !("disposed" in native) || native.disposed !== true || !("host_closed" in native) || native.host_closed !== true)) throw new Error("native_cleanup_unconfirmed");
+    if (cfg.scenario === "input-qualification") {
+      const qualification = report.qualification as Record<string, unknown>;
+      const manual = qualification.manual as Record<string, unknown>;
+      if (cfg.interactive && (qualification.foreground_continuity !== "verified_manual_fixture_challenge" || manual.status !== "verified_manual_fixture_challenge" || manual.user_confirmed !== true || manual.scratch_closed !== true)) throw new Error("qualification_manual_incomplete");
+      if (qualification.effects_verified !== true || qualification.completion_verified !== true || qualification.fixture_closed !== true || qualification.control_revoked !== true || qualification.old_lease_refused !== true) throw new Error("qualification_incomplete");
+    }
     report.cleanup_confirmed = true;
     report.status = "passed";
   } catch (error) { report.error = errorCode(error); }

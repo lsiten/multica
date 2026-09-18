@@ -43,14 +43,16 @@ describe("packaged Desktop native smoke isolation",()=>{
   const f=await fixture();const original=f.run.getMockImplementation()!;f.run.mockImplementation(async(file,args)=>{const result=await original(file,args);return args[0]==="internal-vscreen-diagnostics"?{...result,code:1}:result;});
   expect(await runDesktopNativeSmoke(f.app,f.path,f.dependencies)).toBe(1);const report=JSON.parse(await readFile(join(f.directory,"desktop-native-smoke.json"),"utf8"));expect(report.native.permissions.accessibility).toBe(false);expect(report.desktop_launch_verified).toBe(true);expect(report.tcc_attribution_verified).toBe(false);
  });
- it.each(["valid", "duplicate", "unclean", "foreign"])("checks performance NDJSON and private ready identity: %s",async(kind)=>{
+ it.each(["valid", "duplicate", "unclean", "foreign", "secret", "missing-ready", "late-ready"])("checks child performance NDJSON after producer deletes private ready: %s",async(kind)=>{
   const f=await fixture("performance");
   await writeFile(join(f.directory,"performance-ready.json"),JSON.stringify({type:"performance-ready",schema_version:1,executable:kind==="foreign"?"/foreign":f.helper,version:"v1",commit:"abc123",nonce:"c".repeat(64)}),{mode:0o600});
   const original=f.run.getMockImplementation()!;
   f.run.mockImplementation(async(file,args)=>{
     const result=await original(file,args);if(args[0]!=="internal-vscreen-smoke")return result;
     const final=JSON.stringify({type:"performance-result",schema_version:1,cleanup_confirmed:kind!=="unclean",errors:[]});
-    return {...result,stdout:JSON.stringify({type:"performance-ready"})+"\n"+final+(kind==="duplicate"?"\n"+final:"")};
+    await rm(join(f.directory,"performance-ready.json"));
+    const ready=JSON.stringify({type:"performance-ready",schema_version:1,executable:kind==="foreign"?"/foreign":f.helper,version:"v1",commit:"abc123",...(kind==="secret"?{nonce:"c".repeat(64)}:{})});
+    return {...result,stdout:kind==="missing-ready"?final:kind==="late-ready"?final+"\n"+ready:ready+"\n"+final+(kind==="duplicate"?"\n"+final:"")};
   });
   expect(await runDesktopNativeSmoke(f.app,f.path,f.dependencies)).toBe(kind==="valid"?0:1);
   const report=JSON.parse(await readFile(join(f.directory,"desktop-native-smoke.json"),"utf8"));
@@ -60,4 +62,20 @@ describe("packaged Desktop native smoke isolation",()=>{
   const f=await fixture("input");const original=f.run.getMockImplementation()!;f.run.mockImplementation(async(file,args)=>{const result=await original(file,args);return args[0]==="internal-vscreen-smoke"?{...result,forced:kind==="forced",aborted:kind==="aborted",closed:kind!=="unclosed"}:result;});
   expect(await runDesktopNativeSmoke(f.app,f.path,f.dependencies)).toBe(1);const report=JSON.parse(await readFile(join(f.directory,"desktop-native-smoke.json"),"utf8"));expect(report.cleanup_confirmed).toBe(false);
  });
+});
+
+it.each(["default", "interactive", "unconfirmed", "incomplete", "certified"])("routes and bounds qualification evidence: %s", async (kind) => {
+ const interactive = ["interactive", "unconfirmed"].includes(kind);
+ const passed = ["default", "interactive"].includes(kind);
+ const f=await fixture("input-qualification");
+ const config=JSON.parse(await readFile(f.path,"utf8"));config.interactive=interactive;await writeFile(f.path,JSON.stringify(config));
+ const original=f.run.getMockImplementation()!;
+ const qualification={scope:"experimental-same-bundle-disposable-fixture",effects_verified:true,completion_verified:true,production_certified:false,fixture_closed:true,control_revoked:true,old_lease_refused:true,foreground_continuity:interactive?"verified_manual_fixture_challenge":"unverified_requires_human_typing_phase",manual:{status:interactive?"verified_manual_fixture_challenge":"unverified",user_confirmed:interactive,scratch_closed:interactive},native:{version:"v1",commit:"abc123",executable:f.helper,scenario:"input-qualification",status:"passed",disposed:true,host_closed:true}};
+ if(kind==="unconfirmed") qualification.manual.user_confirmed=false;
+ if(kind==="incomplete") qualification.completion_verified=false;
+ if(kind==="certified") qualification.production_certified=true;
+ f.run.mockImplementation(async(file,args)=>args[0]==="internal-vscreen-input-qualification"?{code:0,pid:789,stdout:JSON.stringify(qualification),stderr:"",closed:true,forced:false,aborted:false}:original(file,args));
+ expect(await runDesktopNativeSmoke(f.app,f.path,f.dependencies)).toBe(passed?0:1);
+ expect(f.run.mock.calls.find(([,args])=>args[0]==="internal-vscreen-input-qualification")?.[1]).toEqual(["internal-vscreen-input-qualification",f.directory,...(interactive?["--interactive"]:[])]);
+ const report=JSON.parse(await readFile(join(f.directory,"desktop-native-smoke.json"),"utf8"));expect(report.qualification).toEqual(qualification);if(kind!=="certified")expect(report.native).toEqual(qualification.native);expect(report.tcc_attribution_verified).toBe(false);
 });

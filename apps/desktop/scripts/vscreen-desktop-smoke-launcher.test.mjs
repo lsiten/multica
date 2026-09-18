@@ -38,3 +38,9 @@ function fakeArchive(bootstrap="MULTICA_DESKTOP_NATIVE_SMOKE_FILE normal-startup
  const json=Buffer.from(JSON.stringify(tree));const size=8+Math.ceil(json.length/4)*4;const header=Buffer.alloc(size);header.writeUInt32LE(size-4,0);header.writeUInt32LE(json.length,4);json.copy(header,8);const prefix=Buffer.alloc(8);prefix.writeUInt32LE(4,0);prefix.writeUInt32LE(size,4);return Buffer.concat([prefix,header,...bodies]);
 }
 it("refuses an old product bootstrap before launching the App",async()=>{const f=await fixture();await writeFile(join(f.options.app,"Contents/Resources/app.asar"),fakeArchive("requestSingleInstanceLock setupDaemonManager"));await expect(launchDesktopNativeSmoke(f.options,f.deps)).rejects.toThrow("unsupported_smoke_bootstrap");expect(f.calls).toHaveLength(0);});
+it.each([false,true])("carries only explicit qualification interactive=%s into private invocation",async(interactive)=>{
+ const f=await fixture();const launch=f.deps.launch;let invocation;
+ f.deps.launch=async(file,args,env)=>{invocation=JSON.parse(await readFile(env.MULTICA_DESKTOP_NATIVE_SMOKE_FILE,"utf8"));return launch(file,args,env);};
+ expect(await launchDesktopNativeSmoke({...f.options,scenario:"input-qualification",allowGui:true,interactive},f.deps)).toMatchObject({status:"passed"});
+ expect(invocation).toMatchObject({scenario:"input-qualification",interactive});
+});
