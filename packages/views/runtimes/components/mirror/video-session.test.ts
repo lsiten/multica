@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { VscreenApi } from "@multica/core/api";
 import { ApiClient } from "@multica/core/api";
 import { MirrorVideoSession } from "./video-session";
 class Peer extends EventTarget {
@@ -27,7 +28,7 @@ class Peer extends EventTarget {
   addTransceiver = vi.fn();
   createDataChannel = () => this.channel;
   createOffer = async () => this.localDescription;
-  setLocalDescription = async () => {};
+  setLocalDescription = vi.fn(async (description: {type:string;sdp?:string}) => { this.localDescription = {type:description.type,sdp:description.sdp ?? ""}; });
   setRemoteDescription = async () => {};
   close = vi.fn();
 }
@@ -168,4 +169,40 @@ describe("Video viewer lease lifecycle", () => {
     await session.close();
     expect(vi.getTimerCount()).toBe(0);
   });
+});
+
+const receiveSDP = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=recvonly\r\na=rtpmap:96 H264/90000\r\na=fmtp:96 profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1\r\n";
+it("sends the queried receive capability through the actual session offer", async () => {
+  class ReceiverPeer extends Peer { override createOffer = async () => ({type:"offer",sdp:receiveSDP}); }
+  vi.stubGlobal("RTCPeerConnection",ReceiverPeer);
+  vi.stubGlobal("navigator",{mediaCapabilities:{decodingInfo:vi.fn().mockResolvedValue({supported:true,smooth:true})}});
+  const createMirrorSession=vi.fn().mockResolvedValue(null);
+  const api={getIceConfig:vi.fn().mockResolvedValue({iceServers:[]}),createMirrorSession} as unknown as VscreenApi;
+  const session=new MirrorVideoSession({api,binding,callbacks:{state:vi.fn(),stream:vi.fn(),metadata:vi.fn()}});
+  await session.start();
+  expect(Peer.latest?.setLocalDescription).toHaveBeenCalledWith({type:"offer",sdp:receiveSDP.replace("level-asymmetry-allowed=1","level-asymmetry-allowed=1;max-recv-level=e028")});
+  expect(createMirrorSession.mock.calls[0]?.[0].offer.sdp).toContain("max-recv-level=e028");
+  await session.close();
+});
+it("closing during capability lookup never sets an offer or creates a remote session", async () => {
+  class ReceiverPeer extends Peer { override createOffer = async () => ({type:"offer",sdp:receiveSDP}); }
+  vi.stubGlobal("RTCPeerConnection",ReceiverPeer);
+  const query=vi.fn(()=>new Promise(()=>{}));vi.stubGlobal("navigator",{mediaCapabilities:{decodingInfo:query}});
+  const createMirrorSession=vi.fn();
+  const api={getIceConfig:vi.fn().mockResolvedValue({iceServers:[]}),createMirrorSession} as unknown as VscreenApi;
+  const session=new MirrorVideoSession({api,binding,callbacks:{state:vi.fn(),stream:vi.fn(),metadata:vi.fn()}});
+  const starting=session.start();await vi.waitFor(()=>expect(query).toHaveBeenCalled());
+  await session.close();await starting;
+  expect(Peer.latest?.setLocalDescription).not.toHaveBeenCalled();expect(createMirrorSession).not.toHaveBeenCalled();expect(Peer.latest?.close).toHaveBeenCalled();
+});
+it("continues with the original browser offer when higher receive support is denied", async () => {
+  class ReceiverPeer extends Peer { override createOffer = async () => ({type:"offer",sdp:receiveSDP}); }
+  vi.stubGlobal("RTCPeerConnection",ReceiverPeer);
+  vi.stubGlobal("navigator",{mediaCapabilities:{decodingInfo:vi.fn().mockResolvedValue({supported:false,smooth:false})}});
+  const createMirrorSession=vi.fn().mockResolvedValue(null);
+  const api={getIceConfig:vi.fn().mockResolvedValue({iceServers:[]}),createMirrorSession} as unknown as VscreenApi;
+  const session=new MirrorVideoSession({api,binding,callbacks:{state:vi.fn(),stream:vi.fn(),metadata:vi.fn()}});
+  await session.start();
+  expect(createMirrorSession.mock.calls[0]?.[0].offer).toEqual({type:"offer",sdp:receiveSDP});
+  await session.close();
 });
