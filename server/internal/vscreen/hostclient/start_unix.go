@@ -22,7 +22,13 @@ import (
 
 // Start authenticates the helper before exposing it. Failure closes all inherited
 // descriptors and reaps the child; no capability is passed in argv or environment.
-func Start(ctx context.Context, config Config) (*Client, error) {
+func Start(ctx context.Context, config Config) (*Client, error) { return start(ctx, config, nil) }
+
+func start(ctx context.Context, config Config, qualification []byte) (*Client, error) {
+	if qualification != nil {
+		config.Media = true
+		config.AppControl = true
+	}
 	if !filepath.IsAbs(config.Executable) || config.Build == "" || len(config.Build) > 512 || strings.ContainsAny(config.Build, "\x00\r\n") {
 		return nil, native.ErrProtocol
 	}
@@ -110,6 +116,22 @@ func Start(ctx context.Context, config Config) (*Client, error) {
 		defer appChild.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, appChild)
 	}
+	var qualificationWriter *os.File
+	if qualification != nil {
+		input, writer, e := os.Pipe()
+		if e != nil {
+			conn.Close()
+			media.Close()
+			appConn.Close()
+			return nil, e
+		}
+		defer input.Close()
+		defer writer.Close()
+		qualificationWriter = writer
+		cmd.Args[1] = "internal-vscreen-input-qualification-host"
+		cmd.ExtraFiles = append(cmd.ExtraFiles, input)
+		cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "MULTICA_RUN_VSCREEN_GUI_SMOKE=1"}
+	}
 	cmd.WaitDelay = config.ShutdownTimeout
 	// Discard child diagnostics: hostile/native stderr never becomes a secret log
 	// or an unbounded buffer, and stdout cannot corrupt the control stream.
@@ -146,6 +168,16 @@ func Start(ctx context.Context, config Config) (*Client, error) {
 	}()
 	// Automatic teardown also covers callers that abandon an uncertain operation.
 	go func() { <-c.closed; _ = c.Close() }()
+	if qualificationWriter != nil {
+		deadline, _ := ctx.Deadline()
+		if err := qualificationWriter.SetWriteDeadline(deadline); err != nil {
+			return nil, errors.Join(err, c.Close())
+		}
+		if _, err := qualificationWriter.Write(qualification); err != nil {
+			return nil, errors.Join(err, c.Close())
+		}
+		qualificationWriter.Close()
+	}
 	if _, err := writer.Write(token[:]); err != nil {
 		return nil, errors.Join(err, c.Close())
 	}
