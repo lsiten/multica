@@ -176,32 +176,15 @@ func (d *Daemon) VscreenActor(workspaceID, runtimeID string) (*vscreen.Actor, er
 
 func (d *Daemon) closeVscreenRuntime(runtimeID string) {
 	d.vscreenMu.Lock()
-	reporter := d.vscreenReporter
 	s := d.vscreen
 	d.vscreenMu.Unlock()
-	if reporter != nil {
-		if err := reporter.CancelScope("", runtimeID); err != nil {
-			d.logger.Warn("virtual screen report scope cleanup failed")
-		}
-	}
 	if s == nil {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for key := range s.enabled {
-		if key.RuntimeID == runtimeID {
-			a, err := s.manager.For(key)
-			if err == nil {
-				err = a.Dispose(ctx)
-			}
-			if err != nil {
-				d.logger.Warn("virtual screen cleanup failed", "runtime_id", runtimeID)
-			}
-			delete(s.enabled, key)
-		}
+	if err := d.removeVscreenRuntime(ctx, s, runtimeID); err != nil {
+		d.logger.Warn("virtual screen cleanup failed", "runtime_id", runtimeID)
 	}
 }
 

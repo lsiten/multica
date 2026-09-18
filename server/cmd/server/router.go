@@ -1374,6 +1374,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// tasks.claim) through the same handlers as the HTTP endpoints.
 	daemonHub.SetRPCHandler(h.DaemonRPCHandler)
 	daemonHub.SetVscreenInterventionHandler(h.DaemonVscreenIntervention)
+	daemonHub.SetVscreenDisabledHandler(h.DaemonVscreenDisabled)
 	daemonHub.SetMirrorAnswerHandler(h.HandleDaemonMirrorAnswer)
 	daemonHub.SetMirrorAnswerFailureHandler(h.HandleDaemonMirrorAnswerFailure)
 	daemonHub.SetMirrorViewerHandler(h.HandleDaemonMirrorViewer)

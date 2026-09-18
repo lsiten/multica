@@ -26,6 +26,15 @@ func (h *Handler) DaemonVscreenIntervention(ctx context.Context, connection daem
 
 func (h *Handler) ingestVscreenIntervention(ctx context.Context, connection daemonws.VscreenConnection, report protocol.VscreenIntervention) (db.RuntimeVscreenIntervention, error) {
 	var row db.RuntimeVscreenIntervention
+	err := connection.WithVscreenLifecycle(ctx, func() error {
+		var err error
+		row, err = h.ingestCurrentVscreenIntervention(ctx, connection, report)
+		return err
+	})
+	return row, err
+}
+func (h *Handler) ingestCurrentVscreenIntervention(ctx context.Context, connection daemonws.VscreenConnection, report protocol.VscreenIntervention) (db.RuntimeVscreenIntervention, error) {
+	var row db.RuntimeVscreenIntervention
 	runtimeID, err := util.ParseUUID(report.RuntimeID)
 	if err != nil || report.Validate() != nil {
 		return row, service.InterventionError("invalid_report")

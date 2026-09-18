@@ -15,10 +15,11 @@ import (
 )
 
 type vscreenInterventionRecord struct {
-	Report    protocol.VscreenIntervention `json:"report"`
-	Stopped   bool                         `json:"stopped"`
-	Windows   []string                     `json:"windows"`
-	Authority appcontrol.Authority         `json:"-"`
+	CleanupReceipt *protocol.VscreenCommandReceipt `json:"cleanup_receipt,omitempty"`
+	Report         protocol.VscreenIntervention    `json:"report"`
+	Stopped        bool                            `json:"stopped"`
+	Windows        []string                        `json:"windows"`
+	Authority      appcontrol.Authority            `json:"-"`
 }
 type vscreenInterventions struct {
 	mu         sync.Mutex
@@ -28,6 +29,10 @@ type vscreenInterventions struct {
 }
 
 func (d *Daemon) beginVscreenIntervention(task Task, actor *vscreen.Actor, reason error) error {
+	status := actor.Status()
+	if !status.Ready || status.Lease.TaskID != task.ID {
+		return &vscreen.Error{Reason: protocol.VscreenStaleSnapshot}
+	}
 	s := d.vscreenRuntime()
 	s.interventions.mu.Lock()
 	defer s.interventions.mu.Unlock()
@@ -168,7 +173,7 @@ func (d *Daemon) validateVscreenContinuation(ctx context.Context, s *vscreenRunt
 		}
 		return nil
 	}
-	if record == nil || record.Report.State != protocol.VscreenInterventionReadyToContinue || !record.Stopped || record.Report.SourceTaskID != continuation.SourceTaskID || record.Report.InterventionID != continuation.InterventionID || record.Report.ReturnReceiptID != continuation.ReturnReceiptID || record.Report.Epoch != continuation.Epoch || a.Status().Display.Epoch != continuation.Epoch || record.Report.AgentID != task.AgentID || record.Report.WorkspaceID != task.WorkspaceID {
+	if record == nil || record.CleanupReceipt != nil || record.Report.State != protocol.VscreenInterventionReadyToContinue || !record.Stopped || record.Report.SourceTaskID != continuation.SourceTaskID || record.Report.InterventionID != continuation.InterventionID || record.Report.ReturnReceiptID != continuation.ReturnReceiptID || record.Report.Epoch != continuation.Epoch || a.Status().Display.Epoch != continuation.Epoch || record.Report.AgentID != task.AgentID || record.Report.WorkspaceID != task.WorkspaceID {
 		return errors.New("virtual screen continuation proof is not current")
 	}
 	if continuation.FreshSession && task.PriorSessionID != "" {
