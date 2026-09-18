@@ -139,7 +139,7 @@ func (d *Daemon) executeVscreenCommand(ctx context.Context, c protocol.VscreenCo
 		h := d.vscreenTakeover
 		d.vscreenMu.Unlock()
 		if h == nil {
-			return errWSRPCUnavailable
+			h = d.requestVscreenTakeover
 		}
 		a, err := s.manager.For(key)
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
@@ -27,6 +28,21 @@ func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID str
 	defer s.mu.Unlock()
 	s.revisions[runtimeID]++
 	state := protocol.VscreenStateSnapshot{RuntimeID: runtimeID, State: protocol.VscreenStateDisabled, ControlState: protocol.VscreenControlIdle, StateRevision: s.revisions[runtimeID], Permissions: protocol.VscreenPermissions{ScreenRecording: "unknown", Accessibility: "unknown"}}
+	if err = d.startVscreenHost(ctx, s); err == nil {
+		probeCtx, probeCancel := context.WithTimeout(ctx, time.Second)
+		permissions, probeErr := s.client.ProbeAppPermissions(probeCtx)
+		probeCancel()
+		if probeErr == nil {
+			state.Permissions.Accessibility = "denied"
+			state.Permissions.ScreenRecording = "denied"
+			if permissions.Accessibility {
+				state.Permissions.Accessibility = "granted"
+			}
+			if permissions.ScreenRecording {
+				state.Permissions.ScreenRecording = "granted"
+			}
+		}
+	}
 	if !s.enabled[key] {
 		return state, nil
 	}
@@ -69,12 +85,21 @@ func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID str
 		state.ActiveTaskID = &status.Lease.TaskID
 	}
 	state.NativeEpoch = display.Epoch.NativeEpoch
+	d.vscreenMu.Lock()
+	reporter := d.vscreenReporter
+	d.vscreenMu.Unlock()
+	if reporter != nil {
+		if err := reporter.InvalidateEpoch(workspaceID, runtimeID, state.NativeEpoch); err != nil {
+			d.logger.Warn("virtual screen report epoch invalidation failed")
+		}
+	}
 	state.DisplayGeneration = display.Epoch.DisplayGeneration
 	state.GeometryRevision = display.Epoch.GeometryRevision
 	state.Permissions.ScreenRecording = "denied"
 	if response.Display.ScreenRecording {
 		state.Permissions.ScreenRecording = "granted"
 	}
+	d.projectVscreenIntervention(s, &state)
 	return state, nil
 }
 
