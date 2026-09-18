@@ -12,7 +12,11 @@ static int reviewWindows=1;
 id ACCopy(AXUIElementRef e, CFStringRef a, ACRequest *r) { return reviewWindows==1?@[@"only-window"]:@[@"one",@"two"]; }
 
 #define STUB(name) NSDictionary *name(ACSession *s, ACRequest *r, NSDictionary *i, NSString **e) { *e=@"probe_unexpected"; return nil; }
-STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserve) STUB(ACAction)
+STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserve) STUB(ACAction) STUB(ACAdoptWindow)
+NSDictionary *ACListApps(ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
+NSDictionary *ACListWindows(ACSession *s, ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
+NSDictionary *ACPIDProcess(pid_t pid) {return @{@"PID":@(pid),@"Start":@"1:0"};}
+NSString *ACInputSourceID(void) {return @"synthetic-layout";}
 #include "guard-source.inc"
 
 static int reviewLookupMode=0;
@@ -47,7 +51,7 @@ int main(void) { @autoreleasepool {
  BOOL unknownBlocked=ACInputQuiescent(s,owner)!=nil, siblingClear=ACInputQuiescent(s,other)==nil;
  reviewLookupMode=1; BOOL exitedClear=ACInputQuiescent(s,owner)==nil;
  s.uncertainInput[@"fence"]=@{@"Process":process,@"Resource":owner}; reviewLookupMode=2; BOOL reusedClear=ACInputQuiescent(s,owner)==nil;
- ACWindow *w=[ACWindow new]; w.process=process; w.resource=owner; w.frameWidth=500; w.frameHeight=400; w.lastBounds=CGRectMake(20,20,500,400);
+ ACWindow *w=[ACWindow new]; w.process=process; w.certifiedProcess=process; w.resource=owner; w.frameWidth=500; w.frameHeight=400; w.lastBounds=CGRectMake(20,20,500,400);
  NSDictionary *d=@{@"ID":@1,@"Bounds":@{@"X":@0,@"Y":@0,@"Width":@1600,@"Height":@900},@"Virtual":@YES}; uintptr_t handle=ac_request_new(3); ACRequest *r=(__bridge ACRequest *)(void *)handle;
  reviewWindows=2; BOOL multiwindowBlocked=ACGuard(s,w,d,r,YES)!=nil; reviewWindows=1;
  NSString *scrollError=ACPIDAction(s,r,w,d,@{@"kind":@"scroll",@"scroll":@{@"position":@{@"x":@10,@"y":@10},@"delta_y":@4,@"delta_x":@0}});
