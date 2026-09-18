@@ -1,3 +1,4 @@
+import { lanEvidence } from "./vscreen-remote.fixture.mjs";
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { clockBounds, frameLatencyBound, decodeFrameMarker, memoryTrend, evaluatePerformance } from "./vscreen-performance-metrics.mjs";
@@ -51,3 +52,9 @@ describe("performance evidence fidelity",()=>{
 });
 
 it("execution failure cannot be hidden by the independent LAN blocker",()=>{const evidence=metrics();expect(evaluatePerformance(evidence).localMeasurement.status).toBe("passed");evidence.failure="viewer_cleanup_unconfirmed";const result=evaluatePerformance(evidence);expect(result.localMeasurement.status).toBe("blocked");expect(result.localMeasurement.failed).toContain("viewer_cleanup_unconfirmed");expect(result.failed).toContain("lan_acceptance_unverified");});
+
+it("complete remote network evidence can pass performance without weakening other gates",()=>{
+ const full=metrics(),lan=lanEvidence();full.networkScope="remote-lan-candidate";full.networkEvidence=lan.evidence;full.viewers.forEach((v,i)=>v.viewerID=lan.viewers[i].viewerID);
+ expect(evaluatePerformance(full)).toMatchObject({status:"passed",planCoverage:{lanAcceptance:"verified"}});
+ full.viewers[0].negotiated.height=720;expect(evaluatePerformance(full).status).toBe("blocked");
+});

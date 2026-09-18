@@ -26,7 +26,7 @@ export async function runSmokeSuite(options, runChild) {
     if(!options.allowGui||unsafe){report.children.push({scenario,status:"blocked",error:{code:unsafe?"not_attempted_cleanup_unconfirmed":"gui_not_authorized"}});continue;}
     const directory=join(options.evidence,scenario);
     let result;
-    try{result=await runChild({...options,scenario,evidence:directory});}catch(error){result={scenario,status:"blocked",error:{code:error.code??"scenario_runner_failed"}};unsafe=true;}
+    try{const childOptions={...options,scenario,evidence:directory};if(scenario!=="performance"){delete childOptions.remoteViewerConfig;delete childOptions.allowRemoteViewer;}result=await runChild(childOptions);}catch(error){result={scenario,status:"blocked",error:{code:error.code??"scenario_runner_failed"}};unsafe=true;}
     report.children.push({scenario,status:result.status,report:join(directory,"report.json"),error:result.error,gui_exercised:result.gui_exercised===true,planCoverage:result.performance?.assessment?.planCoverage??result.planCoverage});
     report.gui_exercised ||= result.gui_exercised===true;
     if((result.gui_exercised || result.gui_attempted) && (result.gui?.disposed!==true||result.gui?.host_closed!==true))unsafe=true;

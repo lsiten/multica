@@ -6,17 +6,18 @@ export function loadPerformanceChromium() { return requireRootTool("@playwright/
 
 // Requires a caller-owned Playwright page. This module never launches or attaches
 // a native capture process and has no ambient browser/account lookup.
-export async function startPerformanceViewer(page, config) {
+export async function startPerformanceViewer(page, config, relay) {
   const endpoint = new URL(config.baseURL);
-  if (endpoint.protocol !== "http:" || endpoint.hostname !== "127.0.0.1" || !config.nonce || !config.viewerID) throw new Error("private_performance_session_required");
+  if (endpoint.protocol !== "http:" || endpoint.hostname !== "127.0.0.1" || (!config.nonce && !relay) || !config.viewerID) throw new Error("private_performance_session_required");
   // A private same-origin document avoids Origin:null CORS/preflight requests.
   // Only this exact navigation is fulfilled; API requests reach the authenticated producer.
+  if (relay) await page.exposeBinding("__vscreenRelay", (_source, path, body) => relay(path, body));
   const viewerURL = new URL("/viewer", endpoint).href;
   const shell = (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>" });
   await page.route(viewerURL, shell, { times: 1 });
   try {
     await page.goto(viewerURL, { waitUntil: "domcontentloaded" });
-    await page.evaluate(browserPerformanceProbe, { ...config, decodeSource:decodeFrameMarker.toString() });
+    await page.evaluate(browserPerformanceProbe, { ...config, relayed: !!relay, decodeSource:decodeFrameMarker.toString() });
   } finally {
     await page.unroute(viewerURL, shell);
   }
@@ -34,10 +35,11 @@ async function browserPerformanceProbe(config) {
   const video=document.createElement("video");video.autoplay=true;video.muted=true;video.playsInline=true;video.style.width="800px";document.body.append(video);
   const canvas=document.createElement("canvas"), drawing=canvas.getContext("2d",{willReadFrequently:true});
   if(!video.requestVideoFrameCallback || !drawing || !window.RTCPeerConnection)throw new Error("actual_video_frame_api_unavailable");
-  let pc=null, source=config.source, negotiated=null, marker=null, sourceTag=null, frameCallback=null, phase="steady", stopped=false;
+  let localCertificate=null, pc=null, source=config.source, negotiated=null, marker=null, sourceTag=null, frameCallback=null, phase="steady", stopped=false;
   let firstAt=null, latestAt=null, openedAt=performance.now(), rendered=0, invalid=0, stale=0, unique=0, lastFrameID=null, decoded=0, bytes=0, cursor=0;
   let frames=[], clockSamples=[], pendingClock=false, failure=null, switches=[], switchPending=false;
   const request=async(path,body)=>{
+    if(config.relayed)return window.__vscreenRelay(path,body);
     const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),10000);
     try{const response=await fetch(config.baseURL+path,{method:body===undefined?"GET":"POST",headers:{Authorization:`Bearer ${config.nonce}`,...(body===undefined?{}:{"Content-Type":"application/json"})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});if(!response.ok)throw new Error(`performance_endpoint_${response.status}`);return await response.json();}finally{clearTimeout(timer);}
   };
@@ -66,7 +68,9 @@ async function browserPerformanceProbe(config) {
   const closePeer=async()=>{if(pc){pc.close();pc=null;await request("/viewer/close",{viewer_id:config.viewerID});}video.srcObject=null;};
   const connect=async(next, nextPhase)=>{
     marker=null;sourceTag=null;await closePeer();source=next;phase=nextPhase;lastFrameID=null;openedAt=performance.now();switchPending=nextPhase==="switch";
-    pc=new RTCPeerConnection();pc.createDataChannel("mirror-control",{ordered:true});
+    const certificate=await RTCPeerConnection.generateCertificate({name:"ECDSA",namedCurve:"P-256"});
+    const fp=certificate.getFingerprints().find((item)=>item.algorithm==="sha-256");localCertificate=fp?{algorithm:fp.algorithm,fingerprint:fp.value}:null;
+    pc=new RTCPeerConnection({certificates:[certificate]});pc.createDataChannel("mirror-control",{ordered:true});
     const transceiver=pc.addTransceiver("video",{direction:"recvonly"});
     const codecs=RTCRtpReceiver.getCapabilities("video")?.codecs.filter((c)=>c.mimeType.toLowerCase()==="video/h264");
     if(!codecs?.length)throw new Error("chromium_h264_decode_unavailable");transceiver.setCodecPreferences(codecs);
@@ -82,9 +86,20 @@ async function browserPerformanceProbe(config) {
   const clockTimer=setInterval(synchronize,10000);
   const renewTimer=setInterval(()=>request("/renew",{viewer_id:config.viewerID}).catch((error)=>{failure=error.message;}),10000);
   window.__vscreenPerformance={
-    async sample(){if(pc){const stats=await pc.getStats();for(const stat of stats.values())if(stat.type==="inbound-rtp"&&stat.kind==="video"){decoded=stat.framesDecoded??null;bytes=stat.bytesReceived??null;}}
+    async sample(){let network=null;if(pc){const stats=await pc.getStats();
+      const inbound=[...stats.values()].find((s)=>s.type==="inbound-rtp"&&s.kind==="video");
+      const transport=inbound?.transportId?stats.get(inbound.transportId):null;
+      const pair=transport&&stats.get(transport.selectedCandidatePairId);
+      if(pair){
+        const candidate=(id)=>{const c=stats.get(id);return c?{address:c.address,port:c.port,protocol:c.protocol,candidate_type:c.candidateType}:null;};
+        const dtls=pc.getReceivers().find((receiver)=>receiver.track?.kind==="video")?.transport;
+        const certificates=dtls?.getRemoteCertificates?.()??[];let remoteCertificate=null;
+        if(certificates.length===1){const digest=await crypto.subtle.digest("SHA-256",certificates[0]);remoteCertificate={algorithm:"sha-256",fingerprint:[...new Uint8Array(digest)].map((byte)=>byte.toString(16).padStart(2,"0")).join("")};}
+        network={viewer_id:config.viewerID,source_id:source.source_id,observed_browser_ms:performance.now(),selected_pair:{id:pair.id,state:pair.state,nominated:pair.nominated,local:candidate(pair.localCandidateId),remote:candidate(pair.remoteCandidateId),bytes_sent:pair.bytesSent,bytes_received:pair.bytesReceived},dtls:{state:dtls?.state,local:localCertificate,remote:remoteCertificate}};
+      }
+      for(const stat of stats.values())if(stat.type==="inbound-rtp"&&stat.kind==="video"){decoded=stat.framesDecoded??null;bytes=stat.bytesReceived??null;}}
       const batch=frames.slice(cursor);cursor=frames.length;
-      return {viewerID:config.viewerID,sourceID:source.source_id,phase,negotiated,frames:batch,clockSamples:[...clockSamples],observedDurationMs:firstAt===null?0:latestAt-firstAt,renderedFrames:rendered,uniqueDynamicFrames:unique,decodedFrames:decoded,bytesReceived:bytes,invalidMarkers:invalid,staleSourceFrames:stale,switchFirstDecodedMs:[...switches],failure};},
+      return {viewerID:config.viewerID,sourceID:source.source_id,phase,negotiated,network,frames:batch,clockSamples:[...clockSamples],observedDurationMs:firstAt===null?0:latestAt-firstAt,renderedFrames:rendered,uniqueDynamicFrames:unique,decodedFrames:decoded,bytesReceived:bytes,invalidMarkers:invalid,staleSourceFrames:stale,switchFirstDecodedMs:[...switches],failure};},
     switchSource:connect,
     async close(){stopped=true;clearInterval(clockTimer);clearInterval(renewTimer);if(frameCallback!==null)video.cancelVideoFrameCallback(frameCallback);try{await closePeer();}finally{video.remove();}}
   };

@@ -22,15 +22,17 @@ export function parseArguments(args, env = process.env) {
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
     if (flag === "--allow-gui") options.allowGui = true;
+    else if (flag === "--allow-remote-viewer") options.allowRemoteViewer = true;
     else if (flag === "--interactive") options.interactive = true;
-    else if (["--app", "--scenario", "--evidence", "--expect-commit", "--launcher"].includes(flag)) {
+    else if (["--app", "--scenario", "--evidence", "--expect-commit", "--launcher", "--remote-viewer-config"].includes(flag)) {
       const value = args[++index];
       if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}`);
-      options[{ "--app": "app", "--scenario": "scenario", "--evidence": "evidence", "--expect-commit": "expectCommit", "--launcher": "launcher" }[flag]] = value;
+      options[{ "--app": "app", "--scenario": "scenario", "--evidence": "evidence", "--expect-commit": "expectCommit", "--launcher": "launcher", "--remote-viewer-config": "remoteViewerConfig" }[flag]] = value;
     } else throw new Error(`Unknown argument: ${flag}`);
   }
   if (!options.app || !isAbsolute(options.app) || !options.app.endsWith(".app")) throw new Error("--app must name an absolute .app path");
   if (!options.evidence || !isAbsolute(options.evidence)) throw new Error("--evidence must name an absolute directory");
+  if ((options.remoteViewerConfig || options.allowRemoteViewer) && (!["performance", "all"].includes(options.scenario) || !options.allowRemoteViewer || !options.remoteViewerConfig || !isAbsolute(options.remoteViewerConfig))) throw new Error("remote viewer requires performance/all, --allow-remote-viewer and an absolute --remote-viewer-config");
   if (options.interactive && options.scenario !== "input-qualification") throw new Error("--interactive requires input-qualification");
   if (options.scenario === "input-qualification" && options.launcher !== "desktop") throw new Error("input-qualification requires --launcher desktop");
   if (!scenarios.includes(options.scenario)) throw new Error(`--scenario must be one of: ${scenarios.join(", ")}`);
