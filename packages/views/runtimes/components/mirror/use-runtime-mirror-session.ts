@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ApiError, api } from "@multica/core/api";
+import { ApiError, api, getApi } from "@multica/core/api";
+import type { CreateMirrorSessionRequest, VscreenScope } from "@multica/core/types";
 import { MirrorFrameReassembler } from "./frame-reassembler";
 import {
   peerConfiguration,
@@ -91,10 +92,12 @@ export function useRuntimeMirrorSession({
   runtimeId,
   enabled,
   retryNonce = 0,
+  scope,
 }: {
   runtimeId: string;
   enabled: boolean;
   retryNonce?: number;
+  scope?: VscreenScope;
 }) {
   const [state, setState] = useState<RuntimeMirrorTransportState>(enabled ? "preparing" : "idle");
   const [failureReason, setFailureReason] = useState<RuntimeMirrorFailureReason | null>(null);
@@ -108,6 +111,12 @@ export function useRuntimeMirrorSession({
       setFailureReason(null);
       return;
     }
+    const client = scope ? getApi().vscreen(scope).legacy : {
+      getIceConfig: () => api.getMirrorICEConfig(runtimeId),
+      createSession: (input: CreateMirrorSessionRequest) => api.createMirrorSession(runtimeId, input),
+      getSession: (viewer: { sessionId: string; viewerId: string }) => api.getMirrorSession(runtimeId, viewer.sessionId),
+      closeSession: (viewer: { sessionId: string; viewerId: string }) => api.closeMirrorSession(runtimeId, viewer.sessionId, viewer.viewerId),
+    };
     let disposed = false;
     let failed = false;
     let peer: RTCPeerConnection | null = null;
@@ -129,8 +138,8 @@ export function useRuntimeMirrorSession({
       if (!sessionId) return;
       const sessionToClose = sessionId;
       sessionId = null;
-      api
-        .closeMirrorSession(runtimeId, sessionToClose, currentViewerId)
+      client
+        .closeSession({ sessionId: sessionToClose, viewerId: currentViewerId })
         .catch((error: unknown) => reportCleanupError(error));
     };
 
@@ -142,7 +151,8 @@ export function useRuntimeMirrorSession({
         setState("preparing");
         setFailureReason(null);
         failed = false;
-        const iceConfig = await api.getMirrorICEConfig(runtimeId);
+        const iceConfig = await client.getIceConfig();
+        if (disposed || failed) return;
         setTurnConfigured(iceConfig.turn_configured);
         peer = new RTCPeerConnection(peerConfiguration(iceConfig));
         peer.onicecandidate = (event) => {
@@ -154,6 +164,7 @@ export function useRuntimeMirrorSession({
         channel.binaryType = "arraybuffer";
 
         channel.onmessage = async (event: MessageEvent<unknown>) => {
+          if (disposed || failed) return;
           if (typeof event.data === "string") {
             const control = parseControlMessage(event.data);
             if (control) {
@@ -165,7 +176,7 @@ export function useRuntimeMirrorSession({
           if (!(event.data instanceof ArrayBuffer) && !(event.data instanceof Blob)) return;
           const packet = await toArrayBuffer(event.data);
           const next = reassembler.push(packet);
-          if (!next || disposed) return;
+          if (!next || disposed || failed) return;
           const url = URL.createObjectURL(
             new Blob([new Uint8Array(next.jpeg)], { type: "image/jpeg" }),
           );
@@ -191,27 +202,31 @@ export function useRuntimeMirrorSession({
 
         setState("negotiating");
         const offer = await peer.createOffer();
+        if (disposed || failed) return;
         await peer.setLocalDescription(offer);
+        if (disposed || failed) return;
         try {
           await waitForUsableIceCandidates(peer, () => sawRelayCandidate);
         } catch {
           throw new MirrorConnectionError("transport");
         }
-        if (disposed) return;
+        if (disposed || failed) return;
         const localOffer = peer.localDescription;
         if (!localOffer || localOffer.type !== "offer" || !localOffer.sdp) {
           throw new MirrorConnectionError("transport");
         }
-        const created = await api.createMirrorSession(runtimeId, {
+        const created = await client.createSession({
           viewer_id: currentViewerId,
           offer: { type: localOffer.type, sdp: localOffer.sdp },
         });
         if (!created.id) throw new MirrorConnectionError("transport");
         sessionId = created.id;
+        if (disposed || failed) { closeSession(); return; }
 
         const deadline = Date.now() + 30_000;
-        while (!disposed && Date.now() < deadline) {
-          const session = await api.getMirrorSession(runtimeId, created.id);
+        while (!disposed && !failed && Date.now() < deadline) {
+          const session = await client.getSession({ sessionId: created.id, viewerId: currentViewerId });
+          if (disposed || failed) return;
           const sessionFailure = mirrorSessionFailureReason(session);
           if (sessionFailure) {
             throw new MirrorConnectionError(sessionFailure);
@@ -248,7 +263,7 @@ export function useRuntimeMirrorSession({
       setTurnConfigured(null);
       setState("closed");
     };
-  }, [enabled, retryNonce, runtimeId]);
+  }, [enabled, retryNonce, runtimeId, scope]);
 
   return { state, failureReason, imageUrl, turnConfigured };
 }

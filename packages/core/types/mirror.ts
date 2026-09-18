@@ -1,3 +1,5 @@
+import type { MirrorViewerGrant } from "./vscreen";
+
 export interface MirrorSessionDescription {
   type: string;
   sdp: string;
@@ -38,6 +40,7 @@ export interface MirrorSession {
 export interface MirrorSessionResponse extends MirrorSession {
   answer?: MirrorSessionDescription;
   ice_config: MirrorICEConfig;
+  viewer_grant?: MirrorViewerGrant;
 }
 
 export interface CreateMirrorSessionRequest {

@@ -1,5 +1,7 @@
 "use client";
 
+import { RuntimeMirrorAction } from "./runtime-mirror-action";
+
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -102,10 +104,7 @@ const COLUMN_WIDTHS = {
 // gaps).
 const FIXED_TRACKS_WIDTH = 164 + 8 * 12;
 
-// The kebab track is conditional like the owner column: on a list where
-// no row carries a delete-permission, EVERY row's only action is hidden,
-// and an unconditionally reserved 28px action track would hang a
-// permanent dead zone off the last column.
+// Viewing and management have independent permissions but share a compact action track.
 function columnTrackVars(
   showOwner: boolean,
   showActions: boolean,
@@ -117,14 +116,14 @@ function columnTrackVars(
     COLUMN_WIDTHS.agents +
     COLUMN_WIDTHS.cost +
     COLUMN_WIDTHS.cli +
-    (showActions ? 28 : 0);
+    (showActions ? 64 : 0);
   return {
     "--rtc-health": `${COLUMN_WIDTHS.health}px`,
     "--rtc-owner": showOwner ? `${COLUMN_WIDTHS.owner}px` : "0px",
     "--rtc-agents": `${COLUMN_WIDTHS.agents}px`,
     "--rtc-cost": `${COLUMN_WIDTHS.cost}px`,
     "--rtc-cli": `${COLUMN_WIDTHS.cli}px`,
-    "--rtc-kebab": showActions ? "1.75rem" : "0px",
+    "--rtc-kebab": showActions ? "4rem" : "0px",
     "--rtc-minw": `${minWidth}px`,
   } as React.CSSProperties;
 }
@@ -744,9 +743,7 @@ export function RuntimeList({
     });
   }, [runtimes, profileById, memberById, workloadIndex, isAdmin, user]);
 
-  // Mirrors RuntimeRowMenu's render guard: the kebab track only earns its
-  // width when at least one row will actually show the menu.
-  const showActions = rows.some((row) => row.canDelete);
+  const showActions = rows.some((row) => row.canDelete || (!!user && isRuntimeUsableForUser(row.runtime, user.id)));
 
   return (
     <div className="overflow-x-auto overflow-y-hidden @container">
@@ -838,6 +835,7 @@ export function RuntimeList({
                   onClick={(e) => e.stopPropagation()}
                   className="flex items-center"
                 >
+                  <RuntimeMirrorAction runtime={row.runtime} compact />
                   <RuntimeRowMenu
                     runtime={row.runtime}
                     profile={row.profile}

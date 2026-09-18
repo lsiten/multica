@@ -1,5 +1,7 @@
 "use client";
 
+import { RuntimeMirrorAction } from "./runtime-mirror-action";
+
 import { useEffect, useState } from "react";
 import {
   Trash2,
@@ -197,6 +199,7 @@ export function RuntimeDetail({
               cliVersion={cliVersion}
               daemonShort={daemonShort}
             />
+            {canReadRuntime && <RuntimeMirrorAction runtime={runtime} />}
             {canReadRuntime && <UsageSection runtime={runtime} />}
           </div>
 

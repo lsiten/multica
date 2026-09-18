@@ -66,3 +66,19 @@ describe("parseAuthSessionUserId", () => {
     expect(parseAuthSessionUserId("x".repeat(257))).toBeUndefined();
   });
 });
+
+describe("Floating viewer child sessions", () => {
+  it("closes a floating child on account switch without invalidating unrelated runtime state", () => {
+    // Given
+    const close = vi.fn();
+    const coordinator = new AuthSessionCoordinator<string>(close);
+    coordinator.reportMain("user-1");
+    coordinator.registerChildWindow("mirror-1");
+    coordinator.reportChild("mirror-1", "user-1");
+    // When
+    coordinator.reportMain("user-2");
+    // Then
+    expect(close).toHaveBeenCalledExactlyOnceWith("mirror-1");
+    expect(coordinator.currentUserId()).toBe("user-2");
+  });
+});

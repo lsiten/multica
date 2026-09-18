@@ -214,19 +214,15 @@ describe("RuntimeDetail visibility section", () => {
     expect(screen.getByText("Public")).toBeInTheDocument();
   });
 
-  it("does not duplicate the device-level mirror action inside nested runtime settings", () => {
-    renderDetail(makeRuntime({
-      daemon_id: "daemon-1",
-      status: "online",
-      metadata: { client_os: "plan9" },
-    }));
-
-    expect(
-      screen.queryByRole("button", { name: "Open mirror" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Screen mirroring is not supported on this platform."),
-    ).not.toBeInTheDocument();
+  it("shows one disabled mirror entry in single-runtime settings when capture is unsupported", () => {
+    // Given
+    const runtime = makeRuntime({ daemon_id: "daemon-1", status: "online", metadata: { client_os: "plan9" } });
+    // When
+    renderDetail(runtime);
+    // Then
+    const actions = screen.getAllByRole("button", { name: "Open mirror" });
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toBeDisabled();
   });
 
   it("keeps daemon CLI version details without rendering update controls", () => {
