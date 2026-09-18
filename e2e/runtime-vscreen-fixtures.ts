@@ -3,6 +3,8 @@ import type { RuntimeDevice } from "../packages/core/types/agent";
 import type { VscreenSourceDescriptorSchema } from "../packages/core/api/vscreen-schemas";
 
 export const RUNTIME_ID = "88888888-8888-4888-8888-888888888888";
+export const SOURCE_TASK_ID = "11111111-1111-4111-8111-111111111111";
+export const CHILD_TASK_ID = "22222222-2222-4222-8222-222222222222";
 export const VIRTUAL_LABEL = "Virtual screen · UI fixture virtual";
 export const PHYSICAL_LABEL = "Physical display · UI fixture physical";
 export const VIRTUAL_PIXEL = [20, 160, 80];
@@ -16,6 +18,19 @@ interface SessionRequest {
   source_generation: string;
   protocol_version: number;
   transport: string;
+}
+interface InterventionWire {
+  id: string;
+  workspace_id: string;
+  runtime_id: string;
+  agent_id: string;
+  source_task_id: string;
+  state: string;
+  reason: string;
+  human_summary: string;
+  return_receipt_id: string;
+  continuation_task_id: string | null;
+  version: number;
 }
 
 // Synthetic canvas video tests the shipped browser page, not native capture,
@@ -67,7 +82,12 @@ async function installSyntheticRTC(page: Page) {
 export async function mockVscreenBrowserUI(
   page: Page,
   identity: { workspaceId: string; userId: string },
-  options: { disabled?: boolean; readerOnly?: boolean; runtimeName?: string } = {},
+  options: {
+    disabled?: boolean;
+    readerOnly?: boolean;
+    runtimeName?: string;
+    handoff?: "request" | "ready_to_continue";
+  } = {},
 ) {
   await installSyntheticRTC(page);
   const runtime: RuntimeDevice = {
@@ -93,6 +113,19 @@ export async function mockVscreenBrowserUI(
     daemon_generation: "ui-daemon-epoch",
     request_id: "ui-query",
   };
+  const intervention: InterventionWire = {
+    id: "ui-intervention",
+    workspace_id: identity.workspaceId,
+    runtime_id: RUNTIME_ID,
+    agent_id: "ui-agent",
+    source_task_id: SOURCE_TASK_ID,
+    state: options.handoff === "ready_to_continue" ? "ready_to_continue" : "awaiting_takeover",
+    reason: "background_action_unsupported",
+    human_summary: "",
+    return_receipt_id: options.handoff === "ready_to_continue" ? "ui-return-receipt" : "",
+    continuation_task_id: null,
+    version: 1,
+  };
   const fixture = {
     sources: (options.disabled ? ["physical"] : ["virtual", "physical"]) as SourceKind[],
     permission: "granted" as "granted" | "denied",
@@ -103,6 +136,8 @@ export async function mockVscreenBrowserUI(
     closed: [] as string[],
     polled: [] as string[],
     commands: [] as unknown[],
+    interventions: options.handoff === "ready_to_continue" ? [intervention] : [] as InterventionWire[],
+    continuations: [] as { human_summary: string; fresh_session: boolean }[],
     sourceReads: 0,
     async releaseHeld() {
       const held = fixture.held;
@@ -113,6 +148,22 @@ export async function mockVscreenBrowserUI(
     },
   };
   const sessions = new Map<string, { viewer_grant: Record<string, unknown> }>();
+  const commands = new Map<string, object>();
+  await page.route(`**/api/tasks/${SOURCE_TASK_ID}/vscreen/interventions/**`, async (route) => {
+    if (!route.request().url().endsWith("/ui-intervention/continue")) {
+      return route.fulfill({ status: 404, json: { reason: "unknown_ui_fixture_route" } });
+    }
+    const body = route.request().postDataJSON();
+    fixture.continuations.push(body);
+    if (!body.fresh_session) {
+      return route.fulfill({ status: 409, json: { reason: "resume_unavailable" } });
+    }
+    intervention.state = "continued";
+    intervention.continuation_task_id = CHILD_TASK_ID;
+    intervention.human_summary = body.human_summary;
+    intervention.version++;
+    return route.fulfill({ json: { task_id: CHILD_TASK_ID, intervention_id: intervention.id } });
+  });
   await page.route("**/api/runtimes**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -137,18 +188,23 @@ export async function mockVscreenBrowserUI(
       scale: 1,
     });
     if (suffix === "/vscreen") {
+      const pendingHandoff = fixture.interventions[0]?.state === "awaiting_takeover";
+      const idle = options.disabled || fixture.interventions[0]?.state === "ready_to_continue" || fixture.interventions[0]?.state === "continued";
       return route.fulfill({ json: { ...envelope, state: {
         runtime_id: RUNTIME_ID,
         state: options.disabled ? "disabled" : "ready",
         native_epoch: options.disabled ? "" : "ui-native-epoch",
         display_generation: options.disabled ? "" : "ui-virtual-generation",
         geometry_revision: options.disabled ? 0 : 1,
-        control_state: options.disabled ? "idle" : "agent",
-        active_task_id: options.disabled ? null : "ui-active-task",
-        intervention_id: null,
+        control_state: pendingHandoff ? "awaiting_takeover" : idle ? "idle" : "agent",
+        active_task_id: idle ? null : SOURCE_TASK_ID,
+        intervention_id: fixture.interventions[0]?.id ?? null,
         permissions: { screen_recording: fixture.permission, accessibility: "granted" },
         state_revision: fixture.stateRevision,
       } } });
+    }
+    if (suffix === "/vscreen/interventions") {
+      return route.fulfill({ json: fixture.interventions });
     }
     if (suffix === "/mirror/sources") {
       fixture.sourceReads++;
@@ -158,8 +214,20 @@ export async function mockVscreenBrowserUI(
       return route.fulfill({ json: { ice_servers: [], turn_configured: false } });
     }
     if (suffix === "/vscreen/commands") {
-      fixture.commands.push(request.postDataJSON());
+      const input = request.postDataJSON();
+      fixture.commands.push(input);
+      if (options.handoff === "request" && input.kind === "request_takeover") {
+        fixture.interventions = [intervention];
+        fixture.stateRevision++;
+        const receipt = { ...envelope, command_id: input.command_id, receipt_id: "ui-command-receipt", state: "succeeded" };
+        commands.set(input.command_id, receipt);
+        return route.fulfill({ json: receipt });
+      }
       return route.fulfill({ status: 403, json: { reason: "permission_denied" } });
+    }
+    const commandId = suffix.match(/^\/vscreen\/commands\/([^/]+)$/)?.[1];
+    if (commandId && commands.has(commandId)) {
+      return route.fulfill({ json: commands.get(commandId) });
     }
     if (suffix === "/mirror/sessions" && request.method() === "POST") {
       const input: SessionRequest = request.postDataJSON();

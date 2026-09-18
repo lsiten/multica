@@ -2,9 +2,11 @@ import { test as base, expect, type Page } from "@playwright/test";
 import { TestApiClient } from "./fixtures";
 import {
   mockVscreenBrowserUI,
+  CHILD_TASK_ID,
   PHYSICAL_LABEL,
   PHYSICAL_PIXEL,
   RUNTIME_ID,
+  SOURCE_TASK_ID,
   VIRTUAL_LABEL,
   VIRTUAL_PIXEL,
   visibleVideoPixel,
@@ -37,6 +39,8 @@ const test = base.extend<{
 
 const surface = (page: Page) => page.getByRole("region", { name: "Runtime screen" });
 const picker = (page: Page) => page.getByRole("combobox", { name: "Screen source" });
+const mirrorStatus = (page: Page, text: string) => surface(page).getByRole("status").filter({ hasText: text }).first();
+const handoff = (page: Page) => page.getByRole("region", { name: "Human takeover" });
 async function openMirror(page: Page, slug: string) {
   await page.goto(`/${slug}/runtimes/${RUNTIME_ID}/mirror`, { waitUntil: "domcontentloaded" });
   await expect(picker(page)).toBeEnabled({ timeout: 15_000 });
@@ -119,7 +123,7 @@ test.describe("Runtime virtual-screen browser UI (synthetic HTTP/RTC)", () => {
     await surface(page).getByRole("button", { name: "Reconnect", exact: true }).click();
     await expect(picker(page).locator("option:checked")).toHaveText("This screen is no longer available. Choose a current source.");
     await expect(surface(page).locator("video")).toHaveCount(0);
-    await expect(surface(page).getByRole("status").last()).toHaveText("This screen is no longer available. Choose a current source.");
+    await expect(mirrorStatus(page, "This screen is no longer available.")).toHaveText("This screen is no longer available. Choose a current source.");
     expect(fixture.created.some(({ request }) => request.source.kind === "physical")).toBe(false);
     await picker(page).selectOption({ label: PHYSICAL_LABEL });
     await expectSyntheticFrame(page, PHYSICAL_LABEL, PHYSICAL_PIXEL);
@@ -143,7 +147,7 @@ test.describe("Runtime virtual-screen browser UI (synthetic HTTP/RTC)", () => {
     await openMirror(page, identity.slug);
     await expect(surface(page).getByRole("button", { name: "Enable virtual screen", exact: true })).toBeEnabled();
     await expect(picker(page)).toHaveValue("");
-    await expect(surface(page).getByRole("status").last()).toHaveText("Choose a screen");
+    await expect(mirrorStatus(page, "Choose a screen")).toHaveText("Choose a screen");
     await expect(surface(page).locator("video")).toHaveCount(0);
     expect(fixture.created).toEqual([]);
     expect(fixture.commands).toEqual([]);
@@ -156,7 +160,7 @@ test.describe("Runtime virtual-screen browser UI (synthetic HTTP/RTC)", () => {
     const fixture = await mockVscreenBrowserUI(page, identity);
     fixture.sources = [];
     await openMirror(page, identity.slug);
-    await expect(surface(page).getByRole("status").last()).toHaveText("No authorized screens are available.");
+    await expect(mirrorStatus(page, "No authorized screens are available.")).toHaveText("No authorized screens are available.");
     await expect(picker(page)).toHaveValue("");
     await expect(picker(page).locator("option")).toHaveCount(1);
     await expect(surface(page).locator("video")).toHaveCount(0);
@@ -170,11 +174,11 @@ test.describe("Runtime virtual-screen browser UI (synthetic HTTP/RTC)", () => {
     await expectSyntheticFrame(page, VIRTUAL_LABEL, VIRTUAL_PIXEL);
     fixture.permission = "denied";
     fixture.stateRevision++;
-    await expect(surface(page).getByRole("status").last()).toHaveText("Screen recording permission is required on this runtime.", { timeout: 12_000 });
+    await expect(mirrorStatus(page, "Screen recording permission is required on this runtime.")).toHaveText("Screen recording permission is required on this runtime.", { timeout: 12_000 });
     await expect(surface(page).locator("video")).toHaveCount(0);
     await expect.poll(() => fixture.closed).toContain(fixture.created[0].id);
     await picker(page).selectOption({ label: PHYSICAL_LABEL });
-    await expect(surface(page).getByRole("status").last()).toHaveText("Screen recording permission is required on this runtime.");
+    await expect(mirrorStatus(page, "Screen recording permission is required on this runtime.")).toHaveText("Screen recording permission is required on this runtime.");
     expect(fixture.created.some(({ request }) => request.source.kind === "physical")).toBe(false);
   });
 
@@ -192,5 +196,49 @@ test.describe("Runtime virtual-screen browser UI (synthetic HTTP/RTC)", () => {
     await expectSyntheticFrame(page, PHYSICAL_LABEL, PHYSICAL_PIXEL);
     await surface(page).getByRole("button", { name: "Reconnect", exact: true }).click();
     await expectSyntheticFrame(page, PHYSICAL_LABEL, PHYSICAL_PIXEL);
+  });
+
+  test("web takeover sends an explicit request and never exposes local app-movement controls", async ({ page, identity }) => {
+    const fixture = await mockVscreenBrowserUI(page, identity, { handoff: "request" });
+    await openMirror(page, identity.slug);
+    await expectSyntheticFrame(page, VIRTUAL_LABEL, VIRTUAL_PIXEL);
+    await expect(handoff(page).getByRole("status")).toHaveText("Ask the runtime owner to take over on its host.");
+    expect(fixture.commands).toEqual([]);
+    await handoff(page).getByRole("button", { name: "Request takeover", exact: true }).click();
+    await expect(handoff(page).getByRole("status")).toHaveText("Waiting for local takeover");
+    expect(fixture.commands).toEqual([{ command_id: expect.any(String), kind: "request_takeover" }]);
+    await expect(handoff(page).getByRole("button", { name: SOURCE_TASK_ID.slice(0, 8), exact: true })).toBeVisible();
+    await expect(handoff(page).getByRole("button", { name: "Move app here", exact: true })).toHaveCount(0);
+    await expect(handoff(page).getByLabel("Move to display")).toHaveCount(0);
+    await expect(handoff(page).getByRole("button", { name: "Return to virtual screen", exact: true })).toHaveCount(0);
+    await expect(handoff(page).getByRole("button", { name: /settings$/ })).toHaveCount(0);
+    await picker(page).selectOption({ label: PHYSICAL_LABEL });
+    await expectSyntheticFrame(page, PHYSICAL_LABEL, PHYSICAL_PIXEL);
+    expect(fixture.commands).toHaveLength(1);
+    expect(fixture.continuations).toEqual([]);
+  });
+
+  test("web continuation requires an explicit fresh-session choice after resume is unavailable", async ({ page, identity }, testInfo) => {
+    const fixture = await mockVscreenBrowserUI(page, identity, { handoff: "ready_to_continue" });
+    await openMirror(page, identity.slug);
+    await expect(handoff(page).getByRole("status")).toHaveText("Returned and ready to continue");
+    await expect(handoff(page).getByRole("button", { name: "Start a fresh session", exact: true })).toHaveCount(0);
+    const summary = "Completed the requested sign-in in the test app.";
+    await handoff(page).getByLabel("What changed?").fill(summary);
+    await handoff(page).getByRole("button", { name: "Continue run", exact: true }).click();
+    await expect(handoff(page).getByRole("alert")).toHaveText("The previous session cannot resume. You can explicitly start a fresh session.");
+    expect(fixture.continuations).toEqual([{ human_summary: summary, fresh_session: false }]);
+    await testInfo.attach("resume-unavailable-explicit-choice", { body: await page.screenshot(), contentType: "image/png" });
+    await handoff(page).getByRole("button", { name: "Start a fresh session", exact: true }).click();
+    await expect(handoff(page).getByRole("status")).toHaveText("Continued in a new run");
+    expect(fixture.continuations).toEqual([
+      { human_summary: summary, fresh_session: false },
+      { human_summary: summary, fresh_session: true },
+    ]);
+    await expect(handoff(page).getByText("Original run:", { exact: false })).toBeVisible();
+    await expect(handoff(page).getByText("Continuation run:", { exact: false })).toBeVisible();
+    await expect(handoff(page).getByRole("button", { name: SOURCE_TASK_ID.slice(0, 8), exact: true })).toBeVisible();
+    await expect(handoff(page).getByRole("button", { name: CHILD_TASK_ID.slice(0, 8), exact: true })).toBeVisible();
+    expect(fixture.commands).toEqual([]);
   });
 });

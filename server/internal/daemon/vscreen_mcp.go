@@ -117,7 +117,7 @@ func strictVscreenJSON(raw []byte, out any) error {
 	return nil
 }
 func vscreenToolDescriptors() []map[string]any {
-	names := []string{"status", "acquire", "release", "launch_app", "observe", "click", "drag", "scroll", "type", "key"}
+	names := []string{"status", "acquire", "release", "list_apps", "launch_app", "observe", "click", "drag", "scroll", "type", "key"}
 	result := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		props := map[string]any{}
@@ -145,7 +145,14 @@ func vscreenToolDescriptors() []map[string]any {
 			props["action"] = vscreenActionSchema(name)
 			required = append(required, "action")
 		}
-		result = append(result, map[string]any{"name": "vscreen_" + name, "description": "Managed runtime GUI " + name + ". Never use other desktop automation. Reobserve after changes; never replay uncertain actions.", "inputSchema": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}})
+		description := "Managed runtime GUI " + name + ". Never use other desktop automation. Reobserve after changes; never replay uncertain actions."
+		if name == "list_apps" {
+			description = "List NSWorkspace-resolved apps in standard Applications folders. Truncated inventories are incomplete. Running apps require human intervention; listing does not certify background input. Known bundle IDs outside these folders may be passed to launch_app."
+		}
+		if name == "key" || name == "scroll" || name == "drag" {
+			description += " Requires independently verified app/OS/action certification. Without it, this tool stops automation for human intervention."
+		}
+		result = append(result, map[string]any{"name": "vscreen_" + name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}})
 	}
 	return result
 }
