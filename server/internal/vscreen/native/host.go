@@ -29,7 +29,9 @@ type resourceDisplay struct {
 
 // RunHost serves only an inherited private socket. Call on the initial locked OS thread.
 // EOF on that socket disposes owned displays before the AppKit runloop exits.
-func RunHost(build string) error {
+func RunHost(build string) error { return runHost(build, false) }
+
+func runHost(build string, qualification bool) error {
 	if !supported() {
 		return ErrUnsupported
 	}
@@ -52,6 +54,14 @@ func RunHost(build string) error {
 	if err := bootstrap.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return err
 	}
+	var scope *inputQualification
+	if qualification {
+		var err error
+		scope, err = readInputQualification()
+		if err != nil {
+			return err
+		}
+	}
 	var token [32]byte
 	if _, err := io.ReadFull(bootstrap, token[:]); err != nil {
 		return fmt.Errorf("read bootstrap: %w", err)
@@ -62,12 +72,16 @@ func RunHost(build string) error {
 	}
 	defer connection.Close()
 	done := make(chan error, 1)
-	go func() { done <- serve(connection, token, build); stopLoop() }()
+	go func() { done <- serveScoped(connection, token, build, scope); stopLoop() }()
 	runLoop()
 	return <-done
 }
 
-func serve(socket net.Conn, token [32]byte, build string) (result error) {
+func serve(socket net.Conn, token [32]byte, build string) error {
+	return serveScoped(socket, token, build, nil)
+}
+
+func serveScoped(socket net.Conn, token [32]byte, build string, qualification *inputQualification) (result error) {
 	if err := socket.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return err
 	}
@@ -76,6 +90,9 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 		return err
 	}
 	if hello.Version != ProtocolVersion || hello.Build != build || hello.Operation != "hello" || subtle.ConstantTimeCompare(hello.Token, token[:]) != 1 {
+		return ErrProtocol
+	}
+	if qualification != nil && (!hello.AppControl || !hello.Media) {
 		return ErrProtocol
 	}
 	captures := newCaptureHost(hello.Media, token)
@@ -95,7 +112,7 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 			connection.Close()
 			return err
 		}
-		apps = newAppHost(connection, build, "", captures)
+		apps = newAppHostScoped(connection, build, "", captures, qualification)
 	}
 	clear(token[:])
 	clear(hello.Token)
@@ -139,6 +156,9 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 			return err
 		}
 		response := Response{Version: ProtocolVersion, Build: build, ID: request.ID, Epoch: protocol.VscreenEpoch{NativeEpoch: nativeEpoch}}
+		if qualification != nil && qualification.checkControl(request) != nil {
+			return ErrProtocol
+		}
 		if request.Version != ProtocolVersion || request.Build != build || request.ID == "" || len(request.Token) > 0 || request.Media || request.AppControl || request.App != nil {
 			return ErrProtocol
 		}

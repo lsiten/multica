@@ -102,6 +102,9 @@ func init() {
 }
 
 func main() {
+	if handleInputQualificationEntrypoint() {
+		return
+	}
 	if len(os.Args) >= 3 && os.Args[1] == daemon.VscreenSmokeProviderCommand {
 		runtime.UnlockOSThread()
 		if err := daemon.RunVscreenSmokeProvider(context.Background(), os.Args[2], os.Args[3:], os.Stdin, os.Stdout); err != nil {

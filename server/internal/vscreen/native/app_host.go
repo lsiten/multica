@@ -47,6 +47,7 @@ type appFlight struct {
 	cancel    context.CancelFunc
 }
 type appHost struct {
+	qualification *inputQualification
 	readDisplay   func(uint32) (Display, error)
 	cleanupErr    error
 	snapshotUsed  map[string]bool
@@ -69,10 +70,21 @@ type appHost struct {
 }
 
 func newAppHost(conn net.Conn, build, epoch string, captures *captureHost) *appHost {
+	return newAppHostScoped(conn, build, epoch, captures, nil)
+}
+
+func newAppHostScoped(conn net.Conn, build, epoch string, captures *captureHost, qualification *inputQualification) *appHost {
 	h := &appHost{conn: conn, build: build, epoch: epoch, captures: captures, resources: make(map[protocol.ResourceKey]resourceDisplay), catalog: make(sourceCatalog), leases: make(map[protocol.ResourceKey]*appLease), flights: make(map[string]appFlight), done: make(chan struct{}), snapshotUsed: make(map[string]bool), humanUsed: make(map[string]bool)}
 	h.readDisplay = describeDisplay
 	policy := appcontrol.ProductionPIDInputPolicy()
-	h.controller, h.controllerErr = appcontrol.New(appcontrol.Config{Authorize: h.authorize, AuthorizeHuman: h.authorizeHuman, CertifiedPIDInput: policy.Decide, PIDInputVerification: policy.Verification})
+	config := appcontrol.Config{Authorize: h.authorize, AuthorizeHuman: h.authorizeHuman, CertifiedPIDInput: policy.Decide, PIDInputVerification: policy.Verification}
+	h.qualification = qualification
+	if qualification != nil {
+		config.CertifiedPIDInput = qualification.decide
+		config.VerifyPIDCompletion = qualification.verifyCompletion
+		config.PIDInputVerification = func(appcontrol.Process) string { return "none" }
+	}
+	h.controller, h.controllerErr = appcontrol.New(config)
 	return h
 }
 func appRefusal(code string) error { return &appcontrol.Error{Reason: code} }
@@ -363,6 +375,9 @@ func (h *appHost) execute(ctx context.Context, r Request) (out *AppResponse, err
 		w, e := h.controller.Launch(ctx, a, *r.App.Launch)
 		out.Window = &w
 		err = e
+		if e == nil && h.qualification != nil {
+			err = h.qualification.bind(w)
+		}
 	case "app_action":
 		if r.App.Action == nil {
 			return out, ErrProtocol
