@@ -46,7 +46,8 @@ func (c *Controller) Observe(ctx context.Context, a Authority, handle string, pn
 func (c *Controller) reportPIDPolicy(ctx context.Context, o *Observation) {
 	o.PIDInputCertificationConfigured = c.config.CertifiedPIDInput != nil
 	o.PIDInputVerification = "none"
-	if o.Window.Handle != "" && c.config.PIDInputVerification != nil && c.config.PIDInputVerification(c.pidIdentity(ctx, o.Window.Process)) == "verified_variants" {
+	o.PIDInputCompletionAvailable = c.config.VerifyPIDCompletion != nil
+	if o.PIDInputCompletionAvailable && o.Window.Handle != "" && c.config.PIDInputVerification != nil && c.config.PIDInputVerification(c.pidIdentity(ctx, o.Window.Process)) == "verified_variants" {
 		o.PIDInputVerification = "verified_variants"
 	}
 }

@@ -66,14 +66,41 @@ func (c *Controller) Act(ctx context.Context, request protocol.VscreenActionRequ
 	if w.window.SnapshotRevision != t.SnapshotRevision || request.Sequence != c.sequence[binding]+1 || len(c.actions) >= 4096 {
 		return Result{}, refusal("stale_snapshot")
 	}
-	identity := c.pidIdentity(ctx, w.window.Process)
+	identity := Process{}
 	decision := PIDInputDecision{}
-	if c.config.CertifiedPIDInput != nil {
+	if c.config.CertifiedPIDInput != nil && c.config.VerifyPIDCompletion != nil {
+		identity = c.pidIdentity(ctx, w.window.Process)
 		decision = c.config.CertifiedPIDInput(identity, request.Action)
+	}
+	decision.Certified = decision.Certified && c.config.VerifyPIDCompletion != nil
+	input := map[string]any{"Window": w.window, "Display": d, "Action": request.Action, "CertifiedPID": decision.Certified, "CertifiedInputSource": decision.InputSourceID, "CertifiedProcess": identity}
+	var completion PIDCompletion
+	if decision.Certified {
+		completion, err = newPIDCompletion(request, w.window)
+		if err != nil {
+			return Result{}, refusal("native_unavailable")
+		}
+		input["Completion"] = completion.native()
 	}
 	var result Result
 	c.sequence[binding] = request.Sequence
-	err = c.backend.call(ctx, "action", map[string]any{"Window": w.window, "Display": d, "Action": request.Action, "CertifiedPID": decision.Certified, "CertifiedInputSource": decision.InputSourceID, "CertifiedProcess": identity}, &result)
+	err = c.backend.call(ctx, "action", input, &result)
+	result.CompletionVerified = false
+	if err == nil && result.Mechanism == "pid" {
+		if !decision.Certified {
+			err = refusal("action_uncertain")
+		} else {
+			err = c.verifyPIDCompletion(ctx, a, completion, d)
+		}
+		if err == nil {
+			result.Outcome = protocol.VscreenActionVerified
+			result.CompletionVerified = true
+		}
+	}
+	if err == nil && result.Mechanism != "ax" && result.Mechanism != "pid" {
+		err = refusal("action_uncertain")
+	}
+
 	if err != nil || ctx.Err() != nil || result.Outcome != protocol.VscreenActionVerified && result.Outcome != protocol.VscreenActionDispatched {
 		c.freeze(a.Resource)
 		result.Outcome = protocol.VscreenActionUncertain

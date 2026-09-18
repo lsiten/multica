@@ -33,6 +33,8 @@ static OSStatus FakeInfo(SecStaticCodeRef code, SecCSFlags flags, CFDictionaryRe
 #include "executable-source.inc"
 
 NSDictionary *ACPIDProcess(pid_t pid) {return liveProcess;}
+uint64_t ACPIDCompletionToken(NSDictionary *context) {abort();}
+void ACRegisterPIDCompletion(ACSession *s,ACWindow *w) {abort();}
 NSString *ACInputSourceID(void) {return liveSource;}
 NSString *ACGuard(ACSession *s, ACWindow *w, NSDictionary *d, ACRequest *r, BOOL background) {nativeGuards++;return @"probe-stop-before-input";}
 NSString *ACReadWindow(ACWindow *w, CGRect *bounds) {*bounds=w.lastBounds;return nil;}

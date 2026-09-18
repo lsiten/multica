@@ -8,7 +8,7 @@ identity = (source / "identity_darwin.m").read_text()
 (out / "ended-source.inc").write_text(identity[identity.index("BOOL ACProcessEnded("):identity.index("id ACCopy(")])
 failed = False
 for name in ["session", "fence"]:
-    cmd = ["xcrun", "clang", "-fobjc-arc", "-fblocks", "-framework", "AppKit", "-framework", "ApplicationServices", "-framework", "ScreenCaptureKit", "-I", str(source), "-I", str(out), "-include", str(fixture / ("native-probe-overrides.h" if name == "session" else "native-fence-overrides.h")), str(source / "bridge_darwin.m")]
+    cmd = ["xcrun", "clang", "-fobjc-arc", "-fblocks", "-framework", "AppKit", "-framework", "ApplicationServices", "-framework", "ScreenCaptureKit", "-I", str(source), "-I", str(out), "-include", str(fixture / ("native-probe-overrides.h" if name == "session" else "native-fence-overrides.h")), str(source / "bridge_darwin.m"), str(source / "completion_darwin.m")]
     if name == "fence": cmd.append(str(source / "input_darwin.m"))
     cmd += [str(fixture / ("native-" + name + "-probe.m")), "-o", str(out / name)]
     build = subprocess.run(cmd, capture_output=True)

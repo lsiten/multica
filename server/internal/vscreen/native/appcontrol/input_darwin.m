@@ -79,6 +79,11 @@ void ACMarkUncertain(ACSession *s, ACWindow *w, NSString *operation) {
 }
 NSString *ACInputQuiescent(ACSession *s, NSDictionary *resource) {
   BOOL blocked = NO;
+  for (NSString *token in s.pendingPIDInputs.allKeys) {
+    NSDictionary *entry=s.pendingPIDInputs[token];
+    if (ACProcessEnded(entry[@"Process"])) {[s.pendingPIDInputs removeObjectForKey:token];continue;}
+    if (!resource || [entry[@"Resource"] isEqual:resource]) blocked=YES;
+  }
   for (NSString *key in s.uncertainInput.allKeys) {
     NSDictionary *entry = s.uncertainInput[key], *process = entry[@"Process"],
                  *owner = entry[@"Resource"];
@@ -131,6 +136,7 @@ static NSString *post(ACSession *s, ACRequest *r, ACWindow *w, NSDictionary *d,
       CGEventSetType(up, type == kCGEventKeyDown ? kCGEventKeyUp
                                                  : kCGEventLeftMouseUp);
       CGEventSetFlags(up, 0);
+      CGEventSetIntegerValueField(up,kCGEventSourceUserData,0);
       ACPressed *pressed = [ACPressed new];
       pressed.process = w.process;
       pressed.certifiedProcess = w.certifiedProcess;
@@ -138,7 +144,12 @@ static NSString *post(ACSession *s, ACRequest *r, ACWindow *w, NSDictionary *d,
       pressed.releaseEvent = CFBridgingRelease(up);
       s.pressed[key] = pressed;
     }
+    if (!w.pidDispatched)
+      ACRegisterPIDCompletion(s,w);
+    BOOL final = type==kCGEventKeyUp || type==kCGEventLeftMouseUp || type==kCGEventScrollWheel;
+    CGEventSetIntegerValueField(event,kCGEventSourceUserData,final?(int64_t)ACPIDCompletionToken(w.completionContext):0);
     CGEventPostToPid(pid, event);
+    w.pidDispatched=YES;
     if (type == kCGEventKeyUp || type == kCGEventLeftMouseUp)
       [s.pressed removeObjectForKey:key];
   }
@@ -309,7 +320,10 @@ static NSString *dispatchInput(ACSession *s, ACRequest *r, ACWindow *w,
 
 NSString *ACPIDAction(ACSession *s, ACRequest *r, ACWindow *w, NSDictionary *d,
                       NSDictionary *action) {
-  NSString *error = dispatchInput(s, r, w, d, action);
+  NSString *error=ACPreparePIDCompletion(s,w,d,r);
+  if (error) return error;
+  w.pidDispatched=NO;
+  error = dispatchInput(s, r, w, d, action);
   if (error)
     releaseInterrupted(s, w);
   return error;

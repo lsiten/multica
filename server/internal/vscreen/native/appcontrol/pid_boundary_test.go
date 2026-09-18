@@ -20,6 +20,7 @@ func TestPIDDecisionRejectsChangedOrMissingMetadata(t *testing.T) {
 			base.AppBuild = ""
 			c.windows["owned"].window.Process = base
 			c.config.CertifiedPIDInput = policy.Decide
+			c.config.VerifyPIDCompletion = syntheticPIDCompletion
 			r.Action = action
 			b.run = func(_ context.Context, op string, in, out any) error {
 				if op == "pid_identity" {
