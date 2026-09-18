@@ -2,9 +2,9 @@ package daemon
 
 import (
 	"encoding/json"
-	"github.com/multica-ai/multica/server/pkg/protocol"
 
 	"github.com/multica-ai/multica/server/internal/runtimeapps"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/remotemcp"
 )
 

@@ -8815,7 +8815,6 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	// Shared across the resume-retry below so the retry's transcript rows
 	// keep ascending seq values for the same task.
-
 	var msgSeq atomic.Int32
 	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {
@@ -9488,6 +9487,10 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// message batch, so the result hand-off below can wait for the transcript
 	// tail to be persisted.
 	drainFinished := make(chan struct{})
+	forcedDrainStop := make(chan struct{})
+	var forceDrainOnce sync.Once
+	forceDrainStop := func() { forceDrainOnce.Do(func() { close(forcedDrainStop) }) }
+	defer forceDrainStop()
 	go func() {
 		defer close(drainFinished)
 		var mu sync.Mutex
@@ -9569,6 +9572,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		}()
 
 		var sessionPinned atomic.Bool
+		drainInterrupted := drainCtx.Done()
 		for {
 			select {
 			case msg, ok := <-session.Messages:
@@ -9711,7 +9715,15 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 					})
 					mu.Unlock()
 				}
-			case <-drainCtx.Done():
+			case <-drainInterrupted:
+				if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+					// GUI stop cancels the provider first; keep consuming its owned cleanup
+					// messages until the backend closes the stream or the drain budget expires.
+					drainInterrupted = nil
+					continue
+				}
+				goto drainDone
+			case <-forcedDrainStop:
 				goto drainDone
 			}
 		}
@@ -9738,6 +9750,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		select {
 		case <-drainFinished:
 		case <-time.After(10 * time.Second):
+			forceDrainStop()
 			drainCancel()
 			select {
 			case <-drainFinished:
@@ -9751,6 +9764,13 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	case result := <-session.Result:
 		stopWatchdog()
 		waitForDrain()
+		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+			select {
+			case <-drainFinished:
+			default:
+				return result, toolCount.Load(), errVscreenStopUnconfirmed
+			}
+		}
 		// terminalObserved outranks a watchdog that fired anyway: if the backend
 		// had already read its authoritative result, this is the real outcome and
 		// re-tagging it would report a completed run as a hang.
