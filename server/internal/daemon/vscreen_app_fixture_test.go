@@ -38,6 +38,7 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 		observers := map[string]appcontrol.Authority{}
 		revoked := map[protocol.ResourceKey]bool{}
 		humans := map[string]native.HumanGrant{}
+		candidates := map[string]native.HumanGrant{}
 		revision := uint64(0)
 		value := ""
 		for {
@@ -80,6 +81,28 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 				} else {
 					humans[r.App.Human.Capability] = *r.App.Human
 				}
+			case "app_human_candidates":
+				g := r.App.Human
+				if g == nil || humans[g.Capability] != *g || g.Direction != "list_existing" || g.WindowHandle != "" || g.InterventionID == "" {
+					reply.Error = "human_grant_required"
+					break
+				}
+				delete(humans, g.Capability)
+				candidates["private-candidate"] = *g
+				reply.App.Candidates = &appcontrol.WindowCandidates{Windows: []appcontrol.WindowCandidate{{Handle: "private-candidate", BundleID: "org.example.Editor", Title: "Private document title"}}}
+			case "app_human_adopt":
+				g := r.App.Human
+				if g == nil || humans[g.Capability] != *g || g.Direction != "adopt_existing" || candidates[g.WindowHandle].InterventionID != g.InterventionID {
+					reply.Error = "stale_window"
+					break
+				}
+				delete(humans, g.Capability)
+				delete(candidates, g.WindowHandle)
+				if os.Getenv("VSCREEN_FIXTURE_ADOPT_ERROR") != "" {
+					reply.Error = "stale_window"
+					break
+				}
+				reply.App.Window = &appcontrol.Window{Handle: g.WindowHandle}
 			case "app_human_transfer":
 				if r.App.Human == nil || humans[r.App.Human.Capability] != *r.App.Human {
 					reply.Error = "permission_denied"

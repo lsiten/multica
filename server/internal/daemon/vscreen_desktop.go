@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -109,10 +110,21 @@ func (d *Daemon) registerVscreenDesktop(ctx context.Context, mux *http.ServeMux,
 }
 func (d *Daemon) vscreenDesktopHandler(c desktopVscreenCredential, verify func(context.Context, string) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var candidates *appcontrol.WindowCandidates
+		var selectionRequired bool
+		var interventionID string
 		reply := func(status int, reason string) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
-			json.NewEncoder(w).Encode(map[string]any{"ok": status == 200, "local": true, "reason": reason})
+			value := map[string]any{"ok": status == 200, "local": true, "reason": reason}
+			if interventionID != "" {
+				value["intervention_id"] = interventionID
+				value["selection_required"] = selectionRequired
+			}
+			if status == 200 && candidates != nil {
+				value["candidates"] = candidates
+			}
+			json.NewEncoder(w).Encode(value)
 		}
 		if r.Method != "POST" {
 			reply(405, "method_not_allowed")
@@ -130,6 +142,7 @@ func (d *Daemon) vscreenDesktopHandler(c desktopVscreenCredential, verify func(c
 			InterventionID string   `json:"intervention_id"`
 			Destination    string   `json:"destination_source_id"`
 			Summary        string   `json:"summary"`
+			WindowHandle   string   `json:"window_handle"`
 			Excluded       []uint32 `json:"excluded_window_ids"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
@@ -167,6 +180,8 @@ func (d *Daemon) vscreenDesktopHandler(c desktopVscreenCredential, verify func(c
 			if record != nil {
 				id = record.Report.InterventionID
 				state = record.Report.State
+				interventionID = record.Report.InterventionID
+				selectionRequired = record.Stopped && state == protocol.VscreenInterventionAwaitingTakeover && len(record.Windows) == 0
 			}
 			s.interventions.mu.Unlock()
 			d.vscreenMu.Lock()
@@ -174,6 +189,12 @@ func (d *Daemon) vscreenDesktopHandler(c desktopVscreenCredential, verify func(c
 			d.vscreenMu.Unlock()
 			if id != "" && (state == protocol.VscreenInterventionAwaitingTakeover || state == protocol.VscreenInterventionHuman || state == protocol.VscreenInterventionReadyToContinue) && (reporter == nil || !reporter.Acknowledged(id, state)) {
 				reply(409, "report_pending")
+				return
+			}
+		case "list_windows", "adopt_window":
+			candidates, err = d.selectVscreenWindow(operation, capability, body.WorkspaceID, body.RuntimeID, body.InterventionID, body.WindowHandle, body.Action == "adopt_window")
+			if err != nil {
+				reply(409, selectionReason(err))
 				return
 			}
 		case "takeover":

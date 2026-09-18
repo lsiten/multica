@@ -1,4 +1,5 @@
 "use client";
+import { MirrorWindowSelection } from "./mirror-window-selection";
 import { TranscriptButton } from "../../../common/task-transcript";
 import type { VscreenIntervention } from "@multica/core/api";
 import { useState } from "react";
@@ -41,6 +42,7 @@ export function MirrorHandoff({ scope, owner, online, catalog, canRequest, permi
   const tooLong = new TextEncoder().encode(summary).length > 2048;
   const disabled = mutation.isPending || !online || tooLong || pendingReport;
   const localOwner = local.data?.local === true && (local.data.ok || local.data.reason === "report_pending");
+  const selectionRequired = row?.id === local.data?.interventionId && local.data?.selectionRequired === true;
   const physical = catalog.filter((source) => source.source.kind !== "virtual");
   const permissionLabel = (value: string | undefined) => value === "granted" ? t(($) => $.vscreen.handoff.granted) : value === "denied" || value === "restricted" || value === "not_determined" ? t(($) => $.vscreen.handoff.not_granted) : t(($) => $.vscreen.handoff.unknown);
   const labels: Record<string, string> = {
@@ -51,7 +53,8 @@ export function MirrorHandoff({ scope, owner, online, catalog, canRequest, permi
     <p className="text-caption" role="status">{row ? labels[row.state] ?? t(($) => $.vscreen.handoff.stale) : t(($) => $.vscreen.handoff.remote)}</p>
     {row && <div className="flex flex-wrap gap-2 text-caption"><span>{t(($) => $.vscreen.handoff.source_run)}: <InterventionRun scope={scope} row={row} id={row.sourceTaskId} label={t(($) => $.vscreen.handoff.source_run)} /></span>{row.continuationTaskId && <span>{t(($) => $.vscreen.handoff.child_run)}: <InterventionRun scope={scope} row={row} id={row.continuationTaskId} label={t(($) => $.vscreen.handoff.child_run)} /></span>}</div>}
     {canRequest && (!row || ["continued", "cancelled", "stale"].includes(row.state)) && <Button size="sm" variant="outline" disabled={disabled} onClick={onRequest}>{t(($) => $.vscreen.takeover)}</Button>}
-    {row?.state === "awaiting_takeover" && localOwner && <div className="flex flex-wrap items-center gap-2">
+    {row?.state === "awaiting_takeover" && localOwner && selectionRequired && platform.localControl && <MirrorWindowSelection key={JSON.stringify([scope,row.id])} scope={scope} interventionId={row.id} disabled={disabled} control={platform.localControl} onAdopted={async () => { await query.refetch(); await local.refetch(); }} />}
+    {row?.state === "awaiting_takeover" && localOwner && !selectionRequired && <div className="flex flex-wrap items-center gap-2">
       <label className="text-caption">{t(($) => $.vscreen.handoff.destination)}<select className="ml-2 max-w-full rounded border bg-background p-1" value={destination} onChange={(e) => setDestination(e.target.value)}><option value="">{t(($) => $.vscreen.choose_source)}</option>{physical.map((source) => <option key={source.source.sourceId} value={source.source.sourceId}>{source.name || t(($) => $.vscreen.physical)}</option>)}</select></label>
       <Button size="sm" disabled={disabled || !physical.some((source) => source.source.sourceId === destination)} aria-busy={mutation.isPending} onClick={() => mutation.mutate("takeover")}>{t(($) => $.vscreen.handoff.move_here)}</Button>
     </div>}
