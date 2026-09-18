@@ -1,0 +1,1 @@
+ALTER TABLE runtime_vscreen_intervention ADD CONSTRAINT runtime_vscreen_intervention_pkey PRIMARY KEY USING INDEX runtime_vscreen_intervention_pkey;

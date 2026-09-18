@@ -328,6 +328,8 @@ type MessageKindRecorder interface {
 // best-effort wakeup hints; the daemon still uses HTTP claim for correctness.
 type Hub struct {
 	vscreenPending map[string]*vscreenPending
+	interventionMu sync.RWMutex
+	onIntervention VscreenInterventionHandler
 	upgrader       websocket.Upgrader
 
 	mu          sync.RWMutex
@@ -473,7 +475,8 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, identity C
 		return
 	}
 
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	generation := uuid.NewString()
+	conn, err := h.upgrader.Upgrade(w, r, http.Header{protocol.DaemonGenerationHeader: []string{generation}})
 	if err != nil {
 		slog.Error("daemon websocket upgrade failed", "error", err)
 		return
@@ -491,7 +494,7 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, identity C
 		send:              make(chan []byte, 16),
 		identity:          identity,
 		registeredAt:      time.Now(),
-		vscreenGeneration: uuid.NewString(),
+		vscreenGeneration: generation,
 		runtimes:          runtimes,
 		rpcSem:            make(chan struct{}, maxInFlightRPCPerClient),
 	}
@@ -1096,6 +1099,8 @@ func (c *client) handleFrame(raw []byte) {
 		rec.RecordDaemonWSMessageReceived(kind)
 	}
 	switch msg.Type {
+	case protocol.EventVscreenIntervention:
+		c.handleVscreenIntervention(msg.Payload)
 	case protocol.EventVscreenResult:
 		c.handleVscreenReceipt(msg.Payload)
 	case protocol.EventVscreenQueryResult:
