@@ -12,13 +12,24 @@ import (
 // NativeCapturer reads the primary active display through the host operating
 // system. On macOS the daemon needs Screen Recording permission. Linux capture
 // is intentionally unsupported in the first mirror version.
-type NativeCapturer struct{}
+type NativeCapturer struct {
+	NoPermissionPrompt bool
+	Bounds             *image.Rectangle
+}
 
-func (NativeCapturer) Capture(context.Context) (image.Image, error) {
+func (c NativeCapturer) Capture(context.Context) (image.Image, error) {
 	if !NativeCaptureSupported() {
 		return nil, ErrUnsupportedPlatform
 	}
-	if runtime.GOOS == "darwin" && !EnsureScreenCapturePermission() {
+	permission := true
+	if runtime.GOOS == "darwin" {
+		if c.NoPermissionPrompt {
+			permission = ScreenCapturePermissionGranted()
+		} else {
+			permission = EnsureScreenCapturePermission()
+		}
+	}
+	if !permission {
 		// EnsureScreenCapturePermission also triggers the one-time system
 		// prompt so the daemon appears in the Screen Recording list.
 		return nil, ErrCapturePermissionDenied
@@ -27,6 +38,9 @@ func (NativeCapturer) Capture(context.Context) (image.Image, error) {
 		return nil, ErrNoDisplay
 	}
 	bounds := screenshot.GetDisplayBounds(0)
+	if c.Bounds != nil {
+		bounds = *c.Bounds
+	}
 	img, err := screenshot.CaptureRect(bounds)
 	if err != nil {
 		return nil, classifyNativeCaptureError(err)

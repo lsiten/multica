@@ -75,6 +75,16 @@ func (s *SessionStore) ConsumeOffer(ctx context.Context, sessionID string, ident
 }
 
 func (s *SessionStore) SetAnswer(ctx context.Context, sessionID string, identity SessionIdentity, answer protocol.MirrorSessionDescription) error {
+	return s.SetAnswerWithQuality(ctx, sessionID, identity, answer, nil)
+}
+
+// SetAnswerWithQuality stores negotiated quality in the same live-session transition as the SDP.
+func (s *SessionStore) SetAnswerWithQuality(ctx context.Context, sessionID string, identity SessionIdentity, answer protocol.MirrorSessionDescription, quality *protocol.MirrorVideoQuality) error {
+	if quality != nil {
+		if err := quality.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := contextError(ctx); err != nil {
 		return err
 	}
@@ -93,6 +103,10 @@ func (s *SessionStore) SetAnswer(ctx context.Context, sessionID string, identity
 	}
 	if !stored.offerUsed || stored.answerSet || stored.metadata.State != SessionStateOffered {
 		return ErrSessionReplay
+	}
+	if quality != nil {
+		copy := *quality
+		stored.metadata.VideoQuality = &copy
 	}
 	stored.answer = answer
 	stored.answerSet = true

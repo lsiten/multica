@@ -3,6 +3,7 @@ package vscreen
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 func (m *Manager) revokeAll() {
@@ -34,4 +35,29 @@ func (m *Manager) Close(ctx context.Context) error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// Suspend revokes input immediately and waits for quiescence while retaining the
+// display. Reconnecting transport does not recover this frozen authority.
+func (a *Actor) Suspend(ctx context.Context) error {
+	a.mu.Lock()
+	a.freezeLocked()
+	a.mu.Unlock()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for !a.nativeMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	defer a.nativeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := a.driver.Quiesce(ctx, a.key); err != nil {
+		return err
+	}
+	return ctx.Err()
 }

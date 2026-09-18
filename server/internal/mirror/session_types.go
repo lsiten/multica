@@ -55,16 +55,17 @@ type SessionIdentity struct {
 // Session is the JSON-safe metadata view of a mirror session. It never carries
 // SDP, frame bytes, or any other media payload.
 type Session struct {
-	ID            string       `json:"id"`
-	WorkspaceID   string       `json:"workspace_id"`
-	RuntimeID     string       `json:"runtime_id"`
-	UserID        string       `json:"user_id"`
-	DaemonID      string       `json:"daemon_id"`
-	ViewerID      string       `json:"viewer_id"`
-	CreatedAt     time.Time    `json:"created_at"`
-	ExpiresAt     time.Time    `json:"expires_at"`
-	State         SessionState `json:"state"`
-	FailureReason string       `json:"failure_reason,omitempty"`
+	VideoQuality  *protocol.MirrorVideoQuality `json:"video_quality,omitempty"`
+	ID            string                       `json:"id"`
+	WorkspaceID   string                       `json:"workspace_id"`
+	RuntimeID     string                       `json:"runtime_id"`
+	UserID        string                       `json:"user_id"`
+	DaemonID      string                       `json:"daemon_id"`
+	ViewerID      string                       `json:"viewer_id"`
+	CreatedAt     time.Time                    `json:"created_at"`
+	ExpiresAt     time.Time                    `json:"expires_at"`
+	State         SessionState                 `json:"state"`
+	FailureReason string                       `json:"failure_reason,omitempty"`
 }
 
 func (s Session) Metadata() SessionMetadata {
@@ -74,17 +75,18 @@ func (s Session) Metadata() SessionMetadata {
 // SessionMetadata is the read-only metadata shape returned after a handshake
 // transition. It has no fields capable of carrying SDP or frame data.
 type SessionMetadata struct {
-	ID            string       `json:"id"`
-	WorkspaceID   string       `json:"workspace_id"`
-	RuntimeID     string       `json:"runtime_id"`
-	UserID        string       `json:"user_id"`
-	DaemonID      string       `json:"daemon_id"`
-	ViewerID      string       `json:"viewer_id"`
-	CreatedAt     time.Time    `json:"created_at"`
-	ExpiresAt     time.Time    `json:"expires_at"`
-	State         SessionState `json:"state"`
-	FailureReason string       `json:"failure_reason,omitempty"`
-	SDP           string       `json:"-"`
+	VideoQuality  *protocol.MirrorVideoQuality `json:"video_quality,omitempty"`
+	ID            string                       `json:"id"`
+	WorkspaceID   string                       `json:"workspace_id"`
+	RuntimeID     string                       `json:"runtime_id"`
+	UserID        string                       `json:"user_id"`
+	DaemonID      string                       `json:"daemon_id"`
+	ViewerID      string                       `json:"viewer_id"`
+	CreatedAt     time.Time                    `json:"created_at"`
+	ExpiresAt     time.Time                    `json:"expires_at"`
+	State         SessionState                 `json:"state"`
+	FailureReason string                       `json:"failure_reason,omitempty"`
+	SDP           string                       `json:"-"`
 }
 
 type CreateSessionInput struct {
@@ -132,7 +134,12 @@ func newOfferedSession(id string, identity SessionIdentity, createdAt, expiresAt
 }
 
 func metadataFromSession(session Session) SessionMetadata {
-	return SessionMetadata{
+	var quality *protocol.MirrorVideoQuality
+	if session.VideoQuality != nil {
+		copy := *session.VideoQuality
+		quality = &copy
+	}
+	return SessionMetadata{VideoQuality: quality,
 		ID:            session.ID,
 		WorkspaceID:   session.WorkspaceID,
 		RuntimeID:     session.RuntimeID,

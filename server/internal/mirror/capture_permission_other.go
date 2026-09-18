@@ -8,3 +8,6 @@ package mirror
 func EnsureScreenCapturePermission() bool {
 	return true
 }
+
+// ScreenCapturePermissionGranted reports the non-TCC platform gate.
+func ScreenCapturePermissionGranted() bool { return NativeCaptureSupported() }

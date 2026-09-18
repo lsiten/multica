@@ -544,7 +544,12 @@ type Daemon struct {
 	// runtimeMirrors owns one shared capture source per registered runtime.
 	// Access is guarded by d.mu; entries are removed when a runtime is removed
 	// or when the daemon shuts down.
-	runtimeMirrors map[string]*mirror.RuntimeMirror
+	vscreenMu               sync.Mutex
+	vscreen                 *vscreenRuntime
+	vscreenInput            VscreenInputHandler
+	vscreenTakeover         VscreenTakeoverHandler
+	vscreenServerGeneration string
+	runtimeMirrors          map[string]*mirror.RuntimeMirror
 	// mirrorControlGeneration identifies the live daemon control WebSocket.
 	// mirrorControlCancel cancels negotiation owned by the previous connection
 	// when a replacement connects; both are guarded by d.mu.
@@ -693,6 +698,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	cacheRoot := filepath.Join(cfg.WorkspacesRoot, ".repos")
 	skillCacheRoot := filepath.Join(cfg.WorkspacesRoot, ".skill-cache", "v1")
 	client := NewClient(cfg.ServerBaseURL)
+	client.managedVscreen = cfg.NativeHostExecutable != ""
 	// Tag every daemon HTTP request with the daemon's CLI version so the
 	// server can split logs/metrics by client version (parallel to the CLI).
 	client.SetVersion(cfg.CLIVersion)
@@ -1414,6 +1420,7 @@ func (d *Daemon) removeStaleRuntime(runtimeID string) (string, bool) {
 	delete(d.wsHBLastAck, runtimeID)
 	d.wsHBMu.Unlock()
 	d.closeDetachedRuntimeMirrors(detachedMirrors)
+	d.closeVscreenRuntime(runtimeID)
 
 	return workspaceID, true
 }
@@ -2146,6 +2153,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Deregister runtimes on shutdown (uses a fresh context since ctx will be cancelled).
 	defer d.deregisterRuntimes()
+	defer d.closeVscreens()
 	defer d.closeRuntimeMirrors()
 
 	// Start workspace sync loop to discover newly created workspaces.
@@ -2210,6 +2218,7 @@ func (d *Daemon) resolveAuth() error {
 		return fmt.Errorf("load CLI config: %w", err)
 	}
 	if cfg.Token == "" {
+		d.closeVscreens()
 		loginHint := "'multica login'"
 		if d.cfg.Profile != "" {
 			loginHint = fmt.Sprintf("'multica login --profile %s'", d.cfg.Profile)
@@ -2267,6 +2276,7 @@ func (d *Daemon) detachRuntimeMirrorsLocked(runtimeIDs []string) []*mirror.Runti
 }
 
 func (d *Daemon) closeDetachedRuntimeMirrors(runtimeMirrors []*mirror.RuntimeMirror) {
+	defer d.pruneVscreens()
 	for _, runtimeMirror := range runtimeMirrors {
 		if runtimeMirror == nil {
 			continue
@@ -4154,6 +4164,7 @@ func (d *Daemon) tryRenewToken(ctx context.Context) {
 	resp, err := d.client.RenewToken(reqCtx)
 	if err != nil {
 		if isUnauthorizedError(err) {
+			d.closeVscreens()
 			loginHint := "'multica login'"
 			if d.cfg.Profile != "" {
 				loginHint = fmt.Sprintf("'multica login --profile %s'", d.cfg.Profile)

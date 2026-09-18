@@ -1,14 +1,10 @@
 package mirror
 
+import "github.com/multica-ai/multica/server/pkg/protocol"
+
 // VideoQuality describes negotiated encoding output; it does not resize or
 // select the underlying display. The native adapter must enforce MaxLevelIDC.
-type VideoQuality struct {
-	Width       int   `json:"width"`
-	Height      int   `json:"height"`
-	FPS         int   `json:"fps"`
-	Bitrate     int   `json:"bitrate"`
-	MaxLevelIDC uint8 `json:"max_level_idc"`
-}
+type VideoQuality = protocol.MirrorVideoQuality
 
 func negotiateVideoQuality(source EncodedSource, level uint8) EncodedSource {
 	width, height, maxBitrate := 1600, 900, 20000000
