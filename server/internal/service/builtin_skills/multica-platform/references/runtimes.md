@@ -113,14 +113,17 @@ as a viewing source never grants agent input authority over it.
 
 Use the injected task-local `multica-vscreen` MCP for GUI work. Its current tools
 are `vscreen_status`, `vscreen_acquire`, `vscreen_release`,
-`vscreen_launch_app`, `vscreen_observe`, `vscreen_click`, `vscreen_drag`,
+`vscreen_list_apps`, `vscreen_launch_app`, `vscreen_observe`, `vscreen_click`, `vscreen_drag`,
 `vscreen_scroll`, `vscreen_type`, and `vscreen_key`. Read each tool's schema rather
 than inventing arguments. Identity comes from the active task binding, not a
 caller-supplied workspace, runtime, task, PID, or display ID.
 
 1. Check status and acquire a transaction before app operations. Wait for a
    queued acquisition; never replace it with global desktop automation.
-2. Launch through the managed tool, then observe its returned window handle.
+2. Discover installed bundle IDs with `vscreen_list_apps`, then launch through
+   the managed tool and observe its returned window handle. Discovery covers
+   standard Applications folders and does not certify background input. Running
+   apps require explicit local-owner window selection during intervention.
    Observations can contain screenshots and Accessibility content sent to the
    AI provider. Do not claim screen content never reaches a model.
 3. Use the current snapshot revision, action ID, sequence, and transaction.

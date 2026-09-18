@@ -38,6 +38,7 @@ type Controller struct {
 	closed       bool
 	frozen       map[protocol.ResourceKey]bool
 	windows      map[string]*ownedWindow
+	candidates   map[string]candidateRecord
 	actions      map[actionIdentity]actionRecord
 	sequence     map[grantBinding]uint64
 }

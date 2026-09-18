@@ -19,6 +19,7 @@ func (c *Controller) Observe(ctx context.Context, a Authority, handle string, pn
 		if err != nil {
 			return Observation{}, err
 		}
+		observation.PIDInputCertificationConfigured = c.config.CertifiedPIDInput != nil
 		observation.Display = d
 		return observation, nil
 	}
@@ -37,6 +38,7 @@ func (c *Controller) Observe(ctx context.Context, a Authority, handle string, pn
 		return Observation{}, refusal("stale_window")
 	}
 	observation.Display = d
+	observation.PIDInputCertificationConfigured = c.config.CertifiedPIDInput != nil
 	w.window = observation.Window
 	return observation, nil
 }
