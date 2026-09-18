@@ -136,7 +136,7 @@ func vscreenToolDescriptors() []map[string]any {
 			add("bundle_id", "string")
 			props["files"] = map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
 		case "observe":
-			add("window_handle", "string")
+			props["window_handle"] = map[string]any{"type": "string"}
 		case "click", "drag", "scroll", "type", "key":
 			add("window_handle", "string")
 			add("snapshot_revision", "integer")
@@ -147,7 +147,13 @@ func vscreenToolDescriptors() []map[string]any {
 		}
 		description := "Managed runtime GUI " + name + ". Never use other desktop automation. Reobserve after changes; never replay uncertain actions."
 		if name == "list_apps" {
-			description = "List NSWorkspace-resolved apps in standard Applications folders. Truncated inventories are incomplete. Running apps require human intervention; listing does not certify background input. Known bundle IDs outside these folders may be passed to launch_app."
+			description = "List NSWorkspace-resolved apps in standard Applications folders. Truncated inventories are incomplete. Reuse a matching handle from managed_windows instead of relaunching an owned running app. Other running apps require local human adoption; inventory does not certify background input. Known bundle IDs outside these folders may be passed to launch_app."
+		}
+		if name == "acquire" || name == "status" {
+			description += " A current lease returns managed_windows entries with window_handle and bundle_id only. Listing is not an observation and does not authorize input; select a handle and freshly observe it."
+		}
+		if name == "observe" {
+			description += " Omit window_handle or use an empty string for a display-only PNG plus managed_windows; it cannot authorize actions. An explicit managed window handle returns fresh AX elements and snapshot_revision for actions."
 		}
 		if name == "key" || name == "scroll" || name == "drag" {
 			description += " Requires independently verified app/OS/action certification. Without it, this tool stops automation for human intervention."

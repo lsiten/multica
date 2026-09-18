@@ -12,7 +12,7 @@ static int reviewWindows=1;
 id ACCopy(AXUIElementRef e, CFStringRef a, ACRequest *r) { return reviewWindows==1?@[@"only-window"]:@[@"one",@"two"]; }
 
 #define STUB(name) NSDictionary *name(ACSession *s, ACRequest *r, NSDictionary *i, NSString **e) { *e=@"probe_unexpected"; return nil; }
-STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserve) STUB(ACAction) STUB(ACAdoptWindow)
+STUB(ACObserveDisplay) STUB(ACLaunch) STUB(ACMove) STUB(ACRestore) STUB(ACObserve) STUB(ACAction) STUB(ACAdoptWindow) STUB(ACManagedWindows)
 NSDictionary *ACListApps(ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
 NSDictionary *ACListWindows(ACSession *s, ACRequest *r, NSString **e) {*e=@"probe_unexpected";return nil;}
 NSDictionary *ACPIDProcess(pid_t pid) {return @{@"PID":@(pid),@"Start":@"1:0"};}

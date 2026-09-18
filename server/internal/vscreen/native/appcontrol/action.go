@@ -110,6 +110,11 @@ func (c *Controller) Resume(ctx context.Context, a Authority) error {
 	if err = c.backend.call(ctx, "resume", d, nil); err != nil {
 		return err
 	}
+	for _, owned := range c.windows {
+		if owned.display.Resource == a.Resource && owned.display.Epoch == a.Epoch {
+			owned.window.SnapshotRevision = 0
+		}
+	}
 	c.mu.Lock()
 	delete(c.frozen, a.Resource)
 	c.mu.Unlock()

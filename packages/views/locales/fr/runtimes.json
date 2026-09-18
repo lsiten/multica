@@ -613,7 +613,7 @@
       "list_windows": "Lister les fenêtres locales",
       "window": "Fenêtre de l’application",
       "choose_window": "Choisir une fenêtre",
-      "no_windows": "Aucune fenêtre éligible. Ouvrez l’application sur ce Mac, puis actualisez la liste.",
+      "no_windows": "Aucune fenêtre ne peut être sélectionnée en toute sécurité. Vérifiez les fenêtres de l’application, puis actualisez la liste.",
       "windows_truncated": "Certaines fenêtres ne sont pas affichées. Fermez les fenêtres inutiles et actualisez si nécessaire.",
       "adopt_window": "Confirmer la fenêtre sélectionnée",
       "selection_expired": "La sélection a expiré ou la fenêtre a changé. Actualisez la liste et sélectionnez à nouveau.",

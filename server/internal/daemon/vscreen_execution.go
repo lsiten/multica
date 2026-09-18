@@ -16,6 +16,7 @@ import (
 
 // This boundary is implemented by the authenticated native host client, never by tool input.
 type vscreenAppClient interface {
+	ManagedAppWindows(context.Context, appcontrol.Authority) ([]appcontrol.ManagedWindow, error)
 	ListApps(context.Context, appcontrol.Authority) (appcontrol.AppList, error)
 	Grant(context.Context, appcontrol.Authority, time.Duration) error
 	Renew(context.Context, appcontrol.Authority, time.Duration) error
@@ -165,7 +166,16 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 	defer e.mu.Unlock()
 	if name == "vscreen_status" {
 		s := e.actor.Status()
-		return vscreenText(map[string]any{"ready": s.Ready, "frozen": s.Frozen, "waiting": s.Waiting, "owns_control": s.Lease.TaskID == e.task.ID && !s.Lease.Cancelled}), nil
+		owns := s.Lease.TaskID == e.task.ID && !s.Lease.Cancelled && e.nativeGranted.Load() && e.lease.TransactionID != "" && s.Lease.TransactionID == e.lease.TransactionID && s.Lease.LeaseEpoch == e.lease.LeaseEpoch
+		windows := []appcontrol.ManagedWindow{}
+		if owns {
+			var err error
+			windows, err = e.apps.ManagedAppWindows(ctx, e.authority(e.lease))
+			if err != nil {
+				return nil, err
+			}
+		}
+		return vscreenText(map[string]any{"ready": s.Ready, "frozen": s.Frozen, "waiting": s.Waiting, "owns_control": owns, "managed_windows": windows}), nil
 	}
 	if args.TransactionID == "" || args.TransactionID != e.lease.TransactionID {
 		return nil, errVscreenToolArguments
@@ -198,9 +208,16 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 			e.freeze(err)
 			return nil, err
 		}
-		return e.observe(ctx, authority, window.Handle)
+		if window.Process.BundleID != args.BundleID || appcontrol.ValidateManagedWindows([]appcontrol.ManagedWindow{{Handle: window.Handle, BundleID: window.Process.BundleID}}) != nil {
+			e.freeze(errVscreenToolArguments)
+			return nil, errVscreenToolArguments
+		}
+		if e.windowObserved != nil {
+			e.windowObserved(window.Handle)
+		}
+		return e.observe(ctx, authority, window.Handle, true)
 	case "vscreen_observe":
-		return e.observe(ctx, authority, args.WindowHandle)
+		return e.observe(ctx, authority, args.WindowHandle, false)
 	case "vscreen_click", "vscreen_drag", "vscreen_scroll", "vscreen_type", "vscreen_key":
 		if args.Action == nil || "vscreen_"+string(args.Action.Kind) != name {
 			return nil, errVscreenToolArguments
@@ -222,7 +239,26 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 		return nil, errVscreenToolArguments
 	}
 }
-func (e *vscreenExecution) observe(ctx context.Context, a appcontrol.Authority, handle string) ([]map[string]any, error) {
+func (e *vscreenExecution) observe(ctx context.Context, a appcontrol.Authority, handle string, ownershipConfirmed bool) ([]map[string]any, error) {
+	if handle != "" && !ownershipConfirmed {
+		windows, err := e.apps.ManagedAppWindows(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for _, w := range windows {
+			if w.Handle == handle {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, &vscreen.Error{Reason: protocol.VscreenStaleSnapshot}
+		}
+		if e.windowObserved != nil {
+			e.windowObserved(handle)
+		}
+	}
 	observation, err := e.apps.ObserveApp(ctx, a, handle, true)
 	if err != nil {
 		return nil, err
@@ -230,11 +266,19 @@ func (e *vscreenExecution) observe(ctx context.Context, a appcontrol.Authority, 
 	if len(observation.PNG) == 0 || observation.Width == 0 || observation.Height == 0 {
 		return nil, errors.New("native snapshot unavailable")
 	}
-	if err = e.actor.RegisterObservation(vscreen.Observation{Lease: e.lease, Epoch: observation.Display.Epoch, WindowHandle: observation.Window.Handle, Revision: observation.Window.SnapshotRevision}); err != nil {
-		return nil, err
+	if observation.Window.Handle != handle || observation.Display.Epoch != a.Epoch {
+		return nil, &vscreen.Error{Reason: protocol.VscreenStaleSnapshot}
 	}
-	if e.windowObserved != nil {
-		e.windowObserved(observation.Window.Handle)
+	if handle == "" {
+		windows, err := e.apps.ManagedAppWindows(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+		content := vscreenText(map[string]any{"observation_scope": "display", "window_handle": "", "snapshot_revision": 0, "width": observation.Width, "height": observation.Height, "managed_windows": windows})
+		return append(content, map[string]any{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(observation.PNG)}), nil
+	}
+	if err = e.actor.RegisterObservation(vscreen.Observation{Lease: e.lease, Epoch: observation.Display.Epoch, WindowHandle: handle, Revision: observation.Window.SnapshotRevision}); err != nil {
+		return nil, err
 	}
 	content := vscreenText(map[string]any{"window_handle": observation.Window.Handle, "snapshot_revision": observation.Window.SnapshotRevision, "width": observation.Width, "height": observation.Height, "bounds": observation.Window.Bounds, "elements": observation.Elements, "truncated": observation.Truncated, "pid_input_certification_configured": observation.PIDInputCertificationConfigured, "pid_input_verification": observation.PIDInputVerification, "input_policy": map[string]string{"click": "use_current_element_Press", "type": "use_current_element_SetValue", "pid_input": "requires_verified_app_os_action_certification; otherwise_human_intervention"}})
 	return append(content, map[string]any{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(observation.PNG)}), nil
@@ -298,7 +342,11 @@ func (e *vscreenExecution) acquire(ctx context.Context, args vscreenToolArgs) ([
 		}
 		e.nativeGranted.Store(true)
 	}
-	return vscreenText(map[string]any{"transaction_id": e.lease.TransactionID, "lease_epoch": e.lease.LeaseEpoch}), nil
+	windows, err := e.apps.ManagedAppWindows(ctx, e.authority(e.lease))
+	if err != nil {
+		return nil, err
+	}
+	return vscreenText(map[string]any{"transaction_id": e.lease.TransactionID, "lease_epoch": e.lease.LeaseEpoch, "managed_windows": windows}), nil
 }
 
 func finalizeVscreenStop(parent, execution context.Context, result *TaskResult, runErr *error) {

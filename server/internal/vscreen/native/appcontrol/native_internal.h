@@ -89,3 +89,4 @@ NSDictionary *ACAdoptWindow(ACSession *, ACRequest *, NSDictionary *, NSString *
 NSString *ACInputSourceID(void);
 
 NSDictionary *ACPIDProcess(pid_t);
+NSDictionary *ACManagedWindows(ACSession *s, ACRequest *r, NSDictionary *display, NSString **error);
