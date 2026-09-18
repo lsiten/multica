@@ -37,7 +37,28 @@ export async function requestVscreenDesktop(input: {
     body: JSON.stringify({ ...input.body, workspace_id: input.workspaceId, runtime_id: input.runtimeId }),
   });
   if (!input.isCurrent()) return { ok: false, local: false, reason: "local_owner_required" };
-  const parsed = resultSchema.safeParse(await response.json());
+  const parsed = resultSchema.safeParse(await boundedDesktopJSON(response));
+  if (!input.isCurrent()) return { ok: false, local: false, reason: "local_owner_required" };
   if (!parsed.success) return { ok: false, local: true, reason: "handoff_failed" };
-  return { ok: response.ok && parsed.data.ok, local: parsed.data.local, reason: ["report_pending", "runtime_not_local", "local_owner_required", "capture_update_failed"].includes(parsed.data.reason ?? "") ? parsed.data.reason : response.ok ? undefined : "handoff_failed" };
+  return { ...parsed.data, candidates: response.ok && parsed.data.ok && input.body.action === "list_windows" ? parsed.data.candidates : undefined, ok: response.ok && parsed.data.ok, local: parsed.data.local, reason: ["report_pending", "runtime_not_local", "local_owner_required", "capture_update_failed", "selection_expired", "selection_unavailable", "stale_intervention", "accessibility_denied", "invalid_selection"].includes(parsed.data.reason ?? "") ? parsed.data.reason : response.ok ? undefined : "handoff_failed" };
+}
+
+async function boundedDesktopJSON(response: Response): Promise<unknown> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      size += next.value.byteLength;
+      if (size > 64 * 1024) { await reader.cancel(); return null; }
+      chunks.push(next.value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    try { return JSON.parse(new TextDecoder().decode(bytes)); } catch { return null; }
+  } finally { reader.releaseLock(); }
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -108,6 +109,52 @@ func TestAppWindowSelectionPrivateClientContracts(t *testing.T) {
 			}
 			if err := <-done; err != nil {
 				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestManagedWindowDirectoryPrivateClientValidation(t *testing.T) {
+	for _, scenario := range []string{"valid", "empty", "missing", "duplicate", "oversized-field"} {
+		t.Run(scenario, func(t *testing.T) {
+			parent, child := net.Pipe()
+			c := &Client{build: "test", epoch: "native", timeout: time.Second, apps: &appChannel{conn: parent, pending: make(map[string]chan native.Response), done: make(chan struct{})}}
+			go c.readApps()
+			t.Cleanup(func() { parent.Close(); child.Close(); <-c.apps.done })
+			a := appAuthority(c)
+			done := make(chan error, 1)
+			go func() {
+				var request native.Request
+				if err := native.ReadMessage(child, &request); err != nil {
+					done <- err
+					return
+				}
+				if request.Operation != "app_managed_windows" || request.App.Authority != a {
+					done <- native.ErrProtocol
+					return
+				}
+				out := &native.AppResponse{}
+				windows := []appcontrol.ManagedWindow{{Handle: "managed", BundleID: "org.example.Editor"}}
+				if scenario == "empty" {
+					windows = []appcontrol.ManagedWindow{}
+				}
+				if scenario == "duplicate" {
+					windows = append(windows, windows[0])
+				}
+				if scenario == "oversized-field" {
+					windows[0].Handle = strings.Repeat("x", 129)
+				}
+				if scenario != "missing" {
+					out.ManagedWindows = &windows
+				}
+				done <- native.WriteMessage(child, native.Response{Version: 1, Build: "test", ID: request.ID, Epoch: a.Epoch, App: out})
+			}()
+			windows, err := c.ManagedAppWindows(t.Context(), a)
+			if (err == nil) != (scenario == "valid" || scenario == "empty") {
+				t.Fatalf("scenario=%s windows=%v err=%v", scenario, windows, err)
+			}
+			if e := <-done; e != nil {
+				t.Fatal(e)
 			}
 		})
 	}

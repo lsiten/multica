@@ -313,3 +313,15 @@ func (c *Client) AdoptAppWindow(ctx context.Context, a appcontrol.Authority, g n
 	}
 	return *out.Window, nil
 }
+
+// ManagedAppWindows lists current lease-scoped owned handles without creating an input proof.
+func (c *Client) ManagedAppWindows(ctx context.Context, a appcontrol.Authority) ([]appcontrol.ManagedWindow, error) {
+	out, err := c.appExchange(ctx, "app_managed_windows", a, native.AppRequest{})
+	if err != nil {
+		return nil, err
+	}
+	if out == nil || out.ManagedWindows == nil || *out.ManagedWindows == nil || appcontrol.ValidateManagedWindows(*out.ManagedWindows) != nil {
+		return nil, native.ErrProtocol
+	}
+	return *out.ManagedWindows, nil
+}

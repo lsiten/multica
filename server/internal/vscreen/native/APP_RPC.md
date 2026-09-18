@@ -58,3 +58,26 @@ Default verification uses fake controller/process/socket fixtures only. The
 actual same-binary controller is wired, but no GUI, TCC prompt, display creation,
 installed-app manipulation, posted input or real Agent CLI is exercised here.
 Native permission-enabled end-to-end acceptance remains outstanding.
+
+## Managed window reuse
+
+`ManagedAppWindows(ctx, authority)` uses the private `app_managed_windows` RPC.
+The response is `managed_windows: [{window_handle, bundle_id}]`, capped at 128
+entries / 48 KiB. It requires the current resumed task lease and exact resource
+and epoch; observer grants cannot enumerate it. Native Controller ownership is
+the source of truth. Human-owned, released, foreign, closed-process/closed-window
+and out-of-display entries are excluded using current window-server metadata;
+no AX tree/screenshot, movement, activation or ownership transfer occurs.
+Listing never registers an input proof and does not mark every window used by a
+task. Resume invalidates old window snapshot revisions. A fresh explicit window
+observation remains mandatory before any action; metadata can become stale after
+listing and observation revalidates native identity and geometry.
+
+Production MCP acquire/status expose the same directory for the current lease.
+Display-only observation returns `observation_scope: "display"`, an empty
+`window_handle`, `snapshot_revision: 0`, PNG and `managed_windows`; it never
+registers a fake empty-window observation. Successful launches and explicitly
+selected known managed handles are tracked before PNG capture, so a screenshot
+failure cannot hide their real ownership from human intervention. Subsequent
+Agents and continuations discover preserved windows through production output,
+without injected fixture handles or persistent PID tables.

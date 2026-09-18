@@ -47,3 +47,21 @@ describe("trusted local handoff request", () => {
     await expect(readVscreenCredential(f.input.directory)).rejects.toThrow(); expect(f.transport).not.toHaveBeenCalled();
   });
 });
+
+it("returns bounded candidates only for an explicit list operation and never in status cache",async()=>{
+ const f=await fixture();const candidates={windows:[{handle:"opaque",bundle_id:"org.example.Editor",title:"Private document"}],truncated:false};
+ f.transport.mockImplementation(async(url)=>Response.json(String(url).endsWith("/health")?f.health:{ok:true,local:true,intervention_id:"i",selection_required:true,candidates}));
+ const listed=await requestVscreenDesktop({...f.input,body:{action:"list_windows",intervention_id:"i"}});
+ expect(listed.candidates?.windows[0]).toEqual({handle:"opaque",bundleId:"org.example.Editor",title:"Private document"});
+ const status=await requestVscreenDesktop({...f.input,body:{action:"status"}});expect(status.candidates).toBeUndefined();expect(status.selectionRequired).toBe(true);
+ f.transport.mockImplementation(async(url)=>Response.json(String(url).endsWith("/health")?f.health:{ok:true,local:true,candidates:{windows:[{...candidates.windows[0],pid:123}],truncated:false}}));
+ expect((await requestVscreenDesktop({...f.input,body:{action:"list_windows"}})).ok).toBe(false);
+});
+
+it("bounds private candidate response bytes and drops metadata after a late context switch",async()=>{
+ const f=await fixture();f.transport.mockImplementation(async(url)=>String(url).endsWith("/health")?Response.json(f.health):new Response("x".repeat(65*1024)));
+ expect((await requestVscreenDesktop({...f.input,body:{action:"list_windows"}})).ok).toBe(false);
+ let current=true;
+ f.transport.mockImplementation(async(url)=>String(url).endsWith("/health")?Response.json(f.health):new Response(new ReadableStream({async pull(controller){await new Promise((resolve)=>setTimeout(resolve,0));current=false;controller.enqueue(new TextEncoder().encode(JSON.stringify({ok:true,local:true,candidates:{windows:[{handle:"opaque",bundle_id:"org.example.Editor",title:"Private document"}],truncated:false}})));controller.close();}})));
+ const result=await requestVscreenDesktop({...f.input,isCurrent:()=>current,body:{action:"list_windows"}});expect(result.ok).toBe(false);expect(result.candidates).toBeUndefined();
+});

@@ -556,7 +556,16 @@
       "granted": "Granted",
       "not_granted": "Not granted",
       "unknown": "Not checked",
-      "permissions": "Automation permissions: Accessibility {{accessibility}} · Screen recording {{screenRecording}}"
+      "permissions": "Automation permissions: Accessibility {{accessibility}} · Screen recording {{screenRecording}}",
+      "selection_help": "Choose an open app window. Confirming keeps it on its current screen; return it to the virtual screen when you finish.",
+      "list_windows": "List local windows",
+      "window": "App window",
+      "choose_window": "Choose a window",
+      "no_windows": "No safely selectable window. Check the app’s windows and refresh the list.",
+      "windows_truncated": "Some windows were omitted. Close unrelated windows and refresh if needed.",
+      "adopt_window": "Confirm selected window",
+      "selection_expired": "The selection expired or changed. Refresh the window list and select again.",
+      "ax_required": "Accessibility permission is required to list and select app windows."
     }
   }
 }
