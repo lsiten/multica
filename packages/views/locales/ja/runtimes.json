@@ -534,7 +534,16 @@
       "granted": "許可済み",
       "not_granted": "未許可",
       "unknown": "未確認",
-      "permissions": "自動操作の権限：アクセシビリティ {{accessibility}} · 画面収録 {{screenRecording}}"
+      "permissions": "自動操作の権限：アクセシビリティ {{accessibility}} · 画面収録 {{screenRecording}}",
+      "selection_help": "開いているアプリのウィンドウを選択します。確認後も現在の画面に留まり、作業後に仮想画面へ返却できます。",
+      "list_windows": "ローカルウィンドウを表示",
+      "window": "アプリのウィンドウ",
+      "choose_window": "ウィンドウを選択",
+      "no_windows": "選択できるウィンドウがありません。この Mac でアプリを開き、一覧を更新してください。",
+      "windows_truncated": "一部のウィンドウは省略されています。必要に応じて不要なウィンドウを閉じ、更新してください。",
+      "adopt_window": "選択したウィンドウを確認",
+      "selection_expired": "選択が期限切れか、ウィンドウが変わりました。一覧を更新して選び直してください。",
+      "ax_required": "ウィンドウの一覧と選択にはアクセシビリティ権限が必要です。"
     }
   }
 }

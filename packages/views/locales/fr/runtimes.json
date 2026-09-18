@@ -465,5 +465,155 @@
     "table_cache_r": "Cache L",
     "table_cache_w": "Cache É",
     "no_data": "Aucune donnée de consommation pour l'instant"
+  },
+  "mirror": {
+    "title": "Écran de l’environnement d’exécution",
+    "eyebrow": "Écran distant",
+    "connection_label": "Connexion",
+    "description": "Vue directe de l’hôte d’exécution. Les pixels de l’écran ne transitent jamais par l’API Multica.",
+    "frame_label": "Écran distant",
+    "frame_alt": "Écran en direct de {{runtime}}",
+    "back_to_runtime": "Retour à l’appareil",
+    "try_again": "Réessayer",
+    "pin_tooltip": "Épingler dans la barre latérale",
+    "unpin_tooltip": "Détacher de la barre latérale",
+    "nat_warning": "Aucun serveur TURN n’est configuré. La diffusion peut échouer si le spectateur et l’environnement d’exécution sont sur des réseaux restrictifs différents.",
+    "states": {
+      "loading": {
+        "title": "Chargement de l’environnement d’exécution",
+        "description": "Vérification de l’environnement et préparation de la connexion.",
+        "status": "Chargement."
+      },
+      "preparing": {
+        "title": "Préparation de la connexion",
+        "description": "Le spectateur prépare une session de diffusion sécurisée.",
+        "status": "Préparation."
+      },
+      "negotiating": {
+        "title": "Négociation de la connexion",
+        "description": "Le spectateur établit une connexion privée avec le daemon.",
+        "status": "Négociation de la connexion WebRTC."
+      },
+      "streaming": {
+        "title": "Écran distant en direct",
+        "description": "L’environnement d’exécution transmet les images complètes à ce spectateur.",
+        "status": "Diffusion en cours."
+      },
+      "offline": {
+        "title": "Environnement d’exécution hors ligne",
+        "description": "Le daemon est indisponible, la diffusion ne peut pas démarrer.",
+        "status": "En attente de connexion de l’environnement d’exécution."
+      },
+      "old_daemon": {
+        "title": "Diffusion non prise en charge par ce daemon",
+        "description": "Mettez à jour le daemon Multica de cet appareil pour utiliser la diffusion d’écran.",
+        "status": "Le daemon installé ne prend pas en charge la diffusion."
+      },
+      "linux_unsupported": {
+        "title": "Diffusion d’écran non prise en charge sous Linux",
+        "description": "La première version prend uniquement en charge l’écran principal sous macOS et Windows.",
+        "status": "Capture d’écran Linux indisponible."
+      },
+      "unsupported_platform": {
+        "title": "Diffusion indisponible sur cette plateforme",
+        "description": "Cette plateforme d’exécution ne peut pas fournir d’écran principal pour la diffusion.",
+        "status": "Cette plateforme ne prend pas en charge la diffusion."
+      },
+      "permission_denied": {
+        "title": "Autorisation d’enregistrement de l’écran refusée",
+        "description": "Le daemon Multica de l’hôte doit disposer de l’autorisation d’enregistrement de l’écran. Une invite système apparaît à la première tentative ; si elle a été fermée, ouvrez Réglages Système → Confidentialité et sécurité → Enregistrement de l’écran, autorisez le daemon Multica, puis réessayez.",
+        "status": "Autorisation de capture d’écran requise."
+      },
+      "capture_unavailable": {
+        "title": "Capture d’écran indisponible",
+        "description": "L’environnement d’exécution n’a pas d’écran principal disponible ou le service de capture ne peut pas démarrer.",
+        "status": "Le service de capture d’écran est indisponible."
+      },
+      "transport_failed": {
+        "title": "Échec de la connexion",
+        "description": "La connexion WebRTC n’a pas pu être établie. Des restrictions réseau ou l’absence d’un serveur TURN peuvent la bloquer.",
+        "status": "Échec du transport de diffusion."
+      },
+      "unavailable": {
+        "title": "Diffusion indisponible",
+        "description": "L’environnement d’exécution est hors ligne, non pris en charge ou vous n’y avez plus accès.",
+        "status": "Aucune connexion de diffusion disponible."
+      },
+      "failed": {
+        "title": "Échec de la connexion",
+        "description": "L’environnement d’exécution n’a pas terminé la connexion. Vérifiez le daemon et réessayez.",
+        "status": "Échec de la connexion de diffusion."
+      }
+    }
+  },
+  "vscreen": {
+    "access_denied": "Vous n’avez pas accès à cet environnement.",
+    "floating_failed": "La fenêtre flottante n’a pas pu être ouverte. Réessayez.",
+    "capture_unavailable": "La capture d’écran est indisponible sur cet environnement.",
+    "source": "Source de l’écran",
+    "choose_source": "Choisir un écran",
+    "virtual": "Écran virtuel",
+    "physical": "Écran physique",
+    "system": "Écran système",
+    "source_gone": "Cet écran n’est plus disponible. Choisissez une source actuelle.",
+    "empty": "Aucun écran autorisé n’est disponible.",
+    "preparing": "Préparation de la connexion…",
+    "negotiating": "Connexion à cet écran…",
+    "streaming": "En direct · Lecture seule",
+    "failed": "La connexion à l’écran a été interrompue. Réessayez.",
+    "permission_denied": "L’autorisation d’enregistrement de l’écran est nécessaire sur cet environnement.",
+    "offline": "Cet environnement est hors ligne.",
+    "upgrade": "Mettez à jour l’environnement pour utiliser la vidéo.",
+    "enable": "Activer l’écran virtuel",
+    "disable": "Désactiver l’écran virtuel",
+    "takeover": "Demander la prise en main",
+    "pending": "En attente de la fin de l’opération…",
+    "succeeded": "Commande terminée.",
+    "command_failed": "La commande n’a pas pu être terminée.",
+    "float": "Ouvrir l’écran flottant",
+    "close": "Fermer le spectateur",
+    "legacy": "Ancienne diffusion d’écran",
+    "select_runtime": "Choisir un environnement",
+    "resize": "Redimensionner l’écran",
+    "retry": "Reconnecter",
+    "handoff": {
+      "title": "Prise en main humaine",
+      "awaiting": "En attente de prise en main locale",
+      "human": "Vous contrôlez l’application",
+      "ready": "Fenêtre restituée, prête à continuer",
+      "continued": "Poursuite dans une nouvelle exécution",
+      "stale": "Cette intervention n’est plus actuelle",
+      "cancelled": "Annulée",
+      "remote": "Demandez au propriétaire de prendre la main sur l’hôte.",
+      "source_run": "Exécution d’origine",
+      "child_run": "Nouvelle exécution",
+      "destination": "Déplacer vers l’écran",
+      "move_here": "Déplacer l’application ici",
+      "summary": "Qu’avez-vous modifié ?",
+      "summary_limit": "2 Kio maximum. Le résumé est transmis à la prochaine exécution.",
+      "return": "Restituer à l’écran virtuel",
+      "continue": "Continuer l’exécution",
+      "fresh": "Démarrer une nouvelle session",
+      "cancel": "Annuler l’intervention",
+      "report_pending": "En attente de confirmation du serveur. Actualisez l’état avant de poursuivre.",
+      "resume_unavailable": "La session précédente ne peut pas reprendre. Vous pouvez choisir une nouvelle session.",
+      "failed": "L’opération n’a pas abouti. Actualisez l’état avant de réessayer.",
+      "refresh": "Actualiser l’état",
+      "screen_settings": "Réglages de l’enregistrement de l’écran",
+      "ax_settings": "Réglages d’accessibilité",
+      "granted": "Accordée",
+      "not_granted": "Non accordée",
+      "unknown": "Non vérifiée",
+      "permissions": "Autorisations d’automatisation : accessibilité {{accessibility}} · enregistrement de l’écran {{screenRecording}}",
+      "selection_help": "Choisissez une fenêtre ouverte. Elle reste sur son écran actuel après confirmation ; restituez-la à l’écran virtuel une fois terminé.",
+      "list_windows": "Lister les fenêtres locales",
+      "window": "Fenêtre de l’application",
+      "choose_window": "Choisir une fenêtre",
+      "no_windows": "Aucune fenêtre éligible. Ouvrez l’application sur ce Mac, puis actualisez la liste.",
+      "windows_truncated": "Certaines fenêtres ne sont pas affichées. Fermez les fenêtres inutiles et actualisez si nécessaire.",
+      "adopt_window": "Confirmer la fenêtre sélectionnée",
+      "selection_expired": "La sélection a expiré ou la fenêtre a changé. Actualisez la liste et sélectionnez à nouveau.",
+      "ax_required": "L’autorisation d’accessibilité est nécessaire pour lister et sélectionner les fenêtres."
+    }
   }
 }
