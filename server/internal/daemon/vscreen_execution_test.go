@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
 	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func TestVscreenProviderStopWaitsForResultAndPreservesUsage(t *testing.T) {
@@ -108,6 +111,26 @@ func TestVscreenProviderStopFinalizationPrecedence(t *testing.T) {
 			}
 			if result.SessionID != "session" || result.WorkDir != "owned-workdir" || len(result.Usage) != 1 {
 				t.Fatal("delivery metadata lost")
+			}
+		})
+	}
+}
+
+func TestVscreenNativeRefusalReasonSurvivesProviderStop(t *testing.T) {
+	for _, tc := range []struct {
+		code string
+		want protocol.VscreenRejectionReason
+	}{
+		{"needs_intervention", protocol.VscreenBackgroundUnsupported}, {"action_uncertain", protocol.VscreenActionUncertainReason}, {"accessibility_denied", protocol.VscreenPermissionDenied}, {"screen_recording_denied", protocol.VscreenPermissionDenied}, {"stale_authority", protocol.VscreenLeaseExpired}, {"app_claim_conflict", protocol.VscreenAppInUse}, {"app_channel_closed", protocol.VscreenNativeUnavailable},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			f, a := newVscreenToolFixture(t)
+			var stopped error
+			e := newVscreenExecution(context.Background(), Task{ID: "task"}, a, f, func(cause error) { stopped = cause })
+			defer e.Close()
+			e.freeze(&hostclient.RemoteError{Code: tc.code})
+			if !errors.Is(stopped, errVscreenIntervention) || vscreenReason(stopped) != tc.want {
+				t.Fatalf("stop cause=%v reason=%s want=%s", stopped, vscreenReason(stopped), tc.want)
 			}
 		})
 	}

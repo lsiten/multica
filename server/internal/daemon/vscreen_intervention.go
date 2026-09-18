@@ -177,6 +177,14 @@ func (d *Daemon) validateVscreenContinuation(ctx context.Context, s *vscreenRunt
 	if err := a.Recover(ctx, continuation.Epoch); err != nil {
 		return err
 	}
+	d.vscreenMu.Lock()
+	reporter := d.vscreenReporter
+	d.vscreenMu.Unlock()
+	if reporter != nil {
+		if err := reporter.Consume(task.WorkspaceID, task.RuntimeID, *continuation); err != nil {
+			return err
+		}
+	}
 	record.Report.State = protocol.VscreenInterventionContinued
 	record.Report.ContinuationTaskID = task.ID
 	return d.persistVscreenInterventionsLocked(s)
