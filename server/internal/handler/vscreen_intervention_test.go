@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -52,8 +53,10 @@ func newInterventionFixture(t *testing.T, scope string) *interventionFixture {
 	f.snapshot = protocol.VscreenStateSnapshot{RuntimeID: runtimeID, State: protocol.VscreenStateReady, NativeEpoch: f.report.Epoch.NativeEpoch, DisplayGeneration: f.report.Epoch.DisplayGeneration, GeometryRevision: 1, ControlState: protocol.VscreenControlAwaitingTakeover, InterventionID: &f.report.InterventionID, InterventionState: f.report.State, Permissions: protocol.VscreenPermissions{ScreenRecording: "granted", Accessibility: "granted"}, StateRevision: 1}
 	hub := daemonws.NewHub()
 	f.h.DaemonHub = hub
+	registered := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hub.HandleWebSocket(w, r, daemonws.ClientIdentity{DaemonID: daemonID, UserID: testUserID, WorkspaceID: testWorkspaceID, RuntimeIDs: []string{runtimeID}})
+		close(registered)
 	}))
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
 	if err != nil {
@@ -125,7 +128,15 @@ func newInterventionFixture(t *testing.T, scope string) *interventionFixture {
 		}
 	}()
 	t.Cleanup(func() { conn.Close(); <-done; server.Close() })
-	observed, err := hub.QueryVscreen(context.Background(), testWorkspaceID, runtimeID, daemonID, "state")
+	// Dial observes the 101 response before the server registers the socket.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	select {
+	case <-registered:
+	case <-ctx.Done():
+		t.Fatal("daemon fixture registration did not complete:", ctx.Err())
+	}
+	observed, err := hub.QueryVscreen(ctx, testWorkspaceID, runtimeID, daemonID, "state")
 	if err != nil {
 		t.Fatal(err)
 	}
