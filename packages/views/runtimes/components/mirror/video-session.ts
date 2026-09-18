@@ -1,3 +1,4 @@
+import { prepareVscreenReceiveOffer } from "@multica/core/runtimes/vscreen-receive-offer";
 import {
   parseVscreenVideoMetadata,
   vscreenErrorReason,
@@ -154,7 +155,8 @@ export class MirrorVideoSession {
       peer.onconnectionstatechange = () => {
         if (
           peer.connectionState === "failed" ||
-          peer.connectionState === "disconnected"
+          peer.connectionState === "disconnected" ||
+          peer.connectionState === "closed"
         )
           this.fail(new MirrorVideoError("transport"));
       };
@@ -173,7 +175,14 @@ export class MirrorVideoSession {
       };
       control.onerror = () => this.fail(new MirrorVideoError("transport"));
       this.options.callbacks.state("negotiating");
-      await peer.setLocalDescription(await peer.createOffer());
+      const createdOffer = await peer.createOffer();
+      if (this.disposed) return;
+      const receiveOffer = await prepareVscreenReceiveOffer(createdOffer, {
+        signal: this.abort.signal,
+      });
+      if (this.disposed) return;
+      await peer.setLocalDescription(receiveOffer);
+      if (this.disposed) return;
       await gatherVideoIce(peer, this.abort.signal);
       if (this.disposed) return;
       const offer = peer.localDescription;
