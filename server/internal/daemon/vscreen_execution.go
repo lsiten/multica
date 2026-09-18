@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -125,7 +124,7 @@ func (e *vscreenExecution) freeze(cause error) {
 		_ = e.apps.Revoke(cleanup, e.authority(lease))
 	}
 	if e.stopProvider != nil {
-		e.stopProvider(fmt.Errorf("%w: %s", errVscreenIntervention, safeVscreenToolError(cause)))
+		e.stopProvider(&vscreen.Error{Reason: vscreenReason(cause), Cause: errors.Join(errVscreenIntervention, cause)})
 	}
 }
 

@@ -18,6 +18,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "vscreen-provider-fixture" {
+		os.Exit(runVscreenProviderFixture())
+	}
 	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-host" {
 		os.Exit(vscreenTestHost())
 	}

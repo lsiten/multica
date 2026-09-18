@@ -129,10 +129,18 @@ func vscreenReason(err error) protocol.VscreenRejectionReason {
 	var remote *hostclient.RemoteError
 	if errors.As(err, &remote) {
 		switch remote.Code {
-		case "screen_recording_denied":
+		case "screen_recording_denied", "accessibility_denied", "permission_denied":
 			return protocol.VscreenPermissionDenied
-		case "stale_epoch":
+		case "stale_epoch", "stale_snapshot", "stale_window":
 			return protocol.VscreenStaleSnapshot
+		case "needs_intervention", "background_unsupported":
+			return protocol.VscreenBackgroundUnsupported
+		case "action_uncertain", "quiescence_required", "deadline_exceeded", "cancelled":
+			return protocol.VscreenActionUncertainReason
+		case "stale_authority", "authority_required", "lease_expired":
+			return protocol.VscreenLeaseExpired
+		case "app_claim_conflict":
+			return protocol.VscreenAppInUse
 		case "display_unavailable":
 			return protocol.VscreenSourceGone
 		}
