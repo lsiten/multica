@@ -120,6 +120,10 @@ func (c *Client) readMedia() {
 			c.failMedia(err)
 			return
 		}
+		if sample.Kind == native.MediaSnapshot {
+			c.acceptSnapshot(sample)
+			continue
+		}
 		c.mediaMu.Lock()
 		stream := c.streams[sample.StreamID]
 		c.mediaMu.Unlock()
@@ -159,6 +163,9 @@ func (c *Client) failMedia(err error) {
 		return
 	}
 	c.mediaErr = err
+	for _, snapshot := range c.snapshots {
+		snapshot.finish(err)
+	}
 	for _, stream := range c.streams {
 		stream.finish(err)
 	}

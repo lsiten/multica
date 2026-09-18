@@ -78,20 +78,40 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 	}
 	captures := newCaptureHost(hello.Media, token)
 	catalog := make(sourceCatalog)
+	var apps *appHost
+	if hello.AppControl {
+		if !hello.Media {
+			return ErrProtocol
+		}
+		connection, err := openPrivateParent(6, token)
+		if err != nil {
+			return err
+		}
+		// Authenticate media before app observations can race capture setup.
+		captures.media, err = openMediaParent(token)
+		if err != nil {
+			connection.Close()
+			return err
+		}
+		apps = newAppHost(connection, build, "", captures)
+	}
 	clear(token[:])
 	clear(hello.Token)
 	if err := socket.SetReadDeadline(time.Time{}); err != nil {
 		return err
 	}
 	nativeEpoch := newEpoch()
-	if err := WriteMessage(socket, Response{Version: ProtocolVersion, Build: build, ID: hello.ID, Epoch: protocol.VscreenEpoch{NativeEpoch: nativeEpoch}}); err != nil {
-		return err
+	if apps != nil {
+		apps.epoch = nativeEpoch
+		go apps.serve()
 	}
 	resources := make(map[protocol.ResourceKey]resourceDisplay)
 	defer func() {
+		appErr := apps.stop()
+		result = errors.Join(result, appErr)
 		captureErr := captures.close()
 		result = errors.Join(result, captureErr)
-		if captureErr != nil {
+		if captureErr != nil || appErr != nil {
 			return
 		}
 		for _, resource := range resources {
@@ -105,6 +125,9 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 			}
 		}
 	}()
+	if err := WriteMessage(socket, Response{Version: ProtocolVersion, Build: build, ID: hello.ID, Epoch: protocol.VscreenEpoch{NativeEpoch: nativeEpoch}}); err != nil {
+		return err
+	}
 	for {
 		var request Request
 		if err := ReadMessage(socket, &request); err != nil {
@@ -114,7 +137,7 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 			return err
 		}
 		response := Response{Version: ProtocolVersion, Build: build, ID: request.ID, Epoch: protocol.VscreenEpoch{NativeEpoch: nativeEpoch}}
-		if request.Version != ProtocolVersion || request.Build != build || request.ID == "" || len(request.Token) > 0 || request.Media {
+		if request.Version != ProtocolVersion || request.Build != build || request.ID == "" || len(request.Token) > 0 || request.Media || request.AppControl || request.App != nil {
 			return ErrProtocol
 		}
 		if request.Operation == "list" {
@@ -126,6 +149,11 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 		} else if request.Operation == "sources" || request.Operation == "start_capture" || request.Operation == "stop_capture" || request.Operation == "force_keyframe" || request.Operation == "capture_status" {
 			response = captureResponse(captures, catalog, resources, nativeEpoch, request, response)
 		} else {
+			if apps != nil && (request.Operation == "dispose" || request.Operation == "quiesce") {
+				if err := apps.lifecycle(request); err != nil {
+					response.Error = appError(err)
+				}
+			}
 			if request.Operation == "dispose" {
 				resource, exists := resources[request.Resource]
 				if exists && resource.quiescent && resource.epoch == request.Epoch {
@@ -137,6 +165,9 @@ func serve(socket net.Conn, token [32]byte, build string) (result error) {
 			if response.Error == "" {
 				response = handleRequest(resources, nativeEpoch, request, response)
 			}
+		}
+		if apps != nil {
+			apps.syncRegistry(resources, catalog)
 		}
 		if err := socket.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 			return err

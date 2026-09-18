@@ -21,17 +21,19 @@ var ErrUnavailable = errors.New("native display unavailable")
 
 // Request is only accepted over the inherited authenticated parent socket.
 type Request struct {
-	Version   int                   `json:"version"`
-	Build     string                `json:"build"`
-	Token     []byte                `json:"token,omitempty"`
-	Media     bool                  `json:"media,omitempty"`
-	Capture   *CaptureOptions       `json:"capture,omitempty"`
-	ID        string                `json:"id"`
-	Operation string                `json:"operation"`
-	Resource  protocol.ResourceKey  `json:"resource"`
-	Epoch     protocol.VscreenEpoch `json:"epoch"`
-	Width     uint32                `json:"width,omitempty"`
-	Height    uint32                `json:"height,omitempty"`
+	Version    int                   `json:"version"`
+	Build      string                `json:"build"`
+	Token      []byte                `json:"token,omitempty"`
+	AppControl bool                  `json:"app_control,omitempty"`
+	App        *AppRequest           `json:"app,omitempty"`
+	Media      bool                  `json:"media,omitempty"`
+	Capture    *CaptureOptions       `json:"capture,omitempty"`
+	ID         string                `json:"id"`
+	Operation  string                `json:"operation"`
+	Resource   protocol.ResourceKey  `json:"resource"`
+	Epoch      protocol.VscreenEpoch `json:"epoch"`
+	Width      uint32                `json:"width,omitempty"`
+	Height     uint32                `json:"height,omitempty"`
 }
 
 // Display contains system readback, never a simulated desktop.
@@ -65,6 +67,7 @@ type Response struct {
 	Displays  []Display             `json:"displays,omitempty"`
 	Sources   []SourceDescriptor    `json:"sources,omitempty"`
 	Capture   *CaptureDescriptor    `json:"capture,omitempty"`
+	App       *AppResponse          `json:"app,omitempty"`
 	Quiescent bool                  `json:"quiescent"`
 }
 

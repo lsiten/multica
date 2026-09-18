@@ -25,6 +25,7 @@ func (e *RemoteError) Error() string { return "native host: " + e.Code }
 // Config supplies the caller-verified executable and version/commit build identity.
 // Zero timeouts select bounded defaults. Executable must be an absolute file path.
 type Config struct {
+	AppControl      bool
 	Media           bool
 	Executable      string
 	Build           string
@@ -35,6 +36,9 @@ type Config struct {
 
 // Client owns exactly one helper. Call serializes control requests; Close is concurrent-safe.
 type Client struct {
+	apps            *appChannel
+	snapshots       map[string]*pendingSnapshot
+	snapshotUsed    map[string]bool
 	media           net.Conn
 	mediaMu         sync.Mutex
 	streams         map[string]*Stream
@@ -186,6 +190,7 @@ func remoteError(code string) error {
 func (c *Client) abort() {
 	c.closeOnce.Do(func() {
 		close(c.closed)
+		c.failApps(ErrClosed)
 		// Closing the socket is the host's cleanup signal, even after framing failure.
 		_ = c.conn.Close()
 		if c.media != nil {
@@ -199,6 +204,7 @@ func (c *Client) abort() {
 // necessary. All callers wait for the same shutdown result, including process reaping.
 func (c *Client) Close() error {
 	c.stopOnce.Do(func() {
+		c.failApps(ErrClosed)
 		c.closeStreams()
 		c.abort()
 		if c.mediaDone != nil {

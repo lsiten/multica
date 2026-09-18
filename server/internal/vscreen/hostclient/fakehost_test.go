@@ -82,6 +82,9 @@ func fakeHost() int {
 	if err := native.WriteMessage(conn, response); err != nil {
 		return 9
 	}
+	if hello.AppControl {
+		return fakeAppHost(conn, response, token, mode)
+	}
 	if hello.Media {
 		return fakeMediaHost(conn, response, token, mode)
 	}
