@@ -113,7 +113,7 @@ func (p *performanceProducer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/metrics" {
-		write(map[string]any{"elapsed_ms": float64(time.Since(p.started).Microseconds()) / 1000, "resources": p.resources, "shared_source": p.shared, "system_gpu": p.systemGPU, "errors": p.errors})
+		write(map[string]any{"elapsed_ms": float64(time.Since(p.started).Microseconds()) / 1000, "resources": p.resources, "shared_source": p.shared, "system_gpu": p.systemGPU, "network": p.networkObservation(r.Context()), "errors": p.errors})
 		return
 	}
 	if r.Method != http.MethodPost {

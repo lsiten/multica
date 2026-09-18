@@ -86,10 +86,55 @@ func TestPerformanceTwoPionViewersShareOneProviderAndDetach(t *testing.T) {
 		case <-ticker.C:
 		}
 	}
+	p.readNetworkRoute = func(ctx context.Context, pair mirror.SelectedICEPair) performanceRouteEvidence {
+		result := currentPerformanceRoute(ctx, pair)
+		if result.Kind == "lan" {
+			t.Fatal("same-host controlled peers falsely qualified as LAN")
+		}
+		t.Logf("LOCALHOST ONLY: OS route kind=%s available=%t reason=%s", result.Kind, result.Available, result.Reason)
+		return result
+	}
+	metrics := performanceTestRequest(p, "GET", "/metrics", nil)
+	var observed struct {
+		Network performanceNetwork `json:"network"`
+	}
+	if err := json.Unmarshal(metrics.Body.Bytes(), &observed); err != nil {
+		t.Fatal(err)
+	}
+	if observed.Network.RunID != p.clockEpoch || len(observed.Network.Viewers) != 2 {
+		t.Fatalf("network scope missing %+v", observed.Network)
+	}
+	for _, entry := range observed.Network.Viewers {
+		if !entry.Available || entry.SourceID != "owned-source" || entry.GrantID == "" || entry.SelectedPair == nil || !entry.DTLS.Available || entry.Route.Kind == "lan" {
+			t.Fatalf("actual Pion telemetry missing %+v", entry)
+		}
+	}
+	p.readNetworkRoute = func(_ context.Context, _ mirror.SelectedICEPair) performanceRouteEvidence {
+		if err := p.peers["one"].negotiation.Abandon(); err != nil {
+			t.Fatal(err)
+		}
+		return performanceRouteEvidence{Available: true, Kind: "loopback", Method: "controlled_close_during_read"}
+	}
+	changed := performanceTestRequest(p, "GET", "/metrics", nil)
+	var changedObservation struct {
+		Network performanceNetwork `json:"network"`
+	}
+	if err := json.Unmarshal(changed.Body.Bytes(), &changedObservation); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range changedObservation.Network.Viewers {
+		if entry.ViewerID == "one" && (entry.Available || entry.SelectedPair != nil || entry.Route.Available) {
+			t.Fatal("stale peer/route survived close during metadata read")
+		}
+	}
 	for _, id := range []string{"one", "two"} {
 		if response := performanceTestRequest(p, "POST", "/viewer/close", map[string]string{"viewer_id": id}); response.Code != 200 {
 			t.Fatal(response.Body.String())
 		}
+	}
+	closedMetrics := performanceTestRequest(p, "GET", "/metrics", nil)
+	if err := json.Unmarshal(closedMetrics.Body.Bytes(), &observed); err != nil || len(observed.Network.Viewers) != 0 {
+		t.Fatal("closed private peers still observable")
 	}
 	client.streams.mu.Lock()
 	defer client.streams.mu.Unlock()
