@@ -16,6 +16,7 @@ import (
 
 // This boundary is implemented by the authenticated native host client, never by tool input.
 type vscreenAppClient interface {
+	ListApps(context.Context, appcontrol.Authority) (appcontrol.AppList, error)
 	Grant(context.Context, appcontrol.Authority, time.Duration) error
 	Renew(context.Context, appcontrol.Authority, time.Duration) error
 	Revoke(context.Context, appcontrol.Authority) error
@@ -185,6 +186,12 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 		e.ticket = nil
 		e.requestID = ""
 		return vscreenText(map[string]any{"released": true}), nil
+	case "vscreen_list_apps":
+		apps, err := e.apps.ListApps(ctx, authority)
+		if err != nil {
+			return nil, err
+		}
+		return vscreenText(apps), nil
 	case "vscreen_launch_app":
 		window, err := e.apps.LaunchApp(ctx, authority, appcontrol.LaunchRequest{BundleID: args.BundleID, Files: args.Files})
 		if err != nil {
@@ -229,7 +236,7 @@ func (e *vscreenExecution) observe(ctx context.Context, a appcontrol.Authority, 
 	if e.windowObserved != nil {
 		e.windowObserved(observation.Window.Handle)
 	}
-	content := vscreenText(map[string]any{"window_handle": observation.Window.Handle, "snapshot_revision": observation.Window.SnapshotRevision, "width": observation.Width, "height": observation.Height, "bounds": observation.Window.Bounds, "elements": observation.Elements, "truncated": observation.Truncated})
+	content := vscreenText(map[string]any{"window_handle": observation.Window.Handle, "snapshot_revision": observation.Window.SnapshotRevision, "width": observation.Width, "height": observation.Height, "bounds": observation.Window.Bounds, "elements": observation.Elements, "truncated": observation.Truncated, "pid_input_certification_configured": observation.PIDInputCertificationConfigured, "input_policy": map[string]string{"click": "use_current_element_Press", "type": "use_current_element_SetValue", "pid_input": "requires_verified_app_os_action_certification; otherwise_human_intervention"}})
 	return append(content, map[string]any{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(observation.PNG)}), nil
 }
 func (e *vscreenExecution) acquire(ctx context.Context, args vscreenToolArgs) ([]map[string]any, error) {

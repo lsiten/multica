@@ -277,3 +277,39 @@ func (c *Client) RevokeObserver(ctx context.Context, a appcontrol.Authority) err
 	_, err := c.appExchange(ctx, "app_observer_revoke", a, native.AppRequest{})
 	return err
 }
+
+// ListApps returns a bounded installed-app inventory under the current task lease.
+func (c *Client) ListApps(ctx context.Context, a appcontrol.Authority) (appcontrol.AppList, error) {
+	out, err := c.appExchange(ctx, "app_list", a, native.AppRequest{})
+	if err != nil {
+		return appcontrol.AppList{}, err
+	}
+	if out == nil || out.Apps == nil || out.Apps.Validate() != nil {
+		return appcontrol.AppList{}, native.ErrProtocol
+	}
+	return *out.Apps, nil
+}
+
+// ListAppWindows returns private local-owner candidates, never model tool data.
+func (c *Client) ListAppWindows(ctx context.Context, a appcontrol.Authority, g native.HumanGrant) (appcontrol.WindowCandidates, error) {
+	out, err := c.appExchange(ctx, "app_human_candidates", a, native.AppRequest{Human: &g})
+	if err != nil {
+		return appcontrol.WindowCandidates{}, err
+	}
+	if out == nil || out.Candidates == nil || out.Candidates.Validate() != nil {
+		return appcontrol.WindowCandidates{}, native.ErrProtocol
+	}
+	return *out.Candidates, nil
+}
+
+// AdoptAppWindow claims a short-lived opaque selection under a separate local-owner grant.
+func (c *Client) AdoptAppWindow(ctx context.Context, a appcontrol.Authority, g native.HumanGrant) (appcontrol.Window, error) {
+	out, err := c.appExchange(ctx, "app_human_adopt", a, native.AppRequest{Human: &g})
+	if err != nil {
+		return appcontrol.Window{}, err
+	}
+	if out == nil || out.Window == nil || out.Window.Handle != g.WindowHandle {
+		return appcontrol.Window{}, native.ErrProtocol
+	}
+	return *out.Window, nil
+}

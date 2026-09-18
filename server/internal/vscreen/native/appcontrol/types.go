@@ -82,12 +82,14 @@ type Element struct {
 
 // Observation includes a bounded AX tree and optionally an owned PNG image.
 type Observation struct {
-	Display       Display
-	Window        Window
-	Elements      []Element
-	PNG           []byte
-	Width, Height uint32
-	Truncated     bool
+	// PIDInputCertificationConfigured is policy availability, not support for a particular action.
+	PIDInputCertificationConfigured bool
+	Display                         Display
+	Window                          Window
+	Elements                        []Element
+	PNG                             []byte
+	Width, Height                   uint32
+	Truncated                       bool
 }
 
 // LaunchRequest permits only an installed bundle ID and explicit local file paths.
@@ -99,6 +101,7 @@ type LaunchRequest struct {
 // HumanRequest requires a separately minted local Desktop grant; GUI leases cannot substitute.
 type HumanRequest struct {
 	Grant, WindowHandle, Direction string
+	InterventionID                 string
 	Resource                       protocol.ResourceKey
 }
 

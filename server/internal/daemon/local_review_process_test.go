@@ -145,7 +145,7 @@ func runLocalReviewProcessScenario(t *testing.T, mode string) {
 	}
 	router := chi.NewRouter()
 	// Use production JWT verification and membership gates, not identity stamps.
-	router.Use(middleware.Auth(queries, nil, nil))
+	router.Use(middleware.Auth(queries, nil, nil, nil))
 	router.With(middleware.RequireWorkspaceMember(queries), handler.RequireHumanActor).Post("/reviews", h.ForwardLocalReview)
 	router.Post("/runtime/{runtimeId}/claim", h.ClaimLocalReviewRelay)
 	router.Post("/runtime/{runtimeId}/{commandId}/result", h.ReportLocalReviewRelay)

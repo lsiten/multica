@@ -16,6 +16,9 @@ import (
 )
 
 type appController interface {
+	ListWindows(context.Context, appcontrol.HumanRequest) (appcontrol.WindowCandidates, error)
+	AdoptWindow(context.Context, appcontrol.HumanRequest) (appcontrol.Window, error)
+	ListApps(context.Context, appcontrol.Authority) (appcontrol.AppList, error)
 	Launch(context.Context, appcontrol.Authority, appcontrol.LaunchRequest) (appcontrol.Window, error)
 	Observe(context.Context, appcontrol.Authority, string, bool) (appcontrol.Observation, error)
 	Act(context.Context, protocol.VscreenActionRequest) (appcontrol.Result, error)
@@ -196,16 +199,16 @@ func (h *appHost) authorizeHuman(ctx context.Context, r appcontrol.HumanRequest)
 	defer h.mu.Unlock()
 	l := h.leases[r.Resource]
 	owned, ok := h.resources[r.Resource]
-	if ctx.Err() != nil || h.closed || !ok || l == nil || l.human == nil || !time.Now().Before(l.humanExpiry) {
+	if ctx.Err() != nil || h.closed || !ok || l == nil || !l.quiescent || l.ready || l.human == nil || !time.Now().Before(l.humanExpiry) {
 		return appcontrol.Display{}, appRefusal("human_grant_required")
 	}
 	g := *l.human
 	// Consume before native movement; uncertain operations cannot replay the capability.
 	l.human = nil
-	if g.Capability != r.Grant || g.WindowHandle != r.WindowHandle || g.Direction != r.Direction {
+	if g.Capability != r.Grant || g.WindowHandle != r.WindowHandle || g.Direction != r.Direction || (r.Direction == "list_existing" || r.Direction == "adopt_existing") && g.InterventionID != r.InterventionID {
 		return appcontrol.Display{}, appRefusal("human_grant_required")
 	}
-	if r.Direction == "to_virtual" {
+	if r.Direction == "to_virtual" || r.Direction == "list_existing" || r.Direction == "adopt_existing" {
 		live, err := h.readDisplay(owned.display.ID)
 		if err != nil || live.UUID != owned.display.UUID || geometryChanged(owned.display, live) {
 			return appcontrol.Display{}, appRefusal("human_grant_required")
@@ -236,7 +239,7 @@ func (h *appHost) issueHuman(r Request) error {
 	l := h.leases[r.Resource]
 	resource, ok := h.resources[r.Resource]
 	g := r.App.Human
-	if h.closed || !ok || resource.epoch != r.Epoch || l == nil || !l.quiescent || g == nil || len(g.Capability) < 32 || len(g.Capability) > 128 || g.InterventionID == "" || len(g.InterventionID) > 256 || g.WindowHandle == "" || len(g.WindowHandle) > 256 || g.Direction != "to_real" && g.Direction != "to_virtual" || r.App.LeaseTTLMS == 0 || r.App.LeaseTTLMS > 15000 {
+	if h.closed || !ok || resource.epoch != r.Epoch || l == nil || !l.quiescent || g == nil || len(g.Capability) < 32 || len(g.Capability) > 128 || g.InterventionID == "" || len(g.InterventionID) > 256 || (g.WindowHandle == "" && g.Direction != "list_existing") || (g.WindowHandle != "" && g.Direction == "list_existing") || len(g.WindowHandle) > 256 || g.Direction != "to_real" && g.Direction != "to_virtual" && g.Direction != "list_existing" && g.Direction != "adopt_existing" || r.App.LeaseTTLMS == 0 || r.App.LeaseTTLMS > 15000 {
 		return appRefusal("human_grant_required")
 	}
 	if h.humanUsed[g.Capability] || len(h.humanUsed) >= 4096 {
@@ -307,6 +310,20 @@ func (h *appHost) execute(ctx context.Context, r Request) (out *AppResponse, err
 		}
 		h.mu.Unlock()
 		return out, err
+	case "app_human_candidates", "app_human_adopt":
+		if r.App.Human == nil {
+			return out, appRefusal("human_grant_required")
+		}
+		g := r.App.Human
+		request := appcontrol.HumanRequest{Grant: g.Capability, Resource: r.Resource, WindowHandle: g.WindowHandle, Direction: g.Direction, InterventionID: g.InterventionID}
+		if r.Operation == "app_human_candidates" {
+			v, e := h.controller.ListWindows(ctx, request)
+			out.Candidates = &v
+			return out, e
+		}
+		w, e := h.controller.AdoptWindow(ctx, request)
+		out.Window = &w
+		return out, e
 	case "app_human_transfer":
 		if r.App.Human == nil {
 			return out, appRefusal("human_grant_required")
@@ -329,6 +346,10 @@ func (h *appHost) execute(ctx context.Context, r Request) (out *AppResponse, err
 		return out, appRefusal("stale_authority")
 	}
 	switch r.Operation {
+	case "app_list":
+		apps, e := h.controller.ListApps(ctx, a)
+		out.Apps = &apps
+		err = e
 	case "app_launch":
 		if r.App.Launch == nil {
 			return out, ErrProtocol
