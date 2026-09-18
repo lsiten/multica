@@ -1,3 +1,4 @@
+import { openVscreenPermissionSettings } from "./external-url";
 import { requestVscreenDesktop } from "./vscreen-desktop-request";
 import type { VscreenScope } from "@multica/core/types";
 import type { VscreenDesktopAction, VscreenDesktopResult } from "../shared/vscreen-desktop";
@@ -1632,7 +1633,7 @@ export async function performVscreenDesktop(scope: VscreenScope, operation: Vscr
   const body = operation.action === "takeover" ? { action: operation.action, intervention_id: operation.interventionId, destination_source_id: operation.destinationSourceId } : operation.action === "return" ? { action: operation.action, intervention_id: operation.interventionId, summary: operation.summary } : operation.action === "list_windows" ? { action: operation.action, intervention_id: operation.interventionId } : operation.action === "adopt_window" ? { action: operation.action, intervention_id: operation.interventionId, window_handle: operation.windowHandle } : { action: "status" };
   try {
     const result = await requestVscreenDesktop({ directory: profileDir(active.name), port: active.port, profile: active.name, backend: scope.backendIdentity, accountId: scope.accountId, workspaceId: scope.workspaceId, runtimeId: scope.runtimeId, body, isCurrent: current, profileAccount: () => readProfileUserId(active.name) });
-    if (result.ok && operation.action === "settings" && current()) await shell.openExternal(operation.permission === "accessibility" ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility" : "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+    if (result.ok && operation.action === "settings" && current()) await openVscreenPermissionSettings(operation.permission);
     return result;
   } catch { return { ok: false, local: false, reason: "local_owner_required" }; }
 }
