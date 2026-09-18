@@ -19,13 +19,14 @@ var (
 )
 
 type vscreenPending struct {
-	client   *client
-	envelope protocol.VscreenEnvelope
-	kind     string
-	result   chan protocol.VscreenQueryResult
-	expires  time.Time
-	receipt  protocol.VscreenCommandReceipt
-	userID   string
+	cleanupStarted bool
+	client         *client
+	envelope       protocol.VscreenEnvelope
+	kind           string
+	result         chan protocol.VscreenQueryResult
+	expires        time.Time
+	receipt        protocol.VscreenCommandReceipt
+	userID         string
 }
 
 func (h *Hub) vscreenClientLocked(workspaceID, runtimeID, daemonID string) *client {
