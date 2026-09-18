@@ -154,6 +154,37 @@ func TestVscreenPrivateEmptyWindowSelectionAdoptionAndReturn(t *testing.T) {
 			if call("status", id, "", 200)["selection_required"] == true {
 				t.Fatal("returned window reopened selector")
 			}
+			continuation := Task{ID: "continued-selection", AgentID: "agent", WorkspaceID: "ws", RuntimeID: "rt", VscreenContinuation: &protocol.VscreenContinuationContext{InterventionID: id, SourceTaskID: "empty-source", ReturnReceiptID: ready.ReturnReceiptID, Epoch: ready.Epoch}}
+			_, nextBroker, next, err := d.startTaskVscreen(ctx, continuation, "codex", func(error) {})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer next.Close()
+			defer nextBroker.Close()
+			acquired, err := next.acquire(ctx, vscreenToolArgs{RequestID: "continued-acquire"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			directory := managedReply(t, acquired)["managed_windows"].([]any)
+			if len(directory) != 1 || directory[0].(map[string]any)["bundle_id"] != "org.example.Editor" {
+				t.Fatal("continuation cannot discover returned adopted app")
+			}
+			discovered := directory[0].(map[string]any)["window_handle"].(string)
+			if len(s.interventions.windows[continuation.ID]) != 0 {
+				t.Fatal("catalog marked every app as used")
+			}
+			typed := map[string]any{"transaction_id": next.lease.TransactionID, "window_handle": discovered, "snapshot_revision": 1, "action_id": "continued-type", "sequence": 1, "action": protocol.VscreenAction{Kind: protocol.VscreenActionType, Type: &protocol.VscreenTypeAction{ElementHandle: "entry", Text: "continued"}}}
+			if _, err := managedInvoke(t, next, "vscreen_type", typed); err == nil {
+				t.Fatal("continued task used return-stage snapshot")
+			}
+			observed, err := managedInvoke(t, next, "vscreen_observe", map[string]any{"transaction_id": next.lease.TransactionID, "window_handle": discovered})
+			if err != nil {
+				t.Fatal(err)
+			}
+			typed["snapshot_revision"] = managedReply(t, observed)["snapshot_revision"]
+			if _, err := managedInvoke(t, next, "vscreen_type", typed); err != nil {
+				t.Fatal(err)
+			}
 
 		})
 	}

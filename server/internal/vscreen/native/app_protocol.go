@@ -43,11 +43,12 @@ type SnapshotDescriptor struct {
 
 // AppResponse contains metadata only; PNG bytes travel as MediaSnapshot chunks.
 type AppResponse struct {
-	Candidates  *appcontrol.WindowCandidates `json:"candidates,omitempty"`
-	Apps        *appcontrol.AppList          `json:"apps,omitempty"`
-	Window      *appcontrol.Window           `json:"window,omitempty"`
-	Observation *appcontrol.Observation      `json:"observation,omitempty"`
-	Snapshot    *SnapshotDescriptor          `json:"snapshot,omitempty"`
-	Result      *appcontrol.Result           `json:"result,omitempty"`
-	Permissions *appcontrol.Permissions      `json:"permissions,omitempty"`
+	ManagedWindows *[]appcontrol.ManagedWindow  `json:"managed_windows,omitempty"`
+	Candidates     *appcontrol.WindowCandidates `json:"candidates,omitempty"`
+	Apps           *appcontrol.AppList          `json:"apps,omitempty"`
+	Window         *appcontrol.Window           `json:"window,omitempty"`
+	Observation    *appcontrol.Observation      `json:"observation,omitempty"`
+	Snapshot       *SnapshotDescriptor          `json:"snapshot,omitempty"`
+	Result         *appcontrol.Result           `json:"result,omitempty"`
+	Permissions    *appcontrol.Permissions      `json:"permissions,omitempty"`
 }

@@ -79,9 +79,14 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 		delete(s.interventions.windows, task.ID)
 		s.interventions.mu.Unlock()
 	}
+	// Track confirmed native ownership independently of screenshot/input proof success.
 	execution.windowObserved = func(handle string) {
 		s.interventions.mu.Lock()
-		s.interventions.windows[task.ID][handle] = true
+		if handle != "" && s.interventions.executions[task.ID] == execution {
+			if windows := s.interventions.windows[task.ID]; windows != nil {
+				windows[handle] = true
+			}
+		}
 		s.interventions.mu.Unlock()
 	}
 	cfg, broker, err := startVscreenMCP(ctx, execution.invoke)
@@ -117,4 +122,4 @@ func mergeVscreenMCP(base, overlay json.RawMessage) (json.RawMessage, error) {
 
 var errVscreenProviderUnavailable = errors.New("managed virtual screen tools unavailable for this provider")
 
-const vscreenExecutionInstructions = "\nFor GUI work use only the managed multica-vscreen tools. Do not use shell or other MCP desktop automation. Acquire a transaction, observe current PNG/AX state, and never replay an uncertain action. Images returned by these tools may be sent to your configured model provider."
+const vscreenExecutionInstructions = "\nFor GUI work use only the managed multica-vscreen tools. Do not use shell or other MCP desktop automation. Acquire a transaction, discover reusable owned handles in managed_windows, explicitly observe the selected window for fresh PNG/AX state, and never replay an uncertain action. Images returned by these tools may be sent to your configured model provider."

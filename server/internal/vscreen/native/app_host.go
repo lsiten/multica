@@ -16,6 +16,7 @@ import (
 )
 
 type appController interface {
+	ManagedWindows(context.Context, appcontrol.Authority) ([]appcontrol.ManagedWindow, error)
 	ListWindows(context.Context, appcontrol.HumanRequest) (appcontrol.WindowCandidates, error)
 	AdoptWindow(context.Context, appcontrol.HumanRequest) (appcontrol.Window, error)
 	ListApps(context.Context, appcontrol.Authority) (appcontrol.AppList, error)
@@ -346,6 +347,10 @@ func (h *appHost) execute(ctx context.Context, r Request) (out *AppResponse, err
 		return out, appRefusal("stale_authority")
 	}
 	switch r.Operation {
+	case "app_managed_windows":
+		windows, e := h.controller.ManagedWindows(ctx, a)
+		out.ManagedWindows = &windows
+		err = e
 	case "app_list":
 		apps, e := h.controller.ListApps(ctx, a)
 		out.Apps = &apps
