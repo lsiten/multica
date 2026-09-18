@@ -27,6 +27,7 @@ async function fixture(overrides = {}) {
   const options = { app, evidence: join(directory, "evidence"), scenario: "diagnostics", allowGui: false };
   const dependencies = {
     fixture: true,
+    runPerformance: async () => ({ assessment: { status: "blocked", localMeasurement: { status: "blocked" }, planCoverage: { lanAcceptance: "unverified" } }, nativeResult: { cleanup_confirmed: true } }),
     host: { platform: "darwin", arch: "arm64", release: "fixture" },
     runCommand: async (command, args, commandOptions) => {
       calls.push({ command, args, guiOptIn: commandOptions?.env?.MULTICA_RUN_VSCREEN_GUI_SMOKE });
@@ -95,9 +96,12 @@ describe("bundle-bound native smoke (test-owned fixtures; no native execution)",
     expect(await runSmoke(f.options, f.dependencies)).toMatchObject({ status: "blocked", error: { code } });
   });
 
-  it.each([false, true])("does not turn an unimplemented GUI scenario into a pass (opt-in %s)", async (allowGui) => {
+  it("does not launch any all-suite child without GUI opt-in", async () => {
     const f = await fixture();
-    expect(await runSmoke({ ...f.options, scenario: "all", allowGui }, f.dependencies)).toMatchObject({ status: "blocked", gui_exercised: false, error: { code: allowGui ? "scenario_not_implemented" : "gui_not_authorized" } });
+    const result = await runSmoke({ ...f.options, scenario: "all", allowGui: false }, f.dependencies);
+    expect(result.status).toBe("blocked");expect(result.children).toHaveLength(6);
+    expect(result.children.every((child)=>child.error.code === "gui_not_authorized")).toBe(true);
+    expect(f.calls).toHaveLength(0);
   });
 
   it.each(["lifecycle", "source"])("invokes the exact bundled %s harness only with explicit opt-in", async (scenario) => {
@@ -211,9 +215,38 @@ describe("complete takeover smoke evidence", () => {
     if (mode === "pass") expect(report.limitations.join(" ")).toContain("scripted owned-App human stage");
   });
 
-  it.each(["performance", "all"])("keeps the unimplemented %s gate closed", async (scenario) => {
+  it("keeps incomplete performance measurement and LAN coverage blocked", async () => {
     const f = await fixture();
-    expect(await runSmoke({ ...f.options, scenario, allowGui: true }, f.dependencies)).toMatchObject({ status: "blocked", gui_exercised: false, error: { code: "scenario_not_implemented" } });
+    expect(await runSmoke({ ...f.options, scenario: "performance", allowGui: true }, f.dependencies)).toMatchObject({ status: "blocked", error: { code: "performance_gate_failed" } });
     expect(f.calls.some((call) => call.args[0] === "internal-vscreen-smoke")).toBe(false);
+  });
+});
+
+describe("explicit Desktop launcher integration",()=>{
+  it("parses only the declared launcher modes",()=>{
+    expect(parseArguments(["--app","/tmp/Multica.app","--evidence","/tmp/evidence","--launcher","desktop"])).toMatchObject({launcher:"desktop"});
+    expect(()=>parseArguments(["--app","/tmp/Multica.app","--evidence","/tmp/evidence","--launcher","other"])).toThrow("launcher");
+  });
+  it("uses Desktop diagnostic provenance instead of blocking on Node TCC",async()=>{
+    const f=await fixture({probe:{permissions:{accessibility:false,screen_recording:false}}});const launched=[];
+    f.dependencies.launchDesktopNativeSmoke=async(options)=>{launched.push(options);return {status:"passed",reportPath:join(f.options.evidence,"desktop-result.json"),report:{desktop_launch_verified:true,cleanup_confirmed:true,native:{version:"v1.2.3-dirty",commit:"abc1234",os:"darwin",arch:"arm64",native_supported:true,permissions:{accessibility:true,screen_recording:true}}}};};
+    const report=await runSmoke({...f.options,launcher:"desktop"},f.dependencies);
+    expect(report.status).toBe("passed");expect(launched[0].scenario).toBe("diagnostics");expect(report.permission_provenance).toMatchObject({desktop_launch_verified:true,tcc_attribution_verified:false});
+    expect(f.calls.some((call)=>call.args[0]==="internal-vscreen-diagnostics")).toBe(false);
+  });
+  it("maps canonical GUI names through the actual companion entry",async()=>{
+    const f=await fixture();const calls=[];
+    f.dependencies.launchDesktopNativeSmoke=async(options)=>{calls.push(options.scenario);return {status:"passed",reportPath:join(f.options.evidence,"desktop-result.json"),report:{desktop_launch_verified:true,cleanup_confirmed:true,native:options.scenario==="diagnostics"?{version:"v1.2.3-dirty",commit:"abc1234",os:"darwin",arch:"arm64",native_supported:true,permissions:{accessibility:true,screen_recording:true}}:{scenario:"source",executable:f.helper,version:"v1.2.3-dirty",commit:"abc1234",status:"passed",gui_exercised:true,disposed:true,host_closed:true,display:{display_id:42},source:{display_id:42}}}};};
+    expect(await runSmoke({...f.options,scenario:"sources",launcher:"desktop",allowGui:true},f.dependencies)).toMatchObject({scenario:"sources",status:"passed"});expect(calls).toEqual(["diagnostics","source"]);
+  });
+  it("performance callback returns only bounded assessment and preserves missing LAN coverage",async()=>{
+    const f=await fixture();let returned;
+    f.dependencies.readPerformanceReady=async()=>({nonce:"private-never-return",base_url:"http://127.0.0.1:1"});
+    f.dependencies.drivePerformanceSession=async()=>({evidence:{frames:[1,2]},assessment:{status:"blocked",localMeasurement:{status:"passed"},failed:["lan_acceptance_unverified"],planCoverage:{lanAcceptance:"unverified"}},nativeResult:{cleanup_confirmed:true}});
+    f.dependencies.launchDesktopNativeSmoke=async(options)=>{
+      if(options.scenario==="performance")returned=await options.onReady({directory:"/owned/private",signal:new AbortController().signal});
+      return {status:options.scenario==="performance"?"blocked":"passed",cleanup_confirmed:true,reportPath:join(f.options.evidence,"desktop-result.json"),report:{desktop_launch_verified:true,cleanup_confirmed:true,native:{version:"v1.2.3-dirty",commit:"abc1234",os:"darwin",arch:"arm64",native_supported:true,permissions:{accessibility:true,screen_recording:true}}}};
+    };
+    const report=await runSmoke({...f.options,scenario:"performance",launcher:"desktop",allowGui:true},f.dependencies);expect(report.status).toBe("blocked");expect(returned.status).toBe("blocked");expect(JSON.stringify(returned)).not.toMatch(/nonce|base_url|frames/);expect(report.performance.assessment.localMeasurement.status).toBe("passed");
   });
 });

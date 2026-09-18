@@ -124,6 +124,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" && os.Args[2] == "performance" {
+		if err := runVscreenPerformanceSmoke(os.Stdout, os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" {
 		if err := runVscreenSmoke(os.Stdout, os.Args[2], os.Args[3]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
