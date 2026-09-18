@@ -5,6 +5,8 @@ import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runDesktopNativeSmoke } from "./native-smoke";
+// Packaged macOS fixtures exercise real POSIX ownership, modes and symlinks.
+const posixSecurity = process.platform !== "win32" && typeof process.getuid === "function";
 const roots:string[]=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map((p)=>rm(p,{recursive:true,force:true})));});
 async function fixture(scenario="diagnostics") {
@@ -27,7 +29,7 @@ async function fixture(scenario="diagnostics") {
  const dependencies={entryPath,executable,platform:"darwin",pid:456,parentPID:321,uid:process.getuid!(),guiOptIn:scenario!=="diagnostics",run,watchParent:vi.fn(()=>vi.fn())};
  return {root,directory,path,config,app,dependencies,run,helper};
 }
-describe("packaged Desktop native smoke isolation",()=>{
+describe.runIf(posixSecurity)("packaged Desktop native smoke isolation (POSIX files)",()=>{
  it("isolates before ready and records actual launch chain without claiming TCC attribution",async()=>{
   const f=await fixture();expect(await runDesktopNativeSmoke(f.app,f.path,f.dependencies)).toBe(0);
   expect(f.app.setPath).toHaveBeenCalledWith("userData",join(f.directory,"user-data"));expect(f.app.setPath.mock.invocationCallOrder[0]).toBeLessThan(f.app.whenReady.mock.invocationCallOrder[0]!);
@@ -64,7 +66,7 @@ describe("packaged Desktop native smoke isolation",()=>{
  });
 });
 
-it.each(["default", "interactive", "unconfirmed", "incomplete", "certified"])("routes and bounds qualification evidence: %s", async (kind) => {
+it.runIf(posixSecurity).each(["default", "interactive", "unconfirmed", "incomplete", "certified"])("routes and bounds qualification evidence: %s", async (kind) => {
  const interactive = ["interactive", "unconfirmed"].includes(kind);
  const passed = ["default", "interactive"].includes(kind);
  const f=await fixture("input-qualification");
@@ -78,4 +80,9 @@ it.each(["default", "interactive", "unconfirmed", "incomplete", "certified"])("r
  expect(await runDesktopNativeSmoke(f.app,f.path,f.dependencies)).toBe(passed?0:1);
  expect(f.run.mock.calls.find(([,args])=>args[0]==="internal-vscreen-input-qualification")?.[1]).toEqual(["internal-vscreen-input-qualification",f.directory,...(interactive?["--interactive"]:[])]);
  const report=JSON.parse(await readFile(join(f.directory,"desktop-native-smoke.json"),"utf8"));expect(report.qualification).toEqual(qualification);if(kind!=="certified")expect(report.native).toEqual(qualification.native);expect(report.tcc_attribution_verified).toBe(false);
+});
+
+it.each(["win32","linux"])("rejects unsupported native smoke platform %s before readiness or helper launch",async(platform)=>{
+ const app={isPackaged:true,setName:vi.fn(),setPath:vi.fn(),setAppLogsPath:vi.fn(),commandLine:{appendSwitch:vi.fn()},whenReady:vi.fn(async()=>{})};const run=vi.fn();
+ expect(await runDesktopNativeSmoke(app,undefined,{platform,run})).toBe(1);expect(run).not.toHaveBeenCalled();expect(app.whenReady).not.toHaveBeenCalled();expect(app.setPath).not.toHaveBeenCalled();
 });
