@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { requestVscreenDesktop, readVscreenCredential } from "./vscreen-desktop-request";
 
+// Authenticated handoff fixtures need actual POSIX private-file semantics.
+const posixSecurity = process.platform !== "win32" && typeof process.getuid === "function";
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 async function fixture() {
@@ -17,7 +19,7 @@ async function fixture() {
   const input = { directory, port: 20111, profile: credential.profile, backend: credential.backend, accountId: "owner", workspaceId: "workspace", runtimeId: "runtime", body: { action: "takeover", intervention_id: "intervention", destination_source_id: "display:physical" }, isCurrent: () => true, profileAccount: async () => "owner", transport };
   return { credential, health, transport, input };
 }
-describe("trusted local handoff request", () => {
+describe.runIf(posixSecurity)("trusted local handoff request (POSIX credentials)", () => {
   it("authenticates an explicit transfer and keeps the capability in main-only headers", async () => {
     const f = await fixture(); expect(await requestVscreenDesktop(f.input)).toEqual({ ok: true, local: true, reason: undefined });
     const [url, init] = f.transport.mock.calls[1]!; expect(url).toBe("http://127.0.0.1:20111/vscreen/desktop");
@@ -25,9 +27,8 @@ describe("trusted local handoff request", () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({ action: "takeover", workspace_id: "workspace", runtime_id: "runtime" });
     expect(String(init?.body)).not.toContain(f.credential.capability);
   });
-  it.each(["account", "backend", "pid", "runtime", "generation"])("rejects stale or foreign %s before physical request", async (kind) => {
+  it.each(["backend", "pid", "runtime", "generation"])("rejects stale or foreign %s before physical request", async (kind) => {
     const f = await fixture();
-    if (kind === "account") f.input.profileAccount = async () => "other";
     if (kind === "backend") f.health.server_url = "https://other.invalid";
     if (kind === "pid") f.health.pid++;
     if (kind === "runtime") f.input.runtimeId = "foreign";
@@ -48,7 +49,7 @@ describe("trusted local handoff request", () => {
   });
 });
 
-it("returns bounded candidates only for an explicit list operation and never in status cache",async()=>{
+it.runIf(posixSecurity)("returns bounded candidates only for an explicit list operation and never in status cache",async()=>{
  const f=await fixture();const candidates={windows:[{handle:"opaque",bundle_id:"org.example.Editor",title:"Private document"}],truncated:false};
  f.transport.mockImplementation(async(url)=>Response.json(String(url).endsWith("/health")?f.health:{ok:true,local:true,intervention_id:"i",selection_required:true,candidates}));
  const listed=await requestVscreenDesktop({...f.input,body:{action:"list_windows",intervention_id:"i"}});
@@ -58,10 +59,20 @@ it("returns bounded candidates only for an explicit list operation and never in 
  expect((await requestVscreenDesktop({...f.input,body:{action:"list_windows"}})).ok).toBe(false);
 });
 
-it("bounds private candidate response bytes and drops metadata after a late context switch",async()=>{
+it.runIf(posixSecurity)("bounds private candidate response bytes and drops metadata after a late context switch",async()=>{
  const f=await fixture();f.transport.mockImplementation(async(url)=>String(url).endsWith("/health")?Response.json(f.health):new Response("x".repeat(65*1024)));
  expect((await requestVscreenDesktop({...f.input,body:{action:"list_windows"}})).ok).toBe(false);
  let current=true;
  f.transport.mockImplementation(async(url)=>String(url).endsWith("/health")?Response.json(f.health):new Response(new ReadableStream({async pull(controller){await new Promise((resolve)=>setTimeout(resolve,0));current=false;controller.enqueue(new TextEncoder().encode(JSON.stringify({ok:true,local:true,candidates:{windows:[{handle:"opaque",bundle_id:"org.example.Editor",title:"Private document"}],truncated:false}})));controller.close();}})));
  const result=await requestVscreenDesktop({...f.input,isCurrent:()=>current,body:{action:"list_windows"}});expect(result.ok).toBe(false);expect(result.candidates).toBeUndefined();
+});
+
+it.each(["account","generation"])("rejects foreign %s before opening a credential on every platform",async(kind)=>{
+ const f=await fixture();if(kind==="account")f.input.profileAccount=async()=>"other";else f.input.isCurrent=()=>false;
+ expect(await requestVscreenDesktop(f.input)).toEqual({ok:false,local:false,reason:"local_owner_required"});expect(f.transport).not.toHaveBeenCalled();
+});
+it("refuses local handoff when POSIX owner identity is unavailable",async()=>{
+ const f=await fixture(),descriptor=Object.getOwnPropertyDescriptor(process,"getuid");
+ try{Object.defineProperty(process,"getuid",{configurable:true,value:undefined});await expect(requestVscreenDesktop(f.input)).rejects.toThrow("local_owner_required");expect(f.transport).not.toHaveBeenCalled();}
+ finally{if(descriptor)Object.defineProperty(process,"getuid",descriptor);else delete (process as {getuid?:()=>number}).getuid;}
 });
