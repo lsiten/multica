@@ -633,8 +633,8 @@
     "interaction_disabled": "L’interaction à distance est désactivée sur l’hôte.",
     "external_text": "Saisir du texte sans utiliser le presse-papiers distant",
     "type_text": "Saisir le texte",
-    "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V",
+    "copy_shortcut": "Ctrl+C",
+    "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
     "switch_app": "Switch app"
   }

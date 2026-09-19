@@ -640,8 +640,8 @@
     "interaction_disabled": "Remote interaction is off on the host.",
     "external_text": "Type text without using the remote clipboard",
     "type_text": "Type text",
-    "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V",
+    "copy_shortcut": "Ctrl+C",
+    "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
     "switch_app": "Switch app"
   }
