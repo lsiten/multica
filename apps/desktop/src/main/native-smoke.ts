@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createReadStream, constants, lstatSync, realpathSync, openSync, fstatSync, readFileSync, closeSync, mkdirSync, writeFileSync } from "node:fs";
+import { createReadStream, constants, existsSync, lstatSync, realpathSync, openSync, fstatSync, readFileSync, closeSync, mkdirSync, writeFileSync } from "node:fs";
 import { lstat, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -44,6 +44,13 @@ async function contained(app: string, path: string): Promise<string> {
   const actual = await realpath(path); const child = relative(app, actual);
   if (!child || child === ".." || child.startsWith(`..${sep}`) || isAbsolute(child) || !(await lstat(actual)).isFile()) throw new Error("bundle_path_escape");
   return actual;
+}
+
+async function containedBundledHelper(app: string): Promise<string> {
+  const resources = join(app, "Contents", "Resources", "app.asar.unpacked", "resources");
+  const daemonHelper = join(resources, "MulticaDaemon.app", "Contents", "MacOS", "multica");
+  if (existsSync(daemonHelper)) return contained(app, daemonHelper);
+  return contained(app, join(resources, "bin", "multica"));
 }
 function parseInvocation(raw: string): Invocation {
   const value: unknown = JSON.parse(raw);
@@ -128,7 +135,7 @@ export async function runDesktopNativeSmoke(app: SmokeApp, path: string | undefi
     deadline = setTimeout(() => controller.abort(), cfg.timeoutMs + 45_000);
     if (controller.signal.aborted) throw new Error("desktop_smoke_cancelled");
     await Promise.race([app.whenReady(), new Promise<never>((_, reject) => controller.signal.addEventListener("abort", () => reject(new Error("desktop_smoke_cancelled")), { once: true }))]);
-    const helper = await contained(selectedApp, join(selectedApp, "Contents", "Resources", "app.asar.unpacked", "resources", "bin", "multica"));
+    const helper = await containedBundledHelper(selectedApp);
     if (await hashFile(helper) !== cfg.helper.sha256) throw new Error("helper_identity_mismatch");
     const commands = report.commands as Array<Record<string, unknown>>;
     async function run(label: string, binary: string, args: string[], gui = false, allowFailure = false) {

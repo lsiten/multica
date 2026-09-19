@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchDesktopNativeSmoke } from "./vscreen-desktop-smoke-launcher.mjs";
@@ -10,9 +10,9 @@ const posixSecurity = process.platform !== "win32" && typeof process.getuid === 
 const directories=[];afterEach(async()=>{await Promise.all(directories.splice(0).map((d)=>rm(d,{recursive:true,force:true})));});
 async function fixture(){
  const root=await realpath(await mkdtemp(join(tmpdir(),"desktop-launcher-")));directories.push(root);const app=join(root,"Multica.app");
- await mkdir(join(app,"Contents/MacOS"),{recursive:true});await mkdir(join(app,"Contents/Resources/app.asar.unpacked/resources/bin"),{recursive:true});
+ await mkdir(join(app,"Contents/MacOS"),{recursive:true});await mkdir(join(app,"Contents/Resources/app.asar.unpacked/resources/MulticaDaemon.app/Contents/MacOS"),{recursive:true});
  await writeFile(join(app,"Contents/Resources/app.asar"),fakeArchive());
- await writeFile(join(app,"Contents/Info.plist"),"fake plist");await writeFile(join(app,"Contents/MacOS/Multica"),"fake main");const helper=join(app,"Contents/Resources/app.asar.unpacked/resources/bin/multica");await writeFile(helper,"fake helper");
+ await writeFile(join(app,"Contents/Info.plist"),"fake plist");await writeFile(join(app,"Contents/MacOS/Multica"),"fake main");const helper=join(app,"Contents/Resources/app.asar.unpacked/resources/MulticaDaemon.app/Contents/MacOS/multica");await writeFile(helper,"fake helper");await chmod(helper,0o755);
  const hash=(raw)=>createHash("sha256").update(raw).digest("hex");
  const options={app,evidence:join(root,"evidence"),scenario:"diagnostics",expectedHelper:{version:"v1",commit:"abc123",sha256:hash("fake helper")}};
  const calls=[];

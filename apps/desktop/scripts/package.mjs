@@ -312,6 +312,7 @@ export function builderArgsForTarget(
   version,
   {
     disableMacNotarize = false,
+    forceAdHocMacIdentity = false,
     hostPlatform = process.platform,
     useScopedOutputDir = false,
   } = {},
@@ -319,6 +320,7 @@ export function builderArgsForTarget(
   const builderArgs = [];
   if (version) builderArgs.push(`-c.extraMetadata.version=${version}`);
   if (disableMacNotarize) builderArgs.push("-c.mac.notarize=false");
+  if (forceAdHocMacIdentity) builderArgs.push("-c.mac.identity=-");
   builderArgs.push(PLATFORM_CONFIG[target.platform].builderFlag);
   const requestedTargets = parsed.platformTargets[target.platform];
   if (
@@ -418,11 +420,19 @@ function main() {
     );
   }
 
+  const forceAdHocMacIdentity =
+    process.env.CSC_IDENTITY_AUTO_DISCOVERY === "false";
   const disableMacNotarize = !process.env.APPLE_TEAM_ID;
   if (disableMacNotarize) {
     console.warn(
       "[package] APPLE_TEAM_ID not set — skipping notarization (local dev build). " +
         "Set APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID for a release build.",
+    );
+  }
+  if (forceAdHocMacIdentity) {
+    console.warn(
+      "[package] CSC_IDENTITY_AUTO_DISCOVERY=false — using explicit ad-hoc identity " +
+        "so electron-builder still runs afterSign on x64 and arm64 packages",
     );
   }
 
@@ -449,6 +459,8 @@ function main() {
 
     const builderArgs = builderArgsForTarget(target, parsed, version, {
       disableMacNotarize,
+      forceAdHocMacIdentity:
+        target.platform === "mac" && forceAdHocMacIdentity,
       hostPlatform: process.platform,
       useScopedOutputDir,
     });

@@ -13,7 +13,7 @@
 // skip the build and fall through to auto-install at runtime. A genuine
 // Go compile error is fatal — you want that to block dev, not hide.
 
-import { access, chmod, copyFile, mkdir, rm } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { execFileSync, execSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -22,11 +22,14 @@ import { cgoEnabledForGoos } from "./bundle-cli-env.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// The helper retains its own signing identifier. Desktop owns its launch and
-// screen-recording permission; the helper is not a separately launched app.
+// Stable codesign identifier for the bundled daemon. The bare binary in
+// resources/bin is not the TCC-visible macOS program; Desktop launches the
+// copy inside MulticaDaemon.app so Screen Recording and Accessibility grants
+// remain attached to this identity across updates.
 const DAEMON_SIGN_IDENTIFIER = "ai.multica.daemon";
 const repoRoot = resolve(here, "..", "..", "..");
 const serverDir = join(repoRoot, "server");
+const desktopResourcesDir = join(repoRoot, "apps", "desktop", "resources");
 
 const PLATFORM_TO_GOOS = {
   darwin: "darwin",
@@ -76,8 +79,9 @@ const goos = PLATFORM_TO_GOOS[targetPlatform];
 const goarch = targetArch === "x64" ? "amd64" : targetArch;
 const binName = binaryNameForPlatform(targetPlatform);
 const srcBinary = join(serverDir, "bin", `${goos}-${goarch}`, binName);
-const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
+const destDir = join(desktopResourcesDir, "bin");
 const destBinary = join(destDir, binName);
+const daemonAppDir = join(desktopResourcesDir, "MulticaDaemon.app");
 
 // Hand git arguments straight to the binary (no shell). A match pattern like
 // `v[0-9]*` must reach git as one literal argument; routing it through a shell
@@ -101,13 +105,18 @@ function hasGo() {
   }
 }
 
-async function exists(p) {
+async function exists(path) {
   try {
-    await access(p, constants.F_OK);
+    await access(path, constants.F_OK);
     return true;
   } catch {
     return false;
   }
+}
+
+async function resetBundledResources() {
+  await rm(destDir, { recursive: true, force: true });
+  await rm(daemonAppDir, { recursive: true, force: true });
 }
 
 if (hasGo()) {
@@ -151,48 +160,124 @@ if (hasGo()) {
   );
 }
 
-// Remove the former standalone app even when no CLI binary is available.
-// Desktop launches the ordinary helper in resources/bin under its own identity.
-await rm(join(destDir, "..", "MulticaDaemon.app"), {
-  recursive: true,
-  force: true,
-});
-
 if (!(await exists(srcBinary))) {
   console.warn(
     `[bundle-cli] ${srcBinary} not present — Desktop will fall back to ` +
-      `auto-installing the latest release at runtime.`,
+      "auto-installing the latest release at runtime.",
   );
-  await rm(destDir, { recursive: true, force: true });
+  await resetBundledResources();
   process.exit(0);
 }
 
-await rm(destDir, { recursive: true, force: true });
+// A previous target in a multi-platform package run may have left either
+// layout behind. Recreate both from the current target so Linux/Windows
+// packages never contain a macOS app and macOS packages cannot use a stale
+// daemon.
+await resetBundledResources();
 await mkdir(destDir, { recursive: true });
 await copyFile(srcBinary, destBinary);
 await chmod(destBinary, 0o755);
 
-// macOS development builds need a signed native helper. electron-builder
-// applies the release signing identity when packaging the containing app.
+// macOS TCC displays and persists permissions for code that has bundle
+// metadata. A bare executable in resources/bin is identified only by a
+// per-build cdhash after electron-builder re-signing and does not reliably
+// appear in Privacy & Security settings. Desktop launches the same binary
+// from the MulticaDaemon.app bundle; resources/bin remains for fallback and
+// non-daemon CLI use.
 if (goos === "darwin" && process.platform === "darwin") {
   signDaemonBinary(destBinary);
+  const appBundle = await buildDaemonAppBundle(destBinary);
+  signDaemonApp(appBundle);
 }
 
 console.log(`[bundle-cli] bundled ${srcBinary} → ${destBinary}`);
 
-function signDaemonBinary(binaryPath) {
-  if (process.platform !== "darwin") return;
+function codesign(args, target) {
   try {
-    execFileSync(
-      "codesign",
-      [
-        "--force", "--sign", "-",
-        "--identifier", DAEMON_SIGN_IDENTIFIER,
-        binaryPath,
-      ],
-      { stdio: "pipe" },
-    );
+    execFileSync("/usr/bin/codesign", args, { stdio: "pipe" });
   } catch (error) {
-    console.warn(`[bundle-cli] codesign failed for ${binaryPath}:`, error?.message ?? error);
+    throw new Error(
+      `[bundle-cli] codesign failed for ${target}: ${error?.message ?? error}`,
+      { cause: error },
+    );
   }
+}
+
+function signDaemonBinary(binaryPath) {
+  codesign(
+    [
+      "--force",
+      "--sign",
+      "-",
+      "--identifier",
+      DAEMON_SIGN_IDENTIFIER,
+      "-r",
+      `=designated => identifier "${DAEMON_SIGN_IDENTIFIER}"`,
+      binaryPath,
+    ],
+    binaryPath,
+  );
+}
+
+async function buildDaemonAppBundle(binaryPath) {
+  const contentsDir = join(daemonAppDir, "Contents");
+  const macosDir = join(contentsDir, "MacOS");
+  await mkdir(macosDir, { recursive: true });
+  const appBinary = join(macosDir, binName);
+  await copyFile(binaryPath, appBinary);
+  await chmod(appBinary, 0o755);
+  const version = bundleVersion();
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>Multica Daemon</string>
+  <key>CFBundleDisplayName</key>
+  <string>Multica Daemon</string>
+  <key>CFBundleIdentifier</key>
+  <string>${DAEMON_SIGN_IDENTIFIER}</string>
+  <key>CFBundleExecutable</key>
+  <string>${binName}</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>${version}</string>
+  <key>CFBundleVersion</key>
+  <string>${version}</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
+`;
+  await writeFile(join(contentsDir, "Info.plist"), plist, { mode: 0o644 });
+  return daemonAppDir;
+}
+
+function bundleVersion() {
+  const fromGit = git("describe", "--tags", "--match", "v[0-9]*", "--abbrev=0").replace(/^v/, "");
+  return /^[0-9]+\.[0-9]+\.[0-9]+/.test(fromGit) ? fromGit : "0.0.0";
+}
+
+function signDaemonApp(appBundlePath) {
+  codesign(
+    [
+      "--force",
+      "--deep",
+      "--sign",
+      "-",
+      "--identifier",
+      DAEMON_SIGN_IDENTIFIER,
+      "-r",
+      `=designated => identifier "${DAEMON_SIGN_IDENTIFIER}"`,
+      appBundlePath,
+    ],
+    appBundlePath,
+  );
 }

@@ -490,8 +490,20 @@ function bundledCliPath(): string {
     "app.asar",
     "app.asar.unpacked",
   );
-  // The macOS executable is an ordinary helper of Multica.app, so recording
-  // consent belongs to Multica rather than a separate daemon application.
+  // TCC attributes Screen Recording and Accessibility to the code it actually
+  // checks. On macOS launch the binary inside MulticaDaemon.app so grants have
+  // stable bundle metadata and remain visible after updates. Keep the bare
+  // binary as a fallback for older packaged layouts.
+  if (process.platform === "darwin") {
+    const daemonBinary = join(
+      resourcesRoot,
+      "MulticaDaemon.app",
+      "Contents",
+      "MacOS",
+      binName,
+    );
+    if (existsSync(daemonBinary)) return daemonBinary;
+  }
   return join(resourcesRoot, "bin", binName);
 }
 
@@ -1630,11 +1642,14 @@ export async function performVscreenDesktop(scope: VscreenScope, operation: Vscr
   const active = await ensureActiveProfile();
   if (!active || targetApiBaseUrl?.replace(/\/$/, "") !== scope.backendIdentity || process.platform !== "darwin") return { ok: false, local: false, reason: "local_owner_required" };
   const current = () => isCurrent() && activeProfile?.name === active.name && targetApiBaseUrl?.replace(/\/$/, "") === scope.backendIdentity;
+  if (operation.action === "settings") {
+    const isCurrentScope = current();
+    if (isCurrentScope) await openVscreenPermissionSettings(operation.permission);
+    return { ok: isCurrentScope, local: true, reason: isCurrentScope ? undefined : "local_owner_required" };
+  }
   const body = operation.action === "takeover" ? { action: operation.action, intervention_id: operation.interventionId, destination_source_id: operation.destinationSourceId } : operation.action === "return" ? { action: operation.action, intervention_id: operation.interventionId, summary: operation.summary } : operation.action === "list_windows" ? { action: operation.action, intervention_id: operation.interventionId } : operation.action === "adopt_window" ? { action: operation.action, intervention_id: operation.interventionId, window_handle: operation.windowHandle } : { action: "status" };
   try {
-    const result = await requestVscreenDesktop({ directory: profileDir(active.name), port: active.port, profile: active.name, backend: scope.backendIdentity, accountId: scope.accountId, workspaceId: scope.workspaceId, runtimeId: scope.runtimeId, body, isCurrent: current, profileAccount: () => readProfileUserId(active.name) });
-    if (result.ok && operation.action === "settings" && current()) await openVscreenPermissionSettings(operation.permission);
-    return result;
+    return await requestVscreenDesktop({ directory: profileDir(active.name), port: active.port, profile: active.name, backend: scope.backendIdentity, accountId: scope.accountId, workspaceId: scope.workspaceId, runtimeId: scope.runtimeId, body, isCurrent: current, profileAccount: () => readProfileUserId(active.name) });
   } catch { return { ok: false, local: false, reason: "local_owner_required" }; }
 }
 let desiredVscreenExclusions: { ids: readonly number[]; accountId: string; isCurrent: () => boolean } | null = null;

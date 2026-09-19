@@ -67,6 +67,11 @@ async function bundleFile(app, path) {
   return actual;
 }
 
+function bundledHelperPath(app) {
+  const resources = join(app, "Contents", "Resources", "app.asar.unpacked", "resources");
+  return join(resources, "MulticaDaemon.app", "Contents", "MacOS", "multica");
+}
+
 function signatureKind(details) {
   if (/^Signature=adhoc\r?$/m.test(details)) return "ad-hoc";
   if (/^Authority=.+$/m.test(details)) return "certificate";
@@ -122,7 +127,7 @@ export async function runSmoke(options, dependencies = {}) {
     if (typeof info.CFBundleExecutable !== "string" || !/^[^/\\]+$/.test(info.CFBundleExecutable) || !info.CFBundleShortVersionString) fail("bundle_metadata", "Missing or invalid bundle executable/version");
     report.bundle = { identifier: info.CFBundleIdentifier, version: info.CFBundleShortVersionString, build: info.CFBundleVersion };
     const main = await bundleFile(report.app, join(report.app, "Contents", "MacOS", info.CFBundleExecutable));
-    const helper = await bundleFile(report.app, join(report.app, "Contents", "Resources", "app.asar.unpacked", "resources", "bin", "multica"));
+    const helper = await bundleFile(report.app, bundledHelperPath(report.app));
     await access(helper, constants.X_OK);
     report.helper = { path: helper, sha256: await hashFile(helper) };
     report.bundle.executable = main;
