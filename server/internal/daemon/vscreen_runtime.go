@@ -30,25 +30,27 @@ type VscreenInputHandler interface {
 type VscreenTakeoverHandler func(context.Context, protocol.VscreenCommand, *vscreen.Actor) error
 
 type vscreenRuntime struct {
-	interventions     vscreenInterventions
-	excludedWindows   []uint32
-	commandMu         sync.Mutex
-	commands          map[string]vscreenCachedCommand
-	grantClosed       bool
-	grantBlockedUntil time.Time
-	grantWG           sync.WaitGroup
-	runCancel         context.CancelFunc
-	runDone           chan struct{}
-	grantMu           sync.Mutex
-	grants            map[vscreenGrantKey]vscreenGrantEntry
-	mu                sync.Mutex
-	client            *hostclient.Client
-	manager           *vscreen.Manager
-	driver            *vscreenNativeDriver
-	hub               *mirror.CaptureHub
-	enabled           map[protocol.ResourceKey]bool
-	revisions         map[string]uint64
-	closed            bool
+	interventions                    vscreenInterventions
+	excludedWindows                  []uint32
+	commandMu                        sync.Mutex
+	commands                         map[string]vscreenCachedCommand
+	grantClosed                      bool
+	grantBlockedUntil                time.Time
+	grantWG                          sync.WaitGroup
+	runCancel                        context.CancelFunc
+	runDone                          chan struct{}
+	grantMu                          sync.Mutex
+	grants                           map[vscreenGrantKey]vscreenGrantEntry
+	mu                               sync.Mutex
+	client                           *hostclient.Client
+	screenPermissionRequested        bool
+	accessibilityPermissionRequested bool
+	manager                          *vscreen.Manager
+	driver                           *vscreenNativeDriver
+	hub                              *mirror.CaptureHub
+	enabled                          map[protocol.ResourceKey]bool
+	revisions                        map[string]uint64
+	closed                           bool
 }
 
 // SetVscreenInputHandler installs a local trusted input implementation before GUI work.
@@ -108,7 +110,7 @@ func (d *Daemon) vscreenRuntime() *vscreenRuntime {
 	d.vscreenMu.Lock()
 	defer d.vscreenMu.Unlock()
 	if d.vscreen == nil {
-		driver := &vscreenNativeDriver{displays: make(map[protocol.ResourceKey]vscreen.Display), input: d.vscreenInput}
+		driver := &vscreenNativeDriver{displays: make(map[protocol.ResourceKey]vscreen.Display), input: d.vscreenInput, arbiter: d.inputArbiter}
 		d.vscreen = &vscreenRuntime{commands: make(map[string]vscreenCachedCommand), grants: make(map[vscreenGrantKey]vscreenGrantEntry), driver: driver, manager: vscreen.NewManager(driver, vscreen.SystemClock{}), enabled: make(map[protocol.ResourceKey]bool), revisions: make(map[string]uint64)}
 		d.loadVscreenInterventions(d.vscreen)
 		if d.cfg.NativeVscreenPreferencesPath != "" {
@@ -227,7 +229,7 @@ func managedVscreenCapabilities() []string {
 	if !native.Supported() {
 		return nil
 	}
-	return []string{protocol.DaemonCapabilityVirtualScreenV1, protocol.DaemonCapabilityScreenMirrorVideoV2, protocol.DaemonCapabilityMirrorViewerGrantV1}
+	return []string{protocol.DaemonCapabilityVirtualScreenV1, protocol.DaemonCapabilityScreenMirrorVideoV2, protocol.DaemonCapabilityMirrorViewerGrantV1, protocol.DaemonCapabilityScreenControlV1}
 }
 
 func (d *Daemon) suspendVscreens(g mirrorControlGeneration) {

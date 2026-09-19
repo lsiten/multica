@@ -5,6 +5,7 @@ package hostclient
 import (
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 	"net"
 	"strings"
 	"testing"
@@ -51,6 +52,33 @@ func TestListAppsPrivateChannelRejectsMalformedInventory(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestRequestAppPermissionsUsesPromptOperation(t *testing.T) {
+	parent, child := net.Pipe()
+	c := &Client{build: "test", epoch: "native", timeout: time.Second, apps: &appChannel{conn: parent, pending: make(map[string]chan native.Response), done: make(chan struct{})}}
+	go c.readApps()
+	t.Cleanup(func() { parent.Close(); child.Close(); <-c.apps.done })
+	done := make(chan error, 1)
+	go func() {
+		var req native.Request
+		if err := native.ReadMessage(child, &req); err != nil {
+			done <- err
+			return
+		}
+		if req.Operation != "app_request_permissions" || req.Resource.RuntimeID != "" || !req.App.Permissions.Accessibility || req.App.Permissions.ScreenRecording {
+			done <- native.ErrProtocol
+			return
+		}
+		done <- native.WriteMessage(child, native.Response{Version: native.ProtocolVersion, Build: "test", ID: req.ID, Epoch: protocol.VscreenEpoch{NativeEpoch: "native"}, App: &native.AppResponse{Permissions: &appcontrol.Permissions{Accessibility: true, ScreenRecording: false}}})
+	}()
+	permissions, err := c.RequestAppPermissions(t.Context(), appcontrol.PermissionRequest{Accessibility: true})
+	if err != nil || permissions.Accessibility != true || permissions.ScreenRecording != false {
+		t.Fatalf("permissions=%+v err=%v", permissions, err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

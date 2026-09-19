@@ -135,5 +135,9 @@ type Config struct {
 	PIDInputVerification func(Process) string
 }
 
-// Permissions reports current TCC state without requesting or prompting for access.
+// Permissions reports current TCC state. Probe reads it without prompting;
+// Request prompts through the selected system consent flows.
 type Permissions struct{ Accessibility, ScreenRecording bool }
+
+// PermissionRequest selects which system consent flows should be presented.
+type PermissionRequest struct{ Accessibility, ScreenRecording bool }

@@ -3,7 +3,9 @@ package daemon
 import (
 	"context"
 	"sync"
+	"time"
 
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
@@ -15,7 +17,12 @@ type vscreenNativeDriver struct {
 	client   *hostclient.Client
 	displays map[protocol.ResourceKey]vscreen.Display
 	input    VscreenInputHandler
+	arbiter  *mirror.Arbiter
 }
+
+// agentGestureTTL bounds a single agent action's FCFS hold. The native action
+// path is synchronous; the TTL only survives a dropped completion.
+const agentGestureTTL = 3 * time.Second
 
 func (d *vscreenNativeDriver) setClient(c *hostclient.Client) {
 	d.mu.Lock()
@@ -65,9 +72,26 @@ func (d *vscreenNativeDriver) reconcileReadback(expected vscreen.Display, respon
 func (d *vscreenNativeDriver) Act(ctx context.Context, a vscreen.Action) (vscreen.ActionResult, error) {
 	d.mu.Lock()
 	h := d.input
+	arbiter := d.arbiter
 	d.mu.Unlock()
 	if h == nil {
 		return vscreen.ActionResult{}, &vscreen.Error{Reason: protocol.VscreenNativeUnavailable}
+	}
+	principal := mirror.Principal{Kind: mirror.PrincipalAgent, ID: a.Target.TaskID}
+	resource := a.Target.Resource
+	gesture := a.ActionID
+	if gesture == "" {
+		gesture = a.Target.TransactionID
+	}
+	if arbiter != nil {
+		switch arbiter.Acquire(resource, principal, gesture, agentGestureTTL) {
+		case mirror.AcquireBusy:
+			// A human (or another gesture) currently owns this resource. The
+			// agent re-observes and retries through its normal action loop.
+			return vscreen.ActionResult{}, &vscreen.Error{Reason: protocol.VscreenAppInUse}
+		case mirror.AcquireHeld, mirror.AcquireReentry:
+			defer arbiter.Release(resource, principal, gesture)
+		}
 	}
 	return h.Act(ctx, a)
 }

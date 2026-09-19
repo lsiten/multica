@@ -30,7 +30,9 @@ export type InboxItemType =
   | "autopilot_paused"
   | "autopilot_quota_exceeded"
   | "runtime_mirror_viewer_started"
-  | "runtime_mirror_viewer_stopped";
+  | "runtime_mirror_viewer_stopped"
+  | "runtime_mirror_control_started"
+  | "runtime_mirror_control_stopped";
 
 /**
  * One workspace's unread inbox count in the cross-workspace summary

@@ -55,6 +55,7 @@ const snapshotSchema = z
     permissions: z
       .object({ screen_recording: permission, accessibility: permission })
       .default({ screen_recording: "unknown", accessibility: "unknown" }),
+    human_interaction: z.boolean().default(false),
     state_revision: VscreenRevisionSchema,
   })
   .refine((wire) => {
@@ -82,6 +83,7 @@ const snapshotSchema = z
       screenRecording: wire.permissions.screen_recording,
       accessibility: wire.permissions.accessibility,
     },
+    humanInteraction: wire.human_interaction,
     stateRevision: wire.state_revision,
   }));
 

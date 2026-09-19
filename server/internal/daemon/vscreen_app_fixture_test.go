@@ -74,6 +74,21 @@ func startVscreenTestAppHost(token []byte, media net.Conn, mediaMu *sync.Mutex) 
 			switch r.Operation {
 			case "app_probe":
 				reply.App.Permissions = &appcontrol.Permissions{}
+			case "app_request_permissions":
+				if path := os.Getenv("VSCREEN_FIXTURE_PERMISSION_REQUEST_COUNT"); path != "" {
+					if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err == nil {
+						_, _ = f.WriteString("x")
+						_ = f.Close()
+					}
+				}
+				permissions := appcontrol.Permissions{Accessibility: r.App.Permissions.Accessibility, ScreenRecording: r.App.Permissions.ScreenRecording}
+				if os.Getenv("VSCREEN_FIXTURE_PERMISSION_REQUEST") == "screen_recording_denied" {
+					permissions.ScreenRecording = false
+				}
+				if os.Getenv("VSCREEN_FIXTURE_PERMISSION_REQUEST") == "accessibility_denied" {
+					permissions.Accessibility = false
+				}
+				reply.App.Permissions = &permissions
 			case "app_grant":
 				if a.TaskID == "" || a.TransactionID == "" || a.LeaseEpoch == 0 {
 					reply.Error = "lease_expired"

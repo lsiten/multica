@@ -133,6 +133,7 @@ func (h *Handler) revokeViewerGrant(record mirror.ViewerGrantRecord) {
 		return
 	}
 	h.sendViewerRevoke(record)
+	h.revokeControlGrantViewer(record.Grant.RuntimeID, record.Grant.ViewerID)
 }
 
 func (h *Handler) sendViewerRevoke(record mirror.ViewerGrantRecord) {

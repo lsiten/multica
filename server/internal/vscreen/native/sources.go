@@ -82,7 +82,11 @@ func (c sourceCatalog) project(key protocol.ResourceKey, resources map[protocol.
 		} else if display.Builtin {
 			kind = protocol.MirrorSourcePhysical
 		}
-		sources = append(sources, SourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: key, Source: protocol.MirrorSource{Kind: kind, SourceID: "display:" + display.UUID}, NativeEpoch: epoch.NativeEpoch, Generation: epoch.DisplayGeneration, Primary: display.Main}, DisplayID: display.ID, Name: display.Name, Width: display.Width, Height: display.Height, LogicalWidth: display.LogicalWidth, LogicalHeight: display.LogicalHeight, Scale: display.Scale, X: display.X, Y: display.Y, GeometryRevision: epoch.GeometryRevision})
+		resource := key
+		if kind != protocol.MirrorSourceVirtual {
+			resource.DisplayID = display.ID
+		}
+		sources = append(sources, SourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: resource, Source: protocol.MirrorSource{Kind: kind, SourceID: "display:" + display.UUID}, NativeEpoch: epoch.NativeEpoch, Generation: epoch.DisplayGeneration, Primary: display.Main}, DisplayID: display.ID, Name: display.Name, Width: display.Width, Height: display.Height, LogicalWidth: display.LogicalWidth, LogicalHeight: display.LogicalHeight, Scale: display.Scale, X: display.X, Y: display.Y, GeometryRevision: epoch.GeometryRevision})
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].DisplayID < sources[j].DisplayID })
 	return sources, nil

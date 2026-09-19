@@ -31,6 +31,9 @@ type ResourceKey struct {
 	WorkspaceID     string `json:"workspace_id"`
 	RuntimeID       string `json:"runtime_id"`
 	UID             uint32 `json:"uid"`
+	// DisplayID identifies one physical/system display within the runtime. It is
+	// zero for the managed virtual display, where UID owns the resource.
+	DisplayID uint32 `json:"display_id,omitempty"`
 }
 
 // Validate requires a canonical backend URL and an unprivileged login identity.

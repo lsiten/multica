@@ -47,11 +47,7 @@ func (d *Daemon) replayActiveMirrorViewerStates(enqueue func([]byte) (*wsOutboun
 	for _, tracked := range d.trackedRuntimeMirrors() {
 		runtimeID := tracked.runtimeID
 		workspaceID := tracked.workspaceID
-		tracked.mirror.SetViewerStateHook(func(change mirror.ViewerStateChange) {
-			if _, err := d.sendMirrorViewerState(enqueue, workspaceID, runtimeID, change.ViewerID, change.Active); err != nil {
-				d.logger.Debug("mirror viewer state dropped", "runtime_id", runtimeID, "error", err)
-			}
-		}, uint64(generation))
+		d.bindMirrorStateHooks(tracked.mirror, enqueue, workspaceID, runtimeID, generation)
 	}
 }
 
@@ -84,5 +80,6 @@ func (d *Daemon) runtimeMirrorForOffer(runtimeID string, generation mirrorContro
 		)
 	})
 	d.runtimeMirrors[runtimeID] = runtimeMirror
+	d.wireMirrorControl(runtimeMirror)
 	return runtimeMirror, true, true
 }

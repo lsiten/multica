@@ -27,7 +27,7 @@ func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID str
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.revisions[runtimeID]++
-	state := protocol.VscreenStateSnapshot{RuntimeID: runtimeID, State: protocol.VscreenStateDisabled, ControlState: protocol.VscreenControlIdle, StateRevision: s.revisions[runtimeID], Permissions: protocol.VscreenPermissions{ScreenRecording: "unknown", Accessibility: "unknown"}}
+	state := protocol.VscreenStateSnapshot{RuntimeID: runtimeID, State: protocol.VscreenStateDisabled, ControlState: protocol.VscreenControlIdle, StateRevision: s.revisions[runtimeID], Permissions: protocol.VscreenPermissions{ScreenRecording: "unknown", Accessibility: "unknown"}, HumanInteraction: d.HumanInteractionEnabled()}
 	if err = d.startVscreenHost(ctx, s); err == nil {
 		probeCtx, probeCancel := context.WithTimeout(ctx, time.Second)
 		permissions, probeErr := s.client.ProbeAppPermissions(probeCtx)

@@ -188,22 +188,83 @@
     "queued_chip_other": "· {{count}} 个排队中"
   },
   "mirror": {
-    "title": "运行时镜像", "eyebrow": "运行时镜像", "connection_label": "连接",
-    "description": "直接查看运行时主机。屏幕像素不会经过 Multica API。", "frame_label": "运行时屏幕", "frame_alt": "{{runtime}} 的实时屏幕", "back_to_runtime": "返回设备", "try_again": "重试", "pin_tooltip": "固定到侧边栏", "unpin_tooltip": "从侧边栏取消固定", "nat_warning": "尚未配置 TURN 服务器。当观看端和运行时处于不同的限制性网络时，镜像可能无法连接。",
+    "title": "运行时镜像",
+    "eyebrow": "运行时镜像",
+    "connection_label": "连接",
+    "description": "直接查看运行时主机。屏幕像素不会经过 Multica API。",
+    "frame_label": "运行时屏幕",
+    "frame_alt": "{{runtime}} 的实时屏幕",
+    "back_to_runtime": "返回设备",
+    "try_again": "重试",
+    "pin_tooltip": "固定到侧边栏",
+    "unpin_tooltip": "从侧边栏取消固定",
+    "nat_warning": "尚未配置 TURN 服务器。当观看端和运行时处于不同的限制性网络时，镜像可能无法连接。",
     "states": {
-      "loading": { "title": "正在加载运行时", "description": "正在检查运行时并准备镜像连接。", "status": "加载中。" },
-      "preparing": { "title": "正在准备连接", "description": "观看端正在准备安全的镜像会话。", "status": "准备中。" },
-      "negotiating": { "title": "正在协商连接", "description": "观看端正在与运行时守护进程建立私有连接。", "status": "正在协商 WebRTC 连接。" },
-      "streaming": { "title": "运行时实时屏幕", "description": "运行时正在向此观看端发送完整画面帧。", "status": "正在镜像。" },
-      "offline": { "title": "运行时离线", "description": "守护进程当前不可用，镜像无法启动。", "status": "等待运行时恢复在线。" },
-      "old_daemon": { "title": "当前守护进程不支持镜像", "description": "请更新该设备上的 Multica 守护进程后使用屏幕镜像。", "status": "已安装的守护进程不支持镜像。" },
-      "linux_unsupported": { "title": "Linux 暂不支持屏幕镜像", "description": "首个镜像版本仅支持 macOS 和 Windows 的主显示器。", "status": "当前不支持 Linux 屏幕采集。" },
-      "unsupported_platform": { "title": "当前平台不支持镜像", "description": "该运行时平台无法提供可镜像的主显示器。", "status": "当前平台不支持镜像。" },
-      "permission_denied": { "title": "屏幕录制权限被拒绝", "description": "运行时主机上的 Multica 守护进程需要屏幕录制权限。首次打开镜像时系统会自动弹出授权提示；若已关闭弹窗，请在「系统设置 → 隐私与安全性 → 屏幕录制」中开启 Multica 守护进程，然后重试。", "status": "需要屏幕采集权限。" },
-    "capture_unavailable": { "title": "屏幕采集不可用", "description": "运行时没有可用的主显示器，或采集服务无法启动。", "status": "屏幕采集服务不可用。" },
-      "transport_failed": { "title": "连接失败", "description": "WebRTC 连接未能建立，可能受到网络限制或缺少 TURN 服务器影响。", "status": "镜像传输失败。" },
-      "unavailable": { "title": "镜像不可用", "description": "运行时已离线、不支持镜像，或你已无法访问它。", "status": "没有可用的镜像连接。" },
-      "failed": { "title": "连接失败", "description": "运行时未能完成镜像连接。请检查守护进程后重试。", "status": "镜像连接失败。" }
+      "loading": {
+        "title": "正在加载运行时",
+        "description": "正在检查运行时并准备镜像连接。",
+        "status": "加载中。"
+      },
+      "preparing": {
+        "title": "正在准备连接",
+        "description": "观看端正在准备安全的镜像会话。",
+        "status": "准备中。"
+      },
+      "negotiating": {
+        "title": "正在协商连接",
+        "description": "观看端正在与运行时守护进程建立私有连接。",
+        "status": "正在协商 WebRTC 连接。"
+      },
+      "streaming": {
+        "title": "运行时实时屏幕",
+        "description": "运行时正在向此观看端发送完整画面帧。",
+        "status": "正在镜像。"
+      },
+      "offline": {
+        "title": "运行时离线",
+        "description": "守护进程当前不可用，镜像无法启动。",
+        "status": "等待运行时恢复在线。"
+      },
+      "old_daemon": {
+        "title": "当前守护进程不支持镜像",
+        "description": "请更新该设备上的 Multica 守护进程后使用屏幕镜像。",
+        "status": "已安装的守护进程不支持镜像。"
+      },
+      "linux_unsupported": {
+        "title": "Linux 暂不支持屏幕镜像",
+        "description": "首个镜像版本仅支持 macOS 和 Windows 的主显示器。",
+        "status": "当前不支持 Linux 屏幕采集。"
+      },
+      "unsupported_platform": {
+        "title": "当前平台不支持镜像",
+        "description": "该运行时平台无法提供可镜像的主显示器。",
+        "status": "当前平台不支持镜像。"
+      },
+      "permission_denied": {
+        "title": "屏幕录制权限被拒绝",
+        "description": "运行时主机上的 Multica 守护进程需要屏幕录制权限。首次打开镜像时系统会自动弹出授权提示；若已关闭弹窗，请在「系统设置 → 隐私与安全性 → 屏幕录制」中开启 Multica 守护进程，然后重试。",
+        "status": "需要屏幕采集权限。"
+      },
+      "capture_unavailable": {
+        "title": "屏幕采集不可用",
+        "description": "运行时没有可用的主显示器，或采集服务无法启动。",
+        "status": "屏幕采集服务不可用。"
+      },
+      "transport_failed": {
+        "title": "连接失败",
+        "description": "WebRTC 连接未能建立，可能受到网络限制或缺少 TURN 服务器影响。",
+        "status": "镜像传输失败。"
+      },
+      "unavailable": {
+        "title": "镜像不可用",
+        "description": "运行时已离线、不支持镜像，或你已无法访问它。",
+        "status": "没有可用的镜像连接。"
+      },
+      "failed": {
+        "title": "连接失败",
+        "description": "运行时未能完成镜像连接。请检查守护进程后重试。",
+        "status": "镜像连接失败。"
+      }
     }
   },
   "detail_page": {
@@ -544,6 +605,26 @@
       "adopt_window": "确认选中窗口",
       "selection_expired": "选择已过期或窗口发生变化，请刷新列表后重新选择。",
       "ax_required": "列出和选择应用窗口需要辅助功能权限。"
-    }
+    },
+    "view_only": "实时画面 · 仅查看",
+    "controlling": "你正在控制此屏幕",
+    "controller_self": "你正在控制 {{source}}",
+    "controller_active": "{{name}} 正在控制 {{source}}",
+    "controller_unknown_member": "一位成员",
+    "control_busy": "屏幕正被另一个手势占用，请重试。",
+    "control_stale": "屏幕已变化，请刷新或重新选择来源。",
+    "control_denied": "控制申请被拒绝。",
+    "control_failed": "无法开始控制，请重试。",
+    "start_control": "控制屏幕",
+    "stop_control": "退出控制",
+    "requesting_control": "正在申请控制…",
+    "enable_interaction": "允许远程交互",
+    "disable_interaction": "关闭远程交互",
+    "emergency_stop": "紧急停止",
+    "interaction_disabled": "主机当前关闭了远程交互。",
+    "external_text": "输入文本（不使用远程剪贴板）",
+    "type_text": "输入文本",
+    "copy_shortcut": "⌘C",
+    "paste_shortcut": "⌘V"
   }
 }

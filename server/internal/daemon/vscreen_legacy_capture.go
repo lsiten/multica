@@ -66,6 +66,7 @@ func (d *Daemon) managedRuntimeMirror(runtimeID string, g mirrorControlGeneratio
 	rm.SetCaptureFailureHandler(func(err error) {
 		d.logger.Debug("managed capture unavailable", "reason", mirror.ControlReasonFromError(err))
 	})
+	d.wireMirrorControl(rm)
 	d.runtimeMirrors[runtimeID] = rm
 	return rm, true
 }

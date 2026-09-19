@@ -61,6 +61,20 @@ func (s *ViewerGrantStore) Lookup(sessionID, userID, runtimeID string, now time.
 }
 
 // Renew accepts an overlapping renewal of the same lease without resurrecting removal.
+
+// LookupViewer returns the live grant for one authenticated runtime viewer.
+func (s *ViewerGrantStore) LookupViewer(runtimeID, viewerID, userID string, now time.Time) (ViewerGrantRecord, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, item := range s.items {
+		if item.Grant.RuntimeID == runtimeID && item.Grant.ViewerID == viewerID &&
+			item.Grant.UserID == userID && item.Grant.ExpiresAt.After(now) {
+			return item, true
+		}
+	}
+	return ViewerGrantRecord{}, false
+}
+
 func (s *ViewerGrantStore) Renew(previous ViewerGrantRecord, expiresAt, now time.Time) (ViewerGrantRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

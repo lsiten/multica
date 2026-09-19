@@ -562,6 +562,13 @@ type Daemon struct {
 	vscreenTakeover         VscreenTakeoverHandler
 	vscreenServerGeneration string
 	runtimeMirrors          map[string]*mirror.RuntimeMirror
+	// inputArbiter serializes atomic gestures per display resource across human
+	// viewers and agent tasks. It is shared by every runtime mirror.
+	inputArbiter            *mirror.Arbiter
+	controlBackend         *mirrorControlBackend
+	// humanInteractionEnabled is the host-side master switch for remote human
+	// control. It defaults to off (view-only); it never gates agent actions.
+	humanInteractionEnabled atomic.Bool
 	// mirrorControlGeneration identifies the live daemon control WebSocket.
 	// mirrorControlCancel cancels negotiation owned by the previous connection
 	// when a replacement connects; both are guarded by d.mu.
@@ -734,6 +741,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		workspaces:                make(map[string]*workspaceState),
 		runtimeIndex:              make(map[string]Runtime),
 		runtimeMirrors:            make(map[string]*mirror.RuntimeMirror),
+		inputArbiter:              mirror.NewArbiter(),
 		profileLaunchSpecs:        make(map[string]profileLaunchSpec),
 		runtimeSet:                newRuntimeSetWatcher(),
 		agentDiscoveryKick:        make(chan struct{}, 1),

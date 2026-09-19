@@ -58,7 +58,8 @@ func (h *Handler) getVscreenObservation(w http.ResponseWriter, r *http.Request, 
 
 // CreateVscreenCommand accepts only remote-safe owner commands.
 func (h *Handler) CreateVscreenCommand(w http.ResponseWriter, r *http.Request) {
-	rt, member, ok := h.requireVscreenAccess(w, r)
+	runtimeID := chi.URLParam(r, "runtimeId")
+	rt, member, ok := h.requireRuntimeReadAccess(w, r, "vscreen_command", runtimeID)
 	if !ok {
 		return
 	}
@@ -76,17 +77,35 @@ func (h *Handler) CreateVscreenCommand(w http.ResponseWriter, r *http.Request) {
 		writeVscreenReason(w, http.StatusBadRequest, "invalid_command")
 		return
 	}
+	if req.Kind.HostInteractionCommand() {
+		if !rt.DaemonID.Valid || rt.Status != "online" || h.DaemonHub == nil {
+			writeVscreenReason(w, http.StatusServiceUnavailable, "daemon_unavailable")
+			return
+		}
+		if !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityScreenControlV1) {
+			writeVscreenReason(w, http.StatusNotImplemented, "upgrade_required")
+			return
+		}
+	} else if !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityVirtualScreenV1) ||
+		!runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityMirrorViewerGrantV1) ||
+		!rt.DaemonID.Valid || rt.Status != "online" || h.DaemonHub == nil {
+		writeVscreenReason(w, http.StatusServiceUnavailable, "daemon_unavailable")
+		return
+	}
 	receipt, err := h.DaemonHub.SubmitVscreenCommand(uuidToString(rt.WorkspaceID), uuidToString(rt.ID), rt.DaemonID.String, requestUserID(r), req.CommandID, req.Kind)
 	if err != nil {
 		writeVscreenError(w, err)
 		return
+	}
+	if req.Kind == protocol.VscreenCommandDisableInteraction || req.Kind == protocol.VscreenCommandEmergencyStop {
+		h.revokeRuntimeControlGrants(rt)
 	}
 	writeJSON(w, http.StatusAccepted, receipt)
 }
 
 // GetVscreenCommand exposes a receipt without replaying its command.
 func (h *Handler) GetVscreenCommand(w http.ResponseWriter, r *http.Request) {
-	rt, member, ok := h.requireVscreenAccess(w, r)
+	rt, member, ok := h.requireRuntimeReadAccess(w, r, "vscreen_command", chi.URLParam(r, "runtimeId"))
 	if !ok {
 		return
 	}

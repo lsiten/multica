@@ -6,6 +6,7 @@ export const VSCREEN_CAPABILITIES = {
   backgroundInput: "background-input-v1",
   video: "screen-mirror-video-v2",
   viewerGrant: "mirror-viewer-grant-v1",
+  screenControl: "screen-control-v1",
 } as const;
 
 export interface VscreenAuthorization {

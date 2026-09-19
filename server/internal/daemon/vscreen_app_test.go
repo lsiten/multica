@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -90,6 +92,76 @@ func TestVscreenPermissionsProbeDoesNotCreateDisplay(t *testing.T) {
 		t.Fatal("permission preflight created display")
 	}
 }
+
+func TestVscreenEnableRequestsHostPermissionsOnceAndKeepsDisplayOnDenial(t *testing.T) {
+	requests := filepath.Join(t.TempDir(), "requests")
+	t.Setenv("VSCREEN_FIXTURE_PERMISSION_REQUEST_COUNT", requests)
+	t.Setenv("VSCREEN_FIXTURE_PERMISSION_REQUEST", "screen_recording_denied")
+	d := vscreenFixtureDaemon(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	g, _, stop := d.beginMirrorControlConnection(ctx)
+	defer stop()
+	d.vscreenServerGeneration = "server"
+	e := protocol.VscreenEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "server", RequestID: "enable"}
+	command := protocol.VscreenCommand{VscreenEnvelope: e, CommandID: "enable", Kind: protocol.VscreenCommandEnable}
+	if err := d.executeVscreenCommand(ctx, command, g); err != nil {
+		t.Fatal(err)
+	}
+	command.CommandID = "enable-again"
+	if err := d.executeVscreenCommand(ctx, command, g); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(requests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := len(raw); count != 1 {
+		t.Fatalf("permission requests=%d, want 1", count)
+	}
+	actor, err := d.VscreenActor("ws", "rt")
+	if err != nil || !actor.Status().Ready {
+		t.Fatalf("virtual display not ready: %+v %v", actor.Status(), err)
+	}
+	state, err := d.vscreenSnapshot(ctx, "ws", "rt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.State != protocol.VscreenStateReady || state.Permissions.ScreenRecording != "denied" {
+		t.Fatalf("ready display must retain denied capture state: %+v", state)
+	}
+}
+
+func TestVscreenEnableInteractionRequestsAccessibilityOnce(t *testing.T) {
+	requests := filepath.Join(t.TempDir(), "requests")
+	t.Setenv("VSCREEN_FIXTURE_PERMISSION_REQUEST_COUNT", requests)
+	d := vscreenFixtureDaemon(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	g, _, stop := d.beginMirrorControlConnection(ctx)
+	defer stop()
+	d.vscreenServerGeneration = "server"
+	e := protocol.VscreenEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "server", RequestID: "interaction"}
+	command := protocol.VscreenCommand{VscreenEnvelope: e, CommandID: "enable-interaction", Kind: protocol.VscreenCommandEnableInteraction}
+	if err := d.executeVscreenCommand(ctx, command, g); err != nil {
+		t.Fatal(err)
+	}
+	if !d.HumanInteractionEnabled() {
+		t.Fatal("human interaction master switch stayed disabled")
+	}
+	command.CommandID = "enable-interaction-again"
+	if err := d.executeVscreenCommand(ctx, command, g); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(requests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := len(raw); count != 1 {
+		t.Fatalf("accessibility requests=%d, want 1", count)
+	}
+}
+
 func TestVscreenMCPNamespacedActionSchemas(t *testing.T) {
 	for _, tool := range vscreenToolDescriptors() {
 		raw, err := json.Marshal(tool)

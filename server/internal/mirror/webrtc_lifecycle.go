@@ -61,6 +61,9 @@ func (m *RuntimeMirror) closePeer(viewerID string, peer *mirrorPeer, opts peerCl
 	if peer.attachTimer != nil {
 		peer.attachTimer.Stop()
 	}
+	if peer.controlGrant != nil {
+		m.dropControlGrantLocked(viewerID, peer)
+	}
 	detach := peer.detach
 	stopNegotiationCleanup := peer.stopNegotiationCleanup
 	peer.detach = nil

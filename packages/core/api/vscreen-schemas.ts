@@ -60,12 +60,14 @@ export const VscreenResourceSchema = z
     workspace_id: id,
     runtime_id: id,
     uid: z.number().int().positive().max(4294967295),
+    display_id: z.number().int().min(0).max(4294967295).default(0),
   })
   .transform((wire) => ({
     backendIdentity: wire.backend_identity,
     workspaceId: wire.workspace_id,
     runtimeId: wire.runtime_id,
     uid: wire.uid,
+    displayId: wire.display_id,
   }));
 export const MirrorSourceSchema = z
   .object({ kind: z.enum(["virtual", "physical", "system"]), source_id: id })
@@ -92,10 +94,16 @@ export const VscreenSourceDescriptorSchema = z
     native_epoch: id,
     generation: id,
     primary: z.boolean(),
+    display_id: z.number().int().min(0).max(4294967295).default(0),
     name: z.string().max(256),
     width: z.number().int().min(0).max(32768),
     height: z.number().int().min(0).max(32768),
+    logical_width: z.number().min(0).max(32768).default(0),
+    logical_height: z.number().min(0).max(32768).default(0),
     scale: z.number().min(0).max(16),
+    x: z.number().int().min(-32768).max(32768).default(0),
+    y: z.number().int().min(-32768).max(32768).default(0),
+    geometry_revision: VscreenRevisionSchema,
   })
   .transform((wire) => ({
     resource: wire.resource,
@@ -103,10 +111,16 @@ export const VscreenSourceDescriptorSchema = z
     nativeEpoch: wire.native_epoch,
     generation: wire.generation,
     primary: wire.primary,
+    displayId: wire.display_id,
     name: wire.name,
     width: wire.width,
     height: wire.height,
+    logicalWidth: wire.logical_width,
+    logicalHeight: wire.logical_height,
     scale: wire.scale,
+    x: wire.x,
+    y: wire.y,
+    geometryRevision: wire.geometry_revision,
   }));
 
 export const MirrorViewerGrantSchema = z
@@ -135,9 +149,60 @@ export const MirrorViewerGrantSchema = z
     expiresAt: wire.expires_at,
   }));
 
+export const MirrorControlGrantSchema = z
+  .object({
+    grant_id: id,
+    session_id: id,
+    workspace_id: id,
+    runtime_id: id,
+    user_id: id,
+    viewer_id: id,
+    native_epoch: id,
+    source: MirrorSourceSchema,
+    source_generation: id,
+    expires_at: z.iso.datetime({ offset: true }),
+  })
+  .transform((wire) => ({
+    grantId: wire.grant_id,
+    sessionId: wire.session_id,
+    workspaceId: wire.workspace_id,
+    runtimeId: wire.runtime_id,
+    userId: wire.user_id,
+    viewerId: wire.viewer_id,
+    nativeEpoch: wire.native_epoch,
+    source: wire.source,
+    sourceGeneration: wire.source_generation,
+    expiresAt: wire.expires_at,
+  }));
+
+
+export const RuntimeMirrorControllerSchema = z
+  .object({
+    viewer_id: id,
+    user_id: id,
+    source: MirrorSourceSchema,
+  })
+  .transform((wire) => ({
+    viewerId: wire.viewer_id,
+    userId: wire.user_id,
+    source: wire.source,
+  }));
+
+export const RuntimeMirrorControlStateSchema = z
+  .object({
+    workspace_id: id,
+    runtime_id: id,
+    controllers: z.array(RuntimeMirrorControllerSchema),
+  })
+  .transform((wire) => ({
+    workspaceId: wire.workspace_id,
+    runtimeId: wire.runtime_id,
+    controllers: wire.controllers,
+  }));
+
 export const VscreenCommandSchema = z.object({
   commandId: id,
-  kind: z.enum(["enable", "disable", "request_takeover"]),
+  kind: z.enum(["enable", "disable", "request_takeover", "enable_interaction", "disable_interaction", "emergency_stop"]),
 });
 export const VscreenReasonSchema = z
   .object({ reason: id })

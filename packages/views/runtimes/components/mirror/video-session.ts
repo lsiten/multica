@@ -5,6 +5,8 @@ import {
   type VscreenApi,
 } from "@multica/core/api";
 import type {
+  MirrorControlGrant,
+  MirrorInputAck,
   MirrorSourceBinding,
   VscreenViewerSession,
 } from "@multica/core/types";
@@ -13,10 +15,16 @@ import { gatherVideoIce } from "./video-ice";
 
 import {
   MirrorVideoError,
+  type MirrorControlInput,
+  type MirrorControlState,
   type MirrorVideoCallbacks,
 } from "./video-session-types";
 export { MirrorVideoError } from "./video-session-types";
 export type {
+  MirrorControlInput,
+  MirrorControlPointer,
+  MirrorControlState,
+  MirrorControlStatus,
   MirrorVideoState,
   MirrorVideoCallbacks,
 } from "./video-session-types";
@@ -30,6 +38,12 @@ export class MirrorVideoSession {
   private expiry: ReturnType<typeof setTimeout> | undefined;
   private geometryRevision: number | undefined;
   private controlOpen = false;
+  private inputChannel: RTCDataChannel | null = null;
+  private inputOpen = false;
+  private inputReady: ((open: boolean) => void) | null = null;
+  private controlGrant: MirrorControlGrant | null = null;
+  private controlRenewal: ReturnType<typeof setTimeout> | undefined;
+  private inputSeq = 0;
   private metadataSeen = false;
   private stream: MediaStream | null = null;
   private published = false;
@@ -43,6 +57,29 @@ export class MirrorVideoSession {
       readonly callbacks: MirrorVideoCallbacks;
     },
   ) {}
+
+  private wireInputChannel(peer: RTCPeerConnection): RTCDataChannel {
+    const channel = peer.createDataChannel("mirror-input", { ordered: true });
+    channel.binaryType = "arraybuffer";
+    channel.onopen = () => {
+      this.inputOpen = true;
+      this.inputReady?.(true);
+      this.inputReady = null;
+    };
+    channel.onclose = () => {
+      this.inputOpen = false;
+      this.inputReady?.(false);
+      this.inputReady = null;
+      if (this.controlGrant) void this.endControl("viewer_revoked");
+    };
+    channel.onerror = () => {
+      this.inputReady?.(false);
+      this.inputReady = null;
+    };
+    channel.onmessage = (event: MessageEvent<unknown>) =>
+      this.inputAckMessage(event.data);
+    return channel;
+  }
 
   private publishStream(): void {
     if (
@@ -84,6 +121,181 @@ export class MirrorVideoSession {
     } catch (error) {
       this.fail(error);
     }
+  }
+
+  private publishControlState(
+    status: MirrorControlState["status"],
+    reason?: string,
+    lastAck?: MirrorInputAck,
+  ): void {
+    this.options.callbacks.control?.({
+      status,
+      reason,
+      lastAck,
+      ...(this.controlGrant ? { grant: this.controlGrant } : {}),
+    });
+  }
+
+  private async ensureInputChannel(): Promise<void> {
+    if (this.disposed) throw new MirrorVideoError("transport");
+    if (this.inputOpen) return;
+    if (!this.inputChannel) throw new MirrorVideoError("webrtc_unavailable");
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new MirrorVideoError("transport")),
+        3_000,
+      );
+      this.inputReady = (open) => {
+        clearTimeout(timer);
+        if (open) resolve();
+        else reject(new MirrorVideoError("viewer_revoked"));
+      };
+    });
+  }
+
+  private inputAckMessage(value: unknown): void {
+    if (this.disposed || typeof value !== "string") return;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      return;
+    }
+    if (!raw || typeof raw !== "object" || !("type" in raw)) return;
+    const type = raw.type;
+    if (type !== "mirror-input:ack" && type !== "mirror-input:nack") return;
+    const ack = raw as MirrorInputAck;
+    if (type === "mirror-input:nack") {
+      if (ack.reason === "busy") {
+        this.publishControlState("active", undefined, ack);
+        return;
+      }
+      if (ack.reason === "stale" || ack.reason === "denied") {
+        this.endControl(ack.reason);
+        return;
+      }
+    }
+    this.publishControlState("active", undefined, ack);
+  }
+
+  private armControlRenewal(): void {
+    clearTimeout(this.controlRenewal);
+    this.controlRenewal = setTimeout(() => void this.renewControl(), 10_000);
+  }
+
+  private async renewControl(): Promise<void> {
+    const viewer = this.viewer;
+    const grant = this.controlGrant;
+    if (!viewer || !grant || this.disposed) return;
+    try {
+      const renewed = await this.options.api.renewMirrorControlGrant(
+        viewer,
+        grant.source,
+        grant.sourceGeneration,
+        this.abort.signal,
+      );
+      if (this.disposed) return;
+      this.controlGrant = renewed;
+      this.armControlRenewal();
+      this.publishControlState("active");
+    } catch {
+      this.endControl("stale");
+    }
+  }
+
+  async startControl(): Promise<void> {
+    const viewer = this.viewer;
+    const binding = this.metadataSeen ? this.options.binding : null;
+    if (!viewer || !binding || !this.controlOpen || !this.stream)
+      throw new MirrorVideoError("interaction_unavailable");
+    if (this.controlGrant) return;
+    this.publishControlState("requesting");
+    try {
+      await this.ensureInputChannel();
+      const grant = await this.options.api.createMirrorControlGrant(
+        viewer,
+        binding.source,
+        binding.generation,
+        this.abort.signal,
+      );
+      if (this.disposed) {
+        await this.options.api.revokeMirrorControlGrant(viewer.viewerId).catch(() => undefined);
+        return;
+      }
+      this.controlGrant = grant;
+      this.armControlRenewal();
+      this.publishControlState("active");
+    } catch (error) {
+      this.publishControlState(
+        "failed",
+        error instanceof MirrorVideoError
+          ? error.reason
+          : (vscreenErrorReason(error) ?? "denied"),
+      );
+      throw error;
+    }
+  }
+
+  private async endControl(reason?: string): Promise<void> {
+    clearTimeout(this.controlRenewal);
+    const viewer = this.viewer;
+    const hadGrant = this.controlGrant;
+    this.controlGrant = null;
+    this.inputSeq = 0;
+    if (hadGrant && viewer) {
+      await this.options.api
+        .revokeMirrorControlGrant(viewer.viewerId)
+        .catch(() => undefined);
+    }
+    if (!this.disposed) this.publishControlState("inactive", reason);
+  }
+
+  async stopControl(): Promise<void> {
+    await this.endControl();
+  }
+
+  sendInput(input: MirrorControlInput): void {
+    const grant = this.controlGrant;
+    const channel = this.inputChannel;
+    if (!grant || !channel || !this.inputOpen || this.disposed) return;
+    const message = {
+      kind: input.kind,
+      grant_id: grant.grantId,
+      gesture_id: input.gestureId,
+      seq: ++this.inputSeq,
+      native_epoch: grant.nativeEpoch,
+      display_generation: grant.sourceGeneration,
+      geometry_revision: this.geometryRevision ?? 0,
+      ...(input.pointer
+        ? {
+            pointer: {
+              x: input.pointer.x,
+              y: input.pointer.y,
+              ...(input.pointer.button
+                ? { button: input.pointer.button }
+                : {}),
+              ...(input.pointer.deltaX !== undefined
+                ? { delta_x: input.pointer.deltaX }
+                : {}),
+              ...(input.pointer.deltaY !== undefined
+                ? { delta_y: input.pointer.deltaY }
+                : {}),
+            },
+          }
+        : {}),
+      ...(input.key
+        ? {
+            key: {
+              key: input.key.key,
+              ...(input.key.modifiers?.length
+                ? { modifiers: [...input.key.modifiers] }
+                : {}),
+            },
+          }
+        : {}),
+      ...(input.text ? { text: input.text } : {}),
+    };
+    channel.send(new TextEncoder().encode(JSON.stringify(message)));
   }
 
   private controlMessage(value: unknown): void {
@@ -174,6 +386,7 @@ export class MirrorVideoSession {
         this.fail(new MirrorVideoError("viewer_revoked"));
       };
       control.onerror = () => this.fail(new MirrorVideoError("transport"));
+      this.inputChannel = this.wireInputChannel(peer);
       this.options.callbacks.state("negotiating");
       const createdOffer = await peer.createOffer();
       if (this.disposed) return;
@@ -257,6 +470,11 @@ export class MirrorVideoSession {
     this.abort.abort();
     clearTimeout(this.renewal);
     clearTimeout(this.expiry);
+    clearTimeout(this.controlRenewal);
+    if (this.controlGrant) await this.endControl();
+    this.inputChannel?.close();
+    this.inputChannel = null;
+    this.inputOpen = false;
     this.peer?.close();
     this.stream?.getTracks().forEach((track) => track.stop());
     this.options.callbacks.stream(null);

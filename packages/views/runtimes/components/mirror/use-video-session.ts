@@ -7,7 +7,12 @@ import type {
   VscreenVideoMetadata,
   VscreenVideoQuality,
 } from "@multica/core/types";
-import { MirrorVideoSession, type MirrorVideoState } from "./video-session";
+import {
+  MirrorVideoSession,
+  type MirrorControlInput,
+  type MirrorControlState,
+  type MirrorVideoState,
+} from "./video-session";
 
 export function useVideoSession(
   scope: VscreenScope,
@@ -21,6 +26,10 @@ export function useVideoSession(
     state: MirrorVideoState;
     reason?: string;
   }>({ state: "closed" });
+  const [controlState, setControlState] = useState<MirrorControlState>({
+    status: "inactive",
+  });
+  const sessionRef = useRef<MirrorVideoSession | null>(null);
   const closing = useRef(Promise.resolve());
   const identity = JSON.stringify([
     scope.backendIdentity,
@@ -53,14 +62,19 @@ export function useVideoSession(
             state: (state, reason) => {
               if (active) setStatus({ state, reason });
             },
+            control: (value) => {
+              if (active) setControlState(value);
+            },
           },
         })
       : null;
+    sessionRef.current = session;
     renderedIdentity.current = identity;
     setStream(null);
     setMetadata(null);
     setQuality(null);
     setStatus({ state: binding ? "preparing" : "closed" });
+    setControlState({ status: "inactive" });
     const pageClosed = () => {
       void session?.close();
     };
@@ -72,6 +86,7 @@ export function useVideoSession(
     return () => {
       window.removeEventListener("pagehide", pageClosed);
       active = false;
+      sessionRef.current = null;
       closing.current = session?.close() ?? Promise.resolve();
     };
     // The serialized identity is the exact immutable peer scope and source binding.
@@ -84,10 +99,15 @@ export function useVideoSession(
     );
   };
   const current = renderedIdentity.current === identity;
+  const currentSession = current ? sessionRef.current : null;
   return {
     stream: current ? stream : null,
     metadata: current ? metadata : null,
     quality: current ? quality : null,
+    control: current ? controlState : { status: "inactive" as const },
+    startControl: () => currentSession?.startControl(),
+    stopControl: () => currentSession?.stopControl(),
+    sendInput: (input: MirrorControlInput) => currentSession?.sendInput(input),
     onFrame,
     ...(current
       ? status

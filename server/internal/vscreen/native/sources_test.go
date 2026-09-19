@@ -25,10 +25,14 @@ func TestSourcesExcludeOtherRuntimeAndOtherHostVirtualDisplays(t *testing.T) {
 	if len(sources) != 2 || sources[0].DisplayID != 1 || sources[0].Source.Kind != protocol.MirrorSourceVirtual || sources[1].DisplayID != 4 || sources[1].Source.Kind != protocol.MirrorSourceSystem {
 		t.Fatalf("unexpected sources %+v", sources)
 	}
-	for _, source := range sources {
-		if source.Resource != key {
-			t.Fatal("foreign binding")
-		}
+	virtualKey := key
+	physicalKey := key
+	physicalKey.DisplayID = 4
+	if sources[0].Resource != virtualKey {
+		t.Fatalf("virtual resource = %+v, want %+v", sources[0].Resource, virtualKey)
+	}
+	if sources[1].Resource != physicalKey {
+		t.Fatalf("physical resource = %+v, want %+v", sources[1].Resource, physicalKey)
 	}
 }
 

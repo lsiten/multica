@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
+	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -51,6 +52,16 @@ func (d *Daemon) handleManagedMirrorOffer(ctx context.Context, msg mirrorOfferMe
 	go func() {
 		defer s.grantWG.Done()
 		defer cancel()
+		s.mu.Lock()
+		err := d.startVscreenHost(answerCtx, s)
+		if err == nil {
+			err = d.requestVscreenPermissions(answerCtx, s, appcontrol.PermissionRequest{ScreenRecording: true})
+		}
+		s.mu.Unlock()
+		if err != nil {
+			d.managedMirrorFailure(msg, offer, err)
+			return
+		}
 		sources, err := d.vscreenSources(answerCtx, offer.WorkspaceID, offer.RuntimeID)
 		if err != nil {
 			d.managedMirrorFailure(msg, offer, err)
@@ -77,13 +88,7 @@ func (d *Daemon) handleManagedMirrorOffer(ctx context.Context, msg mirrorOfferMe
 		hub := s.hub
 		s.mu.Unlock()
 		rm.SetCaptureHub(hub)
-		rm.SetViewerStateHook(func(change mirror.ViewerStateChange) {
-			if d.mirrorControlGenerationIsCurrent(msg.controlGeneration) {
-				if _, err := d.sendMirrorViewerState(msg.enqueue, offer.WorkspaceID, offer.RuntimeID, change.ViewerID, change.Active); err != nil {
-					d.logger.Debug("managed viewer state dropped")
-				}
-			}
-		}, uint64(msg.controlGeneration))
+		d.bindMirrorStateHooks(rm, msg.enqueue, offer.WorkspaceID, offer.RuntimeID, msg.controlGeneration)
 		var answer mirror.Negotiation
 		if offer.ProtocolVersion == 2 {
 			for _, source := range sources {

@@ -295,6 +295,10 @@ func (h *appHost) execute(ctx context.Context, r Request) (out *AppResponse, err
 		p, e := appcontrol.ProbePermissions(ctx)
 		out.Permissions = &p
 		return out, e
+	case "app_request_permissions":
+		p, e := appcontrol.RequestPermissions(ctx, r.App.Permissions)
+		out.Permissions = &p
+		return out, e
 	case "app_quiesce", "app_revoke", "app_dispose":
 		if r.Operation == "app_dispose" {
 			err = h.controller.Dispose(ctx, r.Resource)

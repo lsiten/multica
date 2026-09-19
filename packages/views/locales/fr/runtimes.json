@@ -614,6 +614,26 @@
       "adopt_window": "Confirmer la fenêtre sélectionnée",
       "selection_expired": "La sélection a expiré ou la fenêtre a changé. Actualisez la liste et sélectionnez à nouveau.",
       "ax_required": "L’autorisation d’accessibilité est nécessaire pour lister et sélectionner les fenêtres."
-    }
+    },
+    "view_only": "En direct · Lecture seule",
+    "controlling": "Vous contrôlez cet écran",
+    "controller_self": "Vous contrôlez {{source}}",
+    "controller_active": "{{name}} contrôle {{source}}",
+    "controller_unknown_member": "Un membre",
+    "control_busy": "Un autre geste utilise l’écran. Réessayez.",
+    "control_stale": "L’écran a changé. Actualisez ou choisissez de nouveau la source.",
+    "control_denied": "La demande de contrôle a été refusée.",
+    "control_failed": "Impossible de démarrer le contrôle. Réessayez.",
+    "start_control": "Contrôler l’écran",
+    "stop_control": "Arrêter le contrôle",
+    "requesting_control": "Demande de contrôle…",
+    "enable_interaction": "Autoriser l’interaction à distance",
+    "disable_interaction": "Désactiver l’interaction à distance",
+    "emergency_stop": "Arrêt d’urgence",
+    "interaction_disabled": "L’interaction à distance est désactivée sur l’hôte.",
+    "external_text": "Saisir du texte sans utiliser le presse-papiers distant",
+    "type_text": "Saisir le texte",
+    "copy_shortcut": "⌘C",
+    "paste_shortcut": "⌘V"
   }
 }
