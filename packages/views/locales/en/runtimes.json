@@ -638,6 +638,8 @@
     "external_text": "Type text without using the remote clipboard",
     "type_text": "Type text",
     "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V"
+    "paste_shortcut": "⌘V",
+    "backspace": "Backspace",
+    "switch_app": "Switch app"
   }
 }

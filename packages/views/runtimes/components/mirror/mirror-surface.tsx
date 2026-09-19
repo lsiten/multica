@@ -17,7 +17,9 @@ import {
   vscreenSourcesOptions,
   vscreenStateOptions,
 } from "@multica/core/runtimes";
-import { vscreenErrorReason } from "@multica/core/api";
+import { getApi, vscreenErrorReason } from "@multica/core/api";
+import { agentListOptions } from "@multica/core/workspace";
+import { chatSessionsOptions } from "@multica/core/chat/queries";
 import { Button } from "@multica/ui/components/ui/button";
 import { useT } from "../../../i18n";
 import { useVideoSession } from "./use-video-session";
@@ -28,6 +30,7 @@ import { MirrorCommandControls } from "./mirror-command-controls";
 import { MirrorControlBar } from "./mirror-control-bar";
 import { InteractiveMirrorVideo } from "./interactive-mirror-video";
 import { MirrorControllerPresence } from "./mirror-controller-presence";
+import { MirrorAuthorizationPrompt } from "./mirror-authorization-prompt";
 
 export function MirrorSurface({
   scope,
@@ -49,6 +52,8 @@ export function MirrorSurface({
     ...vscreenStateOptions(scope, queryClient),
     enabled: online && readable,
   });
+  const agents = useQuery({ ...agentListOptions(scope.workspaceId), enabled: online && readable });
+  const sessions = useQuery({ ...chatSessionsOptions(scope.workspaceId), enabled: online && readable });
   const sources = useQuery({
     ...vscreenSourcesOptions(scope),
     enabled: online && readable,
@@ -181,6 +186,12 @@ export function MirrorSurface({
       key: { key, modifiers },
     });
   };
+  const sendAgentMessage = async (agentId: string, text: string) => {
+    const session = sessions.data?.find((candidate) => candidate.agent_id === agentId && candidate.status !== "archived");
+    const target = session ?? await getApi().createChatSession({ agent_id: agentId });
+    await getApi().sendChatMessage(target.id, text);
+    void sessions.refetch();
+  };
   useEffect(() => {
     if (previousSelectedSource.current === null) {
       previousSelectedSource.current = selected;
@@ -250,6 +261,14 @@ export function MirrorSurface({
         catalog={catalog}
       />
       <div className="relative aspect-video min-h-0 w-full bg-muted/30">
+        {video.authorization && (
+          <MirrorAuthorizationPrompt
+            request={video.authorization}
+            onDecision={(approved) => {
+              video.respondAuthorization(video.authorization?.request_id ?? "", approved);
+            }}
+          />
+        )}
         {video.stream && binding ? (
           controlActive ? (
             <InteractiveMirrorVideo
@@ -314,6 +333,10 @@ export function MirrorSurface({
           onStopControl={() => void video.stopControl()}
           onType={sendType}
           onKey={sendKey}
+          onVoice={(recording) => video.sendVoice(recording)}
+          voiceTranscript={video.voiceTranscript}
+          agents={(agents.data ?? []).filter((agent) => agent.runtime_id === runtime.id && !agent.archived_at).map((agent) => ({ id: agent.id, name: agent.name }))}
+          onAgentMessage={sendAgentMessage}
         />
       )}
       {!compact && (

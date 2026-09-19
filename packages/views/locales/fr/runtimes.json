@@ -638,6 +638,8 @@
     "external_text": "Saisir du texte sans utiliser le presse-papiers distant",
     "type_text": "Saisir le texte",
     "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V"
+    "paste_shortcut": "⌘V",
+    "backspace": "Backspace",
+    "switch_app": "Switch app"
   }
 }

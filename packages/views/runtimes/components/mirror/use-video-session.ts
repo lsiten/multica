@@ -12,6 +12,7 @@ import {
   type MirrorControlInput,
   type MirrorControlState,
   type MirrorVideoState,
+  type MirrorAuthorizationRequest,
 } from "./video-session";
 
 export function useVideoSession(
@@ -29,6 +30,8 @@ export function useVideoSession(
   const [controlState, setControlState] = useState<MirrorControlState>({
     status: "inactive",
   });
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [authorization, setAuthorization] = useState<MirrorAuthorizationRequest | null>(null);
   const sessionRef = useRef<MirrorVideoSession | null>(null);
   const closing = useRef(Promise.resolve());
   const identity = JSON.stringify([
@@ -65,6 +68,12 @@ export function useVideoSession(
             control: (value) => {
               if (active) setControlState(value);
             },
+            transcript: (value) => {
+              if (active) setVoiceTranscript(value);
+            },
+            authorization: (value) => {
+              if (active) setAuthorization(value);
+            },
           },
         })
       : null;
@@ -75,6 +84,8 @@ export function useVideoSession(
     setQuality(null);
     setStatus({ state: binding ? "preparing" : "closed" });
     setControlState({ status: "inactive" });
+    setVoiceTranscript("");
+    setAuthorization(null);
     const pageClosed = () => {
       void session?.close();
     };
@@ -108,6 +119,10 @@ export function useVideoSession(
     startControl: () => currentSession?.startControl(),
     stopControl: () => currentSession?.stopControl(),
     sendInput: (input: MirrorControlInput) => currentSession?.sendInput(input),
+    sendVoice: (recording: Blob) => currentSession?.sendVoice(recording),
+    voiceTranscript: current ? voiceTranscript : "",
+    authorization: current ? authorization : null,
+    respondAuthorization: (requestId: string, approved: boolean) => currentSession?.respondAuthorization(requestId, approved),
     onFrame,
     ...(current
       ? status

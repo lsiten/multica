@@ -6,6 +6,14 @@ import type {
   VscreenVideoMetadata,
   VscreenVideoQuality,
 } from "@multica/core/types";
+export interface MirrorAuthorizationRequest {
+  readonly type: "mirror-authorization:request";
+  readonly request_id: string;
+  readonly kind: "system" | "cli";
+  readonly title: string;
+  readonly message: string;
+  readonly expires_at: string;
+}
 export type MirrorVideoState =
   | "preparing"
   | "negotiating"
@@ -19,6 +27,8 @@ export interface MirrorVideoCallbacks {
   readonly quality?: (quality: VscreenVideoQuality | null) => void;
   readonly metadata: (metadata: VscreenVideoMetadata | null) => void;
   readonly control?: (state: MirrorControlState) => void;
+  readonly transcript?: (text: string) => void;
+  readonly authorization?: (request: MirrorAuthorizationRequest) => void;
 }
 export class MirrorVideoError extends Error {
   constructor(readonly reason: string) {

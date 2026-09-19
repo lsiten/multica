@@ -2,12 +2,14 @@ package mirror
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
 
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -81,9 +83,52 @@ type RuntimeMirror struct {
 	peerAttachTimeout          time.Duration
 	arbiter                    *Arbiter
 	controlBackend             ControlBackend
+	voiceTranscriber           VoiceTranscriber
+	authorizationHandler       func(context.Context, string, bool) error
+	authorizationPublisher     func(string, protocol.MirrorAuthorizationRequest)
 	controlMu                  sync.Mutex
 	controlStateHookGeneration uint64
 	controlStateHookFn         func(ControlStateChange)
+}
+
+// VoiceTranscriber runs on the daemon host. It must not persist audio or
+// transcripts; callers may forward the returned text to an existing agent
+// conversation without creating a new task.
+type VoiceTranscriber interface {
+	Transcribe(ctx context.Context, mimeType string, audio []byte) (string, error)
+}
+
+func (m *RuntimeMirror) SetVoiceTranscriber(transcriber VoiceTranscriber) {
+	m.mu.Lock()
+	m.voiceTranscriber = transcriber
+	m.mu.Unlock()
+}
+
+// SetAuthorizationHandler receives explicit viewer consent decisions. The
+// daemon owns the pending request and decides how to apply the result.
+func (m *RuntimeMirror) SetAuthorizationHandler(handler func(context.Context, string, bool) error) {
+	m.mu.Lock()
+	m.authorizationHandler = handler
+	m.mu.Unlock()
+}
+
+func (m *RuntimeMirror) SetAuthorizationPublisher(publisher func(string, protocol.MirrorAuthorizationRequest)) {
+	m.mu.Lock()
+	m.authorizationPublisher = publisher
+	m.mu.Unlock()
+}
+
+func (m *RuntimeMirror) publishAuthorization(viewerID, kind, title, message string) {
+	m.mu.Lock()
+	publisher := m.authorizationPublisher
+	m.mu.Unlock()
+	if publisher == nil {
+		return
+	}
+	publisher(viewerID, protocol.MirrorAuthorizationRequest{
+		Type: protocol.MirrorAuthorizationRequestType, RequestID: uuid.NewString(), Kind: kind,
+		Title: title, Message: message, ExpiresAt: time.Now().Add(2 * time.Minute),
+	})
 }
 
 // ControlBackend is supplied by the daemon. It resolves a granted source to a
@@ -237,6 +282,10 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 			m.bindInputChannel(viewerID, peer, channel, cleanup)
 			return
 		}
+		if channel.Label() == "mirror-voice" && channel.Ordered() {
+			m.bindVoiceChannel(viewerID, peer, channel)
+			return
+		}
 		if peer.video != nil {
 			if (channel.Label() == "mirror" || channel.Label() == "mirror-control") && channel.Ordered() {
 				peer.mu.Lock()
@@ -247,6 +296,21 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 				channel.OnOpen(func() {
 					if err := m.sendVideoMetadata(peer, 0, true); err != nil {
 						_ = cleanup()
+					}
+				})
+				channel.OnMessage(func(message webrtc.DataChannelMessage) {
+					if !message.IsString {
+						return
+					}
+					var response protocol.MirrorAuthorizationResponse
+					if json.Unmarshal([]byte(message.Data), &response) != nil || response.Validate() != nil {
+						return
+					}
+					m.mu.Lock()
+					handler := m.authorizationHandler
+					m.mu.Unlock()
+					if handler != nil {
+						_ = handler(context.Background(), response.RequestID, response.Approved)
 					}
 				})
 				channel.OnClose(func() { _ = cleanup() })

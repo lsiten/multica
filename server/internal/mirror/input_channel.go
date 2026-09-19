@@ -86,8 +86,8 @@ func (m *RuntimeMirror) handleInputMessage(
 
 	peer.mu.Lock()
 	c := peer.controlGrant
-	peer.mu.Unlock()
-	if c == nil {
+	if peer.closed || c == nil || !time.Now().Before(c.deadline) || !time.Now().Before(c.value.ExpiresAt) {
+		peer.mu.Unlock()
 		m.nack(channel, channelMu, channelClosed, input, protocol.MirrorInputDenied)
 		return
 	}
@@ -96,10 +96,15 @@ func (m *RuntimeMirror) handleInputMessage(
 	// Gate 1: grant/binding/source identity must match this exact message.
 	if input.GrantID != grant.GrantID || input.NativeEpoch != grant.NativeEpoch ||
 		input.DisplayGeneration != grant.SourceGeneration ||
-		input.GeometryRevision == 0 {
+		input.GeometryRevision == 0 || input.Seq <= c.lastSeq {
+		peer.mu.Unlock()
 		m.nack(channel, channelMu, channelClosed, input, protocol.MirrorInputStale)
 		return
 	}
+	// Consume sequences before arbitration so even a rejected gesture cannot
+	// be replayed later against a changed screen. Renewals retain this counter.
+	c.lastSeq = input.Seq
+	peer.mu.Unlock()
 
 	m.mu.Lock()
 	backend := m.controlBackend
@@ -136,9 +141,11 @@ func (m *RuntimeMirror) handleInputMessage(
 		return
 	case AcquireHeld, AcquireReentry:
 	}
-	// Pointer-up / key-up / end of type always release; down/move/type hold briefly.
+	// Wheel and text events are complete gestures; pointer and key gestures
+	// retain the resource until their matching up event.
 	releaseAtEnd := input.Kind == protocol.MirrorInputPointerUp ||
 		input.Kind == protocol.MirrorInputKeyUp ||
+		input.Kind == protocol.MirrorInputWheel ||
 		input.Kind == protocol.MirrorInputType
 
 	reason := backend.DispatchInput(context.Background(), resource, grant, input)
@@ -146,6 +153,9 @@ func (m *RuntimeMirror) handleInputMessage(
 		arbiter.Release(resource, principal, input.GestureID)
 	}
 	if reason != "" {
+		if reason == protocol.MirrorInputDenied {
+			m.publishAuthorization(viewerID, "system", "需要主机授权", "运行时需要辅助功能权限才能接收远程输入，请在主机上确认授权。")
+		}
 		m.nack(channel, channelMu, channelClosed, input, reason)
 		return
 	}

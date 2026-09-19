@@ -76,4 +76,9 @@ func (d *Daemon) wireMirrorControl(rm *mirror.RuntimeMirror) {
 		d.controlBackend = newMirrorControlBackend(d)
 	}
 	rm.SetControlBackend(d.controlBackend)
+	rm.SetAuthorizationPublisher(func(viewerID string, request protocol.MirrorAuthorizationRequest) {
+		if !rm.PublishAuthorizationRequest(viewerID, request) {
+			d.logger.Debug("mirror authorization prompt could not be delivered", "runtime_id", request.RequestID)
+		}
+	})
 }
