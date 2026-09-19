@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v4"
+
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 const defaultMirrorPeerAttachTimeout = 30 * time.Second
@@ -71,18 +73,58 @@ type RuntimeMirror struct {
 	source *Source
 	hub    *CaptureHub
 
-	mu                sync.Mutex
-	closed            bool
-	peers             map[string]*mirrorPeer
-	closeDone         chan struct{}
-	closeErr          error
-	peerAttachTimeout time.Duration
+	mu                         sync.Mutex
+	closed                     bool
+	peers                      map[string]*mirrorPeer
+	closeDone                  chan struct{}
+	closeErr                   error
+	peerAttachTimeout          time.Duration
+	arbiter                    *Arbiter
+	controlBackend             ControlBackend
+	controlMu                  sync.Mutex
+	controlStateHookGeneration uint64
+	controlStateHookFn         func(ControlStateChange)
+}
+
+// ControlBackend is supplied by the daemon. It resolves a granted source to a
+// shared arbitration resource, reports whether the host currently permits
+// remote human interaction (default off), and applies one accepted input.
+// DispatchInput returns "" when applied or a MirrorInput* nack reason.
+type ControlBackend interface {
+	ResourceForGrant(grant protocol.MirrorControlGrant) (protocol.ResourceKey, bool)
+	InteractionEnabled() bool
+	DispatchInput(ctx context.Context, resource protocol.ResourceKey, grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) string
+}
+
+// SetArbiter installs the daemon-shared FCFS arbiter so human input and agent
+// actions contend on the same per-resource locks.
+func (m *RuntimeMirror) SetArbiter(a *Arbiter) {
+	m.mu.Lock()
+	m.arbiter = a
+	m.mu.Unlock()
+}
+
+func (m *RuntimeMirror) Arbiter() *Arbiter {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.arbiter
+}
+
+// SetControlBackend installs the daemon-side host gate and input executor.
+func (m *RuntimeMirror) SetControlBackend(backend ControlBackend) {
+	m.mu.Lock()
+	m.controlBackend = backend
+	m.mu.Unlock()
 }
 
 type mirrorPeer struct {
-	pc    *webrtc.PeerConnection
-	video *videoPeer
-	grant *viewerGrant
+	pc           *webrtc.PeerConnection
+	video        *videoPeer
+	grant        *viewerGrant
+	controlGrant *controlGrant
+	input        *webrtc.DataChannel
+	inputClose   func()
+	inputLocks   map[string]string
 
 	mu                     sync.Mutex
 	attachTimer            *time.Timer
@@ -191,6 +233,10 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 		}
 	}
 	pc.OnDataChannel(func(channel *webrtc.DataChannel) {
+		if channel.Label() == "mirror-input" && channel.Ordered() {
+			m.bindInputChannel(viewerID, peer, channel, cleanup)
+			return
+		}
 		if peer.video != nil {
 			if (channel.Label() == "mirror" || channel.Label() == "mirror-control") && channel.Ordered() {
 				peer.mu.Lock()

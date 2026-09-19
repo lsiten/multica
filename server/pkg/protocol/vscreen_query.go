@@ -49,12 +49,19 @@ func (r VscreenQueryResult) Validate(kind string) error {
 		seen := make(map[MirrorSource]bool, len(r.Sources))
 		primary := false
 		for _, source := range r.Sources {
-			if seen[source.Source] || source.Resource != r.Sources[0].Resource || source.NativeEpoch != r.Sources[0].NativeEpoch || (primary && source.Primary) {
+			if !sameDisplayResource(r.Sources[0].Resource, source.Resource) || source.NativeEpoch != r.Sources[0].NativeEpoch {
+				return ErrInvalidVscreenContract
+			}
+			if seen[source.Source] || (primary && source.Primary) {
 				return ErrInvalidVscreenContract
 			}
 			seen[source.Source] = true
 			primary = primary || source.Primary
-			if len(source.Name) > 256 || source.Width < 0 || source.Width > 32768 || source.Height < 0 || source.Height > 32768 || source.Scale < 0 || source.Scale > 16 || math.IsNaN(source.Scale) || math.IsInf(source.Scale, 0) {
+			if len(source.Name) > 256 || source.Width < 0 || source.Width > 32768 || source.Height < 0 || source.Height > 32768 ||
+				source.LogicalWidth < 0 || source.LogicalWidth > 32768 || source.LogicalHeight < 0 || source.LogicalHeight > 32768 ||
+				source.X < -32768 || source.X > 32768 || source.Y < -32768 || source.Y > 32768 ||
+				source.GeometryRevision == 0 || source.Scale < 0 || source.Scale > 16 || math.IsNaN(source.Scale) || math.IsInf(source.Scale, 0) ||
+				math.IsNaN(source.LogicalWidth) || math.IsInf(source.LogicalWidth, 0) || math.IsNaN(source.LogicalHeight) || math.IsInf(source.LogicalHeight, 0) {
 				return ErrInvalidVscreenContract
 			}
 			if err := source.Resource.Validate(); err != nil {
@@ -82,8 +89,19 @@ type MirrorViewerRenewPayload struct {
 // VscreenSourceDescriptor keeps display labels beside their exact authorization binding.
 type VscreenSourceDescriptor struct {
 	MirrorSourceBinding
-	Name   string  `json:"name"`
-	Width  int     `json:"width"`
-	Height int     `json:"height"`
-	Scale  float64 `json:"scale"`
+	DisplayID        uint32  `json:"display_id"`
+	Name             string  `json:"name"`
+	Width            int     `json:"width"`
+	Height           int     `json:"height"`
+	LogicalWidth     float64 `json:"logical_width"`
+	LogicalHeight    float64 `json:"logical_height"`
+	Scale            float64 `json:"scale"`
+	X                int32   `json:"x"`
+	Y                int32   `json:"y"`
+	GeometryRevision uint64  `json:"geometry_revision"`
+}
+
+func sameDisplayResource(a, b ResourceKey) bool {
+	return a.BackendIdentity == b.BackendIdentity && a.WorkspaceID == b.WorkspaceID &&
+		a.RuntimeID == b.RuntimeID && a.UID == b.UID
 }

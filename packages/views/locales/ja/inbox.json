@@ -80,7 +80,9 @@
     "autopilot_paused": "自動化を一時停止しました",
     "autopilot_quota_exceeded": "自動化の実行上限に達しました",
     "runtime_mirror_viewer_started": "画面ミラーリングを開始しました",
-    "runtime_mirror_viewer_stopped": "画面ミラーリングを終了しました"
+    "runtime_mirror_viewer_stopped": "画面ミラーリングを終了しました",
+    "runtime_mirror_control_started": "リモート画面操作が開始されました",
+    "runtime_mirror_control_stopped": "リモート画面操作が終了しました"
   },
   "labels": {
     "set_status_to": "ステータスを変更:",
@@ -96,7 +98,9 @@
     "failed_with_detail": "失敗: {{detail}}",
     "autopilot_quota_blocked": "上限に達したため実行をブロックしました",
     "mirror_viewing_started": "{{runtime}} の画面を閲覧しています。",
-    "mirror_viewing_stopped": "{{runtime}} の画面ミラーリングが終了しました。"
+    "mirror_viewing_stopped": "{{runtime}} の画面ミラーリングが終了しました。",
+    "mirror_control_started": "{{name}} が {{runtime}} を操作しています。",
+    "mirror_control_stopped": "{{runtime}} のリモート操作が終了しました。"
   },
   "toasts": {
     "source_context_retry_started": "元のコンテキストで再試行を開始しました",

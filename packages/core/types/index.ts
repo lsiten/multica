@@ -354,3 +354,5 @@ export type {
 } from "./billing";
 
 export * from "./vscreen";
+
+export type { RuntimeMirrorController, RuntimeMirrorControlState } from "./vscreen";

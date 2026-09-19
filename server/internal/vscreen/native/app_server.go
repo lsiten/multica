@@ -49,7 +49,7 @@ func (h *appHost) serve() {
 				continue
 			}
 		}
-		if r.Operation != "app_probe" && (r.Resource.Validate() != nil || r.Epoch.NativeEpoch != h.epoch || r.App.Authority.Resource != r.Resource || r.App.Authority.Epoch != r.Epoch) {
+		if !permissionOperation(r.Operation) && (r.Resource.Validate() != nil || r.Epoch.NativeEpoch != h.epoch || r.App.Authority.Resource != r.Resource || r.App.Authority.Epoch != r.Epoch) {
 			if h.reply(r, nil, appRefusal("stale_authority")) != nil {
 				return
 			}
@@ -92,7 +92,7 @@ func (h *appHost) serve() {
 		}
 		h.mu.Lock()
 		resource, exists := h.resources[r.Resource]
-		if r.Operation != "app_probe" && (!exists || resource.epoch != r.Epoch) {
+		if !permissionOperation(r.Operation) && (!exists || resource.epoch != r.Epoch) {
 			h.mu.Unlock()
 			if h.reply(r, nil, appRefusal("stale_authority")) != nil {
 				return
@@ -197,4 +197,8 @@ func (h *appHost) lifecycle(r Request) error {
 		h.mu.Unlock()
 	}
 	return err
+}
+
+func permissionOperation(operation string) bool {
+	return operation == "app_probe" || operation == "app_request_permissions"
 }

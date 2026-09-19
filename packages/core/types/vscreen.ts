@@ -10,6 +10,7 @@ export interface VscreenResource {
   readonly workspaceId: string;
   readonly runtimeId: string;
   readonly uid: number;
+  readonly displayId?: number;
 }
 
 export interface VscreenEnvelope {
@@ -46,7 +47,13 @@ export type VscreenPermission =
   | "denied"
   | "restricted"
   | "not_determined";
-export type VscreenCommandKind = "enable" | "disable" | "request_takeover";
+export type VscreenCommandKind =
+  | "enable"
+  | "disable"
+  | "request_takeover"
+  | "enable_interaction"
+  | "disable_interaction"
+  | "emergency_stop";
 
 export interface VscreenStateSnapshot extends VscreenEpoch {
   readonly runtimeId: string;
@@ -59,6 +66,7 @@ export interface VscreenStateSnapshot extends VscreenEpoch {
     readonly accessibility: VscreenPermission;
   };
   readonly stateRevision: number;
+  readonly humanInteraction: boolean;
 }
 
 export interface VscreenStateResponse extends VscreenEnvelope {
@@ -76,13 +84,19 @@ export interface MirrorSourceBinding {
   readonly nativeEpoch: string;
   readonly generation: string;
   readonly primary: boolean;
+  readonly displayId?: number;
 }
 
 export interface VscreenSourceDescriptor extends MirrorSourceBinding {
   readonly name: string;
   readonly width: number;
   readonly height: number;
+  readonly logicalWidth: number;
+  readonly logicalHeight: number;
   readonly scale: number;
+  readonly x: number;
+  readonly y: number;
+  readonly geometryRevision: number;
 }
 
 export interface VscreenSourcesResponse extends VscreenEnvelope {
@@ -100,6 +114,76 @@ export interface VscreenCommandReceipt extends VscreenEnvelope {
   readonly state: "pending" | "running" | "succeeded" | "failed" | "unknown";
   readonly reason?: string;
   readonly epoch?: VscreenEpoch;
+}
+
+
+export interface RuntimeMirrorController {
+  readonly viewerId: string;
+  readonly userId: string;
+  readonly source: MirrorSource;
+}
+
+export interface RuntimeMirrorControlState {
+  readonly workspaceId: string;
+  readonly runtimeId: string;
+  readonly controllers: readonly RuntimeMirrorController[];
+}
+
+/** Explicit capability to send pointer/keyboard input over mirror-input. */
+export interface MirrorControlGrant {
+  readonly grantId: string;
+  readonly sessionId: string;
+  readonly workspaceId: string;
+  readonly runtimeId: string;
+  readonly userId: string;
+  readonly viewerId: string;
+  readonly nativeEpoch: string;
+  readonly source: MirrorSource;
+  readonly sourceGeneration: string;
+  readonly expiresAt: string;
+}
+
+export type MirrorInputKind =
+  | "pointer:down"
+  | "pointer:up"
+  | "pointer:move"
+  | "wheel"
+  | "key:down"
+  | "key:up"
+  | "type";
+
+export type MirrorPointerButton = "left" | "middle" | "right";
+
+export interface MirrorInputMessage {
+  readonly kind: MirrorInputKind;
+  readonly grantId: string;
+  readonly gestureId: string;
+  readonly seq: number;
+  readonly nativeEpoch: string;
+  readonly displayGeneration: string;
+  readonly geometryRevision: number;
+  readonly pointer?: {
+    readonly button?: MirrorPointerButton;
+    readonly x: number;
+    readonly y: number;
+    readonly delta_x?: number;
+    readonly delta_y?: number;
+  };
+  readonly key?: {
+    readonly key: string;
+    readonly modifiers?: readonly ("shift" | "control" | "alt" | "meta")[];
+  };
+  readonly text?: {
+    readonly text: string;
+  };
+}
+
+export interface MirrorInputAck {
+  readonly type: "mirror-input:ack" | "mirror-input:nack";
+  readonly kind: string;
+  readonly gestureId: string;
+  readonly seq: number;
+  readonly reason?: "busy" | "stale" | "denied" | "unsupported";
 }
 
 /** Viewing metadata cannot authorize input or resume an AI task. */

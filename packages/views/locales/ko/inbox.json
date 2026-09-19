@@ -80,7 +80,9 @@
     "autopilot_paused": "자동화 일시 중지됨",
     "autopilot_quota_exceeded": "자동화 실행 한도 도달",
     "runtime_mirror_viewer_started": "화면 미러링이 시작됨",
-    "runtime_mirror_viewer_stopped": "화면 미러링이 종료됨"
+    "runtime_mirror_viewer_stopped": "화면 미러링이 종료됨",
+    "runtime_mirror_control_started": "원격 화면 제어가 시작됨",
+    "runtime_mirror_control_stopped": "원격 화면 제어가 종료됨"
   },
   "labels": {
     "set_status_to": "상태 변경:",
@@ -96,7 +98,9 @@
     "failed_with_detail": "실패: {{detail}}",
     "autopilot_quota_blocked": "한도에 도달하여 실행이 차단됨",
     "mirror_viewing_started": "{{runtime}} 화면을 보고 있습니다.",
-    "mirror_viewing_stopped": "{{runtime}} 화면 미러링이 종료되었습니다."
+    "mirror_viewing_stopped": "{{runtime}} 화면 미러링이 종료되었습니다.",
+    "mirror_control_started": "{{name}}님이 {{runtime}} 화면을 제어하고 있습니다.",
+    "mirror_control_stopped": "{{runtime}} 화면의 원격 제어가 종료되었습니다."
   },
   "toasts": {
     "source_context_retry_started": "원본 컨텍스트로 재시도를 시작했습니다",

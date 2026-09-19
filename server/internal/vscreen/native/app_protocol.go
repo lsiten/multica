@@ -15,6 +15,7 @@ type AppRequest struct {
 	WindowHandle string                         `json:"window_handle,omitempty"`
 	IncludePNG   bool                           `json:"include_png,omitempty"`
 	SnapshotID   string                         `json:"snapshot_id,omitempty"`
+	Permissions  appcontrol.PermissionRequest   `json:"permissions,omitempty"`
 	CancelID     string                         `json:"cancel_id,omitempty"`
 	Human        *HumanGrant                    `json:"human,omitempty"`
 }

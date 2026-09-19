@@ -115,7 +115,7 @@ func (c *Client) appExchange(ctx context.Context, operation string, a appcontrol
 		if response.Error != "" {
 			return nil, &RemoteError{Code: safeAppCode(response.Error)}
 		}
-		if operation != "app_probe" && response.Epoch != a.Epoch {
+		if operation != "app_probe" && operation != "app_request_permissions" && response.Epoch != a.Epoch {
 			c.failApps(native.ErrProtocol)
 			return nil, native.ErrProtocol
 		}
@@ -257,7 +257,16 @@ func (c *Client) TransferApp(ctx context.Context, a appcontrol.Authority, g nati
 
 // ProbeAppPermissions performs only nonprompt native preflight checks.
 func (c *Client) ProbeAppPermissions(ctx context.Context) (appcontrol.Permissions, error) {
-	out, err := c.appExchange(ctx, "app_probe", appcontrol.Authority{Epoch: protocol.VscreenEpoch{NativeEpoch: c.epoch}}, native.AppRequest{})
+	return c.permissionExchange(ctx, "app_probe", appcontrol.PermissionRequest{})
+}
+
+// RequestAppPermissions presents the selected native TCC prompts from the host process.
+func (c *Client) RequestAppPermissions(ctx context.Context, request appcontrol.PermissionRequest) (appcontrol.Permissions, error) {
+	return c.permissionExchange(ctx, "app_request_permissions", request)
+}
+
+func (c *Client) permissionExchange(ctx context.Context, operation string, request appcontrol.PermissionRequest) (appcontrol.Permissions, error) {
+	out, err := c.appExchange(ctx, operation, appcontrol.Authority{Epoch: protocol.VscreenEpoch{NativeEpoch: c.epoch}}, native.AppRequest{Permissions: request})
 	if err != nil {
 		return appcontrol.Permissions{}, err
 	}

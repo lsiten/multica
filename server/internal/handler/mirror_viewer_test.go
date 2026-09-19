@@ -32,6 +32,8 @@ func isolatedMirrorViewerHandler(t *testing.T) *Handler {
 	h := *testHandler
 	h.Bus = events.New()
 	h.MirrorViewers = mirror.NewViewerTracker()
+	h.MirrorControlStates = mirror.NewControlStateTracker()
+	h.MirrorControlGrants = mirror.NewControlGrantStore()
 	h.DaemonHub = daemonws.NewHub()
 	return &h
 }

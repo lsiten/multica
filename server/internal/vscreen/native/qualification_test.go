@@ -73,7 +73,7 @@ func TestQualificationBindsDynamicCodeIdentityAndAction(t *testing.T) {
 func TestQualificationRejectsScopeWindowAndHumanPaths(t *testing.T) {
 	q, _, _ := qualificationFixture(t)
 	a := appcontrol.Authority{Resource: q.scope.Resource}
-	for _, op := range []string{"app_human_grant", "app_human_transfer", "app_human_candidates", "app_human_adopt", "app_list", "app_probe", "app_managed_windows"} {
+	for _, op := range []string{"app_human_grant", "app_human_transfer", "app_human_candidates", "app_human_adopt", "app_list", "app_probe", "app_request_permissions", "app_managed_windows"} {
 		if q.check(appReq(op, a)) == nil {
 			t.Fatal("accepted", op)
 		}

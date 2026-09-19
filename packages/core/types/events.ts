@@ -39,6 +39,7 @@ export type WSEventType =
   | "inbox:unarchived"
   | "inbox:batch-read"
   | "inbox:batch-archived"
+  | "runtime_mirror:control"
   | "workspace:updated"
   | "workspace:deleted"
   | "member:added"
@@ -216,6 +217,21 @@ export interface InboxBatchReadPayload {
 export interface InboxBatchArchivedPayload {
   recipient_id: string;
   count: number;
+}
+
+export interface RuntimeMirrorControlControllerPayload {
+  viewer_id: string;
+  user_id: string;
+  source: {
+    kind: "virtual" | "physical" | "system";
+    source_id: string;
+  };
+}
+
+export interface RuntimeMirrorControlPayload {
+  workspace_id: string;
+  runtime_id: string;
+  controllers: RuntimeMirrorControlControllerPayload[];
 }
 
 export interface CommentCreatedPayload {
@@ -601,6 +617,7 @@ export interface WSEventPayloadMap {
   "inbox:unarchived": InboxUnarchivedPayload;
   "inbox:batch-read": InboxBatchReadPayload;
   "inbox:batch-archived": InboxBatchArchivedPayload;
+  "runtime_mirror:control": RuntimeMirrorControlPayload;
   "workspace:updated": WorkspaceUpdatedPayload;
   "workspace:deleted": WorkspaceDeletedPayload;
   "member:added": MemberAddedPayload;

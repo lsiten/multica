@@ -511,6 +511,10 @@ func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Contex
 			d.handleVscreenViewerRenew(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventMirrorViewerRevoke:
 			d.handleVscreenViewerRevoke(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
+		case protocol.EventMirrorControlGrant:
+			d.handleMirrorControlGrant(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
+		case protocol.EventMirrorControlRevoke:
+			d.handleMirrorControlRevoke(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventVscreenInterventionAck:
 			if reader.vscreenReporter != nil {
 				reader.vscreenReporter.OnAck(reader.vscreenReportBinding, msg.Payload)

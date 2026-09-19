@@ -354,8 +354,10 @@ type Hub struct {
 	onMirrorAnswer        MirrorAnswerHandler
 	onMirrorAnswerFailure MirrorAnswerFailureHandler
 
-	mirrorViewerMu sync.RWMutex
-	onMirrorViewer MirrorViewerHandler
+	mirrorViewerMu       sync.RWMutex
+	onMirrorViewer       MirrorViewerHandler
+	mirrorControlStateMu sync.RWMutex
+	onMirrorControlState MirrorControlStateHandler
 
 	disconnectMu sync.RWMutex
 	onDisconnect DisconnectHandler
@@ -1117,6 +1119,8 @@ func (c *client) handleFrame(raw []byte) {
 		c.handleMirrorAnswerFailureFrame(msg.Payload)
 	case protocol.EventMirrorViewer:
 		c.handleMirrorViewerFrame(msg.Payload)
+	case protocol.EventMirrorControlState:
+		c.handleMirrorControlStateFrame(msg.Payload)
 	default:
 		// Unknown app messages are intentionally ignored for forward
 		// compatibility with future daemon → server message types.

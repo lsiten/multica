@@ -68,7 +68,9 @@ func (h *Handler) HandleDaemonMirrorViewer(ctx context.Context, identity daemonw
 		}
 	}
 	h.MirrorGrants.SetActive(payload.DaemonID, payload.RuntimeID, payload.ViewerID, payload.Active)
+	h.MirrorControlGrants.SetActive(payload.DaemonID, payload.RuntimeID, payload.ViewerID, payload.Active)
 	if !payload.Active {
+		h.revokeControlGrantViewer(payload.RuntimeID, payload.ViewerID)
 		for _, record := range h.MirrorGrants.Records() {
 			if record.DaemonID == payload.DaemonID && record.Grant.RuntimeID == payload.RuntimeID && record.Grant.ViewerID == payload.ViewerID {
 				h.revokeViewerGrant(record)
@@ -133,10 +135,16 @@ func (h *Handler) HandleDaemonMirrorDisconnect(ctx context.Context, identity dae
 			)
 		}
 	}
+	isolatedRuntimeIDs := make([]string, 0, len(identity.RuntimeIDs))
+	for _, runtimeID := range identity.RuntimeIDs {
+		if h.DaemonHub.RuntimeConnectionCount(runtimeID) == 0 {
+			isolatedRuntimeIDs = append(isolatedRuntimeIDs, runtimeID)
+		}
+	}
+	h.revokeControlGrantsForDaemon(identity.DaemonID, isolatedRuntimeIDs)
+	h.resetMirrorControlStatesOnDisconnect(ctx, identity, isolatedRuntimeIDs)
 	if h.MirrorViewers != nil {
-		activeRuntimeIDs := h.MirrorViewers.ResetIf(identity.RuntimeIDs, func(runtimeID string) bool {
-			return h.DaemonHub.RuntimeConnectionCount(runtimeID) == 0
-		})
+		activeRuntimeIDs := h.MirrorViewers.ResetIf(isolatedRuntimeIDs, nil)
 		for _, runtimeID := range activeRuntimeIDs {
 			runtimeUUID, err := util.ParseUUID(runtimeID)
 			if err != nil {

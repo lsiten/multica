@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/multica-ai/multica/server/internal/vscreen"
+	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -62,7 +63,19 @@ func (d *Daemon) handleVscreenQuery(ctx context.Context, msg mirrorOfferMessage)
 		} else {
 			result.Sources = make([]protocol.VscreenSourceDescriptor, 0, len(sources))
 			for _, source := range sources {
-				result.Sources = append(result.Sources, protocol.VscreenSourceDescriptor{MirrorSourceBinding: source.MirrorSourceBinding, Name: source.Name, Width: int(source.Width), Height: int(source.Height), Scale: source.Scale})
+				result.Sources = append(result.Sources, protocol.VscreenSourceDescriptor{
+					MirrorSourceBinding: source.MirrorSourceBinding,
+					DisplayID:           source.DisplayID,
+					Name:                source.Name,
+					Width:               int(source.Width),
+					Height:              int(source.Height),
+					LogicalWidth:        source.LogicalWidth,
+					LogicalHeight:       source.LogicalHeight,
+					Scale:               source.Scale,
+					X:                   source.X,
+					Y:                   source.Y,
+					GeometryRevision:    source.GeometryRevision,
+				})
 			}
 		}
 	default:
@@ -140,6 +153,9 @@ func (d *Daemon) executeVscreenCommand(ctx context.Context, c protocol.VscreenCo
 	if !d.vscreenEnvelopeCurrent(c.VscreenEnvelope, g) {
 		return errWSRPCUnavailable
 	}
+	if c.Kind.HostInteractionCommand() {
+		return d.executeHostInteractionCommand(ctx, c, g)
+	}
 	s := d.vscreenRuntime()
 	if c.Kind == protocol.VscreenCommandRequestTakeover {
 		d.vscreenMu.Lock()
@@ -179,6 +195,9 @@ func (d *Daemon) executeVscreenCommand(ctx context.Context, c protocol.VscreenCo
 		if err = d.startVscreenHost(nativeCtx, s); err != nil {
 			return err
 		}
+		if err = d.requestVscreenPermissions(nativeCtx, s, appcontrol.PermissionRequest{Accessibility: true, ScreenRecording: true}); err != nil {
+			return err
+		}
 		display, ensureErr := a.Ensure(nativeCtx)
 		if ensureErr != nil {
 			return ensureErr
@@ -200,6 +219,56 @@ func (d *Daemon) executeVscreenCommand(ctx context.Context, c protocol.VscreenCo
 		delete(s.enabled, key)
 	}
 	return d.saveVscreenPreferences(s)
+}
+
+// requestVscreenPermissions registers the native host with TCC and presents the
+// system consent prompts. A denied answer still leaves the virtual display
+// available; capture and control enforce their respective permissions.
+func (d *Daemon) requestVscreenPermissions(ctx context.Context, s *vscreenRuntime, request appcontrol.PermissionRequest) error {
+	if (!request.ScreenRecording || s.screenPermissionRequested) && (!request.Accessibility || s.accessibilityPermissionRequested) {
+		return nil
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	_, err := s.client.RequestAppPermissions(requestCtx, request)
+	if err == nil {
+		s.screenPermissionRequested = s.screenPermissionRequested || request.ScreenRecording
+		s.accessibilityPermissionRequested = s.accessibilityPermissionRequested || request.Accessibility
+	}
+	return err
+}
+
+func (d *Daemon) executeHostInteractionCommand(ctx context.Context, c protocol.VscreenCommand, g mirrorControlGeneration) error {
+	switch c.Kind {
+	case protocol.VscreenCommandEnableInteraction:
+		s := d.vscreenRuntime()
+		nativeCtx := context.WithoutCancel(ctx)
+		s.mu.Lock()
+		err := d.startVscreenHost(nativeCtx, s)
+		if err == nil {
+			err = d.requestVscreenPermissions(nativeCtx, s, appcontrol.PermissionRequest{Accessibility: true})
+		}
+		s.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		d.SetHumanInteractionEnabled(true)
+		return nil
+	case protocol.VscreenCommandDisableInteraction:
+		d.SetHumanInteractionEnabled(false)
+		return nil
+	case protocol.VscreenCommandEmergencyStop:
+		d.SetHumanInteractionEnabled(false)
+		if d.inputArbiter != nil {
+			d.inputArbiter.EmergencyReleaseRuntime(c.WorkspaceID, c.RuntimeID)
+		}
+		if rm := d.existingManagedMirror(c.RuntimeID, g); rm != nil {
+			rm.RevokeAllControl(uint64(g))
+		}
+		return nil
+	default:
+		return protocol.ErrInvalidVscreenContract
+	}
 }
 
 type vscreenCachedCommand struct {

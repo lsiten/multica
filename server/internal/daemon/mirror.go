@@ -69,11 +69,7 @@ func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessa
 			return
 		}
 		if created {
-			runtimeMirror.SetViewerStateHook(func(change mirror.ViewerStateChange) {
-				if _, err := d.sendMirrorViewerState(enqueue, offer.WorkspaceID, offer.RuntimeID, change.ViewerID, change.Active); err != nil {
-					d.logger.Debug("mirror viewer state dropped", "runtime_id", offer.RuntimeID, "error", err)
-				}
-			}, uint64(controlGeneration))
+			d.bindMirrorStateHooks(runtimeMirror, enqueue, offer.WorkspaceID, offer.RuntimeID, controlGeneration)
 		}
 		answerCtx, cancel := mirrorOfferContext(ctx, offer.ExpiresAt)
 		defer cancel()
@@ -201,6 +197,57 @@ func (d *Daemon) sendMirrorViewerState(
 		return nil, err
 	}
 	return enqueue(frame)
+}
+
+func (d *Daemon) sendMirrorControlState(
+	enqueue func([]byte) (*wsOutbound, error),
+	workspaceID string,
+	runtimeID string,
+	change mirror.ControlStateChange,
+) (*wsOutbound, error) {
+	if enqueue == nil {
+		return nil, errWSRPCUnavailable
+	}
+	payload := protocol.MirrorControlStatePayload{
+		WorkspaceID: workspaceID,
+		RuntimeID:   runtimeID,
+		DaemonID:    d.cfg.DaemonID,
+		ViewerID:    change.ViewerID,
+		UserID:      change.UserID,
+		Source:      change.Source,
+		Active:      change.Active,
+	}
+	if err := payload.Validate(); err != nil {
+		return nil, err
+	}
+	frame, err := json.Marshal(protocol.Message{Type: protocol.EventMirrorControlState, Payload: marshalRaw(payload)})
+	if err != nil {
+		return nil, err
+	}
+	return enqueue(frame)
+}
+
+func (d *Daemon) bindMirrorStateHooks(
+	runtimeMirror *mirror.RuntimeMirror,
+	enqueue func([]byte) (*wsOutbound, error),
+	workspaceID string,
+	runtimeID string,
+	generation mirrorControlGeneration,
+) {
+	gen := uint64(generation)
+	runtimeMirror.SetViewerStateHook(func(change mirror.ViewerStateChange) {
+		if _, err := d.sendMirrorViewerState(enqueue, workspaceID, runtimeID, change.ViewerID, change.Active); err != nil {
+			d.logger.Debug("mirror viewer state dropped", "runtime_id", runtimeID, "error", err)
+		}
+	}, gen)
+	runtimeMirror.SetControlStateHook(func(change mirror.ControlStateChange) {
+		if !d.mirrorControlGenerationIsCurrent(generation) {
+			return
+		}
+		if _, err := d.sendMirrorControlState(enqueue, workspaceID, runtimeID, change); err != nil {
+			d.logger.Debug("mirror control state dropped", "runtime_id", runtimeID, "error", err)
+		}
+	}, gen)
 }
 
 func mirrorOfferContext(parent context.Context, expiresAt time.Time) (context.Context, context.CancelFunc) {

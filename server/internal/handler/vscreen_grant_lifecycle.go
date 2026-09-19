@@ -122,6 +122,7 @@ func (h *Handler) RunViewerGrantLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			h.sweepViewerGrants(ctx)
+			h.sweepControlGrants(ctx)
 		}
 	}
 }

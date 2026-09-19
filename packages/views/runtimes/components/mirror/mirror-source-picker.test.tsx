@@ -17,7 +17,12 @@ const source: VscreenSourceDescriptor = {
   name: "A very long display name that cannot fit within a narrow floating viewer",
   width: 640,
   height: 360,
+  logicalWidth: 640,
+  logicalHeight: 360,
   scale: 1,
+  x: 0,
+  y: 0,
+  geometryRevision: 1,
 };
 describe("MirrorSourcePicker full labels", () => {
   it("preserves the full source name as a title when the selected text is constrained", () => {

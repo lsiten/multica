@@ -42,6 +42,8 @@ type VscreenStateSnapshot struct {
 	ActiveTaskID      *string                  `json:"active_task_id"`
 	InterventionID    *string                  `json:"intervention_id"`
 	Permissions       VscreenPermissions       `json:"permissions"`
+	// HumanInteraction reports the host master switch for remote human control.
+	HumanInteraction  bool                     `json:"human_interaction,omitempty"`
 	ReturnReceiptID   string                   `json:"return_receipt_id,omitempty"`
 	InterventionState VscreenInterventionState `json:"intervention_state,omitempty"`
 	StateRevision     uint64                   `json:"state_revision"`

@@ -115,6 +115,29 @@ int ac_call(uintptr_t handle, uintptr_t request, const char *bytes,
         @"ScreenRecording" :
             [NSNumber numberWithBool:CGPreflightScreenCaptureAccess()]
       };
+    else if ([op isEqual:@"request_permissions"]) {
+      BOOL requestAccessibility =
+          [input[@"Accessibility"] boolValue];
+      BOOL requestScreenRecording =
+          [input[@"ScreenRecording"] boolValue];
+      if (!requestAccessibility && !requestScreenRecording)
+        error = @"invalid_action";
+      BOOL accessibility =
+          requestAccessibility
+              ? AXIsProcessTrustedWithOptions(
+                    (CFDictionaryRef)@{
+                      (__bridge id)kAXTrustedCheckOptionPrompt : @YES
+                    })
+              : AXIsProcessTrusted();
+      BOOL screenRecording = requestScreenRecording
+                                 ? CGRequestScreenCaptureAccess()
+                                 : CGPreflightScreenCaptureAccess();
+      value = @{
+        @"Accessibility" : [NSNumber numberWithBool:accessibility],
+        @"ScreenRecording" :
+            [NSNumber numberWithBool:screenRecording]
+      };
+    }
     else if ([op isEqual:@"pid_identity"]) {
       value = ACPIDProcess([input[@"PID"] intValue]);
       if (!value)

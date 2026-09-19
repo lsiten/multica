@@ -1305,6 +1305,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	daemonHub.SetMirrorAnswerHandler(h.HandleDaemonMirrorAnswer)
 	daemonHub.SetMirrorAnswerFailureHandler(h.HandleDaemonMirrorAnswerFailure)
 	daemonHub.SetMirrorViewerHandler(h.HandleDaemonMirrorViewer)
+	daemonHub.SetMirrorControlStateHandler(h.HandleDaemonMirrorControlState)
 	daemonHub.SetDisconnectHandler(h.HandleDaemonMirrorDisconnect)
 	health := newServerHealth(pool)
 
@@ -2236,12 +2237,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/vscreen", h.GetVscreen)
 					r.Get("/vscreen/interventions", h.ListVscreenInterventions)
 					r.Get("/mirror/sources", h.GetMirrorSources)
+					r.Get("/mirror/control-state", h.GetMirrorControlState)
 					r.Post("/vscreen/commands", h.CreateVscreenCommand)
 					r.Get("/vscreen/commands/{commandId}", h.GetVscreenCommand)
 					r.Post("/mirror/sessions", h.CreateMirrorSession)
 					r.Post("/mirror/sessions/{sessionId}/renew", h.RenewMirrorSession)
 					r.Get("/mirror/sessions/{sessionId}", h.GetMirrorSession)
 					r.Delete("/mirror/sessions/{sessionId}", h.CloseMirrorSession)
+					r.Post("/mirror/control-grants", h.CreateMirrorControlGrant)
+					r.Post("/mirror/control-grants/renew", h.RenewMirrorControlGrant)
+					r.Delete("/mirror/control-grants/{viewerId}", h.RevokeMirrorControlGrant)
 					r.Delete("/", h.DeleteAgentRuntime)
 					// Confirmed variant of DELETE: unbind every agent bound to
 					// this runtime (they keep their configuration and chats and

@@ -25,6 +25,9 @@ import { MirrorVideo } from "./mirror-video";
 import { useMirrorPlatform } from "./mirror-platform";
 import { MirrorSourcePicker, mirrorSourceKey } from "./mirror-source-picker";
 import { MirrorCommandControls } from "./mirror-command-controls";
+import { MirrorControlBar } from "./mirror-control-bar";
+import { InteractiveMirrorVideo } from "./interactive-mirror-video";
+import { MirrorControllerPresence } from "./mirror-controller-presence";
 
 export function MirrorSurface({
   scope,
@@ -52,6 +55,7 @@ export function MirrorSurface({
   });
   const [selected, setSelected] = useState<string>("");
   const initialSourceChosen = useRef(false);
+  const previousSelectedSource = useRef<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [floatingError, setFloatingError] = useState(false);
   const [commandId, setCommandId] = useState<string | null>(null);
@@ -105,7 +109,18 @@ export function MirrorSurface({
   const runCommand = (kind: VscreenCommandKind) => {
     const id = crypto.randomUUID();
     setCommandId(id);
-    command.mutate({ commandId: id, kind });
+    command.mutate(
+      { commandId: id, kind },
+      {
+        onSuccess: async () => {
+          if (kind !== "emergency_stop") return;
+          await video.stopControl();
+          await queryClient.invalidateQueries({
+            queryKey: vscreenKeys.all(scope),
+          });
+        },
+      },
+    );
   };
   const reason =
     video.reason ??
@@ -143,6 +158,41 @@ export function MirrorSurface({
                         : t(($) => $.vscreen.negotiating);
   const label = runtimeDisplayLabel(runtime);
   const quality = video.quality ?? video.metadata?.quality;
+  const controlActive = video.control.status === "active";
+  const sendType = (text: string) =>
+    video.sendInput({
+      kind: "type",
+      gestureId: crypto.randomUUID(),
+      text: { text },
+    });
+  const sendKey = (
+    key: string,
+    modifiers: ("shift" | "control" | "alt" | "meta")[] = [],
+  ) => {
+    const gestureId = `key-${crypto.randomUUID()}`;
+    video.sendInput({
+      kind: "key:down",
+      gestureId,
+      key: { key, modifiers },
+    });
+    video.sendInput({
+      kind: "key:up",
+      gestureId,
+      key: { key, modifiers },
+    });
+  };
+  useEffect(() => {
+    if (previousSelectedSource.current === null) {
+      previousSelectedSource.current = selected;
+      return;
+    }
+    if (previousSelectedSource.current !== selected) {
+      previousSelectedSource.current = selected;
+      if (video.control.status === "active") void video.stopControl();
+    }
+    // Source switches must replace the control grant rather than rebind it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
   return (
     <section
       aria-label={t(($) => $.mirror.frame_label)}
@@ -194,14 +244,30 @@ export function MirrorSurface({
           {t(($) => $.vscreen.floating_failed)}
         </p>
       )}
+      <MirrorControllerPresence
+        scope={scope}
+        enabled={online && readable}
+        catalog={catalog}
+      />
       <div className="relative aspect-video min-h-0 w-full bg-muted/30">
         {video.stream && binding ? (
-          <MirrorVideo
-            stream={video.stream}
-            onFrame={video.onFrame}
-            ready={video.state === "streaming"}
-            label={t(($) => $.mirror.frame_alt, { runtime: label })}
-          />
+          controlActive ? (
+            <InteractiveMirrorVideo
+              stream={video.stream}
+              onFrame={video.onFrame}
+              source={binding}
+              active
+              sendInput={video.sendInput}
+              label={t(($) => $.mirror.frame_alt, { runtime: label })}
+            />
+          ) : (
+            <MirrorVideo
+              stream={video.stream}
+              onFrame={video.onFrame}
+              ready={video.state === "streaming"}
+              label={t(($) => $.mirror.frame_alt, { runtime: label })}
+            />
+          )
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
             <Monitor
@@ -235,6 +301,21 @@ export function MirrorSurface({
           </span>
         )}
       </div>
+      {!compact && (
+        <MirrorControlBar
+          scope={scope}
+          runtime={runtime}
+          source={binding}
+          state={state.data?.state ?? null}
+          videoReady={video.state === "streaming"}
+          control={video.control}
+          onCommand={runCommand}
+          onStartControl={() => void video.startControl()}
+          onStopControl={() => void video.stopControl()}
+          onType={sendType}
+          onKey={sendKey}
+        />
+      )}
       {!compact && (
         <MirrorCommandControls
           access={access}

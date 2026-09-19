@@ -82,7 +82,9 @@
     "autopilot_paused": "Automatisation en pause",
     "autopilot_quota_exceeded": "Limite d'exécutions d'automatisation atteinte",
     "runtime_mirror_viewer_started": "Diffusion de l’écran démarrée",
-    "runtime_mirror_viewer_stopped": "Diffusion de l’écran terminée"
+    "runtime_mirror_viewer_stopped": "Diffusion de l’écran terminée",
+    "runtime_mirror_control_started": "Contrôle d’écran à distance démarré",
+    "runtime_mirror_control_stopped": "Contrôle d’écran à distance terminé"
   },
   "labels": {
     "set_status_to": "Statut défini sur",
@@ -98,7 +100,9 @@
     "failed_with_detail": "Échec : {{detail}}",
     "autopilot_quota_blocked": "Exécution bloquée car la limite a été atteinte",
     "mirror_viewing_started": "L’écran de {{runtime}} est en cours de consultation.",
-    "mirror_viewing_stopped": "La consultation de l’écran de {{runtime}} est terminée."
+    "mirror_viewing_stopped": "La consultation de l’écran de {{runtime}} est terminée.",
+    "mirror_control_started": "{{name}} contrôle {{runtime}}.",
+    "mirror_control_stopped": "Le contrôle à distance de {{runtime}} est terminé."
   },
   "toasts": {
     "source_context_retry_started": "Nouvelle tentative démarrée avec le contexte d'origine",

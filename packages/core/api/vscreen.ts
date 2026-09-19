@@ -1,5 +1,8 @@
 import { createVscreenInterventionsApi } from "./vscreen-interventions";
 import type {
+  MirrorControlGrant,
+  MirrorSource,
+  RuntimeMirrorControlState,
   MirrorSourceBinding,
   VscreenCommand,
   VscreenMirrorRequest,
@@ -15,6 +18,8 @@ import {
   parseVscreenMirrorSession,
 } from "./vscreen-mirror";
 import {
+  MirrorControlGrantSchema,
+  RuntimeMirrorControlStateSchema,
   VscreenCommandSchema,
   VscreenReasonSchema,
   VscreenScopeSchema,
@@ -189,7 +194,94 @@ export function createVscreenApi(
         { method: "DELETE", keepalive: true },
       );
     },
+    async createMirrorControlGrant(
+      viewer: Pick<VscreenViewerSession, "viewerId">,
+      source: MirrorSource,
+      sourceGeneration: string,
+      signal?: AbortSignal,
+    ): Promise<MirrorControlGrant> {
+      const raw = await request("/mirror/control-grants", {
+        method: "POST",
+        signal,
+        body: JSON.stringify({
+          viewer_id: viewer.viewerId,
+          source: {
+            kind: source.kind,
+            source_id: source.sourceId,
+          },
+          source_generation: sourceGeneration,
+        }),
+      });
+      return parseMirrorControlGrant(raw, identity);
+    },
+    async getMirrorControlState(signal?: AbortSignal): Promise<RuntimeMirrorControlState> {
+      const raw = await request("/mirror/control-state", { signal });
+      const state = parseWithFallback<RuntimeMirrorControlState | null>(
+        raw,
+        RuntimeMirrorControlStateSchema,
+        null,
+        { endpoint: "GET /api/runtimes/:runtimeId/mirror/control-state" },
+      );
+      if (
+        !state ||
+        state.workspaceId !== identity.workspaceId ||
+        state.runtimeId !== identity.runtimeId
+      ) {
+        throw new VscreenContractError();
+      }
+      return state;
+    },
+
+    async renewMirrorControlGrant(
+      viewer: Pick<VscreenViewerSession, "viewerId">,
+      source: MirrorSource,
+      sourceGeneration: string,
+      signal?: AbortSignal,
+    ): Promise<MirrorControlGrant> {
+      const raw = await request("/mirror/control-grants/renew", {
+        method: "POST",
+        signal,
+        body: JSON.stringify({
+          viewer_id: viewer.viewerId,
+          source: {
+            kind: source.kind,
+            source_id: source.sourceId,
+          },
+          source_generation: sourceGeneration,
+        }),
+      });
+      return parseMirrorControlGrant(raw, identity);
+    },
+    async revokeMirrorControlGrant(viewerId: string): Promise<void> {
+      await request(
+        `/mirror/control-grants/${encodeURIComponent(viewerId)}`,
+        { method: "DELETE" },
+      );
+    },
   };
 }
+
+function parseMirrorControlGrant(
+  raw: unknown,
+  scope: VscreenScope,
+): MirrorControlGrant {
+  const grant = parseWithFallback<MirrorControlGrant | null>(
+    raw,
+    MirrorControlGrantSchema,
+    null,
+    { endpoint: "POST /api/runtimes/:runtimeId/mirror/control-grants" },
+  );
+  if (
+    !grant ||
+    grant.workspaceId !== scope.workspaceId ||
+    grant.runtimeId !== scope.runtimeId ||
+    grant.userId !== scope.accountId ||
+    Date.parse(grant.expiresAt) <= Date.now()
+  ) {
+    throw new VscreenContractError();
+  }
+  return grant;
+}
+
 
 export type VscreenApi = ReturnType<typeof createVscreenApi>;

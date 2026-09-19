@@ -210,19 +210,71 @@
     "unpin_tooltip": "Unpin from sidebar",
     "nat_warning": "No TURN server is configured. Mirroring may fail when the viewer and runtime are on different restrictive networks.",
     "states": {
-      "loading": { "title": "Loading runtime", "description": "Checking the runtime and preparing the mirror connection.", "status": "Loading." },
-      "preparing": { "title": "Preparing to connect", "description": "The viewer is preparing a secure mirror session.", "status": "Preparing." },
-      "negotiating": { "title": "Negotiating connection", "description": "The viewer is establishing a private connection with the runtime daemon.", "status": "Negotiating WebRTC connection." },
-      "streaming": { "title": "Live runtime screen", "description": "The runtime is sending complete frames to this viewer.", "status": "Streaming." },
-      "offline": { "title": "Runtime offline", "description": "The daemon is unavailable, so the mirror cannot start.", "status": "Waiting for the runtime to come online." },
-      "old_daemon": { "title": "Mirror unsupported by this daemon", "description": "Update the Multica daemon on this device to use screen mirroring.", "status": "The installed daemon does not support mirroring." },
-      "linux_unsupported": { "title": "Screen mirroring is not supported on Linux", "description": "The first mirror release supports macOS and Windows primary displays only.", "status": "Linux screen capture is not available." },
-      "unsupported_platform": { "title": "Mirror unavailable on this platform", "description": "This runtime platform cannot provide a primary display for mirroring.", "status": "This platform does not support mirroring." },
-      "permission_denied": { "title": "Screen recording permission denied", "description": "The Multica daemon on the runtime host needs Screen Recording permission. A system prompt appears automatically on the first mirror attempt; if it was dismissed, open System Settings → Privacy & Security → Screen Recording, enable the Multica daemon, then try again.", "status": "Screen capture permission is required." },
-    "capture_unavailable": { "title": "Screen capture unavailable", "description": "The runtime has no available primary display, or the capture service cannot start.", "status": "The screen capture service is unavailable." },
-      "transport_failed": { "title": "Connection failed", "description": "The WebRTC connection could not be established. Network restrictions or a missing TURN server may be blocking it.", "status": "Mirror transport failed." },
-      "unavailable": { "title": "Mirror unavailable", "description": "The runtime is offline, unsupported, or you no longer have access to it.", "status": "No mirror connection is available." },
-      "failed": { "title": "Connection failed", "description": "The runtime did not complete the mirror connection. Check the daemon and try again.", "status": "Mirror connection failed." }
+      "loading": {
+        "title": "Loading runtime",
+        "description": "Checking the runtime and preparing the mirror connection.",
+        "status": "Loading."
+      },
+      "preparing": {
+        "title": "Preparing to connect",
+        "description": "The viewer is preparing a secure mirror session.",
+        "status": "Preparing."
+      },
+      "negotiating": {
+        "title": "Negotiating connection",
+        "description": "The viewer is establishing a private connection with the runtime daemon.",
+        "status": "Negotiating WebRTC connection."
+      },
+      "streaming": {
+        "title": "Live runtime screen",
+        "description": "The runtime is sending complete frames to this viewer.",
+        "status": "Streaming."
+      },
+      "offline": {
+        "title": "Runtime offline",
+        "description": "The daemon is unavailable, so the mirror cannot start.",
+        "status": "Waiting for the runtime to come online."
+      },
+      "old_daemon": {
+        "title": "Mirror unsupported by this daemon",
+        "description": "Update the Multica daemon on this device to use screen mirroring.",
+        "status": "The installed daemon does not support mirroring."
+      },
+      "linux_unsupported": {
+        "title": "Screen mirroring is not supported on Linux",
+        "description": "The first mirror release supports macOS and Windows primary displays only.",
+        "status": "Linux screen capture is not available."
+      },
+      "unsupported_platform": {
+        "title": "Mirror unavailable on this platform",
+        "description": "This runtime platform cannot provide a primary display for mirroring.",
+        "status": "This platform does not support mirroring."
+      },
+      "permission_denied": {
+        "title": "Screen recording permission denied",
+        "description": "The Multica daemon on the runtime host needs Screen Recording permission. A system prompt appears automatically on the first mirror attempt; if it was dismissed, open System Settings → Privacy & Security → Screen Recording, enable the Multica daemon, then try again.",
+        "status": "Screen capture permission is required."
+      },
+      "capture_unavailable": {
+        "title": "Screen capture unavailable",
+        "description": "The runtime has no available primary display, or the capture service cannot start.",
+        "status": "The screen capture service is unavailable."
+      },
+      "transport_failed": {
+        "title": "Connection failed",
+        "description": "The WebRTC connection could not be established. Network restrictions or a missing TURN server may be blocking it.",
+        "status": "Mirror transport failed."
+      },
+      "unavailable": {
+        "title": "Mirror unavailable",
+        "description": "The runtime is offline, unsupported, or you no longer have access to it.",
+        "status": "No mirror connection is available."
+      },
+      "failed": {
+        "title": "Connection failed",
+        "description": "The runtime did not complete the mirror connection. Check the daemon and try again.",
+        "status": "Mirror connection failed."
+      }
     }
   },
   "detail_page": {
@@ -566,6 +618,26 @@
       "adopt_window": "Confirm selected window",
       "selection_expired": "The selection expired or changed. Refresh the window list and select again.",
       "ax_required": "Accessibility permission is required to list and select app windows."
-    }
+    },
+    "view_only": "Live · View only",
+    "controlling": "You are controlling this screen",
+    "controller_self": "You are controlling {{source}}",
+    "controller_active": "{{name}} is controlling {{source}}",
+    "controller_unknown_member": "A member",
+    "control_busy": "The screen is busy with another gesture. Try again.",
+    "control_stale": "The screen changed. Refresh or choose the source again.",
+    "control_denied": "Control request was denied.",
+    "control_failed": "Could not start control. Try again.",
+    "start_control": "Control screen",
+    "stop_control": "Stop controlling",
+    "requesting_control": "Requesting control…",
+    "enable_interaction": "Allow remote interaction",
+    "disable_interaction": "Disable remote interaction",
+    "emergency_stop": "Emergency stop",
+    "interaction_disabled": "Remote interaction is off on the host.",
+    "external_text": "Type text without using the remote clipboard",
+    "type_text": "Type text",
+    "copy_shortcut": "⌘C",
+    "paste_shortcut": "⌘V"
   }
 }

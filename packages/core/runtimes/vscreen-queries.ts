@@ -23,6 +23,8 @@ export const vscreenKeys = {
   state: (scope: VscreenScope) => [...vscreenKeys.all(scope), "state"] as const,
   sources: (scope: VscreenScope) =>
     [...vscreenKeys.all(scope), "sources"] as const,
+  controlState: (scope: VscreenScope) =>
+    [...vscreenKeys.all(scope), "control-state"] as const,
   command: (scope: VscreenScope, commandId: string) =>
     [...vscreenKeys.all(scope), "command", commandId] as const,
 };
@@ -97,6 +99,18 @@ export function vscreenSourcesOptions(scope: VscreenScope) {
     queryFn: ({ signal }) => client.getSources(signal),
     staleTime: 0,
     refetchInterval: 5_000,
+    retry: false,
+  });
+}
+
+
+export function vscreenControlStateOptions(scope: VscreenScope) {
+  const client = getApi().vscreen(scope);
+  return queryOptions({
+    queryKey: vscreenKeys.controlState(scope),
+    queryFn: ({ signal }) => client.getMirrorControlState(signal),
+    staleTime: 0,
+    refetchInterval: 10_000,
     retry: false,
   });
 }

@@ -39,6 +39,8 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     autopilot_quota_exceeded: t(($) => $.types.autopilot_quota_exceeded),
     runtime_mirror_viewer_started: t(($) => $.types.runtime_mirror_viewer_started),
     runtime_mirror_viewer_stopped: t(($) => $.types.runtime_mirror_viewer_stopped),
+    runtime_mirror_control_started: t(($) => $.types.runtime_mirror_control_started),
+    runtime_mirror_control_stopped: t(($) => $.types.runtime_mirror_control_stopped),
   };
 }
 
@@ -145,6 +147,17 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
     case "runtime_mirror_viewer_stopped": {
       const runtime = details.runtime_name || typeLabels[item.type];
       return <span>{t(($) => $.labels.mirror_viewing_stopped, { runtime })}</span>;
+    }
+    case "runtime_mirror_control_started": {
+      const runtime = details.runtime_name || typeLabels[item.type];
+      const name = details.controller_user_id
+        ? getActorName("member", details.controller_user_id)
+        : typeLabels[item.type];
+      return <span>{t(($) => $.labels.mirror_control_started, { runtime, name })}</span>;
+    }
+    case "runtime_mirror_control_stopped": {
+      const runtime = details.runtime_name || typeLabels[item.type];
+      return <span>{t(($) => $.labels.mirror_control_stopped, { runtime })}</span>;
     }
     default:
       return <span>{typeLabels[item.type] ?? item.type}</span>;
