@@ -16,9 +16,9 @@ async function fixture(overrides = {}) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "multica-vscreen-smoke-fixture-")));
   directories.push(directory);
   const app = join(directory, "Multica.app");
-  const helper = join(app, "Contents/Resources/app.asar.unpacked/resources/bin/multica");
+  const helper = join(app, "Contents/Resources/app.asar.unpacked/resources/MulticaDaemon.app/Contents/MacOS/multica");
   await mkdir(join(app, "Contents/MacOS"), { recursive: true });
-  await mkdir(join(app, "Contents/Resources/app.asar.unpacked/resources/bin"), { recursive: true });
+  await mkdir(join(app, "Contents/Resources/app.asar.unpacked/resources/MulticaDaemon.app/Contents/MacOS"), { recursive: true });
   await writeFile(join(app, "Contents/Info.plist"), "test-owned plist fixture");
   await writeFile(join(app, "Contents/MacOS/Multica"), "test-owned desktop fixture");
   await writeFile(helper, "test-owned native fixture, never executed");

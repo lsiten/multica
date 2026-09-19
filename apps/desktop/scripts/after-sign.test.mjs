@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,7 +19,32 @@ function fixture() {
   directories.push(directory);
   const app = join(directory, "Multica $QA.app");
   mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
-  return { directory, app };
+  writeFileSync(
+    join(app, "Contents", "Info.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>ai.multica.desktop</string><key>CFBundleExecutable</key><string>Multica</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`,
+  );
+  const desktopBinary = join(app, "Contents", "MacOS", "Multica");
+  const daemon = join(app, "Contents", "Resources", "app.asar.unpacked", "resources", "MulticaDaemon.app");
+  mkdirSync(join(daemon, "Contents", "MacOS"), { recursive: true });
+  const daemonBinary = join(daemon, "Contents", "MacOS", "multica");
+  writeFileSync(
+    join(daemon, "Contents", "Info.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>ai.multica.daemon</string><key>CFBundleExecutable</key><string>multica</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`,
+  );
+  if (process.platform === "darwin") {
+    for (const binary of [desktopBinary, daemonBinary]) {
+      execFileSync("/usr/bin/xcrun", ["clang", "-arch", process.arch === "arm64" ? "arm64" : "x86_64", "-x", "c", "-o", binary, "-"], {
+        input: "int main(void) { return 0; }",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    }
+  } else {
+    writeFileSync(desktopBinary, "desktop");
+    writeFileSync(daemonBinary, "daemon");
+    chmodSync(desktopBinary, 0o755);
+    chmodSync(daemonBinary, 0o755);
+  }
+  return { directory, app, daemon: daemonBinary, daemonApp: daemon };
 }
 
 function mockedHook(signature, status = 0) {
@@ -55,18 +80,28 @@ afterEach(() => {
 });
 
 describe("afterSign screen recording identity", () => {
-  it("pins the containing app identity without requiring a daemon app", async () => {
-    const { directory, app } = fixture();
+  it("pins daemon and containing app identities after electron-builder signing", async () => {
+    const { directory, app, daemon, daemonApp } = fixture();
     const { afterSign, calls } = mockedHook("Identifier=ai.multica.desktop\nSignature=adhoc\n");
     await afterSign({ electronPlatformName: "darwin", appOutDir: directory });
 
+    const entitlements = join(dirname(hookPath), "entitlements.mac.plist");
     const signing = calls.filter(({ args }) => args.includes("--force"));
-    expect(signing).toHaveLength(1);
+    expect(signing).toHaveLength(3);
     expect(signing[0].args).toEqual([
+      "--force", "--sign", "-", "--identifier", "ai.multica.daemon",
+      "-r", '=designated => identifier "ai.multica.daemon"',
+      "--options", "runtime", "--entitlements", entitlements, daemon,
+    ]);
+    expect(signing[1].args).toEqual([
+      "--force", "--sign", "-", "--identifier", "ai.multica.daemon",
+      "-r", '=designated => identifier "ai.multica.daemon"',
+      "--options", "runtime", "--entitlements", entitlements, daemonApp,
+    ]);
+    expect(signing[2].args).toEqual([
       "--force", "--sign", "-", "--identifier", "ai.multica.desktop",
       "-r", '=designated => identifier "ai.multica.desktop"',
-      "--options", "runtime", "--entitlements",
-      join(dirname(hookPath), "entitlements.mac.plist"), app,
+      "--options", "runtime", "--entitlements", entitlements, app,
     ]);
     expect(calls.at(-1).args).toEqual(["--verify", "--deep", "--strict", app]);
   });
@@ -76,15 +111,19 @@ describe("afterSign screen recording identity", () => {
     const { afterSign, calls } = mockedHook(`${app}: code object is not signed at all\n`, 1);
     await afterSign({ electronPlatformName: "darwin", appOutDir: directory });
     const signing = calls.filter(({ args }) => args.includes("--force"));
-    expect(signing).toHaveLength(2);
-    expect(signing[0].args).toEqual(["--force", "--deep", "--sign", "-", "--options", "runtime", "--entitlements", join(dirname(hookPath), "entitlements.mac.plist"), app]);
+    expect(signing).toHaveLength(4);
+    const entitlements = join(dirname(hookPath), "entitlements.mac.plist");
+    expect(signing[0].args).toEqual(["--force", "--deep", "--sign", "-", "--options", "runtime", "--entitlements", entitlements, app]);
     expect(signing[0].args).not.toContain("--identifier");
-    expect(signing[1].args).toContain(`=designated => identifier "ai.multica.desktop"`);
+    expect(signing[1].args.slice(0, -1)).toEqual(["--force", "--sign", "-", "--identifier", "ai.multica.daemon", "-r", '=designated => identifier "ai.multica.daemon"', "--options", "runtime", "--entitlements", entitlements]);
+    expect(String(signing[1].args.at(-1))).toContain("MulticaDaemon.app/Contents/MacOS/multica");
+    expect(signing[2].args).toContain("ai.multica.daemon");
+    expect(signing[3].args).toContain(`=designated => identifier "ai.multica.desktop"`);
     expect(calls.at(-1).args).toEqual(["--verify", "--deep", "--strict", app]);
   });
 
-  it.skipIf(process.platform !== "darwin")("signs a truly unsigned x64 app and nested helper without executing either", async () => {
-    const { directory, app } = fixture();
+  it.skipIf(process.platform !== "darwin")("signs a truly unsigned x64 app and nested daemon without executing either", async () => {
+    const { directory, app, daemon, daemonApp } = fixture();
     const nested = join(app, "Contents", "Frameworks", "Nested Helper.app");
     for (const [bundle, executable, identifier] of [[app, "Multica", "ai.multica.desktop.signing-test"], [nested, "Helper", "ai.multica.desktop.signing-test.helper"]]) {
       mkdirSync(join(bundle, "Contents", "MacOS"), { recursive: true });
@@ -95,11 +134,14 @@ describe("afterSign screen recording identity", () => {
     expect(before.status).not.toBe(0);
     expect(before.stderr).toContain("code object is not signed at all");
     await require(hookPath).default({electronPlatformName:"darwin",appOutDir:directory});
-    for (const [bundle, identifier] of [[app,"ai.multica.desktop.signing-test"],[nested,"ai.multica.desktop.signing-test.helper"]]) {
-      const after=spawnSync("/usr/bin/codesign",["-d","--verbose=4",bundle],{encoding:"utf8"});
+    for (const [bundle, identifier] of [[app,"ai.multica.desktop.signing-test"],[nested,"ai.multica.desktop.signing-test.helper"],[daemonApp,"ai.multica.daemon"]]) {
+      const after=spawnSync("/usr/bin/codesign",["-d","--verbose=4","-r-",bundle],{encoding:"utf8"});
       expect(after.status).toBe(0);expect(after.stdout+after.stderr).toContain("Signature=adhoc");expect(after.stdout+after.stderr).toContain(`Identifier=${identifier}`);
       execFileSync("/usr/bin/codesign",["--verify","--deep","--strict",bundle],{stdio:"pipe"});
     }
+    const daemonInspection = spawnSync("/usr/bin/codesign", ["-d", "--verbose=4", "-r-", daemon], { encoding: "utf8" });
+    expect(daemonInspection.stdout + daemonInspection.stderr).toContain("Identifier=ai.multica.daemon");
+    expect(daemonInspection.stdout + daemonInspection.stderr).toContain('designated => identifier "ai.multica.daemon"');
   }, 30_000);
 
   it("leaves Developer ID signatures and their nested code untouched", async () => {
@@ -120,8 +162,8 @@ describe("afterSign screen recording identity", () => {
     await expect(afterSign({ electronPlatformName: "darwin", appOutDir: directory })).rejects.toThrow(/signature/i);
   });
 
-  it.skipIf(process.platform !== "darwin")("keeps the real main-app designated requirement stable across rebuilt executables", async () => {
-    const { directory, app } = fixture();
+  it.skipIf(process.platform !== "darwin")("keeps real app and daemon designated requirements stable across rebuilds", async () => {
+    const { directory, app, daemon, daemonApp } = fixture();
     const identifier = "ai.multica.desktop.signing-test";
     const binary = join(app, "Contents", "MacOS", "Multica");
     writeFileSync(join(app, "Contents", "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
@@ -133,6 +175,7 @@ describe("afterSign screen recording identity", () => {
     const afterSign = require(hookPath).default;
     const requirements = [];
     const hashes = [];
+    const daemonRequirements = [];
     for (const exitCode of [0, 1]) {
       execFileSync("/usr/bin/xcrun", ["clang", "-x", "c", "-o", binary, "-"], {
         input: `int main(void) { return ${exitCode}; }`,
@@ -146,6 +189,10 @@ describe("afterSign screen recording identity", () => {
       expect(output).toMatch(/flags=.*runtime/);
       requirements.push(output.match(/^designated => (.+)$/m)?.[1]);
       hashes.push(output.match(/^CDHash=(.+)$/m)?.[1]);
+      const daemonOutput = spawnSync("/usr/bin/codesign", ["-d", "-r-", "--verbose=4", daemon], { encoding: "utf8" });
+      expect(daemonOutput.status).toBe(0);
+      daemonRequirements.push((daemonOutput.stdout + daemonOutput.stderr).match(/^designated => (.+)$/m)?.[1]);
+      execFileSync("/usr/bin/codesign", ["--verify", "--strict", daemonApp], { stdio: "pipe" });
       const entitlements = spawnSync("/usr/bin/codesign", ["-d", "--entitlements", ":-", app], { encoding: "utf8" });
       expect(entitlements.status).toBe(0);
       for (const capability of ["allow-jit", "allow-unsigned-executable-memory", "disable-library-validation"]) {
@@ -154,6 +201,7 @@ describe("afterSign screen recording identity", () => {
       execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app], { stdio: "pipe" });
     }
     expect(requirements).toEqual([`identifier "${identifier}"`, `identifier "${identifier}"`]);
+    expect(daemonRequirements).toEqual(['identifier "ai.multica.daemon"', 'identifier "ai.multica.daemon"']);
     expect(hashes[0]).toBeTruthy();
     expect(hashes[0]).not.toBe(hashes[1]);
   }, 30_000);

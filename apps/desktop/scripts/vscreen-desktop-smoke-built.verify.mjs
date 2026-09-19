@@ -16,7 +16,7 @@ const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 try {
   const bundle = join(root, "Multica.app"), directory = join(root, "private");
   const executable = join(bundle, "Contents/MacOS/Multica");
-  const helper = join(bundle, "Contents/Resources/app.asar.unpacked/resources/bin/multica");
+  const helper = join(bundle, "Contents/Resources/app.asar.unpacked/resources/MulticaDaemon.app/Contents/MacOS/multica");
   const entryPath = join(bundle, "Contents/Resources/app.asar/out/main/index.js");
   for (const path of [executable, helper, entryPath]) await mkdir(dirname(path), { recursive: true });
   await mkdir(directory, { mode: 0o700 });

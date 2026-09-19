@@ -11,8 +11,8 @@ const roots:string[]=[];
 afterEach(async()=>{await Promise.all(roots.splice(0).map((p)=>rm(p,{recursive:true,force:true})));});
 async function fixture(scenario="diagnostics") {
  const root=await realpath(await mkdtemp(join(tmpdir(),"desktop-smoke-")));roots.push(root);
- const bundle=join(root,"Multica.app"),directory=join(root,"invocation");await mkdir(directory,{mode:0o700});await mkdir(join(bundle,"Contents/MacOS"),{recursive:true});await mkdir(join(bundle,"Contents/Resources/app.asar.unpacked/resources/bin"),{recursive:true});
- const executable=join(bundle,"Contents/MacOS/Multica"),helper=join(bundle,"Contents/Resources/app.asar.unpacked/resources/bin/multica");await writeFile(executable,"fake main never executed");await writeFile(helper,"fake helper never executed");
+ const bundle=join(root,"Multica.app"),directory=join(root,"invocation");await mkdir(directory,{mode:0o700});await mkdir(join(bundle,"Contents/MacOS"),{recursive:true});await mkdir(join(bundle,"Contents/Resources/app.asar.unpacked/resources/MulticaDaemon.app/Contents/MacOS"),{recursive:true});
+ const executable=join(bundle,"Contents/MacOS/Multica"),helper=join(bundle,"Contents/Resources/app.asar.unpacked/resources/MulticaDaemon.app/Contents/MacOS/multica");await writeFile(executable,"fake main never executed");await writeFile(helper,"fake helper never executed");await chmod(helper,0o755);
  const hash=(s:string)=>createHash("sha256").update(s).digest("hex");
  const entryPath=join(bundle,"Contents/Resources/app.asar/out/main/index.js");await mkdir(join(entryPath,".."),{recursive:true});await writeFile(entryPath,"fake bootstrap");
  const config={schema:1,entrySHA256:hash("fake bootstrap"),nonce:"a".repeat(64),parentPID:321,app:bundle,mainSHA256:hash("fake main never executed"),helper:{version:"v1",commit:"abc123",sha256:hash("fake helper never executed")},scenario,allowGui:scenario!=="diagnostics",expiresAt:Date.now()+60000,timeoutMs:1000};

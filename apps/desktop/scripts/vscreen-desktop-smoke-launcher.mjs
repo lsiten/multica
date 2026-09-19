@@ -10,6 +10,11 @@ const scenarios = ["diagnostics", "lifecycle", "source", "video", "input", "take
 async function hash(path) { const digest=createHash("sha256");for await (const chunk of createReadStream(path)) digest.update(chunk);return digest.digest("hex"); }
 async function inside(app,path) { const actual=await realpath(path);const child=relative(app,actual);if(!child||child===".."||child.startsWith(`..${sep}`)||isAbsolute(child)||!(await stat(actual)).isFile())throw new Error("bundle_path_escape");return actual; }
 
+function bundledHelperPath(app) {
+  const resources = join(app,"Contents","Resources","app.asar.unpacked","resources");
+  return join(resources,"MulticaDaemon.app","Contents","MacOS","multica");
+}
+
 /**
  * @typedef {Object} DesktopNativeSmokeOptions
  * @property {string} app Absolute selected .app path; never a renderer-supplied helper path.
@@ -47,7 +52,7 @@ export async function launchDesktopNativeSmoke(options, dependencies = {}) {
   if (info.CFBundleIdentifier !== "ai.multica.desktop" || typeof info.CFBundleExecutable !== "string" || !/^[^/\\]+$/.test(info.CFBundleExecutable)) throw new Error("bundle_identity_mismatch");
   const entry = await readPackagedSmokeEntry(app);
   const executable = await inside(app,join(app,"Contents","MacOS",info.CFBundleExecutable));
-  const helper = await inside(app,join(app,"Contents","Resources","app.asar.unpacked","resources","bin","multica"));
+  const helper = await inside(app,bundledHelperPath(app));
   if (await hash(helper) !== options.expectedHelper.sha256) throw new Error("helper_identity_mismatch");
   await mkdir(options.evidence,{recursive:true});
   const evidence = await realpath(options.evidence);

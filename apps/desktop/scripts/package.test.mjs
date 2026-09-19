@@ -332,10 +332,15 @@ describe("builderArgsForTarget", () => {
           requestedArchs: ["x64"],
         },
         "1.2.3",
-        { hostPlatform: "darwin", useScopedOutputDir: true },
+        {
+          forceAdHocMacIdentity: true,
+          hostPlatform: "darwin",
+          useScopedOutputDir: true,
+        },
       ),
     ).toEqual([
       "-c.extraMetadata.version=1.2.3",
+      "-c.mac.identity=-",
       "--mac",
       "dmg",
       "zip",
@@ -370,6 +375,27 @@ describe("builderArgsForTarget", () => {
       "always",
       "-c.directories.output=dist/mac-arm64",
     ]);
+  });
+
+  it("does not force ad-hoc identity for certificate-signed mac builds", () => {
+    expect(
+      builderArgsForTarget(
+        { platform: "mac", arch: "arm64" },
+        {
+          allPlatforms: false,
+          sharedArgs: ["--publish", "never"],
+          platformTargets: { mac: [], win: [], linux: [] },
+          requestedPlatforms: ["mac"],
+          requestedArchs: ["arm64"],
+        },
+        "1.2.3",
+        {
+          forceAdHocMacIdentity: false,
+          hostPlatform: "darwin",
+          useScopedOutputDir: true,
+        },
+      ),
+    ).not.toContain("-c.mac.identity=-");
   });
 
   it("defaults linux cross-builds to AppImage on non-Linux hosts", () => {
