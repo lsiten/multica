@@ -621,8 +621,8 @@
     "interaction_disabled": "ホストでリモート操作が無効です。",
     "external_text": "リモートのクリップボードを使わずにテキストを入力",
     "type_text": "テキスト入力",
-    "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V",
+    "copy_shortcut": "Ctrl+C",
+    "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
     "switch_app": "Switch app"
   }
