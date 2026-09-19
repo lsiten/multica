@@ -86,6 +86,8 @@ type RuntimeMirror struct {
 	voiceTranscriber           VoiceTranscriber
 	authorizationHandler       func(context.Context, string, bool) error
 	authorizationPublisher     func(string, protocol.MirrorAuthorizationRequest)
+	authorizationMu            sync.Mutex
+	pendingAuthorizations      map[string]time.Time
 	controlMu                  sync.Mutex
 	controlStateHookGeneration uint64
 	controlStateHookFn         func(ControlStateChange)
@@ -193,9 +195,10 @@ func newRuntimeMirror(capturer Capturer, interval, peerAttachTimeout time.Durati
 		peerAttachTimeout = defaultMirrorPeerAttachTimeout
 	}
 	return &RuntimeMirror{
-		source:            NewSource(capturer, interval),
-		peers:             make(map[string]*mirrorPeer),
-		peerAttachTimeout: peerAttachTimeout,
+		source:                NewSource(capturer, interval),
+		peers:                 make(map[string]*mirrorPeer),
+		pendingAuthorizations: make(map[string]time.Time),
+		peerAttachTimeout:     peerAttachTimeout,
 	}
 }
 
@@ -309,7 +312,7 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 					m.mu.Lock()
 					handler := m.authorizationHandler
 					m.mu.Unlock()
-					if handler != nil {
+					if handler != nil && m.consumeAuthorization(response.RequestID, time.Now()) {
 						_ = handler(context.Background(), response.RequestID, response.Approved)
 					}
 				})

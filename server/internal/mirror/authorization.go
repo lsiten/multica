@@ -28,5 +28,22 @@ func (m *RuntimeMirror) PublishAuthorizationRequest(viewerID string, request pro
 	if peer.closed || peer.video == nil || peer.video.control == nil {
 		return false
 	}
-	return peer.video.control.SendText(string(payload)) == nil
+	m.authorizationMu.Lock()
+	m.pendingAuthorizations[request.RequestID] = request.ExpiresAt
+	m.authorizationMu.Unlock()
+	if err := peer.video.control.SendText(string(payload)); err != nil {
+		m.authorizationMu.Lock()
+		delete(m.pendingAuthorizations, request.RequestID)
+		m.authorizationMu.Unlock()
+		return false
+	}
+	return true
+}
+
+func (m *RuntimeMirror) consumeAuthorization(requestID string, now time.Time) bool {
+	m.authorizationMu.Lock()
+	defer m.authorizationMu.Unlock()
+	expiresAt, ok := m.pendingAuthorizations[requestID]
+	delete(m.pendingAuthorizations, requestID)
+	return ok && expiresAt.After(now)
 }
