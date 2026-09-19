@@ -107,7 +107,7 @@ describe("afterSign screen recording identity", () => {
   });
 
   it("bootstraps only explicitly unsigned app trees before pinning and verification", async () => {
-    const { directory, app } = fixture();
+    const { directory, app, daemon } = fixture();
     const { afterSign, calls } = mockedHook(`${app}: code object is not signed at all\n`, 1);
     await afterSign({ electronPlatformName: "darwin", appOutDir: directory });
     const signing = calls.filter(({ args }) => args.includes("--force"));
@@ -116,7 +116,7 @@ describe("afterSign screen recording identity", () => {
     expect(signing[0].args).toEqual(["--force", "--deep", "--sign", "-", "--options", "runtime", "--entitlements", entitlements, app]);
     expect(signing[0].args).not.toContain("--identifier");
     expect(signing[1].args.slice(0, -1)).toEqual(["--force", "--sign", "-", "--identifier", "ai.multica.daemon", "-r", '=designated => identifier "ai.multica.daemon"', "--options", "runtime", "--entitlements", entitlements]);
-    expect(String(signing[1].args.at(-1))).toContain("MulticaDaemon.app/Contents/MacOS/multica");
+    expect(signing[1].args.at(-1)).toBe(daemon);
     expect(signing[2].args).toContain("ai.multica.daemon");
     expect(signing[3].args).toContain(`=designated => identifier "ai.multica.desktop"`);
     expect(calls.at(-1).args).toEqual(["--verify", "--deep", "--strict", app]);
