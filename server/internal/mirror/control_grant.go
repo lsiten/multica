@@ -7,27 +7,9 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// controlGrantTTL is the local safety timer on top of the server-issued
-// expiry. It only needs to bound a dropped renew/revoke; the grant value
-// carries the authoritative deadline.
-const controlGrantTTL = 30 * time.Second
-
-// controlGrant is the per-peer human input capability. It is independent of
-// the read-only viewer grant: one never implies the other.
-type controlGrant struct {
-	value      protocol.MirrorControlGrant
-	generation uint64
-	timer      *time.Timer
-	deadline   time.Time
-}
-
-func validControlGrant(viewerID string, g protocol.MirrorControlGrant) bool {
-	return g.ViewerID == viewerID && g.Validate(time.Now()) == nil
-}
-
 // BindControlGrant attaches a server-authorized input capability to an
-// existing peer. It is rejected when the peer is closed or already bound, or
-// when the grant does not belong to this viewer.
+// existing peer. A later expiry for the same capability preserves replay state;
+// closed peers and grants belonging to another viewer are rejected.
 func (m *RuntimeMirror) BindControlGrant(viewerID string, grant protocol.MirrorControlGrant, generation uint64) bool {
 	if !validControlGrant(viewerID, grant) {
 		return false
@@ -45,9 +27,13 @@ func (m *RuntimeMirror) BindControlGrant(viewerID string, grant protocol.MirrorC
 	}
 	if current := peer.controlGrant; current != nil {
 		if current.value.EqualIdentity(grant) {
-			if !grant.ExpiresAt.After(current.value.ExpiresAt) {
+			if !time.Now().Before(current.deadline) || generation < current.generation || !grant.ExpiresAt.After(current.value.ExpiresAt) {
 				return false
 			}
+			current.value = grant
+			current.generation = generation
+			m.armControlGrant(viewerID, peer)
+			return true
 		} else {
 			m.dropControlGrantLocked(viewerID, peer)
 		}
@@ -121,10 +107,6 @@ func (m *RuntimeMirror) CurrentControlGrant(viewerID string) (protocol.MirrorCon
 		return protocol.MirrorControlGrant{}, false
 	}
 	return peer.controlGrant.value, true
-}
-
-func sameControlSource(a, b protocol.MirrorControlGrant) bool {
-	return a.NativeEpoch == b.NativeEpoch && a.Source == b.Source && a.SourceGeneration == b.SourceGeneration
 }
 
 // RevokeControlGrant closes the input capability but leaves the viewing

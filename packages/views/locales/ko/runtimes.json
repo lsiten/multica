@@ -625,6 +625,8 @@
     "external_text": "원격 클립보드 없이 텍스트 입력",
     "type_text": "텍스트 입력",
     "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V"
+    "paste_shortcut": "⌘V",
+    "backspace": "Backspace",
+    "switch_app": "Switch app"
   }
 }

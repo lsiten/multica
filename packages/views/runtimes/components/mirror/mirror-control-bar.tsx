@@ -1,8 +1,8 @@
 "use client";
 
 import type { TFunction } from "i18next";
-import { MousePointer2, OctagonX, SquareMousePointer, Type } from "lucide-react";
-import { useState } from "react";
+import { Mic, MousePointer2, OctagonX, SquareMousePointer, Type } from "lucide-react";
+import { useRef, useState } from "react";
 import type {
   RuntimeDevice,
   VscreenCommandKind,
@@ -28,6 +28,10 @@ export function MirrorControlBar({
   onStopControl,
   onType,
   onKey,
+  onVoice,
+  voiceTranscript,
+  agents = [],
+  onAgentMessage,
 }: {
   readonly scope: VscreenScope;
   readonly runtime: RuntimeDevice;
@@ -40,9 +44,17 @@ export function MirrorControlBar({
   readonly onStopControl: () => void;
   readonly onType: (text: string) => void;
   readonly onKey: (key: string, modifiers?: ("shift" | "control" | "alt" | "meta")[]) => void;
+  readonly onVoice: (recording: Blob) => Promise<void> | void;
+  readonly voiceTranscript?: string;
+  readonly agents?: readonly { readonly id: string; readonly name: string }[];
+  readonly onAgentMessage?: (agentId: string, text: string) => Promise<void> | void;
 }) {
   const { t } = useT("runtimes");
   const [text, setText] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [recording, setRecording] = useState(false);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const chunks = useRef<Blob[]>([]);
   const owner = runtime.owner_id === scope.accountId;
   const capabilities = Array.isArray(runtime.metadata.capabilities)
     ? runtime.metadata.capabilities.filter(
@@ -71,11 +83,36 @@ export function MirrorControlBar({
           ? t(($) => $.vscreen.view_only)
           : t(($) => $.vscreen.interaction_disabled);
 
-  const sendType = () => {
-    const value = text;
+  const sendType = async () => {
+    const value = text || voiceTranscript || "";
     if (!value || !active) return;
-    onType(value);
+    if (agentId && onAgentMessage) await onAgentMessage(agentId, value);
+    else onType(value);
     setText("");
+  };
+
+  const toggleVoice = () => {
+    if (recording) {
+      recorder.current?.stop();
+      return;
+    }
+    if (typeof MediaRecorder === "undefined") return;
+    void navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      const next = new MediaRecorder(stream);
+      chunks.current = [];
+      next.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.current.push(event.data);
+      };
+      next.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        const blob = new Blob(chunks.current, { type: next.mimeType || "audio/webm" });
+        void onVoice(blob);
+      };
+      recorder.current = next;
+      setRecording(true);
+      next.start();
+    }).catch(() => setRecording(false));
   };
 
   return (
@@ -152,8 +189,23 @@ export function MirrorControlBar({
               placeholder={t(($) => $.vscreen.external_text)}
             />
           </label>
-          <Button size="sm" variant="secondary" disabled={!text} onClick={sendType}>
+          <Button size="sm" variant="secondary" disabled={!text && !voiceTranscript} onClick={sendType}>
             {t(($) => $.vscreen.type_text)}
+          </Button>
+          {agents.length > 0 && (
+            <select
+              aria-label="Send to agent"
+              value={agentId}
+              onChange={(event) => setAgentId(event.target.value)}
+              className="h-8 rounded-md border bg-background px-2 text-caption"
+            >
+              <option value="">Screen</option>
+              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+            </select>
+          )}
+          <Button size="sm" variant={recording ? "destructive" : "outline"} onClick={toggleVoice}>
+            <Mic className="size-4" />
+            {recording ? "Stop" : "Voice"}
           </Button>
           {(
             [
@@ -171,19 +223,17 @@ export function MirrorControlBar({
               {label}
             </Button>
           ))}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onKey("c", ["meta"])}
-          >
+          <Button size="sm" variant="outline" onClick={() => onKey("backspace")}>
+            {t(($) => $.vscreen.backspace)}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onKey("c", ["control"])}>
             {t(($) => $.vscreen.copy_shortcut)}
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onKey("v", ["meta"])}
-          >
+          <Button size="sm" variant="outline" onClick={() => onKey("v", ["control"])}>
             {t(($) => $.vscreen.paste_shortcut)}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onKey("tab", ["alt"])}>
+            {t(($) => $.vscreen.switch_app)}
           </Button>
         </div>
       )}

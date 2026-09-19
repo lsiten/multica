@@ -624,7 +624,9 @@
     "interaction_disabled": "主机当前关闭了远程交互。",
     "external_text": "输入文本（不使用远程剪贴板）",
     "type_text": "输入文本",
-    "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V"
+    "copy_shortcut": "Ctrl+C",
+    "paste_shortcut": "Ctrl+V",
+    "backspace": "退格",
+    "switch_app": "切换应用"
   }
 }

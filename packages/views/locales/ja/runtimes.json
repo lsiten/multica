@@ -625,6 +625,8 @@
     "external_text": "リモートのクリップボードを使わずにテキストを入力",
     "type_text": "テキスト入力",
     "copy_shortcut": "⌘C",
-    "paste_shortcut": "⌘V"
+    "paste_shortcut": "⌘V",
+    "backspace": "Backspace",
+    "switch_app": "Switch app"
   }
 }

@@ -18,6 +18,7 @@ import {
   type MirrorControlInput,
   type MirrorControlState,
   type MirrorVideoCallbacks,
+  type MirrorAuthorizationRequest,
 } from "./video-session-types";
 export { MirrorVideoError } from "./video-session-types";
 export type {
@@ -27,6 +28,7 @@ export type {
   MirrorControlStatus,
   MirrorVideoState,
   MirrorVideoCallbacks,
+  MirrorAuthorizationRequest,
 } from "./video-session-types";
 
 /** Owns one read-only peer and its renewable grant, never an AI input target. */
@@ -38,12 +40,15 @@ export class MirrorVideoSession {
   private expiry: ReturnType<typeof setTimeout> | undefined;
   private geometryRevision: number | undefined;
   private controlOpen = false;
+  private controlChannel: RTCDataChannel | null = null;
   private inputChannel: RTCDataChannel | null = null;
+  private voiceChannel: RTCDataChannel | null = null;
   private inputOpen = false;
   private inputReady: ((open: boolean) => void) | null = null;
   private controlGrant: MirrorControlGrant | null = null;
   private controlRenewal: ReturnType<typeof setTimeout> | undefined;
   private inputSeq = 0;
+  private voiceSeq = 0;
   private metadataSeen = false;
   private stream: MediaStream | null = null;
   private published = false;
@@ -176,6 +181,55 @@ export class MirrorVideoSession {
       }
     }
     this.publishControlState("active", undefined, ack);
+  }
+
+  private voiceMessage(value: unknown): void {
+    if (this.disposed || typeof value !== "string") return;
+    try {
+      const raw: unknown = JSON.parse(value);
+      if (raw && typeof raw === "object" && "type" in raw && raw.type === "mirror-voice:transcript" && "text" in raw && typeof raw.text === "string") {
+        this.options.callbacks.transcript?.(raw.text);
+      }
+    } catch {
+      // Malformed peer data is ignored at this boundary.
+    }
+  }
+
+  private authorizationMessage(value: unknown): void {
+    if (this.disposed || typeof value !== "string") return;
+    try {
+      const raw: unknown = JSON.parse(value);
+      if (!raw || typeof raw !== "object") return;
+      const record = raw as Record<string, unknown>;
+      if (record.type !== "mirror-authorization:request") return;
+      if (typeof record.request_id !== "string" || typeof record.title !== "string" || typeof record.message !== "string" || (record.kind !== "system" && record.kind !== "cli") || typeof record.expires_at !== "string") return;
+      this.options.callbacks.authorization?.(record as unknown as MirrorAuthorizationRequest);
+    } catch {
+      // Malformed peer data is ignored at this boundary.
+    }
+  }
+
+  respondAuthorization(requestId: string, approved: boolean): void {
+    const channel = this.controlChannel;
+    if (channel?.readyState === "open") {
+      channel.send(JSON.stringify({ type: "mirror-authorization:response", request_id: requestId, approved }));
+    }
+  }
+
+  async sendVoice(recording: Blob): Promise<void> {
+    const channel = this.voiceChannel;
+    if (!channel || channel.readyState !== "open" || this.disposed) return;
+    const bytes = new Uint8Array(await recording.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > 512 * 1024) return;
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    channel.send(JSON.stringify({
+      type: "mirror-voice:audio",
+      grant_id: this.controlGrant?.grantId ?? "",
+      seq: ++this.voiceSeq,
+      mime_type: recording.type || "audio/webm",
+      audio_base64: btoa(binary),
+    }));
   }
 
   private armControlRenewal(): void {
@@ -375,18 +429,21 @@ export class MirrorVideoSession {
       const control = peer.createDataChannel("mirror-control", {
         ordered: true,
       });
+      this.controlChannel = control;
       control.onopen = () => {
         this.controlOpen = true;
         this.publishStream();
       };
       control.onmessage = (event: MessageEvent<unknown>) =>
-        this.controlMessage(event.data);
+        (this.authorizationMessage(event.data), this.controlMessage(event.data));
       control.onclose = () => {
         this.controlOpen = false;
         this.fail(new MirrorVideoError("viewer_revoked"));
       };
       control.onerror = () => this.fail(new MirrorVideoError("transport"));
       this.inputChannel = this.wireInputChannel(peer);
+      this.voiceChannel = peer.createDataChannel("mirror-voice", { ordered: true });
+      this.voiceChannel.onmessage = (event: MessageEvent<unknown>) => this.voiceMessage(event.data);
       this.options.callbacks.state("negotiating");
       const createdOffer = await peer.createOffer();
       if (this.disposed) return;
