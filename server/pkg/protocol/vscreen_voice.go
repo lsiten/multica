@@ -6,7 +6,9 @@ import (
 	"fmt"
 )
 
-// MirrorVoiceMessage is sent over the P2P mirror-voice data channel. Audio is
+// MirrorVoiceMessage is reassembled from binary mirror-voice packets: a 12-byte
+// big-endian header (MVC1 magic, total JSON byte length, byte offset), followed
+// by JSON bytes. Each packet is at most 16 KiB. Audio is
 // intentionally never routed through the API server; the daemon decodes it and
 // passes it to its local speech-to-text provider.
 type MirrorVoiceMessage struct {

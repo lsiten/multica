@@ -5,6 +5,7 @@ package daemon
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -25,7 +26,7 @@ func TestVscreenManagedVideoGrantRevokeKeepsDisplayAndObserver(t *testing.T) {
 func testVscreenManagedVideoGrantRevoke(t *testing.T, sourceIndex int) {
 	t.Helper()
 	helper := filepath.Join(t.TempDir(), "transcribe")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\ncat >/dev/null\nprintf 'voice fixture'\n"), 0700); err != nil {
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\ncount=$(wc -c)\n[ \"$count\" -eq 98304 ] || exit 1\nprintf 'voice fixture'\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("MULTICA_VOICE_TRANSCRIBER", helper)
@@ -132,12 +133,21 @@ func testVscreenManagedVideoGrantRevoke(t *testing.T, sourceIndex int) {
 	case <-ctx.Done():
 		t.Fatal("voice channel not open")
 	}
-	recording, err := json.Marshal(protocol.MirrorVoiceMessage{Type: protocol.MirrorVoiceAudio, GrantID: control.GrantID, Seq: 1, MimeType: "audio/webm", AudioBase64: base64.StdEncoding.EncodeToString([]byte("recording fixture"))})
+	recording, err := json.Marshal(protocol.MirrorVoiceMessage{Type: protocol.MirrorVoiceAudio, GrantID: control.GrantID, Seq: 1, MimeType: "audio/webm", AudioBase64: base64.StdEncoding.EncodeToString(make([]byte, 96*1024))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = voice.SendText(string(recording)); err != nil {
-		t.Fatal(err)
+	for offset := 0; offset < len(recording); {
+		end := min(offset+16*1024-12, len(recording))
+		packet := make([]byte, 12+end-offset)
+		binary.BigEndian.PutUint32(packet, 0x4d564331)
+		binary.BigEndian.PutUint32(packet[4:], uint32(len(recording)))
+		binary.BigEndian.PutUint32(packet[8:], uint32(offset))
+		copy(packet[12:], recording[offset:end])
+		if err = voice.Send(packet); err != nil {
+			t.Fatal(err)
+		}
+		offset = end
 	}
 	select {
 	case reply := <-voiceReplies:

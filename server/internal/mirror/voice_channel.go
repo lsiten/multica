@@ -3,23 +3,49 @@ package mirror
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/pion/webrtc/v4"
 )
 
-// bindVoiceChannel accepts complete short recordings from a viewer. The
+// bindVoiceChannel reassembles bounded recordings from a viewer. The
 // channel is capability-gated exactly like mirror-input and never writes the
 // audio to logs, storage, or signaling messages.
 func (m *RuntimeMirror) bindVoiceChannel(viewerID string, peer *mirrorPeer, channel *webrtc.DataChannel) {
 	ctx, cancel := context.WithCancel(context.Background())
-	channel.OnClose(cancel)
+	var mu sync.Mutex
+	var assembly voiceAssembly
+	channel.OnClose(func() {
+		cancel()
+		mu.Lock()
+		assembly = voiceAssembly{}
+		mu.Unlock()
+	})
 	channel.OnMessage(func(message webrtc.DataChannelMessage) {
-		if !message.IsString {
+		if message.IsString || ctx.Err() != nil {
 			return
 		}
-		result := m.transcribeVoice(ctx, peer, message.Data)
+		peer.mu.Lock()
+		grant := peer.controlGrant
+		valid := !peer.closed && grant != nil && time.Now().Before(grant.deadline) && time.Now().Before(grant.value.ExpiresAt)
+		peer.mu.Unlock()
+		mu.Lock()
+		if !valid {
+			assembly = voiceAssembly{}
+			mu.Unlock()
+			return
+		}
+		recording, packetErr := assembly.push(message.Data, time.Now())
+		mu.Unlock()
+		if packetErr == nil && recording == nil {
+			return
+		}
+		result := voiceResult{Type: "mirror-voice:error", Reason: "invalid_audio"}
+		if packetErr == nil {
+			result = m.transcribeVoice(ctx, peer, recording)
+		}
 		payload, err := json.Marshal(result)
 		if err != nil {
 			return
