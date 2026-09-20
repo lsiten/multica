@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
 import { fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InteractiveMirrorVideo } from "./interactive-mirror-video";
@@ -130,7 +131,7 @@ describe("InteractiveMirrorVideo pointer gestures", () => {
       [
         expect.objectContaining({
           kind: "pointer:move",
-          pointer: expect.objectContaining({ x: 1600, y: 900 }),
+          pointer: expect.objectContaining({ button: "left", x: 1600, y: 900 }),
         }),
       ],
       [
