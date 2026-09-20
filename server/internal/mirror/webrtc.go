@@ -83,7 +83,7 @@ type RuntimeMirror struct {
 	arbiter                    *Arbiter
 	controlBackend             ControlBackend
 	voiceTranscriber           VoiceTranscriber
-	authorizationHandler       func(context.Context, string, bool) error
+	authorizationHandler       func(context.Context, protocol.MirrorAuthorizationRequest, bool) error
 	authorizationPublisher     func(string, protocol.MirrorAuthorizationRequest)
 	authorizationMu            sync.Mutex
 	pendingAuthorizations      map[string]pendingAuthorization
@@ -107,7 +107,7 @@ func (m *RuntimeMirror) SetVoiceTranscriber(transcriber VoiceTranscriber) {
 
 // SetAuthorizationHandler receives explicit viewer consent decisions. The
 // daemon owns the pending request and decides how to apply the result.
-func (m *RuntimeMirror) SetAuthorizationHandler(handler func(context.Context, string, bool) error) {
+func (m *RuntimeMirror) SetAuthorizationHandler(handler func(context.Context, protocol.MirrorAuthorizationRequest, bool) error) {
 	m.mu.Lock()
 	m.authorizationHandler = handler
 	m.mu.Unlock()

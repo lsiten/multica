@@ -22,10 +22,10 @@ func TestAuthorizationDecisionBelongsToLiveRecipient(t *testing.T) {
 			if scenario == "expired_request" {
 				expires = time.Now().Add(-time.Second)
 			}
-			m.pendingAuthorizations["request"] = pendingAuthorization{peer: peer, expiresAt: expires}
+			m.pendingAuthorizations["request"] = pendingAuthorization{peer: peer, expiresAt: expires, request: protocol.MirrorAuthorizationRequest{RequestID: "request", Kind: "cli"}}
 			calls := 0
-			m.SetAuthorizationHandler(func(_ context.Context, id string, approved bool) error {
-				if id != "request" || !approved {
+			m.SetAuthorizationHandler(func(_ context.Context, request protocol.MirrorAuthorizationRequest, approved bool) error {
+				if request.RequestID != "request" || request.Kind != "cli" || !approved {
 					t.Fatal("decision changed before reaching handler")
 				}
 				calls++
@@ -73,7 +73,7 @@ func TestAuthorizationConcurrentDecisionsInvokeHandlerOnce(t *testing.T) {
 	peer := &mirrorPeer{grant: &viewerGrant{deadline: time.Now().Add(time.Hour)}}
 	m.pendingAuthorizations["request"] = pendingAuthorization{peer: peer, expiresAt: time.Now().Add(time.Minute)}
 	var calls atomic.Int32
-	m.SetAuthorizationHandler(func(context.Context, string, bool) error {
+	m.SetAuthorizationHandler(func(context.Context, protocol.MirrorAuthorizationRequest, bool) error {
 		calls.Add(1)
 		return nil
 	})

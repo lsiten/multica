@@ -11,6 +11,7 @@ import (
 )
 
 type pendingAuthorization struct {
+	request   protocol.MirrorAuthorizationRequest
 	peer      *mirrorPeer
 	expiresAt time.Time
 }
@@ -49,7 +50,7 @@ func (m *RuntimeMirror) PublishAuthorizationRequest(viewerID string, request pro
 		m.authorizationMu.Unlock()
 		return false
 	}
-	m.pendingAuthorizations[request.RequestID] = pendingAuthorization{peer: peer, expiresAt: request.ExpiresAt}
+	m.pendingAuthorizations[request.RequestID] = pendingAuthorization{peer: peer, expiresAt: request.ExpiresAt, request: request}
 	m.authorizationMu.Unlock()
 	if err := peer.video.control.SendText(string(payload)); err != nil {
 		m.authorizationMu.Lock()
@@ -88,20 +89,20 @@ func (m *RuntimeMirror) publishAuthorizationRequest(viewerID string, request pro
 	return m.PublishAuthorizationRequest(viewerID, request)
 }
 
-func (m *RuntimeMirror) consumeAuthorization(peer *mirrorPeer, requestID string, now time.Time) bool {
+func (m *RuntimeMirror) consumeAuthorization(peer *mirrorPeer, requestID string, now time.Time) (protocol.MirrorAuthorizationRequest, bool) {
 	peer.mu.Lock()
 	defer peer.mu.Unlock()
 	if peer.closed || peer.grant == nil || !peer.grant.deadline.After(now) {
-		return false
+		return protocol.MirrorAuthorizationRequest{}, false
 	}
 	m.authorizationMu.Lock()
 	defer m.authorizationMu.Unlock()
 	pending, ok := m.pendingAuthorizations[requestID]
 	if !ok || pending.peer != peer {
-		return false
+		return protocol.MirrorAuthorizationRequest{}, false
 	}
 	delete(m.pendingAuthorizations, requestID)
-	return pending.expiresAt.After(now)
+	return pending.request, pending.expiresAt.After(now)
 }
 
 func (m *RuntimeMirror) handleAuthorizationMessage(peer *mirrorPeer, message webrtc.DataChannelMessage) {
@@ -115,12 +116,16 @@ func (m *RuntimeMirror) handleAuthorizationMessage(peer *mirrorPeer, message web
 	m.mu.Lock()
 	handler := m.authorizationHandler
 	m.mu.Unlock()
-	if handler == nil || !m.consumeAuthorization(peer, response.RequestID, time.Now()) {
+	if handler == nil {
+		return
+	}
+	request, ok := m.consumeAuthorization(peer, response.RequestID, time.Now())
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := handler(ctx, response.RequestID, response.Approved); err != nil {
+	if err := handler(ctx, request, response.Approved); err != nil {
 		return
 	}
 }
