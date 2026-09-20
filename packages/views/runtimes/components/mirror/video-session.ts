@@ -52,6 +52,7 @@ export class MirrorVideoSession {
   private controlRenewal: ReturnType<typeof setTimeout> | undefined;
   private inputSeq = 0;
   private voiceSeq = 0;
+  private voiceGrantId: string | null = null;
   private readonly pendingAuthorizations = new Map<string, number>();
   private readonly authorizationReplies = new Map<string, (processed: boolean) => void>();
   private metadataSeen = false;
@@ -237,8 +238,8 @@ export class MirrorVideoSession {
   }
 
   async sendVoice(recording: Blob): Promise<void> {
-    if (this.disposed || !this.controlGrant || !this.peer) return;
-    const grant = this.controlGrant;
+    if (this.disposed || !this.voiceGrantId || !this.peer) return;
+    const grant = this.voiceGrantId;
     if (!this.voiceChannel) {
       this.voiceChannel = this.peer.createDataChannel("mirror-voice", { ordered: true });
       this.voiceChannel.onopen = () => {
@@ -267,10 +268,10 @@ export class MirrorVideoSession {
     if (bytes.byteLength === 0 || bytes.byteLength > 512 * 1024) return;
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
-    if (this.disposed || this.controlGrant !== grant || channel.readyState !== "open") return;
+    if (this.disposed || this.voiceGrantId !== grant || channel.readyState !== "open") return;
     const payload = new TextEncoder().encode(JSON.stringify({
       type: "mirror-voice:audio",
-      grant_id: grant.grantId,
+      grant_id: grant,
       seq: ++this.voiceSeq,
       mime_type: recording.type || "audio/webm",
       audio_base64: btoa(binary),
@@ -531,6 +532,7 @@ export class MirrorVideoSession {
         await this.closeRemote();
         return;
       }
+      this.voiceGrantId = created.viewerGrant.grantId;
       this.armGrant(created.viewerGrant.expiresAt);
       const deadline = Date.now() + 30_000;
       while (!this.disposed && Date.now() < deadline) {

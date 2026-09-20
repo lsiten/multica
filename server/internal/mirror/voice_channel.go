@@ -11,7 +11,7 @@ import (
 )
 
 // bindVoiceChannel reassembles bounded recordings from a viewer. The
-// channel is capability-gated exactly like mirror-input and never writes the
+// channel is gated by the authenticated viewing capability and never writes the
 // audio to logs, storage, or signaling messages.
 func (m *RuntimeMirror) bindVoiceChannel(viewerID string, peer *mirrorPeer, channel *webrtc.DataChannel) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -28,7 +28,7 @@ func (m *RuntimeMirror) bindVoiceChannel(viewerID string, peer *mirrorPeer, chan
 			return
 		}
 		peer.mu.Lock()
-		grant := peer.controlGrant
+		grant := peer.grant
 		valid := !peer.closed && grant != nil && time.Now().Before(grant.deadline) && time.Now().Before(grant.value.ExpiresAt)
 		peer.mu.Unlock()
 		mu.Lock()
@@ -78,11 +78,11 @@ func (m *RuntimeMirror) transcribeVoice(ctx context.Context, peer *mirrorPeer, r
 		return result
 	}
 	peer.mu.Lock()
-	grant := peer.controlGrant
+	grant := peer.grant
 	valid := !peer.closed && grant != nil && voice.GrantID == grant.value.GrantID &&
-		time.Now().Before(grant.deadline) && time.Now().Before(grant.value.ExpiresAt) && voice.Seq > grant.voiceSeq
+		time.Now().Before(grant.deadline) && time.Now().Before(grant.value.ExpiresAt) && voice.Seq > peer.voiceSeq
 	if valid {
-		grant.voiceSeq = voice.Seq
+		peer.voiceSeq = voice.Seq
 	}
 	peer.mu.Unlock()
 	if !valid {
@@ -103,7 +103,7 @@ func (m *RuntimeMirror) transcribeVoice(ctx context.Context, peer *mirrorPeer, r
 		return result
 	}
 	peer.mu.Lock()
-	valid = !peer.closed && peer.controlGrant == grant && time.Now().Before(grant.deadline) && time.Now().Before(grant.value.ExpiresAt)
+	valid = !peer.closed && peer.grant == grant && time.Now().Before(grant.deadline) && time.Now().Before(grant.value.ExpiresAt)
 	peer.mu.Unlock()
 	if !valid {
 		return result

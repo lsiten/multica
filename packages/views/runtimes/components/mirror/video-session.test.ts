@@ -366,6 +366,7 @@ it("encodes wheel input and fragments voice within the negotiated channel limit"
     delta_x: 3,
     delta_y: 4,
   });
+  await session.stopControl();
   await session.sendVoice(new Blob([new Uint8Array(96 * 1024)], { type: "audio/webm" }));
   const voice = peer.channels.get("mirror-voice");
   if (!voice) throw new Error("Voice channel missing");

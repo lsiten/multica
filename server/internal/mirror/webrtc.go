@@ -166,6 +166,7 @@ func (m *RuntimeMirror) SetControlBackend(backend ControlBackend) {
 type mirrorPeer struct {
 	pc           *webrtc.PeerConnection
 	video        *videoPeer
+	voiceSeq     uint64
 	grant        *viewerGrant
 	controlGrant *controlGrant
 	input        *webrtc.DataChannel

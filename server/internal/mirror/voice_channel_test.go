@@ -17,11 +17,11 @@ func (f transcriptionFixture) Transcribe(ctx context.Context, mime string, audio
 }
 
 func TestVoiceChecksCapabilityBeforeAndAfterTranscription(t *testing.T) {
-	for _, scenario := range []string{"accepted", "expired", "revoked_during_transcription", "cancelled", "replayed"} {
+	for _, scenario := range []string{"accepted", "expired", "revoked_during_transcription", "cancelled", "replayed", "foreign_grant", "closed"} {
 		t.Run(scenario, func(t *testing.T) {
 			m := NewRuntimeMirror(nil, time.Hour)
-			peer := &mirrorPeer{controlGrant: &controlGrant{
-				value:    testControlGrant("voice-grant", "display", time.Now().Add(time.Hour)),
+			peer := &mirrorPeer{grant: &viewerGrant{
+				value:    protocol.MirrorViewerGrant{GrantID: "voice-grant", ExpiresAt: time.Now().Add(time.Hour)},
 				deadline: time.Now().Add(time.Minute),
 			}}
 			calls := 0
@@ -32,21 +32,27 @@ func TestVoiceChecksCapabilityBeforeAndAfterTranscription(t *testing.T) {
 				}
 				if scenario == "revoked_during_transcription" {
 					peer.mu.Lock()
-					peer.controlGrant = nil
+					peer.grant = nil
 					peer.mu.Unlock()
 				}
 				return "transcript", nil
 			}))
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			if scenario == "foreign_grant" {
+				peer.grant.value.GrantID = "other-viewer"
+			}
+			if scenario == "closed" {
+				peer.closed = true
+			}
 			if scenario == "expired" {
-				peer.controlGrant.deadline = time.Now().Add(-time.Second)
+				peer.grant.deadline = time.Now().Add(-time.Second)
 			}
 			if scenario == "cancelled" {
 				cancel()
 			}
 			if scenario == "replayed" {
-				peer.controlGrant.voiceSeq = 1
+				peer.voiceSeq = 1
 			}
 			payload, err := json.Marshal(protocol.MirrorVoiceMessage{
 				Type: protocol.MirrorVoiceAudio, GrantID: "voice-grant", Seq: 1,
