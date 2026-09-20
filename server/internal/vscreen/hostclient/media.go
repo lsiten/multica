@@ -43,7 +43,11 @@ func (c *Client) validateMediaResponse(request native.Request, response native.R
 	if request.Operation == "sources" {
 		seen := make(map[protocol.MirrorSource]bool)
 		for _, source := range response.Sources {
-			if !c.validSource(source, request.Resource) || seen[source.Source] {
+			resource := request.Resource
+			if source.Source.Kind != protocol.MirrorSourceVirtual {
+				resource.DisplayID = source.DisplayID
+			}
+			if !c.validSource(source, resource) || seen[source.Source] {
 				return native.ErrProtocol
 			}
 			seen[source.Source] = true

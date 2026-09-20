@@ -71,6 +71,11 @@ func (d *Daemon) handleManagedMirrorOffer(ctx context.Context, msg mirrorOfferMe
 		if err != nil {
 			return
 		}
+		resource, authorized := mirrorOfferResource(resource, sources, *offer.ViewerGrant)
+		if !authorized {
+			d.managedMirrorFailure(msg, offer, protocol.ErrInvalidMirrorDescription)
+			return
+		}
 		bindings := make([]protocol.MirrorSourceBinding, 0, len(sources))
 		for _, source := range sources {
 			bindings = append(bindings, source.MirrorSourceBinding)

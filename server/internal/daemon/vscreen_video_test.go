@@ -16,6 +16,13 @@ import (
 )
 
 func TestVscreenManagedVideoGrantRevokeKeepsDisplayAndObserver(t *testing.T) {
+	for index, name := range []string{"physical", "virtual"} {
+		t.Run(name, func(t *testing.T) { testVscreenManagedVideoGrantRevoke(t, index) })
+	}
+}
+
+func testVscreenManagedVideoGrantRevoke(t *testing.T, sourceIndex int) {
+	t.Helper()
 	d := vscreenFixtureDaemon(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
@@ -30,7 +37,7 @@ func TestVscreenManagedVideoGrantRevokeKeepsDisplayAndObserver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := catalog[1]
+	source := catalog[sourceIndex]
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)

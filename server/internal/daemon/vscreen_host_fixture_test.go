@@ -94,6 +94,8 @@ func vscreenTestHost() int {
 		response = native.Response{Version: 1, Build: hello.Build, ID: request.ID, Epoch: epoch}
 		physical := native.SourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: request.Resource, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "display:physical"}, NativeEpoch: epoch.NativeEpoch, Generation: epoch.DisplayGeneration, Primary: true}, DisplayID: 1, Name: "Fixture physical", Width: 1600, Height: 900, LogicalWidth: 1600, LogicalHeight: 900, Scale: 1, GeometryRevision: 1}
 		virtual := physical
+		physical.Resource.DisplayID = physical.DisplayID
+		virtual.Resource.DisplayID = 0
 		virtual.Source = protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "display:" + request.Resource.RuntimeID}
 		virtual.Primary = false
 		virtual.DisplayID = 2
