@@ -19,7 +19,7 @@ func TestNativeLaunchFilesValidation(t *testing.T) {
 	}
 	text := string(source)
 	start := strings.Index(text, "static NSArray<NSURL *> *ACRequestedFiles")
-	end := strings.Index(text, "NSDictionary *ACLaunch")
+	end := strings.Index(text, "static AXError ACRegisterWindowObserver")
 	if start < 0 || end <= start {
 		t.Fatal("launch files helper boundary missing")
 	}
