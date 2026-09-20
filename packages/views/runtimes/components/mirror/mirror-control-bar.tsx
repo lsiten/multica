@@ -124,7 +124,7 @@ export function MirrorControlBar({
         setRecording(false);
         setInputMode("text");
         const blob = new Blob(chunks.current, { type: next.mimeType || "audio/webm" });
-        void onVoice(blob);
+        void Promise.resolve(onVoice(blob)).catch(() => setVoiceError(true));
       };
       recorder.current = next;
       setRecording(true);
