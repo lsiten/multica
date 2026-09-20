@@ -15,6 +15,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func TestCreateAgentBuilderSessionCreatesIsolatedHiddenBuilder(t *testing.T) {
@@ -835,6 +836,15 @@ func TestSendDirectChatMessageUsesCurrentlyBoundRuntime(t *testing.T) {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE chat_session_id = $1`, created.SessionID)
 	})
 
+	source := &protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "https://fixture.invalid", WorkspaceID: testWorkspaceID, RuntimeID: testRuntimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "display:original"}, NativeEpoch: "native", Generation: "display"}
+	_, mirrorErr := testHandler.TaskService.SendDirectChatMessage(ctx, session, staleAgent, parseUUID(testUserID), "operate the original display", nil, "member", parseUUID(testUserID), source)
+	if mirrorErr == nil {
+		t.Fatal("mirror send followed a runtime rebind instead of rejecting its original source")
+	}
+	var persisted int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM chat_message WHERE chat_session_id = $1 AND content = 'operate the original display'`, session.ID).Scan(&persisted); err != nil || persisted != 0 {
+		t.Fatalf("rejected source persisted a user message: count=%d err=%v", persisted, err)
+	}
 	sent, err := testHandler.TaskService.SendDirectChatMessage(
 		ctx, session, staleAgent, parseUUID(testUserID), "hello after the switch", nil, "member", parseUUID(testUserID),
 	)

@@ -2286,6 +2286,7 @@ type DirectChatSendResult struct {
 }
 
 var ErrChatSessionAlreadyStarted = errors.New("chat session already has a user message")
+var ErrMirrorChatSourceChanged = errors.New("mirror chat source no longer matches the chat runtime")
 
 // SendDirectChatMessage atomically persists one web/mobile direct-chat turn:
 // the owning task (which claims its own input batch via chat_input_task_id), the
@@ -2307,7 +2308,25 @@ func (s *TaskService) SendDirectChatMessage(
 	attachmentIDs []pgtype.UUID,
 	uploaderType string,
 	uploaderID pgtype.UUID,
+	mirrorSource ...*protocol.MirrorSourceBinding,
 ) (*DirectChatSendResult, error) {
+	var taskContext []byte
+	var boundSource *protocol.MirrorSourceBinding
+	if len(mirrorSource) > 1 {
+		return nil, fmt.Errorf("mirror source context provided more than once")
+	}
+	if len(mirrorSource) == 1 && mirrorSource[0] != nil {
+		payload := protocol.MirrorChatTaskContext{Type: protocol.MirrorChatTaskContextType, Source: *mirrorSource[0]}
+		boundSource = &payload.Source
+		if err := payload.Validate(); err != nil {
+			return nil, err
+		}
+		var err error
+		taskContext, err = json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal mirror source context: %w", err)
+		}
+	}
 	// Build the per-task Composio overlay before the transaction — it can do
 	// network I/O and must not run with a DB transaction open.
 	overlay := s.buildRuntimeMCPOverlay(ctx, initiatorUserID, agent)
@@ -2354,6 +2373,9 @@ func (s *TaskService) SendDirectChatMessage(
 		if !carrier.RuntimeID.Valid {
 			return ErrChatTaskAgentNoRuntime
 		}
+		if boundSource != nil && (boundSource.Resource.RuntimeID != util.UUIDToString(carrier.RuntimeID) || boundSource.Resource.WorkspaceID != util.UUIDToString(currentSession.WorkspaceID)) {
+			return ErrMirrorChatSourceChanged
+		}
 
 		// The database status of every newly-created task is "queued" until a
 		// daemon claims it. Product queue semantics are positional instead: this
@@ -2377,6 +2399,7 @@ func (s *TaskService) SendDirectChatMessage(
 			OriginatorUserID:     attr.UserID,
 			AccountableUserID:    attr.AccountableUserID,
 			ForceFreshSession:    pgtype.Bool{Bool: false, Valid: true},
+			Context:              taskContext,
 			RuntimeMcpOverlay:    overlay.Overlay,
 			RuntimeConnectedApps: overlay.ConnectedApps,
 			OriginatorSource:     attrSource,

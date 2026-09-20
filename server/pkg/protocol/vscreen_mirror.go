@@ -44,6 +44,33 @@ type MirrorSourceBinding struct {
 	Primary     bool         `json:"primary"`
 }
 
+// MirrorChatTaskContext is the authenticated source contract carried with a
+// mirror-directed chat task. It is deliberately separate from message text so
+// the daemon can reject a stale or mismatched display without parsing a
+// user-authored string.
+type MirrorChatTaskContext struct {
+	Type   string              `json:"type"`
+	Source MirrorSourceBinding `json:"source"`
+}
+
+const MirrorChatTaskContextType = "mirror_source_v1"
+
+func (c MirrorChatTaskContext) Validate() error {
+	if c.Type != MirrorChatTaskContextType {
+		return fmt.Errorf("%w: unknown mirror chat context", ErrInvalidVscreenContract)
+	}
+	if err := c.Source.Source.Validate(); err != nil {
+		return err
+	}
+	if err := c.Source.Resource.Validate(); err != nil {
+		return err
+	}
+	if !vscreenIdentity(c.Source.NativeEpoch) || !vscreenIdentity(c.Source.Generation) {
+		return fmt.Errorf("%w: incomplete mirror source binding", ErrInvalidVscreenContract)
+	}
+	return nil
+}
+
 // MirrorViewerGrant binds renewable viewing permission independently of negotiation expiry.
 // It is server-issued metadata, not a client-provided proof or an input capability.
 type MirrorViewerGrant struct {

@@ -2125,6 +2125,37 @@ describe("ApiClient", () => {
       expect(JSON.parse(fetchMock.mock.calls[1]![1]?.body as string)).toEqual({ content: "again" });
     });
 
+    it("sendChatMessage serialises an exact mirror source binding separately from text", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message_id: "m1", task_id: "t1", created_at: "2026-08-01T00:00:00Z" }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = new ApiClient("https://api.example.test");
+      await client.sendChatMessage("session-1", "open the selected app", undefined, {
+        resource: { backendIdentity: "https://api.example.test", workspaceId: "ws", runtimeId: "rt", uid: 501, displayId: 7 },
+        source: { kind: "physical", sourceId: "display-7" },
+        nativeEpoch: "native-1",
+        generation: "generation-1",
+        primary: true,
+      });
+
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(JSON.parse(init?.body as string)).toEqual({
+        content: "open the selected app",
+        mirror_source: {
+          resource: { backend_identity: "https://api.example.test", workspace_id: "ws", runtime_id: "rt", uid: 501, display_id: 7 },
+          source: { kind: "physical", source_id: "display-7" },
+          native_epoch: "native-1",
+          generation: "generation-1",
+          primary: true,
+        },
+      });
+    });
+
     it("sendChatMessage accepts the server's null attachment_ids for text-only sends", async () => {
       vi.stubGlobal(
         "fetch",

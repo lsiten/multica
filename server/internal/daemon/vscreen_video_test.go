@@ -123,17 +123,12 @@ func testVscreenManagedVideoGrantRevoke(t *testing.T, sourceIndex int) {
 	case <-ctx.Done():
 		t.Fatal("no native fixture RTP")
 	}
-	rm := d.existingManagedMirror("rt", g)
-	control := protocol.MirrorControlGrant{GrantID: "voice-input", SessionID: grant.SessionID, WorkspaceID: grant.WorkspaceID, RuntimeID: grant.RuntimeID, UserID: grant.UserID, ViewerID: grant.ViewerID, NativeEpoch: grant.NativeEpoch, Source: grant.Source, SourceGeneration: grant.SourceGeneration, ExpiresAt: grant.ExpiresAt}
-	if rm == nil || !rm.BindControlGrant(grant.ViewerID, control, uint64(g)) {
-		t.Fatal("voice control capability rejected")
-	}
 	select {
 	case <-voiceReady:
 	case <-ctx.Done():
 		t.Fatal("voice channel not open")
 	}
-	recording, err := json.Marshal(protocol.MirrorVoiceMessage{Type: protocol.MirrorVoiceAudio, GrantID: control.GrantID, Seq: 1, MimeType: "audio/webm", AudioBase64: base64.StdEncoding.EncodeToString(make([]byte, 96*1024))})
+	recording, err := json.Marshal(protocol.MirrorVoiceMessage{Type: protocol.MirrorVoiceAudio, GrantID: grant.GrantID, Seq: 1, MimeType: "audio/webm", AudioBase64: base64.StdEncoding.EncodeToString(make([]byte, 96*1024))})
 	if err != nil {
 		t.Fatal(err)
 	}

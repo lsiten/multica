@@ -53,6 +53,10 @@ export function MirrorControlBar({
   const [text, setText] = useState("");
   const [agentId, setAgentId] = useState("");
   const [recording, setRecording] = useState(false);
+  const [inputMode, setInputMode] = useState<"text" | "voice">("text");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState(false);
+  const [voiceError, setVoiceError] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const owner = runtime.owner_id === scope.accountId;
@@ -83,12 +87,24 @@ export function MirrorControlBar({
           ? t(($) => $.vscreen.view_only)
           : t(($) => $.vscreen.interaction_disabled);
 
+  const selectedAgent = agents.find((agent) => agent.id === agentId);
+  const agentRoute = !!selectedAgent && !!onAgentMessage;
+  const canSend = active || agentRoute;
+
   const sendType = async () => {
     const value = text || voiceTranscript || "";
-    if (!value || !active) return;
-    if (agentId && onAgentMessage) await onAgentMessage(agentId, value);
-    else onType(value);
-    setText("");
+    if (!value || !canSend || sending) return;
+    setSending(true);
+    setSendError(false);
+    try {
+      if (agentRoute) await onAgentMessage?.(agentId, value);
+      else onType(value);
+      setText("");
+    } catch {
+      setSendError(true);
+    } finally {
+      setSending(false);
+    }
   };
 
   const toggleVoice = () => {
@@ -106,13 +122,17 @@ export function MirrorControlBar({
       next.onstop = () => {
         stream.getTracks().forEach((track) => track.stop());
         setRecording(false);
+        setInputMode("text");
         const blob = new Blob(chunks.current, { type: next.mimeType || "audio/webm" });
-        void onVoice(blob);
+        void Promise.resolve(onVoice(blob)).catch(() => setVoiceError(true));
       };
       recorder.current = next;
       setRecording(true);
       next.start();
-    }).catch(() => setRecording(false));
+    }).catch(() => {
+      setRecording(false);
+      setVoiceError(true);
+    });
   };
 
   return (
@@ -169,44 +189,87 @@ export function MirrorControlBar({
           {feedback}
         </span>
       </div>
-      {active && (
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex min-w-56 flex-1 items-center gap-2 text-caption">
-            <Type className="size-4 shrink-0" />
-            <span className="sr-only">{t(($) => $.vscreen.external_text)}</span>
-            <Input
-              value={text}
-              maxLength={1024}
-              autoComplete="off"
-              onChange={(event) => setText(event.target.value.slice(0, 1024))}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  sendType();
-                }
-              }}
-              className="h-8 min-w-0 flex-1"
-              placeholder={t(($) => $.vscreen.external_text)}
-            />
-          </label>
-          <Button size="sm" variant="secondary" disabled={!text && !voiceTranscript} onClick={sendType}>
-            {t(($) => $.vscreen.type_text)}
-          </Button>
-          {agents.length > 0 && (
-            <select
-              aria-label={t(($) => $.vscreen.send_target)}
-              value={agentId}
-              onChange={(event) => setAgentId(event.target.value)}
-              className="h-8 rounded-md border bg-background px-2 text-caption"
-            >
-              <option value="">{t(($) => $.vscreen.send_screen)}</option>
-              {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-            </select>
-          )}
-          <Button size="sm" variant={recording ? "destructive" : "outline"} onClick={toggleVoice}>
+      <div className="flex flex-wrap items-center gap-2">
+        {inputMode === "text" ? (
+        <label className="flex min-w-56 flex-1 items-center gap-2 text-caption">
+          <Type className="size-4 shrink-0" />
+          <span className="sr-only">{t(($) => $.vscreen.external_text)}</span>
+          <Input
+            value={text}
+            maxLength={1024}
+            autoComplete="off"
+            disabled={sending}
+            onChange={(event) => {
+              setText(event.target.value.slice(0, 1024));
+              if (sendError) setSendError(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void sendType();
+              }
+            }}
+            className="h-8 min-w-0 flex-1"
+            placeholder={t(($) => $.vscreen.external_text)}
+          />
+        </label>
+        ) : (
+          <Button
+            size="sm"
+            variant={recording ? "destructive" : "secondary"}
+            disabled={!active && !agentRoute}
+            onClick={toggleVoice}
+            aria-busy={recording}
+          >
             <Mic className="size-4" />
             {recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
           </Button>
+        )}
+        {inputMode === "text" && <Button
+          size="sm"
+          variant="secondary"
+          disabled={!text && !voiceTranscript || !canSend || sending}
+          aria-busy={sending}
+          onClick={() => void sendType()}
+        >
+          {sending ? t(($) => $.vscreen.sending) : t(($) => $.vscreen.type_text)}
+        </Button>}
+        {agents.length > 0 && (
+          <select
+            aria-label={t(($) => $.vscreen.send_target)}
+            value={agentId}
+            disabled={sending}
+            onChange={(event) => {
+              setAgentId(event.target.value);
+              setSendError(false);
+            }}
+            className="h-8 rounded-md border bg-background px-2 text-caption"
+          >
+            <option value="">{t(($) => $.vscreen.send_screen)}</option>
+            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+          </select>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={recording}
+          onClick={() => {
+            setVoiceError(false);
+            setInputMode((mode) => mode === "text" ? "voice" : "text");
+          }}
+          aria-label={inputMode === "text" ? t(($) => $.vscreen.switch_to_voice) : t(($) => $.vscreen.switch_to_text)}
+        >
+          {inputMode === "text" ? <Mic className="size-4" /> : <Type className="size-4" />}
+        </Button>
+        {voiceError && <span role="alert" className="text-caption text-destructive">{t(($) => $.vscreen.voice_failed)}</span>}
+        {sendError && (
+          <span role="alert" className="text-caption text-destructive">
+            {t(($) => $.vscreen.send_failed)}
+          </span>
+        )}
+      </div>
+      {active && (
+        <div className="flex flex-wrap items-center gap-2">
           {(
             [
               ["escape", "Esc"],

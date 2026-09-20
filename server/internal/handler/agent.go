@@ -360,14 +360,18 @@ type AgentTaskResponse struct {
 	CancelledByCommentChange bool                   `json:"cancelled_by_comment_change,omitempty"`
 	CancelledBy              *TaskCancellationActor `json:"cancelled_by,omitempty"`
 
-	ID                   string                 `json:"id"`
-	AgentID              string                 `json:"agent_id"`
-	RuntimeID            string                 `json:"runtime_id"`
-	IssueID              string                 `json:"issue_id"`
-	WorkspaceID          string                 `json:"workspace_id"`
-	WorkspaceSlug        string                 `json:"workspace_slug,omitempty"`
-	IssueIdentifier      string                 `json:"issue_identifier,omitempty"`
-	RemoteMCPConnections []remotemcp.Connection `json:"remote_mcp_connections,omitempty"`
+	ID        string `json:"id"`
+	AgentID   string `json:"agent_id"`
+	RuntimeID string `json:"runtime_id"`
+	// MirrorSource is an exact, server-validated display target for a mirror
+	// chat task. It is omitted for ordinary tasks; daemons must not infer a
+	// physical target from runtime defaults.
+	MirrorSource         *protocol.MirrorSourceBinding `json:"mirror_source,omitempty"`
+	IssueID              string                        `json:"issue_id"`
+	WorkspaceID          string                        `json:"workspace_id"`
+	WorkspaceSlug        string                        `json:"workspace_slug,omitempty"`
+	IssueIdentifier      string                        `json:"issue_identifier,omitempty"`
+	RemoteMCPConnections []remotemcp.Connection        `json:"remote_mcp_connections,omitempty"`
 	// PluginHookTools are the workspace's agent-trigger plugin hooks, which the
 	// daemon renders as MCP tools for this task. Resolved at claim time so
 	// disabling or uninstalling a plugin takes effect on the next task rather
@@ -823,6 +827,12 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 	if t.HandoffNote.Valid {
 		handoffNote = t.HandoffNote.String
 	}
+	var mirrorSource *protocol.MirrorSourceBinding
+	var mirrorContext protocol.MirrorChatTaskContext
+	if json.Unmarshal(t.Context, &mirrorContext) == nil && mirrorContext.Validate() == nil {
+		binding := mirrorContext.Source
+		mirrorSource = &binding
+	}
 	return AgentTaskResponse{
 		// Task-scoped provenance must not transfer through copied retry context.
 		CancelledByCommentChange: t.Status == "cancelled" && cancellation.TaskID != "" && cancellation.TaskID == uuidToString(t.ID),
@@ -831,6 +841,7 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 		ID:                     uuidToString(t.ID),
 		AgentID:                uuidToString(t.AgentID),
 		RuntimeID:              uuidToString(t.RuntimeID),
+		MirrorSource:           mirrorSource,
 		IssueID:                uuidToString(t.IssueID),
 		WorkspaceID:            workspaceID,
 		Status:                 t.Status,

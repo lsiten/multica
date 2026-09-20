@@ -34,8 +34,8 @@ export function MirrorAuthorizationPrompt({
         {pending && <p role="status">{t(($) => $.vscreen.pending)}</p>}
         {failed && <p role="alert" className="text-destructive">{t(($) => $.vscreen.command_failed)}</p>}
         <DialogFooter>
-          <Button disabled={pending || failed} variant="outline" onClick={() => onDecision(false)}>{t(($) => $.vscreen.authorization_deny)}</Button>
-          <Button disabled={pending || failed} aria-busy={pending} onClick={() => onDecision(true)}>{t(($) => $.vscreen.authorization_allow)}</Button>
+          <Button disabled={pending} variant="outline" onClick={() => onDecision(false)}>{t(($) => $.vscreen.authorization_deny)}</Button>
+          <Button disabled={pending} aria-busy={pending} onClick={() => onDecision(true)}>{t(($) => $.vscreen.authorization_allow)}</Button>
           {failed && <Button variant="outline" onClick={onDismiss}>{t(($) => $.vscreen.close)}</Button>}
         </DialogFooter>
       </DialogContent>

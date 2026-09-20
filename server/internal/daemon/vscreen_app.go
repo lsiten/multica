@@ -28,12 +28,31 @@ func (a *vscreenAppInput) Dispose(context.Context, vscreen.ResourceKey) error { 
 func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider string, stop func(error)) (json.RawMessage, *vscreenMCP, *vscreenExecution, error) {
 	key, err := d.vscreenResource(task.WorkspaceID, task.RuntimeID)
 	if err != nil {
+		if task.MirrorSource != nil {
+			return nil, nil, nil, err
+		}
 		return nil, nil, nil, nil
+	}
+	if task.MirrorSource != nil {
+		binding := protocol.MirrorChatTaskContext{Type: protocol.MirrorChatTaskContextType, Source: *task.MirrorSource}
+		expectedResource := key
+		expectedResource.DisplayID = task.MirrorSource.Resource.DisplayID
+		if err := binding.Validate(); err != nil || task.MirrorSource.Resource != expectedResource {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone, Cause: errors.New("mirror source binding does not match task runtime")}
+		}
+		// The managed execution actor currently owns the virtual display only.
+		// Never silently redirect an explicitly selected physical/system source.
+		if task.MirrorSource.Source.Kind != protocol.MirrorSourceVirtual {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenNativeUnavailable, Cause: errors.New("physical mirror agent execution is unavailable")}
+		}
 	}
 	s := d.vscreenRuntime()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.enabled[key] {
+		if task.MirrorSource != nil {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone}
+		}
 		if task.VscreenContinuation != nil {
 			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenResumeUnavailable}
 		}
@@ -51,6 +70,26 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 	}
 	if !actor.Status().Ready {
 		return nil, nil, nil, errors.New("managed virtual screen is not registered")
+	}
+	if task.MirrorSource != nil {
+		sources, err := s.client.Sources(ctx, key)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		found := false
+		for _, source := range sources {
+			if source.MirrorSourceBinding == *task.MirrorSource && source.DisplayID == actor.Status().Display.DisplayID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone}
+		}
+		current := actor.Status().Display.Epoch
+		if task.MirrorSource.NativeEpoch != current.NativeEpoch || task.MirrorSource.Generation != current.DisplayGeneration {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone, Cause: errors.New("mirror source binding is stale")}
+		}
 	}
 	if err = d.validateVscreenContinuation(ctx, s, task, actor); err != nil {
 		return nil, nil, nil, err

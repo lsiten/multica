@@ -187,14 +187,12 @@ export function MirrorSurface({
     });
   };
   const sendAgentMessage = async (agentId: string, text: string) => {
+    if (!source) throw new Error("mirror source is unavailable");
     const session = sessions.data?.find((candidate) => candidate.agent_id === agentId && candidate.status !== "archived");
     const target = session ?? await getApi().createChatSession({ agent_id: agentId });
-    // Keep the selected source explicit in the existing chat turn. The agent
-    // executor must never infer a physical target from the runtime default.
-    const sourceBinding = source
-      ? `\n\n[Mirror source: ${source.source.kind}/${source.source.sourceId}; epoch=${source.nativeEpoch}; generation=${source.generation}]`
-      : "";
-    await getApi().sendChatMessage(target.id, `${text}${sourceBinding}`);
+    // Send the exact catalog binding as structured task metadata. The server
+    // revalidates it against the live daemon catalog and rejects stale sources.
+    await getApi().sendChatMessage(target.id, text, undefined, source ?? undefined);
     void sessions.refetch();
   };
   useEffect(() => {

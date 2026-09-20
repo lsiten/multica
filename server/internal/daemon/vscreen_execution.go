@@ -157,6 +157,12 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 		return nil, context.Canceled
 	default:
 	}
+	if binding := e.task.MirrorSource; binding != nil {
+		current := e.actor.Status()
+		if !current.Ready || current.Display.Resource != binding.Resource || current.Display.Epoch.NativeEpoch != binding.NativeEpoch || current.Display.Epoch.DisplayGeneration != binding.Generation {
+			return nil, &vscreen.Error{Reason: protocol.VscreenSourceGone}
+		}
+	}
 	if name == "vscreen_acquire" {
 		return e.acquire(ctx, args)
 	}

@@ -56,7 +56,11 @@ received, so partial network data never flashes on screen.
 Use the repository's existing border-separated card surfaces. Do not add a
 second elevation or shadow system for mirror media.
 
-## 8. Accessibility and accepted debt
+## 8. Composer states
+
+The external composer remains available while viewing so a selected bound agent can receive a chat instruction without taking control of the screen. Screen injection controls remain gated by an active human control grant. Sending is serialized, reports a localized error, and preserves the draft for retry; Enter does not submit during IME composition.
+
+## 9. Accessibility and accepted debt
 
 Target WCAG 2.2 AA: all controls are keyboard reachable, focus remains
 visible, and state text has sufficient contrast. Initial native capture uses
