@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
@@ -86,16 +87,21 @@ func (d *Daemon) wireMirrorControl(rm *mirror.RuntimeMirror) {
 	// A viewer decision is the final human confirmation for a host permission
 	// prompt. The prompt is issued by the trusted native host; no input payload
 	// or authorization text is forwarded to the server.
-	rm.SetAuthorizationHandler(func(ctx context.Context, _ string, approved bool) error {
-		if !approved {
-			return nil
-		}
-		s := d.vscreenRuntime()
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.client == nil {
-			return nil
-		}
-		return d.requestVscreenPermissions(ctx, s, appcontrol.PermissionRequest{Accessibility: true})
-	})
+	rm.SetAuthorizationHandler(d.handleMirrorAuthorization)
+}
+
+func (d *Daemon) handleMirrorAuthorization(ctx context.Context, request protocol.MirrorAuthorizationRequest, approved bool) error {
+	if request.Kind != "system" {
+		return errors.New("mirror: CLI approval requires a provider decision handler")
+	}
+	if !approved {
+		return nil
+	}
+	s := d.vscreenRuntime()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.client == nil {
+		return errors.New("mirror: native host unavailable")
+	}
+	return d.requestVscreenPermissions(ctx, s, appcontrol.PermissionRequest{Accessibility: true})
 }
