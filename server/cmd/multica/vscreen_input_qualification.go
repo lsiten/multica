@@ -307,10 +307,12 @@ func exerciseQualification(ctx context.Context, client smokeInputClient, app smo
 			return e
 		}
 		current, e := snapshot()
+		if e == nil {
+			result.ForegroundSamples = append(result.ForegroundSamples, current)
+		}
 		if e != nil || current != foreground {
 			return errors.New("foreground_or_cursor_changed")
 		}
-		result.ForegroundSamples = append(result.ForegroundSamples, current)
 		result.Stages = append(result.Stages, qualificationStage{CompletionVerified: lastActionResult.CompletionVerified, Mechanism: lastActionResult.Mechanism, Action: name, Before: qualificationReportSnapshot(before), After: qualificationReportSnapshot(after), Image: image, Revision: fresh.Window.SnapshotRevision})
 	}
 	if err = client.Revoke(ctx, a); err != nil {
