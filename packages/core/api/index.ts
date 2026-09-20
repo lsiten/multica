@@ -14,6 +14,14 @@ export type {
 } from "./client";
 export { parseWithFallback, setSchemaLogger } from "./schema";
 export type { ParseOptions } from "./schema";
+export {
+  parseMirrorAuthorizationRequest,
+  parseMirrorVoiceMessage,
+} from "./mirror-peer-messages";
+export type {
+  MirrorAuthorizationWireMessage,
+  MirrorVoiceWireMessage,
+} from "./mirror-peer-messages";
 export { DuplicateIssueErrorBodySchema } from "./schemas";
 export type { DuplicateIssueErrorBody } from "./schemas";
 export { WSClient } from "./ws-client";
