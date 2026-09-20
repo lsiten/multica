@@ -44,6 +44,7 @@ export class MirrorVideoSession {
   private controlChannel: RTCDataChannel | null = null;
   private inputChannel: RTCDataChannel | null = null;
   private voiceChannel: RTCDataChannel | null = null;
+  private voiceReady: ((open: boolean) => void) | null = null;
   private inputOpen = false;
   private inputReady: ((open: boolean) => void) | null = null;
   private controlGrant: MirrorControlGrant | null = null;
@@ -146,7 +147,8 @@ export class MirrorVideoSession {
   private async ensureInputChannel(): Promise<void> {
     if (this.disposed) throw new MirrorVideoError("transport");
     if (this.inputOpen) return;
-    if (!this.inputChannel) throw new MirrorVideoError("webrtc_unavailable");
+    if (!this.peer) throw new MirrorVideoError("webrtc_unavailable");
+    if (!this.inputChannel) this.inputChannel = this.wireInputChannel(this.peer);
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new MirrorVideoError("transport")),
@@ -209,9 +211,31 @@ export class MirrorVideoSession {
   }
 
   async sendVoice(recording: Blob): Promise<void> {
-    if (this.disposed || !this.controlGrant) return;
+    if (this.disposed || !this.controlGrant || !this.peer) return;
+    if (!this.voiceChannel) {
+      this.voiceChannel = this.peer.createDataChannel("mirror-voice", { ordered: true });
+      this.voiceChannel.onopen = () => {
+        this.voiceReady?.(true);
+        this.voiceReady = null;
+      };
+      this.voiceChannel.onclose = () => {
+        this.voiceReady?.(false);
+        this.voiceReady = null;
+      };
+      this.voiceChannel.onmessage = (event: MessageEvent<unknown>) => this.voiceMessage(event.data);
+    }
     const channel = this.voiceChannel;
-    if (!channel || channel.readyState !== "open") return;
+    if (!channel) return;
+    if (channel.readyState !== "open") {
+      const opened = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 3_000);
+        this.voiceReady = (open) => {
+          clearTimeout(timer);
+          resolve(open);
+        };
+      });
+      if (!opened || this.disposed) return;
+    }
     const bytes = new Uint8Array(await recording.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 512 * 1024) return;
     let binary = "";
@@ -434,9 +458,6 @@ export class MirrorVideoSession {
         this.fail(new MirrorVideoError("viewer_revoked"));
       };
       control.onerror = () => this.fail(new MirrorVideoError("transport"));
-      this.inputChannel = this.wireInputChannel(peer);
-      this.voiceChannel = peer.createDataChannel("mirror-voice", { ordered: true });
-      this.voiceChannel.onmessage = (event: MessageEvent<unknown>) => this.voiceMessage(event.data);
       this.options.callbacks.state("negotiating");
       const createdOffer = await peer.createOffer();
       if (this.disposed) return;
