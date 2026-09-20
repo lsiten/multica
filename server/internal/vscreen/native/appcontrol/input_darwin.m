@@ -102,8 +102,58 @@ NSString *ACInputQuiescent(ACSession *s, NSDictionary *resource) {
   return blocked ? @"action_uncertain" : nil;
 }
 
+// NSEvent supplies window routing that a bare CG mouse event lacks. Its CG
+// bridge flips against the primary screen; encode window-relative Quartz
+// coordinates through that bridge so the receiving app observes local points.
+static CGEventRef routeWindowPointer(ACWindow *w, CGEventRef event) {
+  CGEventType type = CGEventGetType(event);
+  if (type != kCGEventLeftMouseDown && type != kCGEventLeftMouseUp &&
+      type != kCGEventLeftMouseDragged && type != kCGEventScrollWheel)
+    return event;
+  CGPoint global = CGEventGetLocation(event);
+  NSPoint local = NSMakePoint(global.x - w.lastBounds.origin.x,
+      CGDisplayBounds(CGMainDisplayID()).size.height - (global.y - w.lastBounds.origin.y));
+  NSEventType mouseType = type == kCGEventLeftMouseDown ? NSEventTypeLeftMouseDown :
+      type == kCGEventLeftMouseUp ? NSEventTypeLeftMouseUp :
+      NSEventTypeLeftMouseDragged;
+  NSEvent *mouse = [NSEvent mouseEventWithType:mouseType location:local modifierFlags:0
+      timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:w.windowID context:nil
+      eventNumber:1 clickCount:1 pressure:type == kCGEventLeftMouseUp ? 0 : 1];
+  CGEventRef routed = mouse.CGEvent ? CGEventCreateCopy(mouse.CGEvent) : NULL;
+  CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
+  if (!routed || !source) {
+    if (routed) CFRelease(routed);
+    if (source) CFRelease(source);
+    CFRelease(event);
+    return NULL;
+  }
+  if (type == kCGEventScrollWheel) {
+    CGEventSetType(routed, type);
+    CGEventField fields[] = {kCGScrollWheelEventDeltaAxis1, kCGScrollWheelEventDeltaAxis2,
+        kCGScrollWheelEventPointDeltaAxis1, kCGScrollWheelEventPointDeltaAxis2,
+        kCGScrollWheelEventIsContinuous};
+    for (unsigned i = 0; i < sizeof(fields) / sizeof(fields[0]); i++)
+      CGEventSetIntegerValueField(routed, fields[i], CGEventGetIntegerValueField(event, fields[i]));
+    CGEventSetDoubleValueField(routed, kCGScrollWheelEventFixedPtDeltaAxis1,
+        CGEventGetDoubleValueField(event, kCGScrollWheelEventFixedPtDeltaAxis1));
+    CGEventSetDoubleValueField(routed, kCGScrollWheelEventFixedPtDeltaAxis2,
+        CGEventGetDoubleValueField(event, kCGScrollWheelEventFixedPtDeltaAxis2));
+  }
+  // A combined source can move the physical cursor during background scrolling.
+  CGEventSetSource(routed, source);
+  CFRelease(source);
+  CGEventSetFlags(routed, 0);
+  CGEventSetIntegerValueField(routed, kCGMouseEventWindowUnderMousePointer, w.windowID);
+  CGEventSetIntegerValueField(routed, kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent, w.windowID);
+  CFRelease(event);
+  return routed;
+}
+
 static NSString *post(ACSession *s, ACRequest *r, ACWindow *w, NSDictionary *d,
                       CGEventRef event) {
+  if (!event)
+    return @"native_unavailable";
+  event = routeWindowPointer(w, event);
   if (!event)
     return @"native_unavailable";
   NSString *error = nil;
