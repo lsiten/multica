@@ -211,7 +211,7 @@ export class MirrorVideoSession {
   async sendVoice(recording: Blob): Promise<void> {
     if (this.disposed || !this.controlGrant) return;
     const channel = this.voiceChannel;
-    if (channel.readyState !== "open") return;
+    if (!channel || channel.readyState !== "open") return;
     const bytes = new Uint8Array(await recording.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 512 * 1024) return;
     let binary = "";
