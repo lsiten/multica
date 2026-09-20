@@ -16,6 +16,29 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
+func TestMirrorTaskCannotStartWithoutItsDisplay(t *testing.T) {
+	for _, runtimeID := range []string{"rt", "missing-runtime"} {
+		t.Run(runtimeID, func(t *testing.T) {
+			d := vscreenFixtureDaemon(t)
+			key, err := d.vscreenResource("ws", "rt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := protocol.MirrorSourceBinding{Resource: key, Source: protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "display:fixture"}, NativeEpoch: "native", Generation: "generation"}
+			_, broker, execution, err := d.startTaskVscreen(t.Context(), Task{ID: "mirror-task", WorkspaceID: "ws", RuntimeID: runtimeID, MirrorSource: &source}, "codex", func(error) {})
+			if broker != nil {
+				broker.Close()
+			}
+			if execution != nil {
+				execution.Close()
+			}
+			if err == nil {
+				t.Fatal("explicit mirror task silently started without its display")
+			}
+		})
+	}
+}
+
 func TestVscreenMCPActualNativeWire(t *testing.T) {
 	d := vscreenFixtureDaemon(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -39,7 +62,41 @@ func TestVscreenMCPActualNativeWire(t *testing.T) {
 	if _, err = actor.Ensure(ctx); err != nil {
 		t.Fatal(err)
 	}
-	cfg, broker, execution, err := d.startTaskVscreen(ctx, Task{ID: "wire-task", AgentID: "agent", WorkspaceID: "ws", RuntimeID: "rt"}, "codex", func(error) { t.Error("unexpected provider stop") })
+	catalog, err := s.client.Sources(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding *protocol.MirrorSourceBinding
+	for _, source := range catalog {
+		if source.Source.Kind == protocol.MirrorSourceVirtual {
+			value := source.MirrorSourceBinding
+			binding = &value
+		}
+	}
+	if binding == nil {
+		t.Fatal("fixture has no virtual source")
+	}
+	for _, mutate := range []func(*protocol.MirrorSourceBinding){
+		func(b *protocol.MirrorSourceBinding) { b.Source.SourceID = "display:other" },
+		func(b *protocol.MirrorSourceBinding) { b.NativeEpoch = "old" },
+		func(b *protocol.MirrorSourceBinding) { b.Generation = "old" },
+		func(b *protocol.MirrorSourceBinding) { b.Resource.UID++ },
+		func(b *protocol.MirrorSourceBinding) { b.Resource.BackendIdentity = "https://foreign.invalid" },
+	} {
+		invalid := *binding
+		mutate(&invalid)
+		_, broker, execution, err := d.startTaskVscreen(ctx, Task{ID: "invalid-task", WorkspaceID: "ws", RuntimeID: "rt", MirrorSource: &invalid}, "codex", func(error) {})
+		if broker != nil {
+			broker.Close()
+		}
+		if execution != nil {
+			execution.Close()
+		}
+		if err == nil {
+			t.Fatal("accepted a mismatched mirror binding")
+		}
+	}
+	cfg, broker, execution, err := d.startTaskVscreen(ctx, Task{ID: "wire-task", AgentID: "agent", WorkspaceID: "ws", RuntimeID: "rt", MirrorSource: binding}, "codex", func(error) { t.Error("unexpected provider stop") })
 	if err != nil {
 		t.Fatal(err)
 	}
