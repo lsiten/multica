@@ -808,6 +808,9 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 type SendChatMessageRequest struct {
 	Content       string   `json:"content"`
 	AttachmentIDs []string `json:"attachment_ids"`
+	// MirrorSource is an authenticated, exact display binding. It is validated
+	// against the live daemon catalog before the chat task is persisted.
+	MirrorSource *protocol.MirrorSourceBinding `json:"mirror_source,omitempty"`
 }
 
 type SendChatMessageResponse struct {
@@ -892,6 +895,31 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "chat agent is archived")
 		return
 	}
+	var mirrorSource *protocol.MirrorSourceBinding
+	if req.MirrorSource != nil {
+		if !agent.RuntimeID.Valid || req.MirrorSource.Resource.RuntimeID != uuidToString(agent.RuntimeID) {
+			writeVscreenReason(w, http.StatusConflict, "source_unavailable")
+			return
+		}
+		rt, _, runtimeOK := h.requireRuntimeReadAccess(w, r, "mirror_chat_source", uuidToString(agent.RuntimeID))
+		if !runtimeOK {
+			return
+		}
+		requested := createControlGrantRequest{
+			ViewerID:         "chat-" + sessionID,
+			Source:           &req.MirrorSource.Source,
+			SourceGeneration: req.MirrorSource.Generation,
+		}
+		resolved, _, resolvedOK := h.resolveControlSource(w, r, rt, requested)
+		if !resolvedOK {
+			return
+		}
+		if resolved != *req.MirrorSource {
+			writeVscreenReason(w, http.StatusConflict, "source_stale")
+			return
+		}
+		mirrorSource = &resolved
+	}
 	// Shared verdict: an unbound agent and a machine whose CLI cannot run are
 	// both refusals here, with their own codes. A merely offline runtime is not
 	// checked at all — chat messages queue for it, as they always have.
@@ -946,7 +974,7 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	// creator-only), so they are the task initiator — surfaced to the agent
 	// under `## Task Initiator`. actorType/actorID were resolved above for the
 	// invoke gate.
-	sent, err := h.TaskService.SendDirectChatMessage(r.Context(), session, agent, parseUUID(userID), req.Content, attachmentIDs, actorType, parseUUID(actorID))
+	sent, err := h.TaskService.SendDirectChatMessage(r.Context(), session, agent, parseUUID(userID), req.Content, attachmentIDs, actorType, parseUUID(actorID), mirrorSource)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrChatSessionArchived):

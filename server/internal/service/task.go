@@ -2307,7 +2307,23 @@ func (s *TaskService) SendDirectChatMessage(
 	attachmentIDs []pgtype.UUID,
 	uploaderType string,
 	uploaderID pgtype.UUID,
+	mirrorSource ...*protocol.MirrorSourceBinding,
 ) (*DirectChatSendResult, error) {
+	var taskContext []byte
+	if len(mirrorSource) > 1 {
+		return nil, fmt.Errorf("mirror source context provided more than once")
+	}
+	if len(mirrorSource) == 1 && mirrorSource[0] != nil {
+		payload := protocol.MirrorChatTaskContext{Type: protocol.MirrorChatTaskContextType, Source: *mirrorSource[0]}
+		if err := payload.Validate(); err != nil {
+			return nil, err
+		}
+		var err error
+		taskContext, err = json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal mirror source context: %w", err)
+		}
+	}
 	// Build the per-task Composio overlay before the transaction — it can do
 	// network I/O and must not run with a DB transaction open.
 	overlay := s.buildRuntimeMCPOverlay(ctx, initiatorUserID, agent)
@@ -2377,6 +2393,7 @@ func (s *TaskService) SendDirectChatMessage(
 			OriginatorUserID:     attr.UserID,
 			AccountableUserID:    attr.AccountableUserID,
 			ForceFreshSession:    pgtype.Bool{Bool: false, Valid: true},
+			Context:              taskContext,
 			RuntimeMcpOverlay:    overlay.Overlay,
 			RuntimeConnectedApps: overlay.ConnectedApps,
 			OriginatorSource:     attrSource,
