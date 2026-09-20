@@ -16,7 +16,9 @@ static int32_t gi_mouse(int kind, CGFloat x, CGFloat y, int button, int64_t dx, 
 	CGEventRef e = NULL;
 	CGEventType t = 0;
 	switch (kind) {
-		case 1: t = kCGEventMouseMoved; break;
+		case 1:
+			t = button == 1 ? kCGEventLeftMouseDragged : button == 2 ? kCGEventOtherMouseDragged : button == 3 ? kCGEventRightMouseDragged : kCGEventMouseMoved;
+			break;
 		case 2:
 			t = (button == 1) ? kCGEventLeftMouseDown : (button == 2) ? kCGEventOtherMouseDown : kCGEventRightMouseDown;
 			break;
@@ -25,23 +27,27 @@ static int32_t gi_mouse(int kind, CGFloat x, CGFloat y, int button, int64_t dx, 
 			break;
 		case 4:
 			e = CGEventCreateScrollWheelEvent2(NULL, kCGScrollEventUnitPixel, 2, (int32_t)dy, (int32_t)dx, 0);
-			if (e != NULL) { CGEventPost(kCGHIDEventTap, e); CFRelease(e); }
+			if (e == NULL) return -2;
+			CGEventSetLocation(e, p);
+			CGEventSetFlags(e, 0);
+			CGEventPost(kCGHIDEventTap, e);
+			CFRelease(e);
 			return 0;
 		default: return -1;
 	}
-	e = (kind == 1) ? CGEventCreateMouseEvent(NULL, t, p, kCGMouseButtonLeft)
-	                : CGEventCreateMouseEvent(NULL, t, p, (button==2)?kCGMouseButtonCenter:(button==3)?kCGMouseButtonRight:kCGMouseButtonLeft);
+	e = CGEventCreateMouseEvent(NULL, t, p, (button==2)?kCGMouseButtonCenter:(button==3)?kCGMouseButtonRight:kCGMouseButtonLeft);
 	if (e == NULL) return -2;
+	CGEventSetFlags(e, 0);
 	CGEventPost(kCGHIDEventTap, e);
 	CFRelease(e);
 	return 0;
 }
 
 static void gi_key(CGKeyCode code, bool down, CGEventFlags flags) {
-	CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+	CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStatePrivate);
 	CGEventRef e = CGEventCreateKeyboardEvent(src, code, down);
 	if (e != NULL) {
-		if (flags != 0) CGEventSetFlags(e, flags);
+		CGEventSetFlags(e, flags);
 		CGEventPost(kCGHIDEventTap, e);
 		CFRelease(e);
 	}
@@ -49,13 +55,15 @@ static void gi_key(CGKeyCode code, bool down, CGEventFlags flags) {
 }
 
 static void gi_unicode(const uint16_t *chars, size_t len) {
-	CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-	for (size_t i = 0; i < len; i++) {
-		uint16_t c = chars[i];
+	CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStatePrivate);
+	for (size_t i = 0; i < len;) {
+		size_t units = 1;
+		if (chars[i] >= 0xD800 && chars[i] <= 0xDBFF && i+1 < len && chars[i+1] >= 0xDC00 && chars[i+1] <= 0xDFFF) units = 2;
 		CGEventRef down = CGEventCreateKeyboardEvent(src, 0, true);
 		CGEventRef up   = CGEventCreateKeyboardEvent(src, 0, false);
-		if (down != NULL) { CGEventKeyboardSetUnicodeString(down, 1, &c); CGEventPost(kCGHIDEventTap, down); CFRelease(down); }
-		if (up != NULL)   { CGEventKeyboardSetUnicodeString(up, 1, &c); CGEventPost(kCGHIDEventTap, up); CFRelease(up); }
+		if (down != NULL) { CGEventSetFlags(down, 0); CGEventKeyboardSetUnicodeString(down, units, chars+i); CGEventPost(kCGHIDEventTap, down); CFRelease(down); }
+		if (up != NULL)   { CGEventSetFlags(up, 0); CGEventKeyboardSetUnicodeString(up, units, chars+i); CGEventPost(kCGHIDEventTap, up); CFRelease(up); }
+		i += units;
 	}
 	if (src != NULL) CFRelease(src);
 }
@@ -99,8 +107,10 @@ func buttonNumber(b Button) C.int {
 		return 2
 	case protocol.MirrorButtonRight:
 		return 3
-	default:
+	case protocol.MirrorButtonLeft:
 		return 1
+	default:
+		return 0
 	}
 }
 

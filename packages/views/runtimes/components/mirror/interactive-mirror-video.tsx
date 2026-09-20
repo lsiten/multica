@@ -50,7 +50,7 @@ export function InteractiveMirrorVideo({
     if (!pointerGesture.current || !point) return null;
     const pointer: MirrorControlPointer = {
       ...point,
-      ...(kind !== "pointer:move" ? { button: pointerButton.current } : {}),
+      button: pointerButton.current,
     };
     sendInput({ kind, gestureId: pointerGesture.current, pointer });
     return point;
