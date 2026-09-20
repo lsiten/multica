@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
@@ -72,6 +73,11 @@ func (d *Daemon) runtimeMirrorForOffer(runtimeID string, generation mirrorContro
 		return runtimeMirror, false, true
 	}
 	runtimeMirror := mirror.NewRuntimeMirror(mirror.NativeCapturer{}, 500*time.Millisecond)
+	if executable := os.Getenv("MULTICA_VOICE_TRANSCRIBER"); executable != "" {
+		if transcriber, err := mirror.NewCommandVoiceTranscriber(executable); err == nil {
+			runtimeMirror.SetVoiceTranscriber(transcriber)
+		}
+	}
 	runtimeMirror.SetCaptureFailureHandler(func(err error) {
 		d.logger.Warn("runtime mirror capture unavailable",
 			"runtime_id", runtimeID,

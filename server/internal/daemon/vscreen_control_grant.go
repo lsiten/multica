@@ -1,10 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
+	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -80,5 +82,17 @@ func (d *Daemon) wireMirrorControl(rm *mirror.RuntimeMirror) {
 		if !rm.PublishAuthorizationRequest(viewerID, request) {
 			d.logger.Debug("mirror authorization prompt could not be delivered", "runtime_id", request.RequestID)
 		}
+	})
+	// A viewer decision is the final human confirmation for a host permission
+	// prompt. The prompt is issued by the trusted native host; no input payload
+	// or authorization text is forwarded to the server.
+	rm.SetAuthorizationHandler(func(ctx context.Context, _ string, approved bool) error {
+		if !approved {
+			return nil
+		}
+		s := d.vscreenRuntime()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return d.requestVscreenPermissions(ctx, s, appcontrol.PermissionRequest{Accessibility: true})
 	})
 }
