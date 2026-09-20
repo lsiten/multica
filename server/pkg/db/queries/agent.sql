@@ -686,6 +686,28 @@ WHERE (trigger_comment_id = $1 OR $1 = ANY(coalesced_comment_ids))
   AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
 RETURNING *;
 
+-- name: CancelAgentTasksByEditedComment :many
+-- Content edits normally invalidate tasks whose prompt may contain the old
+-- body. A task with a durable steer receipt is the exception: pending claims
+-- read the current body, while claimed/delivered rows must not be retriggered
+-- because doing so executes both the old and edited instruction. Deletion keeps
+-- using CancelAgentTasksByTriggerComment and cancels every matching task.
+UPDATE agent_task_queue t
+SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL,
+    cancelled_by_type = 'system', cancelled_by_id = NULL, cancelled_by_name = NULL,
+    context = COALESCE(t.context, '{}'::jsonb) || jsonb_build_object('comment_change_cancelled_task_id', t.id::text)
+WHERE (t.trigger_comment_id = @comment_id OR @comment_id = ANY(t.coalesced_comment_ids))
+  AND t.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM comment_agent_delivery d
+      WHERE d.comment_id = @comment_id
+        AND d.agent_id = t.agent_id
+        AND d.task_id = t.id
+        AND d.status IN ('pending', 'steering', 'delivered')
+  )
+RETURNING t.*;
+
 -- name: CancelAgentTasksByChatSession :many
 -- Cancels active tasks belonging to a chat session. Called from
 -- DeleteChatSession so the daemon doesn't keep running work whose result
@@ -766,21 +788,13 @@ WHERE id = (
           WHERE a.id = atq.agent_id
             -- A task's persisted runtime is not authority after an agent rebind.
             AND a.runtime_id = atq.runtime_id
-            -- Private runtimes only execute their owner's agents. Ownerless
-            -- runtime/agent rows remain claimable only so the handler can
-            -- settle them explicitly before daemon delivery; filtering them
-            -- here would leave every task silently queued until the TTL.
-            -- Public runtimes remain shareable across agent owners.
+            -- Queued private-runtime rows are claimable so the handler can
+            -- settle an owner mismatch through the existing FailTask path
+            -- before daemon delivery. Public runtimes remain shareable across
+            -- agent owners; dispatched reclaim keeps its owner fence below.
             AND (
                 r.visibility = 'public'
-                OR (
-                    r.visibility = 'private'
-                    AND (
-                        r.owner_id IS NULL
-                        OR a.owner_id IS NULL
-                        OR r.owner_id = a.owner_id
-                    )
-                )
+                OR r.visibility = 'private'
             )
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
@@ -885,7 +899,8 @@ WHERE id = (
       AND atq.dispatched_at < now() - make_interval(secs => @claim_recovery_secs::double precision)
       AND (atq.prepare_lease_expires_at IS NULL OR atq.prepare_lease_expires_at < now())
       AND EXISTS (
-          -- Keep this authorization fence in sync with ClaimAgentTask.
+          -- Keep the dispatched-reclaim owner fence intentionally stricter
+          -- than the queued claim carve-out below.
           SELECT 1
           FROM agent a
           JOIN agent_runtime r ON r.id = atq.runtime_id
@@ -931,7 +946,8 @@ WHERE id IN (
       AND atq.dispatched_at < now() - make_interval(secs => @claim_recovery_secs::double precision)
       AND (atq.prepare_lease_expires_at IS NULL OR atq.prepare_lease_expires_at < now())
       AND EXISTS (
-          -- Keep this authorization fence in sync with ClaimAgentTask.
+          -- Keep the dispatched-reclaim owner fence intentionally stricter
+          -- than the queued claim carve-out below.
           SELECT 1
           FROM agent a
           JOIN agent_runtime r ON r.id = atq.runtime_id
@@ -2293,14 +2309,7 @@ WHERE atq.runtime_id = $1
         AND a.runtime_id = atq.runtime_id
         AND (
             r.visibility = 'public'
-            OR (
-                r.visibility = 'private'
-                AND (
-                    r.owner_id IS NULL
-                    OR a.owner_id IS NULL
-                    OR r.owner_id = a.owner_id
-                )
-            )
+            OR r.visibility = 'private'
         )
   )
 ORDER BY atq.priority DESC, atq.created_at ASC;
@@ -2420,14 +2429,7 @@ WHERE atq.runtime_id = ANY(@runtime_ids::uuid[])
         AND a.runtime_id = atq.runtime_id
         AND (
             r.visibility = 'public'
-            OR (
-                r.visibility = 'private'
-                AND (
-                    r.owner_id IS NULL
-                    OR a.owner_id IS NULL
-                    OR r.owner_id = a.owner_id
-                )
-            )
+            OR r.visibility = 'private'
         )
   )
 ORDER BY atq.priority DESC, atq.created_at ASC;
