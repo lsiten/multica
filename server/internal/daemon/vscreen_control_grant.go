@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
@@ -73,6 +74,11 @@ func (d *Daemon) handleMirrorControlRevoke(msg mirrorOfferMessage) {
 func (d *Daemon) wireMirrorControl(rm *mirror.RuntimeMirror) {
 	if rm == nil {
 		return
+	}
+	if executable := os.Getenv("MULTICA_VOICE_TRANSCRIBER"); executable != "" {
+		if transcriber, err := mirror.NewCommandVoiceTranscriber(executable); err == nil {
+			rm.SetVoiceTranscriber(transcriber)
+		}
 	}
 	rm.SetArbiter(d.inputArbiter)
 	if d.controlBackend == nil {
