@@ -40,6 +40,19 @@ static NSArray<NSURL *> *ACRequestedFiles(NSDictionary *input, NSString **error)
   return files;
 }
 
+static AXError ACRegisterWindowObserver(AXObserverRef observer, AXUIElementRef app,
+                                       pid_t pid, NSDictionary *process, ACRequest *r) {
+  AXError registered = kAXErrorCannotComplete;
+  while (!ACExpired(r)) {
+    if (![ACProcess(pid) isEqual:process]) return kAXErrorCannotComplete;
+    AXUIElementSetMessagingTimeout(app, (float)MAX(.001, MIN(.1, r.deadline - ACNow())));
+    registered = AXObserverAddNotification(observer, app, kAXWindowCreatedNotification, NULL);
+    if (registered != kAXErrorCannotComplete) return registered;
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, MIN(.05, MAX(0, r.deadline - ACNow())), true);
+  }
+  return registered;
+}
+
 NSDictionary *ACLaunch(ACSession *s, ACRequest *r, NSDictionary *input,
                        NSString **error) {
   if (s.windows.count >= 128) {
@@ -119,8 +132,7 @@ NSDictionary *ACLaunch(ACSession *s, ACRequest *r, NSDictionary *input,
     *error = @"needs_intervention";
     return nil;
   }
-  AXError registered = AXObserverAddNotification(
-      observer, app, kAXWindowCreatedNotification, NULL);
+  AXError registered = ACRegisterWindowObserver(observer, app, launched.processIdentifier, process, r);
   if (registered != kAXErrorSuccess) {
     CFRelease(observer);
     CFRelease(app);
@@ -149,8 +161,15 @@ NSDictionary *ACLaunch(ACSession *s, ACRequest *r, NSDictionary *input,
     return nil;
   }
   AXUIElementRef element = (__bridge AXUIElementRef)windows[0];
-  CGRect bounds = ACElementBounds(element, r);
-  uint32_t identifier = windowID(launched.processIdentifier, bounds);
+  CGRect bounds = CGRectNull;
+  uint32_t identifier = 0;
+  while (!ACExpired(r)) {
+    if (![ACProcess(launched.processIdentifier) isEqual:process]) break;
+    bounds = ACElementBounds(element, r);
+    identifier = windowID(launched.processIdentifier, bounds);
+    if (identifier) break;
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, MIN(0.05, MAX(0, r.deadline - ACNow())), true);
+  }
   if (!identifier) {
     *error = @"stale_window";
     return nil;
