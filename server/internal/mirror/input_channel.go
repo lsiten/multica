@@ -148,12 +148,21 @@ func (m *RuntimeMirror) handleInputMessage(
 		input.Kind == protocol.MirrorInputWheel ||
 		input.Kind == protocol.MirrorInputType
 
-	reason := backend.DispatchInput(context.Background(), resource, grant, input)
+	// Source resolution may block while a revoke, expiry or source switch wins.
+	// Serialize the final capability check and native dispatch with that revoke.
+	peer.mu.Lock()
+	reason := protocol.MirrorInputDenied
+	authorized := !peer.closed && peer.controlGrant == c && time.Now().Before(c.deadline) &&
+		time.Now().Before(c.value.ExpiresAt) && backend.InteractionEnabled()
+	if authorized {
+		reason = backend.DispatchInput(context.Background(), resource, grant, input)
+	}
+	peer.mu.Unlock()
 	if releaseAtEnd || reason != "" {
 		arbiter.Release(resource, principal, input.GestureID)
 	}
 	if reason != "" {
-		if reason == protocol.MirrorInputDenied {
+		if authorized && reason == protocol.MirrorInputDenied {
 			m.publishAuthorization(viewerID, "system", "需要主机授权", "运行时需要辅助功能权限才能接收远程输入，请在主机上确认授权。")
 		}
 		m.nack(channel, channelMu, channelClosed, input, reason)
