@@ -48,8 +48,23 @@ func TestCLIApprovalRequiresOriginalLiveControlGrant(t *testing.T) {
 func TestCLIApprovalDoesNotSelectReadOnlyViewer(t *testing.T) {
 	m := NewRuntimeMirror(nil, time.Hour)
 	m.peers["viewer"] = &mirrorPeer{grant: &viewerGrant{deadline: time.Now().Add(time.Minute)}}
-	approved, err := m.RequestCLIApproval(t.Context(), "ws", "runtime", "Command", "details")
+	approved, err := m.RequestCLIApproval(t.Context(), CLIApprovalAudience{WorkspaceID: "ws", RuntimeID: "runtime", UserID: "user"}, "Command", "details")
 	if err == nil || approved {
 		t.Fatal("read-only viewer selected for command approval")
+	}
+}
+
+func TestCLIApprovalDoesNotSelectAnotherMember(t *testing.T) {
+	m := NewRuntimeMirror(nil, time.Hour)
+	grant := testControlGrant("control", "display", time.Now().Add(time.Minute))
+	m.peers["viewer"] = &mirrorPeer{controlGrant: &controlGrant{value: grant, deadline: grant.ExpiresAt}}
+	approved, err := m.RequestCLIApproval(t.Context(), CLIApprovalAudience{
+		WorkspaceID: grant.WorkspaceID, RuntimeID: grant.RuntimeID, UserID: "different-member",
+	}, "Command", "private approval details")
+	if err == nil || err.Error() != "mirror: no active approval recipient" || approved {
+		t.Fatalf("another member was considered an approval recipient: %v", err)
+	}
+	if len(m.pendingAuthorizations) != 0 {
+		t.Fatal("private approval was published to another member")
 	}
 }

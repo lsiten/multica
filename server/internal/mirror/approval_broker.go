@@ -9,9 +9,18 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// RequestCLIApproval selects one explicitly controlling viewer in this exact
-// workspace and runtime. Ambiguous or read-only audiences cannot approve.
-func (m *RuntimeMirror) RequestCLIApproval(ctx context.Context, workspaceID, runtimeID, title, message string) (bool, error) {
+type CLIApprovalAudience struct {
+	WorkspaceID string
+	RuntimeID   string
+	UserID      string
+}
+
+// RequestCLIApproval selects one explicitly controlling viewer for the task's
+// human initiator. Ambiguous or read-only audiences cannot approve.
+func (m *RuntimeMirror) RequestCLIApproval(ctx context.Context, audience CLIApprovalAudience, title, message string) (bool, error) {
+	if audience.UserID == "" || audience.WorkspaceID == "" || audience.RuntimeID == "" {
+		return false, errors.New("mirror: approval initiator is required")
+	}
 	m.mu.Lock()
 	peers := make(map[string]*mirrorPeer, len(m.peers))
 	for id, peer := range m.peers {
@@ -23,7 +32,7 @@ func (m *RuntimeMirror) RequestCLIApproval(ctx context.Context, workspaceID, run
 	for id, peer := range peers {
 		peer.mu.Lock()
 		grant := peer.controlGrant
-		eligible := !peer.closed && grant != nil && grant.deadline.After(time.Now()) && grant.value.ExpiresAt.After(time.Now()) && grant.value.WorkspaceID == workspaceID && grant.value.RuntimeID == runtimeID
+		eligible := !peer.closed && grant != nil && grant.deadline.After(time.Now()) && grant.value.ExpiresAt.After(time.Now()) && grant.value.WorkspaceID == audience.WorkspaceID && grant.value.RuntimeID == audience.RuntimeID && grant.value.UserID == audience.UserID
 		peer.mu.Unlock()
 		if eligible {
 			if viewerID != "" {

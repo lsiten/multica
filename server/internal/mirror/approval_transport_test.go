@@ -75,13 +75,26 @@ func TestCLIApprovalRoundTripOverPeerChannel(t *testing.T) {
 			if !m.BindControlGrant(viewer.ViewerID, control, 1) {
 				t.Fatal("control grant rejected")
 			}
+			// Another workspace member may control the same public runtime, but
+			// must neither receive this task's prompt nor make its audience ambiguous.
+			other := control
+			other.UserID = "other-member"
+			other.ViewerID = "other-viewer"
+			m.mu.Lock()
+			m.peers[other.ViewerID] = &mirrorPeer{controlGrant: &controlGrant{value: other, deadline: time.Now().Add(time.Minute)}}
+			m.mu.Unlock()
+			defer func() {
+				m.mu.Lock()
+				delete(m.peers, other.ViewerID)
+				m.mu.Unlock()
+			}()
 			type result struct {
 				approved bool
 				err      error
 			}
 			completed := make(chan result, 1)
 			go func() {
-				decision, err := m.RequestCLIApproval(ctx, viewer.WorkspaceID, viewer.RuntimeID, "Codex command", "mkdir approval-marker")
+				decision, err := m.RequestCLIApproval(ctx, CLIApprovalAudience{WorkspaceID: viewer.WorkspaceID, RuntimeID: viewer.RuntimeID, UserID: viewer.UserID}, "Codex command", "mkdir approval-marker")
 				completed <- result{decision, err}
 			}()
 			var request protocol.MirrorAuthorizationRequest
