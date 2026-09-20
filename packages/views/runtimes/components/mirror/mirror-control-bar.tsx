@@ -31,6 +31,8 @@ export function MirrorControlBar({
   onVoice,
   voiceTranscript,
   agents = [],
+  agentId = "",
+  onAgentChange,
   onAgentMessage,
 }: {
   readonly scope: VscreenScope;
@@ -47,11 +49,12 @@ export function MirrorControlBar({
   readonly onVoice: (recording: Blob) => Promise<void> | void;
   readonly voiceTranscript?: string;
   readonly agents?: readonly { readonly id: string; readonly name: string }[];
+  readonly agentId?: string;
+  readonly onAgentChange?: (agentId: string) => void;
   readonly onAgentMessage?: (agentId: string, text: string) => Promise<void> | void;
 }) {
   const { t } = useT("runtimes");
   const [text, setText] = useState("");
-  const [agentId, setAgentId] = useState("");
   const [recording, setRecording] = useState(false);
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const [sending, setSending] = useState(false);
@@ -240,7 +243,7 @@ export function MirrorControlBar({
             value={agentId}
             disabled={sending}
             onChange={(event) => {
-              setAgentId(event.target.value);
+              onAgentChange?.(event.target.value);
               setSendError(false);
             }}
             className="h-8 rounded-md border bg-background px-2 text-caption"
