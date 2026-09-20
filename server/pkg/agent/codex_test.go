@@ -142,7 +142,7 @@ func TestCodexHandleResponseError(t *testing.T) {
 	}
 }
 
-func TestCodexHandleServerRequestAutoApproves(t *testing.T) {
+func TestCodexHandleServerRequestWithoutReviewerDeclines(t *testing.T) {
 	t.Parallel()
 
 	c, fs, _ := newTestCodexClient(t)
@@ -163,8 +163,8 @@ func TestCodexHandleServerRequestAutoApproves(t *testing.T) {
 		t.Fatalf("expected id=10, got %v", resp["id"])
 	}
 	result := resp["result"].(map[string]any)
-	if result["decision"] != "accept" {
-		t.Fatalf("expected decision=accept, got %v", result["decision"])
+	if result["decision"] != "decline" {
+		t.Fatalf("expected decision=decline, got %v", result["decision"])
 	}
 }
 
@@ -185,8 +185,8 @@ func TestCodexHandleServerRequestFileChangeApproval(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	result := resp["result"].(map[string]any)
-	if result["decision"] != "accept" {
-		t.Fatalf("expected decision=accept, got %v", result["decision"])
+	if result["decision"] != "decline" {
+		t.Fatalf("expected decision=decline, got %v", result["decision"])
 	}
 }
 
@@ -251,19 +251,8 @@ func TestCodexHandleServerRequestPermissionsApproval(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected permissions object, got %v", result["permissions"])
 	}
-	network, ok := permissions["network"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected network permissions object, got %v", permissions["network"])
-	}
-	if network["enabled"] != true {
-		t.Fatalf("expected network.enabled=true, got %v", network["enabled"])
-	}
-	fileSystem, ok := permissions["fileSystem"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected fileSystem permissions object, got %v", permissions["fileSystem"])
-	}
-	if got := fileSystem["read"].([]any)[0]; got != "/tmp/repo" {
-		t.Fatalf("expected fileSystem.read to round-trip, got %v", got)
+	if len(permissions) != 0 {
+		t.Fatal("permissions granted without reviewer")
 	}
 }
 

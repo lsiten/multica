@@ -8710,16 +8710,17 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// daemon never calls agent.New or agent.NewRuntime directly, so the two
 	// factories stay meaning exactly one thing each.
 	backend, err := agent.ResolveBackend(provider, agent.Config{
-		ExecutablePath: entry.Path,
-		LaunchPrefix:   profileFixedArgs,
-		CLIVersion:     resolvedVersion,
-		Env:            agentEnv,
-		Logger:         d.logger,
-		TaskID:         task.ID,
-		RuntimeID:      task.RuntimeID,
-		DaemonVersion:  d.cfg.CLIVersion,
-		CodexVersion:   codexVersion,
-		BuiltinRuntime: !usesCustomProfileCommand,
+		RequestApproval: d.requestTaskApproval(task),
+		ExecutablePath:  entry.Path,
+		LaunchPrefix:    profileFixedArgs,
+		CLIVersion:      resolvedVersion,
+		Env:             agentEnv,
+		Logger:          d.logger,
+		TaskID:          task.ID,
+		RuntimeID:       task.RuntimeID,
+		DaemonVersion:   d.cfg.CLIVersion,
+		CodexVersion:    codexVersion,
+		BuiltinRuntime:  !usesCustomProfileCommand,
 	})
 	if err != nil {
 		return TaskResult{}, fmt.Errorf("create agent backend: %w", err)
@@ -8895,7 +8896,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Shared across the resume-retry below so the retry's transcript rows
 	// keep ascending seq values for the same task.
 	var msgSeq atomic.Int32
-	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq, task.RuntimeID)
+	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {
 		return TaskResult{}, err
 	}
@@ -8951,7 +8952,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		freshPrompt := BuildPrompt(task, provider, promptOptions...)
 
-		retryResult, retryTools, retryErr := d.executeAndDrain(ctx, backend, freshPrompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq, task.RuntimeID)
+		retryResult, retryTools, retryErr := d.executeAndDrain(ctx, backend, freshPrompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 		if retryErr != nil {
 			taskLog.Error("fresh session also failed to start; keeping the original poisoned result", "error", retryErr)
 		} else if retryResult.Status != "completed" && retryResult.SessionID == "" {
@@ -9425,11 +9426,7 @@ func freshSessionMayHelp(errText string) bool {
 // messages and is owned by the caller so a same-task retry continues the
 // sequence instead of restarting at 1 — the server orders the transcript by
 // seq alone, and duplicate seqs would interleave the two attempts' rows.
-func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID, codexHome string, msgSeq *atomic.Int32, runtimeIDs ...string) (agent.Result, int32, error) {
-	runtimeID := ""
-	if len(runtimeIDs) > 0 {
-		runtimeID = runtimeIDs[0]
-	}
+func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID, codexHome string, msgSeq *atomic.Int32) (agent.Result, int32, error) {
 	phaseRecorder := taskPhaseRecorderFromContext(ctx)
 	// Wrap the caller's ctx so the idle watchdog (below) can interrupt both
 	// the agent subprocess (via the ctx passed to backend.Execute) AND the
@@ -9492,7 +9489,6 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// letting the 2h idle watchdog own the slot with a perpetual spinner.
 	var outputReceived atomic.Bool
 	var startupWatchdogFired atomic.Bool
-	var authorizationPromptPublished atomic.Bool
 	// inFlightTools counts tool_use messages that haven't yet been paired
 	// with a matching tool_result. A non-zero count means the agent is
 	// legitimately waiting on a tool (e.g. `npm install`, `docker build`)
@@ -9705,11 +9701,6 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 				// can't be misattributed to backend silence.
 				observedAt := time.Now().UTC()
 				lastActivityAt.Store(observedAt.UnixNano())
-				if !authorizationPromptPublished.Load() && (msg.Type == agent.MessageError || msg.Type == agent.MessageLog) {
-					if kind, title, message, detected := mirror.DetectAuthorizationPrompt(msg.Content); detected && authorizationPromptPublished.CompareAndSwap(false, true) {
-						d.publishRuntimeAuthorization(runtimeID, kind, title, message)
-					}
-				}
 				switch msg.Type {
 				case agent.MessageStatus:
 					// Persist the session/work_dir as soon as the backend

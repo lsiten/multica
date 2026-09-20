@@ -1223,6 +1223,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 	}
 
 	c := &codexClient{
+		approvalContext:        runCtx,
 		cfg:                    b.cfg,
 		stdin:                  stdin,
 		pending:                make(map[int]*pendingRPC),
@@ -2334,6 +2335,8 @@ func describeCodexSemanticActivity(msg Message) string {
 // ── codexClient: JSON-RPC 2.0 transport ──
 
 type codexClient struct {
+	approvalContext        context.Context
+	approvalPending        bool
 	cfg                    Config
 	stdin                  interface{ Write([]byte) (int, error) }
 	mu                     sync.Mutex
@@ -2878,14 +2881,9 @@ func (c *codexClient) handleServerRequest(raw map[string]json.RawMessage) {
 	var method string
 	_ = json.Unmarshal(raw["method"], &method)
 
-	// Auto-approve all exec/patch requests in daemon mode
 	switch method {
-	case "item/commandExecution/requestApproval", "execCommandApproval":
-		c.respond(id, map[string]any{"decision": "accept"})
-	case "item/fileChange/requestApproval", "applyPatchApproval":
-		c.respond(id, map[string]any{"decision": "accept"})
-	case "item/permissions/requestApproval":
-		c.respond(id, codexPermissionsApprovalResponse(raw["params"], c.cfg.Logger))
+	case "item/commandExecution/requestApproval", "execCommandApproval", "item/fileChange/requestApproval", "applyPatchApproval", "item/permissions/requestApproval":
+		c.requestHumanApproval(id, method, raw["params"])
 	case "mcpServer/elicitation/request":
 		c.respond(id, map[string]any{"action": "accept", "content": nil, "_meta": nil})
 	default:
@@ -2896,16 +2894,9 @@ func (c *codexClient) handleServerRequest(raw map[string]json.RawMessage) {
 	}
 }
 
-// codexPermissionsApprovalResponse builds the auto-grant reply for a Codex
-// item/permissions/requestApproval server request. In daemon mode there is no
-// human to approve, so we echo back the requested network / fileSystem profile
-// and scope it to the current turn, mirroring the other auto-accept branches in
-// handleServerRequest.
-//
-// The grant is intentionally limited to the network / fileSystem keys we
-// understand. A parse failure and any dropped key are logged so that a future
-// app-server protocol that adds a new permission shape is visible in daemon
-// logs instead of being silently narrowed away.
+// codexPermissionsApprovalResponse limits an explicitly approved permission
+// profile to recognized keys and the current turn. The RPC approval path
+// passes no logger because permission payloads remain local to the reviewer.
 func codexPermissionsApprovalResponse(params json.RawMessage, logger *slog.Logger) map[string]any {
 	var payload struct {
 		Permissions map[string]any `json:"permissions"`

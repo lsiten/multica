@@ -293,14 +293,15 @@ type Result struct {
 
 // Config configures a Backend instance.
 type Config struct {
-	ExecutablePath string            // path to CLI binary (claude, codebuddy, codex, copilot, opencode, codearts, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro-cli, agy, qodercli, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, dim, zeroclaw)
-	CLIVersion     string            // detected version paired with ExecutablePath; vendor-specific usage semantics also require BuiltinRuntime
-	Env            map[string]string // extra environment variables
-	Logger         *slog.Logger
-	TaskID         string
-	RuntimeID      string
-	DaemonVersion  string
-	CodexVersion   string
+	RequestApproval func(context.Context, ApprovalRequest) (bool, error)
+	ExecutablePath  string            // path to CLI binary (claude, codebuddy, codex, copilot, opencode, codearts, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro-cli, agy, qodercli, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, dim, zeroclaw)
+	CLIVersion      string            // detected version paired with ExecutablePath; vendor-specific usage semantics also require BuiltinRuntime
+	Env             map[string]string // extra environment variables
+	Logger          *slog.Logger
+	TaskID          string
+	RuntimeID       string
+	DaemonVersion   string
+	CodexVersion    string
 	// BuiltinRuntime reports that ExecutablePath is the provider's own
 	// discovered binary rather than a custom runtime profile's command. A
 	// custom profile keeps its protocol family as the provider, so the

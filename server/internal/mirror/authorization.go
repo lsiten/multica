@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/pion/webrtc/v4"
 )
 
 type pendingAuthorization struct {
+	control   *controlGrant
+	decision  chan bool
 	request   protocol.MirrorAuthorizationRequest
 	peer      *mirrorPeer
 	expiresAt time.Time
@@ -21,6 +22,10 @@ const maxPendingAuthorizations = 128
 // PublishAuthorizationRequest sends a bounded consent prompt to one viewer's
 // mirror control channel. The request remains a daemon-local pending decision.
 func (m *RuntimeMirror) PublishAuthorizationRequest(viewerID string, request protocol.MirrorAuthorizationRequest) bool {
+	return m.publishAuthorizationDecision(viewerID, request, nil, nil)
+}
+
+func (m *RuntimeMirror) publishAuthorizationDecision(viewerID string, request protocol.MirrorAuthorizationRequest, decision chan bool, expected *controlGrant) bool {
 	if request.Validate(time.Now()) != nil {
 		return false
 	}
@@ -39,6 +44,9 @@ func (m *RuntimeMirror) PublishAuthorizationRequest(viewerID string, request pro
 	if peer.closed || peer.grant == nil || !peer.grant.deadline.After(time.Now()) || peer.video == nil || peer.video.control == nil {
 		return false
 	}
+	if decision != nil && (expected == nil || peer.controlGrant != expected || !expected.deadline.After(time.Now()) || !expected.value.ExpiresAt.After(time.Now())) {
+		return false
+	}
 	m.authorizationMu.Lock()
 	for id, pending := range m.pendingAuthorizations {
 		if !pending.expiresAt.After(time.Now()) {
@@ -50,7 +58,7 @@ func (m *RuntimeMirror) PublishAuthorizationRequest(viewerID string, request pro
 		m.authorizationMu.Unlock()
 		return false
 	}
-	m.pendingAuthorizations[request.RequestID] = pendingAuthorization{peer: peer, expiresAt: request.ExpiresAt, request: request}
+	m.pendingAuthorizations[request.RequestID] = pendingAuthorization{peer: peer, expiresAt: request.ExpiresAt, request: request, decision: decision, control: expected}
 	m.authorizationMu.Unlock()
 	if err := peer.video.control.SendText(string(payload)); err != nil {
 		m.authorizationMu.Lock()
@@ -61,48 +69,23 @@ func (m *RuntimeMirror) PublishAuthorizationRequest(viewerID string, request pro
 	return true
 }
 
-// PublishAuthorizationToViewers fans one local authorization prompt out to
-// the currently attached viewers. Each viewer receives a distinct request ID
-// and therefore can approve only its own prompt.
-func (m *RuntimeMirror) PublishAuthorizationToViewers(kind, title, message string) int {
-	m.mu.Lock()
-	viewerIDs := make([]string, 0, len(m.peers))
-	for viewerID := range m.peers {
-		viewerIDs = append(viewerIDs, viewerID)
-	}
-	m.mu.Unlock()
-	sent := 0
-	for _, viewerID := range viewerIDs {
-		if m.publishAuthorizationRequest(viewerID, protocol.MirrorAuthorizationRequest{
-			Type: protocol.MirrorAuthorizationRequestType,
-			Kind: kind, Title: title, Message: message,
-			ExpiresAt: time.Now().Add(2 * time.Minute),
-		}) {
-			sent++
-		}
-	}
-	return sent
-}
-
-func (m *RuntimeMirror) publishAuthorizationRequest(viewerID string, request protocol.MirrorAuthorizationRequest) bool {
-	request.RequestID = uuid.NewString()
-	return m.PublishAuthorizationRequest(viewerID, request)
-}
-
-func (m *RuntimeMirror) consumeAuthorization(peer *mirrorPeer, requestID string, now time.Time) (protocol.MirrorAuthorizationRequest, bool) {
+func (m *RuntimeMirror) consumeAuthorization(peer *mirrorPeer, requestID string, now time.Time) (pendingAuthorization, bool) {
 	peer.mu.Lock()
 	defer peer.mu.Unlock()
 	if peer.closed || peer.grant == nil || !peer.grant.deadline.After(now) {
-		return protocol.MirrorAuthorizationRequest{}, false
+		return pendingAuthorization{}, false
 	}
 	m.authorizationMu.Lock()
 	defer m.authorizationMu.Unlock()
 	pending, ok := m.pendingAuthorizations[requestID]
 	if !ok || pending.peer != peer {
-		return protocol.MirrorAuthorizationRequest{}, false
+		return pendingAuthorization{}, false
 	}
 	delete(m.pendingAuthorizations, requestID)
-	return pending.request, pending.expiresAt.After(now)
+	if pending.decision != nil && (peer.controlGrant == nil || peer.controlGrant != pending.control || !peer.controlGrant.deadline.After(now) || !peer.controlGrant.value.ExpiresAt.After(now)) {
+		return pendingAuthorization{}, false
+	}
+	return pending, pending.expiresAt.After(now)
 }
 
 func (m *RuntimeMirror) handleAuthorizationMessage(peer *mirrorPeer, message webrtc.DataChannelMessage) {
@@ -119,12 +102,23 @@ func (m *RuntimeMirror) handleAuthorizationMessage(peer *mirrorPeer, message web
 	processed := false
 	defer func() { m.sendAuthorizationResult(peer, response.RequestID, processed) }()
 	request, ok := m.consumeAuthorization(peer, response.RequestID, time.Now())
-	if !ok || handler == nil {
+	if !ok {
+		return
+	}
+	if request.decision != nil {
+		select {
+		case request.decision <- response.Approved:
+			processed = true
+		default:
+		}
+		return
+	}
+	if handler == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := handler(ctx, request, response.Approved); err != nil {
+	if err := handler(ctx, request.request, response.Approved); err != nil {
 		return
 	}
 	processed = ctx.Err() == nil
@@ -154,6 +148,12 @@ func (m *RuntimeMirror) releaseAuthorizations(peer *mirrorPeer) {
 	defer m.authorizationMu.Unlock()
 	for id, pending := range m.pendingAuthorizations {
 		if pending.peer == peer {
+			if pending.decision != nil {
+				select {
+				case pending.decision <- false:
+				default:
+				}
+			}
 			delete(m.pendingAuthorizations, id)
 		}
 	}
