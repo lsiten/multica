@@ -53,8 +53,10 @@ export function MirrorControlBar({
   const [text, setText] = useState("");
   const [agentId, setAgentId] = useState("");
   const [recording, setRecording] = useState(false);
+  const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(false);
+  const [voiceError, setVoiceError] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const owner = runtime.owner_id === scope.accountId;
@@ -120,13 +122,17 @@ export function MirrorControlBar({
       next.onstop = () => {
         stream.getTracks().forEach((track) => track.stop());
         setRecording(false);
+        setInputMode("text");
         const blob = new Blob(chunks.current, { type: next.mimeType || "audio/webm" });
         void onVoice(blob);
       };
       recorder.current = next;
       setRecording(true);
       next.start();
-    }).catch(() => setRecording(false));
+    }).catch(() => {
+      setRecording(false);
+      setVoiceError(true);
+    });
   };
 
   return (
@@ -184,6 +190,7 @@ export function MirrorControlBar({
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        {inputMode === "text" ? (
         <label className="flex min-w-56 flex-1 items-center gap-2 text-caption">
           <Type className="size-4 shrink-0" />
           <span className="sr-only">{t(($) => $.vscreen.external_text)}</span>
@@ -206,7 +213,19 @@ export function MirrorControlBar({
             placeholder={t(($) => $.vscreen.external_text)}
           />
         </label>
-        <Button
+        ) : (
+          <Button
+            size="sm"
+            variant={recording ? "destructive" : "secondary"}
+            disabled={!active && !agentRoute}
+            onClick={toggleVoice}
+            aria-busy={recording}
+          >
+            <Mic className="size-4" />
+            {recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
+          </Button>
+        )}
+        {inputMode === "text" && <Button
           size="sm"
           variant="secondary"
           disabled={!text && !voiceTranscript || !canSend || sending}
@@ -214,7 +233,7 @@ export function MirrorControlBar({
           onClick={() => void sendType()}
         >
           {sending ? t(($) => $.vscreen.sending) : t(($) => $.vscreen.type_text)}
-        </Button>
+        </Button>}
         {agents.length > 0 && (
           <select
             aria-label={t(($) => $.vscreen.send_target)}
@@ -232,14 +251,17 @@ export function MirrorControlBar({
         )}
         <Button
           size="sm"
-          variant={recording ? "destructive" : "outline"}
-          disabled={!active && !agentRoute}
-          onClick={toggleVoice}
-          aria-label={recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
+          variant="ghost"
+          disabled={recording}
+          onClick={() => {
+            setVoiceError(false);
+            setInputMode((mode) => mode === "text" ? "voice" : "text");
+          }}
+          aria-label={inputMode === "text" ? t(($) => $.vscreen.switch_to_voice) : t(($) => $.vscreen.switch_to_text)}
         >
-          <Mic className="size-4" />
-          {recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
+          {inputMode === "text" ? <Mic className="size-4" /> : <Type className="size-4" />}
         </Button>
+        {voiceError && <span role="alert" className="text-caption text-destructive">{t(($) => $.vscreen.voice_failed)}</span>}
         {sendError && (
           <span role="alert" className="text-caption text-destructive">
             {t(($) => $.vscreen.send_failed)}
