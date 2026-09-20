@@ -103,6 +103,14 @@ export function useVideoSession(
     // The serialized identity is the exact immutable peer scope and source binding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, retry]);
+  useEffect(() => {
+    if (!authorization) return;
+    const delay = Math.max(0, Date.parse(authorization.expires_at) - Date.now());
+    const timer = window.setTimeout(() => setAuthorization((current) =>
+      current?.request_id === authorization.request_id ? null : current,
+    ), delay);
+    return () => window.clearTimeout(timer);
+  }, [authorization]);
   const onFrame = () => {
     if (renderedIdentity.current !== identity) return;
     setStatus((current) =>
@@ -122,7 +130,10 @@ export function useVideoSession(
     sendVoice: (recording: Blob) => currentSession?.sendVoice(recording),
     voiceTranscript: current ? voiceTranscript : "",
     authorization: current ? authorization : null,
-    respondAuthorization: (requestId: string, approved: boolean) => currentSession?.respondAuthorization(requestId, approved),
+    respondAuthorization: (requestId: string, approved: boolean) => {
+      currentSession?.respondAuthorization(requestId, approved);
+      if (current && authorization?.request_id === requestId) setAuthorization(null);
+    },
     onFrame,
     ...(current
       ? status
