@@ -67,6 +67,26 @@ func TestMirrorV2ParserRejectsUnsafeBindings(t *testing.T) {
 	}
 }
 
+func TestMirrorChatTaskContextRequiresCompleteBinding(t *testing.T) {
+	_, auth := mirrorV2Fixture()
+	ctx := MirrorChatTaskContext{Type: MirrorChatTaskContextType, Source: auth.Sources[0]}
+	if err := ctx.Validate(); err != nil {
+		t.Fatalf("valid context rejected: %v", err)
+	}
+	for _, mutate := range []func(*MirrorChatTaskContext){
+		func(c *MirrorChatTaskContext) { c.Type = "mirror_source_v0" },
+		func(c *MirrorChatTaskContext) { c.Source.Resource.RuntimeID = "" },
+		func(c *MirrorChatTaskContext) { c.Source.NativeEpoch = "" },
+		func(c *MirrorChatTaskContext) { c.Source.Source.Kind = "unknown" },
+	} {
+		copy := ctx
+		mutate(&copy)
+		if err := copy.Validate(); err == nil {
+			t.Fatal("accepted invalid mirror task context")
+		}
+	}
+}
+
 func TestMirrorV2TwoViewersKeepIndependentSources(t *testing.T) {
 	a, auth := mirrorV2Fixture()
 	b, _ := mirrorV2Fixture()
