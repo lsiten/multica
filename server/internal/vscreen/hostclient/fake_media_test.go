@@ -17,6 +17,7 @@ import (
 func fakeSources(key protocol.ResourceKey) []native.SourceDescriptor {
 	sources := make([]native.SourceDescriptor, 2)
 	for i := range sources {
+		key.DisplayID = uint32(i + 1)
 		sources[i] = native.SourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: key, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: []string{"display:one", "display:two"}[i]}, NativeEpoch: strings.Repeat("a", 64), Generation: strings.Repeat("b", 64)}, DisplayID: uint32(i + 1), Width: 1600, Height: 900, LogicalWidth: 1600, LogicalHeight: 900, Scale: 1, GeometryRevision: 1}
 	}
 	return sources
