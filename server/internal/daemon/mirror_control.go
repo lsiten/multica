@@ -60,6 +60,18 @@ func (d *Daemon) runtimeMirror(runtimeID string) (*mirror.RuntimeMirror, bool) {
 	return runtimeMirror, ok
 }
 
+func (d *Daemon) publishRuntimeAuthorization(runtimeID, kind, title, message string) {
+	if runtimeID == "" {
+		return
+	}
+	d.mu.Lock()
+	rm := d.runtimeMirrors[runtimeID]
+	d.mu.Unlock()
+	if rm != nil {
+		rm.PublishAuthorizationToViewers(kind, title, message)
+	}
+}
+
 func (d *Daemon) runtimeMirrorForOffer(runtimeID string, generation mirrorControlGeneration) (*mirror.RuntimeMirror, bool, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
