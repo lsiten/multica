@@ -1134,7 +1134,7 @@ WHERE id = $1;
 -- bypass (MUL-4302 §2).
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, chat_session_id,
-    initiator_user_id, originator_user_id, accountable_user_id, force_fresh_session, runtime_mcp_overlay,
+    initiator_user_id, originator_user_id, accountable_user_id, force_fresh_session, context, runtime_mcp_overlay,
     runtime_connected_apps, originator_source, trigger_evidence_kind, trigger_evidence_ref_id,
     fire_at, channel_context_revision, id
 )
@@ -1145,6 +1145,7 @@ SELECT
     sqlc.narg(originator_user_id),
     sqlc.narg(accountable_user_id),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
+    sqlc.narg(context),
     sqlc.narg(runtime_mcp_overlay),
     sqlc.narg(runtime_connected_apps),
     sqlc.narg(originator_source),

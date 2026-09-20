@@ -30,6 +30,16 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 	if err != nil {
 		return nil, nil, nil, nil
 	}
+	if task.MirrorSource != nil {
+		if err := task.MirrorSource.Source.Validate(); err != nil || task.MirrorSource.Resource.RuntimeID != task.RuntimeID || task.MirrorSource.Resource.WorkspaceID != task.WorkspaceID {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone, Cause: errors.New("mirror source binding does not match task runtime")}
+		}
+		// The managed execution actor currently owns the virtual display only.
+		// Never silently redirect an explicitly selected physical/system source.
+		if task.MirrorSource.Source.Kind != protocol.MirrorSourceVirtual {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenNativeUnavailable, Cause: errors.New("physical mirror agent execution is unavailable")}
+		}
+	}
 	s := d.vscreenRuntime()
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -4,7 +4,7 @@ import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSche
 import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { createVscreenApi, VscreenScopeError } from "./vscreen";
-import type { VscreenScope } from "../types/vscreen";
+import type { MirrorSourceBinding, VscreenScope } from "../types/vscreen";
 import { configStore } from "../config";
 import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewInput } from "../types/local-review-pages";
 import { localIndexCapabilitySchema } from "../types/local-review-index";
@@ -3979,13 +3979,42 @@ export class ApiClient {
     sessionId: string,
     content: string,
     attachmentIds?: string[],
+    mirrorSource?: MirrorSourceBinding,
   ): Promise<SendChatMessageResponse> {
     const body: {
       content: string;
       attachment_ids?: string[];
+      mirror_source?: {
+        resource: {
+          backend_identity: string;
+          workspace_id: string;
+          runtime_id: string;
+          uid: number;
+          display_id: number;
+        };
+        source: { kind: MirrorSourceBinding["source"]["kind"]; source_id: string };
+        native_epoch: string;
+        generation: string;
+        primary: boolean;
+      };
     } = { content };
     if (attachmentIds && attachmentIds.length > 0) {
       body.attachment_ids = attachmentIds;
+    }
+    if (mirrorSource) {
+      body.mirror_source = {
+        resource: {
+          backend_identity: mirrorSource.resource.backendIdentity,
+          workspace_id: mirrorSource.resource.workspaceId,
+          runtime_id: mirrorSource.resource.runtimeId,
+          uid: mirrorSource.resource.uid,
+          display_id: mirrorSource.resource.displayId ?? 0,
+        },
+        source: { kind: mirrorSource.source.kind, source_id: mirrorSource.source.sourceId },
+        native_epoch: mirrorSource.nativeEpoch,
+        generation: mirrorSource.generation,
+        primary: mirrorSource.primary,
+      };
     }
     const raw = await this.fetch<unknown>(`/api/chat/sessions/${sessionId}/messages`, {
       method: "POST",
