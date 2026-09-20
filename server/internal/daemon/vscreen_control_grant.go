@@ -93,6 +93,9 @@ func (d *Daemon) wireMirrorControl(rm *mirror.RuntimeMirror) {
 		s := d.vscreenRuntime()
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if s.client == nil {
+			return nil
+		}
 		return d.requestVscreenPermissions(ctx, s, appcontrol.PermissionRequest{Accessibility: true})
 	})
 }
