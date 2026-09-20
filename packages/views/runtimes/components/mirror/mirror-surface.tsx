@@ -189,7 +189,12 @@ export function MirrorSurface({
   const sendAgentMessage = async (agentId: string, text: string) => {
     const session = sessions.data?.find((candidate) => candidate.agent_id === agentId && candidate.status !== "archived");
     const target = session ?? await getApi().createChatSession({ agent_id: agentId });
-    await getApi().sendChatMessage(target.id, text);
+    // Keep the selected source explicit in the existing chat turn. The agent
+    // executor must never infer a physical target from the runtime default.
+    const sourceBinding = source
+      ? `\n\n[Mirror source: ${source.source.kind}/${source.source.sourceId}; epoch=${source.nativeEpoch}; generation=${source.generation}]`
+      : "";
+    await getApi().sendChatMessage(target.id, `${text}${sourceBinding}`);
     void sessions.refetch();
   };
   useEffect(() => {
