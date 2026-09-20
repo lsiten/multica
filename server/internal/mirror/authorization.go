@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/pion/webrtc/v4"
 )
@@ -57,6 +58,34 @@ func (m *RuntimeMirror) PublishAuthorizationRequest(viewerID string, request pro
 		return false
 	}
 	return true
+}
+
+// PublishAuthorizationToViewers fans one local authorization prompt out to
+// the currently attached viewers. Each viewer receives a distinct request ID
+// and therefore can approve only its own prompt.
+func (m *RuntimeMirror) PublishAuthorizationToViewers(kind, title, message string) int {
+	m.mu.Lock()
+	viewerIDs := make([]string, 0, len(m.peers))
+	for viewerID := range m.peers {
+		viewerIDs = append(viewerIDs, viewerID)
+	}
+	m.mu.Unlock()
+	sent := 0
+	for _, viewerID := range viewerIDs {
+		if m.publishAuthorizationRequest(viewerID, protocol.MirrorAuthorizationRequest{
+			Type: protocol.MirrorAuthorizationRequestType,
+			Kind: kind, Title: title, Message: message,
+			ExpiresAt: time.Now().Add(2 * time.Minute),
+		}) {
+			sent++
+		}
+	}
+	return sent
+}
+
+func (m *RuntimeMirror) publishAuthorizationRequest(viewerID string, request protocol.MirrorAuthorizationRequest) bool {
+	request.RequestID = uuid.NewString()
+	return m.PublishAuthorizationRequest(viewerID, request)
 }
 
 func (m *RuntimeMirror) consumeAuthorization(peer *mirrorPeer, requestID string, now time.Time) bool {
