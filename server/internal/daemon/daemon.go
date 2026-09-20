@@ -8818,10 +8818,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// the ones that do — so a wrapper's subcommand was either dropped on the
 	// floor or spliced in behind `-p` (GH #7046).
 	extraArgs := defaultArgsForProvider(d.cfg, provider)
-	var mcpConfig json.RawMessage
+	// The task-local MCP overlay (including the managed mirror server) is
+	// independent of the optional agent snapshot. Chat tasks can be claimed
+	// during an agent refresh window without an embedded Agent object; dropping
+	// the overlay in that case leaves the model with no screen tools at all.
+	mcpConfig := effectiveMcpConfig
 	if task.Agent != nil {
 		customArgs = task.Agent.CustomArgs
-		mcpConfig = effectiveMcpConfig
 	}
 	if hermesOverlayActive {
 		// Stripped above, alongside the launch prefix. A skill-less hermes task

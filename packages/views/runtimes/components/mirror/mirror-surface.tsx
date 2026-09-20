@@ -19,7 +19,12 @@ import {
 } from "@multica/core/runtimes";
 import { getApi, vscreenErrorReason } from "@multica/core/api";
 import { agentListOptions } from "@multica/core/workspace";
-import { chatSessionsOptions } from "@multica/core/chat/queries";
+import {
+  chatMessagesOptions,
+  chatSessionsOptions,
+  pendingChatTaskOptions,
+} from "@multica/core/chat/queries";
+import { ChatMessageList } from "../../../chat/components/chat-message-list";
 import { Button } from "@multica/ui/components/ui/button";
 import { useT } from "../../../i18n";
 import { useVideoSession } from "./use-video-session";
@@ -59,6 +64,8 @@ export function MirrorSurface({
     enabled: online && readable,
   });
   const [selected, setSelected] = useState<string>("");
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const initialSourceChosen = useRef(false);
   const previousSelectedSource = useRef<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -71,6 +78,17 @@ export function MirrorSurface({
     enabled: commandId !== null && !command.isPending,
   });
   const catalog = sources.isError ? [] : (sources.data?.sources ?? []);
+  const selectedAgent = (agents.data ?? []).find(
+    (agent) => agent.id === selectedAgentId && agent.runtime_id === runtime.id && !agent.archived_at,
+  );
+  const chatMessages = useQuery({
+    ...chatMessagesOptions(chatSessionId ?? ""),
+    enabled: !!chatSessionId && online && readable,
+  });
+  const pendingChatTask = useQuery({
+    ...pendingChatTaskOptions(chatSessionId ?? ""),
+    enabled: !!chatSessionId && online && readable,
+  });
   useEffect(() => {
     if (initialSourceChosen.current || !sources.isSuccess || !state.isSuccess)
       return;
@@ -193,12 +211,17 @@ export function MirrorSurface({
   };
   const sendAgentMessage = async (agentId: string, text: string) => {
     if (!source) throw new Error("mirror source is unavailable");
-    const session = sessions.data?.find((candidate) => candidate.agent_id === agentId && candidate.status !== "archived");
+    const session = sessions.data
+      ?.filter((candidate) => candidate.agent_id === agentId && candidate.status !== "archived")
+      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0];
     const target = session ?? await getApi().createChatSession({ agent_id: agentId });
+    setChatSessionId(target.id);
     // Send the exact catalog binding as structured task metadata. The server
     // revalidates it against the live daemon catalog and rejects stale sources.
     await getApi().sendChatMessage(target.id, text, undefined, source ?? undefined);
     void sessions.refetch();
+    void queryClient.invalidateQueries({ queryKey: chatMessagesOptions(target.id).queryKey });
+    void queryClient.invalidateQueries({ queryKey: pendingChatTaskOptions(target.id).queryKey });
   };
   useEffect(() => {
     if (previousSelectedSource.current === null) {
@@ -343,6 +366,22 @@ export function MirrorSurface({
         )}
       </div>
       {!compact && (
+        selectedAgent && chatSessionId ? (
+          <div className="flex max-h-72 min-h-0 flex-col border-t bg-background">
+            <div className="shrink-0 px-3 py-2 text-caption font-medium text-muted-foreground">
+              {t(($) => $.mirror.title)} · {selectedAgent.name}
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <ChatMessageList
+                messages={chatMessages.data ?? []}
+                pendingTask={pendingChatTask.data}
+                availability={undefined}
+              />
+            </div>
+          </div>
+        ) : null
+      )}
+      {!compact && (
         <MirrorControlBar
           scope={scope}
           runtime={runtime}
@@ -358,6 +397,17 @@ export function MirrorSurface({
           onVoice={(recording) => video.sendVoice(recording)}
           voiceTranscript={video.voiceTranscript}
           agents={(agents.data ?? []).filter((agent) => agent.runtime_id === runtime.id && !agent.archived_at).map((agent) => ({ id: agent.id, name: agent.name }))}
+          agentId={selectedAgentId}
+          onAgentChange={(agentId) => {
+            setSelectedAgentId(agentId);
+            if (!agentId) setChatSessionId(null);
+            else {
+              const session = sessions.data
+                ?.filter((candidate) => candidate.agent_id === agentId && candidate.status !== "archived")
+                .sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0];
+              setChatSessionId(session?.id ?? null);
+            }
+          }}
           onAgentMessage={sendAgentMessage}
         />
       )}
