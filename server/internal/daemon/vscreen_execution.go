@@ -1,16 +1,22 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/vscreen"
+	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
+	"github.com/multica-ai/multica/server/internal/vscreen/native/globalinput"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -45,6 +51,20 @@ type vscreenExecution struct {
 	onClose        func()
 	windowObserved func(string)
 	stopProvider   func(error)
+	physical       *physicalVscreenTarget
+}
+
+// physicalVscreenTarget is the deliberately narrow agent path for an
+// explicitly selected physical/system source. It has no app/PID authority;
+// every action is posted through the same global injector used by human
+// mirror control and is serialized by the daemon arbiter.
+type physicalVscreenTarget struct {
+	descriptor native.SourceDescriptor
+	refresh    func(context.Context) (native.SourceDescriptor, error)
+	injector   globalinput.Injector
+	arbiter    *mirror.Arbiter
+	mu         sync.Mutex
+	lease      vscreen.Lease
 }
 
 var errVscreenStopUnconfirmed = errors.New("virtual screen provider stop unconfirmed")
@@ -66,11 +86,32 @@ func newVscreenExecution(ctx context.Context, task Task, a *vscreen.Actor, apps 
 	go e.run(lifetime)
 	return e
 }
+
+func newPhysicalVscreenExecution(ctx context.Context, task Task, descriptor native.SourceDescriptor, refresh func(context.Context) (native.SourceDescriptor, error), injector globalinput.Injector, arbiter *mirror.Arbiter, stop func(error)) *vscreenExecution {
+	lifetime, cancel := context.WithCancel(ctx)
+	e := &vscreenExecution{
+		task: task, cancel: cancel, done: make(chan struct{}), lifetimeDone: lifetime.Done(), stopProvider: stop,
+		physical: &physicalVscreenTarget{descriptor: descriptor, refresh: refresh, injector: injector, arbiter: arbiter},
+	}
+	go e.run(lifetime)
+	return e
+}
 func (e *vscreenExecution) authority(l vscreen.Lease) appcontrol.Authority {
 	return appcontrol.Authority{Resource: l.Resource, Epoch: e.actor.Status().Display.Epoch, TaskID: e.task.ID, TransactionID: l.TransactionID, LeaseEpoch: l.LeaseEpoch}
 }
 func (e *vscreenExecution) run(ctx context.Context) {
 	defer close(e.done)
+	if e.physical != nil {
+		<-ctx.Done()
+		e.physical.mu.Lock()
+		if e.physical.lease.TransactionID != "" && e.physical.arbiter != nil {
+			e.physical.arbiter.Release(e.physical.descriptor.Resource, mirror.Principal{Kind: mirror.PrincipalAgent, ID: e.task.ID}, e.physical.lease.TransactionID)
+			e.physical.lease = vscreen.Lease{}
+		}
+		e.physical.mu.Unlock()
+		_ = e.physical.injector.Close()
+		return
+	}
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -156,6 +197,9 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 	case <-e.lifetimeDone:
 		return nil, context.Canceled
 	default:
+	}
+	if e.physical != nil {
+		return e.invokePhysical(ctx, name, args)
 	}
 	if binding := e.task.MirrorSource; binding != nil {
 		current := e.actor.Status()
@@ -244,6 +288,126 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 	default:
 		return nil, errVscreenToolArguments
 	}
+}
+
+func (e *vscreenExecution) invokePhysical(ctx context.Context, name string, args vscreenToolArgs) ([]map[string]any, error) {
+	p := e.physical
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.refresh != nil {
+		current, err := p.refresh(ctx)
+		if err != nil || current.MirrorSourceBinding != p.descriptor.MirrorSourceBinding || current.DisplayID != p.descriptor.DisplayID || current.GeometryRevision != p.descriptor.GeometryRevision {
+			return nil, &vscreen.Error{Reason: protocol.VscreenSourceGone}
+		}
+		p.descriptor = current
+	}
+	snapshot := func() ([]map[string]any, error) {
+		d := p.descriptor
+		bounds := image.Rect(int(d.X), int(d.Y), int(d.X)+int(d.LogicalWidth), int(d.Y)+int(d.LogicalHeight))
+		frame, err := (mirror.NativeCapturer{NoPermissionPrompt: true, Bounds: &bounds}).Capture(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var encoded bytes.Buffer
+		if err := png.Encode(&encoded, frame); err != nil {
+			return nil, err
+		}
+		meta := map[string]any{"observation_scope": "display", "window_handle": "display-focus", "snapshot_revision": d.GeometryRevision, "width": frame.Bounds().Dx(), "height": frame.Bounds().Dy(), "elements": []any{}, "physical_source": true, "input_policy": map[string]string{"click": "coordinate", "type": "focused_display", "pid_input": "unavailable"}}
+		return append(vscreenText(meta), map[string]any{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(encoded.Bytes())}), nil
+	}
+	switch name {
+	case "vscreen_status":
+		return vscreenText(map[string]any{"ready": true, "frozen": false, "owns_control": p.lease.TransactionID != "", "physical_source": true}), nil
+	case "vscreen_observe":
+		return snapshot()
+	case "vscreen_acquire":
+		if args.RequestID == "" || len(args.RequestID) > 128 || p.lease.TransactionID != "" {
+			return nil, errVscreenToolArguments
+		}
+		id, err := randomBrokerToken()
+		if err != nil {
+			return nil, err
+		}
+		p.lease = vscreen.Lease{Resource: p.descriptor.Resource, TransactionID: id, LeaseEpoch: 1, TaskID: e.task.ID, ExpiresAt: time.Now().Add(agentGestureTTL)}
+		return vscreenText(map[string]any{"transaction_id": id, "lease_epoch": 1, "managed_windows": []any{}, "physical_source": true}), nil
+	case "vscreen_release":
+		if p.lease.TransactionID == "" || args.TransactionID != p.lease.TransactionID {
+			return nil, errVscreenToolArguments
+		}
+		if p.arbiter != nil {
+			p.arbiter.Release(p.descriptor.Resource, mirror.Principal{Kind: mirror.PrincipalAgent, ID: e.task.ID}, p.lease.TransactionID)
+		}
+		p.lease = vscreen.Lease{}
+		return vscreenText(map[string]any{"released": true}), nil
+	}
+	if p.lease.TransactionID == "" || args.TransactionID != p.lease.TransactionID || args.Action == nil || args.Action.Validate() != nil {
+		return nil, errVscreenToolArguments
+	}
+	if !p.injector.Available() {
+		return nil, &vscreen.Error{Reason: protocol.VscreenPermissionDenied}
+	}
+	gesture := args.ActionID
+	if gesture == "" {
+		gesture = p.lease.TransactionID
+	}
+	principal := mirror.Principal{Kind: mirror.PrincipalAgent, ID: e.task.ID}
+	if p.arbiter != nil {
+		if p.arbiter.Acquire(p.descriptor.Resource, principal, gesture, agentGestureTTL) == mirror.AcquireBusy {
+			return nil, &vscreen.Error{Reason: protocol.VscreenAppInUse}
+		}
+		defer p.arbiter.Release(p.descriptor.Resource, principal, gesture)
+	}
+	d := p.descriptor
+	toDisplay := func(point protocol.VscreenPoint) (float64, float64) {
+		w, h := float64(d.Width), float64(d.Height)
+		if w <= 0 || h <= 0 {
+			w, h = d.LogicalWidth, d.LogicalHeight
+		}
+		return point.X/w*d.LogicalWidth + float64(d.X), point.Y/h*d.LogicalHeight + float64(d.Y)
+	}
+	var err error
+	switch args.Action.Kind {
+	case protocol.VscreenActionClick:
+		if args.Action.Click.Position == nil {
+			return nil, errVscreenToolArguments
+		}
+		x, y := toDisplay(*args.Action.Click.Position)
+		err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerDown, Button: globalinput.ButtonLeft, X: x, Y: y})
+		if err == nil {
+			err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerUp, Button: globalinput.ButtonLeft, X: x, Y: y})
+		}
+	case protocol.VscreenActionDrag:
+		fromX, fromY := toDisplay(args.Action.Drag.From)
+		toX, toY := toDisplay(args.Action.Drag.To)
+		err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerDown, Button: globalinput.ButtonLeft, X: fromX, Y: fromY})
+		if err == nil {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(args.Action.Drag.DurationMS) * time.Millisecond):
+			}
+		}
+		if err == nil {
+			err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerMove, Button: globalinput.ButtonLeft, X: toX, Y: toY})
+		}
+		if err == nil {
+			err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerUp, Button: globalinput.ButtonLeft, X: toX, Y: toY})
+		}
+	case protocol.VscreenActionScroll:
+		x, y := toDisplay(args.Action.Scroll.Position)
+		err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputWheel, X: x, Y: y, DeltaX: args.Action.Scroll.DeltaX, DeltaY: args.Action.Scroll.DeltaY})
+	case protocol.VscreenActionType:
+		err = p.injector.Text(args.Action.Type.Text)
+	case protocol.VscreenActionKey:
+		err = p.injector.Key(globalinput.KeyEvent{Key: args.Action.Key.Key, Modifiers: args.Action.Key.Modifiers, Down: true})
+		if err == nil {
+			err = p.injector.Key(globalinput.KeyEvent{Key: args.Action.Key.Key, Modifiers: args.Action.Key.Modifiers, Down: false})
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return vscreenText(map[string]any{"outcome": "dispatched", "physical_source": true}), nil
 }
 func (e *vscreenExecution) observe(ctx context.Context, a appcontrol.Authority, handle string, ownershipConfirmed bool) ([]map[string]any, error) {
 	if handle != "" && !ownershipConfirmed {

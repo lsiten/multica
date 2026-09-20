@@ -8,6 +8,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
+	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -40,15 +41,55 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 		if err := binding.Validate(); err != nil || task.MirrorSource.Resource != expectedResource {
 			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone, Cause: errors.New("mirror source binding does not match task runtime")}
 		}
-		// The managed execution actor currently owns the virtual display only.
-		// Never silently redirect an explicitly selected physical/system source.
-		if task.MirrorSource.Source.Kind != protocol.MirrorSourceVirtual {
-			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenNativeUnavailable, Cause: errors.New("physical mirror agent execution is unavailable")}
-		}
 	}
 	s := d.vscreenRuntime()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if task.MirrorSource != nil && task.MirrorSource.Source.Kind != protocol.MirrorSourceVirtual {
+		if !providerSupportsRemoteMCPBroker(provider) {
+			return nil, nil, nil, errVscreenProviderUnavailable
+		}
+		if err = d.startVscreenHost(ctx, s); err != nil {
+			return nil, nil, nil, fmt.Errorf("physical mirror source unavailable: %w", err)
+		}
+		sources, sourceErr := s.client.Sources(ctx, key)
+		if sourceErr != nil {
+			return nil, nil, nil, sourceErr
+		}
+		var selected *native.SourceDescriptor
+		for i := range sources {
+			if sources[i].MirrorSourceBinding == *task.MirrorSource && sources[i].DisplayID == task.MirrorSource.Resource.DisplayID {
+				selected = &sources[i]
+				break
+			}
+		}
+		if selected == nil {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone}
+		}
+		injector := d.globalInjector()
+		if injector == nil {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenNativeUnavailable}
+		}
+		refresh := func(refreshCtx context.Context) (native.SourceDescriptor, error) {
+			fresh, refreshErr := s.client.Sources(refreshCtx, key)
+			if refreshErr != nil {
+				return native.SourceDescriptor{}, refreshErr
+			}
+			for _, source := range fresh {
+				if source.MirrorSourceBinding == *task.MirrorSource && source.DisplayID == task.MirrorSource.Resource.DisplayID {
+					return source, nil
+				}
+			}
+			return native.SourceDescriptor{}, &vscreen.Error{Reason: protocol.VscreenSourceGone}
+		}
+		execution := newPhysicalVscreenExecution(ctx, task, *selected, refresh, injector, d.inputArbiter, stop)
+		cfg, broker, err := startVscreenMCP(ctx, execution.invoke)
+		if err != nil {
+			execution.Close()
+			return nil, nil, nil, err
+		}
+		return cfg, broker, execution, nil
+	}
 	if !s.enabled[key] {
 		if task.MirrorSource != nil {
 			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone}
