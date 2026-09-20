@@ -58,6 +58,8 @@ const TYPE_LABEL: Record<InboxItemType, string> = {
   autopilot_quota_exceeded: "Autopilot run limit reached",
   runtime_mirror_viewer_started: "Screen mirroring started",
   runtime_mirror_viewer_stopped: "Screen mirroring ended",
+  runtime_mirror_control_started: "Remote control started",
+  runtime_mirror_control_stopped: "Remote control ended",
 };
 
 // due_date is a calendar day — format timezone-safely (no offset day shift).
