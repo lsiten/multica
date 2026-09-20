@@ -313,10 +313,8 @@ it("maps wheel deltas to the snake_case mirror-input wire contract", async () =>
     streams: [new MediaStream()],
     track: { onended: null, stop: vi.fn() },
   });
-  const inputChannel = peer.channels.get("mirror-input");
   const controlChannel = peer.channels.get("mirror-control");
-  if (!inputChannel || !controlChannel) throw new Error("Data channels missing");
-  inputChannel.onopen?.();
+  if (!controlChannel) throw new Error("Control channel missing");
   controlChannel.onopen?.();
   controlChannel.onmessage?.({
     data: JSON.stringify({
@@ -327,7 +325,12 @@ it("maps wheel deltas to the snake_case mirror-input wire contract", async () =>
       quality: { width: 640, height: 360, fps: 10, bitrate: 1_000_000, max_level_idc: 31 },
     }),
   });
-  await session.startControl();
+  const controlRequest = session.startControl();
+  await Promise.resolve();
+  const inputChannel = peer.channels.get("mirror-input");
+  if (!inputChannel) throw new Error("Input channel was not created on control request");
+  inputChannel.onopen?.();
+  await controlRequest;
 
   session.sendInput({
     kind: "wheel",
