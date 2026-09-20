@@ -116,16 +116,35 @@ func (m *RuntimeMirror) handleAuthorizationMessage(peer *mirrorPeer, message web
 	m.mu.Lock()
 	handler := m.authorizationHandler
 	m.mu.Unlock()
-	if handler == nil {
-		return
-	}
+	processed := false
+	defer func() { m.sendAuthorizationResult(peer, response.RequestID, processed) }()
 	request, ok := m.consumeAuthorization(peer, response.RequestID, time.Now())
-	if !ok {
+	if !ok || handler == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := handler(ctx, request, response.Approved); err != nil {
+		return
+	}
+	processed = ctx.Err() == nil
+}
+
+func (m *RuntimeMirror) sendAuthorizationResult(peer *mirrorPeer, requestID string, processed bool) {
+	payload, err := json.Marshal(struct {
+		Type      string `json:"type"`
+		RequestID string `json:"request_id"`
+		Processed bool   `json:"processed"`
+	}{"mirror-authorization:result", requestID, processed})
+	if err != nil {
+		return
+	}
+	peer.mu.Lock()
+	defer peer.mu.Unlock()
+	if peer.closed || peer.grant == nil || !peer.grant.deadline.After(time.Now()) || peer.video == nil || peer.video.control == nil {
+		return
+	}
+	if err := peer.video.control.SendText(string(payload)); err != nil {
 		return
 	}
 }

@@ -16,6 +16,7 @@ export { parseWithFallback, setSchemaLogger } from "./schema";
 export type { ParseOptions } from "./schema";
 export {
   parseMirrorAuthorizationRequest,
+  parseMirrorAuthorizationResult,
   parseMirrorVoiceMessage,
 } from "./mirror-peer-messages";
 export type {

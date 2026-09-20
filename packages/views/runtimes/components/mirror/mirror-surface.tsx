@@ -264,6 +264,9 @@ export function MirrorSurface({
         {video.authorization && (
           <MirrorAuthorizationPrompt
             request={video.authorization}
+            pending={video.authorizationPending}
+            failed={video.authorizationFailed}
+            onDismiss={video.dismissAuthorization}
             onDecision={(approved) => {
               video.respondAuthorization(video.authorization?.request_id ?? "", approved);
             }}
