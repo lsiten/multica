@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -23,6 +24,11 @@ func TestVscreenManagedVideoGrantRevokeKeepsDisplayAndObserver(t *testing.T) {
 
 func testVscreenManagedVideoGrantRevoke(t *testing.T, sourceIndex int) {
 	t.Helper()
+	helper := filepath.Join(t.TempDir(), "transcribe")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\ncat >/dev/null\nprintf 'voice fixture'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MULTICA_VOICE_TRANSCRIBER", helper)
 	d := vscreenFixtureDaemon(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
@@ -49,6 +55,19 @@ func testVscreenManagedVideoGrantRevoke(t *testing.T, sourceIndex int) {
 	if _, err = pc.CreateDataChannel("mirror-control", nil); err != nil {
 		t.Fatal(err)
 	}
+	voice, err := pc.CreateDataChannel("mirror-voice", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	voiceReady := make(chan struct{})
+	voiceReplies := make(chan []byte, 1)
+	voice.OnOpen(func() { close(voiceReady) })
+	voice.OnMessage(func(message webrtc.DataChannelMessage) {
+		select {
+		case voiceReplies <- message.Data:
+		case <-ctx.Done():
+		}
+	})
 	packets := make(chan int, 1)
 	pc.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		packet, _, err := track.ReadRTP()
@@ -102,6 +121,36 @@ func testVscreenManagedVideoGrantRevoke(t *testing.T, sourceIndex int) {
 		}
 	case <-ctx.Done():
 		t.Fatal("no native fixture RTP")
+	}
+	rm := d.existingManagedMirror("rt", g)
+	control := protocol.MirrorControlGrant{GrantID: "voice-input", SessionID: grant.SessionID, WorkspaceID: grant.WorkspaceID, RuntimeID: grant.RuntimeID, UserID: grant.UserID, ViewerID: grant.ViewerID, NativeEpoch: grant.NativeEpoch, Source: grant.Source, SourceGeneration: grant.SourceGeneration, ExpiresAt: grant.ExpiresAt}
+	if rm == nil || !rm.BindControlGrant(grant.ViewerID, control, uint64(g)) {
+		t.Fatal("voice control capability rejected")
+	}
+	select {
+	case <-voiceReady:
+	case <-ctx.Done():
+		t.Fatal("voice channel not open")
+	}
+	recording, err := json.Marshal(protocol.MirrorVoiceMessage{Type: protocol.MirrorVoiceAudio, GrantID: control.GrantID, Seq: 1, MimeType: "audio/webm", AudioBase64: base64.StdEncoding.EncodeToString([]byte("recording fixture"))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = voice.SendText(string(recording)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case reply := <-voiceReplies:
+		var result struct {
+			Type   string `json:"type"`
+			Text   string `json:"text"`
+			Reason string `json:"reason"`
+		}
+		if json.Unmarshal(reply, &result) != nil || result.Type != protocol.MirrorVoiceTranscript || result.Text != "voice fixture" {
+			t.Fatalf("managed transcription failed: %s", result.Reason)
+		}
+	case <-ctx.Done():
+		t.Fatal("managed transcription timeout")
 	}
 	s := d.vscreenRuntime()
 	q := answer.VideoQuality
