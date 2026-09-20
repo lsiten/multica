@@ -18,7 +18,6 @@ type controlGrant struct {
 	timer      *time.Timer
 	deadline   time.Time
 	lastSeq    uint64
-	voiceSeq   uint64
 }
 
 func validControlGrant(viewerID string, g protocol.MirrorControlGrant) bool {
