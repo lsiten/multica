@@ -2286,6 +2286,7 @@ type DirectChatSendResult struct {
 }
 
 var ErrChatSessionAlreadyStarted = errors.New("chat session already has a user message")
+var ErrMirrorChatSourceChanged = errors.New("mirror chat source no longer matches the chat runtime")
 
 // SendDirectChatMessage atomically persists one web/mobile direct-chat turn:
 // the owning task (which claims its own input batch via chat_input_task_id), the
@@ -2310,11 +2311,13 @@ func (s *TaskService) SendDirectChatMessage(
 	mirrorSource ...*protocol.MirrorSourceBinding,
 ) (*DirectChatSendResult, error) {
 	var taskContext []byte
+	var boundSource *protocol.MirrorSourceBinding
 	if len(mirrorSource) > 1 {
 		return nil, fmt.Errorf("mirror source context provided more than once")
 	}
 	if len(mirrorSource) == 1 && mirrorSource[0] != nil {
 		payload := protocol.MirrorChatTaskContext{Type: protocol.MirrorChatTaskContextType, Source: *mirrorSource[0]}
+		boundSource = &payload.Source
 		if err := payload.Validate(); err != nil {
 			return nil, err
 		}
@@ -2369,6 +2372,9 @@ func (s *TaskService) SendDirectChatMessage(
 		}
 		if !carrier.RuntimeID.Valid {
 			return ErrChatTaskAgentNoRuntime
+		}
+		if boundSource != nil && (boundSource.Resource.RuntimeID != util.UUIDToString(carrier.RuntimeID) || boundSource.Resource.WorkspaceID != util.UUIDToString(currentSession.WorkspaceID)) {
+			return ErrMirrorChatSourceChanged
 		}
 
 		// The database status of every newly-created task is "queued" until a

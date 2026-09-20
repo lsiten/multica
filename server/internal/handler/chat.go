@@ -977,6 +977,8 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	sent, err := h.TaskService.SendDirectChatMessage(r.Context(), session, agent, parseUUID(userID), req.Content, attachmentIDs, actorType, parseUUID(actorID), mirrorSource)
 	if err != nil {
 		switch {
+		case errors.Is(err, service.ErrMirrorChatSourceChanged):
+			writeVscreenReason(w, http.StatusConflict, "source_stale")
 		case errors.Is(err, service.ErrChatSessionArchived):
 			writeError(w, http.StatusConflict, "chat session is archived")
 		case errors.Is(err, service.ErrChatTaskAgentArchived):

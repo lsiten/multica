@@ -15,6 +15,28 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
+func TestMirrorExecutionCannotAcquireAfterDisplayChanges(t *testing.T) {
+	f, actor := newVscreenToolFixture(t)
+	for _, stale := range []bool{false, true} {
+		binding := protocol.MirrorSourceBinding{Resource: f.display.Resource, Source: protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "display:fixture"}, NativeEpoch: f.display.Epoch.NativeEpoch, Generation: f.display.Epoch.DisplayGeneration}
+		if stale {
+			binding.Generation = "previous-display"
+		}
+		execution := newVscreenExecution(t.Context(), Task{ID: "task", MirrorSource: &binding}, actor, f, func(error) {})
+		_, err := execution.invoke(t.Context(), "vscreen_acquire", json.RawMessage(`{"request_id":"ticket"}`))
+		execution.Close()
+		if stale && err == nil {
+			t.Fatal("stale display acquired native authority")
+		}
+		if !stale && err != nil {
+			t.Fatalf("current display rejected: %v", err)
+		}
+	}
+	if f.grants != 1 {
+		t.Fatalf("native grants=%d, want only the current display grant", f.grants)
+	}
+}
+
 func TestVscreenProviderStopWaitsForResultAndPreservesUsage(t *testing.T) {
 	for _, status := range []string{"aborted", "completed"} {
 		t.Run(status, func(t *testing.T) {
