@@ -8,6 +8,7 @@ class Peer extends EventTarget {
   iceGatheringState = "complete";
   localDescription = { type: "offer", sdp: "v=0" };
   connectionState = "connected";
+  sctp = { maxMessageSize: 16 * 1024 };
   ontrack:
     | ((event: {
         streams: MediaStream[];
@@ -223,7 +224,7 @@ it("continues with the original browser offer when higher receive support is den
 });
 
 
-it("maps wheel deltas to the snake_case mirror-input wire contract", async () => {
+it("encodes wheel input and fragments voice within the negotiated channel limit", async () => {
   vi.stubGlobal("RTCPeerConnection", Peer);
   vi.stubGlobal(
     "MediaStream",
@@ -365,5 +366,34 @@ it("maps wheel deltas to the snake_case mirror-input wire contract", async () =>
     delta_x: 3,
     delta_y: 4,
   });
+  await session.sendVoice(new Blob([new Uint8Array(96 * 1024)], { type: "audio/webm" }));
+  const voice = peer.channels.get("mirror-voice");
+  if (!voice) throw new Error("Voice channel missing");
+  expect(voice.send.mock.calls.length).toBeGreaterThan(1);
+  let offset = 0;
+  const payloads: Uint8Array[] = [];
+  for (const [packet] of voice.send.mock.calls) {
+    expect(packet).toBeInstanceOf(Uint8Array);
+    expect(packet.byteLength).toBeLessThanOrEqual(16 * 1024);
+    const header = new DataView(packet.buffer, packet.byteOffset, packet.byteLength);
+    expect(header.getUint32(0)).toBe(0x4d564331);
+    expect(header.getUint32(8)).toBe(offset);
+    payloads.push(packet.subarray(12));
+    offset += packet.byteLength - 12;
+  }
+  const joined = new Uint8Array(offset);
+  offset = 0;
+  for (const payload of payloads) {
+    joined.set(payload, offset);
+    offset += payload.length;
+  }
+  expect(JSON.parse(new TextDecoder().decode(joined)).audio_base64).toHaveLength(128 * 1024);
+  voice.send.mockClear();
+  peer.sctp.maxMessageSize = 4096;
+  await session.sendVoice(new Blob([new Uint8Array(8192)], { type: "audio/webm" }));
+  expect(voice.send.mock.calls.length).toBeGreaterThan(1);
+  for (const [packet] of voice.send.mock.calls) {
+    expect(packet.byteLength).toBeLessThanOrEqual(4096);
+  }
   await session.close();
 });

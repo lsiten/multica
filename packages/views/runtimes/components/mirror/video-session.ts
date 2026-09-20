@@ -238,6 +238,7 @@ export class MirrorVideoSession {
 
   async sendVoice(recording: Blob): Promise<void> {
     if (this.disposed || !this.controlGrant || !this.peer) return;
+    const grant = this.controlGrant;
     if (!this.voiceChannel) {
       this.voiceChannel = this.peer.createDataChannel("mirror-voice", { ordered: true });
       this.voiceChannel.onopen = () => {
@@ -266,13 +267,29 @@ export class MirrorVideoSession {
     if (bytes.byteLength === 0 || bytes.byteLength > 512 * 1024) return;
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
-    channel.send(JSON.stringify({
+    if (this.disposed || this.controlGrant !== grant || channel.readyState !== "open") return;
+    const payload = new TextEncoder().encode(JSON.stringify({
       type: "mirror-voice:audio",
-      grant_id: this.controlGrant?.grantId ?? "",
+      grant_id: grant.grantId,
       seq: ++this.voiceSeq,
       mime_type: recording.type || "audio/webm",
       audio_base64: btoa(binary),
     }));
+    // Keep each reliable SCTP message below both our receiver limit and the
+    // negotiated transport limit. Never enqueue more than one bounded recording.
+    const negotiated = this.peer?.sctp?.maxMessageSize;
+    const packetSize = Math.min(16 * 1024, negotiated && negotiated > 0 ? negotiated : 16 * 1024);
+    if (packetSize <= 12) throw new Error("Voice data channel message limit is too small");
+    for (let offset = 0; offset < payload.length; offset += packetSize - 12) {
+      const fragment = payload.subarray(offset, offset + packetSize - 12);
+      const packet = new Uint8Array(12 + fragment.length);
+      const header = new DataView(packet.buffer);
+      header.setUint32(0, 0x4d564331); // MVC1
+      header.setUint32(4, payload.length);
+      header.setUint32(8, offset);
+      packet.set(fragment, 12);
+      channel.send(packet);
+    }
   }
 
   private armControlRenewal(): void {
