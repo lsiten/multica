@@ -40,7 +40,7 @@ const source = {
     runtimeId: "runtime",
     uid: 501,
   },
-  source: { kind: "physical", sourceId: "display:1" },
+  source: { kind: "virtual", sourceId: "display:1" },
   nativeEpoch: "native",
   generation: "display",
   name: "Display 1",
@@ -55,12 +55,13 @@ const source = {
 };
 
 const stopControl = vi.fn(async () => undefined);
+const startControl = vi.fn(async () => undefined);
 const invalidateQueries = vi.fn(async () => undefined);
 const commandMutate = vi.fn((_command, options) => {
   void options?.onSuccess?.();
 });
 let controlBarProps: {
-  onCommand: (kind: "emergency_stop") => void;
+  onCommand: (kind: "emergency_stop" | "enable_interaction") => void;
 };
 
 vi.mock("@tanstack/react-query", async () => {
@@ -96,6 +97,7 @@ vi.mock("@multica/core/runtimes", () => ({
       state: {
         state: "ready",
         permissions: { screenRecording: "granted", accessibility: "granted" },
+        humanInteraction: true,
       },
     }),
   }),
@@ -109,11 +111,11 @@ vi.mock("./use-video-session", () => ({
   useVideoSession: () => ({
     stream: null,
     state: "streaming",
-    control: { status: "active" },
+    control: { status: "inactive" },
     reason: null,
     quality: null,
     metadata: null,
-    startControl: vi.fn(),
+    startControl,
     stopControl,
     sendInput: vi.fn(),
     onFrame: vi.fn(),
@@ -168,5 +170,27 @@ describe("MirrorSurface emergency stop", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["vscreen"],
     });
+  });
+});
+
+describe("MirrorSurface interaction", () => {
+  it("starts local screen control after enabling remote interaction", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <I18nProvider locale="en" resources={RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </I18nProvider>
+    );
+
+    render(<MirrorSurface scope={scope} runtime={runtime} />, { wrapper });
+
+    await waitFor(() => expect(controlBarProps).toBeDefined());
+    controlBarProps.onCommand("enable_interaction");
+
+    await waitFor(() => expect(startControl).toHaveBeenCalledOnce());
   });
 });

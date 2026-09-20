@@ -64,6 +64,7 @@ export function MirrorSurface({
   const [retry, setRetry] = useState(0);
   const [floatingError, setFloatingError] = useState(false);
   const [commandId, setCommandId] = useState<string | null>(null);
+  const autoStartControl = useRef(false);
   const command = useVscreenCommand(scope);
   const receipt = useQuery({
     ...vscreenCommandOptions(scope, commandId ?? ""),
@@ -118,11 +119,15 @@ export function MirrorSurface({
       { commandId: id, kind },
       {
         onSuccess: async () => {
+          if (kind === "enable_interaction") autoStartControl.current = true;
           if (kind !== "emergency_stop") return;
           await video.stopControl();
           await queryClient.invalidateQueries({
             queryKey: vscreenKeys.all(scope),
           });
+        },
+        onError: () => {
+          if (kind === "enable_interaction") autoStartControl.current = false;
         },
       },
     );
@@ -207,6 +212,17 @@ export function MirrorSurface({
     // Source switches must replace the control grant rather than rebind it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
+  useEffect(() => {
+    if (
+      !autoStartControl.current ||
+      !state.data?.state.humanInteraction ||
+      video.state !== "streaming" ||
+      !source ||
+      video.control.status !== "inactive"
+    ) return;
+    autoStartControl.current = false;
+    void Promise.resolve(video.startControl()).catch(() => undefined);
+  }, [source, state.data?.state.humanInteraction, video]);
   return (
     <section
       aria-label={t(($) => $.mirror.frame_label)}

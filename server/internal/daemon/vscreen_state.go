@@ -95,9 +95,14 @@ func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID str
 	}
 	state.DisplayGeneration = display.Epoch.DisplayGeneration
 	state.GeometryRevision = display.Epoch.GeometryRevision
-	state.Permissions.ScreenRecording = "denied"
-	if response.Display.ScreenRecording {
-		state.Permissions.ScreenRecording = "granted"
+	// Keep the host permission probe authoritative. The display readback is
+	// useful when the probe is unavailable, but older host helpers can report a
+	// stale false value for a granted TCC identity and must not overwrite it.
+	if state.Permissions.ScreenRecording != "granted" {
+		state.Permissions.ScreenRecording = "denied"
+		if response.Display.ScreenRecording {
+			state.Permissions.ScreenRecording = "granted"
+		}
 	}
 	d.projectVscreenIntervention(s, &state)
 	return state, nil
