@@ -15,6 +15,61 @@ type recordingInputBackend struct {
 	inputs []protocol.MirrorInputMessage
 }
 
+type resolvingInputBackend struct {
+	recordingInputBackend
+	resolving chan struct{}
+	resume    chan struct{}
+}
+
+func (b *resolvingInputBackend) ResourceForGrant(protocol.MirrorControlGrant) (protocol.ResourceKey, bool) {
+	close(b.resolving)
+	<-b.resume
+	return testResource(1), true
+}
+
+func TestInputRevokedDuringSourceResolutionNeverDispatches(t *testing.T) {
+	m := NewRuntimeMirror(nil, time.Hour)
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
+	peer := newControlGrantTestPeer(t)
+	m.peers["viewer"] = peer
+	grant := testControlGrant("control", "display", time.Now().Add(time.Minute))
+	if !m.BindControlGrant("viewer", grant, 1) {
+		t.Fatal("bind control grant")
+	}
+	backend := &resolvingInputBackend{resolving: make(chan struct{}), resume: make(chan struct{})}
+	m.SetControlBackend(backend)
+	m.SetArbiter(NewArbiter())
+	channel, err := peer.pc.CreateDataChannel("mirror-input", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := protocol.MirrorInputMessage{Kind: protocol.MirrorInputType, GrantID: grant.GrantID,
+		GestureID: "gesture", Seq: 1, NativeEpoch: grant.NativeEpoch,
+		DisplayGeneration: grant.SourceGeneration, GeometryRevision: 1,
+		Text: &protocol.MirrorTextInput{Text: "must not be delivered"}}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var channelMu sync.Mutex
+	closed := false
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.handleInputMessage("viewer", peer, channel, &channelMu, &closed, nil, webrtc.DataChannelMessage{Data: payload})
+	}()
+	<-backend.resolving
+	revoked := m.RevokeControlGrant("viewer", grant.GrantID, 1)
+	close(backend.resume)
+	<-done
+	if !revoked {
+		t.Fatal("capability was not revoked")
+	}
+	if len(backend.inputs) != 0 {
+		t.Fatal("revoked capability injected input after source resolution")
+	}
+}
+
 func (b *recordingInputBackend) InteractionEnabled() bool { return true }
 func (b *recordingInputBackend) ResourceForGrant(protocol.MirrorControlGrant) (protocol.ResourceKey, bool) {
 	return testResource(1), true
