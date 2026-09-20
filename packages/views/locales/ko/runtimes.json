@@ -630,6 +630,8 @@
     "voice_stop": "녹음 중지",
     "external_text": "원격 클립보드 없이 텍스트 입력",
     "type_text": "텍스트 입력",
+    "sending": "보내는 중…",
+    "send_failed": "전송하지 못했습니다. 초안은 보존됩니다.",
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",

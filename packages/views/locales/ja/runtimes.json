@@ -630,6 +630,8 @@
     "voice_stop": "録音を停止",
     "external_text": "リモートのクリップボードを使わずにテキストを入力",
     "type_text": "テキスト入力",
+    "sending": "送信中…",
+    "send_failed": "送信できませんでした。下書きは保持されています。",
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
