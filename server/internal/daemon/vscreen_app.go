@@ -62,6 +62,12 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 	if !actor.Status().Ready {
 		return nil, nil, nil, errors.New("managed virtual screen is not registered")
 	}
+	if task.MirrorSource != nil {
+		current := actor.Status().Display.Epoch
+		if task.MirrorSource.NativeEpoch != current.NativeEpoch || task.MirrorSource.Generation != current.DisplayGeneration {
+			return nil, nil, nil, &vscreen.Error{Reason: protocol.VscreenSourceGone, Cause: errors.New("mirror source binding is stale")}
+		}
+	}
 	if err = d.validateVscreenContinuation(ctx, s, task, actor); err != nil {
 		return nil, nil, nil, err
 	}
