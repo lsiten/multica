@@ -219,6 +219,26 @@ func TestVscreenEnableInteractionRequestsAccessibilityOnce(t *testing.T) {
 	}
 }
 
+func TestAccessibilityPermissionRequiresHostOrInjector(t *testing.T) {
+	tests := []struct {
+		name           string
+		hostGranted    bool
+		injectorActive bool
+		want           bool
+	}{
+		{name: "both denied", want: false},
+		{name: "daemon injector granted", injectorActive: true, want: true},
+		{name: "native host granted", hostGranted: true, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := accessibilityPermissionGranted(tt.hostGranted, tt.injectorActive); got != tt.want {
+				t.Fatalf("accessibilityPermissionGranted(%t, %t) = %t, want %t", tt.hostGranted, tt.injectorActive, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestVscreenMCPNamespacedActionSchemas(t *testing.T) {
 	for _, tool := range vscreenToolDescriptors() {
 		raw, err := json.Marshal(tool)
