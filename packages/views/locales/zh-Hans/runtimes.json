@@ -627,6 +627,8 @@
     "voice_stop": "停止录音",
     "external_text": "输入文本（不使用远程剪贴板）",
     "type_text": "输入文本",
+    "sending": "发送中…",
+    "send_failed": "发送失败，草稿已保留。",
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "退格",

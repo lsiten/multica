@@ -643,6 +643,8 @@
     "voice_stop": "Stop recording",
     "external_text": "Type text without using the remote clipboard",
     "type_text": "Type text",
+    "sending": "Sending…",
+    "send_failed": "Could not send. Your draft is preserved.",
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",

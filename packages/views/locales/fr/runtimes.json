@@ -643,6 +643,8 @@
     "voice_stop": "Arrêter l’enregistrement",
     "external_text": "Saisir du texte sans utiliser le presse-papiers distant",
     "type_text": "Saisir le texte",
+    "sending": "Envoi…",
+    "send_failed": "Échec de l’envoi. Votre brouillon est conservé.",
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
