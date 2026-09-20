@@ -23,6 +23,23 @@ static uint32_t windowID(pid_t pid, CGRect bounds) {
   }
   return found;
 }
+static NSArray<NSURL *> *ACRequestedFiles(NSDictionary *input, NSString **error) {
+  id rawFiles = input[@"Files"];
+  NSArray *requestedFiles = @[];
+  if (rawFiles && rawFiles != NSNull.null) {
+    if (![rawFiles isKindOfClass:NSArray.class]) { *error = @"invalid_launch"; return nil; }
+    requestedFiles = rawFiles;
+  }
+  NSMutableArray<NSURL *> *files = [NSMutableArray new];
+  for (id value in requestedFiles) {
+    if (![value isKindOfClass:NSString.class]) { *error = @"invalid_launch"; return nil; }
+    NSString *path = value; BOOL directory = NO;
+    if (!path.isAbsolutePath || ![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory] || directory) { *error = @"invalid_launch"; return nil; }
+    [files addObject:[NSURL fileURLWithPath:path]];
+  }
+  return files;
+}
+
 NSDictionary *ACLaunch(ACSession *s, ACRequest *r, NSDictionary *input,
                        NSString **error) {
   if (s.windows.count >= 128) {
@@ -43,18 +60,8 @@ NSDictionary *ACLaunch(ACSession *s, ACRequest *r, NSDictionary *input,
     *error = @"needs_intervention";
     return nil;
   }
-  NSMutableArray<NSURL *> *files = [NSMutableArray new];
-  for (NSString *path in input[@"Files"]) {
-    BOOL directory = NO;
-    if (!path.isAbsolutePath ||
-        ![NSFileManager.defaultManager fileExistsAtPath:path
-                                            isDirectory:&directory] ||
-        directory) {
-      *error = @"invalid_launch";
-      return nil;
-    }
-    [files addObject:[NSURL fileURLWithPath:path]];
-  }
+  NSArray<NSURL *> *files = ACRequestedFiles(input, error);
+  if (!files) return nil;
   dispatch_semaphore_t completed = dispatch_semaphore_create(0);
   __block NSRunningApplication *launched = nil;
   dispatch_group_enter(s.pending);
