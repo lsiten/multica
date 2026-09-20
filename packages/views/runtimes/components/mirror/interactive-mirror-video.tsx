@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { useRef, type KeyboardEvent } from "react";
 import type { VscreenSourceDescriptor } from "@multica/core/types";
 import { MirrorVideo } from "./mirror-video";
-import { pointToSourceFrame, type SourcePoint } from "./mirror-coordinates";
-import type { MirrorControlInput, MirrorControlPointer } from "./video-session";
+import { useMirrorGestures } from "./use-mirror-gestures";
+import type { MirrorControlInput } from "./video-session";
 
 type Modifier = NonNullable<MirrorControlInput["key"]>["modifiers"] extends
   | readonly (infer M)[]
@@ -27,46 +27,8 @@ export function InteractiveMirrorVideo({
   readonly active: boolean;
   readonly sendInput: (input: MirrorControlInput) => void;
 }) {
-  const activePointerId = useRef<number | null>(null);
-  const pointerGesture = useRef<string | null>(null);
-  const lastPointerPoint = useRef<SourcePoint | null>(null);
+  const pointerHandlers = useMirrorGestures({ source, active, sendInput });
   const keyGestures = useRef<Map<string, string>>(new Map());
-  const pointerButton = useRef<MirrorControlPointer["button"]>("left");
-
-  const pointFromEvent = (
-    event: PointerEvent<HTMLDivElement> | WheelEvent<HTMLDivElement>,
-  ): SourcePoint | null =>
-    pointToSourceFrame(
-      { clientX: event.clientX, clientY: event.clientY },
-      event.currentTarget.getBoundingClientRect(),
-      source,
-    );
-
-  const sendPointer = (
-    kind: MirrorControlInput["kind"],
-    event: PointerEvent<HTMLDivElement>,
-  ): SourcePoint | null => {
-    const point = pointFromEvent(event) ?? lastPointerPoint.current;
-    if (!pointerGesture.current || !point) return null;
-    const pointer: MirrorControlPointer = {
-      ...point,
-      button: pointerButton.current,
-    };
-    sendInput({ kind, gestureId: pointerGesture.current, pointer });
-    return point;
-  };
-
-  const endPointer = (event: PointerEvent<HTMLDivElement>) => {
-    if (!active || activePointerId.current !== event.pointerId) return;
-    event.preventDefault();
-    const point = sendPointer("pointer:up", event);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    activePointerId.current = null;
-    pointerGesture.current = null;
-    lastPointerPoint.current = point;
-  };
 
   return (
     <div
@@ -78,44 +40,8 @@ export function InteractiveMirrorVideo({
           ? "h-full w-full cursor-crosshair touch-none select-none [-webkit-touch-callout:none] focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[-2px]"
           : "h-full w-full outline-none"
       }
-      onPointerDown={(event) => {
-        if (!active || activePointerId.current !== null) return;
-        const point = pointFromEvent(event);
-        if (!point) return;
-        event.preventDefault();
-        activePointerId.current = event.pointerId;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        event.currentTarget.focus({ preventScroll: true });
-        pointerButton.current =
-          event.button === 2 ? "right" : event.button === 1 ? "middle" : "left";
-        pointerGesture.current = crypto.randomUUID();
-        lastPointerPoint.current = point;
-        sendPointer("pointer:down", event);
-      }}
-      onPointerMove={(event) => {
-        if (!active || activePointerId.current !== event.pointerId) return;
-        event.preventDefault();
-        const point = sendPointer("pointer:move", event);
-        if (point) lastPointerPoint.current = point;
-      }}
-      onPointerUp={endPointer}
-      onPointerCancel={endPointer}
+      {...pointerHandlers}
       onContextMenu={(event) => active && event.preventDefault()}
-      onWheel={(event) => {
-        if (!active) return;
-        const point = pointFromEvent(event);
-        if (!point) return;
-        event.preventDefault();
-        sendInput({
-          kind: "wheel",
-          gestureId: crypto.randomUUID(),
-          pointer: {
-            ...point,
-            deltaX: event.deltaX,
-            deltaY: event.deltaY,
-          },
-        });
-      }}
       onKeyDown={(event) => {
         if (!active) return;
         const key = namedKey(event);

@@ -58,7 +58,7 @@ describe("InteractiveMirrorVideo pointer gestures", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps one captured pointer gesture and ignores additional touches", () => {
+  it("keeps one captured mouse gesture and flushes its final move before release", () => {
     const sendInput = vi.fn();
     const { container } = render(
       <InteractiveMirrorVideo
@@ -76,7 +76,7 @@ describe("InteractiveMirrorVideo pointer gestures", () => {
 
     fireEvent.pointerDown(surface, {
       pointerId: 1,
-      pointerType: "touch",
+      pointerType: "mouse",
       button: 0,
       buttons: 1,
       clientX: 80,
@@ -84,7 +84,7 @@ describe("InteractiveMirrorVideo pointer gestures", () => {
     });
     fireEvent.pointerDown(surface, {
       pointerId: 2,
-      pointerType: "touch",
+      pointerType: "mouse",
       button: 0,
       buttons: 1,
       clientX: 20,
@@ -92,21 +92,21 @@ describe("InteractiveMirrorVideo pointer gestures", () => {
     });
     fireEvent.pointerMove(surface, {
       pointerId: 2,
-      pointerType: "touch",
+      pointerType: "mouse",
       buttons: 1,
       clientX: 24,
       clientY: 24,
     });
     fireEvent.pointerMove(surface, {
       pointerId: 1,
-      pointerType: "touch",
+      pointerType: "mouse",
       buttons: 1,
       clientX: 160,
       clientY: 90,
     });
     fireEvent.pointerUp(surface, {
       pointerId: 2,
-      pointerType: "touch",
+      pointerType: "mouse",
       button: 0,
       buttons: 0,
       clientX: 24,
@@ -114,7 +114,7 @@ describe("InteractiveMirrorVideo pointer gestures", () => {
     });
     fireEvent.pointerUp(surface, {
       pointerId: 1,
-      pointerType: "touch",
+      pointerType: "mouse",
       button: 0,
       buttons: 0,
       clientX: 160,

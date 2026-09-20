@@ -66,3 +66,18 @@ Target WCAG 2.2 AA: all controls are keyboard reachable, focus remains
 visible, and state text has sufficient contrast. Initial native capture uses
 the primary display; source selection and audio are intentionally out of scope
 for this first capability.
+
+### Direct screen gestures
+
+The remote desktop uses direct manipulation: touch tap clicks, one-finger swipe
+scrolls in the finger's direction, and holding for 350 ms starts a drag. An 8 CSS
+pixel slop separates tap from scroll regardless of display resolution. Mouse
+and pen keep immediate press/drag. Additional fingers do not steal a gesture.
+This remote-input mechanism is specific to mirroring; the beui swipeable-list
+reference informs interruptibility, not local movement of the video pixels.
+
+Movement is coalesced to one update per animation frame (latest drag position,
+summed scroll distance). Release flushes pending movement; cancellation,
+blur, source changes and unmount release held input and discard pending work.
+Wheel listeners are non-passive so remote scrolling does not scroll the page.
+No decorative or simulated screen animation is used, including reduced motion.
