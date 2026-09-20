@@ -35,7 +35,7 @@ func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID str
 		if probeErr == nil {
 			state.Permissions.Accessibility = "denied"
 			state.Permissions.ScreenRecording = "denied"
-			if permissions.Accessibility {
+			if d.accessibilityPermissionGranted(permissions.Accessibility) {
 				state.Permissions.Accessibility = "granted"
 			}
 			if permissions.ScreenRecording {
@@ -101,6 +101,19 @@ func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID str
 	}
 	d.projectVscreenIntervention(s, &state)
 	return state, nil
+}
+
+// accessibilityPermissionGranted uses the same daemon-side injector that
+// handles physical-screen input as a fallback for the native app-control
+// preflight. macOS can attribute those two checks to different helper
+// identities even when both entries are enabled in System Settings.
+func (d *Daemon) accessibilityPermissionGranted(hostGranted bool) bool {
+	injector := d.globalInjector()
+	return accessibilityPermissionGranted(hostGranted, injector != nil && injector.Available())
+}
+
+func accessibilityPermissionGranted(hostGranted, injectorActive bool) bool {
+	return hostGranted || injectorActive
 }
 
 func (d *Daemon) vscreenSources(ctx context.Context, workspaceID, runtimeID string) ([]native.SourceDescriptor, error) {

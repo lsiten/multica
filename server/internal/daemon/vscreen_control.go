@@ -230,12 +230,16 @@ func (d *Daemon) requestVscreenPermissions(ctx context.Context, s *vscreenRuntim
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	_, err := s.client.RequestAppPermissions(requestCtx, request)
-	if err == nil {
-		s.screenPermissionRequested = s.screenPermissionRequested || request.ScreenRecording
-		s.accessibilityPermissionRequested = s.accessibilityPermissionRequested || request.Accessibility
+	permissions, err := s.client.RequestAppPermissions(requestCtx, request)
+	if err != nil {
+		return err
 	}
-	return err
+	if request.Accessibility && !d.accessibilityPermissionGranted(permissions.Accessibility) {
+		return &vscreen.Error{Reason: protocol.VscreenPermissionDenied}
+	}
+	s.screenPermissionRequested = s.screenPermissionRequested || request.ScreenRecording
+	s.accessibilityPermissionRequested = s.accessibilityPermissionRequested || request.Accessibility
+	return nil
 }
 
 func (d *Daemon) executeHostInteractionCommand(ctx context.Context, c protocol.VscreenCommand, g mirrorControlGeneration) error {
