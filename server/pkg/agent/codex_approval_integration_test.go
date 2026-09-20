@@ -34,11 +34,12 @@ func runCodexRealApproval(t *testing.T, approve bool) {
 	}
 	directory := t.TempDir()
 	marker := filepath.Join(directory, "approval-marker")
+	peerApproval := realApprovalPeer(t, approve)
 	reviewed := make(chan struct{}, 1)
 	backend := &codexBackend{cfg: Config{
 		ExecutablePath: path,
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		RequestApproval: func(_ context.Context, request ApprovalRequest) (bool, error) {
+		RequestApproval: func(ctx context.Context, request ApprovalRequest) (bool, error) {
 			var params struct {
 				Command string `json:"command"`
 				Cwd     string `json:"cwd"`
@@ -51,11 +52,16 @@ func runCodexRealApproval(t *testing.T, approve bool) {
 			expectedCwd, expectedErr := filepath.EvalSymlinks(directory)
 			expectedCommand := command == "mkdir approval-marker" || command == "/bin/zsh -lc 'mkdir approval-marker'" || command == "/bin/bash -lc 'mkdir approval-marker'"
 			if expectedCommand && cwdErr == nil && expectedErr == nil && cwd == expectedCwd {
+				decision, err := peerApproval(ctx, request)
+				if err != nil || decision != approve {
+					t.Errorf("real peer approval decision=%v error=%v", decision, err)
+					return false, err
+				}
 				select {
 				case reviewed <- struct{}{}:
 				default:
 				}
-				return approve, nil
+				return decision, nil
 			}
 			return false, nil
 		},
