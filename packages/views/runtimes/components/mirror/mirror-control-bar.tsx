@@ -230,6 +230,16 @@ export function MirrorControlBar({
             {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
           </select>
         )}
+        <Button
+          size="sm"
+          variant={recording ? "destructive" : "outline"}
+          disabled={!active && !agentRoute}
+          onClick={toggleVoice}
+          aria-label={recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
+        >
+          <Mic className="size-4" />
+          {recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
+        </Button>
         {sendError && (
           <span role="alert" className="text-caption text-destructive">
             {t(($) => $.vscreen.send_failed)}
@@ -238,10 +248,6 @@ export function MirrorControlBar({
       </div>
       {active && (
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant={recording ? "destructive" : "outline"} onClick={toggleVoice}>
-            <Mic className="size-4" />
-            {recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
-          </Button>
           {(
             [
               ["escape", "Esc"],
