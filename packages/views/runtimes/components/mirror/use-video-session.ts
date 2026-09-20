@@ -32,6 +32,10 @@ export function useVideoSession(
   });
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [authorization, setAuthorization] = useState<MirrorAuthorizationRequest | null>(null);
+  const [authorizationPending, setAuthorizationPending] = useState(false);
+  const [authorizationFailed, setAuthorizationFailed] = useState(false);
+  const decisionInFlight = useRef(false);
+  const authorizationID = useRef<string | null>(null);
   const sessionRef = useRef<MirrorVideoSession | null>(null);
   const closing = useRef(Promise.resolve());
   const identity = JSON.stringify([
@@ -72,7 +76,11 @@ export function useVideoSession(
               if (active) setVoiceTranscript(value);
             },
             authorization: (value) => {
-              if (active) setAuthorization(value);
+              if (active) {
+                authorizationID.current = value.request_id;
+                setAuthorization(value);
+                setAuthorizationFailed(false);
+              }
             },
           },
         })
@@ -86,6 +94,10 @@ export function useVideoSession(
     setControlState({ status: "inactive" });
     setVoiceTranscript("");
     setAuthorization(null);
+    authorizationID.current = null;
+    setAuthorizationPending(false);
+    setAuthorizationFailed(false);
+    decisionInFlight.current = false;
     const pageClosed = () => {
       void session?.close();
     };
@@ -130,9 +142,24 @@ export function useVideoSession(
     sendVoice: (recording: Blob) => currentSession?.sendVoice(recording),
     voiceTranscript: current ? voiceTranscript : "",
     authorization: current ? authorization : null,
-    respondAuthorization: (requestId: string, approved: boolean) => {
-      currentSession?.respondAuthorization(requestId, approved);
-      if (current && authorization?.request_id === requestId) setAuthorization(null);
+    authorizationPending,
+    authorizationFailed,
+    dismissAuthorization: () => setAuthorization(null),
+    respondAuthorization: async (requestId: string, approved: boolean) => {
+      if (!currentSession || decisionInFlight.current) return;
+      decisionInFlight.current = true;
+      setAuthorizationPending(true);
+      setAuthorizationFailed(false);
+      const processed = await currentSession.respondAuthorization(requestId, approved);
+      if (sessionRef.current !== currentSession) return;
+      decisionInFlight.current = false;
+      setAuthorizationPending(false);
+      if (authorizationID.current !== requestId) return;
+      if (processed) {
+        setAuthorization((value) => value?.request_id === requestId ? null : value);
+      } else {
+        setAuthorizationFailed(true);
+      }
     },
     onFrame,
     ...(current

@@ -16,13 +16,14 @@ class Peer extends EventTarget {
     | null = null;
   onconnectionstatechange: (() => void) | null = null;
   channel: {
+    readyState: string;
     onopen: (() => void) | null;
     onmessage: ((event: { data: string }) => void) | null;
     onclose: (() => void) | null;
     onerror: (() => void) | null;
     send: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
-  } = { onopen: null, onmessage: null, onclose: null, onerror: null, send: vi.fn(), close: vi.fn() };
+  } = { readyState: "open", onopen: null, onmessage: null, onclose: null, onerror: null, send: vi.fn(), close: vi.fn() };
   channels = new Map<string, typeof this.channel>();
   constructor() {
     super();
@@ -32,7 +33,7 @@ class Peer extends EventTarget {
   createDataChannel = (label: string) => {
     let channel = this.channels.get(label);
     if (!channel) {
-      channel = { onopen: null, onmessage: null, onclose: null, onerror: null, send: vi.fn(), close: vi.fn() };
+      channel = { readyState: "open", onopen: null, onmessage: null, onclose: null, onerror: null, send: vi.fn(), close: vi.fn() };
       this.channels.set(label, channel);
     }
     if (label === "mirror-control") this.channel = channel;
@@ -325,6 +326,23 @@ it("maps wheel deltas to the snake_case mirror-input wire contract", async () =>
       quality: { width: 640, height: 360, fps: 10, bitrate: 1_000_000, max_level_idc: 31 },
     }),
   });
+  expect(peer.channels.has("mirror-input")).toBe(false);
+  controlChannel.onmessage?.({data: JSON.stringify({
+    type: "mirror-authorization:request", request_id: "approval", kind: "system",
+    title: "Permission", message: "Approve this request", expires_at: new Date(Date.now() + 60_000).toISOString(),
+  })});
+  const decision = session.respondAuthorization("approval", true);
+  let settled = false;
+  void decision.then(() => { settled = true; });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  controlChannel.onmessage?.({data: JSON.stringify({type: "mirror-authorization:result", request_id: "foreign", processed: true})});
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  controlChannel.onmessage?.({data: JSON.stringify({type: "mirror-authorization:result", request_id: "approval", processed: false})});
+  expect(await decision).toBe(false);
+  expect(await session.respondAuthorization("approval", true)).toBe(false);
+
   const controlRequest = session.startControl();
   await Promise.resolve();
   const inputChannel = peer.channels.get("mirror-input");

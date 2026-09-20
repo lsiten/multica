@@ -2,6 +2,7 @@ import { prepareVscreenReceiveOffer } from "@multica/core/runtimes/vscreen-recei
 import {
   parseVscreenVideoMetadata,
   parseMirrorAuthorizationRequest,
+  parseMirrorAuthorizationResult,
   parseMirrorVoiceMessage,
   vscreenErrorReason,
   type VscreenApi,
@@ -51,7 +52,8 @@ export class MirrorVideoSession {
   private controlRenewal: ReturnType<typeof setTimeout> | undefined;
   private inputSeq = 0;
   private voiceSeq = 0;
-  private readonly pendingAuthorizations = new Set<string>();
+  private readonly pendingAuthorizations = new Map<string, number>();
+  private readonly authorizationReplies = new Map<string, (processed: boolean) => void>();
   private metadataSeen = false;
   private stream: MediaStream | null = null;
   private published = false;
@@ -195,19 +197,43 @@ export class MirrorVideoSession {
 
   private authorizationMessage(value: unknown): void {
     if (this.disposed || typeof value !== "string") return;
+    const result = parseMirrorAuthorizationResult(value);
+    if (result) {
+      this.authorizationReplies.get(result.request_id)?.(result.processed);
+      return;
+    }
     const request = parseMirrorAuthorizationRequest(value);
     if (request) {
-      this.pendingAuthorizations.add(request.request_id);
+      for (const [id, expiry] of this.pendingAuthorizations) {
+        if (expiry <= Date.now()) this.pendingAuthorizations.delete(id);
+      }
+      if (this.pendingAuthorizations.size >= 128) return;
+      this.pendingAuthorizations.set(request.request_id, Date.parse(request.expires_at));
       this.options.callbacks.authorization?.(request);
     }
   }
 
-  respondAuthorization(requestId: string, approved: boolean): void {
+  respondAuthorization(requestId: string, approved: boolean): Promise<boolean> {
     const channel = this.controlChannel;
-    if (this.pendingAuthorizations.has(requestId) && channel?.readyState === "open") {
-      this.pendingAuthorizations.delete(requestId);
-      channel.send(JSON.stringify({ type: "mirror-authorization:response", request_id: requestId, approved }));
+    const expiry = this.pendingAuthorizations.get(requestId);
+    if (this.disposed || !expiry || expiry <= Date.now() || channel?.readyState !== "open") {
+      return Promise.resolve(false);
     }
+    this.pendingAuthorizations.delete(requestId);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => finish(false), 16_000);
+      const finish = (processed: boolean) => {
+        clearTimeout(timer);
+        this.authorizationReplies.delete(requestId);
+        resolve(processed);
+      };
+      this.authorizationReplies.set(requestId, finish);
+      try {
+        channel.send(JSON.stringify({ type: "mirror-authorization:response", request_id: requestId, approved }));
+      } catch {
+        finish(false);
+      }
+    });
   }
 
   async sendVoice(recording: Blob): Promise<void> {
@@ -538,6 +564,8 @@ export class MirrorVideoSession {
 
   async close(): Promise<void> {
     this.disposed = true;
+    for (const finish of this.authorizationReplies.values()) finish(false);
+    this.pendingAuthorizations.clear();
     this.abort.abort();
     clearTimeout(this.renewal);
     clearTimeout(this.expiry);

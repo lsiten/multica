@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+const authorizationResultSchema = z.object({
+  type: z.literal("mirror-authorization:result"),
+  request_id: z.string().min(1).max(128),
+  processed: z.boolean(),
+});
+
+export function parseMirrorAuthorizationResult(value: unknown) {
+  const result = authorizationResultSchema.safeParse(parseJson(value));
+  return result.success ? result.data : null;
+}
+
 const authorizationWireSchema = z.object({
   type: z.literal("mirror-authorization:request"),
   request_id: z.string().min(1).max(128),
