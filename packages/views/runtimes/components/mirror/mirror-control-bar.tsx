@@ -194,18 +194,18 @@ export function MirrorControlBar({
           </Button>
           {agents.length > 0 && (
             <select
-              aria-label="Send to agent"
+              aria-label={t(($) => $.vscreen.send_target)}
               value={agentId}
               onChange={(event) => setAgentId(event.target.value)}
               className="h-8 rounded-md border bg-background px-2 text-caption"
             >
-              <option value="">Screen</option>
+              <option value="">{t(($) => $.vscreen.send_screen)}</option>
               {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
             </select>
           )}
           <Button size="sm" variant={recording ? "destructive" : "outline"} onClick={toggleVoice}>
             <Mic className="size-4" />
-            {recording ? "Stop" : "Voice"}
+            {recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
           </Button>
           {(
             [
