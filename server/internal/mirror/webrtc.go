@@ -2,7 +2,6 @@ package mirror
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -87,7 +86,7 @@ type RuntimeMirror struct {
 	authorizationHandler       func(context.Context, string, bool) error
 	authorizationPublisher     func(string, protocol.MirrorAuthorizationRequest)
 	authorizationMu            sync.Mutex
-	pendingAuthorizations      map[string]time.Time
+	pendingAuthorizations      map[string]pendingAuthorization
 	controlMu                  sync.Mutex
 	controlStateHookGeneration uint64
 	controlStateHookFn         func(ControlStateChange)
@@ -197,7 +196,7 @@ func newRuntimeMirror(capturer Capturer, interval, peerAttachTimeout time.Durati
 	return &RuntimeMirror{
 		source:                NewSource(capturer, interval),
 		peers:                 make(map[string]*mirrorPeer),
-		pendingAuthorizations: make(map[string]time.Time),
+		pendingAuthorizations: make(map[string]pendingAuthorization),
 		peerAttachTimeout:     peerAttachTimeout,
 	}
 }
@@ -302,19 +301,7 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 					}
 				})
 				channel.OnMessage(func(message webrtc.DataChannelMessage) {
-					if !message.IsString {
-						return
-					}
-					var response protocol.MirrorAuthorizationResponse
-					if json.Unmarshal([]byte(message.Data), &response) != nil || response.Validate() != nil {
-						return
-					}
-					m.mu.Lock()
-					handler := m.authorizationHandler
-					m.mu.Unlock()
-					if handler != nil && m.consumeAuthorization(response.RequestID, time.Now()) {
-						_ = handler(context.Background(), response.RequestID, response.Approved)
-					}
+					m.handleAuthorizationMessage(peer, message)
 				})
 				channel.OnClose(func() { _ = cleanup() })
 				return

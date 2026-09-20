@@ -69,6 +69,7 @@ func (m *RuntimeMirror) closePeer(viewerID string, peer *mirrorPeer, opts peerCl
 	peer.detach = nil
 	peer.stopNegotiationCleanup = nil
 	peer.mu.Unlock()
+	m.releaseAuthorizations(peer)
 	if stopNegotiationCleanup != nil {
 		stopNegotiationCleanup()
 	}

@@ -1,6 +1,8 @@
 import { prepareVscreenReceiveOffer } from "@multica/core/runtimes/vscreen-receive-offer";
 import {
   parseVscreenVideoMetadata,
+  parseMirrorAuthorizationRequest,
+  parseMirrorVoiceMessage,
   vscreenErrorReason,
   type VscreenApi,
 } from "@multica/core/api";
@@ -18,7 +20,6 @@ import {
   type MirrorControlInput,
   type MirrorControlState,
   type MirrorVideoCallbacks,
-  type MirrorAuthorizationRequest,
 } from "./video-session-types";
 export { MirrorVideoError } from "./video-session-types";
 export type {
@@ -49,6 +50,7 @@ export class MirrorVideoSession {
   private controlRenewal: ReturnType<typeof setTimeout> | undefined;
   private inputSeq = 0;
   private voiceSeq = 0;
+  private readonly pendingAuthorizations = new Set<string>();
   private metadataSeen = false;
   private stream: MediaStream | null = null;
   private published = false;
@@ -185,40 +187,31 @@ export class MirrorVideoSession {
 
   private voiceMessage(value: unknown): void {
     if (this.disposed || typeof value !== "string") return;
-    try {
-      const raw: unknown = JSON.parse(value);
-      if (raw && typeof raw === "object" && "type" in raw && raw.type === "mirror-voice:transcript" && "text" in raw && typeof raw.text === "string") {
-        this.options.callbacks.transcript?.(raw.text);
-      }
-    } catch {
-      // Malformed peer data is ignored at this boundary.
-    }
+    const raw = parseMirrorVoiceMessage(value);
+    if (raw?.type === "mirror-voice:transcript") this.options.callbacks.transcript?.(raw.text);
   }
 
   private authorizationMessage(value: unknown): void {
     if (this.disposed || typeof value !== "string") return;
-    try {
-      const raw: unknown = JSON.parse(value);
-      if (!raw || typeof raw !== "object") return;
-      const record = raw as Record<string, unknown>;
-      if (record.type !== "mirror-authorization:request") return;
-      if (typeof record.request_id !== "string" || typeof record.title !== "string" || typeof record.message !== "string" || (record.kind !== "system" && record.kind !== "cli") || typeof record.expires_at !== "string") return;
-      this.options.callbacks.authorization?.(record as unknown as MirrorAuthorizationRequest);
-    } catch {
-      // Malformed peer data is ignored at this boundary.
+    const request = parseMirrorAuthorizationRequest(value);
+    if (request) {
+      this.pendingAuthorizations.add(request.request_id);
+      this.options.callbacks.authorization?.(request);
     }
   }
 
   respondAuthorization(requestId: string, approved: boolean): void {
     const channel = this.controlChannel;
-    if (channel?.readyState === "open") {
+    if (this.pendingAuthorizations.has(requestId) && channel?.readyState === "open") {
+      this.pendingAuthorizations.delete(requestId);
       channel.send(JSON.stringify({ type: "mirror-authorization:response", request_id: requestId, approved }));
     }
   }
 
   async sendVoice(recording: Blob): Promise<void> {
+    if (this.disposed || !this.controlGrant) return;
     const channel = this.voiceChannel;
-    if (!channel || channel.readyState !== "open" || this.disposed) return;
+    if (channel.readyState !== "open") return;
     const bytes = new Uint8Array(await recording.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 512 * 1024) return;
     let binary = "";
