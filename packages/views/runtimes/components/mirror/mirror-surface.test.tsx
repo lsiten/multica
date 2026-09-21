@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
@@ -62,7 +62,20 @@ const commandMutate = vi.fn((_command, options) => {
 });
 let controlBarProps: {
   onCommand: (kind: "emergency_stop" | "enable_interaction") => void;
+  onAgentChange: (agentId: string) => void;
 };
+
+vi.mock("@multica/core/workspace", () => ({
+  agentListOptions: () => ({ queryKey: ["agents"], queryFn: async () => [{ id: "agent", name: "Mirror agent", runtime_id: "runtime" }] }),
+}));
+vi.mock("@multica/core/chat/queries", () => ({
+  chatSessionsOptions: () => ({ queryKey: ["sessions"], queryFn: async () => [{ id: "chat", agent_id: "agent", status: "active", updated_at: "2026-09-21" }] }),
+  chatMessagesOptions: () => ({ queryKey: ["messages"], queryFn: async () => [] }),
+  pendingChatTaskOptions: () => ({ queryKey: ["pending-task"], queryFn: async () => null }),
+}));
+vi.mock("../../../chat/components/chat-message-list", () => ({
+  ChatMessageList: () => <div>Conversation content</div>,
+}));
 
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
@@ -174,6 +187,28 @@ describe("MirrorSurface emergency stop", () => {
 });
 
 describe("MirrorSurface interaction", () => {
+  it("toggles the video conversation overlay without deleting its session", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<I18nProvider locale="en" resources={RESOURCES}>
+      <QueryClientProvider client={queryClient}>
+        <MirrorSurface scope={scope} runtime={runtime} />
+      </QueryClientProvider>
+    </I18nProvider>);
+    await waitFor(() => expect(queryClient.getQueryData(["sessions"])).toBeDefined());
+    act(() => controlBarProps.onAgentChange("agent"));
+    const overlay = await screen.findByRole("complementary", { name: "Live conversation" });
+    expect(overlay.parentElement).toHaveClass("aspect-video");
+    expect(overlay).toHaveClass("absolute", "bottom-3", "right-3");
+    fireEvent.click(screen.getByRole("button", { name: "Clear screen" }));
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show chat" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Show chat" }));
+    expect(screen.getByText("Conversation content")).toBeInTheDocument();
+    expect(queryClient.getQueryData(["sessions"])).toHaveLength(1);
+    act(() => controlBarProps.onAgentChange(""));
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+  });
+
   it("starts local screen control after enabling remote interaction", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
