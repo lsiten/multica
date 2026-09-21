@@ -15,6 +15,7 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { useT } from "../../../i18n";
 import type { MirrorControlState } from "./video-session";
+import { appSwitchModifiers } from "./mirror-shortcuts";
 
 export function MirrorControlBar({
   scope,
@@ -28,6 +29,7 @@ export function MirrorControlBar({
   onStopControl,
   onType,
   onKey,
+  clientOS,
   onVoice,
   voiceTranscript,
   agents = [],
@@ -46,6 +48,7 @@ export function MirrorControlBar({
   readonly onStopControl: () => void;
   readonly onType: (text: string) => void;
   readonly onKey: (key: string, modifiers?: ("shift" | "control" | "alt" | "meta")[]) => void;
+  readonly clientOS?: string;
   readonly onVoice: (recording: Blob) => Promise<void> | void;
   readonly voiceTranscript?: string;
   readonly agents?: readonly { readonly id: string; readonly name: string }[];
@@ -298,7 +301,7 @@ export function MirrorControlBar({
           <Button size="sm" variant="outline" onClick={() => onKey("v", ["control"])}>
             {t(($) => $.vscreen.paste_shortcut)}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => onKey("tab", ["alt"])}>
+          <Button size="sm" variant="outline" onClick={() => onKey("tab", [...appSwitchModifiers(clientOS)])}>
             {t(($) => $.vscreen.switch_app)}
           </Button>
         </div>
