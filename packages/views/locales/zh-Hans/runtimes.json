@@ -637,6 +637,7 @@
     "clear_screen": "清屏",
     "show_chat": "显示对话",
     "chat_overlay": "实时对话",
+    "chat_you": "你",
     "external_text": "输入文本（不使用远程剪贴板）",
     "type_text": "输入文本",
     "sending": "发送中…",

@@ -653,6 +653,7 @@
     "clear_screen": "Masquer la conversation",
     "show_chat": "Afficher la conversation",
     "chat_overlay": "Conversation en direct",
+    "chat_you": "Vous",
     "external_text": "Saisir du texte sans utiliser le presse-papiers distant",
     "type_text": "Saisir le texte",
     "sending": "Envoi…",

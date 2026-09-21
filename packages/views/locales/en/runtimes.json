@@ -653,6 +653,7 @@
     "clear_screen": "Clear screen",
     "show_chat": "Show chat",
     "chat_overlay": "Live conversation",
+    "chat_you": "You",
     "external_text": "Type text without using the remote clipboard",
     "type_text": "Type text",
     "sending": "Sending…",
