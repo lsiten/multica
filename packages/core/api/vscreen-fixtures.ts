@@ -40,6 +40,7 @@ export const sourceWire = {
   width: 1600,
   height: 900,
   scale: 2,
+  geometry_revision: stateWire.state.geometry_revision,
 };
 export const grantWire = {
   grant_id: "grant-1",
