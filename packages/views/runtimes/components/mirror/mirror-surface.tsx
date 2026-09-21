@@ -2,7 +2,7 @@
 import { MirrorHandoff } from "./mirror-handoff";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Monitor, PictureInPicture2, RefreshCw } from "lucide-react";
+import { Monitor, PictureInPicture2, RefreshCw, MessageSquare, EyeOff } from "lucide-react";
 import type {
   RuntimeDevice,
   VscreenCommandKind,
@@ -66,6 +66,7 @@ export function MirrorSurface({
   const [selected, setSelected] = useState<string>("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
+  const [clearScreen, setClearScreen] = useState(false);
   const initialSourceChosen = useRef(false);
   const previousSelectedSource = useRef<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -291,6 +292,17 @@ export function MirrorSurface({
             <PictureInPicture2 aria-hidden="true" />
           </Button>
         )}
+        {!compact && (
+          <Button
+            size="sm"
+            variant={clearScreen ? "secondary" : "ghost"}
+            aria-pressed={clearScreen}
+            onClick={() => setClearScreen((value) => !value)}
+          >
+            {clearScreen ? <MessageSquare aria-hidden="true" /> : <EyeOff aria-hidden="true" />}
+            {clearScreen ? t(($) => $.vscreen.show_chat) : t(($) => $.vscreen.clear_screen)}
+          </Button>
+        )}
       </div>
       {floatingError && (
         <p className="px-3 py-2 text-caption text-destructive" role="alert">
@@ -354,6 +366,24 @@ export function MirrorSurface({
             {status}
           </div>
         )}
+        {!compact && !clearScreen && selectedAgent && chatSessionId && (
+          <aside
+            aria-label={t(($) => $.vscreen.chat_overlay)}
+            className="absolute bottom-3 right-3 flex h-[55%] max-h-72 w-[min(24rem,calc(100%-1.5rem))] min-w-0 flex-col overflow-hidden rounded-xl border bg-background/85 shadow-lg backdrop-blur-md sm:w-[38%]"
+          >
+            <div className="shrink-0 truncate px-3 py-2 text-caption font-medium">
+              {selectedAgent.name}
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <ChatMessageList
+                key={chatSessionId}
+                messages={chatMessages.data ?? []}
+                pendingTask={pendingChatTask.data}
+                availability={undefined}
+              />
+            </div>
+          </aside>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-caption text-muted-foreground">
         <span role={video.state === "failed" ? "alert" : "status"}>
@@ -366,23 +396,8 @@ export function MirrorSurface({
         )}
       </div>
       {!compact && (
-        selectedAgent && chatSessionId ? (
-          <div className="flex max-h-72 min-h-0 flex-col border-t bg-background">
-            <div className="shrink-0 px-3 py-2 text-caption font-medium text-muted-foreground">
-              {t(($) => $.mirror.title)} · {selectedAgent.name}
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <ChatMessageList
-                messages={chatMessages.data ?? []}
-                pendingTask={pendingChatTask.data}
-                availability={undefined}
-              />
-            </div>
-          </div>
-        ) : null
-      )}
-      {!compact && (
         <MirrorControlBar
+          key={JSON.stringify([scope, selected, source?.nativeEpoch, source?.generation, selectedAgentId])}
           scope={scope}
           runtime={runtime}
           source={binding}

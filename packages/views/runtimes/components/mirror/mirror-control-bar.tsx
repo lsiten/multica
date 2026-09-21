@@ -2,7 +2,7 @@
 
 import type { TFunction } from "i18next";
 import { Mic, MousePointer2, OctagonX, SquareMousePointer, Type } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type {
   RuntimeDevice,
   VscreenCommandKind,
@@ -16,6 +16,7 @@ import { Input } from "@multica/ui/components/ui/input";
 import { useT } from "../../../i18n";
 import type { MirrorControlState } from "./video-session";
 import { appSwitchModifiers } from "./mirror-shortcuts";
+import { MirrorVoiceInput } from "./mirror-voice-input";
 
 export function MirrorControlBar({
   scope,
@@ -58,13 +59,9 @@ export function MirrorControlBar({
 }) {
   const { t } = useT("runtimes");
   const [text, setText] = useState("");
-  const [recording, setRecording] = useState(false);
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(false);
-  const [voiceError, setVoiceError] = useState(false);
-  const recorder = useRef<MediaRecorder | null>(null);
-  const chunks = useRef<Blob[]>([]);
   const owner = runtime.owner_id === scope.accountId;
   const capabilities = Array.isArray(runtime.metadata.capabilities)
     ? runtime.metadata.capabilities.filter(
@@ -98,7 +95,7 @@ export function MirrorControlBar({
   const canSend = active || agentRoute;
 
   const sendType = async () => {
-    const value = text || voiceTranscript || "";
+    const value = text;
     if (!value || !canSend || sending) return;
     setSending(true);
     setSendError(false);
@@ -111,34 +108,6 @@ export function MirrorControlBar({
     } finally {
       setSending(false);
     }
-  };
-
-  const toggleVoice = () => {
-    if (recording) {
-      recorder.current?.stop();
-      return;
-    }
-    if (typeof MediaRecorder === "undefined") return;
-    void navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-      const next = new MediaRecorder(stream);
-      chunks.current = [];
-      next.ondataavailable = (event) => {
-        if (event.data.size > 0) chunks.current.push(event.data);
-      };
-      next.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        setRecording(false);
-        setInputMode("text");
-        const blob = new Blob(chunks.current, { type: next.mimeType || "audio/webm" });
-        void Promise.resolve(onVoice(blob)).catch(() => setVoiceError(true));
-      };
-      recorder.current = next;
-      setRecording(true);
-      next.start();
-    }).catch(() => {
-      setRecording(false);
-      setVoiceError(true);
-    });
   };
 
   return (
@@ -220,21 +189,20 @@ export function MirrorControlBar({
           />
         </label>
         ) : (
-          <Button
-            size="sm"
-            variant={recording ? "destructive" : "secondary"}
-            disabled={!active && !agentRoute}
-            onClick={toggleVoice}
-            aria-busy={recording}
-          >
-            <Mic className="size-4" />
-            {recording ? t(($) => $.vscreen.voice_stop) : t(($) => $.vscreen.voice_start)}
-          </Button>
+          <MirrorVoiceInput
+            enabled={canSend && videoReady && !sending}
+            transcript={voiceTranscript}
+            onVoice={onVoice}
+            onTranscript={(value) => {
+              setText((draft) => draft ? `${draft} ${value}` : value);
+              setInputMode("text");
+            }}
+          />
         )}
         {inputMode === "text" && <Button
           size="sm"
           variant="secondary"
-          disabled={!text && !voiceTranscript || !canSend || sending}
+          disabled={!text || !canSend || sending}
           aria-busy={sending}
           onClick={() => void sendType()}
         >
@@ -258,16 +226,13 @@ export function MirrorControlBar({
         <Button
           size="sm"
           variant="ghost"
-          disabled={recording}
           onClick={() => {
-            setVoiceError(false);
             setInputMode((mode) => mode === "text" ? "voice" : "text");
           }}
           aria-label={inputMode === "text" ? t(($) => $.vscreen.switch_to_voice) : t(($) => $.vscreen.switch_to_text)}
         >
           {inputMode === "text" ? <Mic className="size-4" /> : <Type className="size-4" />}
         </Button>
-        {voiceError && <span role="alert" className="text-caption text-destructive">{t(($) => $.vscreen.voice_failed)}</span>}
         {sendError && (
           <span role="alert" className="text-caption text-destructive">
             {t(($) => $.vscreen.send_failed)}

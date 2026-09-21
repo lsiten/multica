@@ -139,7 +139,10 @@ export function useVideoSession(
     startControl: () => currentSession?.startControl(),
     stopControl: () => currentSession?.stopControl(),
     sendInput: (input: MirrorControlInput) => currentSession?.sendInput(input),
-    sendVoice: (recording: Blob) => currentSession?.sendVoice(recording),
+    sendVoice: (recording: Blob) => {
+      setVoiceTranscript("");
+      return currentSession?.sendVoice(recording);
+    },
     voiceTranscript: current ? voiceTranscript : "",
     authorization: current ? authorization : null,
     authorizationPending,
