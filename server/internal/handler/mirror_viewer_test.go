@@ -345,9 +345,11 @@ func TestHandleDaemonMirrorDisconnectClosesPendingSignalingSessions(t *testing.T
 		t.Fatalf("consume mirror offer: %v", err)
 	}
 	h := &Handler{
-		DaemonHub:      daemonws.NewHub(),
-		MirrorSessions: sessions,
-		MirrorViewers:  mirror.NewViewerTracker(),
+		DaemonHub:           daemonws.NewHub(),
+		MirrorSessions:      sessions,
+		MirrorViewers:       mirror.NewViewerTracker(),
+		MirrorControlGrants: mirror.NewControlGrantStore(),
+		MirrorControlStates: mirror.NewControlStateTracker(),
 	}
 	daemonIdentity := daemonws.ClientIdentity{
 		DaemonID:     sessionIdentity.DaemonID,

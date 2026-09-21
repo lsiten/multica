@@ -52,7 +52,7 @@ func testVscreenManagedViewerRenewAndMemberRevocation(t *testing.T, version int)
 				daemonErrors <- err
 				return
 			}
-			source := protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "virtual"}, NativeEpoch: "native", Generation: "display"}, Name: "Virtual screen", Width: 1920, Height: 1080, Scale: 1}
+			source := protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "virtual"}, NativeEpoch: "native", Generation: "display"}, Name: "Virtual screen", Width: 1920, Height: 1080, Scale: 1, GeometryRevision: 1}
 			if version == 1 {
 				source.Source = protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "primary"}
 				source.Primary = true
