@@ -2141,6 +2141,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/mika", h.CreateMikaAgent)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetAgent)
+					r.With(handler.RequireHumanActor).Post("/voice/transcribe", h.TranscribeChatVoice)
 					r.Put("/", h.UpdateAgent)
 					r.Post("/archive", h.ArchiveAgent)
 					r.Post("/restore", h.RestoreAgent)

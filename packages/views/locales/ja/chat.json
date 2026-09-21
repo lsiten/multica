@@ -10,6 +10,10 @@
     "default": "Multica に質問"
   },
   "input": {
+    "voice_failed": "録音または文字起こしに失敗しました。マイクの権限と選択したランタイムを確認してください。",
+    "voice_upgrade_required": "音声入力にはサーバーと選択したランタイムの更新が必要です。",
+    "voice_unconfigured": "選択したランタイムで MULTICA_VOICE_TRANSCRIBER を設定して再起動してください。",
+    "voice_offline": "選択したランタイムはオフラインです。再接続してください。",
     "placeholder_no_agent": "チャットを始めるにはエージェントを作成してください",
     "placeholder_archived": "このセッションはアーカイブされています",
     "placeholder_archived_agent": "このエージェントはアーカイブされています",

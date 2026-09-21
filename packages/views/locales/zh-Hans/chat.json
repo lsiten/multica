@@ -10,6 +10,10 @@
     "default": "问 Multica"
   },
   "input": {
+    "voice_failed": "录音或转写失败，请检查麦克风权限和所选运行时后重试。",
+    "voice_upgrade_required": "请更新服务端和所选运行时后使用语音输入。",
+    "voice_unconfigured": "请在所选运行时配置 MULTICA_VOICE_TRANSCRIBER 并重启。",
+    "voice_offline": "所选运行时离线，请连接后重试。",
     "placeholder_no_agent": "创建一个智能体后才能开始对话",
     "placeholder_archived": "此会话已归档",
     "placeholder_archived_agent": "该智能体已归档",

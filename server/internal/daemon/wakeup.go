@@ -437,6 +437,8 @@ func (d *Daemon) readTaskWakeupMessagesForConnection(conn *websocket.Conn, taskW
 }
 
 func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Context, reader taskWakeupReader) error {
+	voice := &voiceRequests{ctx: ctx, d: d, reader: reader}
+	defer voice.close()
 	conn := reader.conn
 	taskWakeups := reader.taskWakeups
 	wsRPCGeneration := reader.wsRPCGeneration
@@ -527,6 +529,10 @@ func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Contex
 			d.handleVscreenCleanupAck(mirrorOfferMessage{raw: msg.Payload, controlGeneration: mirrorGeneration})
 		case protocol.EventVscreenQuery:
 			d.handleVscreenQuery(ctx, mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
+		case protocol.EventVoiceTranscribe:
+			voice.handle(msg.Payload)
+		case protocol.EventVoiceCancel:
+			voice.cancel(msg.Payload)
 		case protocol.EventVscreenCommand:
 			d.handleVscreenCommand(ctx, mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventMirrorOffer:

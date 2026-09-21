@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
-import { RESOURCES } from "../../../test/i18n";
-import { MirrorVoiceInput } from "./mirror-voice-input";
+import { RESOURCES } from "../../test/i18n";
+import { HoldToTalkInput } from "./hold-to-talk-input";
 
 const stopTrack = vi.fn();
 const stream = { getTracks: () => [{ stop: stopTrack }] };
@@ -27,7 +27,7 @@ class FakeRecorder {
 
 function view(transcript = "", enabled = true) {
   return <I18nProvider locale="en" resources={RESOURCES}>
-    <MirrorVoiceInput enabled={enabled} transcript={transcript} onVoice={onVoice} onTranscript={onTranscript} />
+    <HoldToTalkInput enabled={enabled} transcript={transcript} onVoice={onVoice} onTranscript={onTranscript} />
   </I18nProvider>;
 }
 async function hold() {
@@ -52,7 +52,34 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-describe("MirrorVoiceInput", () => {
+describe("HoldToTalkInput", () => {
+  it("accepts a direct transcription response without a mirror session", async () => {
+    const transcribe = vi.fn(async () => "Direct transcript");
+    render(<I18nProvider locale="en" resources={RESOURCES}>
+      <HoldToTalkInput enabled onVoice={transcribe} onTranscript={onTranscript} />
+    </I18nProvider>);
+    fireEvent.keyUp(await hold(), { key: " " });
+    await waitFor(() => expect(onTranscript).toHaveBeenCalledWith("Direct transcript"));
+  });
+
+  it("aborts pending transcription and ignores a late response after unmount", async () => {
+    let finish!: (text: string) => void;
+    let signal: AbortSignal | undefined;
+    const transcribe = vi.fn((_blob: Blob, requestSignal: AbortSignal) => {
+      signal = requestSignal;
+      return new Promise<string>((resolve) => { finish = resolve; });
+    });
+    const { unmount } = render(<I18nProvider locale="en" resources={RESOURCES}>
+      <HoldToTalkInput enabled onVoice={transcribe} onTranscript={onTranscript} />
+    </I18nProvider>);
+    fireEvent.keyUp(await hold(), { key: " " });
+    await waitFor(() => expect(transcribe).toHaveBeenCalledOnce());
+    unmount();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => finish("Late transcript"));
+    expect(onTranscript).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("handles pointer release with slide cancellation %s", async (cancel) => {
     render(view());
     const button = screen.getByRole("button", { name: "Hold to talk" });

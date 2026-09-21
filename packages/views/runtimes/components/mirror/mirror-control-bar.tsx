@@ -16,7 +16,7 @@ import { Input } from "@multica/ui/components/ui/input";
 import { useT } from "../../../i18n";
 import type { MirrorControlState } from "./video-session";
 import { appSwitchModifiers } from "./mirror-shortcuts";
-import { MirrorVoiceInput } from "./mirror-voice-input";
+import { HoldToTalkInput } from "../../../common/voice/hold-to-talk-input";
 
 export function MirrorControlBar({
   scope,
@@ -189,7 +189,7 @@ export function MirrorControlBar({
           />
         </label>
         ) : (
-          <MirrorVoiceInput
+          <HoldToTalkInput
             enabled={canSend && videoReady && !sending}
             transcript={voiceTranscript}
             onVoice={onVoice}

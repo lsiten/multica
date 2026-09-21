@@ -1,4 +1,5 @@
 import { createVscreenApi, VscreenScopeError } from "./vscreen";
+import { VoiceTranscriptSchema, voiceAudioPayload } from "./voice";
 import type { MirrorSourceBinding, VscreenScope } from "../types/vscreen";
 import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
@@ -3852,6 +3853,17 @@ export class ApiClient {
     return parseWithFallback(raw, ChatMessageListSchema, EMPTY_CHAT_MESSAGE_LIST, {
       endpoint: "GET /api/chat/sessions/:id/messages",
     });
+  }
+
+  async transcribeChatVoice(agentId: string, recording: Blob, signal: AbortSignal): Promise<string> {
+    const body = await voiceAudioPayload(recording, signal);
+    const endpoint = `/api/agents/${encodeURIComponent(agentId)}/voice/transcribe`;
+    const raw: unknown = await this.fetch(endpoint, {
+      method: "POST", body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(28_000)]),
+    });
+    const result = parseWithFallback<{ text: string } | null>(raw, VoiceTranscriptSchema, null, { endpoint });
+    if (!result) throw new Error("invalid_voice_transcript");
+    return result.text;
   }
 
   async listChatMessagesPage(
