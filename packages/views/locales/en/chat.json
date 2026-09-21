@@ -11,6 +11,10 @@
     "default": "Ask Multica"
   },
   "input": {
+    "voice_failed": "Could not record or transcribe. Check microphone access and the selected runtime, then retry.",
+    "voice_upgrade_required": "Update the server and selected runtime to use voice input.",
+    "voice_unconfigured": "Configure MULTICA_VOICE_TRANSCRIBER on the selected runtime, then restart it.",
+    "voice_offline": "The selected runtime is offline. Reconnect and try again.",
     "placeholder_no_agent": "Create an agent to start chatting",
     "placeholder_archived": "This session is archived",
     "placeholder_archived_agent": "This agent has been archived",

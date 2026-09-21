@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { renderWithI18n } from "../../../test/i18n";
 import { MirrorControlBar } from "./mirror-control-bar";
 
-vi.mock("./mirror-voice-input", () => ({
-  MirrorVoiceInput: ({ onTranscript }: { onTranscript: (text: string) => void }) =>
+vi.mock("../../../common/voice/hold-to-talk-input", () => ({
+  HoldToTalkInput: ({ onTranscript }: { onTranscript: (text: string) => void }) =>
     <button onClick={() => onTranscript("Recognized words")}>Finish transcription</button>,
 }));
 

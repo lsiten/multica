@@ -4,9 +4,10 @@ import { AudioLines, LoaderCircle, Mic } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
-import { useT } from "../../../i18n";
+import { useT } from "../../i18n";
 
 type Capture = {
+  controller: AbortController;
   recorder?: MediaRecorder;
   stream?: MediaStream;
   timer?: ReturnType<typeof setTimeout>;
@@ -16,16 +17,18 @@ type Capture = {
 
 function dispose(capture: Capture) {
   capture.cancelled = true;
+  capture.controller.abort();
   clearTimeout(capture.timer);
   if (capture.recorder?.state === "recording") capture.recorder.stop();
   capture.stream?.getTracks().forEach((track) => track.stop());
 }
 
-export function MirrorVoiceInput({ enabled, transcript, onVoice, onTranscript }: {
+export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, errorMessage }: {
   readonly enabled: boolean;
   readonly transcript?: string;
-  readonly onVoice: (recording: Blob) => Promise<void> | void;
+  readonly onVoice: (recording: Blob, signal: AbortSignal) => Promise<string | void> | void;
   readonly onTranscript: (text: string) => void;
+  readonly errorMessage?: string;
 }) {
   const { t } = useT("runtimes");
   const [phase, setPhase] = useState<"idle" | "requesting" | "recording" | "transcribing">("idle");
@@ -105,7 +108,7 @@ export function MirrorVoiceInput({ enabled, transcript, onVoice, onTranscript }:
       setError(true);
       return;
     }
-    const current: Capture = { cancelled: false, released: false };
+    const current: Capture = { cancelled: false, released: false, controller: new AbortController() };
     capture.current = current;
     setPhase("requesting");
     try {
@@ -134,7 +137,16 @@ export function MirrorVoiceInput({ enabled, transcript, onVoice, onTranscript }:
         }
         setPhase("transcribing");
         current.timer = setTimeout(() => fail(current), 30_000);
-        void Promise.resolve().then(() => onVoice(blob)).catch(() => fail(current));
+        void Promise.resolve().then(() => {
+          if (!current.cancelled) return onVoice(blob, current.controller.signal);
+        }).then((text) => {
+          if (typeof text !== "string" || capture.current !== current || current.cancelled) return;
+          if (!text.trim()) { fail(current); return; }
+          dispose(current);
+          capture.current = null;
+          setPhase("idle");
+          onTranscript(text);
+        }).catch(() => fail(current));
       };
       recorder.start();
       setPhase("recording");
@@ -201,7 +213,7 @@ export function MirrorVoiceInput({ enabled, transcript, onVoice, onTranscript }:
           <span className="text-body text-foreground">{t(($) => $.vscreen.voice_cancel_hint)}</span>
         </div>
       )}
-      {error && <p role="alert" className="mt-1 text-caption text-destructive">{t(($) => $.vscreen.voice_failed)}</p>}
+      {error && <p role="alert" className="mt-1 text-caption text-destructive">{errorMessage || t(($) => $.vscreen.voice_failed)}</p>}
     </div>
   );
 }

@@ -16,6 +16,10 @@ const mockApiUploadFile = vi.hoisted(() => vi.fn());
 // Observability for the write-back insert path: a settle whose mount died
 // delivers into the live editor through this method.
 const insertMarkdownSpy = vi.hoisted(() => vi.fn());
+vi.mock("./chat-voice-input", () => ({
+  ChatVoiceInput: ({ onTranscript, disabled }: { onTranscript: (text: string) => void; disabled: boolean }) =>
+    <button disabled={disabled} onClick={() => onTranscript("Voice <text>")}>Voice input fixture</button>,
+}));
 
 // The real handle mints an id when it inserts the placeholder and hands it to
 // the uploader, which adopts it as the draft `clientUploadId`. Mocks must do
@@ -376,6 +380,14 @@ function element(props: Partial<React.ComponentProps<typeof ChatInput>>) {
     </I18nProvider>
   );
 }
+
+it("appends voice text to the live draft without sending or interpreting markup", () => {
+  const { onSend } = renderInput({ agentId: "agent" });
+  fireEvent.change(screen.getByTestId("editor"), { target: { value: "Existing draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Voice input fixture" }));
+  expect(insertMarkdownSpy).toHaveBeenCalledWith("Voice \\<text\\>");
+  expect(onSend).not.toHaveBeenCalled();
+});
 
 // MUL-4864: an uncreated chat has ONE draft per workspace. `selectedAgentId`
 // picks where the first send goes; it does not own the draft. Switching agent

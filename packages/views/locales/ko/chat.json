@@ -10,6 +10,10 @@
     "default": "Multica에 묻기"
   },
   "input": {
+    "voice_failed": "녹음 또는 변환에 실패했습니다. 마이크 권한과 선택한 런타임을 확인 후 다시 시도하세요.",
+    "voice_upgrade_required": "음성 입력을 사용하려면 서버와 선택한 런타임을 업데이트하세요.",
+    "voice_unconfigured": "선택한 런타임에 MULTICA_VOICE_TRANSCRIBER를 설정하고 다시 시작하세요.",
+    "voice_offline": "선택한 런타임이 오프라인입니다. 연결 후 다시 시도하세요.",
     "placeholder_no_agent": "채팅을 시작하려면 에이전트를 만드세요",
     "placeholder_archived": "보관된 세션입니다",
     "placeholder_archived_agent": "보관된 에이전트입니다",

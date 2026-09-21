@@ -328,6 +328,7 @@ type MessageKindRecorder interface {
 // Hub keeps daemon WebSocket connections indexed by runtime ID. Messages are
 // best-effort wakeup hints; the daemon still uses HTTP claim for correctness.
 type Hub struct {
+	voicePending      map[string]*voicePending
 	vscreenPending    map[string]*vscreenPending
 	interventionMu    sync.RWMutex
 	onIntervention    VscreenInterventionHandler
@@ -1105,6 +1106,8 @@ func (c *client) handleFrame(raw []byte) {
 	switch msg.Type {
 	case protocol.EventVscreenIntervention:
 		c.handleVscreenIntervention(msg.Payload)
+	case protocol.EventVoiceTranscript:
+		c.handleVoiceResult(msg.Payload)
 	case protocol.EventVscreenResult:
 		c.handleVscreenReceipt(msg.Payload)
 	case protocol.EventVscreenQueryResult:

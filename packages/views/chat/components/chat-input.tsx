@@ -19,6 +19,7 @@ import {
 } from "../../editor/use-coordinated-uploads";
 import { SubmitButton } from "@multica/ui/components/common/submit-button";
 import { ChatAddMenu } from "./chat-add-menu";
+import { ChatVoiceInput } from "./chat-voice-input";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { useChatStore, DRAFT_NEW_SESSION } from "@multica/core/chat";
 import { attachmentToDraftUpload, type DraftUpload } from "@multica/core/drafts";
@@ -118,6 +119,7 @@ interface ChatInputProps {
   agentRuntimeRequired?: boolean;
   /** Name of the currently selected agent, used in the placeholder. */
   agentName?: string;
+  agentId?: string;
   /** Rendered at the bottom-left of the input bar — typically the agent picker. */
   leftAdornment?: ReactNode;
   /** Chat @ suggestions: current/recent issue/project entries. */
@@ -162,6 +164,7 @@ export function ChatInput({
   agentAccessRevoked,
   agentRuntimeRequired,
   agentName,
+  agentId,
   leftAdornment,
   contextItems,
   projects = [],
@@ -732,6 +735,21 @@ export function ChatInput({
           </div>
         )}
         <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
+          {agentId && <ChatVoiceInput
+            key={JSON.stringify([draftKey, agentId])}
+            agentId={agentId}
+            disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
+            onTranscript={(text) => {
+              if (editorDraftKeyRef.current !== draftKey) return;
+              const escaped = text.replace(/[\\`*_{}[\]()#+.!<>~-]/g, "\\$&");
+              if (editorRef.current?.insertMarkdownAtEnd(escaped)) {
+                const markdown = editorRef.current.flushPendingUpdate();
+                if (markdown != null) commitDraft(draftKey, markdown);
+                setIsEmpty(false);
+                editorRef.current.focus();
+              }
+            }}
+          />}
           <SubmitButton
             onClick={submit}
             disabled={hasNothingToSend || submitting || !!disabled || !!noAgent}

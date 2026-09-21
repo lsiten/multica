@@ -1015,6 +1015,7 @@ export function ChatWindow() {
         agentAccessRevoked={isAgentAccessRevoked}
         agentRuntimeRequired={!activeAgentRuntimeBound}
         agentName={activeAgent?.name}
+        agentId={activeAgent?.id}
         projects={projects}
         projectId={activeProjectId}
         onProjectChange={handleProjectChange}

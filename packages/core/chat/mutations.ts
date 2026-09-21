@@ -12,6 +12,15 @@ import type {
 
 const logger = createLogger("chat.mut");
 
+export function useTranscribeChatVoice() {
+  return useMutation({
+    mutationFn: ({ agentId, recording, signal }: { agentId: string; recording: Blob; signal: AbortSignal }) =>
+      api.transcribeChatVoice(agentId, recording, signal),
+    retry: false,
+    gcTime: 0,
+  });
+}
+
 /**
  * Consume a deferred-cancellation draft restore (#5219) after the composer has
  * applied it. The endpoint is idempotent, so consuming twice — or consuming a

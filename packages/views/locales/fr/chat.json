@@ -11,6 +11,10 @@
     "default": "Demander à Multica"
   },
   "input": {
+    "voice_failed": "Échec de l’enregistrement ou de la transcription. Vérifiez le microphone et le runtime sélectionné, puis réessayez.",
+    "voice_upgrade_required": "Mettez à jour le serveur et le runtime sélectionné pour utiliser la saisie vocale.",
+    "voice_unconfigured": "Configurez MULTICA_VOICE_TRANSCRIBER sur le runtime sélectionné, puis redémarrez-le.",
+    "voice_offline": "Le runtime sélectionné est hors ligne. Reconnectez-le et réessayez.",
     "placeholder_no_agent": "Créez un agent pour commencer à discuter",
     "placeholder_archived": "Cette session est archivée",
     "placeholder_archived_agent": "Cet agent a été archivé",
