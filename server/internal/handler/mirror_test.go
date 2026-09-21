@@ -62,6 +62,10 @@ func TestCreateMirrorSessionConsumesOfferBeforeDaemonAnswer(t *testing.T) {
 		t.Fatalf("connect daemon websocket: %v: %s", err, body)
 	}
 	defer conn.Close()
+	deadline := time.Now().Add(time.Second)
+	for testHandler.DaemonHub.RuntimeConnectionCount(runtimeID) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if got := testHandler.DaemonHub.RuntimeConnectionCount(runtimeID); got != 1 {
 		t.Fatalf("runtime connection count = %d, want 1", got)
 	}
