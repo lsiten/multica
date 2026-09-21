@@ -31,8 +31,8 @@ type NetworkSettings struct {
 	Mode       string                `json:"mode"`
 	Servers    []StoredICEServer     `json:"servers"`
 	Cloudflare *StoredCloudflareTURN `json:"cloudflare,omitempty"`
-	// ViewerNotificationsEnabled controls inbox items for mirror
-	// start/stop. A pointer lets absent/legacy settings default to enabled
+	// ViewerNotificationsEnabled controls inbox items for mirror viewing and
+	// remote control start/stop. A pointer lets absent/legacy settings default to enabled
 	// while an explicit false stays distinguishable.
 	ViewerNotificationsEnabled *bool `json:"viewer_notifications_enabled,omitempty"`
 }

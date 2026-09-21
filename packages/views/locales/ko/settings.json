@@ -1490,7 +1490,7 @@
     "notifications_title": "알림",
     "notifications_description": "화면 미러링으로 생성되는 받은편지함 알림을 관리합니다.",
     "notifications_inbox_label": "받은편지함 알림",
-    "notifications_inbox_description": "런타임 화면 보기가 시작되거나 종료될 때 받은편지함 알림을 보냅니다.",
+    "notifications_inbox_description": "저장 후 화면 보기와 원격 제어의 시작·종료에 대한 새 알림에 적용됩니다. 기존 알림은 유지됩니다.",
     "log": {
       "title": "미러링 로그",
       "description": "최근 미러링 세션, 응답, 실패 및 시청 활동입니다.",

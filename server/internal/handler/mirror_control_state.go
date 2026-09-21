@@ -182,6 +182,9 @@ func (h *Handler) createMirrorControlNotice(
 	active bool,
 	payload protocol.MirrorControlStatePayload,
 ) error {
+	if !h.mirrorInboxNotificationsEnabled(ctx, rt) {
+		return nil
+	}
 	state := "stopped"
 	itemType := protocol.InboxTypeRuntimeControlStopped
 	name := mirrorRuntimeNoticeName(rt)
