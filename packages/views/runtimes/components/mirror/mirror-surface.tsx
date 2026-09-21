@@ -394,6 +394,7 @@ export function MirrorSurface({
           onStopControl={() => void video.stopControl()}
           onType={sendType}
           onKey={sendKey}
+          clientOS={typeof runtime.metadata.client_os === "string" ? runtime.metadata.client_os : runtime.device_info}
           onVoice={(recording) => video.sendVoice(recording)}
           voiceTranscript={video.voiceTranscript}
           agents={(agents.data ?? []).filter((agent) => agent.runtime_id === runtime.id && !agent.archived_at).map((agent) => ({ id: agent.id, name: agent.name }))}
