@@ -1497,7 +1497,7 @@
     "notifications_title": "Notifications",
     "notifications_description": "Gérez les notifications de boîte de réception générées par la diffusion d’écran.",
     "notifications_inbox_label": "Notifications de boîte de réception",
-    "notifications_inbox_description": "Envoyer une notification lorsqu’une personne commence ou cesse de consulter l’écran d’un environnement d’exécution.",
+    "notifications_inbox_description": "Après enregistrement, s’applique aux nouvelles notifications de début et de fin de visualisation ou de contrôle à distance. Les notifications existantes sont conservées.",
     "log": {
       "title": "Journaux de diffusion",
       "description": "Sessions récentes, réponses, échecs et activité des spectateurs.",

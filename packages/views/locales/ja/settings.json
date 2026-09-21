@@ -1490,7 +1490,7 @@
     "notifications_title": "通知",
     "notifications_description": "画面ミラーリングの受信トレイ通知を管理します。",
     "notifications_inbox_label": "受信トレイ通知",
-    "notifications_inbox_description": "ランタイム画面の視聴が開始または終了されたときに受信トレイへ通知します。",
+    "notifications_inbox_description": "保存後、画面の視聴やリモート操作の開始・終了に関する新しい通知に適用されます。既存の通知は保持されます。",
     "log": {
       "title": "ミラーログ",
       "description": "最近のミラーセッション、応答、失敗、視聴アクティビティ。",

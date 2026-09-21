@@ -88,21 +88,26 @@ func (h *Handler) HandleDaemonMirrorViewer(ctx context.Context, identity daemonw
 	return h.notifyMirrorViewer(ctx, rt, payload.Active)
 }
 
-// notifyMirrorViewerNotice writes the viewer inbox item unless the workspace
-// explicitly disabled mirror viewer notifications. Settings parse failures
-// fall back to notifying (legacy behaviour).
-func (h *Handler) notifyMirrorViewer(ctx context.Context, rt db.AgentRuntime, active bool) error {
+// mirrorInboxNotificationsEnabled applies the workspace preference to both
+// viewer and controller lifecycle notifications. Invalid legacy settings keep
+// the existing default of notifying.
+func (h *Handler) mirrorInboxNotificationsEnabled(ctx context.Context, rt db.AgentRuntime) bool {
 	ws, wsErr := h.Queries.GetWorkspace(ctx, rt.WorkspaceID)
 	if wsErr != nil {
-		slog.Warn("mirror viewer: load workspace settings failed", "runtime_id", util.UUIDToString(rt.ID), "error", wsErr)
-		return nil
+		slog.Warn("mirror: load workspace notification settings failed", "runtime_id", util.UUIDToString(rt.ID), "error", wsErr)
+		return false
 	}
 	wsSettings, parseErr := mirror.ParseNetworkSettings(ws.Settings)
-	if parseErr != nil || wsSettings.ViewerNotifications() {
-		if err := h.createMirrorViewerNotice(ctx, rt, active); err != nil {
-			slog.Warn("mirror viewer inbox write failed", "runtime_id", util.UUIDToString(rt.ID), "active", active, "error", err)
-			return err
-		}
+	return parseErr != nil || wsSettings.ViewerNotifications()
+}
+
+func (h *Handler) notifyMirrorViewer(ctx context.Context, rt db.AgentRuntime, active bool) error {
+	if !h.mirrorInboxNotificationsEnabled(ctx, rt) {
+		return nil
+	}
+	if err := h.createMirrorViewerNotice(ctx, rt, active); err != nil {
+		slog.Warn("mirror viewer inbox write failed", "runtime_id", util.UUIDToString(rt.ID), "active", active, "error", err)
+		return err
 	}
 	return nil
 }

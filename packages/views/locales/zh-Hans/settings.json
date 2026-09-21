@@ -1490,7 +1490,7 @@
     "notifications_title": "通知",
     "notifications_description": "管理屏幕镜像产生的收件箱通知。",
     "notifications_inbox_label": "收件箱通知",
-    "notifications_inbox_description": "当有人开始或停止观看运行时屏幕时，发送收件箱通知。",
+    "notifications_inbox_description": "保存后，对观看和远程控制的开始、结束通知生效；已有通知保留。",
     "log": {
       "title": "镜像日志",
       "description": "最近的镜像会话、应答、失败和观看活动。",
