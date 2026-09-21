@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemonws"
 	"github.com/multica-ai/multica/server/internal/events"
@@ -61,6 +62,7 @@ func TestHandleDaemonMirrorDisconnectClearsControlState(t *testing.T) {
 		RuntimeIDs:   []string{runtimeID},
 	}
 	payload := protocol.MirrorControlStatePayload{
+		Active:      true,
 		WorkspaceID: testWorkspaceID,
 		RuntimeID:   runtimeID,
 		DaemonID:    daemonID,
@@ -71,8 +73,13 @@ func TestHandleDaemonMirrorDisconnectClearsControlState(t *testing.T) {
 	if err := h.HandleDaemonMirrorControlState(context.Background(), identity, payload); err != nil {
 		t.Fatalf("start mirror control: %v", err)
 	}
-	if got := <-controlEvents; len(got.Controllers) != 1 {
-		t.Fatalf("active control event = %+v, want one controller", got)
+	select {
+	case got := <-controlEvents:
+		if len(got.Controllers) != 1 {
+			t.Fatalf("active control event = %+v, want one controller", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the active mirror control event")
 	}
 
 	h.HandleDaemonMirrorDisconnect(context.Background(), identity)
@@ -80,8 +87,13 @@ func TestHandleDaemonMirrorDisconnectClearsControlState(t *testing.T) {
 	if got := h.MirrorControlStates.Snapshot(runtimeID); len(got) != 0 {
 		t.Fatalf("controllers after disconnect = %+v, want empty", got)
 	}
-	if got := <-controlEvents; len(got.Controllers) != 0 {
-		t.Fatalf("disconnect control event = %+v, want no controllers", got)
+	select {
+	case got := <-controlEvents:
+		if len(got.Controllers) != 0 {
+			t.Fatalf("disconnect control event = %+v, want no controllers", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the disconnected mirror control event")
 	}
 	notices := listMirrorControlNotices(t, runtimeID)
 	if len(notices) != 2 || notices[0] != protocol.InboxTypeRuntimeControlStarted || notices[1] != protocol.InboxTypeRuntimeControlStopped {
@@ -109,6 +121,7 @@ func TestHandleDaemonMirrorDisconnectKeepsControlStateServedByAnotherConnection(
 	defer func() { _ = conn.Close() }()
 
 	payload := protocol.MirrorControlStatePayload{
+		Active:      true,
 		WorkspaceID: testWorkspaceID,
 		RuntimeID:   runtimeID,
 		DaemonID:    daemonID,

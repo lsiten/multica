@@ -136,7 +136,7 @@ func TestVscreenRegressionPATGrantCreationRevalidatesCache(t *testing.T) {
 					done <- err
 					return
 				}
-				source := protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "primary"}, NativeEpoch: "native", Generation: "display", Primary: true}, Scale: 1}
+				source := protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "primary"}, NativeEpoch: "native", Generation: "display", Primary: true}, Scale: 1, GeometryRevision: 1}
 				raw, err := json.Marshal(protocol.VscreenQueryResult{VscreenEnvelope: query.VscreenEnvelope, Sources: []protocol.VscreenSourceDescriptor{source}})
 				if err != nil {
 					done <- err
@@ -263,7 +263,7 @@ func TestVscreenRegressionConcurrentRenewKeepsViewer(t *testing.T) {
 		return query
 	}
 	respond := func(query protocol.VscreenQuery) {
-		source := protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "primary"}, NativeEpoch: "native", Generation: "display", Primary: true}, Scale: 1}
+		source := protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "primary"}, NativeEpoch: "native", Generation: "display", Primary: true}, Scale: 1, GeometryRevision: 1}
 		raw, err := json.Marshal(protocol.VscreenQueryResult{VscreenEnvelope: query.VscreenEnvelope, Sources: []protocol.VscreenSourceDescriptor{source}})
 		if err != nil {
 			t.Fatal(err)

@@ -44,7 +44,7 @@ func TestVscreenHTTPSourceCatalogAndOwnerCommand(t *testing.T) {
 		}
 		sources := []protocol.VscreenSourceDescriptor{}
 		for _, kind := range []protocol.MirrorSourceKind{protocol.MirrorSourceVirtual, protocol.MirrorSourcePhysical} {
-			sources = append(sources, protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: kind, SourceID: string(kind)}, NativeEpoch: "native", Generation: "display", Primary: kind == protocol.MirrorSourcePhysical}, Name: string(kind), Width: 1920, Height: 1080, Scale: 1})
+			sources = append(sources, protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: kind, SourceID: string(kind)}, NativeEpoch: "native", Generation: "display", Primary: kind == protocol.MirrorSourcePhysical}, Name: string(kind), Width: 1920, Height: 1080, Scale: 1, GeometryRevision: 1})
 		}
 		raw, err := json.Marshal(protocol.VscreenQueryResult{VscreenEnvelope: query.VscreenEnvelope, Sources: sources})
 		if err != nil {
