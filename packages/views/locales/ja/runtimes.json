@@ -640,6 +640,7 @@
     "clear_screen": "会話を非表示",
     "show_chat": "会話を表示",
     "chat_overlay": "リアルタイムの会話",
+    "chat_you": "あなた",
     "external_text": "リモートのクリップボードを使わずにテキストを入力",
     "type_text": "テキスト入力",
     "sending": "送信中…",

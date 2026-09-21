@@ -24,7 +24,7 @@ import {
   chatSessionsOptions,
   pendingChatTaskOptions,
 } from "@multica/core/chat/queries";
-import { ChatMessageList } from "../../../chat/components/chat-message-list";
+import { MirrorChatOverlay } from "./mirror-chat-overlay";
 import { Button } from "@multica/ui/components/ui/button";
 import { useT } from "../../../i18n";
 import { useVideoSession } from "./use-video-session";
@@ -367,22 +367,12 @@ export function MirrorSurface({
           </div>
         )}
         {!compact && !clearScreen && selectedAgent && chatSessionId && (
-          <aside
-            aria-label={t(($) => $.vscreen.chat_overlay)}
-            className="absolute bottom-3 right-3 flex h-[55%] max-h-72 w-[min(24rem,calc(100%-1.5rem))] min-w-0 flex-col overflow-hidden rounded-xl border bg-background/85 shadow-lg backdrop-blur-md sm:w-[38%]"
-          >
-            <div className="shrink-0 truncate px-3 py-2 text-caption font-medium">
-              {selectedAgent.name}
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <ChatMessageList
-                key={chatSessionId}
-                messages={chatMessages.data ?? []}
-                pendingTask={pendingChatTask.data}
-                availability={undefined}
-              />
-            </div>
-          </aside>
+          <MirrorChatOverlay
+            key={chatSessionId}
+            agentName={selectedAgent.name}
+            messages={chatMessages.data ?? []}
+            pendingTask={pendingChatTask.data}
+          />
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-caption text-muted-foreground">

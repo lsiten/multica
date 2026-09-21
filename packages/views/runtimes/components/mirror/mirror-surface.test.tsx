@@ -73,8 +73,8 @@ vi.mock("@multica/core/chat/queries", () => ({
   chatMessagesOptions: () => ({ queryKey: ["messages"], queryFn: async () => [] }),
   pendingChatTaskOptions: () => ({ queryKey: ["pending-task"], queryFn: async () => null }),
 }));
-vi.mock("../../../chat/components/chat-message-list", () => ({
-  ChatMessageList: () => <div>Conversation content</div>,
+vi.mock("./mirror-chat-overlay", () => ({
+  MirrorChatOverlay: () => <aside aria-label="Live conversation" className="absolute bottom-3 right-3">Conversation content</aside>,
 }));
 
 vi.mock("@tanstack/react-query", async () => {
