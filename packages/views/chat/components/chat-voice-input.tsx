@@ -1,7 +1,7 @@
 "use client";
 
 import { Mic, Type } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@multica/ui/components/ui/button";
 import { ApiError } from "@multica/core/api";
 import { useTranscribeChatVoice } from "@multica/core/chat/mutations";
@@ -16,6 +16,7 @@ export function ChatVoiceInput({ agentId, disabled, onTranscript }: {
   const { t } = useT("runtimes");
   const { t: tChat } = useT("chat");
   const [open, setOpen] = useState(false);
+  const voicePanel = useRef<HTMLDivElement>(null);
   const transcription = useTranscribeChatVoice();
   const error = transcription.error;
   const errorMessage = error instanceof ApiError
@@ -27,8 +28,15 @@ export function ChatVoiceInput({ agentId, disabled, onTranscript }: {
           ? tChat(($) => $.input.voice_offline)
           : undefined
     : undefined;
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+  useEffect(() => {
+    if (!open || disabled) return;
+    voicePanel.current?.querySelector<HTMLButtonElement>("button")?.focus();
+  }, [open, disabled]);
   return <div className="relative">
-    {open && !disabled && <div className="absolute bottom-full right-0 mb-2 w-64 max-w-[70vw] rounded-lg border bg-popover p-2 shadow-lg">
+    {open && !disabled && <div ref={voicePanel} role="dialog" aria-label={t(($) => $.vscreen.switch_to_voice)} className="absolute bottom-full right-0 z-20 mb-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border bg-popover p-2 shadow-lg">
       <HoldToTalkInput
         enabled={!disabled}
         errorMessage={errorMessage ?? tChat(($) => $.input.voice_failed)}

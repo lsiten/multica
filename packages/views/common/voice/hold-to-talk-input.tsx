@@ -15,6 +15,19 @@ type Capture = {
   released: boolean;
 };
 
+const RECORDING_LIMIT_MS = 60_000;
+
+function supportedMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return undefined;
+  return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"]
+    .find((type) => MediaRecorder.isTypeSupported(type));
+}
+
+function formatDuration(durationMs: number): string {
+  const seconds = Math.floor(durationMs / 1000);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function dispose(capture: Capture) {
   capture.cancelled = true;
   capture.controller.abort();
@@ -34,10 +47,20 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   const [phase, setPhase] = useState<"idle" | "requesting" | "recording" | "transcribing">("idle");
   const [cancelGesture, setCancelGesture] = useState(false);
   const [error, setError] = useState(false);
+  const [recordingMs, setRecordingMs] = useState(0);
   const capture = useRef<Capture | null>(null);
   const cancelOnRelease = useRef(false);
   const pointer = useRef<number | null>(null);
+  const recordingStartedAt = useRef<number | null>(null);
   const previousTranscript = useRef(transcript);
+
+  useEffect(() => {
+    if (phase !== "recording" || recordingStartedAt.current === null) return;
+    const timer = window.setInterval(() => {
+      setRecordingMs(Date.now() - (recordingStartedAt.current ?? Date.now()));
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [phase]);
 
   useEffect(() => {
     if (transcript === previousTranscript.current) return;
@@ -46,6 +69,8 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     if (!transcript || !current?.released || current.cancelled) return;
     dispose(current);
     capture.current = null;
+    recordingStartedAt.current = null;
+    setRecordingMs(0);
     setPhase("idle");
     onTranscript(transcript);
   }, [transcript, onTranscript]);
@@ -55,6 +80,8 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       if (capture.current) dispose(capture.current);
       capture.current = null;
       pointer.current = null;
+      recordingStartedAt.current = null;
+      setRecordingMs(0);
       setPhase("idle");
     };
     const onKey = (event: KeyboardEvent) => {
@@ -80,6 +107,8 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     if (capture.current !== current || current.cancelled) return;
     dispose(current);
     capture.current = null;
+    recordingStartedAt.current = null;
+    setRecordingMs(0);
     setPhase("idle");
     setError(true);
   };
@@ -92,6 +121,8 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     if (cancel || !current.recorder) {
       dispose(current);
       capture.current = null;
+      recordingStartedAt.current = null;
+      setRecordingMs(0);
       setPhase("idle");
       return;
     }
@@ -118,7 +149,11 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
         dispose(current);
         return;
       }
-      const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 48_000 });
+      const mimeType = supportedMimeType();
+      const recorder = new MediaRecorder(stream, {
+        audioBitsPerSecond: 48_000,
+        ...(mimeType ? { mimeType } : {}),
+      });
       current.recorder = recorder;
       const chunks: Blob[] = [];
       recorder.ondataavailable = (event) => {
@@ -144,13 +179,17 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
           if (!text.trim()) { fail(current); return; }
           dispose(current);
           capture.current = null;
+          recordingStartedAt.current = null;
+          setRecordingMs(0);
           setPhase("idle");
           onTranscript(text);
         }).catch(() => fail(current));
       };
       recorder.start();
+      recordingStartedAt.current = Date.now();
+      setRecordingMs(0);
       setPhase("recording");
-      current.timer = setTimeout(() => release(cancelOnRelease.current), 60_000);
+      current.timer = setTimeout(() => release(cancelOnRelease.current), RECORDING_LIMIT_MS);
     } catch {
       fail(current);
     }
@@ -209,6 +248,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
             <span role="status" className="text-body font-medium">
               {cancelGesture ? t(($) => $.vscreen.voice_cancel_release) : phase === "requesting" ? t(($) => $.vscreen.voice_requesting) : t(($) => $.vscreen.voice_release)}
             </span>
+            {phase === "recording" && <span className="font-mono text-caption tabular-nums opacity-80">{formatDuration(recordingMs)}</span>}
           </div>
           <span className="text-body text-foreground">{t(($) => $.vscreen.voice_cancel_hint)}</span>
         </div>
