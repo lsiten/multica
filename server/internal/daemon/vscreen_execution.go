@@ -110,17 +110,27 @@ func configuredUITARS(task Task) *computeruse.UITARS {
 	if endpoint == "" {
 		endpoint = env["OPENAI_API_BASE"]
 	}
+	style := "openai"
+	apiKey := env["OPENAI_API_KEY"]
+	if endpoint == "" && env["ANTHROPIC_API_KEY"] != "" {
+		endpoint = env["ANTHROPIC_BASE_URL"]
+		if endpoint == "" {
+			endpoint = "https://api.anthropic.com/v1/messages"
+		}
+		style = "anthropic"
+		apiKey = env["ANTHROPIC_API_KEY"]
+	}
 	if endpoint == "" {
 		return nil
 	}
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
+	if style == "openai" && !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint = strings.TrimRight(endpoint, "/") + "/chat/completions"
 	}
 	model := task.Agent.Model
 	if model == "" {
 		return nil
 	}
-	client, err := computeruse.NewUITARS(computeruse.UITARSConfig{Endpoint: endpoint, Model: model, APIKey: env["OPENAI_API_KEY"]})
+	client, err := computeruse.NewUITARS(computeruse.UITARSConfig{Endpoint: endpoint, Model: model, APIKey: apiKey, Style: style})
 	if err != nil {
 		return nil
 	}
