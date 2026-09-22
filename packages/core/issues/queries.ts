@@ -254,7 +254,7 @@ export const PAGINATED_CATEGORIES: readonly IssueStatusCategory[] = ALL_STATUSES
 
 /** Flatten a bucketed response to a single Issue[] for consumers that want the whole list. */
 export function flattenIssueBuckets(data: ListIssuesCache) {
-  const out = [];
+  const out: Issue[] = [];
   for (const status of PAGINATED_CATEGORIES) {
     const bucket = data.byStatus[status];
     if (bucket) out.push(...bucket.issues);
@@ -386,7 +386,7 @@ async function fetchProjectGanttIssues(
   projectId: string,
   assigneeTypes?: IssueAssigneeType[],
 ) {
-  const issues = [];
+  const issues: Issue[] = [];
   let offset = 0;
   while (offset < PROJECT_GANTT_MAX_ISSUES) {
     const res = await api.listIssues({

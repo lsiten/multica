@@ -1,3 +1,4 @@
+import { setupLocalVoice } from "./local-voice";
 import { VSCREEN_DESKTOP_CHANNEL, vscreenDesktopActionSchema } from "../shared/vscreen-desktop";
 import { ownedMirrorWindowIDs } from "./vscreen-exclusions";
 import { RuntimeMirrorWindowManager } from "./runtime-mirror-window-manager";
@@ -889,6 +890,7 @@ if (!gotTheLock) {
       }
     });
 
+    setupLocalVoice();
     desktopInitialized = true;
     createWindow();
 

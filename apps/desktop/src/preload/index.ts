@@ -1,3 +1,5 @@
+import { LOCAL_VOICE_CHANNEL, type LocalVoiceAPI } from "../shared/local-voice";
+declare global { interface Window { localVoiceAPI?: LocalVoiceAPI } }
 import { VSCREEN_DESKTOP_CHANNEL, type VscreenDesktopRequest, type VscreenDesktopResult } from "../shared/vscreen-desktop";
 import { exposeRuntimeMirrorAPI } from "./runtime-mirror";
 import { RUNTIME_MIRROR_ARGUMENT, RUNTIME_MIRROR_CHANNEL, type RuntimeMirrorWindowRequest } from "../shared/runtime-mirror-window";
@@ -318,6 +320,18 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:open-log-file"),
 };
 
+const localVoiceAPI: LocalVoiceAPI = {
+  getStatus: () => ipcRenderer.invoke(LOCAL_VOICE_CHANNEL.status),
+  retry: () => ipcRenderer.invoke(LOCAL_VOICE_CHANNEL.retry),
+  transcribe: (id, samples) => ipcRenderer.invoke(LOCAL_VOICE_CHANNEL.transcribe, id, samples),
+  cancel: (id) => ipcRenderer.send(LOCAL_VOICE_CHANNEL.cancel, id),
+  onStatus: (listener) => {
+    const handler = (_event: unknown, status: Awaited<ReturnType<LocalVoiceAPI["getStatus"]>>) => listener(status);
+    ipcRenderer.on(LOCAL_VOICE_CHANNEL.changed, handler);
+    return () => ipcRenderer.removeListener(LOCAL_VOICE_CHANNEL.changed, handler);
+  },
+};
+
 const updaterAPI = {
   onUpdateAvailable: (callback: (info: { version: string; releaseNotes?: string }) => void) => {
     const handler = (_: unknown, info: { version: string; releaseNotes?: string }) => callback(info);
@@ -354,6 +368,7 @@ if (process.argv.some((argument) => argument.startsWith(RUNTIME_MIRROR_ARGUMENT)
   contextBridge.exposeInMainWorld("desktopAPI", desktopAPI);
   contextBridge.exposeInMainWorld("daemonAPI", daemonAPI);
   contextBridge.exposeInMainWorld("updater", updaterAPI);
+  contextBridge.exposeInMainWorld("localVoiceAPI", localVoiceAPI);
 } else {
   // @ts-expect-error - fallback for non-isolated context
   window.electron = electronAPI;
@@ -363,4 +378,5 @@ if (process.argv.some((argument) => argument.startsWith(RUNTIME_MIRROR_ARGUMENT)
   window.daemonAPI = daemonAPI;
   // @ts-expect-error - fallback for non-isolated context
   window.updater = updaterAPI;
+  window.localVoiceAPI = localVoiceAPI;
 }

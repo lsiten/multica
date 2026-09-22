@@ -1,3 +1,5 @@
+import { LocalVoiceContext } from "@multica/views/platform";
+import { createLocalVoiceAdapter } from "./platform/local-voice";
 import ReactDOM from "react-dom/client";
 import { lazy, Suspense } from "react";
 const RuntimeMirrorApp = lazy(() => import("./components/runtime-mirror-window").then((module) => ({ default: module.RuntimeMirrorApp })));
@@ -40,8 +42,10 @@ if (import.meta.env.DEV && import.meta.env.VITE_REACT_GRAB) {
   document.head.appendChild(grab);
 }
 
+const localVoice = window.localVoiceAPI ? createLocalVoiceAdapter(window.localVoiceAPI) : null;
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <AppCrashBoundary>
-    <Suspense fallback={null}>{window.runtimeMirrorAPI ? <RuntimeMirrorApp /> : <App />}</Suspense>
+    <LocalVoiceContext value={localVoice}><Suspense fallback={null}>{window.runtimeMirrorAPI ? <RuntimeMirrorApp /> : <App />}</Suspense></LocalVoiceContext>
   </AppCrashBoundary>,
 );

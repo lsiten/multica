@@ -36,7 +36,8 @@
     "change_project_context": "Change project context",
     "remove_project_context": "Remove project context",
     "no_projects": "No projects yet",
-    "project_context_unsupported": "Project description won't apply — this agent's daemon needs an upgrade"
+    "project_context_unsupported": "Project description won't apply — this agent's daemon needs an upgrade",
+    "voice_setup_failed": "Voice setup failed. Retry from the desktop app."
   },
   "queue": {
     "title_one": "{{count}} queued message",
