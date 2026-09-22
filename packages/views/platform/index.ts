@@ -25,3 +25,4 @@ export {
   type ScrollRestorationAdapter,
   type ScrollRestorationEntry,
 } from "./scroll-restoration";
+export { LocalVoiceContext, useLocalVoice } from "./local-voice";

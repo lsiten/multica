@@ -15,3 +15,4 @@ export {
   type SystemNotificationPayload,
   type WebNotificationPermission,
 } from "./system-notification";
+export type { LocalVoiceStatus, LocalVoiceAdapter } from "./voice";

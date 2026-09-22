@@ -35,7 +35,8 @@
     "change_project_context": "更改项目上下文",
     "remove_project_context": "移除项目上下文",
     "no_projects": "还没有项目",
-    "project_context_unsupported": "项目描述不会生效——该智能体的守护进程版本过旧，需要升级"
+    "project_context_unsupported": "项目描述不会生效——该智能体的守护进程版本过旧，需要升级",
+    "voice_setup_failed": "语音引擎准备失败，请重试。"
   },
   "queue": {
     "title_other": "{{count}} 条排队消息",

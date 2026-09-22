@@ -1,3 +1,4 @@
+import type { LocalVoiceAPI } from "../shared/local-voice";
 import type { VscreenDesktopRequest, VscreenDesktopResult } from "../shared/vscreen-desktop";
 import type { RuntimeMirrorWindowRequest } from "../shared/runtime-mirror-window";
 import type { RuntimeMirrorPreloadAPI } from "./runtime-mirror";
@@ -186,6 +187,7 @@ interface UpdaterAPI {
 
 declare global {
   interface Window {
+    localVoiceAPI?: LocalVoiceAPI;
     runtimeMirrorAPI?: RuntimeMirrorPreloadAPI;
     electron: ElectronAPI;
     desktopAPI: DesktopAPI;

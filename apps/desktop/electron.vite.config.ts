@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   main: {
-    build: { rollupOptions: { preserveEntrySignatures: "strict", external: ["electron"], input: { index: resolve("src/main/index.ts"), "normal-startup": resolve("src/main/normal-startup.ts") }, output: { strictExecutionOrder: true, hoistTransitiveImports: false, format: "cjs", entryFileNames: "[name].js" } } },
+    build: { rollupOptions: { preserveEntrySignatures: "strict", external: ["electron", "@huggingface/transformers", "onnxruntime-node"], input: { index: resolve("src/main/index.ts"), "voice-worker": resolve("src/main/voice-worker.ts"), "normal-startup": resolve("src/main/normal-startup.ts") }, output: { strictExecutionOrder: true, hoistTransitiveImports: false, format: "cjs", entryFileNames: "[name].js" } } },
     // Workspace packages export TypeScript source, not Node-loadable bundles.
     plugins: [externalizeDepsPlugin({ exclude: ["@multica/core"] })],
   },
@@ -13,7 +13,7 @@ export default defineConfig({
     // One CJS bundle keeps sandboxed preload imports local; window context limits exposed APIs.
     build: {
       lib: { entry: resolve("src/preload/index.ts"), formats: ["cjs"], fileName: () => "index.js" },
-      rollupOptions: { external: ["electron"], output: { codeSplitting: false } },
+      rollupOptions: { external: ["electron", "@huggingface/transformers", "onnxruntime-node"], output: { codeSplitting: false } },
     },
     plugins: [externalizeDepsPlugin({ exclude: ["@electron-toolkit/preload"] })],
   },

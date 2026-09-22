@@ -35,7 +35,8 @@
     "change_project_context": "プロジェクトコンテキストを変更",
     "remove_project_context": "プロジェクトコンテキストを削除",
     "no_projects": "プロジェクトがまだありません",
-    "project_context_unsupported": "プロジェクトの説明は適用されません——このエージェントのデーモンのアップグレードが必要です"
+    "project_context_unsupported": "プロジェクトの説明は適用されません——このエージェントのデーモンのアップグレードが必要です",
+    "voice_setup_failed": "音声エンジンの準備に失敗しました。再試行してください。"
   },
   "queue": {
     "title_other": "キュー内のメッセージ {{count}} 件",
