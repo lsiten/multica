@@ -96,6 +96,57 @@ describe("HoldToTalkInput", () => {
     expect(stopTrack).toHaveBeenCalled();
   });
 
+  it("keeps the hold-to-talk surface above the current pointer", async () => {
+    render(view());
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    button.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 240, clientY: 420 });
+    const overlay = document.querySelector<HTMLElement>("[data-voice-overlay]");
+    expect(overlay).toHaveStyle({
+      left: "240px",
+      top: "420px",
+      transform: "translate(-50%, calc(-100% - 16px))",
+    });
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: 360, clientY: 300 });
+    expect(overlay).toHaveStyle({ left: "360px", top: "300px" });
+    fireEvent.pointerUp(button, { pointerId: 1 });
+  });
+
+  it("keeps long transcripts inside a narrow viewport", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.voiceOverlay !== undefined) {
+        return {
+          x: 0, y: 0, left: 0, top: 0, width: 280, height: 140,
+          right: 280, bottom: 140, toJSON: () => ({}),
+        };
+      }
+      return {
+        x: 0, y: 500, left: 0, top: 500, width: 160, height: 48,
+        right: 160, bottom: 548, toJSON: () => ({}),
+      };
+    });
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 568 });
+    const { rerender } = render(view());
+    const button = screen.getByRole("button", { name: "Hold to talk" });
+    button.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 16, clientY: 500 });
+    await screen.findByText("Release to transcribe");
+    rerender(view("这是一个很长的中文实时转写内容，用来验证边缘不会被裁剪"));
+    const overlay = document.querySelector<HTMLElement>("[data-voice-overlay]");
+    expect(overlay).toHaveStyle({ left: "156px", top: "500px" });
+    expect(screen.getByText("这是一个很长的中文实时转写内容，用来验证边缘不会被裁剪")).toBeInTheDocument();
+    fireEvent.pointerUp(button, { pointerId: 1 });
+  });
+
+  it("shows a transcript update while the microphone is still held", async () => {
+    const { rerender } = render(view());
+    const button = await hold();
+    rerender(view("Live words"));
+    expect(screen.getByText("Live words")).toBeInTheDocument();
+    fireEvent.keyUp(button, { key: " " });
+  });
+
   it("records only while held and returns transcription for editing on release", async () => {
     const { rerender } = render(view());
     const button = await hold();

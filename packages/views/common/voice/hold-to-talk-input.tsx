@@ -1,7 +1,7 @@
 "use client";
 
 import { AudioLines, LoaderCircle, Mic } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../../i18n";
@@ -11,11 +11,21 @@ type Capture = {
   recorder?: MediaRecorder;
   stream?: MediaStream;
   timer?: ReturnType<typeof setTimeout>;
+  transcriptAtStart: string | undefined;
   cancelled: boolean;
   released: boolean;
 };
 
 const RECORDING_LIMIT_MS = 60_000;
+const VOICE_OVERLAY_GAP = 16;
+const VOICE_OVERLAY_VIEWPORT_PADDING = 16;
+
+type PointerPosition = {
+  readonly x: number;
+  readonly y: number;
+};
+
+type OverlayPlacement = "above" | "below";
 
 function supportedMimeType(): string | undefined {
   if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return undefined;
@@ -26,6 +36,21 @@ function supportedMimeType(): string | undefined {
 function formatDuration(durationMs: number): string {
   const seconds = Math.floor(durationMs / 1000);
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function clampPointerPosition(clientX: number, clientY: number): PointerPosition {
+  const maxX = Math.max(
+    VOICE_OVERLAY_VIEWPORT_PADDING,
+    window.innerWidth - VOICE_OVERLAY_VIEWPORT_PADDING,
+  );
+  const maxY = Math.max(
+    VOICE_OVERLAY_VIEWPORT_PADDING,
+    window.innerHeight - VOICE_OVERLAY_VIEWPORT_PADDING,
+  );
+  return {
+    x: Math.min(maxX, Math.max(VOICE_OVERLAY_VIEWPORT_PADDING, clientX)),
+    y: Math.min(maxY, Math.max(VOICE_OVERLAY_VIEWPORT_PADDING, clientY)),
+  };
 }
 
 function dispose(capture: Capture) {
@@ -48,9 +73,13 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   const [cancelGesture, setCancelGesture] = useState(false);
   const [error, setError] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
+  const [pointerPosition, setPointerPosition] = useState<PointerPosition | null>(null);
+  const [overlayAnchor, setOverlayAnchor] = useState<PointerPosition | null>(null);
+  const [overlayPlacement, setOverlayPlacement] = useState<OverlayPlacement>("above");
   const capture = useRef<Capture | null>(null);
   const cancelOnRelease = useRef(false);
   const pointer = useRef<number | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const recordingStartedAt = useRef<number | null>(null);
   const previousTranscript = useRef(transcript);
 
@@ -64,22 +93,28 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
 
   useEffect(() => {
     if (transcript === previousTranscript.current) return;
-    previousTranscript.current = transcript;
     const current = capture.current;
-    if (!transcript || !current?.released || current.cancelled) return;
+    if (!transcript) {
+      previousTranscript.current = transcript;
+      return;
+    }
+    if (!current?.released || current.cancelled) return;
+    previousTranscript.current = transcript;
     dispose(current);
     capture.current = null;
     recordingStartedAt.current = null;
     setRecordingMs(0);
     setPhase("idle");
     onTranscript(transcript);
-  }, [transcript, onTranscript]);
+  }, [phase, transcript, onTranscript]);
 
   useEffect(() => {
     const cancel = () => {
       if (capture.current) dispose(capture.current);
       capture.current = null;
       pointer.current = null;
+      setPointerPosition(null);
+      setOverlayAnchor(null);
       recordingStartedAt.current = null;
       setRecordingMs(0);
       setPhase("idle");
@@ -121,6 +156,8 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     if (cancel || !current.recorder) {
       dispose(current);
       capture.current = null;
+      setPointerPosition(null);
+      setOverlayAnchor(null);
       recordingStartedAt.current = null;
       setRecordingMs(0);
       setPhase("idle");
@@ -128,6 +165,8 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     }
     current.recorder.stop();
     current.stream?.getTracks().forEach((track) => track.stop());
+    setPointerPosition(null);
+    setOverlayAnchor(null);
   };
 
   const start = async () => {
@@ -139,7 +178,12 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       setError(true);
       return;
     }
-    const current: Capture = { cancelled: false, released: false, controller: new AbortController() };
+    const current: Capture = {
+      cancelled: false,
+      released: false,
+      controller: new AbortController(),
+      transcriptAtStart: transcript,
+    };
     capture.current = current;
     setPhase("requesting");
     try {
@@ -196,6 +240,56 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   };
 
   const holding = phase === "recording" || phase === "requesting";
+  const liveTranscript =
+    capture.current && transcript !== capture.current.transcriptAtStart
+      ? transcript?.trim()
+      : undefined;
+  useLayoutEffect(() => {
+    if (!pointerPosition || !overlayRef.current) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const halfWidth = rect.width / 2;
+    const minX = VOICE_OVERLAY_VIEWPORT_PADDING + halfWidth;
+    const maxX = Math.max(
+      minX,
+      window.innerWidth - VOICE_OVERLAY_VIEWPORT_PADDING - halfWidth,
+    );
+    const x = Math.min(maxX, Math.max(minX, pointerPosition.x));
+    const viewportHeight = Math.max(
+      VOICE_OVERLAY_VIEWPORT_PADDING * 2,
+      window.innerHeight,
+    );
+    const aboveMinY = VOICE_OVERLAY_VIEWPORT_PADDING + VOICE_OVERLAY_GAP + rect.height;
+    const aboveMaxY = viewportHeight - VOICE_OVERLAY_VIEWPORT_PADDING + VOICE_OVERLAY_GAP;
+    const belowMaxY =
+      viewportHeight - VOICE_OVERLAY_VIEWPORT_PADDING - VOICE_OVERLAY_GAP - rect.height;
+    const aboveFits = aboveMinY <= aboveMaxY && pointerPosition.y >= aboveMinY;
+    const belowFits = belowMaxY >= VOICE_OVERLAY_VIEWPORT_PADDING && pointerPosition.y <= belowMaxY;
+    const placement: OverlayPlacement = aboveFits || !belowFits ? "above" : "below";
+    const y = placement === "above"
+      ? Math.min(aboveMaxY, Math.max(aboveMinY, pointerPosition.y))
+      : Math.min(belowMaxY, Math.max(VOICE_OVERLAY_VIEWPORT_PADDING, pointerPosition.y));
+    setOverlayPlacement(placement);
+    setOverlayAnchor((current) =>
+      current?.x === x && current.y === y
+        ? current
+        : { x, y },
+    );
+  }, [cancelGesture, liveTranscript, phase, pointerPosition]);
+  const anchor = overlayAnchor ?? pointerPosition;
+  const overlayStyle = anchor
+    ? {
+        left: String(anchor.x) + "px",
+        top: String(anchor.y) + "px",
+        transform:
+          overlayPlacement === "above"
+            ? "translate(-50%, calc(-100% - 16px))"
+            : "translate(-50%, 16px)",
+      }
+    : {
+        left: "50%",
+        top: "72%",
+        transform: "translate(-50%, -100%)",
+      };
   return (
     <div className="min-w-0 flex-1">
       <Button
@@ -208,11 +302,13 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
         onPointerDown={(event) => {
           if (event.button !== 0 || pointer.current !== null) return;
           pointer.current = event.pointerId;
+          setPointerPosition(clampPointerPosition(event.clientX, event.clientY));
           event.currentTarget.setPointerCapture(event.pointerId);
           void start();
         }}
         onPointerMove={(event) => {
           if (pointer.current !== event.pointerId || !holding) return;
+          setPointerPosition(clampPointerPosition(event.clientX, event.clientY));
           const cancel = event.clientY < event.currentTarget.getBoundingClientRect().top - 40;
           cancelOnRelease.current = cancel;
           setCancelGesture(cancel);
@@ -243,12 +339,27 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       </Button>
       {holding && (
         <div className="pointer-events-none fixed inset-0 z-50 flex flex-col items-center justify-end gap-6 bg-background/70 px-6 pb-[20vh] backdrop-blur-sm">
-          <div className={cn("relative flex flex-col items-center gap-4 rounded-3xl px-12 py-8 shadow-lg", cancelGesture ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground")}>
-            <AudioLines aria-hidden="true" className="size-12 motion-safe:animate-pulse" />
-            <span role="status" className="text-body font-medium">
-              {cancelGesture ? t(($) => $.vscreen.voice_cancel_release) : phase === "requesting" ? t(($) => $.vscreen.voice_requesting) : t(($) => $.vscreen.voice_release)}
-            </span>
-            {phase === "recording" && <span className="font-mono text-caption tabular-nums opacity-80">{formatDuration(recordingMs)}</span>}
+          <div
+            ref={overlayRef}
+            data-voice-overlay
+            className="absolute flex max-w-[calc(100vw-2rem)] flex-col items-center gap-3"
+            style={overlayStyle}
+          >
+            {liveTranscript && (
+              <div
+                aria-live="polite"
+                className="max-w-full rounded-lg border bg-background/95 px-3 py-2 text-body text-foreground shadow-md"
+              >
+                <span className="break-words [overflow-wrap:anywhere]">{liveTranscript}</span>
+              </div>
+            )}
+            <div className={cn("relative flex flex-col items-center gap-4 rounded-3xl px-12 py-8 shadow-lg", cancelGesture ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground")}>
+              <AudioLines aria-hidden="true" className="size-12 motion-safe:animate-pulse" />
+              <span role="status" className="text-body font-medium">
+                {cancelGesture ? t(($) => $.vscreen.voice_cancel_release) : phase === "requesting" ? t(($) => $.vscreen.voice_requesting) : t(($) => $.vscreen.voice_release)}
+              </span>
+              {phase === "recording" && <span className="font-mono text-caption tabular-nums opacity-80">{formatDuration(recordingMs)}</span>}
+            </div>
           </div>
           <span className="text-body text-foreground">{t(($) => $.vscreen.voice_cancel_hint)}</span>
         </div>
