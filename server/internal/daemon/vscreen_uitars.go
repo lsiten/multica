@@ -27,7 +27,7 @@ func (e *vscreenExecution) invokeUITARS(ctx context.Context, args vscreenToolArg
 		return nil, err
 	}
 	var pngData []byte
-	width, height := 0, 0
+	width, height, revision := 0, 0, uint64(0)
 	for _, block := range content {
 		if block["type"] == "image" {
 			pngData, _ = base64.StdEncoding.DecodeString(fmt.Sprint(block["data"]))
@@ -41,6 +41,9 @@ func (e *vscreenExecution) invokeUITARS(ctx context.Context, args vscreenToolArg
 				if v, ok := meta["height"].(float64); ok {
 					height = int(v)
 				}
+				if v, ok := meta["snapshot_revision"].(float64); ok {
+					revision = uint64(v)
+				}
 			}
 		}
 	}
@@ -49,6 +52,9 @@ func (e *vscreenExecution) invokeUITARS(ctx context.Context, args vscreenToolArg
 	}
 	if width <= 0 || height <= 0 {
 		return nil, errors.New("UI-TARS observation has invalid dimensions")
+	}
+	if revision > 0 {
+		args.SnapshotRevision = revision
 	}
 	output, err := e.uiTars.Predict(ctx, args.Goal, pngData)
 	if err != nil {
@@ -74,7 +80,15 @@ func (e *vscreenExecution) invokeUITARS(ctx context.Context, args vscreenToolArg
 	default:
 		return nil, errors.New("unsupported UI-TARS action")
 	}
-	return e.invoke(ctx, "vscreen_click", mustJSONRaw(vscreenToolArgs{TransactionID: args.TransactionID, WindowHandle: args.WindowHandle, SnapshotRevision: args.SnapshotRevision, ActionID: "ui-tars", Sequence: args.Sequence + 1, Action: &action}))
+	sequence := args.Sequence
+	if sequence == 0 {
+		sequence = 1
+	}
+	actionID := args.ActionID
+	if actionID == "" {
+		actionID = "ui-tars"
+	}
+	return e.invoke(ctx, "vscreen_click", mustJSONRaw(vscreenToolArgs{TransactionID: args.TransactionID, WindowHandle: args.WindowHandle, SnapshotRevision: args.SnapshotRevision, ActionID: actionID, Sequence: sequence, Action: &action}))
 }
 
 func mustJSONRaw(value any) json.RawMessage { raw, _ := json.Marshal(value); return raw }

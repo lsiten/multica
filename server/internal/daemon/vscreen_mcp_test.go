@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -312,5 +313,38 @@ func TestVscreenMCPAcceptsRequestMetadata(t *testing.T) {
 			}
 			mcpFixtureText(t, result)
 		})
+	}
+}
+
+func TestVscreenUITARSFallbackReusesAgentModelAndExecutesBoundAction(t *testing.T) {
+	modelCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelCalls++
+		if r.URL.Path != "/chat/completions" || r.Header.Get("Authorization") != "Bearer fixture" {
+			t.Fatalf("unexpected model request: %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Thought: authorization is visible\nAction: click(start_box='(1, 0)')"}}]}`))
+	}))
+	defer server.Close()
+	f, actor := newVscreenToolFixture(t)
+	f.windows = []appcontrol.ManagedWindow{{Handle: "window", BundleID: "fixture"}}
+	task := Task{ID: "uitars-task", WorkspaceID: "workspace", RuntimeID: "runtime", Agent: &AgentData{Model: "fixture-model", CustomEnv: map[string]string{"OPENAI_BASE_URL": server.URL, "OPENAI_API_KEY": "fixture"}}}
+	execution := newVscreenExecution(t.Context(), task, actor, f, nil)
+	defer execution.Close()
+	lease, err := execution.invoke(t.Context(), "vscreen_acquire", mustJSON(t, vscreenToolArgs{RequestID: "uitars-request"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(lease[0]["text"].(string)), &payload); err != nil {
+		t.Fatal(err)
+	}
+	tx := payload["transaction_id"].(string)
+	if _, err := execution.invoke(t.Context(), "vscreen_ui_tars", mustJSON(t, vscreenToolArgs{TransactionID: tx, Goal: "click the authorization button", WindowHandle: "window", Sequence: 1})); err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls != 1 {
+		t.Fatalf("model calls = %d", modelCalls)
 	}
 }
