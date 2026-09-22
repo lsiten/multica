@@ -45,6 +45,7 @@ export function ChatVoiceInput({ agentId, disabled, onTranscript }: {
     {open && !disabled && <div ref={voicePanel} role="dialog" aria-label={t(($) => $.vscreen.switch_to_voice)} className="absolute bottom-full right-0 z-20 mb-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border bg-popover p-2 shadow-lg">
       <HoldToTalkInput
         enabled={!disabled}
+        onRealtimeVoice={localVoice?.transcribeStream}
         errorMessage={errorMessage ?? tChat(($) => $.input.voice_failed)}
         onVoice={(recording, signal) => localVoice
           ? localVoice.transcribe(recording, signal)

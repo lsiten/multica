@@ -11,6 +11,8 @@ type Capture = {
   recorder?: MediaRecorder;
   stream?: MediaStream;
   timer?: ReturnType<typeof setTimeout>;
+  chunks: Blob[];
+  realtime?: { stop: () => void; promise: Promise<string> };
   transcriptAtStart: string | undefined;
   cancelled: boolean;
   released: boolean;
@@ -57,16 +59,19 @@ function dispose(capture: Capture) {
   capture.cancelled = true;
   capture.controller.abort();
   clearTimeout(capture.timer);
+  capture.realtime?.stop();
+  capture.realtime = undefined;
   if (capture.recorder?.state === "recording") capture.recorder.stop();
   capture.stream?.getTracks().forEach((track) => track.stop());
 }
 
-export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, errorMessage }: {
+export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, errorMessage, onRealtimeVoice }: {
   readonly enabled: boolean;
   readonly transcript?: string;
   readonly onVoice: (recording: Blob, signal: AbortSignal) => Promise<string | void> | void;
   readonly onTranscript: (text: string) => void;
   readonly errorMessage?: string;
+  readonly onRealtimeVoice?: (stream: unknown, signal: AbortSignal, onPartial: (text: string) => void) => { stop: () => void; promise: Promise<string> };
 }) {
   const { t } = useT("runtimes");
   const [phase, setPhase] = useState<"idle" | "requesting" | "recording" | "transcribing">("idle");
@@ -76,6 +81,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   const [pointerPosition, setPointerPosition] = useState<PointerPosition | null>(null);
   const [overlayAnchor, setOverlayAnchor] = useState<PointerPosition | null>(null);
   const [overlayPlacement, setOverlayPlacement] = useState<OverlayPlacement>("above");
+  const [partialTranscript, setPartialTranscript] = useState<string>();
   const capture = useRef<Capture | null>(null);
   const cancelOnRelease = useRef(false);
   const pointer = useRef<number | null>(null);
@@ -115,6 +121,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       pointer.current = null;
       setPointerPosition(null);
       setOverlayAnchor(null);
+      setPartialTranscript(undefined);
       recordingStartedAt.current = null;
       setRecordingMs(0);
       setPhase("idle");
@@ -153,17 +160,38 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     if (!current || current.released) return;
     current.released = true;
     clearTimeout(current.timer);
-    if (cancel || !current.recorder) {
+    if (cancel || (!current.recorder && !current.realtime)) {
+      const realtime = current.realtime;
+      current.realtime = undefined;
       dispose(current);
+      realtime?.stop();
       capture.current = null;
       setPointerPosition(null);
       setOverlayAnchor(null);
+      setPartialTranscript(undefined);
       recordingStartedAt.current = null;
       setRecordingMs(0);
       setPhase("idle");
       return;
     }
-    current.recorder.stop();
+    if (current.realtime) {
+      const realtime = current.realtime;
+      current.realtime = undefined;
+      realtime.stop();
+      setPhase("transcribing");
+      current.timer = setTimeout(() => fail(current), 120_000);
+      void realtime.promise.then((text) => {
+        if (capture.current !== current || current.cancelled) return;
+        if (!text.trim()) { fail(current); return; }
+        dispose(current); capture.current = null; recordingStartedAt.current = null;
+        setRecordingMs(0); setPhase("idle"); onTranscript(text.trim());
+      }).catch(() => fail(current));
+      setPointerPosition(null); setOverlayAnchor(null);
+      return;
+    }
+    const recorder = current.recorder;
+    if (!recorder) return;
+    recorder.stop();
     current.stream?.getTracks().forEach((track) => track.stop());
     setPointerPosition(null);
     setOverlayAnchor(null);
@@ -172,9 +200,10 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   const start = async () => {
     if (!enabled || capture.current) return;
     setError(false);
+    setPartialTranscript(undefined);
     setCancelGesture(false);
     cancelOnRelease.current = false;
-    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    if (!navigator.mediaDevices?.getUserMedia || (!onRealtimeVoice && typeof MediaRecorder === "undefined")) {
       setError(true);
       return;
     }
@@ -182,6 +211,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       cancelled: false,
       released: false,
       controller: new AbortController(),
+      chunks: [],
       transcriptAtStart: transcript,
     };
     capture.current = current;
@@ -193,15 +223,25 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
         dispose(current);
         return;
       }
+      if (onRealtimeVoice) {
+        current.realtime = onRealtimeVoice(stream, current.controller.signal, (text) => {
+          if (capture.current === current && !current.cancelled) setPartialTranscript(text.trim());
+        });
+        void current.realtime.promise.catch(() => fail(current));
+        recordingStartedAt.current = Date.now();
+        setRecordingMs(0);
+        setPhase("recording");
+        current.timer = setTimeout(() => release(cancelOnRelease.current), RECORDING_LIMIT_MS);
+        return;
+      }
       const mimeType = supportedMimeType();
       const recorder = new MediaRecorder(stream, {
         audioBitsPerSecond: 48_000,
         ...(mimeType ? { mimeType } : {}),
       });
       current.recorder = recorder;
-      const chunks: Blob[] = [];
       recorder.ondataavailable = (event) => {
-        if (event.data.size) chunks.push(event.data);
+        if (event.data.size) current.chunks.push(event.data);
       };
       recorder.onerror = () => fail(current);
       recorder.onstop = () => {
@@ -209,14 +249,14 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
         if (capture.current !== current || current.cancelled) return;
         clearTimeout(current.timer);
         current.released = true;
-        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        const blob = new Blob(current.chunks, { type: recorder.mimeType || "audio/webm" });
         if (!blob.size || blob.size > 512 * 1024) {
           fail(current);
           return;
         }
         setPhase("transcribing");
         current.timer = setTimeout(() => fail(current), 30_000);
-        void Promise.resolve().then(() => {
+        void Promise.resolve().then(async () => {
           if (!current.cancelled) return onVoice(blob, current.controller.signal);
         }).then((text) => {
           if (typeof text !== "string" || capture.current !== current || current.cancelled) return;
@@ -240,10 +280,11 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   };
 
   const holding = phase === "recording" || phase === "requesting";
-  const liveTranscript =
+  const liveTranscript = partialTranscript || (
     capture.current && transcript !== capture.current.transcriptAtStart
       ? transcript?.trim()
-      : undefined;
+      : undefined
+  );
   useLayoutEffect(() => {
     if (!pointerPosition || !overlayRef.current) return;
     const rect = overlayRef.current.getBoundingClientRect();
@@ -360,8 +401,8 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
               </span>
               {phase === "recording" && <span className="font-mono text-caption tabular-nums opacity-80">{formatDuration(recordingMs)}</span>}
             </div>
+            <span className="text-body text-foreground">{t(($) => $.vscreen.voice_cancel_hint)}</span>
           </div>
-          <span className="text-body text-foreground">{t(($) => $.vscreen.voice_cancel_hint)}</span>
         </div>
       )}
       {error && <p role="alert" className="mt-1 text-caption text-destructive">{errorMessage || t(($) => $.vscreen.voice_failed)}</p>}

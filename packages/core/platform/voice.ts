@@ -9,4 +9,9 @@ export interface LocalVoiceAdapter {
   readonly subscribe: (listener: () => void) => () => void;
   readonly retry: () => void;
   readonly transcribe: (recording: Blob, signal: AbortSignal) => Promise<string>;
+  readonly transcribeStream?: (
+    stream: unknown,
+    signal: AbortSignal,
+    onPartial: (text: string) => void,
+  ) => { readonly stop: () => void; readonly promise: Promise<string> };
 }
