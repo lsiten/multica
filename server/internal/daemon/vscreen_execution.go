@@ -8,7 +8,7 @@ import (
 	"errors"
 	"image"
 	"image/png"
-	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -85,7 +85,7 @@ func safeVscreenToolError(err error) string {
 }
 func newVscreenExecution(ctx context.Context, task Task, a *vscreen.Actor, apps vscreenAppClient, stop func(error)) *vscreenExecution {
 	lifetime, cancel := context.WithCancel(ctx)
-	e := &vscreenExecution{task: task, actor: a, apps: apps, cancel: cancel, done: make(chan struct{}), lifetimeDone: lifetime.Done(), stopProvider: stop, uiTars: configuredUITARS()}
+	e := &vscreenExecution{task: task, actor: a, apps: apps, cancel: cancel, done: make(chan struct{}), lifetimeDone: lifetime.Done(), stopProvider: stop, uiTars: configuredUITARS(task)}
 	go e.run(lifetime)
 	return e
 }
@@ -95,18 +95,32 @@ func newPhysicalVscreenExecution(ctx context.Context, task Task, descriptor nati
 	e := &vscreenExecution{
 		task: task, cancel: cancel, done: make(chan struct{}), lifetimeDone: lifetime.Done(), stopProvider: stop,
 		physical: &physicalVscreenTarget{descriptor: descriptor, refresh: refresh, injector: injector, arbiter: arbiter},
-		uiTars:   configuredUITARS(),
+		uiTars:   configuredUITARS(task),
 	}
 	go e.run(lifetime)
 	return e
 }
 
-func configuredUITARS() *computeruse.UITARS {
-	endpoint := os.Getenv("MULTICA_UI_TARS_ENDPOINT")
+func configuredUITARS(task Task) *computeruse.UITARS {
+	if task.Agent == nil {
+		return nil
+	}
+	env := task.Agent.CustomEnv
+	endpoint := env["OPENAI_BASE_URL"]
+	if endpoint == "" {
+		endpoint = env["OPENAI_API_BASE"]
+	}
 	if endpoint == "" {
 		return nil
 	}
-	client, err := computeruse.NewUITARS(computeruse.UITARSConfig{Endpoint: endpoint, Model: os.Getenv("MULTICA_UI_TARS_MODEL"), APIKey: os.Getenv("MULTICA_UI_TARS_API_KEY")})
+	if !strings.HasSuffix(endpoint, "/chat/completions") {
+		endpoint = strings.TrimRight(endpoint, "/") + "/chat/completions"
+	}
+	model := task.Agent.Model
+	if model == "" {
+		return nil
+	}
+	client, err := computeruse.NewUITARS(computeruse.UITARSConfig{Endpoint: endpoint, Model: model, APIKey: env["OPENAI_API_KEY"]})
 	if err != nil {
 		return nil
 	}

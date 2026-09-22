@@ -161,7 +161,7 @@ func vscreenToolDescriptors() []map[string]any {
 			description += " Omit window_handle or use an empty string for a display-only PNG plus managed_windows; it cannot authorize actions. An explicit managed window handle returns fresh AX elements and snapshot_revision for actions."
 		}
 		if name == "ui_tars" {
-			description += " Fallback visual computer-use action for providers without native computer use. Requires daemon configuration MULTICA_UI_TARS_ENDPOINT, MULTICA_UI_TARS_MODEL, and optional MULTICA_UI_TARS_API_KEY. It observes the bound screen, sends only the current PNG and goal to the configured endpoint, parses one bounded action, and executes it through the managed lease."
+			description += " Fallback visual computer-use action for providers without native computer use. It reuses the selected agent's OpenAI-compatible model, base URL, and credentials from the agent runtime environment; no separate UI-TARS configuration is required. It observes the bound screen, sends only the current PNG and goal, parses one bounded action, and executes it through the managed lease."
 		}
 		if name == "key" || name == "scroll" || name == "drag" {
 			description += " Requires independently verified app/OS/action certification. Without it, this tool stops automation for human intervention."
