@@ -324,7 +324,17 @@ func TestVscreenUITARSFallbackReusesAgentModelAndExecutesBoundAction(t *testing.
 			t.Fatalf("unexpected model request: %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Thought: authorization is visible\nAction: click(start_box='(1, 0)')"}}]}`))
+		responses := []string{
+			"Thought: open Spotlight\nAction: hotkey(key='meta space')",
+			"Thought: enter the app name\nAction: type(content='Jianying')",
+			"Thought: submit the search\nAction: hotkey(key='enter')",
+			"Thought: the requested state is visible\nAction: finished()",
+		}
+		response := responses[len(responses)-1]
+		if modelCalls <= len(responses) {
+			response = responses[modelCalls-1]
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": response}}}})
 	}))
 	defer server.Close()
 	f, actor := newVscreenToolFixture(t)
@@ -344,7 +354,7 @@ func TestVscreenUITARSFallbackReusesAgentModelAndExecutesBoundAction(t *testing.
 	if _, err := execution.invoke(t.Context(), "vscreen_ui_tars", mustJSON(t, vscreenToolArgs{TransactionID: tx, Goal: "click the authorization button", WindowHandle: "window", Sequence: 1})); err != nil {
 		t.Fatal(err)
 	}
-	if modelCalls != 1 {
+	if modelCalls != 4 || f.value != "Jianying" {
 		t.Fatalf("model calls = %d", modelCalls)
 	}
 }

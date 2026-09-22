@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/multica-ai/multica/server/internal/computeruse"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -15,6 +16,54 @@ func (e *vscreenExecution) invokeUITARS(ctx context.Context, args vscreenToolArg
 	if e.uiTars == nil || args.Goal == "" || args.TransactionID == "" {
 		return nil, errors.New("UI-TARS fallback is not configured")
 	}
+	sequence := args.Sequence
+	if sequence == 0 {
+		sequence = 1
+	}
+	baseActionID := args.ActionID
+	if baseActionID == "" {
+		baseActionID = "ui-tars"
+	}
+	for step := uint64(0); step < 8; step++ {
+		pngData, width, height, revision, err := e.observeUITARS(ctx, args)
+		if err != nil {
+			return nil, err
+		}
+		output, err := e.uiTars.Predict(ctx, args.Goal, pngData)
+		if err != nil {
+			return nil, err
+		}
+		decision, err := computeruse.ParseAction(output, width, height)
+		if err != nil {
+			return nil, err
+		}
+		if decision.Kind == "wait" || decision.Kind == "finished" {
+			return vscreenText(map[string]any{"decision": decision.Kind, "steps": step}), nil
+		}
+		var action protocol.VscreenAction
+		switch decision.Kind {
+		case "click":
+			action = protocol.VscreenAction{Kind: protocol.VscreenActionClick, Click: &protocol.VscreenClickAction{Position: &protocol.VscreenPoint{X: decision.X, Y: decision.Y}}}
+		case "type":
+			action = protocol.VscreenAction{Kind: protocol.VscreenActionType, Type: &protocol.VscreenTypeAction{ElementHandle: args.WindowHandle, Text: decision.Text}}
+		case "key":
+			action = protocol.VscreenAction{Kind: protocol.VscreenActionKey, Key: &protocol.VscreenKeyAction{Key: decision.Key, Modifiers: decision.Modifiers}}
+		case "scroll":
+			action = protocol.VscreenAction{Kind: protocol.VscreenActionScroll, Scroll: &protocol.VscreenScrollAction{Position: protocol.VscreenPoint{X: decision.X, Y: decision.Y}, DeltaX: decision.DX, DeltaY: decision.DY}}
+		default:
+			return nil, errors.New("unsupported UI-TARS action")
+		}
+		actionID := baseActionID + "-" + strconv.FormatUint(step+1, 10)
+		actionTool := "vscreen_" + string(action.Kind)
+		if _, err := e.invoke(ctx, actionTool, mustJSONRaw(vscreenToolArgs{TransactionID: args.TransactionID, WindowHandle: args.WindowHandle, SnapshotRevision: revision, ActionID: actionID, Sequence: sequence, Action: &action})); err != nil {
+			return nil, err
+		}
+		sequence++
+	}
+	return nil, errors.New("UI-TARS action budget exhausted before verification")
+}
+
+func (e *vscreenExecution) observeUITARS(ctx context.Context, args vscreenToolArgs) ([]byte, int, int, uint64, error) {
 	observeArgs := vscreenToolArgs{TransactionID: args.TransactionID, WindowHandle: args.WindowHandle}
 	var content []map[string]any
 	var err error
@@ -24,7 +73,7 @@ func (e *vscreenExecution) invokeUITARS(ctx context.Context, args vscreenToolArg
 		content, err = e.invoke(ctx, "vscreen_observe", mustJSONRaw(observeArgs))
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, 0, 0, err
 	}
 	var pngData []byte
 	width, height, revision := 0, 0, uint64(0)
@@ -48,47 +97,15 @@ func (e *vscreenExecution) invokeUITARS(ctx context.Context, args vscreenToolArg
 		}
 	}
 	if len(pngData) == 0 {
-		return nil, errors.New("UI-TARS observation has no screenshot")
+		return nil, 0, 0, 0, errors.New("UI-TARS observation has no screenshot")
 	}
 	if width <= 0 || height <= 0 {
-		return nil, errors.New("UI-TARS observation has invalid dimensions")
+		return nil, 0, 0, 0, errors.New("UI-TARS observation has invalid dimensions")
 	}
-	if revision > 0 {
-		args.SnapshotRevision = revision
+	if revision == 0 && e.physical == nil {
+		return nil, 0, 0, 0, errors.New("UI-TARS observation has no snapshot revision")
 	}
-	output, err := e.uiTars.Predict(ctx, args.Goal, pngData)
-	if err != nil {
-		return nil, err
-	}
-	decision, err := computeruse.ParseAction(output, width, height)
-	if err != nil {
-		return nil, err
-	}
-	if decision.Kind == "wait" || decision.Kind == "finished" {
-		return vscreenText(map[string]any{"decision": decision.Kind}), nil
-	}
-	var action protocol.VscreenAction
-	switch decision.Kind {
-	case "click":
-		action = protocol.VscreenAction{Kind: protocol.VscreenActionClick, Click: &protocol.VscreenClickAction{Position: &protocol.VscreenPoint{X: decision.X, Y: decision.Y}}}
-	case "type":
-		action = protocol.VscreenAction{Kind: protocol.VscreenActionType, Type: &protocol.VscreenTypeAction{ElementHandle: args.WindowHandle, Text: decision.Text}}
-	case "key":
-		action = protocol.VscreenAction{Kind: protocol.VscreenActionKey, Key: &protocol.VscreenKeyAction{Key: decision.Key, Modifiers: decision.Modifiers}}
-	case "scroll":
-		action = protocol.VscreenAction{Kind: protocol.VscreenActionScroll, Scroll: &protocol.VscreenScrollAction{Position: protocol.VscreenPoint{X: decision.X, Y: decision.Y}, DeltaX: decision.DX, DeltaY: decision.DY}}
-	default:
-		return nil, errors.New("unsupported UI-TARS action")
-	}
-	sequence := args.Sequence
-	if sequence == 0 {
-		sequence = 1
-	}
-	actionID := args.ActionID
-	if actionID == "" {
-		actionID = "ui-tars"
-	}
-	return e.invoke(ctx, "vscreen_click", mustJSONRaw(vscreenToolArgs{TransactionID: args.TransactionID, WindowHandle: args.WindowHandle, SnapshotRevision: args.SnapshotRevision, ActionID: actionID, Sequence: sequence, Action: &action}))
+	return pngData, width, height, revision, nil
 }
 
 func mustJSONRaw(value any) json.RawMessage { raw, _ := json.Marshal(value); return raw }
