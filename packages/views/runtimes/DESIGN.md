@@ -45,6 +45,24 @@ column and never creates horizontal scrolling for primary content.
 - **Accessibility:** the frame has a text alternative describing the live
   runtime source; state changes use `role=status` or `role=alert`.
 
+### Hold-to-talk voice composer
+
+- **Structure:** a full-screen dimmer contains an anchored voice card while
+  recording; the card follows the active pointer and stays one 16px spacing
+  token above it. A live transcript, when available, sits above the card.
+  The measured card bounds are clamped to the viewport; if there is not enough
+  room above the pointer, it flips below it to remain visible.
+- **States:** requesting microphone, recording, cancellation-by-slide, and
+  transcribing. Transcript updates are announced politely and remain visible
+  during the active gesture.
+- **Interaction:** pointer coordinates and measured overlay bounds are clamped
+  to a 16px viewport inset; keyboard activation uses a centered fallback
+  anchor. Position updates use a compositor transform and no decorative motion
+  is added. Reduced-motion users keep the same anchored layout without the
+  pulse animation.
+- **Accessibility:** the transcript uses `aria-live="polite"`; the existing
+  status and error labels remain the primary instructions and recovery path.
+
 ## 6. Interaction and motion
 
 Reuse existing button/link hover, active, and focus behaviour. No decorative
