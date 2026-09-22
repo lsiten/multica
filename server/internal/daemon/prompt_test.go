@@ -8,6 +8,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // TestBuildQuickCreatePromptRules locks in the rules that govern how the
@@ -1958,6 +1959,32 @@ func TestSharedLocalDirectoryBlock(t *testing.T) {
 			t.Fatalf("notice was not appended after the chat body:\n%s", out)
 		}
 	})
+}
+
+func TestBuildPromptMirrorChatPrioritizesBoundScreenAction(t *testing.T) {
+	t.Parallel()
+
+	task := Task{
+		ChatSessionID: "session",
+		ChatMessage:   "帮我点授权",
+		MirrorSource: &protocol.MirrorSourceBinding{
+			Resource: protocol.ResourceKey{BackendIdentity: "https://api.example", WorkspaceID: "workspace", RuntimeID: "runtime", UID: 7, DisplayID: 2},
+			Source:   protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "display:2"},
+		},
+	}
+
+	out := BuildPrompt(task, "codex")
+	if !strings.HasPrefix(out, "You are operating the authenticated screen selected in the mirror view.") {
+		t.Fatalf("mirror screen directive was not first in the prompt:\n%s", out)
+	}
+	for _, marker := range []string{"workspace=\"workspace\"", "runtime=\"runtime\"", "source_kind=\"physical\"", "source_id=\"display:2\"", "acquiring a transaction", "observing this bound screen"} {
+		if !strings.Contains(out, marker) {
+			t.Fatalf("mirror prompt missing bound-screen marker %q:\n%s", marker, out)
+		}
+	}
+	if strings.Index(out, "observing this bound screen") > strings.Index(out, task.ChatMessage) {
+		t.Fatal("user action appeared before the bound-screen operating directive")
+	}
 }
 
 // TestWorktreeReplayConflictBlock covers the one thing a conflicted worktree

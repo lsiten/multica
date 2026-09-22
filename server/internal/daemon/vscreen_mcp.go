@@ -88,6 +88,7 @@ func (s *vscreenMCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var params struct {
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
+			Meta      json.RawMessage `json:"_meta,omitempty"`
 		}
 		if strictVscreenJSON(req.Params, &params) != nil {
 			writePluginHookMCPError(w, req.ID, -32602, "invalid tool parameters")

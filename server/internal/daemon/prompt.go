@@ -200,7 +200,11 @@ func BuildPrompt(task Task, provider string, options ...PromptOption) string {
 
 func buildPromptBody(task Task, provider string) string {
 	if task.ChatSessionID != "" {
-		return buildChatPrompt(task)
+		body := buildChatPrompt(task)
+		if task.MirrorSource != nil {
+			return buildMirrorChatPrompt(task, body)
+		}
+		return body
 	}
 	if task.TriggerCommentID != "" {
 		return buildCommentPrompt(task, provider)
@@ -226,6 +230,21 @@ func buildPromptBody(task Task, provider string) string {
 	// treat the read as mandatory)", which read as if comment-triggered turns
 	// did not (MUL-6984).
 	fmt.Fprintf(&b, "For comment history, workflow step 2 applies. Scan the threads first with `multica issue comment list %s --roots-only --summary --compact --output json`, then expand only what matters with `--thread <thread-id> --tail 30`. For `--since` incremental polling, pagination, and folding, see `multica issue comment list --help`.\n", task.IssueID)
+	return b.String()
+}
+
+// buildMirrorChatPrompt makes the authenticated screen binding and the user's
+// requested screen action the first-order context for a mirror-directed chat.
+// The binding is carried outside ChatMessage so words such as "current screen"
+// cannot accidentally select a different display or turn this into a generic
+// coding conversation.
+func buildMirrorChatPrompt(task Task, chatPrompt string) string {
+	var b strings.Builder
+	b.WriteString("You are operating the authenticated screen selected in the mirror view. This is a screen-control request, and it has priority over general chat or coding assistance.\n")
+	fmt.Fprintf(&b, "Bound screen: workspace=%q runtime=%q source_kind=%q source_id=%q display_id=%d.\n", task.MirrorSource.Resource.WorkspaceID, task.MirrorSource.Resource.RuntimeID, task.MirrorSource.Source.Kind, task.MirrorSource.Source.SourceID, task.MirrorSource.Resource.DisplayID)
+	b.WriteString("Interpret references to \"the current screen\", \"this screen\", or \"当前屏幕\" as this exact bound screen. Treat the user's message below as the action to perform on it. Start by acquiring a transaction and observing this bound screen for fresh visual and accessibility state, then carry out the requested action with the managed multica-vscreen tools.\n")
+	b.WriteString("Do not turn a screen-action request into a general explanation, coding task, or instructions for the user to click manually. If the request names an authorization prompt, inspect the bound screen first and interact with that prompt only when it is visible and matches the user's request. If the managed screen tool cannot perform the action, report the concrete tool limitation instead of claiming it was completed.\n\n")
+	b.WriteString(chatPrompt)
 	return b.String()
 }
 
