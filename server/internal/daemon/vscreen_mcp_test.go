@@ -277,3 +277,40 @@ func TestVscreenMCPUnknownActionStopsAfterRevocation(t *testing.T) {
 func (f *vscreenToolFixture) ManagedAppWindows(context.Context, appcontrol.Authority) ([]appcontrol.ManagedWindow, error) {
 	return append([]appcontrol.ManagedWindow{}, f.windows...), nil
 }
+
+func TestVscreenMCPAcceptsRequestMetadata(t *testing.T) {
+	for _, name := range []string{"vscreen_status", "vscreen_acquire"} {
+		t.Run(name, func(t *testing.T) {
+			f, actor := newVscreenToolFixture(t)
+			execution := newVscreenExecution(t.Context(), Task{ID: "metadata-task", WorkspaceID: "workspace", RuntimeID: "runtime"}, actor, f, nil)
+			defer execution.Close()
+			cfg, broker, err := startVscreenMCP(t.Context(), execution.invoke)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer broker.Close()
+			arguments := map[string]any{}
+			if name == "vscreen_acquire" {
+				arguments["request_id"] = "metadata-request"
+			}
+			raw, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": arguments, "_meta": map[string]any{"progressToken": 1}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := http.Post(mcpFixtureURL(t, cfg), "application/json", bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			var body map[string]any
+			if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			result, ok := body["result"].(map[string]any)
+			if !ok {
+				t.Fatalf("standard MCP request metadata rejected: %v", body)
+			}
+			mcpFixtureText(t, result)
+		})
+	}
+}
