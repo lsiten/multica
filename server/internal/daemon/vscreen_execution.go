@@ -8,10 +8,12 @@ import (
 	"errors"
 	"image"
 	"image/png"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/computeruse"
 	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
@@ -52,6 +54,7 @@ type vscreenExecution struct {
 	windowObserved func(string)
 	stopProvider   func(error)
 	physical       *physicalVscreenTarget
+	uiTars         *computeruse.UITARS
 }
 
 // physicalVscreenTarget is the deliberately narrow agent path for an
@@ -82,7 +85,7 @@ func safeVscreenToolError(err error) string {
 }
 func newVscreenExecution(ctx context.Context, task Task, a *vscreen.Actor, apps vscreenAppClient, stop func(error)) *vscreenExecution {
 	lifetime, cancel := context.WithCancel(ctx)
-	e := &vscreenExecution{task: task, actor: a, apps: apps, cancel: cancel, done: make(chan struct{}), lifetimeDone: lifetime.Done(), stopProvider: stop}
+	e := &vscreenExecution{task: task, actor: a, apps: apps, cancel: cancel, done: make(chan struct{}), lifetimeDone: lifetime.Done(), stopProvider: stop, uiTars: configuredUITARS()}
 	go e.run(lifetime)
 	return e
 }
@@ -92,9 +95,22 @@ func newPhysicalVscreenExecution(ctx context.Context, task Task, descriptor nati
 	e := &vscreenExecution{
 		task: task, cancel: cancel, done: make(chan struct{}), lifetimeDone: lifetime.Done(), stopProvider: stop,
 		physical: &physicalVscreenTarget{descriptor: descriptor, refresh: refresh, injector: injector, arbiter: arbiter},
+		uiTars:   configuredUITARS(),
 	}
 	go e.run(lifetime)
 	return e
+}
+
+func configuredUITARS() *computeruse.UITARS {
+	endpoint := os.Getenv("MULTICA_UI_TARS_ENDPOINT")
+	if endpoint == "" {
+		return nil
+	}
+	client, err := computeruse.NewUITARS(computeruse.UITARSConfig{Endpoint: endpoint, Model: os.Getenv("MULTICA_UI_TARS_MODEL"), APIKey: os.Getenv("MULTICA_UI_TARS_API_KEY")})
+	if err != nil {
+		return nil
+	}
+	return client
 }
 func (e *vscreenExecution) authority(l vscreen.Lease) appcontrol.Authority {
 	return appcontrol.Authority{Resource: l.Resource, Epoch: e.actor.Status().Display.Epoch, TaskID: e.task.ID, TransactionID: l.TransactionID, LeaseEpoch: l.LeaseEpoch}
@@ -181,6 +197,7 @@ type vscreenToolArgs struct {
 	SnapshotRevision uint64                  `json:"snapshot_revision,omitempty"`
 	ActionID         string                  `json:"action_id,omitempty"`
 	Sequence         uint64                  `json:"sequence,omitempty"`
+	Goal             string                  `json:"goal,omitempty"`
 	Action           *protocol.VscreenAction `json:"action,omitempty"`
 }
 
@@ -199,7 +216,13 @@ func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.Raw
 	default:
 	}
 	if e.physical != nil {
+		if name == "vscreen_ui_tars" {
+			return e.invokeUITARS(ctx, args)
+		}
 		return e.invokePhysical(ctx, name, args)
+	}
+	if name == "vscreen_ui_tars" {
+		return e.invokeUITARS(ctx, args)
 	}
 	if binding := e.task.MirrorSource; binding != nil {
 		current := e.actor.Status()

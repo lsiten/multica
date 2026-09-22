@@ -118,13 +118,17 @@ func strictVscreenJSON(raw []byte, out any) error {
 	return nil
 }
 func vscreenToolDescriptors() []map[string]any {
-	names := []string{"status", "acquire", "release", "list_apps", "launch_app", "observe", "click", "drag", "scroll", "type", "key"}
+	names := []string{"status", "acquire", "release", "list_apps", "launch_app", "observe", "click", "drag", "scroll", "type", "key", "ui_tars"}
 	result := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		props := map[string]any{}
 		required := []string{}
 		add := func(key, kind string) { props[key] = map[string]any{"type": kind}; required = append(required, key) }
 		switch name {
+		case "ui_tars":
+			add("transaction_id", "string")
+			add("goal", "string")
+			props["window_handle"] = map[string]any{"type": "string"}
 		case "acquire":
 			add("request_id", "string")
 			props["intent"] = map[string]any{"type": "string"}
@@ -155,6 +159,9 @@ func vscreenToolDescriptors() []map[string]any {
 		}
 		if name == "observe" {
 			description += " Omit window_handle or use an empty string for a display-only PNG plus managed_windows; it cannot authorize actions. An explicit managed window handle returns fresh AX elements and snapshot_revision for actions."
+		}
+		if name == "ui_tars" {
+			description += " Fallback visual computer-use action for providers without native computer use. Requires daemon configuration MULTICA_UI_TARS_ENDPOINT, MULTICA_UI_TARS_MODEL, and optional MULTICA_UI_TARS_API_KEY. It observes the bound screen, sends only the current PNG and goal to the configured endpoint, parses one bounded action, and executes it through the managed lease."
 		}
 		if name == "key" || name == "scroll" || name == "drag" {
 			description += " Requires independently verified app/OS/action certification. Without it, this tool stops automation for human intervention."
