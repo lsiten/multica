@@ -157,14 +157,14 @@ func TestVscreenRegressionPATGrantCreationRevalidatesCache(t *testing.T) {
 			rawToken, patID := insertTestPAT(t, patExpiry)
 			warm := newRequest(http.MethodGet, "/warm-cache", nil)
 			warm.Header.Set("Authorization", "Bearer "+rawToken)
-			testutil.Call(t, middleware.Auth(h.Queries, cache, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })).ServeHTTP, warm).Want(http.StatusNoContent)
+			testutil.Call(t, middleware.Auth(h.Queries, cache, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })).ServeHTTP, warm).Want(http.StatusNoContent)
 			if revoked {
 				dbfx.Exec(t, "UPDATE personal_access_token SET revoked = TRUE WHERE id = $1", patID)
 			}
 			body := map[string]any{"viewer_id": "pat-viewer", "offer": map[string]string{"type": "offer", "sdp": "offer-sdp"}}
 			req := withURLParam(newRequest(http.MethodPost, "/mirror/sessions", body), "runtimeId", runtimeID)
 			req.Header.Set("Authorization", "Bearer "+rawToken)
-			res := testutil.Call(t, middleware.Auth(h.Queries, cache, nil)(http.HandlerFunc(h.CreateMirrorSession)).ServeHTTP, req)
+			res := testutil.Call(t, middleware.Auth(h.Queries, cache, nil, nil)(http.HandlerFunc(h.CreateMirrorSession)).ServeHTTP, req)
 			t.Logf("cached PAT revoked=%v HTTP=%d response=%s", revoked, res.Code, res.Body.String())
 			if revoked {
 				if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "viewer_revoked") {
@@ -213,7 +213,7 @@ func TestVscreenRegressionPATGrantCreationRevalidatesCache(t *testing.T) {
 			go respondToQuery()
 			renewReq := withURLParams(newRequest(http.MethodPost, "/renew", nil), "runtimeId", runtimeID, "sessionId", response.ID)
 			renewReq.Header.Set("Authorization", "Bearer "+rawToken)
-			renewedResponse := testutil.Call(t, middleware.Auth(h.Queries, cache, nil)(http.HandlerFunc(h.RenewMirrorSession)).ServeHTTP, renewReq).Want(http.StatusOK)
+			renewedResponse := testutil.Call(t, middleware.Auth(h.Queries, cache, nil, nil)(http.HandlerFunc(h.RenewMirrorSession)).ServeHTTP, renewReq).Want(http.StatusOK)
 			var renewed protocol.MirrorViewerGrant
 			renewedResponse.JSON(&renewed)
 			if err := <-done; err != nil {
@@ -293,7 +293,7 @@ func TestVscreenRegressionConcurrentRenewKeepsViewer(t *testing.T) {
 		req := withURLParams(newRequest(http.MethodPost, "/mirror/sessions/concurrent-session/renew", nil), "runtimeId", runtimeID, "sessionId", grant.SessionID)
 		req.Header.Set("Authorization", "Bearer "+token)
 		go func() {
-			res := testutil.Call(t, middleware.Auth(h.Queries, nil, nil)(http.HandlerFunc(h.RenewMirrorSession)).ServeHTTP, req)
+			res := testutil.Call(t, middleware.Auth(h.Queries, nil, nil, nil)(http.HandlerFunc(h.RenewMirrorSession)).ServeHTTP, req)
 			done <- res
 		}()
 	}

@@ -254,7 +254,7 @@ func TestVscreenInterventionHTTPConcurrentContinuation(t *testing.T) {
 				t.Fatal(err)
 			}
 			claimReq := newRequest(http.MethodPost, "/api/daemon/runtimes/"+f.report.RuntimeID+"/tasks/claim", nil)
-			built, _, _, _, failure := f.h.buildClaimedTaskResponse(claimReq, &child, rt, f.report.RuntimeID, testWorkspaceID)
+			built, _, _, _, _, failure := f.h.buildClaimedTaskResponse(claimReq, &child, rt, f.report.RuntimeID, testWorkspaceID)
 			if failure != nil {
 				t.Fatalf("claim builder rejected: %+v", failure)
 			}

@@ -246,7 +246,7 @@ func TestInboxListBodyPreview(t *testing.T) {
 				t.Fatalf("body = nil, want %d characters", utf8.RuneCountInString(*tc.want))
 			case tc.want != nil && *got != *tc.want:
 				t.Fatalf("body = %d characters %q…, want %d characters",
-					utf8.RuneCountInString(*got), truncateForLog(*got),
+					utf8.RuneCountInString(*got), truncateInboxForLog(*got),
 					utf8.RuneCountInString(*tc.want))
 			}
 		})
@@ -258,13 +258,13 @@ func TestInboxListBodyPreview(t *testing.T) {
 			t.Fatal("body = nil")
 		}
 		if !utf8.ValidString(*got) {
-			t.Fatalf("preview is not valid UTF-8: %q", truncateForLog(*got))
+			t.Fatalf("preview is not valid UTF-8: %q", truncateInboxForLog(*got))
 		}
 		if n := utf8.RuneCountInString(*got); n != inboxListBodyPreviewLimit {
 			t.Fatalf("preview = %d characters, want %d", n, inboxListBodyPreviewLimit)
 		}
 		if !strings.HasSuffix(*got, "…") {
-			t.Fatalf("preview does not end with an ellipsis: %q", truncateForLog(*got))
+			t.Fatalf("preview does not end with an ellipsis: %q", truncateInboxForLog(*got))
 		}
 	})
 }
@@ -348,7 +348,7 @@ func TestInboxListsShipCommentPreviewNotFullComment(t *testing.T) {
 	}
 }
 
-func truncateForLog(s string) string {
+func truncateInboxForLog(s string) string {
 	if r := []rune(s); len(r) > 40 {
 		return string(r[:40])
 	}

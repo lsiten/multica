@@ -3199,7 +3199,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// for redelivery and must not spend two more queries before returning.
 		if task.RerunOfTaskID.Valid {
 			if err := h.applyExactChatRerun(r.Context(), *task, &resp); err != nil {
-				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "rerun source", uuidToString(task.RerunOfTaskID))
+				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "rerun source", uuidToString(task.RerunOfTaskID))
 			}
 		} else if !task.ForceFreshSession {
 			contextRevision := pgtype.Int8{}

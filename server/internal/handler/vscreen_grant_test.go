@@ -82,7 +82,7 @@ func testVscreenManagedViewerRenewAndMemberRevocation(t *testing.T, version int)
 	req := withURLParam(newRequestAs(userID, http.MethodPost, "/mirror/sessions", body), "runtimeId", runtimeID)
 	req.Header.Set("Authorization", "Bearer "+token)
 	var created mirrorSessionResponse
-	testutil.Call(t, middleware.Auth(h.Queries, nil, nil)(http.HandlerFunc(h.CreateMirrorSession)).ServeHTTP, req).Want(http.StatusCreated).JSON(&created)
+	testutil.Call(t, middleware.Auth(h.Queries, nil, nil, nil)(http.HandlerFunc(h.CreateMirrorSession)).ServeHTTP, req).Want(http.StatusCreated).JSON(&created)
 	readFrame := func(want string) protocol.Message {
 		t.Helper()
 		select {
@@ -114,7 +114,7 @@ func testVscreenManagedViewerRenewAndMemberRevocation(t *testing.T, version int)
 	renew := withURLParams(newRequestAs(userID, http.MethodPost, "/renew", nil), "runtimeId", runtimeID, "sessionId", created.ID)
 	renew.Header.Set("Authorization", "Bearer "+token)
 	if version == 2 {
-		testutil.Call(t, middleware.Auth(h.Queries, nil, nil)(http.HandlerFunc(h.RenewMirrorSession)).ServeHTTP, renew).Want(http.StatusOK)
+		testutil.Call(t, middleware.Auth(h.Queries, nil, nil, nil)(http.HandlerFunc(h.RenewMirrorSession)).ServeHTTP, renew).Want(http.StatusOK)
 	} else {
 		h.sweepViewerGrants(context.Background())
 	}
