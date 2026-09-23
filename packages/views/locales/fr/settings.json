@@ -82,7 +82,7 @@
       "done": "Terminé.",
       "cancelled": "Abandonné."
     }
-   },
+  },
   "quick_actions": {
     "title": "Actions rapides",
     "description": "Lancez un agent et un prompt prédéfinis depuis la barre latérale d’une tâche.",
@@ -373,7 +373,8 @@
       "quick_actions": "Actions rapides",
       "plugins": "Plugins",
       "mcp": "MCP",
-      "billing": "Facturation"
+      "billing": "Facturation",
+      "mirror_network": "Screen mirroring"
     },
     "groups": {
       "personal": "Personnel",
@@ -1283,6 +1284,37 @@
       "restart": "Redémarrer",
       "save_failed": "Impossible d’enregistrer les paramètres.",
       "icon_failed": "Impossible de charger l’icône."
+    },
+    "worktrees": {
+      "discard_changes": "Also permanently discard uncommitted changes and unpushed commits in the selected directories.",
+      "title": "Worktrees",
+      "description": "New completed runs automatically clean safe task environments. Uncommitted changes, unpushed commits and local output files are retained.",
+      "scope": "All task environments managed by this daemon profile on this machine.",
+      "count": "{{count}} worktrees",
+      "group_by_agent": "Group by agent",
+      "refresh": "Refresh",
+      "clean_all": "Clean all",
+      "clean_agent": "Clean agent worktrees",
+      "clean": "Clean",
+      "all": "All worktrees",
+      "unknown_agent": "Unknown agent",
+      "active": "Active · protected",
+      "dirty": "Uncommitted changes · protected",
+      "unpushed": "Unpushed commits · protected",
+      "review_active": "In review or viewed in the last 5 minutes · protected",
+      "unowned": "Ownership unverified · protected",
+      "output": "Local output · retained",
+      "unavailable": "Unable to verify · protected",
+      "inactive": "Inactive",
+      "offline": "Start the daemon to view and clean worktrees.",
+      "load_failed": "Could not load worktrees.",
+      "cleanup_failed": "Cleanup failed. Refresh the list before retrying.",
+      "empty": "No worktrees on this machine.",
+      "confirm_title": "Clean {{count}} worktrees?",
+      "confirm_description": "Selected task directories, logs and local outputs will be permanently removed. Running tasks and uncommitted or unpushed work are protected. Branches in repositories outside these directories remain available.",
+      "cleaned": "Cleaned {{count}} worktrees.",
+      "retained": "Kept {{count}} worktrees because their state changed or could not be verified.",
+      "refresh_tab": "Refresh current tab"
     }
   },
   "members": {
@@ -1371,7 +1403,7 @@
     "status_loading": "Vérification...",
     "status_unknown": "État indisponible",
     "channel_hint": "Discutez avec les agents et créez des tâches depuis {{channel}}."
-   },
+  },
   "notification_bots": {
     "title": "Robots de notification",
     "description": "Transférez les nouvelles notifications de votre boîte de réception dans cet espace de travail vers des robots indépendants. Utilise les préférences ci-dessus, même lorsque l’application est fermée.",

@@ -166,7 +166,8 @@
     "runtime_required_toast": "Associez un runtime avant d'exécuter cet agent.",
     "assign_work": "Assigner du travail",
     "more_actions_aria": "Actions de l'agent",
-    "updated": "Mis à jour {{when}}"
+    "updated": "Mis à jour {{when}}",
+    "open_runtime_mirror": "Open runtime mirror"
   },
   "inspector": {
     "section_profile": "Profil",
@@ -952,7 +953,8 @@
       "agent_error": "Erreur d'exécution de l'agent",
       "codex_semantic_inactivity": "Délai d'inactivité sémantique de Codex dépassé",
       "manual": "Annulée par l'utilisateur",
-      "user_cancelled": "Annulée par l'utilisateur"
+      "user_cancelled": "Annulée par l'utilisateur",
+      "startup_timeout": "Agent produced no output after starting; run stopped (possibly not signed in or unreachable)"
     }
   },
   "last_active": {

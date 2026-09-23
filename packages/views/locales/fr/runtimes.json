@@ -188,7 +188,14 @@
     "running_chip_one": "· {{count}} en cours",
     "running_chip_other": "· {{count}} en cours",
     "queued_chip_one": "· {{count}} en attente",
-    "queued_chip_other": "· {{count}} en attente"
+    "queued_chip_other": "· {{count}} en attente",
+    "open_mirror": "Open mirror",
+    "mirror_reason": {
+      "offline": "This device is offline.",
+      "linux": "Screen mirroring is not supported on Linux.",
+      "platform": "Screen mirroring is not supported on this platform.",
+      "old_daemon": "Update the Multica daemon on this device to use screen mirroring."
+    }
   },
   "detail_page": {
     "not_found_title": "Runtime introuvable",

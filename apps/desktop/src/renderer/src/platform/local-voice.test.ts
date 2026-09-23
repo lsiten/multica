@@ -15,8 +15,8 @@ function fixture() {
     resume = async () => undefined;
   });
   vi.stubGlobal("AudioWorkletNode", class {
-    port = {};
-    constructor() { node = this; }
+    port: { onmessage?: (event: { data: Float32Array }) => void } = {};
+    constructor() { node = { port: this.port }; }
     connect() {}
     disconnect() {}
   });
