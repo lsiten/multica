@@ -1070,6 +1070,21 @@
       "reconnect_failed": "데몬에 다시 연결하지 못했습니다",
       "try_again_moment": "잠시 후 다시 시도하세요.",
       "try_again": "다시 시도하세요."
+    },
+    "application": {
+      "title": "앱 설정",
+      "api_url": "백엔드 API 주소",
+      "api_description": "서버 변경은 다시 시작한 후 적용됩니다. 다시 로그인해야 할 수 있습니다.",
+      "app_name": "앱 이름",
+      "icon": "앱 아이콘",
+      "choose_icon": "이미지 선택",
+      "reset_icon": "기본값으로 복원",
+      "default_icon": "기본 Multica 아이콘",
+      "save": "저장",
+      "saved": "저장되었습니다. 다시 시작하면 적용됩니다.",
+      "restart": "지금 다시 시작",
+      "save_failed": "설정을 저장하지 못했습니다.",
+      "icon_failed": "아이콘을 불러오지 못했습니다."
     }
   },
   "members": {

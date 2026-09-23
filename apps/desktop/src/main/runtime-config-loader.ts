@@ -1,6 +1,7 @@
 import { app } from "electron";
-import { readFile } from "fs/promises";
-import { join } from "path";
+import { copyFile, mkdir, readFile, rename, writeFile } from "fs/promises";
+import { randomUUID } from "node:crypto";
+import { extname, join } from "path";
 import {
   DEFAULT_RUNTIME_CONFIG,
   parseRuntimeConfig,
@@ -42,6 +43,21 @@ export async function loadRuntimeConfig(options: {
 
 export function desktopConfigPath(): string {
   return join(app.getPath("home"), ".multica", "desktop.json");
+}
+
+export async function saveRuntimeConfig(config: RuntimeConfig): Promise<void> {
+  const path = desktopConfigPath();
+  const directory = join(app.getPath("home"), ".multica");
+  await mkdir(directory, { recursive: true });
+  let stored = config;
+  if (config.iconPath) {
+    const iconPath = join(directory, `desktop-icon-${randomUUID()}${extname(config.iconPath)}`);
+    await copyFile(config.iconPath, iconPath);
+    stored = { ...config, iconPath };
+  }
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  await writeFile(temporary, JSON.stringify(stored, null, 2) + "\n", { mode: 0o600 });
+  await rename(temporary, path);
 }
 
 function isMissingFileError(err: unknown): boolean {

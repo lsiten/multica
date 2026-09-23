@@ -3,6 +3,8 @@ export interface RuntimeConfig {
   apiUrl: string;
   wsUrl: string;
   appUrl: string;
+  appName: string;
+  iconPath?: string;
 }
 
 export interface RuntimeConfigError {
@@ -18,6 +20,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   apiUrl: "https://multica.lene.fun",
   wsUrl: "wss://multica.lene.fun/ws",
   appUrl: "https://multica.lene.fun",
+  appName: "Multica",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
@@ -25,6 +28,7 @@ const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   apiUrl: "http://localhost:8080",
   wsUrl: "ws://localhost:8080/ws",
   appUrl: "http://localhost:3000",
+  appName: "Multica Canary",
 });
 
 export interface RuntimeConfigEnv {
@@ -47,6 +51,7 @@ export function runtimeConfigFromDevEnv(env: RuntimeConfigEnv): RuntimeConfig {
     appUrl: env.appUrl
       ? normalizeHttpUrl(env.appUrl, "VITE_APP_URL")
       : deriveDevAppUrl(apiUrl),
+    appName: "Multica",
   };
 }
 
@@ -72,6 +77,8 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
   const apiUrl = requiredString(obj.apiUrl, "apiUrl");
   const appUrl = optionalString(obj.appUrl, "appUrl");
   const wsUrl = optionalString(obj.wsUrl, "wsUrl");
+  const appName = optionalAppName(obj.appName);
+  const iconPath = optionalString(obj.iconPath, "iconPath");
 
   const normalizedApiUrl = normalizeHttpUrl(apiUrl, "apiUrl");
   return {
@@ -79,6 +86,8 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
     apiUrl: normalizedApiUrl,
     wsUrl: wsUrl ? normalizeWsUrl(wsUrl, "wsUrl") : deriveWsUrl(normalizedApiUrl),
     appUrl: appUrl ? normalizeHttpUrl(appUrl, "appUrl") : deriveAppUrl(normalizedApiUrl),
+    appName,
+    ...(iconPath ? { iconPath } : {}),
   };
 }
 
@@ -137,6 +146,18 @@ function optionalString(value: unknown, field: string): string | undefined {
     throw new Error(`Invalid desktop runtime config: ${field} must be a non-empty string when set`);
   }
   return value;
+}
+
+function optionalAppName(value: unknown): string {
+  if (value === undefined) return "Multica";
+  if (typeof value !== "string") {
+    throw new Error("Invalid desktop runtime config: appName must be a string");
+  }
+  const name = value.trim();
+  if (name.length === 0 || name.length > 64) {
+    throw new Error("Invalid desktop runtime config: appName must be 1–64 characters");
+  }
+  return name;
 }
 
 function normalizeHttpUrl(value: string, field: string): string {

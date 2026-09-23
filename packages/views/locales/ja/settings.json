@@ -1329,6 +1329,21 @@
       "reconnect_failed": "デーモンに再接続できませんでした",
       "try_again_moment": "しばらくしてからもう一度お試しください。",
       "try_again": "もう一度お試しください。"
+    },
+    "application": {
+      "title": "アプリ設定",
+      "api_url": "バックエンド API URL",
+      "api_description": "サーバーの変更は再起動後に反映されます。再ログインが必要な場合があります。",
+      "app_name": "アプリ名",
+      "icon": "アプリアイコン",
+      "choose_icon": "画像を選択",
+      "reset_icon": "既定に戻す",
+      "default_icon": "既定の Multica アイコン",
+      "save": "保存",
+      "saved": "保存しました。再起動すると反映されます。",
+      "restart": "今すぐ再起動",
+      "save_failed": "設定を保存できませんでした。",
+      "icon_failed": "アイコンを読み込めませんでした。"
     }
   },
   "members": {

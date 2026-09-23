@@ -17,10 +17,10 @@ import { installContextMenu } from "./context-menu";
 import { handleAppShortcut } from "./keyboard-shortcuts";
 import { installNavigationGestures } from "./navigation-gestures";
 import { installNavigationGuard } from "./navigation-guard";
-import { createRendererWebPreferences } from "./renderer-web-preferences";
+import { configureRendererBackend, createRendererWebPreferences } from "./renderer-web-preferences";
 import { getAppVersion } from "./app-version";
-import { loadRuntimeConfig } from "./runtime-config-loader";
-import type { RuntimeConfigResult } from "../shared/runtime-config";
+import { loadRuntimeConfig, saveRuntimeConfig } from "./runtime-config-loader";
+import { parseRuntimeConfig, type RuntimeConfigResult } from "../shared/runtime-config";
 import {
   RENDERER_ROUTE_CONTEXT_CHANNEL,
   sanitizeRendererRouteContext,
@@ -333,6 +333,11 @@ function createWindow(): BrowserWindow {
     screen.getAllDisplays().map((d) => d.workArea),
     screen.getPrimaryDisplay().workArea,
   );
+  const configuredIconPath = runtimeConfigResult.ok
+    ? runtimeConfigResult.config.iconPath
+    : undefined;
+  const windowIconPath = configuredIconPath ??
+    (is.dev || process.platform === "linux" ? BUNDLED_ICON_PATH : undefined);
 
   mainWindow = new BrowserWindow({
     width: windowOpts.width,
@@ -351,9 +356,7 @@ function createWindow(): BrowserWindow {
     // Linux production needs this explicitly because AppImage direct-launch
     // does not install a .desktop entry, so the WM has no other path to
     // the bundled icon; without it Ubuntu falls back to the theme default.
-    ...(is.dev || process.platform === "linux"
-      ? { icon: BUNDLED_ICON_PATH }
-      : {}),
+    ...(windowIconPath ? { icon: windowIconPath } : {}),
     webPreferences: createRendererWebPreferences(
       join(__dirname, "../preload/index.js"),
       systemLocale,
@@ -667,6 +670,11 @@ if (!gotTheLock) {
       },
     });
 
+    if (runtimeConfigResult.ok) {
+      configureRendererBackend(runtimeConfigResult.config.apiUrl);
+      if (!is.dev) app.setName(runtimeConfigResult.config.appName);
+    }
+
     electronApp.setAppUserModelId(
       is.dev ? "ai.multica.desktop.dev" : "ai.multica.desktop",
     );
@@ -674,8 +682,11 @@ if (!gotTheLock) {
     // macOS: replace the default Electron dock icon with the bundled logo
     // so the Canary dev build is visually distinct from a stock Electron
     // run. `app.dock` is macOS-only — guard the call.
-    if (is.dev && process.platform === "darwin" && app.dock) {
-      const icon = nativeImage.createFromPath(BUNDLED_ICON_PATH);
+    const dockIconPath = runtimeConfigResult.ok
+      ? runtimeConfigResult.config.iconPath ?? (is.dev ? BUNDLED_ICON_PATH : undefined)
+      : undefined;
+    if (process.platform === "darwin" && app.dock && dockIconPath) {
+      const icon = nativeImage.createFromPath(dockIconPath);
       if (!icon.isEmpty()) app.dock.setIcon(icon);
     }
 
@@ -751,6 +762,33 @@ if (!gotTheLock) {
     // blocking error and must not silently fall back to the cloud defaults.
     ipcMain.on("runtime-config:get", (event) => {
       event.returnValue = runtimeConfigResult;
+    });
+
+    ipcMain.handle("runtime-config:pick-icon", async (event) => {
+      const owner = BrowserWindow.fromWebContents(event.sender);
+      if (!owner) throw new Error("Invalid settings window");
+      const result = await dialog.showOpenDialog(owner, {
+        properties: ["openFile"],
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "ico", "icns"] }],
+      });
+      const path = result.filePaths[0];
+      if (result.canceled || !path) return null;
+      if (nativeImage.createFromPath(path).isEmpty()) throw new Error("Invalid application icon");
+      return path;
+    });
+
+    ipcMain.handle("runtime-config:save", async (event, input: unknown) => {
+      if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Invalid settings window");
+      const config = parseRuntimeConfig(JSON.stringify(input));
+      if (config.iconPath && nativeImage.createFromPath(config.iconPath).isEmpty()) throw new Error("Invalid application icon");
+      await saveRuntimeConfig(config);
+      return config;
+    });
+
+    ipcMain.handle("runtime-config:restart", (event) => {
+      if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Invalid settings window");
+      app.relaunch();
+      app.quit();
     });
 
     ipcMain.on(RENDERER_ROUTE_CONTEXT_CHANNEL, (event, context: unknown) => {

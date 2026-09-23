@@ -1,4 +1,11 @@
 import type { WebPreferences } from "electron";
+import { createHash } from "node:crypto";
+
+let backendPartition: string | undefined;
+
+export function configureRendererBackend(apiUrl: string): void {
+  backendPartition = `persist:backend-${createHash("sha256").update(apiUrl).digest("hex")}`;
+}
 
 /**
  * WebPreferences shared by every renderer window — the tabbed main window and
@@ -19,6 +26,7 @@ export function createRendererWebPreferences(
   additionalArguments: string[] = [],
 ): WebPreferences {
   return {
+    ...(backendPartition ? { partition: backendPartition } : {}),
     preload: preloadPath,
     // Sandboxed preload. The preload script only uses sandbox-safe APIs: the
     // `electron` module (contextBridge, ipcRenderer — including sendSync) and

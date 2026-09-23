@@ -20,6 +20,7 @@ describe("runtime config", () => {
       apiUrl: "https://congvc-x99.taila6fa8a.ts.net:18443",
       wsUrl: "wss://congvc-x99.taila6fa8a.ts.net:18443/ws",
       appUrl: "https://congvc-x99.taila6fa8a.ts.net:18443",
+      appName: "Multica",
     });
   });
 
@@ -33,6 +34,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.multica.ai",
       wsUrl: "wss://api.multica.ai/ws",
       appUrl: "https://multica.ai",
+      appName: "Multica",
     });
   });
 
@@ -55,6 +57,23 @@ describe("runtime config", () => {
       apiUrl: "https://api.example.com",
       wsUrl: "wss://ws.example.com/socket",
       appUrl: "https://app.example.com",
+      appName: "Multica",
+    });
+  });
+
+  it("preserves desktop branding settings", () => {
+    expect(
+      parseRuntimeConfig(
+        JSON.stringify({
+          schemaVersion: 1,
+          apiUrl: "https://api.example.com",
+          appName: "Acme Desktop",
+          iconPath: "/Users/example/acme.png",
+        }),
+      ),
+    ).toMatchObject({
+      appName: "Acme Desktop",
+      iconPath: "/Users/example/acme.png",
     });
   });
 
@@ -98,6 +117,7 @@ describe("runtime config", () => {
       apiUrl: "http://dev-api.example.test:8080",
       wsUrl: "ws://dev-api.example.test:8080/ws",
       appUrl: "http://dev-app.example.test:3000",
+      appName: "Multica",
     });
   });
 
@@ -107,6 +127,7 @@ describe("runtime config", () => {
       apiUrl: "http://localhost:8080",
       wsUrl: "ws://localhost:8080/ws",
       appUrl: "http://localhost:3000",
+      appName: "Multica",
     });
   });
 
@@ -123,6 +144,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.test.multica.ai",
       wsUrl: "wss://api.test.multica.ai/ws",
       appUrl: "https://test.multica.ai",
+      appName: "Multica",
     });
   });
 
@@ -137,6 +159,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.test.multica.ai",
       wsUrl: "wss://api.test.multica.ai/ws",
       appUrl: "https://staging.multica.ai",
+      appName: "Multica",
     });
   });
 });

@@ -1336,6 +1336,21 @@
       "reconnect_failed": "Couldn't reconnect the daemon",
       "try_again_moment": "Please try again in a moment.",
       "try_again": "Please try again."
+    },
+    "application": {
+      "title": "Application",
+      "api_url": "Backend API URL",
+      "api_description": "Changing the backend takes effect after restart. You may need to sign in again.",
+      "app_name": "Application name",
+      "icon": "Application icon",
+      "choose_icon": "Choose image",
+      "reset_icon": "Use default",
+      "default_icon": "Default Multica icon",
+      "save": "Save",
+      "saved": "Saved. Restart to apply.",
+      "restart": "Restart now",
+      "save_failed": "Could not save application settings.",
+      "icon_failed": "Could not load the selected icon."
     }
   },
   "members": {

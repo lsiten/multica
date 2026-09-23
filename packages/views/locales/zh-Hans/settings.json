@@ -1329,6 +1329,21 @@
       "reconnect_failed": "无法重新连接守护进程",
       "try_again_moment": "请稍后重试。",
       "try_again": "请重试。"
+    },
+    "application": {
+      "title": "应用设置",
+      "api_url": "后端 API 地址",
+      "api_description": "更换后端后重启生效，可能需要重新登录。",
+      "app_name": "应用名称",
+      "icon": "应用图标",
+      "choose_icon": "选择图片",
+      "reset_icon": "恢复默认",
+      "default_icon": "默认 Multica 图标",
+      "save": "保存",
+      "saved": "已保存，重启后生效。",
+      "restart": "立即重启",
+      "save_failed": "保存应用设置失败。",
+      "icon_failed": "无法加载所选图标。"
     }
   },
   "members": {

@@ -5,7 +5,7 @@ import { exposeRuntimeMirrorAPI } from "./runtime-mirror";
 import { RUNTIME_MIRROR_ARGUMENT, RUNTIME_MIRROR_CHANNEL, type RuntimeMirrorWindowRequest } from "../shared/runtime-mirror-window";
 import { contextBridge, ipcRenderer } from "electron";
 import { electronAPI } from "@electron-toolkit/preload";
-import type { RuntimeConfigResult } from "../shared/runtime-config";
+import type { RuntimeConfig, RuntimeConfigResult } from "../shared/runtime-config";
 import type { FreezeBreadcrumb } from "../shared/freeze-breadcrumb";
 import type {
   ManualUpdateCheckResult,
@@ -108,6 +108,9 @@ function subscribeToMainRendererChannel<T>(
 }
 
 const desktopAPI = {
+  saveRuntimeConfig: (config: RuntimeConfig): Promise<RuntimeConfig> => ipcRenderer.invoke("runtime-config:save", config),
+  pickAppIcon: (): Promise<string | null> => ipcRenderer.invoke("runtime-config:pick-icon"),
+  restartApp: (): Promise<void> => ipcRenderer.invoke("runtime-config:restart"),
   vscreenDesktop: (request: VscreenDesktopRequest): Promise<VscreenDesktopResult> => ipcRenderer.invoke(VSCREEN_DESKTOP_CHANNEL, request),
   openRuntimeMirror: (request: RuntimeMirrorWindowRequest): Promise<boolean> => ipcRenderer.invoke(RUNTIME_MIRROR_CHANNEL, "open", request),
   /** App version + normalized OS. Read once at preload time so the renderer

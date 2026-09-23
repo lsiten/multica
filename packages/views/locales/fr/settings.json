@@ -82,7 +82,7 @@
       "done": "Terminé.",
       "cancelled": "Abandonné."
     }
-  },
+   },
   "quick_actions": {
     "title": "Actions rapides",
     "description": "Lancez un agent et un prompt prédéfinis depuis la barre latérale d’une tâche.",
@@ -1268,6 +1268,21 @@
       "reconnect_failed": "Impossible de reconnecter le démon",
       "try_again_moment": "Veuillez réessayer dans un instant.",
       "try_again": "Veuillez réessayer."
+    },
+    "application": {
+      "title": "Application",
+      "api_url": "URL API du serveur",
+      "api_description": "Redémarrez après un changement de serveur. Une nouvelle connexion peut être nécessaire.",
+      "app_name": "Nom de l’application",
+      "icon": "Icône de l’application",
+      "choose_icon": "Choisir une image",
+      "reset_icon": "Par défaut",
+      "default_icon": "Icône Multica par défaut",
+      "save": "Enregistrer",
+      "saved": "Enregistré. Redémarrez pour appliquer.",
+      "restart": "Redémarrer",
+      "save_failed": "Impossible d’enregistrer les paramètres.",
+      "icon_failed": "Impossible de charger l’icône."
     }
   },
   "members": {
