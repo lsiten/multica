@@ -10,10 +10,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
+
+func TestVscreenReasonPreservesNativeCapturePermissionFailure(t *testing.T) {
+	if got := vscreenReason(mirror.ErrCapturePermissionDenied); got != protocol.VscreenPermissionDenied {
+		t.Fatalf("permission capture reason = %s, want %s", got, protocol.VscreenPermissionDenied)
+	}
+}
 
 func TestMirrorExecutionCannotAcquireAfterDisplayChanges(t *testing.T) {
 	f, actor := newVscreenToolFixture(t)

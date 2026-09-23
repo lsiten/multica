@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
@@ -140,6 +141,12 @@ func (d *Daemon) vscreenSources(ctx context.Context, workspaceID, runtimeID stri
 }
 
 func vscreenReason(err error) protocol.VscreenRejectionReason {
+	if errors.Is(err, mirror.ErrCapturePermissionDenied) {
+		return protocol.VscreenPermissionDenied
+	}
+	if errors.Is(err, mirror.ErrNoDisplay) {
+		return protocol.VscreenSourceGone
+	}
 	var domain *vscreen.Error
 	if errors.As(err, &domain) {
 		return domain.Reason
