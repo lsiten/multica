@@ -10,8 +10,11 @@ import { SettingsCard, SettingsRow, SettingsSection } from "@multica/views/setti
 import { useT } from "@multica/views/i18n";
 import { toast } from "sonner";
 import type { DaemonStatus, ManagedWorktree } from "../../../shared/daemon-types";
-import { LocalReviewDialog, LocalReviewEntry } from "@multica/views/issues/components";
+import { LocalReviewDialog, LocalReviewEntry, WorktreeActionLabel, WorktreeLifecycle, WorktreeReason, WorktreeRepositoryStatus } from "@multica/views/issues/components";
 import type { LocalReviewRequest } from "@multica/core/types/local-review";
+import { canCleanWorktree, canDiscardWorktree } from "@multica/core/types/managed-worktree";
+import { compareWorktreeLifecycle, type WorktreeAction } from "@multica/core/types/worktree-lifecycle";
+import { invalidateWorktreeInventory } from "@multica/views/platform";
 
 export function WorktreeManager({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
@@ -30,6 +33,9 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
   const [grouped, setGrouped] = useState(true);
   const [pending, setPending] = useState<readonly ManagedWorktree[] | null>(null);
   const [discardChanges, setDiscardChanges] = useState(false);
+  const [retained, setRetained] = useState<Record<string, string>>({});
+  const selectedWorktree = pending?.[0];
+  const singleDiscard = !!selectedWorktree && pending?.length === 1 && canDiscardWorktree(selectedWorktree) && !canCleanWorktree(selectedWorktree);
   const selectCleanup = (selected: readonly ManagedWorktree[]) => {
     setDiscardChanges(false);
     setPending(selected);
@@ -46,6 +52,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
       return { removedPaths, retained };
     },
     onSuccess: (result) => {
+      setRetained(result.retained);
       toast.success(t(($) => $.desktop.worktrees.cleaned, { count: result.removedPaths.length }));
       if (Object.keys(result.retained).length > 0) {
         toast.warning(t(($) => $.desktop.worktrees.retained, { count: Object.keys(result.retained).length }));
@@ -53,7 +60,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
       setPending(null);
     },
     onError: (error) => toast.error(t(($) => $.desktop.worktrees.cleanup_failed), { description: error.message }),
-    onSettled: () => client.invalidateQueries({ queryKey }),
+    onSettled: () => invalidateWorktreeInventory(client),
   });
   const rows = inventory.data ?? [];
   const workspaceIds = useMemo(
@@ -68,19 +75,20 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
     })),
   });
   const groups = useMemo(() => {
-    const result = new Map<string, { name: string; rows: ManagedWorktree[] }>();
-    for (const row of inventory.data ?? []) {
+    const result = new Map<string, { name: string; action: WorktreeAction; rows: ManagedWorktree[] }>();
+    for (const row of (inventory.data ?? []).toSorted(compareWorktreeLifecycle)) {
       const workspaceIndex = workspaceIds.indexOf(row.workspaceId);
       const currentAgent = agentQueries[workspaceIndex]?.data?.find((agent) => agent.id === row.agentId);
       // Inventory defines local scope; agent identity defines grouping, not its runtime.
-      const key = grouped ? row.workspaceId + ":" + (row.agentId || row.agentName) : "all";
-      const group = result.get(key) ?? { name: grouped ? currentAgent?.name || row.agentName || row.agentId || t(($) => $.desktop.worktrees.unknown_agent) : t(($) => $.desktop.worktrees.all), rows: [] };
+      const action = row.nextAction ?? "unknown";
+      const key = action + ":" + (grouped ? row.workspaceId + ":" + (row.agentId || row.agentName) : "all");
+      const group = result.get(key) ?? { action, name: grouped ? currentAgent?.name || row.agentName || row.agentId || t(($) => $.desktop.worktrees.unknown_agent) : t(($) => $.desktop.worktrees.all), rows: [] };
       group.rows.push(row);
       result.set(key, group);
     }
-    return [...result.entries()].sort(([, a], [, b]) => a.name.localeCompare(b.name));
+    return [...result.entries()];
   }, [inventory.data, grouped, t, agentQueries, workspaceIds]);
-  const cleanable = (items: readonly ManagedWorktree[]) => items.filter((row) => !row.active && ["", "dirty", "unpushed", "output"].includes(row.protectionReason));
+  const cleanable = (items: readonly ManagedWorktree[]) => items.filter(canCleanWorktree);
   const reasonLabel = (reason: string) => {
     switch (reason) {
       case "active": return t(($) => $.desktop.worktrees.active);
@@ -112,11 +120,12 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
         </SettingsRow>
         {!enabled && <p className="px-4 py-3 text-body text-muted-foreground">{t(($) => $.desktop.worktrees.offline)}</p>}
         {inventory.isError && <p role="alert" className="px-4 py-3 text-body text-destructive">{t(($) => $.desktop.worktrees.load_failed)} {inventory.error.message}</p>}
+        {Object.keys(retained).length > 0 && <div role="status" className="space-y-2 px-4 py-3"><p className="text-body">{t(($) => $.desktop.worktrees.retained, { count: Object.keys(retained).length })}</p>{Object.entries(retained).map(([path, reason]) => <div key={path}><p className="break-all font-mono text-caption">{path}</p><WorktreeReason reason={reason} /></div>)}</div>}
         {enabled && !inventory.isPending && !inventory.isError && rows.length === 0 && <p className="px-4 py-3 text-body text-muted-foreground">{t(($) => $.desktop.worktrees.empty)}</p>}
         {groups.map(([key, group]) => (
           <div key={key} className="border-t px-4 py-3">
             <div className="flex items-center justify-between gap-3">
-              <p className="min-w-0 truncate text-body font-medium" title={group.name}>{group.name} · {group.rows.length}</p>
+              <div className="min-w-0"><p className="text-caption font-medium"><WorktreeActionLabel action={group.action} /></p><p className="truncate text-body font-medium" title={group.name}>{group.name} · {group.rows.length}</p></div>
               {grouped && <Button variant="outline" size="sm" disabled={blocked || cleanable(group.rows).length === 0} onClick={() => selectCleanup(cleanable(group.rows))}>{t(($) => $.desktop.worktrees.clean_agent)}</Button>}
             </div>
             <div className="mt-2 space-y-3">
@@ -126,9 +135,13 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
                     <p className="truncate font-medium text-foreground" title={row.taskName}>{row.taskName}</p>
                     <p className="break-all font-mono" title={row.path}>{row.path}</p>
                     <p>{(row.sizeBytes / 1024 ** 2).toFixed(1)} MB · {reasonLabel(row.active ? "active" : row.protectionReason)}</p>
-                    {row.repositories?.map((path) => <LocalReviewEntry key={path} labelSuffix={path.split(/[\\/]/).pop()} request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: "main" }} onOpen={setReview} />)}
+                    <WorktreeLifecycle row={row} />
+                    {row.repositories?.map((path) => {
+                      const repository = row.repositoryDetails?.find((entry) => entry.path === path);
+                      return <div key={path} className="mt-2 space-y-1"><WorktreeRepositoryStatus repository={repository} /><LocalReviewEntry labelSuffix={path.split(/[\\/]/).pop()} request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: repository?.target ?? "" }} onOpen={setReview} /></div>;
+                    })}
                   </div>
-                  <Button variant="ghost" size="sm" disabled={blocked || cleanable([row]).length === 0} onClick={() => selectCleanup([row])}>{t(($) => $.desktop.worktrees.clean)}</Button>
+                  <Button variant="ghost" size="sm" disabled={blocked || (!canCleanWorktree(row) && !canDiscardWorktree(row))} onClick={() => selectCleanup([row])}>{canDiscardWorktree(row) ? t(($) => $.desktop.worktrees.discard_worktree) : t(($) => $.desktop.worktrees.clean)}</Button>
                 </div>
               ))}
             </div>
@@ -143,13 +156,13 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
             <DialogDescription>{t(($) => $.desktop.worktrees.confirm_description)}</DialogDescription>
           </DialogHeader>
           <div className="max-h-48 overflow-y-auto break-all font-mono text-caption text-muted-foreground">{pending?.map((row) => <p key={row.path}>{row.path}</p>)}</div>
-          <label className="flex items-start gap-2 text-body text-destructive">
+          {singleDiscard && <label className="flex items-start gap-2 text-body text-destructive">
             <input type="checkbox" checked={discardChanges} disabled={cleanup.isPending} onChange={(event) => setDiscardChanges(event.target.checked)} />
             {t(($) => $.desktop.worktrees.discard_changes)}
-          </label>
+          </label>}
           <DialogFooter>
             <Button variant="ghost" disabled={cleanup.isPending} onClick={() => setPending(null)}>{t(($) => $.desktop.daemon.cancel)}</Button>
-            <Button variant="destructive" disabled={cleanup.isPending || !enabled} onClick={() => { if (pending) cleanup.mutate(pending); }}>
+            <Button variant="destructive" disabled={blocked || (singleDiscard && !discardChanges)} onClick={() => { if (pending) cleanup.mutate(pending); }}>
               {cleanup.isPending && <Loader2 className="size-3.5 animate-spin" />}{t(($) => $.desktop.worktrees.clean)}
             </Button>
           </DialogFooter>

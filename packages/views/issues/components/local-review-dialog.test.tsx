@@ -25,12 +25,13 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
 
-function mount() {
+function mount(target = "main") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  renderWithI18n(<QueryClientProvider client={client}><LocalReviewDialog request={{ task_id: "task", workspace_id: "ws", path: "/repo/feature", target: "main" }} onClose={() => {}} /></QueryClientProvider>, { locale: "zh-Hans" });
+  renderWithI18n(<QueryClientProvider client={client}><LocalReviewDialog request={{ task_id: "task", workspace_id: "ws", path: "/repo/feature", target }} onClose={() => {}} /></QueryClientProvider>, { locale: "zh-Hans" });
   return client;
 }
 async function chooseTarget(branch: string) {
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "目标分支" })).toBeEnabled());
   fireEvent.click(screen.getByRole("combobox", { name: "目标分支" }));
   fireEvent.change(await screen.findByRole("combobox", { name: "搜索本地分支…" }), { target: { value: branch } });
   fireEvent.click(await screen.findByRole("option", { name: branch }));
@@ -51,13 +52,13 @@ describe("paged local MR dialog", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(120000); });
     expect(renewReviewLease).toHaveBeenCalledTimes(stopped);
   });
-  it("defaults to an existing priority branch and preserves manual selection", async () => {
+  it("requires an intended target and preserves manual selection", async () => {
     vi.mocked(readLocalReviewBranches).mockResolvedValue(["release", "test"]);
     const client = mount();
-    await screen.findByText("+after");
-    expect(readReviewManifest).toHaveBeenCalledWith(expect.objectContaining({ target: "test", action: "manifest" }), expect.any(AbortSignal));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "目标分支" })).toBeEnabled());
+    expect(readReviewManifest).not.toHaveBeenCalled();
     await chooseTarget("release");
-    expect(readReviewManifest).toHaveBeenCalledTimes(1);
+    expect(readReviewManifest).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "对比目标分支" }));
     await waitFor(() => expect(readReviewManifest).toHaveBeenLastCalledWith(expect.objectContaining({ target: "release" }), expect.any(AbortSignal)));
     vi.mocked(readLocalReviewBranches).mockResolvedValue(["main", "release", "test"]);
@@ -71,7 +72,23 @@ describe("paged local MR dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "对比目标分支" }));
     await waitFor(() => expect(readReviewManifest).toHaveBeenLastCalledWith(expect.objectContaining({ target: "release", runtime_id: "discovered" }), expect.any(AbortSignal)));
     fireEvent.change(screen.getByRole("combobox", { name: "仓库" }), { target: { value: "/repo/other" } });
+    await chooseTarget("release");
+    fireEvent.click(screen.getByRole("button", { name: "对比目标分支" }));
     await waitFor(() => expect(readReviewManifest).toHaveBeenLastCalledWith(expect.objectContaining({ path: "/repo/other", runtime_id: "discovered" }), expect.any(AbortSignal)));
+  });
+  it("does not read or approve a version merely because main exists", async () => {
+    mount("");
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "目标分支" })).toBeEnabled());
+    expect(readReviewManifest).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "确认通过" })).not.toBeInTheDocument();
+  });
+  it("invalidates inventories after a review decision", async () => {
+    const client = mount();
+    const key = ["desktop-worktrees", "viewer", "profile", "daemon"];
+    client.setQueryData(key, []);
+    await screen.findByText("+after");
+    fireEvent.click(screen.getByRole("button", { name: "确认通过" }));
+    await waitFor(() => expect(client.getQueryState(key)?.isInvalidated).toBe(true));
   });
   it("keeps a large file isolated and target selection available", async () => {
     vi.mocked(readReviewFile).mockImplementation(async (input) => ({ version_id: input.version_id || "", path: input.file_path || "", preview: "too_large" }));
@@ -81,7 +98,7 @@ describe("paged local MR dialog", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
   it("approves the fixed version and merges only after separate confirmation", async () => {
-    mount();
+    const client = mount();
     await screen.findByText("+after");
     expect(screen.getByRole("button", { name: "合并" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "确认通过" }));
@@ -89,9 +106,12 @@ describe("paged local MR dialog", () => {
     expect(readReviewManifest).toHaveBeenLastCalledWith(expect.objectContaining({ action: "approve", version_id: "a".repeat(64), snapshot_id: "a".repeat(64) }));
     fireEvent.click(screen.getByRole("button", { name: "合并" }));
     expect(readReviewManifest).not.toHaveBeenCalledWith(expect.objectContaining({ action: "merge" }));
+    const inventoryKey = ["local-review-worktrees", "viewer", "ws"];
+    client.setQueryData(inventoryKey, []);
     fireEvent.click(screen.getByRole("button", { name: "确认本地合并" }));
     await screen.findByText(/merged-sha/);
     expect(readReviewManifest).toHaveBeenLastCalledWith(expect.objectContaining({ action: "merge", version_id: "a".repeat(64) }));
+    expect(client.getQueryState(inventoryKey)?.isInvalidated).toBe(true);
   });
   it("loads commit history only when expanded and keeps it scoped to the version", async () => {
     vi.mocked(readReviewCommits).mockImplementation(async (input) => ({

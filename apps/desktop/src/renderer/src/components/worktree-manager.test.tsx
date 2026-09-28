@@ -8,6 +8,8 @@ import type { ManagedWorktree } from "../../../shared/daemon-types";
 import { api } from "@multica/core/api";
 import { pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
 import { reviewFileFixture, reviewManifestFixture } from "../../../../../../packages/views/test/local-review-pages";
+import { toWorktreeLifecycle, worktreeLifecycleSchema } from "@multica/core/types/worktree-lifecycle";
+import { parseManagedWorktrees } from "@multica/core/types/managed-worktree";
 
 vi.mock("@multica/core/api", () => ({ api: { listAgents: vi.fn(), listRuntimes: vi.fn() } }));
 
@@ -20,6 +22,7 @@ const listWorktrees = vi.fn();
 const cleanupWorktrees = vi.fn();
 const readLocalReviewPage = vi.fn();
 const row = (agentId: string, path: string): ManagedWorktree => ({
+  ...toWorktreeLifecycle(worktreeLifecycleSchema.parse({ run_status: "completed", next_action: "cleanup" })),
   agentId, agentName: "Same name", path, workspaceId: "ws", taskName: path,
   taskId: "task-id", repositories: [],
   kind: "issue", sizeBytes: 123, active: false, protectionReason: "",
@@ -44,7 +47,7 @@ beforeEach(() => {
 
 describe("worktree management", () => {
   it("opens the real MR dialog for the selected repository without cleaning it", async () => {
-    listWorktrees.mockResolvedValue([{ ...row("agent-id", "/task-root"), runtimeId: "runtime", repositories: ["/repo/worktree"] }]);
+    listWorktrees.mockResolvedValue([{ ...row("agent-id", "/task-root"), runtimeId: "runtime", repositories: ["/repo/worktree"], repositoryDetails: [{ path: "/repo/worktree", target: "main", reviewState: "open", nextAction: "review", reason: "review" }] }]);
     readLocalReviewPage.mockImplementation(async (raw: unknown) => {
       const input = pagedReviewRequestSchema.parse(raw);
       if (input.action === "repositories") return { repositories: [input.path] };
@@ -107,13 +110,15 @@ describe("worktree management", () => {
   });
 
   it("requires an explicit discard choice and shows inventory failures", async () => {
-    listWorktrees.mockResolvedValue([{ ...row("a", "/dirty"), protectionReason: "dirty" }]);
+    listWorktrees.mockResolvedValue([{ ...row("a", "/dirty"), nextAction: "retained", protectionReason: "dirty" }]);
     cleanupWorktrees.mockResolvedValue({ removedPaths: ["/dirty"], retained: {} });
     mount();
-    await waitFor(() => expect(screen.getByRole("button", { name: "清理全部" })).toBeEnabled());
-    fireEvent.click(await screen.findByRole("button", { name: "清理全部" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "放弃工作副本" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "清理可回收项" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "放弃工作副本" }));
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "清理" })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole("checkbox"));
     fireEvent.click(within(dialog).getByRole("button", { name: "清理" }));
     await waitFor(() => expect(cleanupWorktrees).toHaveBeenCalledWith(["/dirty"], true));
@@ -121,5 +126,37 @@ describe("worktree management", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "刷新" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("加载 worktree 失败");
+  });
+  it("keeps old daemon rows protected when no lifecycle decision is available", async () => {
+    listWorktrees.mockResolvedValue(parseManagedWorktrees([{ workspace_id: "ws", task_short: "legacy", path: "/legacy", kind: "task", size_bytes: 0, active: false, protection_reason: "" }]));
+    mount();
+    await screen.findByText("/legacy");
+    expect(screen.getByRole("button", { name: "清理可回收项" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "清理" })).toBeDisabled();
+    expect(cleanupWorktrees).not.toHaveBeenCalled();
+  });
+  it("shows issue state and lifecycle evidence with stale work first", async () => {
+    listWorktrees.mockResolvedValue([
+      { ...row("a", "/recent"), nextAction: "review", lastActivityAt: "2026-09-27T00:00:00Z" },
+      { ...row("a", "/stale"), nextAction: "review", issueId: "issue-review", issueStatus: "in_review", stale: true, completedAt: "2026-09-01T00:00:00Z", lastActivityAt: "2026-09-02T00:00:00Z" },
+    ]);
+    mount();
+    expect(await screen.findByText("任务 issue-review · 审核中")).toHaveAttribute("title", "in_review");
+    expect(screen.getByText("长期未处理")).toBeInTheDocument();
+    expect(document.querySelector('time[datetime="2026-09-01T00:00:00Z"]')).toBeInTheDocument();
+    const paths = screen.getAllByTitle(/^\/(recent|stale)$/).filter((element) => element.classList.contains("font-mono"));
+    expect(paths.map((element) => element.textContent)).toEqual(["/stale", "/recent"]);
+  });
+  it("keeps each retained path and recovery reason visible after cleanup", async () => {
+    listWorktrees.mockResolvedValue([row("a", "/retained")]);
+    cleanupWorktrees.mockResolvedValue({ removedPaths: [], retained: { "/retained": "dirty" } });
+    mount();
+    await waitFor(() => expect(screen.getByRole("button", { name: "清理可回收项" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "清理可回收项" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "清理" }));
+    const result = await screen.findByRole("status");
+    expect(result).toHaveTextContent("/retained");
+    expect(result).toHaveTextContent("未提交修改");
+    await waitFor(() => expect(listWorktrees).toHaveBeenCalledTimes(2));
   });
 });

@@ -26,3 +26,4 @@ export {
   type ScrollRestorationEntry,
 } from "./scroll-restoration";
 export { LocalVoiceContext, useLocalVoice } from "./local-voice";
+export { invalidateWorktreeInventory } from "./local-review-inventory";

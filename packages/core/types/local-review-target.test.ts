@@ -3,12 +3,10 @@ import { expect, it } from "vitest";
 import { defaultReviewTarget } from "./local-review-target";
 
 it.each([
-  [["test", "production", "master", "main"], "main"],
-  [["test", "production", "master"], "master"],
-  [["test", "production"], "production"],
-  [["feature", "test"], "test"],
-  [["feature", "release"], "feature"],
-  [[], ""],
-])("selects a default from %j", (branches, expected) => {
-  expect(defaultReviewTarget(branches)).toBe(expected);
+  [["test", "production", "master", "main"], "", ""],
+  [["feature", "release"], "release", "release"],
+  [["feature", "release"], "main", ""],
+  [[], "main", ""],
+])("uses only an available requested target from %j", (branches, requested, expected) => {
+  expect(defaultReviewTarget(branches, requested)).toBe(expected);
 });

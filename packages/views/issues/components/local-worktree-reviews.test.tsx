@@ -9,8 +9,8 @@ import { reviewFileFixture, reviewManifestFixture } from "../../test/local-revie
 
 vi.mock("@multica/core/auth", () => ({ useAuthStore: (select: (state: { user: { id: string } }) => unknown) => select({ user: { id: "viewer" } }) }));
 vi.mock("../../platform/local-review", () => ({ readLocalReviewBranches: async () => ["main"], localReviewInventoryPage: async () => [
-  { taskId: "task-a", workspaceId: "ws", runtimeId: "runtime-a", agentId: "agent-a", taskName: "feature-a", repositories: ["/remote/worktree-a"] },
-  { taskId: "task-b", workspaceId: "ws", runtimeId: "runtime-b", agentId: "agent-b", taskName: "feature-b", repositories: ["/remote/worktree-b"] },
+  { taskId: "task-a", workspaceId: "ws", runtimeId: "runtime-a", agentId: "agent-a", taskName: "feature-a", repositories: ["/remote/worktree-a"], repositoryDetails: [{ path: "/remote/worktree-a", target: "main", nextAction: "review" }] },
+  { taskId: "task-b", workspaceId: "ws", runtimeId: "runtime-b", agentId: "agent-b", taskName: "feature-b", repositories: ["/remote/worktree-b"], repositoryDetails: [{ path: "/remote/worktree-b", target: "main", nextAction: "review" }] },
 ] }));
 vi.mock("../../platform/local-review-pages", () => ({
   readReviewRepositories: async (input: PagedReviewInput) => ({ repositories: [input.path] }),

@@ -12,6 +12,7 @@ import { issueKeys } from "@multica/core/issues/queries";
 import type { AgentTask } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { CodeReviewContextSection } from "./code-review-context-section";
+import { toWorktreeLifecycle, worktreeLifecycleSchema } from "@multica/core/types/worktree-lifecycle";
 
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 vi.mock("@multica/core/auth", () => { const state = { user: { id: "viewer" } }; return { useAuthStore: Object.assign((select: (value: typeof state) => unknown) => select(state), { getState: () => state }) }; });
@@ -40,6 +41,7 @@ describe("CodeReviewContextSection", () => {
   beforeEach(() => {
     vi.mocked(readReviewRepositories).mockImplementation(async (input) => ({ repositories: [input.path] }));
     vi.mocked(localReviewInventory).mockResolvedValue([{
+      ...toWorktreeLifecycle(worktreeLifecycleSchema.parse({ repositories_details: [{ path: "/managed/review-worktree", target: "main" }] })),
       taskId: task.id, workspaceId: "ws-1", runtimeId: "runtime-1", agentId: "agent-1",
       path: "/managed/review-worktree", taskName: "agent/review-123", repositories: ["/managed/review-worktree"], active: false,
     }]);
@@ -48,7 +50,7 @@ describe("CodeReviewContextSection", () => {
     const rows = [task, { ...task, id: "older", created_at: "2026-09-07T00:00:00Z" }, { ...task, id: "empty", work_dir: "/empty" }, { ...task, id: "remote", runtime_id: "runtime-2" }];
     class FixtureClient extends ApiClient { override async listTasksByIssue() { return rows; } }
     setApiInstance(new FixtureClient("https://fixture.invalid"));
-    vi.mocked(localReviewInventory).mockResolvedValue(rows.map((row) => ({ taskId: row.id, workspaceId: "ws-1", runtimeId: row.runtime_id || "", agentId: "agent-1", path: row.work_dir || "", taskName: row.id, repositories: [row.work_dir || ""], active: false })));
+    vi.mocked(localReviewInventory).mockResolvedValue(rows.map((row) => ({ ...toWorktreeLifecycle(worktreeLifecycleSchema.parse({})), taskId: row.id, workspaceId: "ws-1", runtimeId: row.runtime_id || "", agentId: "agent-1", path: row.work_dir || "", taskName: row.id, repositories: [row.work_dir || ""], active: false })));
     vi.mocked(readReviewRepositories).mockImplementation(async (input) => ({ repositories: input.path === "/empty" ? [] : [input.path] }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(issueKeys.tasks("issue-1"), rows);

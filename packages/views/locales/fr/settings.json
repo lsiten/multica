@@ -1322,14 +1322,15 @@
       "icon_failed": "Impossible de charger l’icône."
     },
     "worktrees": {
-      "discard_changes": "Supprimer également de façon définitive les modifications non validées et les commits non poussés dans les répertoires sélectionnés.",
+      "discard_worktree": "Abandonner la copie",
+      "discard_changes": "Abandonner définitivement les modifications non commitées, les commits non préservés ailleurs et les fichiers produits localement dans cette copie de travail.",
       "title": "Worktrees",
       "description": "Les nouvelles exécutions terminées nettoient automatiquement les environnements sans risque. Les modifications non validées, les commits non poussés et les fichiers de sortie locaux sont conservés.",
       "scope": "Tous les environnements de tâches gérés par ce profil de daemon sur cette machine.",
       "count": "{{count}} worktrees",
       "group_by_agent": "Grouper par agent",
       "refresh": "Actualiser",
-      "clean_all": "Tout nettoyer",
+      "clean_all": "Nettoyer les éléments récupérables",
       "clean_agent": "Nettoyer les worktrees de l’agent",
       "clean": "Nettoyer",
       "all": "Tous les worktrees",
@@ -1347,7 +1348,7 @@
       "cleanup_failed": "Échec du nettoyage. Actualisez la liste avant de réessayer.",
       "empty": "Aucun worktree sur cette machine.",
       "confirm_title": "Nettoyer {{count}} worktrees ?",
-      "confirm_description": "Les répertoires de tâches, journaux et sorties locales sélectionnés seront définitivement supprimés. Les tâches en cours, modifications non validées et commits non poussés sont protégés. Les branches des dépôts situés en dehors de ces répertoires restent disponibles.",
+      "confirm_description": "Chaque répertoire est revérifié ; seuls ceux pouvant être récupérés sans risque sont supprimés définitivement, avec leurs journaux. Les exécutions actives restent toujours protégées. Les modifications non commitées, les commits non préservés ailleurs et les fichiers produits localement sont conservés par défaut. Les branches des dépôts situés en dehors de ces répertoires restent disponibles.",
       "cleaned": "{{count}} worktrees nettoyés.",
       "retained": "{{count}} worktrees conservés, car leur état a changé ou n’a pas pu être vérifié.",
       "refresh_tab": "Actualiser l’onglet actif"

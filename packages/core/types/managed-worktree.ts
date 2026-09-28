@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { parseWithFallback } from "../api/schema";
+import { toWorktreeLifecycle, worktreeLifecycleSchema } from "./worktree-lifecycle";
 
-const managedWorktreeSchema = z.object({
+const managedWorktreeSchema = worktreeLifecycleSchema.extend({
   workspace_id: z.string(),
   task_short: z.string(),
   task_id: z.string().optional().default(""),
@@ -15,6 +16,7 @@ const managedWorktreeSchema = z.object({
   active: z.boolean().optional().default(true),
   protection_reason: z.string().optional().default("unavailable"),
 }).transform((row) => ({
+  ...toWorktreeLifecycle(row),
   workspaceId: row.workspace_id,
   taskName: row.task_short,
   taskId: row.task_id,
@@ -36,6 +38,16 @@ const cleanupResultSchema = z.object({
 
 export type ManagedWorktree = z.infer<typeof managedWorktreeSchema>;
 export type ManagedWorktreeCleanupResult = z.infer<typeof cleanupResultSchema>;
+
+export function canCleanWorktree(row: ManagedWorktree): boolean {
+  return !row.active && row.nextAction === "cleanup" && row.protectionReason === ""
+    && ["completed", "failed", "cancelled"].includes(row.runStatus);
+}
+
+export function canDiscardWorktree(row: ManagedWorktree): boolean {
+  return !row.active && row.nextAction !== "unknown" && ["completed", "failed", "cancelled"].includes(row.runStatus)
+    && ["dirty", "unpushed", "output"].includes(row.protectionReason);
+}
 
 export function parseManagedWorktrees(value: unknown): ManagedWorktree[] {
   const result = parseWithFallback<ManagedWorktree[] | null>(value, z.array(managedWorktreeSchema), null, { endpoint: "/worktrees" });

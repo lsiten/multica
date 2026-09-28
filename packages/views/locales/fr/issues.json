@@ -1450,6 +1450,32 @@
     "completed": "Objectif réalisé par le responsable",
     "review_gate": "Seul le responsable peut confirmer cet objectif avant la revue."
   },
+  "worktree_lifecycle": {
+    "actions": {
+      "active": "En cours",
+      "review": "À examiner",
+      "changes_requested": "À corriger",
+      "merge": "À fusionner",
+      "cleanup": "Prêt à nettoyer",
+      "retained": "Conservé",
+      "unknown": "À vérifier"
+    },
+    "stale": "En attente prolongée",
+    "issue": "Tâche {{id}} · {{status}}",
+    "run": "Exécution · {{status}}",
+    "completed": "Fin de l’exécution",
+    "activity": "Dernière activité",
+    "target": "Branche cible : {{target}}",
+    "choose_target": "Choisissez la branche cible prévue avant la revue.",
+    "dirty": "Des modifications non commitées restent présentes. Préservez-les et examinez-les avant le nettoyage.",
+    "unpushed": "Des commits non poussés restent présents. Préservez-les ou livrez-les avant le nettoyage.",
+    "save_outputs": "Préservez les fichiers produits localement avant le nettoyage.",
+    "resume_review": "Terminez ou actualisez la revue avant le nettoyage.",
+    "rework": "Appliquez les corrections demandées et soumettez une nouvelle version.",
+    "wait_run": "Attendez la fin de l’exécution en cours.",
+    "reconnect": "Reconnectez le runtime et vérifiez la propriété avant de réessayer.",
+    "check_task": "Vérifiez la tâche et actualisez la liste avant de réessayer."
+  },
   "local_review": {
     "entry_checking": "Vérification du dépôt…",
     "entry_empty": "Aucun dépôt Git à examiner",

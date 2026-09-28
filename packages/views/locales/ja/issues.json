@@ -694,6 +694,32 @@
     "stop_tooltip": "エージェントを停止",
     "cancel_failed": "実行をキャンセルできませんでした"
   },
+  "worktree_lifecycle": {
+    "actions": {
+      "active": "実行中",
+      "review": "レビュー待ち",
+      "changes_requested": "修正待ち",
+      "merge": "マージ待ち",
+      "cleanup": "削除可能",
+      "retained": "保持",
+      "unknown": "確認が必要"
+    },
+    "stale": "長期未処理",
+    "issue": "タスク {{id}} · {{status}}",
+    "run": "実行 · {{status}}",
+    "completed": "実行終了",
+    "activity": "最終更新",
+    "target": "対象ブランチ：{{target}}",
+    "choose_target": "レビューする対象ブランチを確認して選択してください。",
+    "dirty": "未コミットの変更があります。保存してレビューしてから削除してください。",
+    "unpushed": "未プッシュのコミットがあります。保存または引き渡してから削除してください。",
+    "save_outputs": "ローカルの成果物を保存してから削除してください。",
+    "resume_review": "レビューを完了または更新してから削除してください。",
+    "rework": "レビューの指摘を修正し、新しいバージョンを提出してください。",
+    "wait_run": "実行が終了するまでお待ちください。",
+    "reconnect": "ランタイムに再接続し、所有者を確認してから再試行してください。",
+    "check_task": "タスクを確認し、一覧を更新してから再試行してください。"
+  },
   "local_review": {
     "entry_checking": "リポジトリを確認中…",
     "entry_empty": "レビュー可能な Git リポジトリがありません",

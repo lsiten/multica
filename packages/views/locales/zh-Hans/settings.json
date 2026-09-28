@@ -1211,14 +1211,15 @@
   },
   "desktop": {
     "worktrees": {
-      "discard_changes": "永久丢弃未提交修改和未推送提交。",
+      "discard_worktree": "放弃工作副本",
+      "discard_changes": "永久放弃此工作副本中的未提交修改、未另行保存的提交和本地产出文件。",
       "title": "Worktree 管理",
       "description": "新运行完成后会自动清理可安全回收的任务目录。有未提交修改、未推送提交或本地产出文件时会保留。",
       "scope": "查看此设备上当前守护进程配置管理的全部任务目录。",
       "count": "{{count}} 个 worktree",
       "group_by_agent": "按智能体分组",
       "refresh": "刷新",
-      "clean_all": "清理全部",
+      "clean_all": "清理可回收项",
       "clean_agent": "清理此智能体",
       "clean": "清理",
       "all": "全部 worktree",
@@ -1236,7 +1237,7 @@
       "cleanup_failed": "清理失败，请刷新列表后重试。",
       "empty": "此设备上暂无 worktree。",
       "confirm_title": "清理 {{count}} 个 worktree？",
-      "confirm_description": "将永久删除所选任务目录、日志和本地产出文件。运行中的任务、有未提交修改或未推送成果的目录会受到保护。保存在这些目录之外仓库中的分支会继续保留。",
+      "confirm_description": "清理前会重新核查，仅永久删除可安全回收的目录和日志。运行中的目录始终保留；默认保留未提交修改、未另行保存的提交和本地产出。目录外仓库中的分支会继续保留。",
       "cleaned": "已清理 {{count}} 个 worktree。",
       "retained": "{{count}} 个 worktree 状态已变化或无法验证，已保留。",
       "refresh_tab": "刷新当前标签页"

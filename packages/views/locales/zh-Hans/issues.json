@@ -694,6 +694,32 @@
     "stop_tooltip": "停止智能体",
     "cancel_failed": "取消运行失败"
   },
+  "worktree_lifecycle": {
+    "actions": {
+      "active": "运行中",
+      "review": "待审查",
+      "changes_requested": "待返工",
+      "merge": "待合并",
+      "cleanup": "可清理",
+      "retained": "保留",
+      "unknown": "待核实"
+    },
+    "stale": "长期未处理",
+    "issue": "任务 {{id}} · {{status}}",
+    "run": "运行 · {{status}}",
+    "completed": "运行结束",
+    "activity": "最后活动",
+    "target": "目标分支：{{target}}",
+    "choose_target": "请选择确认过的目标分支后再审查。",
+    "dirty": "有未提交修改。请先保存并审查交付，再清理工作副本。",
+    "unpushed": "有未推送提交。请先保存或交付这些提交，再清理工作副本。",
+    "save_outputs": "先保存本地产出文件，再清理工作副本。",
+    "resume_review": "先完成或刷新审查，再清理工作副本。",
+    "rework": "按审查意见修改并提交新版本。",
+    "wait_run": "等待当前运行结束。",
+    "reconnect": "重新连接运行时并核实归属后重试。",
+    "check_task": "检查任务并刷新列表后重试。"
+  },
   "local_review": {
     "entry_checking": "正在验证仓库…",
     "entry_empty": "无可审查的 Git 仓库",

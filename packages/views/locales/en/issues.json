@@ -721,6 +721,32 @@
     "stop_tooltip": "Stop agent",
     "cancel_failed": "Failed to cancel run"
   },
+  "worktree_lifecycle": {
+    "actions": {
+      "active": "Running",
+      "review": "Needs review",
+      "changes_requested": "Needs changes",
+      "merge": "Ready to merge",
+      "cleanup": "Ready to clean",
+      "retained": "Retained",
+      "unknown": "Needs verification"
+    },
+    "stale": "Long pending",
+    "issue": "Issue {{id}} · {{status}}",
+    "run": "Run · {{status}}",
+    "completed": "Run ended",
+    "activity": "Last activity",
+    "target": "Target: {{target}}",
+    "choose_target": "Choose the intended target branch before reviewing.",
+    "dirty": "Uncommitted changes remain. Preserve and review them before cleaning.",
+    "unpushed": "Unpushed commits remain. Preserve or deliver them before cleaning.",
+    "save_outputs": "Preserve the local outputs before cleaning.",
+    "resume_review": "Finish or refresh the review before cleaning.",
+    "rework": "Address the review feedback and submit a new version.",
+    "wait_run": "Wait for the active run to end.",
+    "reconnect": "Reconnect the runtime and verify ownership before retrying.",
+    "check_task": "Check the issue and refresh the inventory before retrying."
+  },
   "local_review": {
     "entry_checking": "Checking repository…",
     "entry_empty": "No Git repository to review",

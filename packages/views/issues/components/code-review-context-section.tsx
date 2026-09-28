@@ -48,6 +48,7 @@ export function CodeReviewContextSection({ issueId }: { issueId: string }) {
   const checking = !task && probes.some((probe) => probe.isPending || probe.isFetching);
   const unavailable = probes.some((probe) => probe.isError);
   const path = repositories.find((path) => path === repository) ?? repositories[0];
+  const target = inventory.data?.find((row) => row.taskId === task?.id)?.repositoryDetails?.find((entry) => entry.path === path)?.target ?? "";
   return <section className="space-y-2 rounded-lg border bg-card p-3">
     <h3 className="text-caption font-medium">{t(($) => $.local_review.title)}</h3>
     {inventory.isPending || checking ? <p role="status" className="text-caption text-muted-foreground">{t(($) => $.local_review.loading)}</p> : inventory.error ? <p role="alert" className="text-caption text-destructive">{inventory.error.message}</p> : !task ? <p role="status" className="text-caption text-muted-foreground">{unavailable ? t(($) => $.local_review.entry_failed) : t(($) => $.local_review.entry_empty)}</p> : <>
@@ -58,8 +59,8 @@ export function CodeReviewContextSection({ issueId }: { issueId: string }) {
       <p className="break-all text-caption text-muted-foreground">{task.work_dir || task.durable_work_dir}</p>
       {repositories.length > 1 && <select className="w-full rounded-sm border bg-background p-1 text-caption" aria-label={t(($) => $.local_review.repository)} value={path} onChange={(event) => { setRepository(event.target.value); setOpen(false); }}>{repositories.map((path) => <option key={path} value={path}>{path}</option>)}</select>}
       {task.durable_work_dir && <p className="text-caption text-muted-foreground">{t(($) => $.local_review.delivery_notice)}</p>}
-      {path && <LocalReviewEntry request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target: "main" }} onOpen={() => { setSelected(task.id); setRepository(path); setOpen(true); }} />}
-      {open && path && selected === task.id && repository === path && <LocalReviewDialog key={task.id + path} request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target: "main" }} onClose={() => setOpen(false)} />}
+      {path && <LocalReviewEntry request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target }} onOpen={() => { setSelected(task.id); setRepository(path); setOpen(true); }} />}
+      {open && path && selected === task.id && repository === path && <LocalReviewDialog key={task.id + path} request={{ task_id: task.id, workspace_id: workspaceId, runtime_id: task.runtime_id ?? undefined, path, target }} onClose={() => setOpen(false)} />}
     </>}
   </section>;
 }

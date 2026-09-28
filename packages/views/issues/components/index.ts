@@ -12,3 +12,4 @@ export { IssueMentionCard } from "./issue-mention-card";
 export { IssueChip } from "./issue-chip";
 export { LocalReviewDialog } from "./local-review-dialog";
 export { LocalReviewEntry } from "./local-review-entry";
+export { WorktreeActionLabel, WorktreeLifecycle, WorktreeReason, WorktreeRepositoryStatus } from "./worktree-lifecycle";

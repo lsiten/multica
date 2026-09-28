@@ -15,6 +15,7 @@ import { useT } from "../../i18n";
 import { LocalReviewError, reviewErrorKind } from "./local-review-error";
 import { LocalReviewTargetPicker } from "./local-review-target-picker";
 import { LocalReviewStagingBrowser } from "./local-review-staging-browser";
+import { invalidateWorktreeInventory } from "../../platform/local-review-inventory";
 
 type Decision = "submit" | "approve" | "request_changes" | "merge";
 
@@ -49,7 +50,7 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
     queryFn: ({ signal }) => readLocalReviewBranches(scope, signal), enabled: !!repositories.data?.repositories.length,
     retry: false, staleTime: 30000, refetchOnWindowFocus: false, networkMode: "always",
   });
-  const target = chosenTarget ?? defaultReviewTarget(branches.data ?? []);
+  const target = chosenTarget ?? defaultReviewTarget(branches.data ?? [], chosenRepository ? "" : request.target);
   const targetDraft = draft ?? target;
   const key = ["paged-local-review", userId, request.workspace_id, request.task_id, repositoryPath, target];
   const manifest = useQuery({
@@ -67,7 +68,7 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
       if (!manifest.data) throw new Error("Load the review version first");
       return readReviewManifest({ ...scope, runtime_id: scope.runtime_id || manifest.data.runtime_id, target, action, version_id: manifest.data.version_id, snapshot_id: manifest.data.version_id, comment });
     },
-    onSuccess: (result) => { client.setQueryData(key, result); setConfirmMerge(false); },
+    onSuccess: (result) => { client.setQueryData(key, result); setConfirmMerge(false); void invalidateWorktreeInventory(client); },
   });
   const data = manifest.data;
   const lease = useQuery({
@@ -98,10 +99,11 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
       {pending && <p role="status" className="text-caption">{t(($) => $.local_review.loading)}</p>}
       {repositories.isSuccess && !repositories.data.repositories.length && <p role="status" className="text-caption">{t(($) => $.local_review.no_worktrees)}</p>}
       {branches.isSuccess && !branches.data.length && <p role="status" className="text-caption">{t(($) => $.local_review.no_local_branches)}</p>}
+      {branches.data?.length && !target ? <p role="status" className="text-caption">{t(($) => $.worktree_lifecycle.choose_target)}</p> : null}
       {data && <>
         {data.header.dirty && <p className="text-caption text-warning">{t(($) => $.local_review.dirty)}</p>}
         {selectedCommit && <p role="status" className="text-caption">{t(($) => $.local_review.selection_complete, { commit: selectedCommit.slice(0, 12) })}</p>}
-        <LocalReviewStagingBrowser key={data.version_id} request={effectiveScope} manifest={data} disabled={operation.isPending || selectionBusy} onBusyChange={setIndexBusy} onSelectionBusy={setSelectionBusy} onSelectedMerged={(commit) => { setSelectedCommit(commit); void manifest.refetch(); }} onChanged={() => { void manifest.refetch(); }} />
+        <LocalReviewStagingBrowser key={data.version_id} request={effectiveScope} manifest={data} disabled={operation.isPending || selectionBusy} onBusyChange={setIndexBusy} onSelectionBusy={setSelectionBusy} onSelectedMerged={(commit) => { setSelectedCommit(commit); void manifest.refetch(); void invalidateWorktreeInventory(client); }} onChanged={() => { void manifest.refetch(); void invalidateWorktreeInventory(client); }} />
         <LocalReviewCommits key={"commits-" + data.version_id} request={effectiveScope} manifest={data} />
         {!!data.review.events.length && <details className="text-caption"><summary>{t(($) => $.local_review.history)}</summary><ol className="max-h-32 space-y-2 overflow-auto py-2">{data.review.events.map((event, index) => <li key={index} className="rounded-sm border p-2"><p>{event.actor_name || event.actor_id || t(($) => $.local_review.former_member)} · {event.kind === "approve" ? t(($) => $.local_review.approved) : event.kind === "request_changes" ? t(($) => $.local_review.changes_requested) : event.kind === "merge" || event.kind === "merge_recovered" ? t(($) => $.local_review.merged) : t(($) => $.local_review.submit)} · <time dateTime={event.created_at}>{new Date(event.created_at).toLocaleString()}</time></p>{event.comment && <p className="mt-1 whitespace-pre-wrap break-words">{event.comment}</p>}</li>)}</ol></details>}
         <Input value={comment} onChange={(event) => setComment(event.target.value)} placeholder={t(($) => $.local_review.comment)} aria-label={t(($) => $.local_review.comment)} maxLength={8000} />
