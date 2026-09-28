@@ -26,13 +26,15 @@ import { attachmentToDraftUpload, type DraftUpload } from "@multica/core/drafts"
 import { createLogger } from "@multica/core/logger";
 import { formatShortcut, useShortcut } from "@multica/core/shortcuts";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
-import type { Attachment, Project } from "@multica/core/types";
+import type { Attachment, ChatMessage, Project } from "@multica/core/types";
+import { useChatInputHistory } from "./use-chat-input-history";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ClearablePillButton } from "../../common/pill-button";
 import { useT } from "../../i18n";
 
 const logger = createLogger("chat.ui");
 const EMPTY_UPLOADS: DraftUpload[] = [];
+const EMPTY_HISTORY: ChatMessage[] = [];
 /** Editor identity for the chat composer — see the editorKey note below. */
 const CHAT_COMPOSER_EDITOR_KEY = "chat-composer";
 
@@ -56,6 +58,8 @@ function isAttachmentReferenced(content: string, attachment: Attachment): boolea
 }
 
 interface ChatInputProps {
+  historyMessages?: readonly ChatMessage[];
+  historyWorkspaceId?: string;
   onSend: (
     content: string,
     attachmentIds: string[] | undefined,
@@ -149,6 +153,8 @@ interface ChatInputProps {
 }
 
 export function ChatInput({
+  historyMessages = EMPTY_HISTORY,
+  historyWorkspaceId,
   onSend,
   restoreDraftRequest,
   conversationStarterRequest,
@@ -211,6 +217,11 @@ export function ChatInput({
   // Embedded surfaces (Agent Builder) still pass `editorKeyOverride` to isolate
   // their own composer.
   const draftKey = draftKeyOverride ?? activeSessionId ?? DRAFT_NEW_SESSION;
+  const history = useChatInputHistory({
+    scope: JSON.stringify([historyWorkspaceId, draftKey]),
+    sessionId: draftKey,
+    messages: historyMessages,
+  });
   // Select a primitive — empty-string fallback keeps referential stability.
   const inputDraft = useChatStore((s) => s.inputDrafts[draftKey] ?? "");
   const storeUploads = useChatStore(
@@ -511,7 +522,9 @@ export function ChatInput({
       // Edits / deletions that remove the markdown URL also drop the binding.
       const activeIds: string[] = [];
       for (const attachment of draftAttachments) {
-        if (isAttachmentReferenced(content, attachment)) activeIds.push(attachment.id);
+        if (!attachment.chat_message_id && isAttachmentReferenced(content, attachment)) {
+          activeIds.push(attachment.id);
+        }
       }
       const uniqueActiveIds = Array.from(new Set(activeIds));
       // Capture draft key BEFORE onSend — creating a new session mutates
@@ -543,6 +556,7 @@ export function ChatInput({
         const liveDraft = useChatStore.getState().inputDrafts[keyAtSend];
         const untouched = liveDraft === undefined || liveDraft === draftValueAtSend;
         if (options?.clearEditor !== false && untouched) {
+          history.reset();
           editorRef.current?.clearContent();
           // Scrubbed the document the user was looking at, so the caret belongs
           // back here: chat is a conversation and the next turn is typed in the
@@ -701,6 +715,26 @@ export function ChatInput({
               commitDraft(editorDraftKeyRef.current, md);
             }}
             onSubmit={submit}
+            onHistoryNavigate={(direction, empty) => {
+              const editor = editorRef.current;
+              if (!editor || disabled || noAgent || submitting ||
+                editorDraftKeyRef.current !== draftKey || gate.isBlocked()) return false;
+              const pending = editor.flushPendingUpdate();
+              if (pending !== null) commitDraft(draftKey, pending);
+              return history.navigate({
+                direction,
+                empty,
+                markdown: editor.getMarkdown(),
+                uploads: useChatStore.getState().inputDraftAttachments[draftKey] ?? EMPTY_UPLOADS,
+              }, (draft) => {
+                setInputDraftAttachments(draftKey, draft.attachments.map(attachmentToDraftUpload));
+                editor.adoptContent(draft.content);
+                const markdown = editor.getMarkdown();
+                commitDraft(draftKey, markdown);
+                setIsEmpty(!markdown.trim());
+                return markdown;
+              });
+            }}
             onUploadFile={uploadEnabled ? handleUpload : undefined}
             pasteAsFileThreshold={PASTE_AS_FILE_THRESHOLD}
             onUploadingChange={uploadGate.onUploadingChange}

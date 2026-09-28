@@ -317,6 +317,8 @@ export function ChatPage() {
       />
 
       <ChatInput
+        historyMessages={c.messages}
+        historyWorkspaceId={c.wsId}
         onSend={c.handleSend}
         restoreDraftRequest={c.restoreDraftRequest}
         conversationStarterRequest={c.conversationStarterRequest}

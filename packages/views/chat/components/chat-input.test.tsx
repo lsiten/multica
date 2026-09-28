@@ -4,6 +4,7 @@ import { act, render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import type { DraftUpload } from "@multica/core/drafts";
+import type { ChatMessage } from "@multica/core/types";
 import enCommon from "../../locales/en/common.json";
 import enChat from "../../locales/en/chat.json";
 import enEditor from "../../locales/en/editor.json";
@@ -380,6 +381,64 @@ function element(props: Partial<React.ComponentProps<typeof ChatInput>>) {
     </I18nProvider>
   );
 }
+
+describe("ChatInput history integration", () => {
+  const messages: ChatMessage[] = ["older", "latest"].map((content) => ({
+    id: content, content, role: "user", chat_session_id: "session",
+    task_id: null, created_at: "",
+  }));
+
+  function navigate(direction: "previous" | "next", empty: boolean) {
+    const handler = editorProps.last?.onHistoryNavigate;
+    if (typeof handler !== "function") throw new TypeError("Missing history handler");
+    let handled = false;
+    act(() => { handled = handler(direction, empty); });
+    return handled;
+  }
+
+  it("keeps the recalled content and navigation after a rejected send", async () => {
+    useChatStore.getState().activeSessionId = "session";
+    const { onSend } = renderInput({ historyMessages: messages, onSend: vi.fn(async () => false) });
+    expect(navigate("previous", true)).toBe(true);
+    expect(useChatStore.getState().inputDrafts.session).toBe("latest");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled());
+    expect(editorState.cleared).toBe(0);
+    expect(navigate("previous", false)).toBe(true);
+    expect(useChatStore.getState().inputDrafts.session).toBe("older");
+  });
+
+  it("sends recalled attachments as stable references without rebinding their IDs", async () => {
+    useChatStore.getState().activeSessionId = "session";
+    const attachment = makeUpload({ id: "historical", filename: "image.png", link: "/api/attachments/historical/download", chat_message_id: "latest" });
+    const { onSend } = renderInput({ historyMessages: [{
+      id: "latest", role: "user", chat_session_id: "session", task_id: null,
+      created_at: "", content: "", attachments: [attachment],
+    }] });
+    expect(navigate("previous", true)).toBe(true);
+    expect(useChatStore.getState().inputDraftAttachments.session).toMatchObject([
+      { attachment: { id: "historical", chat_message_id: "latest" } },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    expect(onSend).toHaveBeenCalledWith(
+      "![image.png](/api/attachments/historical/download)", undefined, expect.any(Function), [],
+    );
+  });
+
+  it("protects disabled composers and draft uploads that have not produced Markdown", () => {
+    useChatStore.getState().activeSessionId = "session";
+    const { rerender } = renderInput({ historyMessages: messages, disabled: true });
+    expect(navigate("previous", true)).toBe(false);
+    useChatStore.getState().inputDraftAttachments.session = [{
+      clientUploadId: "pending", status: "uploading", filename: "new.pdf", size: 10,
+    }];
+    rerender(element({ historyMessages: messages }));
+    expect(navigate("previous", true)).toBe(false);
+    expect(editorState.adopted).toEqual([]);
+  });
+});
 
 it("appends voice text to the live draft without sending or interpreting markup", () => {
   const { onSend } = renderInput({ agentId: "agent" });

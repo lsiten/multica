@@ -53,6 +53,7 @@ import { createMarkdownPasteExtension } from "./markdown-paste";
 import { createMarkdownCopyExtension } from "./markdown-copy";
 import { createBlurShortcutExtension } from "./blur-shortcut";
 import { createSubmitShortcutExtension } from "./submit-shortcut";
+import { createInputHistoryExtension, type InputHistoryDirection } from "./input-history";
 import { createFileUploadExtension } from "./file-upload";
 import { FileCardExtension } from "./file-card";
 import { ImageView } from "./image-view";
@@ -145,6 +146,7 @@ export interface EditorExtensionsOptions {
   placeholder?: string | (() => string);
   queryClient?: import("@tanstack/react-query").QueryClient;
   onSubmitRef?: RefObject<(() => void) | undefined>;
+  onHistoryNavigateRef?: RefObject<((direction: InputHistoryDirection, empty: boolean) => boolean) | undefined>;
   onUploadFileRef?: RefObject<
     ((file: File, uploadId: string) => Promise<UploadResult | null>) | undefined
   >;
@@ -298,6 +300,9 @@ export function createEditorExtensions(
       return true;
     }),
     createBlurShortcutExtension(),
+    ...(options.onHistoryNavigateRef
+      ? [createInputHistoryExtension((direction, empty) => options.onHistoryNavigateRef?.current?.(direction, empty) ?? false)]
+      : []),
     createFileUploadExtension(options.onUploadFileRef!, options.pasteAsFileThresholdRef),
   ];
 }
