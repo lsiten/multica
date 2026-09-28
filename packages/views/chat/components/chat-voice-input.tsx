@@ -1,71 +1,98 @@
 "use client";
 
-import { Mic, Type } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { AudioLines, Check, LoaderCircle, Mic, RotateCcw, X } from "lucide-react";
+import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { Button } from "@multica/ui/components/ui/button";
 import { ApiError } from "@multica/core/api";
 import { useTranscribeChatVoice } from "@multica/core/chat/mutations";
-import { HoldToTalkInput } from "../../common/voice/hold-to-talk-input";
+import type { DictationDraft } from "../../editor/dictation-draft";
 import { useT } from "../../i18n";
 import { useLocalVoice } from "../../platform";
+import { useChatDictation } from "./use-chat-dictation";
 
-export function ChatVoiceInput({ agentId, disabled, onTranscript }: {
+export interface ChatVoiceInputRef {
+  cancel: () => void;
+  isActive: () => boolean;
+}
+
+export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, ref }: {
   readonly agentId: string;
   readonly disabled: boolean;
-  readonly onTranscript: (text: string) => void;
+  readonly onBegin: () => DictationDraft | null;
+  readonly onActiveChange: (active: boolean) => void;
+  readonly ref?: Ref<ChatVoiceInputRef>;
 }) {
-  const { t } = useT("runtimes");
-  const { t: tChat } = useT("chat");
-  const [open, setOpen] = useState(false);
-  const voicePanel = useRef<HTMLDivElement>(null);
+  const { t } = useT("chat");
+  const microphone = useRef<HTMLButtonElement>(null);
   const { adapter: localVoice, status: voiceStatus } = useLocalVoice();
   const transcription = useTranscribeChatVoice();
-  const voiceReady = voiceStatus?.phase === "ready";
-  const voicePercent = voiceStatus && "percent" in voiceStatus ? voiceStatus.percent : 0;
-  const voiceSetupFailed = voiceStatus?.phase === "failed";
-  const voiceUnavailable = localVoice != null && !voiceReady;
+  const setupFailed = voiceStatus?.phase === "failed";
+  const preparing = localVoice != null && voiceStatus?.phase !== "ready";
+  const percent = voiceStatus && "percent" in voiceStatus ? voiceStatus.percent : 0;
+  const dictation = useChatDictation({
+    enabled: !disabled && !preparing,
+    onBegin: () => { transcription.reset(); return onBegin(); },
+    onActiveChange,
+    onRealtimeVoice: localVoice?.transcribeStream,
+    onVoice: (recording, signal) => localVoice
+      ? localVoice.transcribe(recording, signal)
+      : transcription.mutateAsync({ agentId, recording, signal }),
+  });
+  const active = dictation.phase !== "idle";
+  const wasActive = useRef(false);
+  useImperativeHandle(ref, () => ({ cancel: dictation.cancel, isActive: dictation.isActive }));
+  useEffect(() => {
+    if (wasActive.current && !active && !disabled) microphone.current?.focus();
+    wasActive.current = active;
+  }, [active, disabled]);
   const error = transcription.error;
   const errorMessage = error instanceof ApiError
     ? error.status === 501 || (error.status === 404 && !["agent not found", "runtime not found"].includes(error.message))
-      ? tChat(($) => $.input.voice_upgrade_required)
+      ? t(($) => $.input.voice_upgrade_required)
       : error.message === "transcriber_unavailable"
-        ? tChat(($) => $.input.voice_unconfigured)
+        ? t(($) => $.input.voice_unconfigured)
         : error.message === "daemon_unavailable"
-          ? tChat(($) => $.input.voice_offline)
-          : undefined
-    : undefined;
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-  useEffect(() => {
-    if (!open || disabled) return;
-    voicePanel.current?.querySelector<HTMLButtonElement>("button")?.focus();
-  }, [open, disabled]);
-  return <div className="relative">
-    {open && !disabled && <div ref={voicePanel} role="dialog" aria-label={t(($) => $.vscreen.switch_to_voice)} className="absolute bottom-full right-0 z-20 mb-2 w-64 max-w-[calc(100vw-2rem)] rounded-lg border bg-popover p-2 shadow-lg">
-      <HoldToTalkInput
-        enabled={!disabled}
-        onRealtimeVoice={localVoice?.transcribeStream}
-        errorMessage={errorMessage ?? tChat(($) => $.input.voice_failed)}
-        onVoice={(recording, signal) => localVoice
-          ? localVoice.transcribe(recording, signal)
-          : transcription.mutateAsync({ agentId, recording, signal })}
-        onTranscript={(text) => { onTranscript(text); setOpen(false); }}
-      />
+          ? t(($) => $.input.voice_offline)
+          : t(($) => $.input.voice_failed)
+    : t(($) => $.input.voice_failed);
+  const status = dictation.phase === "requesting" ? t(($) => $.input.voice_requesting)
+    : dictation.phase === "transcribing" ? t(($) => $.input.voice_transcribing)
+      : localVoice?.transcribeStream ? t(($) => $.input.voice_listening)
+        : t(($) => $.input.voice_recording);
+  const label = setupFailed ? t(($) => $.input.voice_setup_retry)
+    : preparing ? t(($) => $.input.voice_setup_progress, { percent })
+      : t(($) => $.input.voice_start);
+  return <>
+    {active && <div className="flex flex-wrap items-center gap-2 px-3 pb-2" data-chat-dictation>
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-caption text-muted-foreground" role="status">
+        {dictation.phase === "recording"
+          ? <AudioLines aria-hidden="true" className="size-4 shrink-0 text-brand motion-safe:animate-pulse" />
+          : <LoaderCircle aria-hidden="true" className="size-4 shrink-0 motion-safe:animate-spin" />}
+        <span className="min-w-0 break-words">{status}</span>
+        {dictation.phase === "recording" && <span className="shrink-0 font-mono tabular-nums">{String(Math.floor(dictation.seconds / 60)).padStart(2, "0")}:{String(dictation.seconds % 60).padStart(2, "0")}</span>}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button size="icon-sm" variant="ghost" aria-label={t(($) => $.input.voice_cancel)} title={t(($) => $.input.voice_cancel)} onClick={dictation.cancel}>
+          <X aria-hidden="true" />
+        </Button>
+        <Button size="sm" variant="secondary" disabled={dictation.phase !== "recording"} onClick={dictation.stop}>
+          <Check aria-hidden="true" />{t(($) => $.input.voice_done)}
+        </Button>
+      </div>
     </div>}
-    <Button
-      size="icon-sm" variant="ghost" disabled={disabled || voiceUnavailable}
-      aria-label={voiceReady || localVoice == null ? (open ? t(($) => $.vscreen.switch_to_text) : t(($) => $.vscreen.switch_to_voice)) : voiceSetupFailed ? tChat(($) => $.input.voice_setup_failed) : `Voice setup ${voicePercent}%`}
-      aria-expanded={open && !disabled && voiceReady}
-      aria-busy={voiceUnavailable}
-      title={voiceSetupFailed ? tChat(($) => $.input.voice_setup_failed) : undefined}
-      className="relative overflow-hidden"
-      onClick={() => { transcription.reset(); setOpen((value) => !value); }}
+    {dictation.error && <p role="alert" className="px-3 pb-2 text-caption text-destructive">{errorMessage}</p>}
+    {setupFailed && <p role="alert" className="px-3 pb-2 text-caption text-destructive">{t(($) => $.input.voice_setup_failed)}</p>}
+    {!active && <Button
+      ref={microphone}
+      size="icon-sm" variant="ghost" disabled={disabled || (preparing && !setupFailed)}
+      aria-label={label} title={label} aria-busy={preparing && !setupFailed}
+      className="absolute bottom-1 right-10 overflow-hidden"
+      onClick={() => setupFailed ? localVoice?.retry() : void dictation.start()}
     >
-      {voiceUnavailable && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 bg-muted-foreground/20 transition-[width] duration-300" style={{ width: `${voicePercent}%` }} />}
+      {preparing && !setupFailed && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-0 bg-muted-foreground/20 transition-[width] duration-300" style={{ width: `${percent}%` }} />}
       <span className="relative z-10 inline-flex items-center justify-center">
-        {voiceUnavailable ? `${voicePercent}%` : open ? <Type aria-hidden="true" /> : <Mic aria-hidden="true" />}
+        {setupFailed ? <RotateCcw aria-hidden="true" /> : preparing ? `${percent}%` : <Mic aria-hidden="true" />}
       </span>
-    </Button>
-  </div>;
+    </Button>}
+  </>;
 }

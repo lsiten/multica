@@ -37,7 +37,16 @@
     "remove_project_context": "Retirer le contexte de projet",
     "no_projects": "Aucun projet pour l'instant",
     "project_context_unsupported": "La description du projet ne s'appliquera pas — le daemon de cet agent doit être mis à jour",
-    "voice_setup_failed": "Impossible de préparer le moteur vocal. Réessayez."
+    "voice_setup_failed": "La préparation vocale a échoué. Utilisez le bouton Réessayer.",
+    "voice_start": "Démarrer la dictée",
+    "voice_requesting": "Autorisez l’accès au microphone...",
+    "voice_listening": "Écoute · texte modifiable après Terminer",
+    "voice_recording": "Enregistrement · texte disponible après Terminer",
+    "voice_transcribing": "Finalisation de la transcription...",
+    "voice_cancel": "Annuler la dictée (Échap)",
+    "voice_done": "Terminer",
+    "voice_setup_progress": "Préparation de la voix {{percent}} %",
+    "voice_setup_retry": "Réessayer la préparation vocale"
   },
   "queue": {
     "title_one": "{{count}} message en file d'attente",

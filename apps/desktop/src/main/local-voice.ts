@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, net, utilityProcess, type IpcMainInvokeEvent, type UtilityProcess } from "electron";
 import { join } from "node:path";
 import type { LocalVoiceStatus } from "@multica/core/platform";
-import { LOCAL_VOICE_CHANNEL, validVoiceSamples } from "../shared/local-voice";
+import { LOCAL_VOICE_CHANNEL, validVoiceLanguage, validVoiceSamples } from "../shared/local-voice";
 import { VOICE_ASSETS, VOICE_BASE_URL, VOICE_REVISION } from "./voice-assets";
 import { downloadVoiceAssets } from "./voice-download";
 
@@ -73,14 +73,14 @@ export function setupLocalVoice(): void {
   }
   ipcMain.handle(LOCAL_VOICE_CHANNEL.status, (event) => { checkSender(event); return status; });
   ipcMain.handle(LOCAL_VOICE_CHANNEL.retry, (event) => { checkSender(event); void prepare(); });
-  ipcMain.handle(LOCAL_VOICE_CHANNEL.transcribe, (event, id: unknown, samples: unknown) => {
+  ipcMain.handle(LOCAL_VOICE_CHANNEL.transcribe, (event, id: unknown, samples: unknown, language: unknown) => {
     checkSender(event);
-    if (typeof id !== "string" || id.length > 100 || !validVoiceSamples(samples)) throw new Error("Invalid voice recording");
+    if (typeof id !== "string" || id.length > 100 || !validVoiceSamples(samples) || !validVoiceLanguage(language)) throw new Error("Invalid voice recording");
     if (status.phase !== "ready" || !worker || pending) throw new Error("Voice transcription unavailable or busy");
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => { stopWorker(); load(); }, 120_000);
       pending = { id, sender: event.sender.id, resolve, reject, timer };
-      worker?.postMessage({ id, samples });
+      worker?.postMessage({ id, samples, language });
     });
   });
   ipcMain.on(LOCAL_VOICE_CHANNEL.cancel, (event, id: unknown) => {

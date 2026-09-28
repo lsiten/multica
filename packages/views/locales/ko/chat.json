@@ -36,7 +36,16 @@
     "remove_project_context": "프로젝트 컨텍스트 제거",
     "no_projects": "아직 프로젝트가 없습니다",
     "project_context_unsupported": "프로젝트 설명이 적용되지 않습니다 — 이 에이전트의 데몬 업그레이드가 필요합니다",
-    "voice_setup_failed": "음성 엔진을 준비하지 못했습니다. 다시 시도하세요."
+    "voice_setup_failed": "음성 준비에 실패했습니다. 다시 시도 버튼을 누르세요.",
+    "voice_start": "음성 입력 시작",
+    "voice_requesting": "마이크 권한을 기다리는 중...",
+    "voice_listening": "듣는 중 · 완료 후 음성 부분을 편집할 수 있습니다",
+    "voice_recording": "녹음 중 · 완료 후 텍스트로 변환됩니다",
+    "voice_transcribing": "음성 변환을 마무리하는 중...",
+    "voice_cancel": "음성 입력 취소 (Esc)",
+    "voice_done": "완료",
+    "voice_setup_progress": "음성 준비 중 {{percent}}%",
+    "voice_setup_retry": "음성 준비 다시 시도"
   },
   "queue": {
     "title_other": "대기 중인 메시지 {{count}}개",

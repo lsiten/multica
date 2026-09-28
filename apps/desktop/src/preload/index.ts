@@ -326,7 +326,7 @@ const daemonAPI = {
 const localVoiceAPI: LocalVoiceAPI = {
   getStatus: () => ipcRenderer.invoke(LOCAL_VOICE_CHANNEL.status),
   retry: () => ipcRenderer.invoke(LOCAL_VOICE_CHANNEL.retry),
-  transcribe: (id, samples) => ipcRenderer.invoke(LOCAL_VOICE_CHANNEL.transcribe, id, samples),
+  transcribe: (id, samples, language) => ipcRenderer.invoke(LOCAL_VOICE_CHANNEL.transcribe, id, samples, language),
   cancel: (id) => ipcRenderer.send(LOCAL_VOICE_CHANNEL.cancel, id),
   onStatus: (listener) => {
     const handler = (_event: unknown, status: Awaited<ReturnType<LocalVoiceAPI["getStatus"]>>) => listener(status);

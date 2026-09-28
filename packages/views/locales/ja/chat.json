@@ -36,7 +36,16 @@
     "remove_project_context": "プロジェクトコンテキストを削除",
     "no_projects": "プロジェクトがまだありません",
     "project_context_unsupported": "プロジェクトの説明は適用されません——このエージェントのデーモンのアップグレードが必要です",
-    "voice_setup_failed": "音声エンジンの準備に失敗しました。再試行してください。"
+    "voice_setup_failed": "音声の準備に失敗しました。再試行ボタンを押してください。",
+    "voice_start": "音声入力を開始",
+    "voice_requesting": "マイクのアクセス許可を待っています...",
+    "voice_listening": "聞き取り中・完了後に音声部分を編集できます",
+    "voice_recording": "録音中・完了後に文字に変換します",
+    "voice_transcribing": "文字起こしを完了しています...",
+    "voice_cancel": "音声入力をキャンセル（Esc）",
+    "voice_done": "完了",
+    "voice_setup_progress": "音声を準備中 {{percent}}%",
+    "voice_setup_retry": "音声の準備を再試行"
   },
   "queue": {
     "title_other": "キュー内のメッセージ {{count}} 件",

@@ -5,6 +5,8 @@ import { I18nProvider } from "@multica/core/i18n/react";
 import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import type { DraftUpload } from "@multica/core/drafts";
 import type { ChatMessage } from "@multica/core/types";
+import { setCurrentWorkspace } from "@multica/core/platform";
+import type { DictationDraft } from "../../editor/dictation-draft";
 import enCommon from "../../locales/en/common.json";
 import enChat from "../../locales/en/chat.json";
 import enEditor from "../../locales/en/editor.json";
@@ -17,9 +19,15 @@ const mockApiUploadFile = vi.hoisted(() => vi.fn());
 // Observability for the write-back insert path: a settle whose mount died
 // delivers into the live editor through this method.
 const insertMarkdownSpy = vi.hoisted(() => vi.fn());
+const voiceFixture = vi.hoisted(() => ({ hold: false, draft: null as DictationDraft | null }));
 vi.mock("./chat-voice-input", () => ({
-  ChatVoiceInput: ({ onTranscript, disabled }: { onTranscript: (text: string) => void; disabled: boolean }) =>
-    <button disabled={disabled} onClick={() => onTranscript("Voice <text>")}>Voice input fixture</button>,
+  ChatVoiceInput: ({ onBegin, disabled }: { onBegin: () => DictationDraft | null; disabled: boolean }) =>
+    <button disabled={disabled} onClick={() => {
+      const draft = onBegin();
+      voiceFixture.draft = draft;
+      draft?.update("Voice <text>");
+      if (!voiceFixture.hold) draft?.finish();
+    }}>Voice input fixture</button>,
 }));
 
 // The real handle mints an id when it inserts the placeholder and hands it to
@@ -118,6 +126,17 @@ vi.mock("../../editor", async () => ({
     }, [value]);
     useImperativeHandle(ref, () => ({
       getMarkdown: () => valueRef.current,
+      beginDictation: () => {
+        let preview = "";
+        return {
+          update: (text: string) => { preview = text; },
+          finish: () => {
+            valueRef.current = `${valueRef.current}\n\n${preview}`.trim();
+            onUpdate?.(valueRef.current);
+          },
+          cancel: () => undefined,
+        };
+      },
       clearContent: () => {
         editorState.cleared += 1;
         valueRef.current = "";
@@ -248,12 +267,14 @@ vi.mock("@multica/core/chat", () => {
 });
 
 import { ChatInput } from "./chat-input";
-import { useChatStore } from "@multica/core/chat";
+import { useChatStore, DRAFT_NEW_SESSION } from "@multica/core/chat";
 
 type ChatInputOnSend = React.ComponentProps<typeof ChatInput>["onSend"];
 type ChatInputCommit = Parameters<ChatInputOnSend>[2];
 
 beforeEach(() => {
+  voiceFixture.hold = false;
+  voiceFixture.draft = null;
   dropHandlers.onDrop = null;
   editorProps.last = null;
   editorState.cleared = 0;
@@ -444,8 +465,33 @@ it("appends voice text to the live draft without sending or interpreting markup"
   const { onSend } = renderInput({ agentId: "agent" });
   fireEvent.change(screen.getByTestId("editor"), { target: { value: "Existing draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Voice input fixture" }));
-  expect(insertMarkdownSpy).toHaveBeenCalledWith("Voice \\<text\\>");
+  expect(useChatStore.getState().inputDrafts[DRAFT_NEW_SESSION]).toContain("Voice <text>");
+  expect(insertMarkdownSpy).not.toHaveBeenCalled();
   expect(onSend).not.toHaveBeenCalled();
+});
+
+it("ignores stale dictation writes after the workspace namespace switches", async () => {
+  setCurrentWorkspace("voice-workspace-a", "workspace-a");
+  try {
+    voiceFixture.hold = true;
+    renderInput({ agentId: "agent", historyWorkspaceId: "workspace-a" });
+    fireEvent.change(screen.getByTestId("editor"), { target: { value: "Workspace A original draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Voice input fixture" }));
+    expect(useChatStore.getState().inputDrafts[DRAFT_NEW_SESSION]).toBe("Workspace A original draft");
+    await act(async () => setCurrentWorkspace("voice-workspace-b", "workspace-b"));
+    const store = useChatStore.getState();
+    store.inputDrafts = { [DRAFT_NEW_SESSION]: "Workspace B saved draft" };
+    vi.mocked(store.setInputDraft).mockClear();
+    act(() => {
+      voiceFixture.draft?.update("Late speech from A");
+      voiceFixture.draft?.cancel();
+      voiceFixture.draft?.finish();
+    });
+    expect(store.setInputDraft).not.toHaveBeenCalled();
+    expect(store.inputDrafts).toEqual({ [DRAFT_NEW_SESSION]: "Workspace B saved draft" });
+  } finally {
+    await act(async () => setCurrentWorkspace(null, null));
+  }
 });
 
 // MUL-4864: an uncreated chat has ONE draft per workspace. `selectedAgentId`

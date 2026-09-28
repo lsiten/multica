@@ -58,6 +58,7 @@ import type { MentionItem } from "./extensions/mention-suggestion";
 import type { IssueIdentifierResolver } from "./extensions/issue-identifier-autolink";
 import type { BuiltinCommandSuggestionOptions } from "./extensions/slash-command-suggestion";
 import { createEditorExtensions } from "./extensions";
+import { beginDictationDraft, getDraftMarkdown, hasDictationPreview, type DictationDraft } from "./dictation-draft";
 import type { InputHistoryDirection } from "./extensions/input-history";
 import {
   uploadAndInsertFile,
@@ -100,7 +101,7 @@ function normalizeMarkdown(md: string): string {
 
 /** `normalizeMarkdown` applied to the live editor's serialized content. */
 function normalizeEditorMarkdown(editor: Editor): string {
-  return normalizeMarkdown(editor.getMarkdown());
+  return normalizeMarkdown(getDraftMarkdown(editor));
 }
 
 /** True when any node in the document is mid-upload (`attrs.uploading`). The
@@ -255,6 +256,7 @@ type ContentEditorValueProps =
 type ContentEditorProps = ContentEditorBaseProps & ContentEditorValueProps;
 
 interface ContentEditorRef {
+  beginDictation: () => DictationDraft | null;
   getMarkdown: () => string;
   clearContent: () => void;
   focus: () => void;
@@ -635,6 +637,17 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
           pendingFlushRef.current = normalizeEditorMarkdown(ed);
         }
         if (debounceRef.current) clearTimeout(debounceRef.current);
+        if (hasDictationPreview(ed)) {
+          debounceRef.current = undefined;
+          pendingFlushRef.current = null;
+          pendingBaseRef.current = null;
+          const md = normalizeEditorMarkdown(ed);
+          if (md !== lastEmittedRef.current) {
+            lastEmittedRef.current = md;
+            onUpdateRef.current(md, documentBaseRef.current);
+          }
+          return;
+        }
         debounceRef.current = setTimeout(() => {
           debounceRef.current = undefined;
           pendingFlushRef.current = null;
@@ -904,12 +917,13 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     }, [editor, placeholderText]);
 
     useImperativeHandle(ref, () => ({
+      beginDictation: () => editor ? beginDictationDraft(editor) : null,
       // Intentionally NOT routed through `normalizeMarkdown` — see the "stays
       // untrimmed" safety net in content-editor.test.tsx. It used to also pass
       // through `stripBlobUrls`; that wrapper is gone because an in-flight
       // placeholder no longer serialises at all, which is strictly stronger
       // than scrubbing it back out afterwards.
-      getMarkdown: () => editor?.getMarkdown() ?? "",
+      getMarkdown: () => editor ? getDraftMarkdown(editor) : "",
       clearContent: () => {
         if (!editor) return;
         editor.commands.clearContent();

@@ -19,9 +19,10 @@ import {
 } from "../../editor/use-coordinated-uploads";
 import { SubmitButton } from "@multica/ui/components/common/submit-button";
 import { ChatAddMenu } from "./chat-add-menu";
-import { ChatVoiceInput } from "./chat-voice-input";
+import { ChatVoiceInput, type ChatVoiceInputRef } from "./chat-voice-input";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { useChatStore, DRAFT_NEW_SESSION } from "@multica/core/chat";
+import { getCurrentSlug } from "@multica/core/platform";
 import { attachmentToDraftUpload, type DraftUpload } from "@multica/core/drafts";
 import { createLogger } from "@multica/core/logger";
 import { formatShortcut, useShortcut } from "@multica/core/shortcuts";
@@ -186,6 +187,8 @@ export function ChatInput({
   const { t: tEditor } = useT("editor");
   const sendShortcut = useShortcut("send");
   const editorRef = useRef<ContentEditorRef>(null);
+  const voiceRef = useRef<ChatVoiceInputRef>(null);
+  const [voiceActive, setVoiceActive] = useState(false);
   const composerRef = useRef<HTMLDivElement>(null);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   // Two keys with deliberately different concerns:
@@ -331,6 +334,12 @@ export function ChatInput({
     liveRegistryKey: `chat:${loadedDraftKey}`,
   });
 
+  const voiceScope = JSON.stringify([historyWorkspaceId, draftKey, agentId, editorKey]);
+  useLayoutEffect(() => {
+    const voice = voiceRef.current;
+    return () => voice?.cancel();
+  }, [voiceScope]);
+
   // Move the editor from the draft it holds to the draft that is selected.
   //
   // Two hazards make this more than "let the value sync handle it":
@@ -403,6 +412,7 @@ export function ChatInput({
     if (editorDraftKeyRef.current !== draftKey) return;
     if (editorRef.current?.hasActiveUploads() === true) return;
 
+    voiceRef.current?.cancel();
     editorRef.current?.flushPendingUpdate();
     appliedConversationStarterIdRef.current = conversationStarterRequest.id;
     commitDraft(draftKey, conversationStarterRequest.content);
@@ -423,6 +433,7 @@ export function ChatInput({
       return;
     }
     if (appliedRestoreIdRef.current === restoreDraftRequest.id) return;
+    if (voiceRef.current?.isActive()) return;
     // Session-scoped restore: if this draft belongs to a specific session,
     // wait until the user is actually viewing it. A fire-and-forget send that
     // failed after the user navigated away must not dump its content into the
@@ -459,6 +470,7 @@ export function ChatInput({
     draftUploads,
     onRestoreDraftApplied,
     restoreDraftRequest,
+    voiceActive,
     setInputDraft,
     setInputDraftAttachments,
   ]);
@@ -495,6 +507,7 @@ export function ChatInput({
       editorScrubbedRef.current = false;
       // These states disable the SubmitButton, but Mod+Enter bypasses it — so a
       // read-only or busy composer must still refuse the keyboard path.
+      if (voiceRef.current?.isActive()) return false;
       if (disabled || noAgent || (isRunning && !allowSubmitWhileRunning)) {
         logger.debug("input.send skipped", {
           disabled,
@@ -594,6 +607,10 @@ export function ChatInput({
       return true;
     },
   });
+
+  const submitInput = () => {
+    if (!voiceRef.current?.isActive()) void submit();
+  };
 
   const placeholder = agentAccessRevoked
     ? t(($) => $.input.placeholder_access_revoked)
@@ -714,10 +731,10 @@ export function ChatInput({
               // upload's own completion dispatch.
               commitDraft(editorDraftKeyRef.current, md);
             }}
-            onSubmit={submit}
+            onSubmit={submitInput}
             onHistoryNavigate={(direction, empty) => {
               const editor = editorRef.current;
-              if (!editor || disabled || noAgent || submitting ||
+              if (!editor || disabled || noAgent || submitting || voiceRef.current?.isActive() ||
                 editorDraftKeyRef.current !== draftKey || gate.isBlocked()) return false;
               const pending = editor.flushPendingUpdate();
               if (pending !== null) commitDraft(draftKey, pending);
@@ -752,6 +769,41 @@ export function ChatInput({
             showBubbleMenu
           />
         </div>
+        {agentId && <ChatVoiceInput
+          key={voiceScope}
+          ref={voiceRef}
+          agentId={agentId}
+          disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
+          onActiveChange={setVoiceActive}
+          onBegin={() => {
+            if (editorDraftKeyRef.current !== draftKey) return null;
+            const editor = editorRef.current;
+            const workspaceAtStart = getCurrentSlug();
+            const draft = editor?.beginDictation();
+            if (!editor || !draft) return null;
+            const sync = () => {
+              const markdown = editor.flushPendingUpdate() ?? editor.getMarkdown();
+              if (getCurrentSlug() !== workspaceAtStart) return;
+              commitDraft(draftKey, markdown);
+              setIsEmpty(!markdown.trim());
+            };
+            sync();
+            return {
+              update: (text) => {
+                if (getCurrentSlug() !== workspaceAtStart) return;
+                draft.update(text);
+                sync();
+              },
+              finish: () => {
+                if (getCurrentSlug() !== workspaceAtStart) { draft.cancel(); sync(); return; }
+                draft.finish();
+                sync();
+                editor.focus();
+              },
+              cancel: () => { draft.cancel(); sync(); },
+            };
+          }}
+        />}
         {(uploadEnabled || projectSelectionEnabled || leftAdornment) && (
           <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
             {(uploadEnabled || projectSelectionEnabled) && (
@@ -769,24 +821,9 @@ export function ChatInput({
           </div>
         )}
         <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
-          {agentId && <ChatVoiceInput
-            key={JSON.stringify([draftKey, agentId])}
-            agentId={agentId}
-            disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
-            onTranscript={(text) => {
-              if (editorDraftKeyRef.current !== draftKey) return;
-              const escaped = text.replace(/[\\`*_{}[\]()#+.!<>~-]/g, "\\$&");
-              if (editorRef.current?.insertMarkdownAtEnd(escaped)) {
-                const markdown = editorRef.current.flushPendingUpdate();
-                if (markdown != null) commitDraft(draftKey, markdown);
-                setIsEmpty(false);
-                editorRef.current.focus();
-              }
-            }}
-          />}
           <SubmitButton
-            onClick={submit}
-            disabled={hasNothingToSend || submitting || !!disabled || !!noAgent}
+            onClick={submitInput}
+            disabled={hasNothingToSend || submitting || voiceActive || !!disabled || !!noAgent}
             loading={submitting}
             busy={gate.uploading}
             // Queue-capable runs reuse this one action slot: an empty composer

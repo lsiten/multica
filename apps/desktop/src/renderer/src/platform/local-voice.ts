@@ -1,7 +1,13 @@
+import { matchLocale } from "@multica/core/i18n";
 import type { LocalVoiceAdapter, LocalVoiceStatus } from "@multica/core/platform";
-import type { LocalVoiceAPI } from "../../../shared/local-voice";
+import type { LocalVoiceAPI, LocalVoiceLanguage } from "../../../shared/local-voice";
 
-export function createLocalVoiceAdapter(api: LocalVoiceAPI): LocalVoiceAdapter {
+function voiceLanguage(locale: string): LocalVoiceLanguage {
+  const matched = matchLocale([locale]);
+  return matched === "zh-Hans" ? "zh" : matched;
+}
+
+export function createLocalVoiceAdapter(api: LocalVoiceAPI, getLocale = () => document.documentElement.lang): LocalVoiceAdapter {
   let status: LocalVoiceStatus = { phase: "downloading", percent: 0 };
   let revision = 0;
   const listeners = new Set<() => void>();
@@ -15,6 +21,7 @@ export function createLocalVoiceAdapter(api: LocalVoiceAPI): LocalVoiceAdapter {
     retry: () => { void api.retry().catch(() => publish({ phase: "failed", percent: 0 })); },
     transcribe: async (recording, signal) => {
       signal.throwIfAborted();
+      const language = voiceLanguage(getLocale());
       const id = crypto.randomUUID();
       const audio = new AudioContext({ sampleRate: 16_000 });
       let samples: Float32Array;
@@ -32,12 +39,13 @@ export function createLocalVoiceAdapter(api: LocalVoiceAPI): LocalVoiceAdapter {
       return new Promise<string>((resolve, reject) => {
         const cancel = () => { api.cancel(id); reject(new DOMException("Cancelled", "AbortError")); };
         signal.addEventListener("abort", cancel, { once: true });
-        void api.transcribe(id, samples).then((text) => { if (!signal.aborted) resolve(text); }, reject)
+        void api.transcribe(id, samples, language).then((text) => { if (!signal.aborted) resolve(text); }, reject)
           .finally(() => signal.removeEventListener("abort", cancel));
       });
     },
     transcribeStream: (input, signal, onPartial) => {
       signal.throwIfAborted();
+      const language = voiceLanguage(getLocale());
       const stream = input as MediaStream;
       let stopped = false;
       let activeId: string | undefined;
@@ -76,17 +84,18 @@ export function createLocalVoiceAdapter(api: LocalVoiceAPI): LocalVoiceAdapter {
         if (busy || samples.length === processed && !final) return;
 
         if (!final && samples.length - processed < 2 * 16_000) return;
-        const start = final ? 0 : Math.max(0, samples.length - 4 * 16_000);
-        const chunk = samples.slice(start);
+        // Partial results replace the live draft, so each must cover the full utterance.
+        const chunk = samples.slice();
         processed = samples.length;
         if (!final) {
+          const recent = chunk.subarray(Math.max(0, chunk.length - 4 * 16_000));
           let energy = 0;
-          for (const sample of chunk) energy += sample * sample;
-          if (Math.sqrt(energy / Math.max(1, chunk.length)) < 0.008) return;
+          for (const sample of recent) energy += sample * sample;
+          if (Math.sqrt(energy / Math.max(1, recent.length)) < 0.008) return;
         }
         const id = crypto.randomUUID();
         activeId = id;
-        busy = api.transcribe(id, chunk).then((text) => {
+        busy = api.transcribe(id, chunk, language).then((text) => {
           if (signal.aborted) return;
           latest = text;
           onPartial(text);
