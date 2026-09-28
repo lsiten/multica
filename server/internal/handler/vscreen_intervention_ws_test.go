@@ -21,8 +21,9 @@ import (
 
 type interventionWSTest struct {
 	*interventionFixture
-	server *httptest.Server
-	token  string
+	server     *httptest.Server
+	token      string
+	registered chan struct{}
 }
 
 func newInterventionWSTest(t *testing.T) *interventionWSTest {
@@ -30,14 +31,18 @@ func newInterventionWSTest(t *testing.T) *interventionWSTest {
 	f := newInterventionFixture(t, "issue")
 	f.h.DaemonHub = daemonws.NewHub()
 	f.h.DaemonHub.SetVscreenInterventionHandler(f.h.DaemonVscreenIntervention)
+	registered := make(chan struct{}, 1)
 	router := chi.NewRouter()
 	router.Use(middleware.DaemonAuth(f.h.Queries, nil, nil, nil))
-	router.Get("/api/daemon/ws", f.h.DaemonWebSocket)
+	router.Get("/api/daemon/ws", func(w http.ResponseWriter, r *http.Request) {
+		f.h.DaemonWebSocket(w, r)
+		registered <- struct{}{}
+	})
 	router.Post("/api/daemon/runtimes/{runtimeId}/vscreen/interventions", f.h.ReportVscreenIntervention)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	token, _ := insertTestPAT(t, time.Now().Add(time.Hour))
-	return &interventionWSTest{interventionFixture: f, server: server, token: token}
+	return &interventionWSTest{interventionFixture: f, server: server, token: token, registered: registered}
 }
 
 func (f *interventionWSTest) dial(t *testing.T) (*websocket.Conn, string) {
@@ -50,6 +55,14 @@ func (f *interventionWSTest) dial(t *testing.T) (*websocket.Conn, string) {
 	generation := response.Header.Get(protocol.DaemonGenerationHeader)
 	if generation == "" {
 		t.Fatal("missing authenticated generation")
+	}
+	// The upgrade response reaches Dial before the hub registers the replacement.
+	ctx, cancel := context.WithTimeout(t.Context(), 7*time.Second)
+	defer cancel()
+	select {
+	case <-f.registered:
+	case <-ctx.Done():
+		t.Fatal("authenticated daemon socket was not registered")
 	}
 	return conn, generation
 }
