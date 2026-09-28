@@ -21,7 +21,7 @@ describe("bundled desktop helper", () => {
           mkdirSync(path, { recursive: true });
         }
         mkdirSync(join(resources, "MulticaDaemon.app", "Contents"), { recursive: true });
-        for (const name of ["bundle-cli.mjs", "bundle-cli-env.mjs"]) {
+        for (const name of ["bundle-cli.mjs", "bundle-cli-env.mjs", "package.mjs"]) {
           copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(scripts, name));
         }
         for (const name of ["go", "git", "codesign"]) {

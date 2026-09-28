@@ -41,6 +41,7 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     runtime_mirror_viewer_stopped: t(($) => $.types.runtime_mirror_viewer_stopped),
     runtime_mirror_control_started: t(($) => $.types.runtime_mirror_control_started),
     runtime_mirror_control_stopped: t(($) => $.types.runtime_mirror_control_stopped),
+    children_done: t(($) => $.types.children_done),
   };
 }
 
@@ -158,6 +159,12 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
     case "runtime_mirror_control_stopped": {
       const runtime = details.runtime_name || typeLabels[item.type];
       return <span>{t(($) => $.labels.mirror_control_stopped, { runtime })}</span>;
+    }
+    case "children_done": {
+      // The stage arrives as a JSON number; details are typed as strings.
+      const stage = details.stage != null ? String(details.stage) : "";
+      if (stage) return <span>{t(($) => $.labels.children_done_stage, { stage })}</span>;
+      return <span>{typeLabels[item.type]}</span>;
     }
     default:
       return <span>{typeLabels[item.type] ?? item.type}</span>;

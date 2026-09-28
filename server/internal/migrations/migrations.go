@@ -91,10 +91,19 @@ func AllVersions() ([]string, error) {
 	return versions, nil
 }
 
-// ExtractVersion strips the .up.sql / .down.sql suffix from a migration file.
+// ExtractVersion returns the stable database ledger identity. Renumbered files
+// retain their shipped identity so upgrades never repeat already-applied SQL.
 func ExtractVersion(filename string) string {
 	base := filepath.Base(filename)
 	base = strings.TrimSuffix(base, ".up.sql")
 	base = strings.TrimSuffix(base, ".down.sql")
+	switch base {
+	case "900451_notification_bot", "900452_notification_bot_owner_index",
+		"900453_notification_bot_delivery_unique", "900454_notification_bot_delivery_ready",
+		"900455_issue_goal_mode", "900457_pinned_item_runtime_mirror",
+		"900458_runtime_mirror_event", "900459_runtime_mirror_event_index",
+		"900468_drop_reference_only_column":
+		return strings.TrimPrefix(base, "900")
+	}
 	return base
 }

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { forgetLocalSearchIndex } from "../search-index/instance";
 import type { UpdateMirrorNetworkRequest, Workspace } from "../types";
 import { api } from "../api";
 import { defaultStorage } from "../platform/storage";
@@ -44,6 +45,9 @@ export function useLeaveWorkspace() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (workspaceId: string) => api.leaveWorkspace(workspaceId),
+    onSuccess: (_data, workspaceId) => {
+      void forgetLocalSearchIndex(workspaceId);
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: workspaceKeys.list() });
     },
@@ -74,8 +78,9 @@ export function useDeleteWorkspace() {
     // `${key}:${slug}` namespace — a failed DELETE means the workspace still
     // exists and its drafts/view state must survive. The realtime handler
     // skips self-initiated deletes, so cleanup has to happen here.
-    onSuccess: (_data, _workspaceId, ctx) => {
+    onSuccess: (_data, workspaceId, ctx) => {
       if (ctx?.slug) clearWorkspaceStorage(defaultStorage, ctx.slug);
+      void forgetLocalSearchIndex(workspaceId);
     },
     // The workspace still exists after a failed DELETE, so a later external
     // delete of the same ID must be handled by the realtime handler again.
@@ -88,10 +93,6 @@ export function useDeleteWorkspace() {
   });
 }
 
-/**
- * Adds a server to the workspace library. It is assigned to no agent: an
- * agent owner gives it to their agent separately.
- */
 /** Updates the workspace screen-mirror ICE/TURN plan (owner/admin only). */
 export function useUpdateWorkspaceMirrorNetwork(wsId: string) {
   const queryClient = useQueryClient();
@@ -123,6 +124,10 @@ export function useClearWorkspaceMirrorEvents(wsId: string) {
   });
 }
 
+/**
+ * Adds a server to the workspace library. It is assigned to no agent: an
+ * agent owner gives it to their agent separately.
+ */
 export function useCreateWorkspaceMcpServer(wsId: string) {
   const queryClient = useQueryClient();
   return useMutation({

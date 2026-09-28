@@ -167,7 +167,7 @@
     "assign_work": "Assigner du travail",
     "more_actions_aria": "Actions de l'agent",
     "updated": "Mis à jour {{when}}",
-    "open_runtime_mirror": "Open runtime mirror"
+    "open_runtime_mirror": "Ouvrir l’écran de l’environnement d’exécution"
   },
   "inspector": {
     "section_profile": "Profil",
@@ -836,7 +836,6 @@
     "copy_filtered": "Copier la sélection filtrée",
     "copied": "Copié",
     "waiting_events": "En attente d'événements...",
-    "antigravity_live_unavailable": "Antigravity ne fournit pas encore d'événements d'exécution en direct. La transcription sera disponible une fois l'exécution terminée.",
     "no_data": "Aucune donnée d'exécution enregistrée.",
     "sort_chronological": "Plus anciens d'abord",
     "sort_newest_first": "Plus récents d'abord",
@@ -852,6 +851,7 @@
     "status_cancelled": "Annulée",
     "status_waiting": "En attente",
     "trigger_initial": "Exécution initiale",
+    "trigger_text": "Déclencheur",
     "trigger_comment": "Depuis un commentaire",
     "trigger_autopilot": "Automatisation",
     "trigger_retry": "Relance",
@@ -912,7 +912,8 @@
     "tool_kind_command": "Commandes",
     "tool_kind_write": "Modifications",
     "tool_kind_read": "Lectures",
-    "tool_kind_misc": "Autres"
+    "tool_kind_misc": "Autres",
+    "trigger_wakeup": "Réveil"
   },
   "task_failure": {
     "cancelled_by_system": "Annulée par le système",
@@ -954,7 +955,7 @@
       "codex_semantic_inactivity": "Délai d'inactivité sémantique de Codex dépassé",
       "manual": "Annulée par l'utilisateur",
       "user_cancelled": "Annulée par l'utilisateur",
-      "startup_timeout": "Agent produced no output after starting; run stopped (possibly not signed in or unreachable)"
+      "startup_timeout": "L’agent n’a produit aucune sortie après le démarrage ; exécution arrêtée (connexion au compte ou réseau indisponible)"
     }
   },
   "last_active": {

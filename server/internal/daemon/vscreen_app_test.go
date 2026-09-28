@@ -134,6 +134,9 @@ func TestVscreenMCPActualNativeWire(t *testing.T) {
 }
 func TestVscreenPermissionsProbeDoesNotCreateDisplay(t *testing.T) {
 	d := vscreenFixtureDaemon(t)
+	previousInjector := d.globalInjector()
+	globalInjectorInst = &physicalInjectorFixture{available: false}
+	t.Cleanup(func() { globalInjectorInst = previousInjector })
 	state, err := d.vscreenSnapshot(context.Background(), "ws", "rt")
 	if err != nil {
 		t.Fatal(err)

@@ -2,6 +2,9 @@ import type { ComponentProps } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { I18nProvider } from "@multica/core/i18n/react";
+import { RESOURCES } from "@multica/views/locales";
+
 const historyState = vi.hoisted(() => ({
   canGoBack: true,
   canGoForward: true,
@@ -15,9 +18,15 @@ const historyState = vi.hoisted(() => ({
   goBack: vi.fn(),
   goForward: vi.fn(),
   goToHistoryIndex: vi.fn(),
+  reload: vi.fn(),
 }));
 
 const navigationState = vi.hoisted(() => ({ push: vi.fn() }));
+
+vi.mock("@multica/views/navigation", () => ({
+  useNavigation: () => navigationState,
+}));
+
 const sidebarState = vi.hoisted(() => ({
   state: "expanded" as "expanded" | "collapsed",
   isCompact: false,
@@ -25,10 +34,6 @@ const sidebarState = vi.hoisted(() => ({
 
 vi.mock("@/hooks/use-tab-history", () => ({
   useTabHistory: () => historyState,
-}));
-
-vi.mock("@multica/views/navigation", () => ({
-  useNavigation: () => navigationState,
 }));
 
 vi.mock("@multica/views/layout", () => ({
@@ -46,12 +51,8 @@ vi.mock("@multica/ui/components/ui/sidebar", () => ({
   ),
 }));
 
-const {
-  WINDOW_TOOLBAR_CLEARANCE,
-  WindowToolbar,
-  browsingHistoryForMenu,
-  historyIndicesForMenu,
-} = await import("./window-toolbar");
+const { WINDOW_TOOLBAR_CLEARANCE, WindowToolbar, browsingHistoryForMenu, historyIndicesForMenu } =
+  await import("./window-toolbar");
 
 beforeEach(() => {
   historyState.canGoBack = true;
@@ -70,6 +71,7 @@ beforeEach(() => {
   historyState.goBack.mockReset();
   historyState.goForward.mockReset();
   historyState.goToHistoryIndex.mockReset();
+  historyState.reload.mockReset();
   navigationState.push.mockReset();
   sidebarState.state = "expanded";
   sidebarState.isCompact = false;
@@ -144,14 +146,24 @@ describe("browsingHistoryForMenu", () => {
 });
 
 describe("WindowToolbar history controls", () => {
-  it("right-aligns the controls to the expanded sidebar edge", () => {
+  it("keeps tab refresh available alongside the history menu", () => {
+    render(<I18nProvider locale="en" resources={RESOURCES}><WindowToolbar /></I18nProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh current tab" }));
+    expect(historyState.reload).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "History" })).toBeEnabled();
+    expect(historyState.goBack).not.toHaveBeenCalled();
+    expect(historyState.goForward).not.toHaveBeenCalled();
+  });
+
+  it("left-aligns the controls past the traffic lights across the expanded sidebar", () => {
     render(<WindowToolbar />);
 
     const toolbar = document.querySelector('[data-slot="window-toolbar"]');
-    expect(toolbar).toHaveClass("justify-end");
+    expect(toolbar).not.toHaveClass("justify-end");
     expect(toolbar).toHaveStyle({
+      paddingLeft: "88px",
       width:
-        "max(var(--sidebar-live-width, var(--sidebar-width)), 256px)",
+        "max(var(--sidebar-live-width, var(--sidebar-width)), 272px)",
     });
     expect(toolbar).toHaveAttribute("data-sidebar-resize-consumer");
     expect(toolbar).not.toHaveClass("transition-[width]");
@@ -163,9 +175,29 @@ describe("WindowToolbar history controls", () => {
     rerender(<WindowToolbar />);
 
     const toolbar = document.querySelector('[data-slot="window-toolbar"]');
-    expect(WINDOW_TOOLBAR_CLEARANCE).toBe(256);
-    expect(toolbar).toHaveClass("justify-end");
-    expect(toolbar).toHaveStyle({ width: "256px" });
+    expect(WINDOW_TOOLBAR_CLEARANCE).toBe(272);
+    expect(toolbar).toHaveStyle({ paddingLeft: "88px", width: "272px" });
+  });
+
+  it("keeps Back, Forward, refresh, History and the sidebar toggle accessible", () => {
+    render(<I18nProvider locale="en" resources={RESOURCES}><WindowToolbar /></I18nProvider>);
+
+    expect(
+      screen.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Go back", "Go forward", "Refresh current tab", "History", "Toggle sidebar"]);
+    expect(screen.getByRole("button", { name: "History" })).toBeEnabled();
+  });
+
+  it("disables Back and Forward in a fresh tab", () => {
+    historyState.canGoBack = false;
+    historyState.canGoForward = false;
+    historyState.historyEntries = ["/acme/issues"];
+    historyState.historyIndex = 0;
+
+    render(<WindowToolbar />);
+
+    expect(screen.getByRole("button", { name: "Go back" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Go forward" })).toBeDisabled();
   });
 
   it("opens workspace browsing history and navigates the active tab to a selected entry", () => {

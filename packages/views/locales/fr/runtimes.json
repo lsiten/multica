@@ -189,12 +189,12 @@
     "running_chip_other": "· {{count}} en cours",
     "queued_chip_one": "· {{count}} en attente",
     "queued_chip_other": "· {{count}} en attente",
-    "open_mirror": "Open mirror",
+    "open_mirror": "Voir l’écran",
     "mirror_reason": {
-      "offline": "This device is offline.",
-      "linux": "Screen mirroring is not supported on Linux.",
-      "platform": "Screen mirroring is not supported on this platform.",
-      "old_daemon": "Update the Multica daemon on this device to use screen mirroring."
+      "offline": "Cet appareil est hors ligne.",
+      "linux": "La diffusion d’écran n’est pas prise en charge sous Linux.",
+      "platform": "La diffusion d’écran n’est pas prise en charge sur cette plateforme.",
+      "old_daemon": "Mettez à jour le daemon Multica de cet appareil pour utiliser la diffusion d’écran."
     }
   },
   "detail_page": {

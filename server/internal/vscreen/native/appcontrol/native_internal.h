@@ -90,7 +90,6 @@ NSDictionary *ACListApps(ACRequest *r, NSString **error);
 NSDictionary *ACListWindows(ACSession *, ACRequest *, NSString **);
 NSDictionary *ACAdoptWindow(ACSession *, ACRequest *, NSDictionary *, NSString **);
 
-NSDictionary *ACManagedWindows(ACSession *s, ACRequest *r, NSDictionary *display, NSString **error);
 NSString *ACInputSourceID(void);
 
 NSDictionary *ACPIDProcess(pid_t);

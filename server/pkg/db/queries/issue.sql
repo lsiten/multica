@@ -8,7 +8,7 @@
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
-       i.revision
+       i.revision, i.duplicate_of_issue_id
 FROM issue i
 WHERE i.workspace_id = $1
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
@@ -242,11 +242,14 @@ WITH wakeup_source AS MATERIALIZED (SELECT set_config('multica.source_task_id', 
         sqlc.narg('parent_issue_id')::uuid AS next_parent_issue_id,
         sqlc.narg('project_id')::uuid AS next_project_id,
         sqlc.narg('stage')::integer AS next_stage,
-        -- A duplicate mark only survives a write that leaves an already
-        -- cancelled issue cancelled. Every other write drops it, so reopening
-        -- an issue removes its mark and cancelling it again does not bring the
-        -- mark back. Nothing writes the pointer yet; see the migration.
+        -- A supplied pointer marks the issue (the handler also sets cancelled).
+        -- Otherwise a mark only survives a write that leaves an already
+        -- cancelled issue cancelled. Every other write drops it: reopening is
+        -- how a mark is removed, and re-entering cancelled does not revive a
+        -- pointer that a server predating this rule left on a reopened issue.
         CASE
+            WHEN sqlc.narg('duplicate_of_issue_id')::uuid IS NOT NULL
+                THEN sqlc.narg('duplicate_of_issue_id')::uuid
             WHEN i.status = 'cancelled' AND COALESCE(sqlc.narg('status')::text, i.status) = 'cancelled'
                 THEN i.duplicate_of_issue_id
             ELSE NULL
@@ -337,6 +340,56 @@ UPDATE issue AS i SET
 FROM wakeup_source
 WHERE i.id = $1 AND i.workspace_id = $3
 RETURNING i.*;
+
+-- name: LockIssuesForDuplicateMark :many
+-- Locks the issue being marked and its target, in id order, before the mark is
+-- validated. Two marks that share an issue (A -> B racing B -> A, or C -> A
+-- racing A -> B) then run one after the other, so the second one validates
+-- against what the first wrote. A target outside the workspace is not returned.
+-- is_duplicate applies the same validity rule as the reads below.
+SELECT i.id,
+       (i.status = 'cancelled' AND EXISTS (
+           SELECT 1 FROM issue AS original
+           WHERE original.id = i.duplicate_of_issue_id
+             AND original.workspace_id = i.workspace_id
+       ))::boolean AS is_duplicate
+FROM issue AS i
+WHERE i.workspace_id = sqlc.arg('workspace_id')
+  AND i.id = ANY(sqlc.arg('issue_ids')::uuid[])
+ORDER BY i.id
+FOR UPDATE OF i;
+
+-- A mark only counts while the duplicate is cancelled and its original still
+-- exists. Writes keep that true, but a server predating this feature (after a
+-- rollback that kept the column) can reopen a duplicate or delete an original
+-- without touching the pointer, so every read applies the rule itself.
+
+-- name: IssueHasDuplicates :one
+SELECT EXISTS (
+    SELECT 1 FROM issue
+    WHERE workspace_id = sqlc.arg('workspace_id')
+      AND duplicate_of_issue_id = sqlc.arg('issue_id')::uuid
+      AND status = 'cancelled'
+) AS has_duplicates;
+
+-- name: ListIssueDuplicates :many
+SELECT * FROM issue
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND duplicate_of_issue_id = sqlc.arg('issue_id')::uuid
+  AND status = 'cancelled'
+ORDER BY created_at ASC, id ASC;
+
+-- name: GetIssueRefInWorkspace :one
+-- The summary a duplicate's response carries for its original (MUL-7349).
+SELECT id, number, title, status FROM issue
+WHERE id = $1 AND workspace_id = $2;
+
+-- name: ListIssueRefsInWorkspace :many
+-- GetIssueRefInWorkspace for a page: every original the page's duplicates
+-- point at, in one read.
+SELECT id, number, title, status FROM issue
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND id = ANY(sqlc.arg('ids')::uuid[]);
 
 -- name: ClearIssueDuplicatesOf :many
 -- Deleting an issue clears the pointers of its duplicates, the way deleting a
@@ -431,8 +484,23 @@ cleared_wakeup_receipts AS (
 cleared_wakeups AS (
  DELETE FROM issue_wakeup WHERE issue_id IN (SELECT target.id FROM target)
 ),
+cleared_child_events AS (
+ DELETE FROM issue_child_event WHERE parent_id IN (SELECT target.id FROM target) OR child_id IN (SELECT target.id FROM target)
+),
+cleared_task_supplements AS (
+ DELETE FROM task_supplement WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_task_supplement_capabilities AS (
+ DELETE FROM task_supplement_capability WHERE issue_id IN (SELECT target.id FROM target)
+),
 cleared_vcs_pr_links AS (
     DELETE FROM issue_vcs_pull_request WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_pr_automation AS (
+    DELETE FROM issue_pr_automation WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_pr_exclusions AS (
+    DELETE FROM issue_pull_request_exclusion WHERE issue_id IN (SELECT target.id FROM target)
 )
 DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target);
 
@@ -442,7 +510,7 @@ DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target);
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
-       i.revision
+       i.revision, i.duplicate_of_issue_id
 FROM issue i
 WHERE i.workspace_id = $1
   -- Negate only known terminal keys so an unknown legacy key remains visible.

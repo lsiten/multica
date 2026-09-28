@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/multica-ai/multica/server/internal/migrations"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -45,7 +46,7 @@ type migrationSQL struct {
 	buildsBigm bool
 }
 
-// migrationCorpus is every migration file, keyed by file name
+// migrationCorpus is every migration file, keyed by stable ledger identity and direction
 // ("273_agent_task_queue_runtime_id_index.up.sql"), read and parsed once per
 // package run. Four tests audit the directory; each used to read and strip all
 // of it on its own, and on a slow filesystem that was most of this package's
@@ -82,7 +83,12 @@ var migrationCorpus = sync.OnceValues(func() (map[string]migrationSQL, error) {
 	}
 	corpus := make(map[string]migrationSQL, len(paths))
 	for i, path := range paths {
-		corpus[filepath.Base(path)] = parsed[i]
+		name := filepath.Base(path)
+		direction := ".up.sql"
+		if strings.HasSuffix(name, ".down.sql") {
+			direction = ".down.sql"
+		}
+		corpus[migrations.ExtractVersion(name)+direction] = parsed[i]
 	}
 	return corpus, nil
 })

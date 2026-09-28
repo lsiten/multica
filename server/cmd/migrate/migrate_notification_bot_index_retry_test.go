@@ -65,7 +65,7 @@ func TestNotificationBotConcurrentIndexesRecoverInvalidBuilds(t *testing.T) {
 			// When the unchanged published migration retries with production hooks.
 			err = runMigrations(t.Context(), pool, runOptions{
 				Direction:             "up",
-				Files:                 []string{filepath.Join("..", "..", "migrations", tc.version+".up.sql")},
+				Files:                 []string{filepath.Join("..", "..", "migrations", "900"+tc.version+".up.sql")},
 				SchemaMigrationsTable: schema + ".schema_migrations",
 				AdvisoryLockKey:       int64(rand.Uint64()>>1) | 1,
 				Hooks:                 preMigrationHooks,

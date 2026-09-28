@@ -12,13 +12,14 @@ import (
 )
 
 type physicalInjectorFixture struct {
-	mu       sync.Mutex
-	pointers []globalinput.PointerEvent
-	keys     []globalinput.KeyEvent
-	texts    []string
+	mu        sync.Mutex
+	available bool
+	pointers  []globalinput.PointerEvent
+	keys      []globalinput.KeyEvent
+	texts     []string
 }
 
-func (f *physicalInjectorFixture) Available() bool { return true }
+func (f *physicalInjectorFixture) Available() bool { return f.available }
 func (f *physicalInjectorFixture) Close() error    { return nil }
 func (f *physicalInjectorFixture) Pointer(event globalinput.PointerEvent) error {
 	f.mu.Lock()
@@ -46,7 +47,7 @@ func TestPhysicalVscreenExecutionUsesExplicitSourceAndGlobalInjector(t *testing.
 		Source:      protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "display:physical"},
 		NativeEpoch: "native", Generation: "generation",
 	}, DisplayID: 7, Width: 1000, Height: 500, LogicalWidth: 1000, LogicalHeight: 500}
-	injector := &physicalInjectorFixture{}
+	injector := &physicalInjectorFixture{available: true}
 	execution := newPhysicalVscreenExecution(t.Context(), Task{ID: "task", WorkspaceID: "ws", RuntimeID: "rt", MirrorSource: &descriptor.MirrorSourceBinding}, descriptor, nil, injector, mirror.NewArbiter(), nil)
 	t.Cleanup(execution.Close)
 
