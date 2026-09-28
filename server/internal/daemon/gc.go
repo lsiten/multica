@@ -223,6 +223,9 @@ func (d *Daemon) gcWorkspace(ctx context.Context, wsDir string, stats *gcStats) 
 				cleanedHere++
 				stats.cleaned++
 			} else {
+				if reason == "dirty" || reason == "unpushed" || reason == "output" || reason == "retained" {
+					d.cleanupManagedWorktree(ctx, worktreeCleanup{path: taskDir, automatic: true, artifactStats: stats})
+				}
 				stats.skipped++
 			}
 			continue
@@ -344,6 +347,16 @@ func (d *Daemon) applyGCAction(taskDir string, action gcAction, stats *gcStats) 
 			return 0
 		}
 		defer release()
+		releaseDisk, err := d.lockGCTaskDirectory(taskDir)
+		if err != nil {
+			stats.skipped++
+			return 0
+		}
+		defer releaseDisk()
+		if active, err := localreview.HasActiveReview(d.recoveryContext(), taskDir, time.Now()); err != nil || active {
+			stats.skipped++
+			return 0
+		}
 		// Re-read provenance after taking the exclusion lock so a concurrent
 		// reset cannot change ownership between validation and mutation.
 		if _, err := d.gcTaskDirOwner(taskDir); err != nil {
@@ -356,6 +369,7 @@ func (d *Daemon) applyGCAction(taskDir string, action gcAction, stats *gcStats) 
 	case gcActionClean:
 		bytes, removed := d.cleanTaskDir(taskDir)
 		if !removed {
+			d.reclaimRetainedGCArtifacts(d.recoveryContext(), taskDir, stats)
 			stats.skipped++
 			return 0
 		}
@@ -365,6 +379,7 @@ func (d *Daemon) applyGCAction(taskDir string, action gcAction, stats *gcStats) 
 	case gcActionOrphan:
 		bytes, removed := d.cleanTaskDir(taskDir)
 		if !removed {
+			d.reclaimRetainedGCArtifacts(d.recoveryContext(), taskDir, stats)
 			stats.skipped++
 			return 0
 		}
@@ -372,8 +387,7 @@ func (d *Daemon) applyGCAction(taskDir string, action gcAction, stats *gcStats) 
 		stats.bytesReclaimed += bytes
 		return 1
 	case gcActionCleanArtifacts:
-		removed, bytes, perPattern := d.cleanTaskArtifacts(taskDir, d.cfg.GCArtifactPatterns)
-		recordArtifactCleanup(stats, removed, bytes, perPattern)
+		d.reclaimRetainedGCArtifacts(d.recoveryContext(), taskDir, stats)
 		stats.skipped++ // task dir itself preserved
 	case gcActionCleanManagedArtifacts:
 		removed, bytes, perPattern := d.cleanManagedTaskArtifacts(taskDir)
@@ -904,7 +918,7 @@ func (d *Daemon) gcTaskDirOwner(taskDir string) (*execenv.EnvRootOwner, error) {
 // cleanTaskDir removes a proven daemon-owned task directory, logs the
 // reclaimed bytes, and returns that count for the cycle summary. A failed or
 // refused removal reports removed=false.
-func (d *Daemon) cleanTaskDir(taskDir string) (bytes int64, removed bool) {
+func (d *Daemon) removeTaskDir(taskDir string) (bytes int64, removed bool) {
 	// Measure first, prove ownership second. dirSize walks the entire tree,
 	// which on a large task directory takes long enough for the validated
 	// directory to be replaced underneath us — checking before that walk would
@@ -1328,6 +1342,9 @@ func (d *Daemon) evictRepoCacheLocked(ctx context.Context, barePath string, stat
 	if idle <= d.cfg.GCRepoTTL {
 		return
 	}
+	if preserved, err := repoCachePublished(ctx, barePath); err != nil || !preserved {
+		return
+	}
 
 	// Measure before the final check, not after. dirSize walks every file in
 	// the repo, which on a multi-GiB cache takes long enough for a workspace to
@@ -1436,7 +1453,10 @@ func (d *Daemon) pruneWorktreeLocked(ctx context.Context, barePath string) {
 		if _, ok := activeBranches[branch]; ok {
 			continue
 		}
-		if out, err := runGitGCCommandContext(ctx, barePath, "branch", "-D", "--", branch); err != nil {
+		if preserved, err := agentBranchPreserved(ctx, barePath, branch); err != nil || !preserved {
+			continue
+		}
+		if out, err := runGitGCCommandContext(ctx, barePath, "branch", "-d", "--", branch); err != nil {
 			if ctx.Err() != nil {
 				return
 			}

@@ -134,6 +134,7 @@ type Config struct {
 	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
 	GCInterval                     time.Duration         // how often the GC loop runs (default: 2h)
 	GCTTL                          time.Duration         // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
+	WorktreeStaleTTL               time.Duration         // reminder age from authoritative business activity; never deletion authorization
 	GCCompletedTaskTTL             time.Duration         // fully clean inactive issue-task envs completed at least this long ago, regardless of parent issue status (default: 14d on Multica Cloud, 0/disabled elsewhere; local_directory envs are never fully removed)
 	GCOrphanTTL                    time.Duration         // clean orphan dirs with no meta, or dirs whose issue gc-check returns 404, once they exceed this age (default: 72h). The 404 path uses the same TTL — a scoped-down token can't instantly wipe live workspaces.
 	GCArtifactTTL                  time.Duration         // once a task has been completed for at least this long, drop regenerable artifacts: pattern-matched build outputs when the parent record keeps the directory (an open issue), and the exact daemon-managed Codex cache for every task kind (default: 12h, set 0 to disable both)
@@ -581,6 +582,10 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	worktreeStaleTTL, err := worktreeStaleTTLFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
 	gcCompletedTaskTTL, err := durationFromEnv("MULTICA_GC_COMPLETED_TASK_TTL", defaultGCCompletedTaskTTL(serverBaseURL))
 	if err != nil {
 		return Config{}, err
@@ -661,6 +666,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		GCEnabled:                       gcEnabled,
 		GCInterval:                      gcInterval,
 		GCTTL:                           gcTTL,
+		WorktreeStaleTTL:                worktreeStaleTTL,
 		GCCompletedTaskTTL:              gcCompletedTaskTTL,
 		GCOrphanTTL:                     gcOrphanTTL,
 		GCArtifactTTL:                   gcArtifactTTL,

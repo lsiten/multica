@@ -20,6 +20,7 @@ type worktreeCleanup struct {
 	path           string
 	automatic      bool
 	discardChanges bool
+	artifactStats  *gcStats
 }
 
 func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCleanup) string {
@@ -68,12 +69,26 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 	}
 	if request.automatic {
 		meta, err := execenv.ReadGCMeta(path)
-		if err != nil || !meta.AutoCleanup || meta.LocalDirectory || status.Status != "completed" {
+		if err != nil || !meta.AutoCleanup || meta.LocalDirectory {
+			return "retained"
+		}
+		if request.artifactStats != nil {
+			completed := meta.CompletedAt
+			if status.CompletedAt.After(completed) {
+				completed = status.CompletedAt
+			}
+			if d.cfg.GCArtifactTTL <= 0 || completed.IsZero() || time.Since(completed) <= d.cfg.GCArtifactTTL {
+				return "retained"
+			}
+			d.cleanRetainedWorktreeArtifacts(ctx, path, request.artifactStats)
+			return ""
+		}
+		if status.Status != "completed" {
 			return "retained"
 		}
 		// Output may be the sole copy of a generated deliverable. Only explicit
 		// manual cleanup may remove it together with the task's logs.
-		if dirSize(filepath.Join(path, "output")) > 0 {
+		if outputContainsFiles(filepath.Join(path, "output")) {
 			return "output"
 		}
 	}
@@ -84,18 +99,9 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 	if reason != "" {
 		return reason
 	}
-	if request.automatic && hasNonRepositoryFiles(path, repositories) {
-		return "output"
-	}
-	if request.automatic {
-		for _, repo := range repositories {
-			ignored, err := worktreeGit(ctx, repo, "ls-files", "--others", "--ignored", "--exclude-standard")
-			if err != nil {
-				return "unavailable"
-			}
-			if ignored != "" {
-				return "output"
-			}
+	if request.automatic || !request.discardChanges {
+		if reason := worktreeDeliverablesReason(ctx, path, repositories); reason != "" {
+			return reason
 		}
 	}
 	if err := execenv.ArchiveReviewDirectory(ctx, d.cfg.WorkspacesRoot, path); err != nil {
@@ -120,7 +126,7 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 			}
 		}
 	}
-	if _, removed := d.cleanTaskDir(path); !removed {
+	if _, removed := d.removeTaskDir(path); !removed {
 		return "unavailable"
 	}
 	return ""
@@ -152,7 +158,7 @@ func hasNonRepositoryFiles(root string, repositories []string) bool {
 	for _, name := range []string{"workdir", "worktree"} {
 		found := false
 		err := filepath.WalkDir(filepath.Join(root, name), func(path string, entry fs.DirEntry, err error) error {
-			if errors.Is(err, os.ErrNotExist) {
+			if errors.Is(err, os.ErrNotExist) && path == filepath.Join(root, name) {
 				return nil
 			}
 			if err != nil {
@@ -180,7 +186,7 @@ func inspectWorktreeRepositories(ctx context.Context, root, workspacesRoot strin
 	for _, name := range []string{"workdir", "worktree"} {
 		path := filepath.Join(root, name)
 		err := filepath.WalkDir(path, func(path string, entry fs.DirEntry, err error) error {
-			if errors.Is(err, os.ErrNotExist) {
+			if errors.Is(err, os.ErrNotExist) && path == filepath.Join(root, name) {
 				return nil
 			}
 			if err != nil {
@@ -216,7 +222,10 @@ func inspectWorktreeRepositories(ctx context.Context, root, workspacesRoot strin
 			return repositories, "dirty"
 		}
 		stash, err := worktreeGit(ctx, repo, "stash", "list")
-		if err != nil || stash != "" {
+		if err != nil {
+			return repositories, "unavailable"
+		}
+		if stash != "" {
 			return repositories, "dirty"
 		}
 		common, err := worktreeGit(ctx, repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -228,12 +237,20 @@ func inspectWorktreeRepositories(ctx context.Context, root, workspacesRoot strin
 			return nil, "unavailable"
 		}
 		branch, err := worktreeGit(ctx, repo, "symbolic-ref", "--quiet", "HEAD")
-		rel, relErr := filepath.Rel(workspacesRoot, common)
+		canonicalRoot, rootErr := filepath.EvalSymlinks(workspacesRoot)
+		canonicalCommon, commonErr := filepath.EvalSymlinks(common)
+		if rootErr != nil || commonErr != nil {
+			return repositories, "unavailable"
+		}
+		rel, relErr := filepath.Rel(canonicalRoot, canonicalCommon)
 		if common != gitDir && err == nil && branch != "" && relErr == nil && !filepath.IsLocal(rel) {
 			continue
 		}
 		unpushed, err := worktreeGit(ctx, repo, "rev-list", "HEAD", "--branches", "--tags", "--not", "--remotes")
-		if err != nil || unpushed != "" {
+		if err != nil {
+			return repositories, "unavailable"
+		}
+		if unpushed != "" {
 			return repositories, "unpushed"
 		}
 	}

@@ -1,8 +1,11 @@
 -- name: ListLocalReviewWorktrees :many
-SELECT task.id AS task_id, task.runtime_id, task.agent_id, task.issue_id, task.work_dir, task.status, task.branch_name, agent.workspace_id
+SELECT task.id AS task_id, task.runtime_id, task.agent_id, task.issue_id, task.work_dir, task.status, task.branch_name, agent.workspace_id,
+       task.completed_at, issue.status AS issue_status,
+       COALESCE(issue.last_activity_at, issue.updated_at) AS last_activity_at
 FROM agent_task_queue task
 JOIN agent ON agent.id = task.agent_id
 JOIN agent_runtime runtime ON runtime.id = task.runtime_id AND runtime.workspace_id = agent.workspace_id
+LEFT JOIN issue ON issue.id = task.issue_id AND issue.workspace_id = agent.workspace_id
 WHERE agent.workspace_id = sqlc.arg(workspace_id)
 AND task.work_dir IS NOT NULL AND task.work_dir <> ''
 AND (task.status NOT IN ('completed', 'failed', 'cancelled') OR COALESCE(task.durable_work_dir, '') = '')

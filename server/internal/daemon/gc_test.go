@@ -520,7 +520,7 @@ func TestCleanTaskDir_RemovesDirectory(t *testing.T) {
 	t.Parallel()
 	d := newGCTestDaemon(t, http.NewServeMux())
 	taskDir := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "doomed", nil)
-	writeFile(t, filepath.Join(taskDir, "workdir", "payload.bin"), 64)
+	writeFile(t, filepath.Join(taskDir, "logs", "task.log"), 64)
 
 	if _, err := os.Stat(taskDir); err != nil {
 		t.Fatal("task dir should exist before cleanup")
@@ -687,10 +687,24 @@ func TestCleanTaskDir_RemovesStableRootRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
+	t.Cleanup(env.ReleaseLock)
 	original := env.RootDir
-	d := &Daemon{cfg: Config{WorkspacesRoot: root}, logger: slog.Default()}
-	if bytes, removed := d.cleanTaskDir(original); !removed || bytes <= 0 {
-		t.Fatalf("reclaimed bytes = %d, want owner metadata bytes", bytes)
+	if err := execenv.CleanupSidecars(original); err != nil {
+		t.Fatalf("CleanupSidecars: %v", err)
+	}
+	env.ReleaseLock()
+	if err := execenv.WriteGCMeta(original, execenv.GCMeta{Kind: execenv.GCKindQuickCreate, WorkspaceID: params.WorkspaceID, TaskID: params.TaskID}, slog.Default()); err != nil {
+		t.Fatalf("WriteGCMeta: %v", err)
+	}
+	d := worktreeTestDaemon(t)
+	d.cfg.WorkspacesRoot = root
+	stats := &gcStats{byPattern: map[string]int{}}
+	action := d.shouldCleanTaskDir(t.Context(), original)
+	if removed := d.applyGCAction(original, action, stats); removed != 1 || stats.bytesReclaimed <= 0 {
+		t.Fatalf("removed = %d, reclaimed bytes = %d, want one completed environment and owner metadata bytes", removed, stats.bytesReclaimed)
+	}
+	if _, err := os.Stat(original); !os.IsNotExist(err) {
+		t.Fatalf("completed environment remains: %v", err)
 	}
 
 	resolved, err := execenv.ResolveRootDir(execenv.RootDirParams{
@@ -818,7 +832,7 @@ func TestGCWorkspace_CompletedTaskTTLRemovesOpenIssue(t *testing.T) {
 		WorkspaceID: "ws-completed",
 		CompletedAt: time.Now().Add(-25 * time.Hour),
 	})
-	writeFile(t, filepath.Join(taskDir, "workdir", "checkout.bin"), 128)
+	writeFile(t, filepath.Join(taskDir, "logs", "task.log"), 128)
 
 	stats := &gcStats{byPattern: map[string]int{}}
 	d.gcWorkspace(context.Background(), wsDir, stats)
@@ -915,6 +929,9 @@ func TestGCWorkspace_ReclaimsLegacyCodexSandboxWithoutConfiguredPatterns(t *test
 		json.NewEncoder(w).Encode(map[string]any{"issues": []map[string]any{
 			{"id": issueID, "found": true, "status": "in_progress", "updated_at": time.Now()},
 		}})
+	})
+	mux.HandleFunc("/api/daemon/tasks/task/gc-check", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"status": "completed"})
 	})
 
 	d := newGCTestDaemon(t, mux)

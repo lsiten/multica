@@ -1024,10 +1024,7 @@ func (c *Client) GetAutopilotRunGCCheck(ctx context.Context, runID string) (*Aut
 // TaskGCStatus carries the agent_task_queue status for quick-create cleanup.
 // Quick-create tasks have no separate parent record, so GC keys directly on
 // the task itself.
-type TaskGCStatus struct {
-	Status      string    `json:"status"`
-	CompletedAt time.Time `json:"completed_at"`
-}
+type TaskGCStatus = protocol.TaskGCStatus
 
 // GetTaskGCCheck returns the status of an agent task for GC decisions.
 func (c *Client) GetTaskGCCheck(ctx context.Context, taskID string) (*TaskGCStatus, error) {

@@ -21,6 +21,7 @@ func newEvictTestRepo(t *testing.T, d *Daemon, workspaceID, repoURL string) stri
 		t.Fatal(err)
 	}
 	runGitForGC(t, "", "clone", "--bare", source, barePath)
+	runGitForGC(t, "", "-C", barePath, "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*")
 	return barePath
 }
 

@@ -6112,19 +6112,3 @@ func (h *Handler) GetAutopilotRunGCCheck(w http.ResponseWriter, r *http.Request)
 		"completed_at": run.CompletedAt.Time,
 	})
 }
-
-// GetTaskGCCheck returns the agent_task_queue status for quick-create cleanup.
-// Quick-create tasks have no parent record (no issue_id at WriteGCMeta time,
-// no chat session, no autopilot run) so the daemon keys GC directly on the
-// task row itself.
-func (h *Handler) GetTaskGCCheck(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskId")
-	task, ok := h.requireDaemonTaskAccess(w, r, taskID)
-	if !ok {
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":       task.Status,
-		"completed_at": task.CompletedAt.Time,
-	})
-}

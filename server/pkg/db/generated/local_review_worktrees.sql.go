@@ -12,10 +12,13 @@ import (
 )
 
 const listLocalReviewWorktrees = `-- name: ListLocalReviewWorktrees :many
-SELECT task.id AS task_id, task.runtime_id, task.agent_id, task.issue_id, task.work_dir, task.status, task.branch_name, agent.workspace_id
+SELECT task.id AS task_id, task.runtime_id, task.agent_id, task.issue_id, task.work_dir, task.status, task.branch_name, agent.workspace_id,
+       task.completed_at, issue.status AS issue_status,
+       COALESCE(issue.last_activity_at, issue.updated_at) AS last_activity_at
 FROM agent_task_queue task
 JOIN agent ON agent.id = task.agent_id
 JOIN agent_runtime runtime ON runtime.id = task.runtime_id AND runtime.workspace_id = agent.workspace_id
+LEFT JOIN issue ON issue.id = task.issue_id AND issue.workspace_id = agent.workspace_id
 WHERE agent.workspace_id = $1
 AND task.work_dir IS NOT NULL AND task.work_dir <> ''
 AND (task.status NOT IN ('completed', 'failed', 'cancelled') OR COALESCE(task.durable_work_dir, '') = '')
@@ -35,14 +38,17 @@ type ListLocalReviewWorktreesParams struct {
 }
 
 type ListLocalReviewWorktreesRow struct {
-	TaskID      pgtype.UUID `json:"task_id"`
-	RuntimeID   pgtype.UUID `json:"runtime_id"`
-	AgentID     pgtype.UUID `json:"agent_id"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	WorkDir     pgtype.Text `json:"work_dir"`
-	Status      string      `json:"status"`
-	BranchName  pgtype.Text `json:"branch_name"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	RuntimeID      pgtype.UUID        `json:"runtime_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	WorkDir        pgtype.Text        `json:"work_dir"`
+	Status         string             `json:"status"`
+	BranchName     pgtype.Text        `json:"branch_name"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	IssueStatus    pgtype.Text        `json:"issue_status"`
+	LastActivityAt pgtype.Timestamptz `json:"last_activity_at"`
 }
 
 func (q *Queries) ListLocalReviewWorktrees(ctx context.Context, arg ListLocalReviewWorktreesParams) ([]ListLocalReviewWorktreesRow, error) {
@@ -69,6 +75,9 @@ func (q *Queries) ListLocalReviewWorktrees(ctx context.Context, arg ListLocalRev
 			&i.Status,
 			&i.BranchName,
 			&i.WorkspaceID,
+			&i.CompletedAt,
+			&i.IssueStatus,
+			&i.LastActivityAt,
 		); err != nil {
 			return nil, err
 		}

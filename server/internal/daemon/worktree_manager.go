@@ -10,6 +10,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/localreview"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // ManagedWorktree is a daemon-owned completed task environment. Its Path is
@@ -17,6 +18,7 @@ import (
 // desktop app needs it only as an opaque cleanup handle.
 type ManagedWorktree struct {
 	TaskDiskUsage
+	protocol.WorktreeLifecycle
 	Active           bool     `json:"active"`
 	ProtectionReason string   `json:"protection_reason"`
 	TaskID           string   `json:"task_id"`
@@ -62,6 +64,8 @@ func (d *Daemon) managedWorktrees(ctx context.Context) ([]ManagedWorktree, error
 		return nil, err
 	}
 	worktrees := make([]ManagedWorktree, 0, len(report.Tasks))
+	lifecycleCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
 	for _, task := range report.Tasks {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -112,14 +116,16 @@ func (d *Daemon) managedWorktrees(ctx context.Context) ([]ManagedWorktree, error
 		if repositories == nil {
 			repositories = []string{}
 		}
-		worktrees = append(worktrees, ManagedWorktree{
+		row := ManagedWorktree{
 			TaskDiskUsage:    task,
 			Active:           active,
 			ProtectionReason: reason,
 			TaskID:           taskID,
 			RuntimeID:        runtimeID,
 			Repositories:     repositories,
-		})
+		}
+		d.describeManagedWorktree(lifecycleCtx, &row)
+		worktrees = append(worktrees, row)
 	}
 	return worktrees, nil
 }
