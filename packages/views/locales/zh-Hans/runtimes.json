@@ -637,6 +637,7 @@
     "voice_transcribing": "正在转文字...",
     "voice_cancel_release": "松开取消",
     "voice_cancel_hint": "上滑取消 · Esc 取消",
+    "voice_review_cancel": "取消语音草稿",
     "clear_screen": "清屏",
     "show_chat": "显示对话",
     "chat_overlay": "实时对话",

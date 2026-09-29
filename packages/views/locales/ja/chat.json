@@ -43,6 +43,9 @@
     "voice_recording": "録音中・完了後に文字に変換します",
     "voice_transcribing": "文字起こしを完了しています...",
     "voice_cancel": "音声入力をキャンセル（Esc）",
+    "voice_stop": "停止して文字起こし",
+    "voice_send": "停止して送信",
+    "voice_volume": "マイク音量",
     "voice_done": "完了",
     "voice_setup_progress": "音声を準備中 {{percent}}%",
     "voice_setup_retry": "音声の準備を再試行"

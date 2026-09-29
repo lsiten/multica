@@ -13,7 +13,7 @@ type Capture = {
   timer?: ReturnType<typeof setTimeout>;
   chunks: Blob[];
   realtime?: { stop: () => void; promise: Promise<string> };
-  transcriptAtStart: string | undefined;
+  partial: string;
   cancelled: boolean;
   released: boolean;
 };
@@ -65,11 +65,14 @@ function dispose(capture: Capture) {
   capture.stream?.getTracks().forEach((track) => track.stop());
 }
 
-export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, errorMessage, onRealtimeVoice }: {
+export function HoldToTalkInput({ enabled, onVoice, onTranscript, onPartial, onError, onCancel, errorMessage, onRealtimeVoice }: {
   readonly enabled: boolean;
   readonly transcript?: string;
   readonly onVoice: (recording: Blob, signal: AbortSignal) => Promise<string | void> | void;
   readonly onTranscript: (text: string) => void;
+  readonly onPartial?: (text: string) => void;
+  readonly onError?: (partial: string) => void;
+  readonly onCancel?: () => void;
   readonly errorMessage?: string;
   readonly onRealtimeVoice?: (stream: unknown, signal: AbortSignal, onPartial: (text: string) => void) => { stop: () => void; promise: Promise<string> };
 }) {
@@ -83,11 +86,12 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   const [overlayPlacement, setOverlayPlacement] = useState<OverlayPlacement>("above");
   const [partialTranscript, setPartialTranscript] = useState<string>();
   const capture = useRef<Capture | null>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   const cancelOnRelease = useRef(false);
   const pointer = useRef<number | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const recordingStartedAt = useRef<number | null>(null);
-  const previousTranscript = useRef(transcript);
 
   useEffect(() => {
     if (phase !== "recording" || recordingStartedAt.current === null) return;
@@ -96,23 +100,6 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     }, 100);
     return () => window.clearInterval(timer);
   }, [phase]);
-
-  useEffect(() => {
-    if (transcript === previousTranscript.current) return;
-    const current = capture.current;
-    if (!transcript) {
-      previousTranscript.current = transcript;
-      return;
-    }
-    if (!current?.released || current.cancelled) return;
-    previousTranscript.current = transcript;
-    dispose(current);
-    capture.current = null;
-    recordingStartedAt.current = null;
-    setRecordingMs(0);
-    setPhase("idle");
-    onTranscript(transcript);
-  }, [phase, transcript, onTranscript]);
 
   useEffect(() => {
     const cancel = () => {
@@ -125,6 +112,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       recordingStartedAt.current = null;
       setRecordingMs(0);
       setPhase("idle");
+      onCancelRef.current?.();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") cancel();
@@ -153,6 +141,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
     setRecordingMs(0);
     setPhase("idle");
     setError(true);
+    onError?.(current.partial);
   };
 
   const release = (cancel = false) => {
@@ -212,7 +201,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       released: false,
       controller: new AbortController(),
       chunks: [],
-      transcriptAtStart: transcript,
+      partial: "",
     };
     capture.current = current;
     setPhase("requesting");
@@ -225,7 +214,11 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
       }
       if (onRealtimeVoice) {
         current.realtime = onRealtimeVoice(stream, current.controller.signal, (text) => {
-          if (capture.current === current && !current.cancelled) setPartialTranscript(text.trim());
+          if (capture.current === current && !current.cancelled) {
+            setPartialTranscript(text.trim());
+            current.partial = text.trim();
+            onPartial?.(current.partial);
+          }
         });
         void current.realtime.promise.catch(() => fail(current));
         recordingStartedAt.current = Date.now();
@@ -280,11 +273,7 @@ export function HoldToTalkInput({ enabled, transcript, onVoice, onTranscript, er
   };
 
   const holding = phase === "recording" || phase === "requesting";
-  const liveTranscript = partialTranscript || (
-    capture.current && transcript !== capture.current.transcriptAtStart
-      ? transcript?.trim()
-      : undefined
-  );
+  const liveTranscript = partialTranscript || undefined;
   useLayoutEffect(() => {
     if (!pointerPosition || !overlayRef.current) return;
     const rect = overlayRef.current.getBoundingClientRect();

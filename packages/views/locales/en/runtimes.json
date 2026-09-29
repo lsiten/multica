@@ -653,6 +653,7 @@
     "voice_transcribing": "Transcribing…",
     "voice_cancel_release": "Release to cancel",
     "voice_cancel_hint": "Slide up to cancel · Esc to cancel",
+    "voice_review_cancel": "Cancel voice draft",
     "clear_screen": "Clear screen",
     "show_chat": "Show chat",
     "chat_overlay": "Live conversation",

@@ -637,6 +637,7 @@
     "voice_transcribing": "텍스트로 변환 중…",
     "voice_cancel_release": "놓으면 취소",
     "voice_cancel_hint": "위로 밀거나 Esc를 눌러 취소",
+    "voice_review_cancel": "음성 초안 취소",
     "clear_screen": "대화 숨기기",
     "show_chat": "대화 표시",
     "chat_overlay": "실시간 대화",

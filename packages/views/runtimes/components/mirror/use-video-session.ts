@@ -143,6 +143,11 @@ export function useVideoSession(
       setVoiceTranscript("");
       return currentSession?.sendVoice(recording);
     },
+    streamVoice: (stream: unknown, signal: AbortSignal, onPartial: (text: string) => void) =>
+      currentSession?.streamVoice(stream, signal, onPartial) ?? {
+        stop: () => undefined,
+        promise: Promise.reject(new Error("Mirror session unavailable")),
+      },
     voiceTranscript: current ? voiceTranscript : "",
     authorization: current ? authorization : null,
     authorizationPending,

@@ -637,6 +637,7 @@
     "voice_transcribing": "文字起こし中…",
     "voice_cancel_release": "離してキャンセル",
     "voice_cancel_hint": "上にスライド、または Esc でキャンセル",
+    "voice_review_cancel": "音声下書きをキャンセル",
     "clear_screen": "会話を非表示",
     "show_chat": "会話を表示",
     "chat_overlay": "リアルタイムの会話",

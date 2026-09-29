@@ -7,7 +7,7 @@ import { HoldToTalkInput } from "./hold-to-talk-input";
 const stopTrack = vi.fn();
 const stream = { getTracks: () => [{ stop: stopTrack }] };
 const getUserMedia = vi.fn(async () => stream);
-const onVoice = vi.fn(async (_blob: Blob) => undefined);
+const onVoice = vi.fn(async (_blob: Blob): Promise<string | void> => undefined);
 const onTranscript = vi.fn();
 const recorders: FakeRecorder[] = [];
 class FakeRecorder {
@@ -25,9 +25,9 @@ class FakeRecorder {
   }
 }
 
-function view(transcript = "", enabled = true) {
+function view(transcript = "", enabled = true, extra: Partial<React.ComponentProps<typeof HoldToTalkInput>> = {}) {
   return <I18nProvider locale="en" resources={RESOURCES}>
-    <HoldToTalkInput enabled={enabled} transcript={transcript} onVoice={onVoice} onTranscript={onTranscript} />
+    <HoldToTalkInput enabled={enabled} transcript={transcript} onVoice={onVoice} onTranscript={onTranscript} {...extra} />
   </I18nProvider>;
 }
 async function hold() {
@@ -127,12 +127,17 @@ describe("HoldToTalkInput", () => {
     });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 568 });
-    const { rerender } = render(view());
+    let partial!: (text: string) => void;
+    const onRealtimeVoice = vi.fn((_stream: unknown, _signal: AbortSignal, onText: (text: string) => void) => {
+      partial = onText;
+      return { stop: vi.fn(), promise: new Promise<string>(() => undefined) };
+    });
+    render(view("", true, { onRealtimeVoice }));
     const button = screen.getByRole("button", { name: "Hold to talk" });
     button.setPointerCapture = vi.fn();
     fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 16, clientY: 500 });
     await screen.findByText("Release to transcribe");
-    rerender(view("这是一个很长的中文实时转写内容，用来验证边缘不会被裁剪"));
+    act(() => partial("这是一个很长的中文实时转写内容，用来验证边缘不会被裁剪"));
     const overlay = document.querySelector<HTMLElement>("[data-voice-overlay]");
     expect(overlay).toHaveStyle({ left: "156px", top: "500px" });
     expect(screen.getByText("这是一个很长的中文实时转写内容，用来验证边缘不会被裁剪")).toBeInTheDocument();
@@ -140,23 +145,26 @@ describe("HoldToTalkInput", () => {
   });
 
   it("shows a transcript update while the microphone is still held", async () => {
-    const { rerender } = render(view());
+    let partial!: (text: string) => void;
+    const onRealtimeVoice = vi.fn((_stream: unknown, _signal: AbortSignal, onText: (text: string) => void) => {
+      partial = onText;
+      return { stop: vi.fn(), promise: new Promise<string>(() => undefined) };
+    });
+    render(view("", true, { onRealtimeVoice }));
     const button = await hold();
-    rerender(view("Live words"));
+    act(() => partial("Live words"));
     expect(screen.getByText("Live words")).toBeInTheDocument();
     fireEvent.keyUp(button, { key: " " });
   });
 
   it("records only while held and returns transcription for editing on release", async () => {
-    const { rerender } = render(view());
+    render(view());
     const button = await hold();
     expect(onVoice).not.toHaveBeenCalled();
+    onVoice.mockResolvedValueOnce("Recognized words");
     fireEvent.keyUp(button, { key: " " });
     await waitFor(() => expect(onVoice).toHaveBeenCalledOnce());
     expect(stopTrack).toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Transcribing…" })).toBeDisabled();
-    expect(onTranscript).not.toHaveBeenCalled();
-    rerender(view("Recognized words"));
     await waitFor(() => expect(onTranscript).toHaveBeenCalledWith("Recognized words"));
     expect(screen.getByRole("button", { name: "Hold to talk" })).toBeEnabled();
   });

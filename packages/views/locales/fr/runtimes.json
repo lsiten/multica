@@ -653,6 +653,7 @@
     "voice_transcribing": "Transcription…",
     "voice_cancel_release": "Relâcher pour annuler",
     "voice_cancel_hint": "Glisser vers le haut ou Échap pour annuler",
+    "voice_review_cancel": "Annuler le brouillon vocal",
     "clear_screen": "Masquer la conversation",
     "show_chat": "Afficher la conversation",
     "chat_overlay": "Conversation en direct",

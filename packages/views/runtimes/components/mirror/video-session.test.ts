@@ -389,11 +389,18 @@ it("encodes wheel input and fragments voice within the negotiated channel limit"
     offset += payload.length;
   }
   expect(JSON.parse(new TextDecoder().decode(joined)).audio_base64).toHaveLength(128 * 1024);
-  voice.send.mockClear();
+  voice.readyState = "closed";
+  voice.onclose?.();
+  peer.channels.delete("mirror-voice");
+  await session.sendVoice(new Blob([new Uint8Array(32)], { type: "audio/webm" }));
+  const reopenedVoice = peer.channels.get("mirror-voice");
+  if (!reopenedVoice) throw new Error("Voice channel was not recreated");
+  expect(reopenedVoice).not.toBe(voice);
+  reopenedVoice.send.mockClear();
   peer.sctp.maxMessageSize = 4096;
   await session.sendVoice(new Blob([new Uint8Array(8192)], { type: "audio/webm" }));
-  expect(voice.send.mock.calls.length).toBeGreaterThan(1);
-  for (const [packet] of voice.send.mock.calls) {
+  expect(reopenedVoice.send.mock.calls.length).toBeGreaterThan(1);
+  for (const [packet] of reopenedVoice.send.mock.calls) {
     expect(packet.byteLength).toBeLessThanOrEqual(4096);
   }
   await session.close();

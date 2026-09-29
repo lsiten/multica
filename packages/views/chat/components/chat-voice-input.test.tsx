@@ -66,7 +66,7 @@ describe("ChatVoiceInput", () => {
     expect(getUserMedia).toHaveBeenCalledOnce();
     act(() => partial("live text"));
     expect(draft.update).toHaveBeenCalledWith("live text");
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop and transcribe" }));
     expect(screen.getByText("Finishing transcription...")).toBeInTheDocument();
     await act(async () => resolve("Final text"));
     expect(draft.update).toHaveBeenLastCalledWith("Final text");
@@ -80,11 +80,11 @@ describe("ChatVoiceInput", () => {
     render(view());
     screen.getByRole("button", { name: "Start dictation" }).focus();
     await user.keyboard("{Enter}");
-    await screen.findByRole("button", { name: "Done" });
+    await screen.findByRole("button", { name: "Stop and transcribe" });
     await user.keyboard("{Escape}");
     expect(draft.cancel).toHaveBeenCalledOnce();
     await user.keyboard(" ");
-    await screen.findByRole("button", { name: "Done" });
+    await screen.findByRole("button", { name: "Stop and transcribe" });
     await user.click(screen.getByRole("button", { name: "Cancel dictation (Esc)" }));
     expect(draft.cancel).toHaveBeenCalledTimes(2);
   });
@@ -107,7 +107,7 @@ describe("ChatVoiceInput", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));
     await screen.findByText("Recording · text appears after Done");
     expect(mocks.mutateAsync).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop and transcribe" }));
     await waitFor(() => expect(draft.finish).toHaveBeenCalledOnce());
     expect(mocks.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ agentId: "agent", recording: expect.any(Blob), signal: expect.any(AbortSignal) }));
     expect(draft.update).toHaveBeenCalledWith("Batch result");

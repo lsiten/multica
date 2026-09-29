@@ -43,6 +43,9 @@
     "voice_recording": "녹음 중 · 완료 후 텍스트로 변환됩니다",
     "voice_transcribing": "음성 변환을 마무리하는 중...",
     "voice_cancel": "음성 입력 취소 (Esc)",
+    "voice_stop": "중지 후 텍스트 변환",
+    "voice_send": "중지하고 보내기",
+    "voice_volume": "마이크 음량",
     "voice_done": "완료",
     "voice_setup_progress": "음성 준비 중 {{percent}}%",
     "voice_setup_retry": "음성 준비 다시 시도"

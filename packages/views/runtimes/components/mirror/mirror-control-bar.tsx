@@ -12,7 +12,7 @@ import type {
 } from "@multica/core/types";
 import { VSCREEN_CAPABILITIES } from "@multica/core/runtimes";
 import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
 import { useT } from "../../../i18n";
 import type { MirrorControlState } from "./video-session";
 import { appSwitchModifiers } from "./mirror-shortcuts";
@@ -32,11 +32,11 @@ export function MirrorControlBar({
   onKey,
   clientOS,
   onVoice,
-  voiceTranscript,
   agents = [],
   agentId = "",
   onAgentChange,
   onAgentMessage,
+  onRealtimeVoice,
 }: {
   readonly scope: VscreenScope;
   readonly runtime: RuntimeDevice;
@@ -51,6 +51,7 @@ export function MirrorControlBar({
   readonly onKey: (key: string, modifiers?: ("shift" | "control" | "alt" | "meta")[]) => void;
   readonly clientOS?: string;
   readonly onVoice: (recording: Blob) => Promise<void> | void;
+  readonly onRealtimeVoice?: (stream: unknown, signal: AbortSignal, onPartial: (text: string) => void) => { stop: () => void; promise: Promise<string> };
   readonly voiceTranscript?: string;
   readonly agents?: readonly { readonly id: string; readonly name: string }[];
   readonly agentId?: string;
@@ -60,6 +61,8 @@ export function MirrorControlBar({
   const { t } = useT("runtimes");
   const [text, setText] = useState("");
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
+  const [voiceReview, setVoiceReview] = useState(false);
+  const voicePrefix = useState(() => ({ value: "" }))[0];
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(false);
   const owner = runtime.owner_id === scope.accountId;
@@ -108,6 +111,12 @@ export function MirrorControlBar({
     } finally {
       setSending(false);
     }
+  };
+
+  const appendSpeech = (speech: string) => {
+    const prefix = voicePrefix.value.trimEnd();
+    const separator = prefix && speech ? " " : "";
+    setText(`${prefix}${separator}${speech}`.slice(0, 1024));
   };
 
   return (
@@ -169,13 +178,15 @@ export function MirrorControlBar({
         <label className="flex min-w-56 flex-1 items-center gap-2 text-caption">
           <Type className="size-4 shrink-0" />
           <span className="sr-only">{t(($) => $.vscreen.external_text)}</span>
-          <Input
+          <Textarea
             value={text}
             maxLength={1024}
             autoComplete="off"
             disabled={sending}
+            rows={2}
             onChange={(event) => {
               setText(event.target.value.slice(0, 1024));
+              setVoiceReview(false);
               if (sendError) setSendError(false);
             }}
             onKeyDown={(event) => {
@@ -184,17 +195,29 @@ export function MirrorControlBar({
                 void sendType();
               }
             }}
-            className="h-8 min-w-0 flex-1"
+            className="min-h-16 min-w-0 flex-1 resize-y"
             placeholder={t(($) => $.vscreen.external_text)}
           />
         </label>
         ) : (
           <HoldToTalkInput
             enabled={canSend && videoReady && !sending}
-            transcript={voiceTranscript}
             onVoice={onVoice}
+            onRealtimeVoice={onRealtimeVoice}
             onTranscript={(value) => {
-              setText((draft) => draft ? `${draft} ${value}` : value);
+              appendSpeech(value);
+              setVoiceReview(true);
+              setInputMode("text");
+            }}
+            onPartial={appendSpeech}
+            onError={(partial) => {
+              if (partial) appendSpeech(partial);
+              setVoiceReview(true);
+              setInputMode("text");
+            }}
+            onCancel={() => {
+              setText(voicePrefix.value);
+              setVoiceReview(false);
               setInputMode("text");
             }}
           />
@@ -208,6 +231,19 @@ export function MirrorControlBar({
         >
           {sending ? t(($) => $.vscreen.sending) : t(($) => $.vscreen.type_text)}
         </Button>}
+        {voiceReview && inputMode === "text" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={sending}
+            onClick={() => {
+              setText(voicePrefix.value);
+              setVoiceReview(false);
+            }}
+          >
+            {t(($) => $.vscreen.voice_review_cancel)}
+          </Button>
+        )}
         {agents.length > 0 && (
           <select
             aria-label={t(($) => $.vscreen.send_target)}
@@ -227,7 +263,14 @@ export function MirrorControlBar({
           size="sm"
           variant="ghost"
           onClick={() => {
-            setInputMode((mode) => mode === "text" ? "voice" : "text");
+            setInputMode((mode) => {
+              if (mode === "text") {
+                voicePrefix.value = text;
+                setVoiceReview(false);
+                return "voice";
+              }
+              return "text";
+            });
           }}
           aria-label={inputMode === "text" ? t(($) => $.vscreen.switch_to_voice) : t(($) => $.vscreen.switch_to_text)}
         >

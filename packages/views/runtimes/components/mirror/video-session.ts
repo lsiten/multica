@@ -22,6 +22,12 @@ import {
   type MirrorControlState,
   type MirrorVideoCallbacks,
 } from "./video-session-types";
+import {
+  MIRROR_VOICE_MAX_BYTES,
+  MirrorVoiceRequestError,
+  startMirrorVoiceStream,
+  type MirrorVoiceTransport,
+} from "./voice-stream";
 export { MirrorVideoError } from "./video-session-types";
 export type {
   MirrorControlInput,
@@ -45,7 +51,16 @@ export class MirrorVideoSession {
   private controlChannel: RTCDataChannel | null = null;
   private inputChannel: RTCDataChannel | null = null;
   private voiceChannel: RTCDataChannel | null = null;
-  private voiceReady: ((open: boolean) => void) | null = null;
+  private readonly voiceReady = new Set<{
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }>();
+  private readonly voiceReplies = new Map<number, {
+    resolve?: (text: string) => void;
+    reject?: (error: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
+    cleanup?: () => void;
+  }>();
   private inputOpen = false;
   private inputReady: ((open: boolean) => void) | null = null;
   private controlGrant: MirrorControlGrant | null = null;
@@ -193,7 +208,18 @@ export class MirrorVideoSession {
   private voiceMessage(value: unknown): void {
     if (this.disposed || typeof value !== "string") return;
     const raw = parseMirrorVoiceMessage(value);
-    if (raw?.type === "mirror-voice:transcript") this.options.callbacks.transcript?.(raw.text);
+    if (!raw) return;
+    const reply = this.voiceReplies.get(raw.seq);
+    if (!reply) return;
+    this.voiceReplies.delete(raw.seq);
+    clearTimeout(reply.timer);
+    reply.cleanup?.();
+    if (raw.type === "mirror-voice:transcript") {
+      this.options.callbacks.transcript?.(raw.text);
+      reply.resolve?.(raw.text);
+    } else {
+      reply.reject?.(new MirrorVoiceRequestError(raw.reason));
+    }
   }
 
   private authorizationMessage(value: unknown): void {
@@ -237,60 +263,171 @@ export class MirrorVideoSession {
     });
   }
 
-  async sendVoice(recording: Blob): Promise<void> {
-    if (this.disposed || !this.voiceGrantId || !this.peer) return;
-    const grant = this.voiceGrantId;
+  private async ensureVoiceChannel(signal?: AbortSignal): Promise<RTCDataChannel> {
+    if (this.disposed || !this.voiceGrantId || !this.peer)
+      throw new MirrorVoiceRequestError("channel_unavailable");
     if (!this.voiceChannel) {
-      this.voiceChannel = this.peer.createDataChannel("mirror-voice", { ordered: true });
-      this.voiceChannel.onopen = () => {
-        this.voiceReady?.(true);
-        this.voiceReady = null;
+      const channel = this.peer.createDataChannel("mirror-voice", { ordered: true });
+      channel.onopen = () => {
+        for (const waiter of this.voiceReady) waiter.resolve();
+        this.voiceReady.clear();
       };
-      this.voiceChannel.onclose = () => {
-        this.voiceReady?.(false);
-        this.voiceReady = null;
+      channel.onclose = () => {
+        const error = new MirrorVoiceRequestError("channel_closed");
+        if (this.voiceChannel === channel) this.voiceChannel = null;
+        for (const waiter of this.voiceReady) waiter.reject(error);
+        this.voiceReady.clear();
+        this.rejectVoiceReplies(error);
       };
-      this.voiceChannel.onmessage = (event: MessageEvent<unknown>) => this.voiceMessage(event.data);
+      channel.onerror = () => {
+        const error = new MirrorVoiceRequestError("channel_error");
+        if (this.voiceChannel === channel) this.voiceChannel = null;
+        for (const waiter of this.voiceReady) waiter.reject(error);
+        this.voiceReady.clear();
+        this.rejectVoiceReplies(error);
+      };
+      channel.onmessage = (event: MessageEvent<unknown>) => this.voiceMessage(event.data);
+      this.voiceChannel = channel;
     }
     const channel = this.voiceChannel;
-    if (!channel) return;
-    if (channel.readyState !== "open") {
-      const opened = await new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => resolve(false), 3_000);
-        this.voiceReady = (open) => {
+    if (channel.readyState === "open") return channel;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.voiceReady.delete(waiter);
+        reject(new MirrorVoiceRequestError("channel_timeout"));
+      }, 3_000);
+      const waiter = {
+        resolve: () => {
           clearTimeout(timer);
-          resolve(open);
-        };
-      });
-      if (!opened || this.disposed) return;
+          if (signal) signal.removeEventListener("abort", abort);
+          resolve();
+        },
+        reject: (error: unknown) => {
+          clearTimeout(timer);
+          if (signal) signal.removeEventListener("abort", abort);
+          reject(error);
+        },
+      };
+      const abort = () => waiter.reject(new DOMException("Mirror voice cancelled", "AbortError"));
+      this.voiceReady.add(waiter);
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
+    });
+    if (this.disposed) throw new MirrorVoiceRequestError("channel_closed");
+    return channel;
+  }
+
+  private rejectVoiceReplies(error: unknown): void {
+    for (const [sequence, reply] of this.voiceReplies) {
+      clearTimeout(reply.timer);
+      reply.cleanup?.();
+      this.voiceReplies.delete(sequence);
+      reply.reject?.(error);
     }
+  }
+
+  private async transmitVoice(
+    recording: Blob,
+    signal: AbortSignal | undefined,
+    awaitReply: boolean,
+  ): Promise<string | undefined> {
+    const channel = await this.ensureVoiceChannel(signal);
+    const grant = this.voiceGrantId;
+    if (!grant || this.disposed || channel.readyState !== "open")
+      throw new MirrorVoiceRequestError("channel_unavailable");
     const bytes = new Uint8Array(await recording.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > 512 * 1024) return;
+    if (bytes.byteLength === 0) throw new MirrorVoiceRequestError("empty_recording");
+    if (bytes.byteLength > MIRROR_VOICE_MAX_BYTES)
+      throw new MirrorVoiceRequestError("recording_too_large");
+    if (signal?.aborted) throw new DOMException("Mirror voice cancelled", "AbortError");
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
-    if (this.disposed || this.voiceGrantId !== grant || channel.readyState !== "open") return;
+    if (this.disposed || this.voiceGrantId !== grant || channel.readyState !== "open")
+      throw new MirrorVoiceRequestError("channel_unavailable");
+    const sequence = ++this.voiceSeq;
+    let reply: Promise<string> | undefined;
+    if (awaitReply) {
+      reply = new Promise((resolve, reject) => {
+        const onAbort = () => {
+          const pending = this.voiceReplies.get(sequence);
+          if (!pending) return;
+          clearTimeout(pending.timer);
+          this.voiceReplies.delete(sequence);
+          pending.cleanup?.();
+          reject(new DOMException("Mirror voice cancelled", "AbortError"));
+        };
+        const timer = setTimeout(() => {
+          this.voiceReplies.delete(sequence);
+          signal?.removeEventListener("abort", onAbort);
+          reject(new MirrorVoiceRequestError("transcription_timeout"));
+        }, 15_000);
+        this.voiceReplies.set(sequence, {
+          resolve,
+          reject,
+          timer,
+          cleanup: () => signal?.removeEventListener("abort", onAbort),
+        });
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+      });
+    } else {
+      const timer = setTimeout(() => this.voiceReplies.delete(sequence), 30_000);
+      this.voiceReplies.set(sequence, { timer });
+    }
     const payload = new TextEncoder().encode(JSON.stringify({
       type: "mirror-voice:audio",
       grant_id: grant,
-      seq: ++this.voiceSeq,
+      seq: sequence,
       mime_type: recording.type || "audio/webm",
       audio_base64: btoa(binary),
     }));
-    // Keep each reliable SCTP message below both our receiver limit and the
-    // negotiated transport limit. Never enqueue more than one bounded recording.
     const negotiated = this.peer?.sctp?.maxMessageSize;
     const packetSize = Math.min(16 * 1024, negotiated && negotiated > 0 ? negotiated : 16 * 1024);
-    if (packetSize <= 12) throw new Error("Voice data channel message limit is too small");
-    for (let offset = 0; offset < payload.length; offset += packetSize - 12) {
-      const fragment = payload.subarray(offset, offset + packetSize - 12);
-      const packet = new Uint8Array(12 + fragment.length);
-      const header = new DataView(packet.buffer);
-      header.setUint32(0, 0x4d564331); // MVC1
-      header.setUint32(4, payload.length);
-      header.setUint32(8, offset);
-      packet.set(fragment, 12);
-      channel.send(packet);
+    if (packetSize <= 12) {
+      this.voiceReplies.delete(sequence);
+      throw new MirrorVoiceRequestError("message_limit");
     }
+    try {
+      for (let offset = 0; offset < payload.length; offset += packetSize - 12) {
+        const fragment = payload.subarray(offset, offset + packetSize - 12);
+        const packet = new Uint8Array(12 + fragment.length);
+        const header = new DataView(packet.buffer);
+        header.setUint32(0, 0x4d564331);
+        header.setUint32(4, payload.length);
+        header.setUint32(8, offset);
+        packet.set(fragment, 12);
+        channel.send(packet);
+      }
+    } catch (error) {
+      const pending = this.voiceReplies.get(sequence);
+      if (pending) {
+        clearTimeout(pending.timer);
+        pending.cleanup?.();
+        this.voiceReplies.delete(sequence);
+        pending.reject?.(error);
+      }
+      throw error;
+    }
+    return reply ? await reply : undefined;
+  }
+
+  async sendVoice(recording: Blob): Promise<void> {
+    try {
+      await this.transmitVoice(recording, undefined, false);
+    } catch {
+      // Batch voice retains its historical best-effort Promise<void> contract.
+    }
+  }
+
+  streamVoice(
+    input: unknown,
+    signal: AbortSignal,
+    onPartial: (text: string) => void,
+  ): { stop: () => void; promise: Promise<string> } {
+    const transport: MirrorVoiceTransport = {
+      request: (recording, requestSignal) => this.transmitVoice(recording, requestSignal, true).then((text) => text ?? ""),
+    };
+    return startMirrorVoiceStream(input, signal, onPartial, transport);
   }
 
   private armControlRenewal(): void {
@@ -586,6 +723,10 @@ export class MirrorVideoSession {
     for (const finish of this.authorizationReplies.values()) finish(false);
     this.pendingAuthorizations.clear();
     this.abort.abort();
+    const voiceError = new MirrorVoiceRequestError("session_closed");
+    for (const waiter of this.voiceReady) waiter.reject(voiceError);
+    this.voiceReady.clear();
+    this.rejectVoiceReplies(voiceError);
     clearTimeout(this.renewal);
     clearTimeout(this.expiry);
     clearTimeout(this.controlRenewal);
@@ -593,6 +734,8 @@ export class MirrorVideoSession {
     this.inputChannel?.close();
     this.inputChannel = null;
     this.inputOpen = false;
+    this.voiceChannel?.close();
+    this.voiceChannel = null;
     this.peer?.close();
     this.stream?.getTracks().forEach((track) => track.stop());
     this.options.callbacks.stream(null);

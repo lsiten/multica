@@ -44,6 +44,9 @@
     "voice_recording": "Recording · text appears after Done",
     "voice_transcribing": "Finishing transcription...",
     "voice_cancel": "Cancel dictation (Esc)",
+    "voice_stop": "Stop and transcribe",
+    "voice_send": "Stop and send",
+    "voice_volume": "Microphone level",
     "voice_done": "Done",
     "voice_setup_progress": "Preparing voice {{percent}}%",
     "voice_setup_retry": "Retry voice setup"

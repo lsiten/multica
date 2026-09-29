@@ -2,8 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import type { LocalVoiceAdapter } from "@multica/core/platform";
 import type { DictationDraft } from "../../editor/dictation-draft";
 import { recordDictation, type DictationRecording } from "./chat-dictation-recorder";
+import { observeDictationVolume } from "./dictation-volume";
 
-type DictationPhase = "idle" | "requesting" | "recording" | "transcribing";
+export type DictationPhase = "idle" | "requesting" | "recording" | "transcribing";
 type Capture = {
   controller: AbortController;
   draft: DictationDraft;
@@ -13,6 +14,9 @@ type Capture = {
   startedAt: number;
   stopping: boolean;
   transcript: string;
+  closeMeter?: () => void;
+  completion: Promise<boolean>;
+  complete: (success: boolean) => void;
 };
 
 interface ChatDictationOptions {
@@ -27,6 +31,7 @@ function releaseCapture(capture: Capture) {
   clearTimeout(capture.timer);
   capture.controller.abort();
   capture.recording?.stop();
+  capture.closeMeter?.();
   capture.stream?.getTracks().forEach((track) => track.stop());
 }
 
@@ -36,7 +41,9 @@ export function useChatDictation(options: ChatDictationOptions) {
   const capture = useRef<Capture | null>(null);
   const [phase, setPhase] = useState<DictationPhase>("idle");
   const [seconds, setSeconds] = useState(0);
+  const [level, setLevel] = useState(0);
   const [error, setError] = useState(false);
+  const [hasTranscript, setHasTranscript] = useState(false);
 
   const cancel = useCallback(() => {
     const current = capture.current;
@@ -44,8 +51,10 @@ export function useChatDictation(options: ChatDictationOptions) {
     capture.current = null;
     releaseCapture(current);
     current.draft.cancel();
+    current.complete(false);
     currentOptions.current.onActiveChange(false);
     setPhase("idle");
+    setLevel(0);
   }, []);
 
   const fail = useCallback((current: Capture) => {
@@ -56,19 +65,29 @@ export function useChatDictation(options: ChatDictationOptions) {
     else current.draft.cancel();
     currentOptions.current.onActiveChange(false);
     setPhase("idle");
+    setLevel(0);
     setError(true);
+    current.complete(false);
   }, []);
 
-  const stop = useCallback(() => {
+  const finish = useCallback((): Promise<boolean> => {
     const current = capture.current;
-    if (!current || current.stopping || !current.recording) return;
+    if (!current?.recording) return Promise.resolve(false);
+    if (current.stopping) return current.completion;
     current.stopping = true;
     clearTimeout(current.timer);
+    current.closeMeter?.();
     setPhase("transcribing");
     current.timer = setTimeout(() => fail(current), 120_000);
-    current.recording.stop();
-    current.stream?.getTracks().forEach((track) => track.stop());
+    try {
+      current.recording.stop();
+      current.stream?.getTracks().forEach((track) => track.stop());
+    } catch {
+      fail(current);
+    }
+    return current.completion;
   }, [fail]);
+  const stop = useCallback(() => { void finish(); }, [finish]);
 
   const start = useCallback(async () => {
     const config = currentOptions.current;
@@ -81,12 +100,17 @@ export function useChatDictation(options: ChatDictationOptions) {
     }
     const draft = config.onBegin();
     if (!draft) return;
+    let resolveCompletion!: (success: boolean) => void;
+    const completion = new Promise<boolean>((resolve) => { resolveCompletion = resolve; });
     const current: Capture = {
       controller: new AbortController(), draft, startedAt: 0, stopping: false, transcript: "",
+      completion, complete: resolveCompletion,
     };
     capture.current = current;
     config.onActiveChange(true);
+    setHasTranscript(false);
     setSeconds(0);
+    setLevel(0);
     setPhase("requesting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -95,10 +119,14 @@ export function useChatDictation(options: ChatDictationOptions) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
+      current.closeMeter = observeDictationVolume(stream, (next) => {
+        if (capture.current === current) setLevel(next);
+      });
       current.recording = config.onRealtimeVoice
         ? config.onRealtimeVoice(stream, current.controller.signal, (text) => {
           if (capture.current === current) {
             current.transcript = text;
+            setHasTranscript(!!text.trim());
             draft.update(text);
           }
         })
@@ -115,6 +143,8 @@ export function useChatDictation(options: ChatDictationOptions) {
         draft.finish();
         config.onActiveChange(false);
         setPhase("idle");
+        setLevel(0);
+        current.complete(true);
       }, () => fail(current));
     } catch {
       fail(current);
@@ -150,5 +180,5 @@ export function useChatDictation(options: ChatDictationOptions) {
     };
   }, [phase, cancel]);
 
-  return { phase, seconds, error, start, stop, cancel, isActive: () => capture.current !== null };
+  return { phase, seconds, level, hasTranscript, error, start, stop, finish, cancel, isActive: () => capture.current !== null };
 }

@@ -335,6 +335,9 @@ export function ChatInput({
   });
 
   const voiceScope = JSON.stringify([historyWorkspaceId, draftKey, agentId, editorKey]);
+  const voiceSubmitPending = useRef(false);
+  const latestVoiceScope = useRef(voiceScope);
+  latestVoiceScope.current = voiceScope;
   useLayoutEffect(() => {
     const voice = voiceRef.current;
     return () => voice?.cancel();
@@ -608,8 +611,19 @@ export function ChatInput({
     },
   });
 
-  const submitInput = () => {
-    if (!voiceRef.current?.isActive()) void submit();
+  const submitInput = async () => {
+    if (voiceSubmitPending.current || disabled || noAgent || gate.isBlocked() ||
+      (isRunning && !allowSubmitWhileRunning)) return;
+    const voice = voiceRef.current;
+    if (!voice?.isActive()) { void submit(); return; }
+    voiceSubmitPending.current = true;
+    const scope = voiceScope;
+    try {
+      const completed = await voice.finish();
+      if (completed && latestVoiceScope.current === scope && voiceRef.current === voice) await submit();
+    } finally {
+      voiceSubmitPending.current = false;
+    }
   };
 
   const placeholder = agentAccessRevoked
@@ -775,6 +789,9 @@ export function ChatInput({
           agentId={agentId}
           disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
           onActiveChange={setVoiceActive}
+          onSubmit={() => { void submitInput(); }}
+          canSubmit={!disabled && !noAgent && !submitting && !gate.uploading && (!isRunning || !!allowSubmitWhileRunning)}
+          hasContent={!hasNothingToSend}
           onBegin={() => {
             if (editorDraftKeyRef.current !== draftKey) return null;
             const editor = editorRef.current;
@@ -804,7 +821,7 @@ export function ChatInput({
             };
           }}
         />}
-        {(uploadEnabled || projectSelectionEnabled || leftAdornment) && (
+        {!voiceActive && (uploadEnabled || projectSelectionEnabled || leftAdornment) && (
           <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
             {(uploadEnabled || projectSelectionEnabled) && (
               <ChatAddMenu
@@ -820,7 +837,7 @@ export function ChatInput({
             {leftAdornment}
           </div>
         )}
-        <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
+        {!voiceActive && <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
           <SubmitButton
             onClick={submitInput}
             disabled={hasNothingToSend || submitting || voiceActive || !!disabled || !!noAgent}
@@ -852,7 +869,7 @@ export function ChatInput({
             stopTooltip={t(($) => $.input.stop_tooltip)}
             stopAriaLabel={t(($) => $.input.stop_tooltip)}
           />
-        </div>
+        </div>}
         {uploadEnabled && isDragOver && <FileDropOverlay />}
       </div>
     </div>
