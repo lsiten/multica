@@ -187,6 +187,30 @@ describe("MirrorSurface emergency stop", () => {
 });
 
 describe("MirrorSurface interaction", () => {
+  it("requests browser fullscreen for the mirror surface", async () => {
+    const originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: requestFullscreen,
+    });
+    try {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(<I18nProvider locale="en" resources={RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          <MirrorSurface scope={scope} runtime={runtime} />
+        </QueryClientProvider>
+      </I18nProvider>);
+      fireEvent.click(await screen.findByRole("button", { name: "Enter full screen" }));
+      expect(requestFullscreen).toHaveBeenCalledOnce();
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+        configurable: true,
+        value: originalRequestFullscreen,
+      });
+    }
+  });
+
   it("toggles the video conversation overlay without deleting its session", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<I18nProvider locale="en" resources={RESOURCES}>

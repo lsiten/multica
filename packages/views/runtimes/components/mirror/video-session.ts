@@ -75,6 +75,7 @@ export class MirrorVideoSession {
   private published = false;
   private starting: Promise<void> | null = null;
   private readonly abort = new AbortController();
+  private connectionGrace: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly options: {
@@ -617,11 +618,24 @@ export class MirrorVideoSession {
         this.publishStream();
       };
       peer.onconnectionstatechange = () => {
-        if (
-          peer.connectionState === "failed" ||
-          peer.connectionState === "disconnected" ||
-          peer.connectionState === "closed"
-        )
+        if (peer.connectionState === "connected" || peer.connectionState === "connecting" || peer.connectionState === "new") {
+          clearTimeout(this.connectionGrace);
+          this.connectionGrace = undefined;
+          return;
+        }
+        if (peer.connectionState === "disconnected") {
+          // Browsers briefly report `disconnected` while ICE is recovering.
+          // Keep the media element alive during that window and only tear down
+          // after the peer remains disconnected for five seconds.
+          clearTimeout(this.connectionGrace);
+          this.connectionGrace = setTimeout(() => {
+            this.connectionGrace = undefined;
+            if (peer.connectionState === "disconnected")
+              this.fail(new MirrorVideoError("transport"));
+          }, 5_000);
+          return;
+        }
+        if (peer.connectionState === "failed" || peer.connectionState === "closed")
           this.fail(new MirrorVideoError("transport"));
       };
       const control = peer.createDataChannel("mirror-control", {
@@ -730,6 +744,8 @@ export class MirrorVideoSession {
     clearTimeout(this.renewal);
     clearTimeout(this.expiry);
     clearTimeout(this.controlRenewal);
+    clearTimeout(this.connectionGrace);
+    this.connectionGrace = undefined;
     if (this.controlGrant) await this.endControl();
     this.inputChannel?.close();
     this.inputChannel = null;
