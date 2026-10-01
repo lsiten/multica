@@ -33,8 +33,10 @@ multica autopilot update <autopilot-id> --status active|paused --output json
 multica autopilot runs <autopilot-id> --output json
 multica autopilot trigger-add <autopilot-id> --kind schedule --cron "0 9 * * *" --timezone Asia/Shanghai --output json
 multica autopilot trigger-add <autopilot-id> --kind webhook --label "ci" --output json
+multica autopilot trigger-list <autopilot-id> --output json
 multica autopilot trigger <autopilot-id> --output json
 multica autopilot trigger-rotate-url <autopilot-id> <trigger-id> --yes --output json
+multica autopilot trigger-update <autopilot-id> <trigger-id> --cron "0 9 * * *" --output json
 ```
 
 Do not run `trigger`, `delete`, `trigger-delete`, or `trigger-rotate-url` to

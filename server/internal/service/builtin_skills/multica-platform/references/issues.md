@@ -5,13 +5,17 @@ Product contracts the runtime brief does not fully encode.
 - [PR linking](#pr-linking)
 - [Reading a linked PR's real state](#reading-a-linked-prs-real-state)
 - [Custom properties: typed workflow state](#custom-properties-typed-workflow-state)
+- [Issue metadata (KV)](#issue-metadata-kv)
 - [Status changes have server side effects](#status-changes-have-server-side-effects)
 - [Who else is running right now](#who-else-is-running-right-now)
+- [Rerun, cancel, and inspect a run](#rerun-cancel-and-inspect-a-run)
+- [Subscribers](#subscribers)
+- [Labels](#labels)
 - [Sub-issues: todo starts work now, backlog parks it](#sub-issues-todo-starts-work-now-backlog-parks-it)
 - [Charts and files in a comment](#charts-and-files-in-a-comment)
 - [Incorrect to correct](#incorrect-to-correct)
 
-To attach a local file to an existing issue description, use `multica issue update <id> --attachment <local-path>`. The CLI appends the file's Markdown reference to the end of the description; to replace an image, also use `--description-file` to remove the old reference. Do not put local filesystem paths in the description.
+To attach a local file to an existing issue description, use `multica issue update <id> --attachment <local-path>`. The CLI appends the file's Markdown reference to the end of the description; to replace an image, also use `--description-file` to remove the old reference. Do not put local filesystem paths in the description. `--description-file` and `--attachment` read a path **inside the current working directory** unless `--allow-external-file` is set (MUL-4252), which stops a stale file from another run or environment from being picked up. `--attachment` is repeatable (repeat the flag for multiple files); on `issue create` you can instead bind already-uploaded attachments with `--attachment-id <uuid>` — `issue update` has no such flag. To feed a description from a pipe use `--description-stdin` (a heredoc `--description` can swallow trailing flags, #4182).
 
 ## PR linking
 
@@ -190,6 +194,24 @@ multica issue get <issue-id> --resolve-properties
   Read `display` for a single value and `display_values` for a multi_select
   or multi_actor value; `value` keeps the stored ids.
 
+## Issue metadata (KV)
+
+Per-issue key/value metadata (`issue metadata`) is distinct from custom
+properties: it is free-form and typed, but **not catalog-validated** — the CLI
+does not check a metadata value against a property definition.
+
+- Read: `issue metadata list <issue-id>` (all keys); `issue metadata get
+  <issue-id> --key <key>` (one key).
+- Write: `issue metadata set <issue-id> --key <key> --value <value>`. The value
+  is JSON-parsed by default (`true`/`false` -> bool, `3`/`3.14` -> number,
+  `waiting` -> string); `--type string|number|bool` forces a type, or quote
+  like `'"42"'` to force a string when the bare value would otherwise sniff as a
+  number or bool.
+- Remove: `issue metadata delete <issue-id> --key <key>`.
+- Where it belongs: run-local scratch and machine state go in metadata; typed,
+  human-visible, filterable workflow state goes in a custom property (see
+  Custom properties above).
+
 ## Status changes have server side effects
 
 A status change is not cosmetic — the server enqueues or skips agent work based
@@ -288,6 +310,51 @@ Both are advisory reads. Nothing here reserves an issue or serialises anything:
 a run you see may finish a second later, and one you don't see may start a
 second later. Coordinate through the issue's comments — the reads tell you whom
 to coordinate with.
+
+## Rerun, cancel, and inspect a run
+
+A run's lifecycle is read and controlled from the issue, not the daemon.
+
+- `issue runs <issue-id>` — full execution history, newest first. `--active`
+  returns only in-flight runs; `--siblings` widens to the sub-issue family (see
+  "Who else is running right now"); `--full-id` prints full run UUIDs.
+- `issue run-messages <run-id> [--since <n>]` — one run's messages; `--since`
+  takes a sequence number.
+- `issue usage <issue-id>` — aggregated token usage. In table output RUNS counts
+  terminal runs, and a total prefixed with `>=` is a lower bound (one or more
+  terminal runs did not report usage).
+- `issue rerun <id>` — re-enqueue an issue's current agent assignment as a fresh
+  run. A write: confirm the assignment is the one you actually want to rerun
+  (not a stale or superseded one).
+- `issue cancel-task <run-id>` — cancel an in-progress or queued run and
+  interrupt the in-flight agent so it stops emitting tool calls promptly;
+  `--issue <id>` scopes an ambiguous short run-id prefix. A write that stops a
+  live agent — use only to abort a run you meant to stop.
+- `issue search <query>` — search issues by title, description, or comments.
+- `issue reorder <id>` — move an issue within its status column (changes
+  position only, not state).
+
+## Subscribers
+
+`issue subscriber` controls who is notified about an issue — separate from the
+assignee and from wakeups.
+
+- `issue subscriber list <issue-id>` — who is subscribed.
+- `issue subscriber add <issue-id>` — subscribe a member or agent (defaults to
+  the caller; name or id the target).
+- `issue subscriber remove <issue-id>` — unsubscribe (defaults to the caller).
+- Subscribing routes notifications to the subscriber; it does **not** start a
+  run. For a future run use `issue wakeup` (below), not a subscription.
+
+## Labels
+
+Labels tag issues and filter them; they are distinct from properties and status.
+
+- `issue label list <issue-id>` — labels set on the issue.
+- `issue label add <issue-id> <label-id>` /
+  `issue label remove <issue-id> <label-id>` — add or remove a label by its
+  UUID (a UUID from `label list`, never a display name — see "A name is not an
+  id").
 
 ## Sub-issues: todo starts work now, backlog parks it
 
@@ -411,6 +478,17 @@ multica issue create --title "Step 3" --parent <issue-id> --assignee <agent> --s
 multica issue create --title "Step 1" --parent <issue-id> --assignee <agent> --stage 1 --status todo
 multica issue create --title "Step 2" --parent <issue-id> --assignee <agent> --stage 2 --status backlog
 multica issue create --title "Step 3" --parent <issue-id> --assignee <agent> --stage 3 --status backlog
+```
+
+Reading a file you do not control (incorrect):
+
+```bash
+# incorrect — --description-file / --attachment default to the current working
+# directory; a path outside it is refused unless --allow-external-file is set
+multica issue update <id> --description-file /tmp/other-run/description.md
+# correct — write the file inside the working directory, or pass
+# --allow-external-file when the path is genuinely outside it (MUL-4252)
+multica issue update <id> --description-file ./description.md
 ```
 
 ## Issue wakeups
