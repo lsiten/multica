@@ -145,6 +145,7 @@ var concurrentIndexCleanups = map[string]string{
 	"900479_project_graph_event_workspace_index":                "project_graph_event_workspace_created_idx",
 	"900481_squad_collaboration_graph_workspace_index":          "squad_collaboration_graph_workspace_idx",
 	"900483_squad_collaboration_history_revision_index":         "squad_collaboration_history_revision_idx",
+	"900485_workspace_jev_config_index":                         "workspace_jev_config_workspace_idx",
 	"563_search_index_change_changed_at_index":                  "idx_search_index_change_changed_at",
 	"562_search_index_change_workspace_index":                   "idx_search_index_change_workspace_xid",
 	"552_agent_task_history_page_index":                         "idx_agent_task_queue_history_page",
