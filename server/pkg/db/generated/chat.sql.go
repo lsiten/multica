@@ -2398,6 +2398,40 @@ func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSes
 	return items, nil
 }
 
+const listChatTaskInputOwners = `-- name: ListChatTaskInputOwners :many
+SELECT id, chat_input_task_id
+FROM agent_task_queue
+WHERE chat_session_id = $1
+`
+
+type ListChatTaskInputOwnersRow struct {
+	ID              pgtype.UUID `json:"id"`
+	ChatInputTaskID pgtype.UUID `json:"chat_input_task_id"`
+}
+
+// Retry children keep the original direct-chat input owner in
+// chat_input_task_id. The chat transcript exposes that stable owner so every
+// client can associate a failed retry attempt with the original user message.
+func (q *Queries) ListChatTaskInputOwners(ctx context.Context, chatSessionID pgtype.UUID) ([]ListChatTaskInputOwnersRow, error) {
+	rows, err := q.db.Query(ctx, listChatTaskInputOwners, chatSessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListChatTaskInputOwnersRow{}
+	for rows.Next() {
+		var i ListChatTaskInputOwnersRow
+		if err := rows.Scan(&i.ID, &i.ChatInputTaskID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingChatTasksByCreator = `-- name: ListPendingChatTasksByCreator :many
 SELECT atq.id AS task_id, atq.status, atq.chat_session_id, cs.agent_id
 FROM agent_task_queue atq

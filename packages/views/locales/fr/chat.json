@@ -99,7 +99,13 @@
       "context_overflow": "Cette conversation est devenue trop longue pour le modèle. Démarrez une nouvelle session, ou découpez votre demande en étapes plus courtes.",
       "runtime_missing_executable": "Le CLI de l'agent n'a pas pu être exécuté sur cette machine. Vérifiez qu'il est correctement installé et présent dans le PATH, puis réessayez.",
       "runtime_version_unsupported": "Le CLI de l'agent est trop ancien pour ce runtime. Mettez-le à jour, puis réessayez.",
-      "fallback": "Une erreur est survenue et l'agent n'a pas pu terminer sa réponse. Veuillez réessayer."
+      "fallback": "Une erreur est survenue et l'agent n'a pas pu terminer sa réponse. Veuillez réessayer.",
+      "retry": "Réessayer",
+      "retrying": "Nouvel essai…",
+      "retry_aria": "Réessayer ce message",
+      "continue": "Continuer",
+      "continuing": "Continuation…",
+      "continue_aria": "Continuer ce message"
     },
     "tools_one": "{{count}} outil",
     "tools_other": "{{count}} outils",

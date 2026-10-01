@@ -4860,6 +4860,37 @@ func (q *Queries) HasActiveTaskForIssueAndAgentInThread(ctx context.Context, arg
 	return has_active, err
 }
 
+const hasChatContinuationForTask = `-- name: HasChatContinuationForTask :one
+SELECT EXISTS (
+    SELECT 1
+    FROM agent_task_queue
+    WHERE chat_session_id = $1
+      AND (
+          (id = $2 AND context->>'chat_continuation_for' IS NOT NULL)
+          OR (
+              retry_of_task_id = $2
+              AND context->>'chat_continuation_for' = $2::text
+          )
+      )
+)
+`
+
+type HasChatContinuationForTaskParams struct {
+	SessionID    pgtype.UUID `json:"session_id"`
+	SourceTaskID pgtype.UUID `json:"source_task_id"`
+}
+
+// Explicit chat continuation is a one-shot action for a failed turn. Automatic
+// retry children do not carry this marker, so an exhausted automatic retry can
+// still be resumed once by the member without allowing repeated clicks to
+// create an unbounded chain.
+func (q *Queries) HasChatContinuationForTask(ctx context.Context, arg HasChatContinuationForTaskParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasChatContinuationForTask, arg.SessionID, arg.SourceTaskID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const hasPendingTaskForIssue = `-- name: HasPendingTaskForIssue :one
 SELECT count(*) > 0 AS has_pending FROM agent_task_queue
 WHERE context->>'wakeup_id' IS NULL AND issue_id = $1 AND status IN ('queued', 'dispatched')
@@ -6902,6 +6933,89 @@ type MarkAgentTaskWaitingLocalDirectoryParams struct {
 // mutation handles the reverse transition once the lock is acquired.
 func (q *Queries) MarkAgentTaskWaitingLocalDirectory(ctx context.Context, arg MarkAgentTaskWaitingLocalDirectoryParams) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, markAgentTaskWaitingLocalDirectory, arg.ID, arg.WaitReason, arg.PrepareLeaseSecs)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.SquadID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.CommentThreadID,
+		&i.CancelledByType,
+		&i.CancelledByID,
+		&i.CancelledByName,
+		&i.IssueSnapshot,
+	)
+	return i, err
+}
+
+const markChatContinuationTask = `-- name: MarkChatContinuationTask :one
+UPDATE agent_task_queue
+SET context = COALESCE(context, '{}'::jsonb) ||
+    jsonb_build_object('chat_continuation_for', $1::text)
+WHERE id = $2
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot
+`
+
+type MarkChatContinuationTaskParams struct {
+	SourceTaskID string      `json:"source_task_id"`
+	TaskID       pgtype.UUID `json:"task_id"`
+}
+
+// Keep the explicit continuation provenance on the child task itself. The
+// source row is locked by ContinueChatTask, so the marker and child creation
+// commit atomically with the session enqueue transaction.
+func (q *Queries) MarkChatContinuationTask(ctx context.Context, arg MarkChatContinuationTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, markChatContinuationTask, arg.SourceTaskID, arg.TaskID)
 	var i AgentTaskQueue
 	err := row.Scan(
 		&i.ID,

@@ -138,6 +138,8 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   task_id: string | null;
+  /** Stable input owner for retry attempts; absent on legacy/unowned tasks. */
+  input_task_id?: string | null;
   created_at: string;
   /**
    * Attachments linked to this message via the attachment table's
@@ -210,6 +212,13 @@ export interface SendChatMessageResponse {
    * compat with servers that predate the field.
    */
   attachment_ids?: string[];
+}
+
+/** Result of continuing a failed chat task from its recorded agent context. */
+export interface ContinueChatTaskResponse {
+  task_id: string;
+  status: string;
+  created_at: string;
 }
 
 export interface StartMikaOnboardingResponse {

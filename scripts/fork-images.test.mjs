@@ -7,6 +7,10 @@ assert.match(workflow, /push:\n    tags:\n      - "v\*\.\*\.\*"\n      - "!v\*-d
 assert.doesNotMatch(workflow, /branches:|workflow_dispatch:/);
 assert.match(workflow, /build:\n    needs: verify/);
 assert.match(workflow, /publish:\n    needs: \[verify, build\]/);
+assert.ok(workflow.includes("image: backend\n            arch: arm64\n            runs-on: ubuntu-latest\n            qemu: true"));
+assert.ok(workflow.includes("image: web\n            arch: arm64\n            runs-on: ubuntu-24.04-arm\n            qemu: false"));
+assert.ok(workflow.includes("uses: docker/setup-qemu-action@v3"));
+assert.ok(workflow.includes("if: matrix.qemu"));
 const validation = workflow.match(/id: version[\s\S]*?run: \|\n([\s\S]*?)\n\n/)[1]
   .replace(/^          /gm, "");
 for (const [tag, expected] of [["v1.2.3", 0], ["v1.2.3-rc.1", 0], ["main", 1], ["v1.2", 1], ["v1.2.3-dirty", 1], ["v1.2.3;echo unsafe", 1]]) {

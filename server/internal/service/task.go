@@ -5292,6 +5292,133 @@ var retryableReasons = map[string]bool{
 	string(taskfailure.ReasonSkillBundleUnavailable): true,
 }
 
+// chatContinuationReasons are failures for which the chat UI may explicitly
+// resume the failed task's recorded agent session. Keep this contract narrower
+// than a generic retry: provider auth/quota failures and poisoned histories
+// must remain retry-only so the UI does not replay a request that cannot recover
+// from the existing context.
+var chatContinuationReasons = map[string]bool{
+	string(taskfailure.ReasonRuntimeOffline):                   true,
+	string(taskfailure.ReasonRuntimeRecovery):                  true,
+	string(taskfailure.ReasonTimeout):                          true,
+	string(taskfailure.ReasonAgentProviderNetwork):             true,
+	string(taskfailure.ReasonAgentProviderCapacityOrRateLimit): true,
+	string(taskfailure.ReasonAgentProviderServerError):         true,
+	string(taskfailure.ReasonSkillBundleUnavailable):           true,
+}
+
+var (
+	// ErrChatTaskContinuationUnavailable is returned when the failed task no
+	// longer has a safe, private continuation path (for example it was already
+	// resumed, its context is poisoned, or the session changed).
+	ErrChatTaskContinuationUnavailable = errors.New("chat task continuation unavailable")
+	// ErrChatTaskContinuationPending prevents a second explicit continuation
+	// while an automatic retry or another user action already owns the session.
+	ErrChatTaskContinuationPending = errors.New("chat task continuation already pending")
+)
+
+// ContinueChatTask creates a queued retry child from a failed direct-chat task
+// without inserting another user message. The child inherits the source task's
+// chat input owner, session and workdir through CreateRetryTask, so the daemon
+// resumes the exact failed turn and the original failure remains visible.
+func (s *TaskService) ContinueChatTask(
+	ctx context.Context,
+	session db.ChatSession,
+	sourceTaskID pgtype.UUID,
+	canInvoke func(db.Agent) bool,
+) (*db.AgentTaskQueue, error) {
+	parent, err := s.Queries.GetAgentTaskInWorkspace(ctx, db.GetAgentTaskInWorkspaceParams{
+		ID: sourceTaskID, WorkspaceID: session.WorkspaceID,
+	})
+	if err != nil || !parent.ChatSessionID.Valid || parent.ChatSessionID != session.ID || parent.Status != "failed" {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	reason := ""
+	if parent.FailureReason.Valid {
+		reason = parent.FailureReason.String
+	}
+	if !chatContinuationReasons[reason] || ResumeUnsafeFailure(reason, parent.Error.String) {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	agent, err := s.Queries.GetAgent(ctx, parent.AgentID)
+	if err != nil || agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	if canInvoke != nil && !canInvoke(agent) {
+		return nil, ErrRerunInvokeNotAllowed
+	}
+	if s.TxStarter == nil {
+		return nil, errors.New("chat task continuation: transaction starter is required")
+	}
+
+	tx, err := s.TxStarter.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("chat task continuation: begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.Queries.WithTx(tx)
+	lockedSession, err := qtx.LockChatSessionForEnqueue(ctx, session.ID)
+	if err != nil || lockedSession.Status != "active" {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	locked, err := qtx.GetAgentTaskForDelegatedFailureUpdate(ctx, sourceTaskID)
+	if err != nil || locked.Status != "failed" || !locked.ChatSessionID.Valid || locked.ChatSessionID != session.ID {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	lockedReason := ""
+	if locked.FailureReason.Valid {
+		lockedReason = locked.FailureReason.String
+	}
+	if !chatContinuationReasons[lockedReason] || ResumeUnsafeFailure(lockedReason, locked.Error.String) {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	if pending, err := qtx.HasPendingChatTurnForSession(ctx, session.ID); err != nil {
+		return nil, fmt.Errorf("chat task continuation: check pending turn: %w", err)
+	} else if pending {
+		return nil, ErrChatTaskContinuationPending
+	}
+	continued, err := qtx.HasChatContinuationForTask(ctx, db.HasChatContinuationForTaskParams{
+		SessionID:    session.ID,
+		SourceTaskID: locked.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chat task continuation: check existing continuation: %w", err)
+	}
+	if continued {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	maxAttempts := locked.MaxAttempts
+	if maxAttempts <= locked.Attempt {
+		maxAttempts = locked.Attempt + 1
+	}
+	child, err := qtx.CreateRetryTask(ctx, db.CreateRetryTaskParams{
+		ID:                   locked.ID,
+		NewTaskID:            dbid.NewV7(),
+		MaxAttempts:          pgtype.Int4{Int32: maxAttempts, Valid: true},
+		RuntimeMcpOverlay:    locked.RuntimeMcpOverlay,
+		RuntimeConnectedApps: locked.RuntimeConnectedApps,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
+	if err != nil {
+		return nil, fmt.Errorf("chat task continuation: create retry: %w", err)
+	}
+	child, err = qtx.MarkChatContinuationTask(ctx, db.MarkChatContinuationTaskParams{
+		TaskID:       child.ID,
+		SourceTaskID: util.UUIDToString(locked.ID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chat task continuation: mark retry: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("chat task continuation: commit: %w", err)
+	}
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, child)
+	s.NotifyTaskEnqueued(ctx, child)
+	return &child, nil
+}
+
 // runtime_offline retries start deferred, not queued: their positive fire_at
 // routes them through health-gated promotion after a fresh runtime heartbeat
 // returns. The queue sweeper also exempts this retry lineage, covering the race

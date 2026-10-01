@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@multica/core/chat/queries";
+import { canContinueChatFailure } from "@multica/core/chat";
 import { RichContent } from "../../rich-content";
 import { RichContentScrollRootProvider } from "../../rich-content/scroll-root";
 import { copyText } from "@multica/ui/lib/clipboard";
@@ -92,6 +93,9 @@ interface ChatMessageListProps {
    * that reply until chat:quick_actions resolves it.
    */
   quickActionsPendingMessageId?: string | null;
+  /** Retry or resume a failed turn using its original user message. */
+  onFailureAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  failureActionsDisabled?: boolean;
 }
 
 // ─── Virtuoso chrome ─────────────────────────────────────────────────────
@@ -188,6 +192,8 @@ export function ChatMessageList({
   quickActionsDisabled = false,
   onRegenerateQuickActions,
   quickActionsPendingMessageId = null,
+  onFailureAction,
+  failureActionsDisabled = false,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
@@ -234,6 +240,14 @@ export function ChatMessageList({
       )?.id ?? null,
     [messages],
   );
+
+  const inputMessageByTaskId = useMemo(() => {
+    const result = new Map<string, ChatMessage>();
+    for (const message of messages) {
+      if (message.role === "user" && message.task_id) result.set(message.task_id, message);
+    }
+    return result;
+  }, [messages]);
 
   // Once the assistant message for this pending task has landed in the
   // messages list, AssistantMessage owns its rendering — suppress the live
@@ -387,6 +401,11 @@ export function ChatMessageList({
               latestAssistantMessageId={latestAssistantMessageId}
               quickActionsPendingMessageId={quickActionsPendingMessageId}
               starterCardsMessageId={starterCardsMessageId}
+              onFailureAction={onFailureAction}
+              failureActionsDisabled={failureActionsDisabled}
+              failureInput={item.kind === "message" && item.message.task_id
+                ? inputMessageByTaskId.get(item.message.input_task_id ?? item.message.task_id)
+                : undefined}
             />
           </div>
         )}
@@ -452,6 +471,9 @@ const MessageBubble = memo(function MessageBubble({
   latestAssistantMessageId,
   quickActionsPendingMessageId,
   starterCardsMessageId,
+  onFailureAction,
+  failureActionsDisabled,
+  failureInput,
 }: {
   item: ChatRenderItem;
   isPending: boolean;
@@ -462,6 +484,9 @@ const MessageBubble = memo(function MessageBubble({
   latestAssistantMessageId: string | null;
   quickActionsPendingMessageId: string | null;
   starterCardsMessageId: string | null;
+  onFailureAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  failureActionsDisabled: boolean;
+  failureInput?: ChatMessage;
 }) {
   // The live row and the persisted assistant row both land here under one key,
   // and both render <AssistantMessage> — same component type, same position —
@@ -474,6 +499,9 @@ const MessageBubble = memo(function MessageBubble({
         transformContent={transformContent}
         onQuickAction={onQuickAction}
         quickActionsDisabled={quickActionsDisabled}
+        onFailureAction={onFailureAction}
+        failureActionsDisabled={failureActionsDisabled}
+        failureInput={undefined}
       />
     );
   }
@@ -517,6 +545,9 @@ const MessageBubble = memo(function MessageBubble({
       canRegenerateQuickActions={message.id === latestAssistantMessageId}
       quickActionsPending={quickActionsPendingMessageId === message.id}
       showStarterCards={message.id === starterCardsMessageId}
+      onFailureAction={onFailureAction}
+      failureActionsDisabled={failureActionsDisabled}
+      failureInput={failureInput}
     />
   );
 });
@@ -549,6 +580,9 @@ function AssistantMessage({
   canRegenerateQuickActions = false,
   quickActionsPending = false,
   showStarterCards = false,
+  onFailureAction,
+  failureActionsDisabled,
+  failureInput,
 }: {
   taskId: string | null;
   message?: ChatMessage;
@@ -561,6 +595,9 @@ function AssistantMessage({
   quickActionsPending?: boolean;
   /** This turn is Mika's onboarding opening — render starter cards, not chips. */
   showStarterCards?: boolean;
+  onFailureAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  failureActionsDisabled: boolean;
+  failureInput?: ChatMessage;
 }) {
   const canFetchTaskMessages = isTaskMessageTaskId(taskId);
 
@@ -595,6 +632,10 @@ function AssistantMessage({
         rawError={message.content}
         timeline={timeline}
         elapsedMs={message.elapsed_ms}
+        message={message}
+        hasOriginalInput={!!failureInput}
+        onAction={onFailureAction}
+        disabled={failureActionsDisabled}
       />
     );
   }
@@ -964,14 +1005,23 @@ function FailureBubble({
   rawError,
   timeline,
   elapsedMs,
+  message,
+  hasOriginalInput,
+  onAction,
+  disabled,
 }: {
   reason: string;
   rawError: string;
   timeline: ChatTimelineItem[];
   elapsedMs?: number | null;
+  message: ChatMessage;
+  hasOriginalInput: boolean;
+  onAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  disabled: boolean;
 }) {
   const { t } = useT("chat");
   const [open, setOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"retry" | "continue" | null>(null);
   // Chat gets its own friendly, reassuring copy per failure reason — plain
   // language + a "try again" nudge — instead of the terse developer labels
   // (`failureReasonLabel`) used on the agent-detail / execution-log surfaces.
@@ -1020,6 +1070,16 @@ function FailureBubble({
   const label =
     (copyKey && chatFailureCopy[copyKey]) ??
     t(($) => $.message_list.failure.fallback);
+  const canContinue = canContinueChatFailure(reason);
+  const runAction = async (action: "retry" | "continue") => {
+    if (!onAction || !hasOriginalInput || disabled || pendingAction) return;
+    setPendingAction(action);
+    try {
+      await onAction(message, action);
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   return (
     <div className="w-full space-y-1.5">
@@ -1032,6 +1092,36 @@ function FailureBubble({
         <AlertTriangle className="size-3.5 shrink-0 text-destructive mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="text-destructive">{label}</div>
+          {onAction && hasOriginalInput ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={disabled || pendingAction !== null}
+                onClick={() => void runAction("retry")}
+                aria-label={t(($) => $.message_list.failure.retry_aria)}
+              >
+                {pendingAction === "retry"
+                  ? t(($) => $.message_list.failure.retrying)
+                  : t(($) => $.message_list.failure.retry)}
+              </Button>
+              {canContinue ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={disabled || pendingAction !== null}
+                  onClick={() => void runAction("continue")}
+                  aria-label={t(($) => $.message_list.failure.continue_aria)}
+                >
+                  {pendingAction === "continue"
+                    ? t(($) => $.message_list.failure.continuing)
+                    : t(($) => $.message_list.failure.continue)}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           {rawError.trim() && (
             <Collapsible open={open} onOpenChange={setOpen}>
               <CollapsibleTrigger className="mt-0.5 flex items-center gap-1 text-caption text-muted-foreground hover:text-foreground transition-colors">

@@ -115,6 +115,7 @@ import type {
   PendingChatTasksResponse,
   HasPendingChatTasksResponse,
   SendChatMessageResponse,
+  ContinueChatTaskResponse,
   StartMikaOnboardingResponse,
   CancelTaskResponse,
   Project,
@@ -289,6 +290,7 @@ import {
   ChatSessionSchema,
   PrioritizeQueuedChatTaskResponseSchema,
   SendChatMessageResponseSchema,
+  ContinueChatTaskResponseSchema,
   StartMikaOnboardingResponseSchema,
   ChildIssuesResponseSchema,
   IssueDuplicatesResponseSchema,
@@ -4239,6 +4241,24 @@ export class ApiClient {
       { endpoint: "POST /api/chat/sessions/:id/messages" },
     );
     if (!response) throw new Error("invalid send chat message response");
+    return response;
+  }
+
+  async continueChatTask(
+    sessionId: string,
+    taskId: string,
+  ): Promise<ContinueChatTaskResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/chat/sessions/${sessionId}/tasks/${taskId}/continue`,
+      { method: "POST" },
+    );
+    const response = parseWithFallback<ContinueChatTaskResponse | null>(
+      raw,
+      ContinueChatTaskResponseSchema,
+      null,
+      { endpoint: "POST /api/chat/sessions/:id/tasks/:taskId/continue" },
+    );
+    if (!response) throw new Error("invalid continue chat task response");
     return response;
   }
 
