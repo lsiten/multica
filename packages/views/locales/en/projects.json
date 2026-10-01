@@ -80,7 +80,13 @@
     "no_issues_yet": "No issues yet",
     "toast_link_copied": "Link copied",
     "toast_project_deleted": "Project deleted",
-    "toast_move_issue_failed": "Failed to move issue"
+    "toast_move_issue_failed": "Failed to move issue",
+    "artifact_section": "Artifacts and sources",
+    "artifact_task": "Task {{id}} · {{event}}",
+    "artifact_branch": "Branch: {{value}}",
+    "artifact_workdir": "Persistent work directory: {{value}}",
+    "artifact_derived_from": "Source task: {{value}}",
+    "artifact_attachments": "Attachments: {{value}}"
   },
   "resources": {
     "section_header": "Resources",

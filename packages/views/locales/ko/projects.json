@@ -79,7 +79,13 @@
     "no_issues_yet": "아직 태스크가 없습니다",
     "toast_link_copied": "링크를 복사했습니다",
     "toast_project_deleted": "프로젝트를 삭제했습니다",
-    "toast_move_issue_failed": "태스크를 이동하지 못했습니다"
+    "toast_move_issue_failed": "태스크를 이동하지 못했습니다",
+    "artifact_section": "결과물 및 소스",
+    "artifact_task": "작업 {{id}} · {{event}}",
+    "artifact_branch": "브랜치: {{value}}",
+    "artifact_workdir": "영구 작업 디렉터리: {{value}}",
+    "artifact_derived_from": "소스 작업: {{value}}",
+    "artifact_attachments": "첨부 파일: {{value}}"
   },
   "resources": {
     "section_header": "리소스",

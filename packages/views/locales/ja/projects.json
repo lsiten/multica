@@ -79,7 +79,13 @@
     "no_issues_yet": "タスクはまだありません",
     "toast_link_copied": "リンクをコピーしました",
     "toast_project_deleted": "プロジェクトを削除しました",
-    "toast_move_issue_failed": "タスクを移動できませんでした"
+    "toast_move_issue_failed": "タスクを移動できませんでした",
+    "artifact_section": "成果物とソース",
+    "artifact_task": "タスク {{id}} · {{event}}",
+    "artifact_branch": "ブランチ: {{value}}",
+    "artifact_workdir": "永続作業ディレクトリ: {{value}}",
+    "artifact_derived_from": "ソースタスク: {{value}}",
+    "artifact_attachments": "添付ファイル: {{value}}"
   },
   "resources": {
     "section_header": "リソース",

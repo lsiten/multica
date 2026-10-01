@@ -111,6 +111,7 @@
     "react-resizable-panels": "^4.7.5",
     "react-virtuoso": "catalog:",
     "recharts": "3.8.0",
+    "zod": "catalog:",
     "rehype-katex": "catalog:",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",

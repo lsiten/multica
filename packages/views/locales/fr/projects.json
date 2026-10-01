@@ -80,7 +80,13 @@
     "no_issues_yet": "Aucune tâche pour l'instant",
     "toast_link_copied": "Lien copié",
     "toast_project_deleted": "Projet supprimé",
-    "toast_move_issue_failed": "Échec du déplacement de la tâche"
+    "toast_move_issue_failed": "Échec du déplacement de la tâche",
+    "artifact_section": "Livrables et sources",
+    "artifact_task": "Tâche {{id}} · {{event}}",
+    "artifact_branch": "Branche : {{value}}",
+    "artifact_workdir": "Répertoire de travail persistant : {{value}}",
+    "artifact_derived_from": "Tâche source : {{value}}",
+    "artifact_attachments": "Pièces jointes : {{value}}"
   },
   "resources": {
     "section_header": "Ressources",
