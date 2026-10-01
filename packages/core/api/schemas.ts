@@ -1035,6 +1035,7 @@ export const ChatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]).catch("assistant"),
   content: z.string().default(""),
   task_id: z.string().nullable().default(null),
+  input_task_id: z.string().nullable().optional(),
   created_at: z.string().default(""),
   attachments: z.array(AttachmentSchema).optional(),
   failure_reason: z.string().nullable().optional(),

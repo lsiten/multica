@@ -734,6 +734,34 @@ FROM agent_task_queue
 WHERE parent_task_id = $1
   AND status <> 'cancelled';
 
+-- name: HasChatContinuationForTask :one
+-- Explicit chat continuation is a one-shot action for a failed turn. Automatic
+-- retry children do not carry this marker, so an exhausted automatic retry can
+-- still be resumed once by the member without allowing repeated clicks to
+-- create an unbounded chain.
+SELECT EXISTS (
+    SELECT 1
+    FROM agent_task_queue
+    WHERE chat_session_id = @session_id
+      AND (
+          (id = @source_task_id AND context->>'chat_continuation_for' IS NOT NULL)
+          OR (
+              retry_of_task_id = @source_task_id
+              AND context->>'chat_continuation_for' = @source_task_id::text
+          )
+      )
+);
+
+-- name: MarkChatContinuationTask :one
+-- Keep the explicit continuation provenance on the child task itself. The
+-- source row is locked by ContinueChatTask, so the marker and child creation
+-- commit atomically with the session enqueue transaction.
+UPDATE agent_task_queue
+SET context = COALESCE(context, '{}'::jsonb) ||
+    jsonb_build_object('chat_continuation_for', @source_task_id::text)
+WHERE id = @task_id
+RETURNING *;
+
 -- name: GetAgentTaskInWorkspace :one
 -- Loads a task only when its owning agent lives in the given workspace.
 -- agent_id is NOT NULL on every task row (and ON DELETE CASCADE, so the agent

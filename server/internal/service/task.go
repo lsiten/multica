@@ -5359,6 +5359,16 @@ func (s *TaskService) ContinueChatTask(
 	} else if pending {
 		return nil, ErrChatTaskContinuationPending
 	}
+	continued, err := qtx.HasChatContinuationForTask(ctx, db.HasChatContinuationForTaskParams{
+		SessionID:    session.ID,
+		SourceTaskID: locked.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chat task continuation: check existing continuation: %w", err)
+	}
+	if continued {
+		return nil, ErrChatTaskContinuationUnavailable
+	}
 	maxAttempts := locked.MaxAttempts
 	if maxAttempts <= locked.Attempt {
 		maxAttempts = locked.Attempt + 1
@@ -5375,6 +5385,13 @@ func (s *TaskService) ContinueChatTask(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("chat task continuation: create retry: %w", err)
+	}
+	child, err = qtx.MarkChatContinuationTask(ctx, db.MarkChatContinuationTaskParams{
+		TaskID:       child.ID,
+		SourceTaskID: util.UUIDToString(locked.ID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("chat task continuation: mark retry: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("chat task continuation: commit: %w", err)

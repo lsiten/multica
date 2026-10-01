@@ -222,7 +222,9 @@ export function ChatMessageList({
           quickActionsDisabled={quickActionsDisabled}
           onFailureAction={onFailureAction}
           failureActionsDisabled={failureActionsDisabled}
-          failureInput={item.task_id ? inputMessageByTaskId.get(item.task_id) : undefined}
+          failureInput={item.task_id
+            ? inputMessageByTaskId.get(item.input_task_id ?? item.task_id)
+            : undefined}
         />
       )}
       ItemSeparatorComponent={MessageSeparator}

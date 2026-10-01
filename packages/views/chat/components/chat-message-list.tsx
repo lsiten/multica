@@ -404,7 +404,7 @@ export function ChatMessageList({
               onFailureAction={onFailureAction}
               failureActionsDisabled={failureActionsDisabled}
               failureInput={item.kind === "message" && item.message.task_id
-                ? inputMessageByTaskId.get(item.message.task_id)
+                ? inputMessageByTaskId.get(item.message.input_task_id ?? item.message.task_id)
                 : undefined}
             />
           </div>

@@ -138,6 +138,8 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   task_id: string | null;
+  /** Stable input owner for retry attempts; absent on legacy/unowned tasks. */
+  input_task_id?: string | null;
   created_at: string;
   /**
    * Attachments linked to this message via the attachment table's

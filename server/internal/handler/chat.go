@@ -1287,10 +1287,15 @@ func (h *Handler) ListChatMessages(w http.ResponseWriter, r *http.Request) {
 		messageIDs[i] = m.ID
 	}
 	groupedAtt := h.groupChatMessageAttachments(r.Context(), workspaceID, messageIDs)
+	inputTaskOwners, err := chatInputTaskOwners(r.Context(), h.Queries, messages)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list chat task input owners")
+		return
+	}
 
 	resp := make([]ChatMessageResponse, len(messages))
 	for i, m := range messages {
-		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)])
+		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)], chatInputTaskIDForMessage(m, inputTaskOwners))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1352,10 +1357,15 @@ func (h *Handler) ListChatMessagesPage(w http.ResponseWriter, r *http.Request) {
 		messageIDs[i] = m.ID
 	}
 	groupedAtt := h.groupChatMessageAttachments(r.Context(), workspaceID, messageIDs)
+	inputTaskOwners, err := chatInputTaskOwners(r.Context(), h.Queries, messages)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list chat task input owners")
+		return
+	}
 
 	resp := make([]ChatMessageResponse, len(messages))
 	for i, m := range messages {
-		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)])
+		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)], chatInputTaskIDForMessage(m, inputTaskOwners))
 	}
 	writeJSON(w, http.StatusOK, ChatMessagesPageResponse{
 		Messages:   resp,
@@ -2093,7 +2103,11 @@ type ChatMessageResponse struct {
 	Role          string  `json:"role"`
 	Content       string  `json:"content"`
 	TaskID        *string `json:"task_id"`
-	CreatedAt     string  `json:"created_at"`
+	// InputTaskID is the stable direct-chat input owner. Automatic and explicit
+	// retry children keep the original user message under this task id even
+	// though their own task_id is different.
+	InputTaskID *string `json:"input_task_id,omitempty"`
+	CreatedAt   string  `json:"created_at"`
 	// FailureReason flags an assistant row synthesized by FailTask's chat
 	// fallback. Front-end uses it to switch to the destructive bubble.
 	FailureReason *string `json:"failure_reason"`
@@ -2129,13 +2143,14 @@ func chatSessionToResponse(s db.ChatSession) ChatSessionResponse {
 	}
 }
 
-func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) ChatMessageResponse {
+func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse, inputTaskID *string) ChatMessageResponse {
 	return ChatMessageResponse{
 		ID:            uuidToString(m.ID),
 		ChatSessionID: uuidToString(m.ChatSessionID),
 		Role:          m.Role,
 		Content:       m.Content,
 		TaskID:        uuidToPtr(m.TaskID),
+		InputTaskID:   inputTaskID,
 		CreatedAt:     timestampToString(m.CreatedAt),
 		FailureReason: textToPtr(m.FailureReason),
 		ElapsedMs:     int8ToPtr(m.ElapsedMs),
@@ -2143,6 +2158,30 @@ func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) C
 		QuickActions:  decodeChatQuickActions(m.QuickActions),
 		Attachments:   attachments,
 	}
+}
+
+func chatInputTaskOwners(ctx context.Context, q *db.Queries, messages []db.ChatMessage) (map[string]string, error) {
+	if len(messages) == 0 {
+		return map[string]string{}, nil
+	}
+	owners, err := q.ListChatTaskInputOwners(ctx, messages[0].ChatSessionID)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(owners))
+	for _, owner := range owners {
+		if owner.ChatInputTaskID.Valid {
+			result[uuidToString(owner.ID)] = uuidToString(owner.ChatInputTaskID)
+		}
+	}
+	return result, nil
+}
+
+func chatInputTaskIDForMessage(m db.ChatMessage, owners map[string]string) *string {
+	if owner, ok := owners[uuidToString(m.TaskID)]; ok {
+		return &owner
+	}
+	return nil
 }
 
 // visibleChatMessages removes product-authored context that is sent to the
