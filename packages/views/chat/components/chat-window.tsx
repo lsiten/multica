@@ -71,6 +71,7 @@ import { useChatDraftRestore } from "./use-chat-draft-restore";
 import { useChatTaskActions } from "./use-chat-task-actions";
 import { useChatInputFocus } from "./use-chat-input-focus";
 import { ChatMessageList, ChatMessageSkeleton } from "./chat-message-list";
+import { findOriginalChatInputMessage } from "./chat-failure-action";
 import { ChatInput } from "./chat-input";
 import { ChatQueue } from "./chat-queue";
 import { EmptyState } from "./chat-empty-state";
@@ -658,11 +659,7 @@ export function ChatWindow() {
         }
         return;
       }
-      const original = messages.find(
-        (candidate) =>
-          candidate.role === "user" &&
-          candidate.task_id === message.task_id,
-      );
+      const original = findOriginalChatInputMessage(messages, message);
       if (!original) {
         toast.error(t(($) => $.input.send_failed_toast));
         return;

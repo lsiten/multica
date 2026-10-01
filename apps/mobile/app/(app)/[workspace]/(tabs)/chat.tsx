@@ -88,6 +88,7 @@ import { Header } from "@/components/ui/header";
 import { ChatTitleButton } from "@/components/chat/chat-title-button";
 import { ChatSessionActions } from "@/components/chat/chat-session-actions";
 import { ChatMessageList } from "@/components/chat/chat-message-list";
+import { findOriginalChatInputMessage } from "@/lib/chat-failure-action";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { AgentPickerSheet } from "@/components/chat/agent-picker-sheet";
 import { NoAgentBanner } from "@/components/chat/no-agent-banner";
@@ -457,11 +458,7 @@ export default function ChatTab() {
         }
         return;
       }
-      const original = messages.find(
-        (candidate) =>
-          candidate.role === "user" &&
-          candidate.task_id === message.task_id,
-      );
+      const original = findOriginalChatInputMessage(messages, message);
       if (!original) {
         Alert.alert(t("alerts.not_sent"), t("failure.default"));
         return;
