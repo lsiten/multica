@@ -290,7 +290,7 @@ describe("MirrorSurface toolbar buttons", () => {
     await waitFor(() =>
       expect(queryClient.getQueryData(["state"])).toBeDefined(),
     );
-    const float = screen.getByRole("button", { name: "Open floating screen" });
+    const float = screen.getByRole("button", { name: "Open presentation view" });
     expect(float).toBeEnabled();
     fireEvent.click(float);
     await waitFor(() => expect(openFloating).toHaveBeenCalledOnce());
@@ -319,7 +319,7 @@ describe("MirrorSurface toolbar buttons", () => {
       expect(queryClient.getQueryData(["state"])).toBeDefined(),
     );
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Open floating screen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open presentation view" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear screen" })).not.toBeInTheDocument();
     platformOpenFloating = undefined;
   });
