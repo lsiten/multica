@@ -643,7 +643,21 @@ export function ChatWindow() {
   }, [pendingTaskId, activeSessionId, cancelChatTask]);
 
   const handleFailureAction = useCallback(
-    async (message: ChatMessage, _action: "retry" | "continue") => {
+    async (message: ChatMessage, action: "retry" | "continue") => {
+      if (action === "continue") {
+        if (!message.task_id) {
+          toast.error(t(($) => $.input.send_failed_toast));
+          return;
+        }
+        try {
+          await api.continueChatTask(message.chat_session_id, message.task_id);
+          await qc.invalidateQueries({ queryKey: chatKeys.pendingTask(message.chat_session_id) });
+        } catch (err) {
+          apiLogger.error("continueChatTask.error", { sessionId: message.chat_session_id, taskId: message.task_id, err });
+          toast.error(t(($) => $.input.send_failed_toast));
+        }
+        return;
+      }
       const original = messages.find(
         (candidate) =>
           candidate.role === "user" &&
@@ -658,7 +672,7 @@ export function ChatWindow() {
         original.attachments?.map((attachment) => attachment.id),
       );
     },
-    [handleSend, messages, t],
+    [handleSend, messages, qc, t],
   );
 
   const handleSelectAgent = useCallback(

@@ -905,6 +905,46 @@ describe("ChatMessageList failure copy (MUL-5370 regression)", () => {
     );
     expect(continueButton).toBeDisabled();
   });
+
+  it("dispatches continue as a distinct recovery action", async () => {
+    const onFailureAction = vi.fn();
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "input",
+                chat_session_id: "s1",
+                role: "user",
+                content: "continue this request",
+                task_id: TASK_ID,
+                created_at: new Date(0).toISOString(),
+              },
+              {
+                id: "failure",
+                chat_session_id: "s1",
+                role: "assistant",
+                content: "provider unavailable",
+                task_id: TASK_ID,
+                created_at: new Date(1).toISOString(),
+                failure_reason: "agent_error.provider_network",
+              },
+            ]}
+            pendingTask={undefined}
+            availability="online"
+            onFailureAction={onFailureAction}
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Continue this message" }));
+    expect(onFailureAction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "failure" }),
+      "continue",
+    );
+  });
 });
 
 describe("ChatMessageList onboarding starter cards", () => {

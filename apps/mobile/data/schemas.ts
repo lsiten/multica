@@ -18,6 +18,7 @@ import type {
   ChatMessage,
   ChatPendingTask,
   ChatSession,
+  ContinueChatTaskResponse,
   Comment,
   InboxItem,
   InboxWorkspaceUnread,
@@ -331,6 +332,12 @@ export const SendChatMessageResponseSchema: z.ZodType<SendChatMessageResponse> =
   supports_queue: z.boolean().optional(),
   queued: z.boolean().optional().catch(undefined),
   created_at: z.string().default(""),
+}).loose();
+
+export const ContinueChatTaskResponseSchema: z.ZodType<ContinueChatTaskResponse> = z.object({
+  task_id: z.string().min(1),
+  status: z.string().min(1),
+  created_at: z.string().min(1),
 }).loose();
 
 // Live timeline emitted by the agent runtime while a task is running. Each

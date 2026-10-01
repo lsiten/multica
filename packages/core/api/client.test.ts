@@ -2266,6 +2266,32 @@ describe("ApiClient", () => {
         new ApiClient("https://api.example.test").sendChatMessage("session-1", "hello"),
       ).rejects.toThrow();
     });
+
+    it("continues a failed chat task through the task recovery endpoint", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({
+          task_id: "retry-task",
+          status: "queued",
+          created_at: "2026-08-01T00:00:01Z",
+        }), {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        new ApiClient("https://api.example.test").continueChatTask("session-1", "failed-task"),
+      ).resolves.toEqual({
+        task_id: "retry-task",
+        status: "queued",
+        created_at: "2026-08-01T00:00:01Z",
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.example.test/api/chat/sessions/session-1/tasks/failed-task/continue",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
   });
 });
 

@@ -836,6 +836,63 @@ type SendChatMessageResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type ContinueChatTaskResponse struct {
+	TaskID    string `json:"task_id"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ContinueChatTask resumes a recoverable failed chat turn from its recorded
+// task context without inserting another user message.
+func (h *Handler) ContinueChatTask(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+	session, ok := h.gatePublicChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	if !ok {
+		return
+	}
+	if session.Status != "active" {
+		writeError(w, http.StatusBadRequest, "chat session is archived")
+		return
+	}
+	taskID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "taskId"), "task id")
+	if !ok {
+		return
+	}
+	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	canInvoke := func(agent db.Agent) bool {
+		return h.canInvokeAgent(r.Context(), agent, actorType, actorID, h.invokeOriginatorFromRequest(r, actorType, actorID), workspaceID)
+	}
+	task, err := h.TaskService.ContinueChatTask(r.Context(), session, taskID, canInvoke)
+	switch {
+	case errors.Is(err, service.ErrRerunInvokeNotAllowed):
+		h.writeDispatchBlocked(w, http.StatusForbidden, ReasonInvocationNotAllowed)
+	case errors.Is(err, service.ErrChatTaskContinuationPending):
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"code":  "chat_continuation_pending",
+			"error": "This chat already has a recovery attempt in progress.",
+		})
+	case errors.Is(err, service.ErrChatTaskContinuationUnavailable):
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"code":  "chat_continuation_unavailable",
+			"error": "This failed turn can no longer be continued. Try sending the original message again.",
+		})
+	case err != nil:
+		slog.Warn("continue chat task failed", "task_id", taskID, "session_id", session.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to continue chat task")
+	default:
+		writeJSON(w, http.StatusAccepted, ContinueChatTaskResponse{
+			TaskID:    uuidToString(task.ID),
+			Status:    task.Status,
+			CreatedAt: timestampToString(task.CreatedAt),
+		})
+	}
+}
+
 func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {

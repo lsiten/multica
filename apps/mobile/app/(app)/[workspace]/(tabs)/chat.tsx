@@ -443,7 +443,20 @@ export default function ChatTab() {
   }, [pendingTask?.task_id, pendingTask?.status, activeSessionId, qc]);
 
   const handleFailureAction = useCallback(
-    async (message: ChatMessage, _action: "retry" | "continue") => {
+    async (message: ChatMessage, action: "retry" | "continue") => {
+      if (action === "continue") {
+        if (!message.task_id) {
+          Alert.alert(t("alerts.not_sent"), t("failure.default"));
+          return;
+        }
+        try {
+          await api.continueChatTask(message.chat_session_id, message.task_id);
+          await qc.invalidateQueries({ queryKey: chatKeys.pendingTask(message.chat_session_id) });
+        } catch (err) {
+          Alert.alert(t("alerts.not_sent"), sendFailureMessage(err));
+        }
+        return;
+      }
       const original = messages.find(
         (candidate) =>
           candidate.role === "user" &&
@@ -459,7 +472,7 @@ export default function ChatTab() {
         { clearDraft: false },
       );
     },
-    [handleSend, messages, t],
+    [handleSend, messages, qc, sendFailureMessage, t],
   );
 
   // ── Header / sheet actions ─────────────────────────────────────────────

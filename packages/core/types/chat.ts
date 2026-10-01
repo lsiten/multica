@@ -212,6 +212,13 @@ export interface SendChatMessageResponse {
   attachment_ids?: string[];
 }
 
+/** Result of continuing a failed chat task from its recorded agent context. */
+export interface ContinueChatTaskResponse {
+  task_id: string;
+  status: string;
+  created_at: string;
+}
+
 export interface StartMikaOnboardingResponse {
   /** True only for the request that wrote the opening. */
   started: boolean;
