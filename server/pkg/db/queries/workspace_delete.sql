@@ -359,6 +359,9 @@ deleted_issue_reactions AS (
 deleted_activity AS (
     DELETE FROM activity_log WHERE workspace_id = $1
 ),
+deleted_workspace_jev_config AS (
+    DELETE FROM workspace_jev_config WHERE workspace_id = $1
+),
 deleted_inbox AS (
     DELETE FROM inbox_item WHERE workspace_id = $1
 ),
@@ -676,6 +679,9 @@ deleted_packages AS (
 DELETE FROM plugin_installation WHERE id IN (SELECT id FROM installations);
 
 -- name: DeleteWorkspaceAgents :exec
+WITH deleted_identities AS (
+    DELETE FROM agent_identity WHERE workspace_id = $1
+)
 DELETE FROM agent WHERE agent.workspace_id = $1;
 
 -- name: DeleteWorkspaceRuntimesAndProjects :exec
@@ -690,6 +696,15 @@ deleted_profiles AS (
     DELETE FROM runtime_profile WHERE runtime_profile.workspace_id = $1
 )
 DELETE FROM project WHERE project.workspace_id = $1;
+
+-- name: DeleteWorkspaceProjectGraphEvents :exec
+DELETE FROM project_graph_event WHERE workspace_id = $1;
+
+-- name: DeleteWorkspaceSquadCollaborationGraphs :exec
+DELETE FROM squad_collaboration_graph WHERE workspace_id = $1;
+
+-- name: DeleteWorkspaceSquadCollaborationHistory :exec
+DELETE FROM squad_collaboration_history WHERE workspace_id = $1;
 
 -- name: DeleteWorkspaceAdministration :exec
 WITH

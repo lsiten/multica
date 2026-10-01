@@ -49,7 +49,17 @@
     "voice_volume": "Niveau du microphone",
     "voice_done": "Terminer",
     "voice_setup_progress": "Préparation de la voix {{percent}} %",
-    "voice_setup_retry": "Réessayer la préparation vocale"
+    "voice_setup_retry": "Réessayer la préparation vocale",
+    "autonomy_mode": "Exécution autonome",
+    "autonomy_off": "Mode standard",
+    "autonomy_configure": "Définir les limites",
+    "autonomy_duration": "Limite de temps (secondes)",
+    "autonomy_tokens": "Limite de tokens",
+    "autonomy_cost": "Limite de coût d’exécution (ticks USD)",
+    "autonomy_enabled": "Mode autonome activé",
+    "autonomy_hint": "Ces limites concernent uniquement ce message.",
+    "autonomy_zero_unlimited": "0 signifie illimité. Ces limites s’appliquent uniquement à ce message.",
+    "autonomy_invalid": "Saisissez 0 ou un entier positif ; la durée est limitée à 86400 secondes."
   },
   "queue": {
     "title_one": "{{count}} message en file d'attente",

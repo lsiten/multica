@@ -89,3 +89,13 @@ func TestProviderTokenUsageContract(t *testing.T) {
 		})
 	}
 }
+
+func TestReportedCostSnapshotRequiresProviderCost(t *testing.T) {
+	if _, ok := ReportedCostSnapshot(TokenUsage{InputTokens: 100}); ok {
+		t.Fatal("token counters without a provider price must not enable a cost gate")
+	}
+	usage, ok := ReportedCostSnapshot(TokenUsage{InputTokens: 100, CostUSDTicks: 7})
+	if !ok || usage.CostUSDTicks != 7 {
+		t.Fatalf("reported cost snapshot = %+v, known=%v", usage, ok)
+	}
+}

@@ -99,6 +99,10 @@ type Config struct {
 	// the server into minting webhook URLs pointing at an attacker-controlled
 	// host.
 	PublicURL string
+	// PhoneInboundToken authenticates the server webhook that accepts a
+	// normalized inbound phone event from a configured phone gateway. It is
+	// intentionally separate from user/session credentials.
+	PhoneInboundToken string
 	// AppURL is the browser application's canonical origin, resolved from
 	// MULTICA_APP_URL (falling back to FRONTEND_ORIGIN). It is kept separate
 	// from PublicURL because split app/API deployments use different origins.

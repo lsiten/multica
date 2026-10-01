@@ -95,6 +95,36 @@ describe("ApiClient agent conversation-starter compatibility", () => {
   });
 });
 
+describe("ApiClient agent identity", () => {
+  const identity = { agent_id: "agent-1", email: "agent@example.com", phone: "" };
+  const malformedResponses = [
+    { agent_id: 42 },
+    { ...identity, agent_id: "agent-2" },
+  ];
+
+  it.each(malformedResponses)("rejects malformed GET identity %j", async (body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.getAgentIdentity("agent-1")).rejects.toThrow(/identity/i);
+  });
+
+  it.each(malformedResponses)("rejects malformed PUT identity %j", async (body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.updateAgentIdentity("agent-1", identity)).rejects.toThrow(/identity/i);
+  });
+
+  it("returns the server-confirmed identity after saving", async () => {
+    const confirmed = { ...identity, email: "normalized@example.com" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(confirmed))));
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.updateAgentIdentity("agent-1", identity)).resolves.toEqual(confirmed);
+  });
+});
+
 describe("ApiClient edit guards", () => {
   it("serializes field baselines for issue and comment writes", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
@@ -2228,6 +2258,30 @@ describe("ApiClient", () => {
           primary: true,
         },
       });
+    });
+
+    it("sendChatMessage serialises a per-message autonomy policy", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+        message_id: "message-1", task_id: "task-1", supports_queue: false, queued: false,
+        attachment_ids: null, created_at: "2026-01-01T00:00:00Z",
+      })));
+      vi.stubGlobal("fetch", fetchMock);
+      await new ApiClient("https://api.example.test").sendChatMessage("session-1", "run it", undefined, undefined, {
+        mode: "autonomous", max_duration_seconds: 60, max_token_count: 50000, max_cost_usd_ticks: 2500,
+      });
+      const init = fetchMock.mock.calls[0]?.[1];
+      expect(JSON.parse(String(init?.body))).toMatchObject({ autonomy_policy: { mode: "autonomous", max_duration_seconds: 60, max_token_count: 50000, max_cost_usd_ticks: 2500 } });
+    });
+
+    it("serialises an explicit normal-mode reset while leaving omitted policy undefined", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+        message_id: "message-1", task_id: "task-1", supports_queue: false, queued: false,
+        attachment_ids: null, created_at: "2026-01-01T00:00:00Z",
+      })));
+      vi.stubGlobal("fetch", fetchMock);
+      await new ApiClient("https://api.example.test").sendChatMessage("session-1", "normal", undefined, undefined, null);
+      const init = fetchMock.mock.calls[0]?.[1];
+      expect(JSON.parse(String(init?.body))).toEqual({ content: "normal", autonomy_policy: null });
     });
 
     it("sendChatMessage accepts the server's null attachment_ids for text-only sends", async () => {

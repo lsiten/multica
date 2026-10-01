@@ -223,6 +223,7 @@ func daemonCommonCapabilities() []string {
 		protocol.DaemonCapabilityPlatformSkillV1,
 		protocol.DaemonCapabilityCheckoutKeepsWorkV1,
 		protocol.DaemonCapabilityJoinedWakeupsV1,
+		protocol.DaemonCapabilityJevV1,
 	}
 	if mirror.NativeCaptureSupported() {
 		capabilities = append(capabilities, protocol.DaemonCapabilityScreenMirrorV1)
@@ -664,6 +665,24 @@ func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []Tas
 	}
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/usage", taskID), map[string]any{
 		"usage": usage,
+	}, nil)
+}
+
+func (c *Client) ReportProjectGraphEvent(ctx context.Context, taskID, projectID, eventType, nodeID string, data map[string]any) error {
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/project-graph/events", taskID), map[string]any{
+		"project_id": projectID, "event_type": eventType, "node_id": nodeID, "data": data,
+	}, nil)
+}
+
+// SendAgentEmail asks the server to perform one task-scoped identity email
+// action. The short-lived daemon token is explicit so a local MCP tool cannot
+// accidentally send the daemon owner's long-lived credential or mutate the
+// client's shared token while other task requests are in flight.
+func (c *Client) SendAgentEmail(ctx context.Context, daemonToken, taskID, recipient, subject, body string) error {
+	return c.postJSONWithToken(ctx, fmt.Sprintf("/api/daemon/tasks/%s/identity/email", taskID), daemonToken, map[string]any{
+		"recipient": recipient,
+		"subject":   subject,
+		"body":      body,
 	}, nil)
 }
 

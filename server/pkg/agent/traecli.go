@@ -450,5 +450,5 @@ func (b *traecliBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 		}
 	}()
 
-	return &Session{Messages: msgStream.ch, Result: resCh}, nil
+	return &Session{Messages: msgStream.ch, Result: resCh, UsageSnapshot: NewReportedUsageSnapshot(c.accumulatedUsage)}, nil
 }

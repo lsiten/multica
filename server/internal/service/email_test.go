@@ -250,6 +250,36 @@ func TestNewEmailService_FromEmailResolution(t *testing.T) {
 	}
 }
 
+func TestEmailService_SendAgentEmailRejectsMessageHeaderInjection(t *testing.T) {
+	service := &EmailService{}
+	tests := []struct {
+		name    string
+		to      string
+		subject string
+		body    string
+	}{
+		{name: "display name recipient", to: "Alice <alice@example.test>", subject: "hello", body: "body"},
+		{name: "subject newline", to: "alice@example.test", subject: "hello\r\nBcc: bad@example.test", body: "body"},
+		{name: "body carriage return", to: "alice@example.test", subject: "hello", body: "hello\r\nX-Header: value"},
+		{name: "body NUL", to: "alice@example.test", subject: "hello", body: "hello\x00world"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := service.SendAgentEmail(tt.to, tt.subject, tt.body)
+			if err == nil {
+				t.Fatal("SendAgentEmail unexpectedly accepted unsafe input")
+			}
+		})
+	}
+}
+
+func TestEmailService_SendAgentEmailDoesNotClaimDevDelivery(t *testing.T) {
+	service := &EmailService{}
+	if err := service.SendAgentEmail("alice@example.test", "status update", "line one\nline two <safe>"); err == nil {
+		t.Fatal("unconfigured email transport reported a successful delivery")
+	}
+}
+
 func TestSendSMTPRequiresConfiguredFromEmail(t *testing.T) {
 	s := &EmailService{
 		smtpHost:     "127.0.0.1",

@@ -48,7 +48,17 @@
     "voice_volume": "마이크 음량",
     "voice_done": "완료",
     "voice_setup_progress": "음성 준비 중 {{percent}}%",
-    "voice_setup_retry": "음성 준비 다시 시도"
+    "voice_setup_retry": "음성 준비 다시 시도",
+    "autonomy_mode": "자율 실행",
+    "autonomy_off": "표준 모드",
+    "autonomy_configure": "한도 설정",
+    "autonomy_duration": "시간 제한(초)",
+    "autonomy_tokens": "Token 제한",
+    "autonomy_cost": "실행 비용 한도(USD 틱)",
+    "autonomy_enabled": "자율 실행 사용",
+    "autonomy_hint": "한도는 이 메시지에만 적용됩니다.",
+    "autonomy_zero_unlimited": "0은 제한 없음입니다. 이 제한은 이 메시지에만 적용됩니다.",
+    "autonomy_invalid": "0 또는 0 이상의 정수를 입력하세요. 시간 제한은 86400초입니다."
   },
   "queue": {
     "title_other": "대기 중인 메시지 {{count}}개",

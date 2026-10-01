@@ -33,15 +33,15 @@ type VscreenPermissions struct {
 
 // VscreenStateSnapshot is a daemon-authoritative monotonic projection for clients.
 type VscreenStateSnapshot struct {
-	RuntimeID         string                   `json:"runtime_id"`
-	State             VscreenState             `json:"state"`
-	NativeEpoch       string                   `json:"native_epoch"`
-	DisplayGeneration string                   `json:"display_generation"`
-	GeometryRevision  uint64                   `json:"geometry_revision"`
-	ControlState      VscreenControlState      `json:"control_state"`
-	ActiveTaskID      *string                  `json:"active_task_id"`
-	InterventionID    *string                  `json:"intervention_id"`
-	Permissions       VscreenPermissions       `json:"permissions"`
+	RuntimeID         string              `json:"runtime_id"`
+	State             VscreenState        `json:"state"`
+	NativeEpoch       string              `json:"native_epoch"`
+	DisplayGeneration string              `json:"display_generation"`
+	GeometryRevision  uint64              `json:"geometry_revision"`
+	ControlState      VscreenControlState `json:"control_state"`
+	ActiveTaskID      *string             `json:"active_task_id"`
+	InterventionID    *string             `json:"intervention_id"`
+	Permissions       VscreenPermissions  `json:"permissions"`
 	// HumanInteraction reports the host master switch for remote human control.
 	HumanInteraction  bool                     `json:"human_interaction,omitempty"`
 	ReturnReceiptID   string                   `json:"return_receipt_id,omitempty"`

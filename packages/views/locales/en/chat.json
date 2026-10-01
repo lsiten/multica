@@ -49,7 +49,17 @@
     "voice_volume": "Microphone level",
     "voice_done": "Done",
     "voice_setup_progress": "Preparing voice {{percent}}%",
-    "voice_setup_retry": "Retry voice setup"
+    "voice_setup_retry": "Retry voice setup",
+    "autonomy_mode": "Autonomous execution",
+    "autonomy_off": "Standard mode",
+    "autonomy_configure": "Set limits",
+    "autonomy_duration": "Time limit (seconds)",
+    "autonomy_tokens": "Token limit",
+    "autonomy_cost": "Execution cost limit (USD ticks)",
+    "autonomy_enabled": "Autonomous mode enabled",
+    "autonomy_hint": "The limits apply to this message only.",
+    "autonomy_zero_unlimited": "0 means unlimited. These limits apply to this message only.",
+    "autonomy_invalid": "Enter 0 or a non-negative integer; time is capped at 86400 seconds."
   },
   "queue": {
     "title_one": "{{count}} queued message",

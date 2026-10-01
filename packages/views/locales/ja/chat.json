@@ -48,7 +48,17 @@
     "voice_volume": "マイク音量",
     "voice_done": "完了",
     "voice_setup_progress": "音声を準備中 {{percent}}%",
-    "voice_setup_retry": "音声の準備を再試行"
+    "voice_setup_retry": "音声の準備を再試行",
+    "autonomy_mode": "自律実行",
+    "autonomy_off": "標準モード",
+    "autonomy_configure": "上限を設定",
+    "autonomy_duration": "時間上限（秒）",
+    "autonomy_tokens": "Token 上限",
+    "autonomy_cost": "実行コスト上限（USD ティック）",
+    "autonomy_enabled": "自律実行を有効化",
+    "autonomy_hint": "上限はこのメッセージだけに適用されます。",
+    "autonomy_zero_unlimited": "0 は無制限です。これらの上限はこのメッセージだけに適用されます。",
+    "autonomy_invalid": "0 または 0 以上の整数を入力してください。時間上限は 86400 秒です。"
   },
   "queue": {
     "title_other": "キュー内のメッセージ {{count}} 件",

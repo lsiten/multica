@@ -24,6 +24,14 @@ type Backend interface {
 
 // ExecOptions configures a single execution.
 type ExecOptions struct {
+	// CostLimitUSDTicks enables an execution-time stop when the provider exposes
+	// a reported cost snapshot. The daemon rejects bounded tasks for providers
+	// without execution-time usage support.
+	CostLimitUSDTicks int64
+	// TokenLimit enables execution-time stopping when the provider reports a
+	// cumulative token snapshot. The daemon rejects bounded tasks for providers
+	// without a live snapshot.
+	TokenLimit int64
 	// EnableTaskSupplement installs provider hooks only for runs whose daemon/server
 	// capability handshake enabled additional messages.
 	EnableTaskSupplement bool
@@ -150,6 +158,9 @@ func runContext(ctx context.Context, timeout time.Duration) (context.Context, co
 
 // Session represents a running agent execution.
 type Session struct {
+	// UsageSnapshot is an optional, concurrency-safe provider usage snapshot.
+	// It reports only provider-declared cost; false means cost is unavailable.
+	UsageSnapshot func() (TokenUsage, bool)
 	// Supplement delivers an additional human instruction to the currently
 	// active provider turn. Nil means the backend cannot safely do so.
 	// Adapters bound their own transport calls; a hook-based adapter may wait
@@ -244,6 +255,37 @@ type TokenUsage struct {
 	CostUSDTicks int64
 }
 
+// ReportedCostSnapshot reports whether a snapshot contains a provider-declared
+// cost. Token counters alone are not sufficient for an execution-time dollar
+// budget because they may be present without a price or rate card.
+func ReportedCostSnapshot(usage TokenUsage) (TokenUsage, bool) {
+	if usage.CostUSDTicks <= 0 {
+		return TokenUsage{}, false
+	}
+	return usage, true
+}
+
+// NewReportedCostSnapshot adapts a provider's cumulative usage reader to the
+// optional session callback while keeping the "cost known" rule in one place.
+func NewReportedCostSnapshot(snapshot func() TokenUsage) func() (TokenUsage, bool) {
+	if snapshot == nil {
+		return nil
+	}
+	return func() (TokenUsage, bool) {
+		return ReportedCostSnapshot(snapshot())
+	}
+}
+
+func NewReportedUsageSnapshot(snapshot func() TokenUsage) func() (TokenUsage, bool) {
+	if snapshot == nil {
+		return nil
+	}
+	return func() (TokenUsage, bool) {
+		usage := snapshot()
+		return usage, usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.CacheReadTokens > 0 || usage.CacheWriteTokens > 0 || usage.CostUSDTicks > 0
+	}
+}
+
 // CostUSDTicksPerUSD is the scale of the provider-reported cost unit: xAI
 // reports whole ticks of 1e-10 USD, which keeps sub-cent turn costs exact in
 // int64 all the way to the database instead of drifting through float64.
@@ -257,6 +299,10 @@ type Result struct {
 	DurationMs int64
 	SessionID  string
 	Usage      map[string]TokenUsage // keyed by model name
+	// BudgetExceeded means the daemon stopped execution after an observed
+	// provider-reported cost reached the configured limit.
+	BudgetExceeded      bool
+	TokenBudgetExceeded bool
 	// ResumeRejected is positive evidence that this run's requested resume
 	// was permanently refused — the transcript is gone, the session belongs to
 	// another provider account, OR the session still exists but its history
@@ -340,6 +386,10 @@ type Config struct {
 	// Command boundary applies it to every process the package spawns, task
 	// launches and CLI probes alike. Backends never read it directly.
 	LaunchPrefix []string
+	// ProcessLauncher controls where backend processes are created. Nil keeps
+	// the historical local process behavior; the production daemon always uses
+	// LocalProcessLauncher and tests may inject a recorder.
+	ProcessLauncher ProcessLauncher
 }
 
 // New creates a Backend for the given agent type.

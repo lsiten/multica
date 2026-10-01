@@ -157,3 +157,17 @@ export function agentBuilderSessionListOptions(wsId: string) {
     staleTime: 0,
   });
 }
+
+export const agentIdentityKeys = {
+  detail: (wsId: string, agentId: string) =>
+    ["workspaces", wsId, "agent-identity", agentId] as const,
+};
+
+export function agentIdentityOptions(wsId: string, agentId: string) {
+  return queryOptions({
+    queryKey: agentIdentityKeys.detail(wsId, agentId),
+    queryFn: () => api.getAgentIdentity(agentId),
+    enabled: wsId.length > 0 && agentId.length > 0,
+    staleTime: 0,
+  });
+}

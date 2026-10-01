@@ -22,17 +22,17 @@ func (e VscreenEnvelope) Validate() error {
 type VscreenCommandKind string
 
 const (
-	VscreenCommandEnable            VscreenCommandKind = "enable"
-	VscreenCommandDisable           VscreenCommandKind = "disable"
-	VscreenCommandRequestTakeover   VscreenCommandKind = "request_takeover"
+	VscreenCommandEnable          VscreenCommandKind = "enable"
+	VscreenCommandDisable         VscreenCommandKind = "disable"
+	VscreenCommandRequestTakeover VscreenCommandKind = "request_takeover"
 	// VscreenCommandEnableInteraction turns on the host master switch for
 	// remote human pointer/keyboard control. It is host-wide, owner-only, and
 	// never gates agent actions.
-	VscreenCommandEnableInteraction VscreenCommandKind = "enable_interaction"
+	VscreenCommandEnableInteraction  VscreenCommandKind = "enable_interaction"
 	VscreenCommandDisableInteraction VscreenCommandKind = "disable_interaction"
 	// VscreenCommandEmergencyStop immediately clears every remote gesture lock
 	// (human and agent) and disables remote human interaction.
-	VscreenCommandEmergencyStop      VscreenCommandKind = "emergency_stop"
+	VscreenCommandEmergencyStop VscreenCommandKind = "emergency_stop"
 )
 
 // HostInteractionCommand reports whether the kind targets the host-wide human

@@ -30,7 +30,9 @@ import (
 	"github.com/multica-ai/multica/server/internal/cli"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/multica-ai/multica/server/internal/jevmodels"
 	"github.com/multica-ai/multica/server/internal/mirror"
+	"github.com/multica-ai/multica/server/internal/projectgraph"
 	"github.com/multica-ai/multica/server/internal/selfexec"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -384,11 +386,14 @@ type repoCacheBackend interface {
 
 // Daemon is the local agent runtime that polls for and executes tasks.
 type Daemon struct {
-	cfg        Config
-	client     *Client
-	repoCache  repoCacheBackend
-	skillCache *SkillBundleCache
-	logger     *slog.Logger
+	jevModelsOnce sync.Once
+	jevModels     *jevmodels.Manager
+	jevModelsErr  error
+	cfg           Config
+	client        *Client
+	repoCache     repoCacheBackend
+	skillCache    *SkillBundleCache
+	logger        *slog.Logger
 
 	// terminalReports is the durable outbox for complete/fail callbacks. The
 	// sender hook is production-wired through Client and overridable in focused
@@ -2113,6 +2118,8 @@ func (d *Daemon) clearWSHeartbeatAcks() {
 
 // Run starts the daemon: resolves auth, registers runtimes, then polls for tasks.
 func (d *Daemon) Run(ctx context.Context) error {
+	defer d.closeJevModelManager()
+
 	// Wrap context so handleUpdate can cancel the daemon for restart.
 	ctx, cancel := context.WithCancel(ctx)
 	d.cancelFunc = cancel
@@ -7781,6 +7788,78 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if err := validateTaskIdentity(task); err != nil {
 		return TaskResult{}, err
 	}
+	var graphStore *projectgraph.Store
+	if task.ProjectID != "" {
+		if store, graphErr := projectgraph.Open(d.cfg.WorkspacesRoot, task.ProjectID); graphErr != nil {
+			taskLog.Warn("project graph store unavailable", "error", graphErr)
+		} else {
+			graphStore = store
+			startEvent := projectgraph.Event{
+				At: time.Now(), Type: "task_started", ProjectID: task.ProjectID, NodeID: task.ID,
+				Data: map[string]any{"agent_id": task.AgentID, "provider": provider},
+			}
+			_ = graphStore.Append(startEvent)
+			graphCtx, graphCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := d.client.ReportProjectGraphEvent(graphCtx, task.ID, task.ProjectID, startEvent.Type, startEvent.NodeID, startEvent.Data); err != nil {
+				taskLog.Warn("project graph start event upload failed", "error", err)
+			}
+			graphCancel()
+			defer func() {
+				data := map[string]any{"agent_id": task.AgentID, "provider": provider, "status": taskResult.Status}
+				if taskResult.Comment != "" {
+					data["result_sha256"] = projectgraph.HashSummary(taskResult.Comment)
+				}
+				if taskResult.BranchName != "" || taskResult.DurableWorkDir != "" {
+					artifact := map[string]any{"derived_from_task_id": task.ID}
+					if taskResult.BranchName != "" {
+						artifact["branch_name"] = taskResult.BranchName
+					}
+					if taskResult.DurableWorkDir != "" {
+						artifact["durable_work_dir"] = taskResult.DurableWorkDir
+					}
+					data["artifact"] = artifact
+				}
+				finishedEvent := projectgraph.Event{
+					At: time.Now(), Type: "task_finished", ProjectID: task.ProjectID, NodeID: task.ID, Data: data,
+				}
+				_ = graphStore.Append(finishedEvent)
+				graphCtx, graphCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := d.client.ReportProjectGraphEvent(graphCtx, task.ID, task.ProjectID, finishedEvent.Type, finishedEvent.NodeID, finishedEvent.Data); err != nil {
+					taskLog.Warn("project graph finish event upload failed", "error", err)
+				}
+				graphCancel()
+			}()
+		}
+	}
+	if len(task.Agent.RuntimeConfigOverride) > 0 {
+		if merged, mergeErr := mergeRuntimeConfigAutonomy(task.Agent.RuntimeConfig, task.Agent.RuntimeConfigOverride); mergeErr != nil {
+			return TaskResult{}, mergeErr
+		} else {
+			task.Agent.RuntimeConfig = merged
+		}
+	}
+	autonomyPolicy, err := parseAutonomyPolicy(task.Agent.RuntimeConfig)
+	if err != nil {
+		return TaskResult{}, err
+	}
+	costLimitUSDTicks := effectiveAutonomyCostLimit(autonomyPolicy)
+	if autonomyPolicy != nil {
+		taskLog.Info("autonomy policy applied", "mode", autonomyPolicy.Mode, "max_duration_seconds", autonomyPolicy.MaxDurationSeconds, "max_cost_usd_ticks", autonomyPolicy.MaxCostUSDTicks, "max_token_count", autonomyPolicy.MaxTokenCount)
+	}
+	if duration := autonomyPolicy.duration(); duration > 0 {
+		policyCtx, cancelPolicy := context.WithTimeout(ctx, duration)
+		defer cancelPolicy()
+		ctx = policyCtx
+	}
+
+	ctx, taskBudget, cancelTaskBudget := newTaskUsageBudget(ctx, autonomyPolicy)
+	taskBudget.primaryProvider = provider
+	defer cancelTaskBudget(nil)
+	defer func() { finalizeTaskBudget(ctx, autonomyPolicy, taskBudget, &taskResult, &returnErr) }()
+	if !supportsLiveTaskBudget(provider, autonomyPolicy) {
+		_ = taskBudget.RejectUnreportedUsage()
+		return TaskResult{}, errTaskUsageUnavailable
+	}
 
 	// Refuse to spawn an agent without a workspace. An empty workspace_id
 	// here would make MULTICA_WORKSPACE_ID empty in the agent env, and the
@@ -7875,7 +7954,17 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	var instructions string
 	agentName = task.Agent.Name
 	skills = task.Agent.Skills
-	instructions = task.Agent.Instructions
+	instructions = task.Agent.Instructions + autonomyPolicy.instructions()
+	if identity := task.Agent.Identity; identity != nil {
+		instructions += "\nAgent identity manifest (identifiers only; payment credentials are not available):"
+		if identity.Email != "" {
+			instructions += "\n- email: " + identity.Email
+		}
+		if identity.Phone != "" {
+			instructions += "\n- phone: " + identity.Phone
+		}
+		instructions += "\nUse these identifiers only when the task requires acting as this Agent. Payment actions are not available in this execution layer."
+	}
 
 	// Prepare isolated execution environment.
 	// Repos are passed as metadata only — the agent checks them out on demand
@@ -8081,6 +8170,123 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			return TaskResult{}, vscreenErr
 		}
 	}
+	// Expose the semantic decision and completion tools through the same MCP
+	// configuration consumed by every provider. All managed capability services
+	// stay on loopback because execution is host-native.
+	listenHost, advertisedHost := "127.0.0.1", ""
+	identityMCPConfig, identityMCPServer, identityMCPErr := startTaskIdentityActionsMCPAt(
+		ctx, task.ID, autonomyPolicy.allowsIdentityAction("email"),
+		hostIdentityEmailInvoker(task, communicationReceiptPath(d.cfg.WorkspacesRoot, task, "email")), taskLog, listenHost, advertisedHost,
+	)
+	if identityMCPErr != nil {
+		return TaskResult{}, identityMCPErr
+	}
+	if identityMCPServer != nil {
+		defer identityMCPServer.Close()
+	}
+	if len(identityMCPConfig) > 0 {
+		if endpoint := taskMCPReadinessEndpoint(identityMCPConfig, identityActionsMCPName); endpoint != "" {
+			cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, identityActionsMCPName, endpoint, "task", true)
+			defer cleanup()
+		}
+		merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, identityMCPConfig)
+		if mergeErr != nil {
+			return TaskResult{}, fmt.Errorf("merge identity actions MCP configuration: %w", mergeErr)
+		}
+		effectiveMcpConfig = merged
+		taskCtx.AgentInstructions += "\nManaged identity actions are available only for explicitly granted capabilities; email is sent by this daemon using the configured host SMTP account."
+	}
+	emailReceiveMCPConfig, emailReceiveMCPServer, emailReceiveMCPErr := startTaskEmailReceiveMCPAt(
+		ctx, task, autonomyPolicy.allowsIdentityAction("email"), taskLog, listenHost, advertisedHost,
+	)
+	if emailReceiveMCPErr != nil {
+		return TaskResult{}, emailReceiveMCPErr
+	}
+	if emailReceiveMCPServer != nil {
+		defer emailReceiveMCPServer.Close()
+	}
+	if len(emailReceiveMCPConfig) > 0 {
+		if endpoint := taskMCPReadinessEndpoint(emailReceiveMCPConfig, emailReceiveMCPName); endpoint != "" {
+			cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, emailReceiveMCPName, endpoint, "task", true)
+			defer cleanup()
+		}
+		merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, emailReceiveMCPConfig)
+		if mergeErr != nil {
+			return TaskResult{}, fmt.Errorf("merge identity email receive MCP configuration: %w", mergeErr)
+		}
+		effectiveMcpConfig = merged
+		taskCtx.AgentInstructions += "\nManaged identity email receive is available only for explicitly granted capabilities and reads unread messages without marking them seen."
+	} else if autonomyPolicy.allowsIdentityAction("email") {
+		taskCtx.AgentInstructions += "\nEmail receive is unavailable unless IMAP is configured in the host Agent environment; do not claim to have read new messages."
+	}
+	phoneMCPConfig, phoneMCPServer, phoneMCPErr := startTaskPhoneActionsMCPAt(
+		ctx, task, autonomyPolicy.allowsIdentityAction("phone"), taskLog, listenHost, advertisedHost,
+		communicationReceiptPath(d.cfg.WorkspacesRoot, task, "phone"),
+	)
+	if phoneMCPErr != nil {
+		return TaskResult{}, phoneMCPErr
+	}
+	if phoneMCPServer != nil {
+		defer phoneMCPServer.Close()
+	}
+	if len(phoneMCPConfig) > 0 {
+		if endpoint := taskMCPReadinessEndpoint(phoneMCPConfig, phoneActionsMCPName); endpoint != "" {
+			cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, phoneActionsMCPName, endpoint, "task", true)
+			defer cleanup()
+		}
+		merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, phoneMCPConfig)
+		if mergeErr != nil {
+			return TaskResult{}, fmt.Errorf("merge identity phone MCP configuration: %w", mergeErr)
+		}
+		effectiveMcpConfig = merged
+		taskCtx.AgentInstructions += "\nManaged identity phone actions are available only for explicitly granted capabilities; calls require a configured provider and stable idempotency key."
+	} else if autonomyPolicy.allowsIdentityAction("phone") {
+		taskCtx.AgentInstructions += "\nPhone identity action was requested but no supported host phone provider is configured; do not claim that a call was placed."
+	}
+	var completionVerifier interface{ completionVerification() completionVerification }
+	if d.cfg.LLM2JevEnabled && autonomyPolicy.allows("decision") {
+
+		var llm2jevConfig json.RawMessage
+		var llm2jevServer interface{ Close() }
+		var llm2jevErr error
+		if task.JevConfig != nil {
+			llm2jevConfig, llm2jevServer, llm2jevErr = d.startTaskConfiguredJevMCP(ctx, task, provider, taskLog)
+		} else {
+			var legacyServer *llm2jevMCPSet
+			llm2jevConfig, legacyServer, llm2jevErr = startTaskLLM2JevMCPAtWithLimits(
+				ctx, task.ID, provider, task, taskLog, listenHost, advertisedHost, d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32,
+			)
+			if legacyServer != nil {
+				llm2jevServer = legacyServer
+			}
+		}
+		if llm2jevErr != nil {
+			return TaskResult{}, llm2jevErr
+		}
+		if llm2jevServer != nil {
+			if verifier, ok := llm2jevServer.(interface{ completionVerification() completionVerification }); ok {
+				completionVerifier = verifier
+			}
+			defer llm2jevServer.Close()
+			if endpoint := taskMCPReadinessEndpoint(llm2jevConfig, llm2jevMCPName); endpoint != "" {
+				cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, llm2jevMCPName, endpoint, "task", true)
+				defer cleanup()
+			}
+		}
+		if len(llm2jevConfig) > 0 {
+			merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, llm2jevConfig)
+			if mergeErr != nil {
+				return TaskResult{}, fmt.Errorf("merge LLM2Jev MCP configuration: %w", mergeErr)
+			}
+			effectiveMcpConfig = merged
+			taskCtx.AgentInstructions += llm2jevExecutionInstructions
+		}
+	}
+	// Probe every URL-based MCP server actually handed to the task after all
+	// managed overlays are merged. The probe only performs initialize/tools/list
+	// and never starts stdio commands or calls a tool.
+	cleanupMCPReadiness := registerTaskMCPReadinessFromConfig(d, task.WorkspaceID, effectiveMcpConfig, "task")
+	defer cleanupMCPReadiness()
 	// Decode openclaw-specific runtime_config knobs once so reuse / prepare /
 	// ExecOptions all see the same mode + gateway pin (issue #3260). Parse
 	// failures fail soft to local mode — a broken JSON blob must never block
@@ -8713,6 +8919,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if err := configureCodexTaskShellEnvironment(provider, env.CodexHome, os.Environ(), agentEnv, agentCustomEnv, d.logger); err != nil {
 		return TaskResult{}, err
 	}
+	// All providers execute directly on the host. The launcher seam remains
+	// available for unit tests, but no guest VM or sandbox launcher is wired
+	// into production task execution.
+	var processLauncher agent.ProcessLauncher = agent.LocalProcessLauncher{}
 	// The overlay is authoritative once built, so nothing on the command line
 	// may re-point HERMES_HOME out of it. Both argv regions are stripped
 	// together, against the same assembled argv the resolver read: a selection
@@ -8745,6 +8955,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		DaemonVersion:   d.cfg.CLIVersion,
 		CodexVersion:    codexVersion,
 		BuiltinRuntime:  !usesCustomProfileCommand,
+		ProcessLauncher: processLauncher,
 	})
 	if err != nil {
 		return TaskResult{}, fmt.Errorf("create agent backend: %w", err)
@@ -8819,6 +9030,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		idleWatchdogTimeout = d.cfg.OpenCodeIdleWatchdog
 	}
 	execOpts := agent.ExecOptions{
+		CostLimitUSDTicks:          costLimitUSDTicks,
+		TokenLimit:                 autonomyPolicyTokenLimit(autonomyPolicy),
 		EnableTaskSupplement:       taskSupplementNegotiated,
 		Cwd:                        env.WorkDir,
 		Model:                      model,
@@ -8926,7 +9139,27 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	var msgSeq atomic.Int32
 	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {
+		if autonomyPolicy != nil && autonomyPolicy.MaxDurationSeconds > 0 && errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+			taskLog.Warn("autonomy duration limit reached", "max_duration_seconds", autonomyPolicy.MaxDurationSeconds)
+			return TaskResult{Status: "blocked", Comment: "Task stopped after its autonomy time limit.", WorkDir: env.WorkDir, EnvRoot: env.RootDir, FailureReason: "duration_exceeded"}, nil
+		}
 		return TaskResult{}, err
+	}
+	if result.BudgetExceeded || result.TokenBudgetExceeded {
+		usageEntries := usageEntriesForResult(provider, result.Usage)
+		failureReason, comment := "budget_exceeded", "Task stopped after reported provider usage reached its autonomy cost limit."
+		if result.TokenBudgetExceeded {
+			failureReason, comment = "token_budget_exceeded", "Task stopped after reported token usage reached its autonomy limit."
+		}
+		return TaskResult{
+			Status: "blocked", Comment: comment,
+			SessionID: result.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir,
+			Usage: usageEntries, FailureReason: failureReason,
+		}, nil
+	}
+	if autonomyPolicy != nil && autonomyPolicy.MaxDurationSeconds > 0 && errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		taskLog.Warn("autonomy duration limit reached", "max_duration_seconds", autonomyPolicy.MaxDurationSeconds)
+		return TaskResult{Status: "blocked", Comment: "Task stopped after its autonomy time limit.", SessionID: result.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir, Usage: usageEntriesForResult(provider, result.Usage), FailureReason: "duration_exceeded"}, nil
 	}
 
 	// retiredSessionID is the session this run was told to resume and then
@@ -8942,6 +9175,31 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		firstResult := result
 		firstUsage := result.Usage
 		firstTools := tools
+		if autonomyPolicy != nil && autonomyPolicy.MaxTokenCount > 0 {
+			firstUsageEntries := usageEntriesForResult(provider, firstUsage)
+			firstTokens, tokenOverflow := reportedUsageTokenCount(firstUsageEntries)
+			if tokenOverflow || firstTokens >= autonomyPolicy.MaxTokenCount {
+				return TaskResult{Status: "blocked", Comment: "Task reached its configured autonomy token limit before a session retry.", SessionID: firstResult.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir, Usage: firstUsageEntries, FailureReason: "token_budget_exceeded"}, nil
+			}
+			execOpts.TokenLimit = autonomyPolicy.MaxTokenCount - firstTokens
+		}
+		if costLimitUSDTicks > 0 {
+			firstUsageEntries := usageEntriesForResult(provider, firstUsage)
+			firstTotal, firstExceeded := reportedUsageCostExceeded(firstUsageEntries, costLimitUSDTicks)
+			remainingLimit, canRetryWithinBudget := remainingAutonomyCostLimit(costLimitUSDTicks, firstTotal)
+			if firstExceeded || !canRetryWithinBudget {
+				taskLog.Warn("reported cost limit reached; skipping fresh-session retry", "cost_usd_ticks", firstTotal, "max_cost_usd_ticks", costLimitUSDTicks)
+				return TaskResult{
+					Status: "blocked", Comment: "Task reached its configured autonomy cost limit before a session retry.",
+					SessionID: firstResult.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir,
+					Usage: firstUsageEntries, FailureReason: "budget_exceeded",
+				}, nil
+			}
+			// The retry is part of the same task budget. Pass only the
+			// remaining reported-cost allowance to the fresh session, rather
+			// than resetting the full limit for a second provider process.
+			execOpts.CostLimitUSDTicks = remainingLimit
+		}
 		if !result.ResumeRejectedTransient {
 			retiredSessionID = task.PriorSessionID
 		}
@@ -8996,6 +9254,22 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// session keeps firstResult so the bad session stays excluded rather
 		// than being relabeled resumable by a benign-looking second error.
 		result, tools = reconcileFreshRetryResult(firstResult, firstUsage, firstTools, retryResult, retryTools, retryErr)
+		if result.BudgetExceeded || result.TokenBudgetExceeded {
+			usageEntries := usageEntriesForResult(provider, result.Usage)
+			failureReason, comment := "budget_exceeded", "Task stopped after reported provider usage reached its autonomy cost limit during session retry."
+			if result.TokenBudgetExceeded {
+				failureReason, comment = "token_budget_exceeded", "Task stopped after reported token usage reached its autonomy limit during session retry."
+			}
+			return TaskResult{
+				Status: "blocked", Comment: comment,
+				SessionID: result.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir,
+				Usage: usageEntries, FailureReason: failureReason,
+			}, nil
+		}
+		if autonomyPolicy != nil && autonomyPolicy.MaxDurationSeconds > 0 && errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+			taskLog.Warn("autonomy duration limit reached during session retry", "max_duration_seconds", autonomyPolicy.MaxDurationSeconds)
+			return TaskResult{Status: "blocked", Comment: "Task stopped at its autonomy time limit during session retry.", SessionID: result.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir, Usage: usageEntriesForResult(provider, result.Usage), FailureReason: "duration_exceeded"}, nil
+		}
 	}
 	phaseRecorder.Mark(taskPhaseTurnCompleted)
 
@@ -9014,20 +9288,24 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	)
 
 	// Convert agent usage map to task usage entries.
-	var usageEntries []TaskUsageEntry
-	for model, u := range result.Usage {
-		if u.InputTokens == 0 && u.OutputTokens == 0 && u.CacheReadTokens == 0 && u.CacheWriteTokens == 0 && u.CostUSDTicks <= 0 {
-			continue
+	usageEntries := usageEntriesForResult(provider, result.Usage)
+	if autonomyPolicy != nil && autonomyPolicy.MaxTokenCount > 0 {
+		totalTokens, overflow := reportedUsageTokenCount(usageEntries)
+		if overflow || totalTokens >= autonomyPolicy.MaxTokenCount {
+			taskLog.Warn("agent task reached reported token policy", "tokens", totalTokens, "max_token_count", autonomyPolicy.MaxTokenCount)
+			return TaskResult{Status: "blocked", Comment: "Task stopped after reported token usage reached its autonomy limit.", SessionID: result.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir, Usage: usageEntries, FailureReason: "token_budget_exceeded"}, nil
 		}
-		usageEntries = append(usageEntries, TaskUsageEntry{
-			Provider:         provider,
-			Model:            model,
-			InputTokens:      u.InputTokens,
-			OutputTokens:     u.OutputTokens,
-			CacheReadTokens:  u.CacheReadTokens,
-			CacheWriteTokens: u.CacheWriteTokens,
-			CostUSDTicks:     u.CostUSDTicks,
-		})
+	}
+	if costLimitUSDTicks > 0 {
+		totalCost, exceeded := reportedUsageCostExceeded(usageEntries, costLimitUSDTicks)
+		if exceeded || totalCost >= costLimitUSDTicks {
+			taskLog.Warn("agent task reached reported cost policy", "cost_usd_ticks", totalCost, "max_cost_usd_ticks", costLimitUSDTicks)
+			return TaskResult{
+				Status: "blocked", Comment: "Task exceeded its configured autonomy cost limit.",
+				SessionID: result.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir,
+				Usage: usageEntries, FailureReason: "budget_exceeded",
+			}, nil
+		}
 	}
 
 	// MUL-5305: withhold a Codex session whose rollout never reached the per-issue
@@ -9054,6 +9332,16 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	switch result.Status {
 	case "completed":
+		if autonomyPolicy != nil && autonomyPolicy.Mode == autonomyModeAutonomous {
+			verification := completionVerification{Reason: "completion_verifier_unavailable"}
+			if completionVerifier != nil {
+				verification = completionVerifier.completionVerification()
+			}
+			if reason := autonomousCompletionFailure(verification); reason != "" {
+				taskLog.Warn("autonomous task completion rejected without valid verification", "reason", verification.Reason)
+				return TaskResult{Status: "blocked", Comment: reason, SessionID: result.SessionID, WorkDir: env.WorkDir, EnvRoot: env.RootDir, Usage: usageEntries, FailureReason: reason}, nil
+			}
+		}
 		if result.Output == "" {
 			// The agent completed successfully but produced no text output.
 			// This is valid — the agent may have done all its work via tool
@@ -9259,6 +9547,18 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 }
 
+func taskMCPReadinessEndpoint(raw json.RawMessage, name string) string {
+	var document struct {
+		MCPServers map[string]struct {
+			URL string `json:"url"`
+		} `json:"mcpServers"`
+	}
+	if json.Unmarshal(raw, &document) != nil {
+		return ""
+	}
+	return strings.TrimSpace(document.MCPServers[name].URL)
+}
+
 // shouldRetryWithFreshSession reports whether a failed run that requested
 // --resume should be retried once from a fresh session.
 //
@@ -9400,20 +9700,27 @@ func shouldRetryWithFreshSession(result agent.Result, priorSessionID string, too
 //
 // Usage is merged across both attempts in every branch so billing is complete.
 func reconcileFreshRetryResult(first agent.Result, firstUsage map[string]agent.TokenUsage, firstTools int32, retry agent.Result, retryTools int32, retryErr error) (agent.Result, int32) {
+	var selected agent.Result
+	var selectedTools int32
 	switch {
 	case retryErr != nil:
 		first.Usage = firstUsage
-		return first, firstTools
+		selected, selectedTools = first, firstTools
 	case retry.SessionID != "":
 		retry.Usage = mergeUsage(firstUsage, retry.Usage)
-		return retry, retryTools
+		selected, selectedTools = retry, retryTools
 	case retry.Status == "completed":
 		retry.Usage = mergeUsage(firstUsage, retry.Usage)
-		return retry, retryTools
+		selected, selectedTools = retry, retryTools
 	default:
 		first.Usage = mergeUsage(firstUsage, retry.Usage)
-		return first, firstTools
+		selected, selectedTools = first, firstTools
 	}
+	// A budget stop is authoritative even when the retry did not establish a
+	// new resumable session and the first result remains the selected outcome.
+	selected.BudgetExceeded = first.BudgetExceeded || retry.BudgetExceeded
+	selected.TokenBudgetExceeded = first.TokenBudgetExceeded || retry.TokenBudgetExceeded
+	return selected, selectedTools
 }
 
 // freshSessionMayHelp reports whether restarting the conversation could
@@ -9449,12 +9756,36 @@ func freshSessionMayHelp(errText string) bool {
 	}
 }
 
+func reportedUsageTokenLimitReached(usage agent.TokenUsage, limit int64) bool {
+	if limit <= 0 {
+		return false
+	}
+	total, overflow := reportedUsageTokenCount([]TaskUsageEntry{{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheReadTokens: usage.CacheReadTokens, CacheWriteTokens: usage.CacheWriteTokens}})
+	return overflow || total >= limit
+}
+
 // executeAndDrain runs a backend, drains its message stream (forwarding to the
 // server), and waits for the final result. msgSeq numbers the reported task
 // messages and is owned by the caller so a same-task retry continues the
 // sequence instead of restarting at 1 — the server orders the transcript by
 // seq alone, and duplicate seqs would interleave the two attempts' rows.
-func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID, codexHome string, msgSeq *atomic.Int32) (agent.Result, int32, error) {
+func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID, codexHome string, msgSeq *atomic.Int32) (finalResult agent.Result, finalTools int32, finalErr error) {
+
+	budget := taskBudgetFromContext(ctx)
+	source := ""
+	if budget != nil {
+		source = budget.nextAttempt()
+		defer func() {
+			budget.RecordSnapshot(source, budget.primaryProvider, finalResult.Usage)
+			if errors.Is(budget.Check(), errTaskTokenLimit) {
+				finalResult.TokenBudgetExceeded = true
+				finalResult.BudgetExceeded = true
+			}
+			if errors.Is(budget.Check(), errTaskCostLimit) {
+				finalResult.BudgetExceeded = true
+			}
+		}()
+	}
 	phaseRecorder := taskPhaseRecorderFromContext(ctx)
 	// Wrap the caller's ctx so the idle watchdog (below) can interrupt both
 	// the agent subprocess (via the ctx passed to backend.Execute) AND the
@@ -9477,12 +9808,111 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		taskLog.Debug("backend execute returned error", "error", err)
 		return agent.Result{}, 0, err
 	}
+
+	if (opts.TokenLimit > 0 || opts.CostLimitUSDTicks > 0) && session.UsageSnapshot == nil {
+		if budget != nil {
+			_ = budget.RejectUnreportedUsage()
+		}
+		agentCancel()
+		defer func() { finalErr = errTaskUsageUnavailable }()
+	}
+	defer func() {
+		if session.UsageSnapshot != nil {
+			if snapshot, known := session.UsageSnapshot(); known {
+				finalResult.Usage = reconcileUsageSnapshot(finalResult.Usage, opts.Model, snapshot)
+			}
+		}
+	}()
 	// This counter intentionally starts at the narrower provider-session
 	// boundary, not at the earlier server-side StartTask transition.
 	d.runningTasks.Add(1)
 	defer d.runningTasks.Add(-1)
 	phaseRecorder.Mark(taskPhaseRuntimeStarted)
 	taskLog.Debug("backend started, draining messages")
+	var budgetExceeded atomic.Bool
+	var tokenBudgetExceeded atomic.Bool
+	budgetCtx, stopBudgetWatcher := context.WithCancel(agentCtx)
+	budgetWatcherDone := make(chan struct{})
+	defer func() {
+		stopBudgetWatcher()
+		<-budgetWatcherDone
+	}()
+	budgetResult := func(result agent.Result) agent.Result {
+		reached := budgetExceeded.Load()
+		var snapshot agent.TokenUsage
+		var snapshotKnown bool
+		if session.UsageSnapshot != nil {
+			snapshot, snapshotKnown = session.UsageSnapshot()
+			if snapshotKnown && opts.CostLimitUSDTicks > 0 && snapshot.CostUSDTicks >= opts.CostLimitUSDTicks {
+				reached = true
+				budgetExceeded.Store(true)
+			}
+			if snapshotKnown && opts.TokenLimit > 0 && reportedUsageTokenLimitReached(snapshot, opts.TokenLimit) {
+				reached = true
+				tokenBudgetExceeded.Store(true)
+			}
+		}
+
+		if snapshotKnown {
+			result.Usage = reconcileUsageSnapshot(result.Usage, opts.Model, snapshot)
+			if budget != nil {
+				budget.RecordSnapshot(source, budget.primaryProvider, result.Usage)
+			}
+		}
+		if budget != nil {
+			if errors.Is(budget.Check(), errTaskTokenLimit) {
+				tokenBudgetExceeded.Store(true)
+				reached = true
+			}
+			if errors.Is(budget.Check(), errTaskCostLimit) {
+				reached = true
+			}
+		}
+		if !reached {
+			return result
+		}
+		result.BudgetExceeded = true
+		result.TokenBudgetExceeded = tokenBudgetExceeded.Load()
+		if snapshotKnown {
+			result.Usage = reconcileUsageSnapshot(result.Usage, opts.Model, snapshot)
+		}
+		return result
+	}
+	if (budget != nil || opts.CostLimitUSDTicks > 0 || opts.TokenLimit > 0) && session.UsageSnapshot != nil {
+		go func() {
+			defer close(budgetWatcherDone)
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					usage, ok := session.UsageSnapshot()
+					if ok && budget != nil {
+						model := opts.Model
+						if model == "" {
+							model = "unknown"
+						}
+						budget.RecordSnapshot(source, budget.primaryProvider, map[string]agent.TokenUsage{model: usage})
+					}
+					costReached := opts.CostLimitUSDTicks > 0 && usage.CostUSDTicks >= opts.CostLimitUSDTicks
+					tokensReached := opts.TokenLimit > 0 && reportedUsageTokenLimitReached(usage, opts.TokenLimit)
+					if ok && (costReached || tokensReached) {
+						budgetExceeded.Store(true)
+						if tokensReached {
+							tokenBudgetExceeded.Store(true)
+						}
+						taskLog.Warn("provider-reported autonomy limit reached; stopping execution", "cost_usd_ticks", usage.CostUSDTicks, "max_cost_usd_ticks", opts.CostLimitUSDTicks, "max_token_count", opts.TokenLimit)
+						agentCancel()
+						return
+					}
+				case <-budgetCtx.Done():
+					return
+				}
+			}
+		}()
+	} else {
+		close(budgetWatcherDone)
+	}
 
 	// Only negotiated sessions may claim additions. Stop and join delivery
 	// before the caller reports the task's terminal state to the server.
@@ -9968,6 +10398,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 
 	select {
 	case result := <-session.Result:
+		result = budgetResult(result)
 		stopWatchdog()
 		waitForDrain()
 		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
@@ -9998,6 +10429,19 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		}
 		return result, toolCount.Load(), nil
 	case <-drainCtx.Done():
+		if budgetExceeded.Load() || (budget != nil && budget.Check() != nil) {
+			waitForDrain()
+			timer := time.NewTimer(terminalResultHandoffBudget)
+			defer timer.Stop()
+			select {
+			case result, ok := <-session.Result:
+				if ok {
+					return budgetResult(result), toolCount.Load(), nil
+				}
+			case <-timer.C:
+			}
+			return budgetResult(agent.Result{Status: "aborted", Error: "provider-reported cost limit reached"}), toolCount.Load(), nil
+		}
 		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
 			// A cancelled context is not proof that the owned provider and tools have stopped.
 			select {
@@ -10077,6 +10521,9 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 				Status: "cancelled",
 				Error:  "task cancelled by upstream context (server cancel or daemon shutdown)",
 			}, toolCount.Load(), nil
+		}
+		if result, delivered, _ := awaitTerminalResult("task_deadline"); delivered {
+			return budgetResult(result), toolCount.Load(), nil
 		}
 		return agent.Result{
 			Status: "timeout",
@@ -10257,10 +10704,85 @@ func mergeUsage(a, b map[string]agent.TokenUsage) map[string]agent.TokenUsage {
 		existing.OutputTokens += u.OutputTokens
 		existing.CacheReadTokens += u.CacheReadTokens
 		existing.CacheWriteTokens += u.CacheWriteTokens
-		existing.CostUSDTicks += u.CostUSDTicks
+		existing.CostUSDTicks = saturatingAddCostTicks(existing.CostUSDTicks, u.CostUSDTicks)
 		merged[model] = existing
 	}
 	return merged
+}
+
+// reconcileUsageSnapshot replaces a final usage entry with the provider's
+// cumulative execution snapshot without adding the same turn twice. The
+// snapshot may be keyed by an effective provider model while ExecOptions has
+// no explicit model, so a single existing entry is reconciled as a fallback.
+func reconcileUsageSnapshot(usage map[string]agent.TokenUsage, model string, snapshot agent.TokenUsage) map[string]agent.TokenUsage {
+	if usage == nil {
+		usage = make(map[string]agent.TokenUsage, 1)
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	if existing, ok := usage[model]; ok {
+		usage[model] = maxTokenUsage(existing, snapshot)
+		return usage
+	}
+	if len(usage) > 0 {
+		// A provider snapshot does not carry a model key. Reconcile it
+		// into the largest existing entry rather than adding an "unknown"
+		// row, which would double-count a cumulative snapshot when the
+		// final result already contains multiple model entries.
+		key := ""
+		var largest agent.TokenUsage
+		for candidate, existing := range usage {
+			if key == "" || existing.CostUSDTicks > largest.CostUSDTicks {
+				key, largest = candidate, existing
+			}
+		}
+		usage[key] = maxTokenUsage(largest, snapshot)
+		return usage
+	}
+	usage[model] = snapshot
+	return usage
+}
+
+func maxTokenUsage(a, b agent.TokenUsage) agent.TokenUsage {
+	if b.InputTokens > a.InputTokens {
+		a.InputTokens = b.InputTokens
+	}
+	if b.OutputTokens > a.OutputTokens {
+		a.OutputTokens = b.OutputTokens
+	}
+	if b.CacheReadTokens > a.CacheReadTokens {
+		a.CacheReadTokens = b.CacheReadTokens
+	}
+	if b.CacheWriteTokens > a.CacheWriteTokens {
+		a.CacheWriteTokens = b.CacheWriteTokens
+	}
+	if b.CostUSDTicks > a.CostUSDTicks {
+		a.CostUSDTicks = b.CostUSDTicks
+	}
+	return a
+}
+
+func usageEntriesForResult(provider string, usage map[string]agent.TokenUsage) []TaskUsageEntry {
+	if len(usage) == 0 {
+		return nil
+	}
+	entries := make([]TaskUsageEntry, 0, len(usage))
+	for model, u := range usage {
+		if u.InputTokens == 0 && u.OutputTokens == 0 && u.CacheReadTokens == 0 && u.CacheWriteTokens == 0 && u.CostUSDTicks <= 0 {
+			continue
+		}
+		entries = append(entries, TaskUsageEntry{
+			Provider: provider, Model: model,
+			InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+			CacheReadTokens: u.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens,
+			CostUSDTicks: u.CostUSDTicks,
+		})
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	return entries
 }
 
 // repoDataToInfo converts daemon RepoData to repocache RepoInfo.
@@ -10614,6 +11136,9 @@ func socketSafeTempBaseDir() string {
 func isBlockedEnvKey(key string) bool {
 	upper := strings.ToUpper(key)
 	if strings.HasPrefix(upper, "MULTICA_") {
+		return true
+	}
+	if strings.HasPrefix(upper, "TWILIO_") || strings.HasPrefix(upper, "IMAP_") || strings.HasPrefix(upper, "SMTP_") || strings.HasPrefix(upper, "PHONE_") {
 		return true
 	}
 	switch upper {

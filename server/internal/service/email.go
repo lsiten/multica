@@ -8,6 +8,7 @@ import (
 	"mime"
 	"mime/quotedprintable"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"os"
 	"strings"
@@ -23,6 +24,11 @@ import (
 // a full phishing pitch into a workspace name that gets sent from our domain.
 const maxSubjectFieldRunes = 60
 
+const (
+	maxAgentEmailSubjectBytes = 256
+	maxAgentEmailBodyBytes    = 64 << 10
+)
+
 type EmailService struct {
 	client          *resend.Client
 	fromEmail       string
@@ -33,6 +39,16 @@ type EmailService struct {
 	smtpTLSInsecure bool
 	smtpTLSImplicit bool
 	smtpEHLOName    string
+}
+
+// FromAddress returns the deployment-configured sender identity without
+// exposing SMTP/API credentials. Agent identity actions must match it exactly
+// so a configured recipient address cannot be misrepresented as the sender.
+func (s *EmailService) FromAddress() string {
+	if s == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.fromEmail)
 }
 
 type smtpAuthClient interface {
@@ -361,6 +377,55 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 	}
 	_, err := s.client.Emails.Send(params)
 	return err
+}
+
+// SendAgentEmail delivers a task-scoped agent identity email. The caller owns
+// authorization and auditing; this method only validates the message boundary
+// and routes through the deployment's existing SMTP, Resend, or DEV backend.
+// The body is treated as plain text and escaped before it is placed in the
+// existing HTML email transport. Provider credentials and the From address are
+// intentionally resolved from server configuration, never from the request.
+func (s *EmailService) SendAgentEmail(to, subject, text string) error {
+	if s == nil {
+		return fmt.Errorf("agent email service is unavailable")
+	}
+	recipient := strings.TrimSpace(to)
+	parsed, err := mail.ParseAddress(recipient)
+	if err != nil || parsed.Address != recipient || strings.ContainsAny(recipient, "\r\n") {
+		return fmt.Errorf("agent email recipient is invalid")
+	}
+	if len([]byte(subject)) == 0 || len([]byte(subject)) > maxAgentEmailSubjectBytes || containsEmailHeaderControl(subject) {
+		return fmt.Errorf("agent email subject is invalid")
+	}
+	if len([]byte(text)) == 0 || len([]byte(text)) > maxAgentEmailBodyBytes || strings.ContainsRune(text, '\x00') || strings.ContainsRune(text, '\r') {
+		return fmt.Errorf("agent email body is invalid")
+	}
+	body := fmt.Sprintf(
+		`<div style="font-family: sans-serif; white-space: pre-wrap;">%s</div>`,
+		html.EscapeString(text),
+	)
+	if s.smtpHost != "" {
+		return s.sendSMTP(recipient, subject, body)
+	}
+	if s.client == nil {
+		return fmt.Errorf("agent email transport is not configured")
+	}
+	_, err = s.client.Emails.Send(&resend.SendEmailRequest{
+		From:    s.fromEmail,
+		To:      []string{recipient},
+		Subject: subject,
+		Html:    body,
+	})
+	return err
+}
+
+func containsEmailHeaderControl(value string) bool {
+	for _, r := range value {
+		if r == '\r' || r == '\n' || unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // SendInvitationEmail notifies the invitee that they have been invited to a workspace.

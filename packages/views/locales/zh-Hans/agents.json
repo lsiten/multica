@@ -273,7 +273,8 @@
     "discard_dialog_title": "放弃未保存的修改？",
     "discard_dialog_description": "当前 tab 有未保存的修改，离开会丢弃这些修改。",
     "discard_keep": "继续编辑",
-    "discard_confirm": "放弃修改"
+    "discard_confirm": "放弃修改",
+    "identity": "身份"
   },
   "creation_studio": {
     "title": "创建智能体",
@@ -744,6 +745,18 @@
       "started_prefix": "{{when}}启动",
       "dispatched_prefix": "{{when}}派发",
       "queued_prefix": "{{when}}排队"
+    },
+    "identity": {
+      "description": "为需要代表你执行任务的智能体配置稳定身份。这里只保存标识信息，不保存支付凭据。",
+      "email_label": "邮箱地址",
+      "phone_label": "电话号码",
+      "save": "保存身份",
+      "saved_toast": "智能体身份已保存。",
+      "save_failed_toast": "保存智能体身份失败。",
+      "email_placeholder": "agent@example.com",
+      "phone_placeholder": "+8613800138000",
+      "load_failed": "无法加载此智能体身份。",
+      "retry": "重试"
     }
   },
   "char_counter": {

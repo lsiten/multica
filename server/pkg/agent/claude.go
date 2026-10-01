@@ -147,6 +147,11 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 	msgCh := make(chan Message, 256)
 	resCh := make(chan Result, 1)
+	var liveUsage atomic.Pointer[TokenUsage]
+	publishUsage := func(usage map[string]TokenUsage) {
+		total := totalTokenUsage(usage)
+		liveUsage.Store(&total)
+	}
 
 	// procDone closes once cmd.Wait() returns, letting the cancellation handler
 	// skip a process that already exited and avoid signalling a dead/reused pid.
@@ -203,6 +208,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		sawAsyncLaunch := false
 		usage := make(map[string]TokenUsage)
 		seenUsage := make(map[string]struct{})
+		var streamUsage claudeStreamUsage
 		eventCount := 0
 		invalidEventCount := 0
 		assistantEventCount := 0
@@ -259,9 +265,13 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			eventCount++
 
 			switch msg.Type {
+			case "stream_event":
+				streamUsage.observe(msg, usage, seenUsage)
+				publishUsage(usage)
 			case "assistant":
 				assistantEventCount++
 				turn := b.handleAssistant(msg, msgCh, usage, seenUsage)
+				publishUsage(usage)
 				toolUseCount += turn.toolUses
 				if !turn.understood {
 					unreadableAssistantCount++
@@ -288,6 +298,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				}
 				if resultUsage, authoritative := claudeResultUsageSince(msg, opts.Model, baseline); authoritative {
 					usage = resultUsage
+					publishUsage(usage)
 					usageMsg := msg
 					lastUsageResult = &usageMsg
 				}
@@ -440,6 +451,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			)
 		}
 
+		publishUsage(usage)
 		resCh <- Result{
 			Status:         finalStatus,
 			Output:         finalOutput,
@@ -451,7 +463,13 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		}
 	}()
 
-	session := &Session{Messages: msgCh, Result: resCh}
+	session := &Session{Messages: msgCh, Result: resCh, UsageSnapshot: func() (TokenUsage, bool) {
+		u := liveUsage.Load()
+		if u == nil {
+			return TokenUsage{}, false
+		}
+		return *u, true
+	}}
 	if supplements != nil {
 		session.Supplement = supplements.supplement
 		session.SupplementReady = supplements.ready
@@ -644,6 +662,7 @@ func claudeMapHasAsyncLaunchStatus(value map[string]any) bool {
 // ── Claude SDK JSON types ──
 
 type claudeSDKMessage struct {
+	Event           json.RawMessage `json:"event,omitempty"`
 	Type            string          `json:"type"`
 	Message         json.RawMessage `json:"message,omitempty"`
 	Subtype         string          `json:"subtype,omitempty"`
@@ -1090,6 +1109,10 @@ func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
 		// clarification belongs in an issue comment instead.
 		"--disallowedTools", "AskUserQuestion",
 	}
+	if opts.TokenLimit > 0 {
+		args = append(args, "--include-partial-messages")
+	}
+
 	if hasManagedMcpConfig(opts.McpConfig) {
 		// A saved agent-level config is authoritative, including an explicitly
 		// empty object. With no managed config, omit strict mode so Claude can

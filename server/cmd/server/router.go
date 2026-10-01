@@ -430,6 +430,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		DisableWorkspaceCreation: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
 		VCSIntegrationEnabled:    os.Getenv("MULTICA_VCS_INTEGRATION_ENABLED") == "true",
 		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_PUBLIC_URL")), "/"),
+		PhoneInboundToken:        strings.TrimSpace(os.Getenv("MULTICA_PHONE_INBOUND_TOKEN")),
 		AppURL:                   appURLFromEnv(),
 		TrustedProxies:           parseTrustedProxies(os.Getenv("MULTICA_TRUSTED_PROXIES")),
 		CloudURL:                 strings.TrimSpace(os.Getenv("MULTICA_CLOUD_URL")),
@@ -1533,6 +1534,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// purpose: the bearer token in the URL path IS the credential. Workspace
 	// context is derived from the trigger row, never from request headers.
 	r.Post("/api/webhooks/autopilots/{token}", h.HandleAutopilotWebhook)
+	// Phone gateway callbacks use a dedicated daemon-owned token, never a user session.
+	r.Post("/api/phone/inbound", h.ReceivePhoneInbound)
 	// GitHub App webhook (no Multica auth — requests are authenticated via
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
 	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
@@ -1613,6 +1616,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/tasks/{taskId}/complete", h.CompleteTask)
 		r.Post("/tasks/{taskId}/fail", h.FailTask)
 		r.Post("/tasks/{taskId}/usage", h.ReportTaskUsage)
+		r.Post("/tasks/{taskId}/project-graph/events", h.ReportProjectGraphEvent)
+		r.Post("/tasks/{taskId}/identity/email", h.SendAgentEmail)
 		r.Post("/tasks/{taskId}/messages", h.ReportTaskMessages)
 		r.Get("/tasks/{taskId}/messages", h.ListTaskMessages)
 		r.Post("/tasks/{taskId}/cancel-ack", h.AckTaskCancelled)
@@ -1742,6 +1747,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// The payload is names and transports only; the stored
 					// entries are write-only.
 					r.Get("/mcp-servers", h.ListWorkspaceMcpServers)
+					r.Get("/jev-config", h.GetWorkspaceJevConfig)
 					// Installed Plugins are member-visible so a member can
 					// see what is mounted in their workspace and which scopes
 					// it holds; install / configure / remove stay admin-only.
@@ -1754,6 +1760,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// Admin-level access
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Put("/jev-config", h.UpdateWorkspaceJevConfig)
 					r.Put("/", h.UpdateWorkspace)
 					r.Patch("/", h.UpdateWorkspace)
 					r.Patch("/mirror/network", h.UpdateWorkspaceMirrorNetwork)
@@ -2157,6 +2164,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/", h.CreateProject)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetProject)
+					r.Get("/collaboration-graph", h.GetProjectCollaborationGraph)
+					r.Get("/collaboration-evidence", h.GetProjectCollaborationEvidence)
+					r.Get("/graph/events", h.ListProjectGraphEvents)
 					r.Put("/", h.UpdateProject)
 					r.Delete("/", h.DeleteProject)
 					r.Get("/resources", h.ListProjectResources)
@@ -2172,6 +2182,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/", h.CreateSquad)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetSquad)
+					r.Get("/collaboration-graph", h.GetSquadCollaborationGraph)
+					r.Put("/collaboration-graph", h.UpdateSquadCollaborationGraph)
 					r.Put("/", h.UpdateSquad)
 					r.Delete("/", h.DeleteSquad)
 					r.Get("/members", h.ListSquadMembers)
@@ -2273,6 +2285,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/mika", h.CreateMikaAgent)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetAgent)
+					r.Get("/identity", h.GetAgentIdentity)
+					r.Put("/identity", h.UpdateAgentIdentity)
 					r.With(handler.RequireHumanActor).Post("/voice/transcribe", h.TranscribeChatVoice)
 					r.Put("/", h.UpdateAgent)
 					r.Post("/archive", h.ArchiveAgent)

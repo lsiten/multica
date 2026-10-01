@@ -18,7 +18,7 @@ import { useRegenerateChatQuickActions } from "@multica/core/chat/mutations";
 import { useQuickActionsPendingTimeout } from "@multica/core/chat/use-quick-actions-pending-timeout";
 import { useQuickActionsFailureToast } from "./components/use-quick-actions-failure-toast";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, ChatSession } from "@multica/core/types";
+import type { Agent, ChatAutonomyPolicyOverride, ChatSession } from "@multica/core/types";
 import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
@@ -79,6 +79,10 @@ export function ChatPage() {
   // conversation pane is always mounted so it only needs to reset itself once a
   // real session takes over.
   const [composingNew, setComposingNew] = useState(false);
+  const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
+  useEffect(() => {
+    setAutonomyPolicy(null);
+  }, [c.activeSessionId, c.activeAgent?.id]);
   useEffect(() => {
     // Read the LIVE store value for the same reason as the session sync
     // effects below: under StrictMode's double-invoke this effect replays
@@ -174,6 +178,16 @@ export function ChatPage() {
     // compact layout must stay in the compose pane after activeSessionId is
     // cleared.
     if (!c.currentSession || projectId !== null) setComposingNew(true);
+  };
+
+  // Keep the mode selection on the chat page controlled just like the floating
+  // composer. The per-message override is cleared after an accepted send so a
+  // later ordinary message explicitly resets to normal mode instead of
+  // accidentally inheriting the previous turn's limits.
+  const handleSend = async (...args: Parameters<typeof c.handleSend>) => {
+    const accepted = await c.handleSend(...args);
+    if (accepted && args[4] !== undefined) setAutonomyPolicy(null);
+    return accepted;
   };
 
   // URL → new chat: `?agent=<id>` is the deep link used by "DM" entry points
@@ -319,7 +333,7 @@ export function ChatPage() {
       <ChatInput
         historyMessages={c.messages}
         historyWorkspaceId={c.wsId}
-        onSend={c.handleSend}
+        onSend={handleSend}
         restoreDraftRequest={c.restoreDraftRequest}
         conversationStarterRequest={c.conversationStarterRequest}
         onConversationStarterApplied={c.handleConversationStarterApplied}
@@ -346,6 +360,8 @@ export function ChatPage() {
         onProjectChange={changeProjectContext}
         isProjectUpdating={c.isProjectUpdating}
         focusRequest={c.focusInputRequest}
+        autonomyPolicy={autonomyPolicy}
+        onAutonomyPolicyChange={setAutonomyPolicy}
       />
     </div>
   );

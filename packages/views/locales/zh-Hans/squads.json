@@ -90,6 +90,7 @@
     "last_active_label": "最近活动 {{time}}"
   },
   "detail_tabs": {
+    "graph": "协作图谱",
     "members": "成员",
     "instructions": "指引"
   },

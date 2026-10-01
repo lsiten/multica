@@ -46,6 +46,25 @@ describe.skipIf(process.platform === "win32")("macOS daemon launch", () => {
     expect(output).toContain("desktop");
   });
 
+  it("does not inherit a daemon-task checkout as the child cwd", async () => {
+    const { dir, binary } = await fixture(
+      'if [ -f "$(pwd)/.multica/daemon_task_context.json" ]; then printf "task marker inherited" >&2; exit 73; fi; exec /bin/sleep 30',
+    );
+    await startMacDaemon({
+      binary,
+      profile: "desktop-test",
+      directory: dir,
+      env: process.env,
+      isReady: async (pid) => {
+        children.push(pid);
+        return true;
+      },
+    });
+    expect(await readFile(join(dir, "daemon.err.log"), "utf8")).not.toContain(
+      "task marker inherited",
+    );
+  });
+
   it("reports early exit and preserves stderr instead of reporting a successful start", async () => {
     const { dir, binary } = await fixture('printf "startup rejected" >&2\nexit 23');
     await expect(startMacDaemon({

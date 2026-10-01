@@ -77,6 +77,47 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	return i, err
 }
 
+const createProjectGraphEvent = `-- name: CreateProjectGraphEvent :one
+INSERT INTO project_graph_event (
+    workspace_id, project_id, task_id, event_type, node_id, data
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+)
+RETURNING id, workspace_id, project_id, task_id, event_type, node_id, data, created_at
+`
+
+type CreateProjectGraphEventParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+	EventType   string      `json:"event_type"`
+	NodeID      pgtype.Text `json:"node_id"`
+	Data        []byte      `json:"data"`
+}
+
+func (q *Queries) CreateProjectGraphEvent(ctx context.Context, arg CreateProjectGraphEventParams) (ProjectGraphEvent, error) {
+	row := q.db.QueryRow(ctx, createProjectGraphEvent,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.TaskID,
+		arg.EventType,
+		arg.NodeID,
+		arg.Data,
+	)
+	var i ProjectGraphEvent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.TaskID,
+		&i.EventType,
+		&i.NodeID,
+		&i.Data,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteProject = `-- name: DeleteProject :exec
 DELETE FROM project WHERE id = $1 AND workspace_id = $2
 `
@@ -90,6 +131,51 @@ type DeleteProjectParams struct {
 func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) error {
 	_, err := q.db.Exec(ctx, deleteProject, arg.ID, arg.WorkspaceID)
 	return err
+}
+
+const deleteProjectGraphEvents = `-- name: DeleteProjectGraphEvents :exec
+DELETE FROM project_graph_event WHERE project_id=$1 AND workspace_id=$2
+`
+
+type DeleteProjectGraphEventsParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteProjectGraphEvents(ctx context.Context, arg DeleteProjectGraphEventsParams) error {
+	_, err := q.db.Exec(ctx, deleteProjectGraphEvents, arg.ProjectID, arg.WorkspaceID)
+	return err
+}
+
+const getAgentTaskProjectID = `-- name: GetAgentTaskProjectID :one
+SELECT CASE
+    WHEN task.issue_id IS NOT NULL THEN issue.project_id
+    WHEN task.chat_session_id IS NOT NULL THEN chat_session.project_id
+    WHEN task.autopilot_run_id IS NOT NULL THEN autopilot.project_id
+    WHEN task.context->>'type' = 'quick_create' THEN CASE
+        WHEN task.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        THEN (task.context->>'project_id')::uuid
+        ELSE NULL
+    END
+    ELSE NULL
+END::uuid AS project_id
+FROM agent_task_queue AS task
+LEFT JOIN issue ON issue.id = task.issue_id
+LEFT JOIN chat_session ON chat_session.id = task.chat_session_id
+LEFT JOIN autopilot_run ON autopilot_run.id = task.autopilot_run_id
+LEFT JOIN autopilot ON autopilot.id = autopilot_run.autopilot_id
+WHERE task.id = $1
+`
+
+// Resolve the task's current source project using the claim source precedence.
+// Issue, chat, and run-only autopilot tasks carry the reference in different
+// source rows; quick-create keeps it in its JSON context. Invalid context
+// values are ignored rather than turning a task lookup into a cast failure.
+func (q *Queries) GetAgentTaskProjectID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getAgentTaskProjectID, id)
+	var project_id pgtype.UUID
+	err := row.Scan(&project_id)
+	return project_id, err
 }
 
 const getProjectInWorkspace = `-- name: GetProjectInWorkspace :one

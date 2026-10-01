@@ -599,5 +599,5 @@ func (b *zeroclawBackend) Execute(ctx context.Context, prompt string, opts ExecO
 		}
 	}()
 
-	return &Session{Messages: msgStream.ch, Result: resCh}, nil
+	return &Session{Messages: msgStream.ch, Result: resCh, UsageSnapshot: NewReportedUsageSnapshot(c.accumulatedUsage)}, nil
 }

@@ -187,7 +187,11 @@ func (q *Queries) DeleteAgentRuntime(ctx context.Context, id pgtype.UUID) error 
 }
 
 const deleteSystemAgentsByRuntime = `-- name: DeleteSystemAgentsByRuntime :exec
-DELETE FROM agent WHERE runtime_id = $1 AND kind = 'system'
+WITH deleted_identities AS (
+    DELETE FROM agent_identity
+    WHERE agent_id IN (SELECT agent.id FROM agent WHERE agent.runtime_id = $1 AND agent.kind = 'system')
+)
+DELETE FROM agent WHERE agent.runtime_id = $1 AND agent.kind = 'system'
 `
 
 // System agents are invisible execution infrastructure (for example the Agent

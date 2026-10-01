@@ -18,7 +18,7 @@ import {
 import { upsertChatMessageToCaches } from "@multica/core/chat/message-cache";
 import { removeChatMessageFromCaches } from "@multica/core/realtime";
 import { useWorkspaceId } from "@multica/core/hooks";
-import type { ChatMessage } from "@multica/core/types";
+import type { ChatAutonomyPolicyOverride, ChatMessage } from "@multica/core/types";
 import { useAppForeground } from "../../common/use-app-foreground";
 import { useChatDraftRestore } from "../../chat/components/use-chat-draft-restore";
 import { useT } from "../../i18n";
@@ -228,6 +228,7 @@ export function useBuilderSession(options: {
   const send = async (
     content: string,
     commitInput?: () => void,
+    autonomyPolicy?: ChatAutonomyPolicyOverride | null,
   ): Promise<boolean> => {
     const text = content.trim();
     // switchingRuntime blocks the send while a rebind is in flight: the server
@@ -237,7 +238,7 @@ export function useBuilderSession(options: {
     setError(null);
     try {
       const encodedContent = options.encodeInput(text);
-      const result = await api.sendChatMessage(sessionId, encodedContent);
+      const result = await api.sendChatMessage(sessionId, encodedContent, undefined, undefined, autonomyPolicy);
       const createdAt = new Date().toISOString();
       // Same door as the chat surfaces (MUL-5711). This path used to write the
       // flat cache only, so a Builder send left the paged cache — which the

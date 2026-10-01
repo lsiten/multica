@@ -30,6 +30,7 @@ import type {
   LocalRuntimeProbe,
   ManagedWorktree,
   ManagedWorktreeCleanupResult,
+  DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
@@ -278,12 +279,17 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:restart"),
   getStatus: (): Promise<DaemonStatus> =>
     ipcRenderer.invoke("daemon:get-status"),
+  getMcpReadiness: (): Promise<DaemonMcpReadiness[]> =>
+    ipcRenderer.invoke("daemon:mcp-readiness"),
   probeRuntimes: (): Promise<LocalRuntimeProbe> =>
     ipcRenderer.invoke("daemon:probe-runtimes"),
   getHostName: (): Promise<string> =>
     ipcRenderer.invoke("daemon:get-host-name"),
   listWorktrees: (): Promise<ManagedWorktree[]> =>
     ipcRenderer.invoke("daemon:list-worktrees"),
+  getJevModels: (): Promise<unknown> => ipcRenderer.invoke("daemon:jev-models"),
+  installJevModel: (modelId: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-install", modelId),
+  cancelJevModelInstall: (modelId: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-cancel", modelId),
   cleanupWorktrees: (paths: string[], discardChanges = false): Promise<ManagedWorktreeCleanupResult> =>
     ipcRenderer.invoke("daemon:cleanup-worktrees", paths, discardChanges),
   onStatusChange: (callback: (status: DaemonStatus) => void) => {

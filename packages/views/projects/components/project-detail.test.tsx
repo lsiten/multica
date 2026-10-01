@@ -22,6 +22,7 @@ vi.mock("@multica/ui/lib/clipboard", () => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
+ useInfiniteQuery: () => ({data:undefined,isLoading:false,hasNextPage:false,refetch:vi.fn()}),
   useQuery: (options: { queryKey?: readonly unknown[] }) => {
     switch (options.queryKey?.[0]) {
       case "project-detail":
@@ -42,6 +43,11 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@multica/core/projects/queries", () => ({
   projectDetailOptions: () => ({ queryKey: ["project-detail"] }),
+}));
+
+vi.mock("@multica/core/collaboration", () => ({
+  projectCollaborationGraphInfiniteOptions: () => ({ queryKey: ["collaboration-graph"] }),
+  projectCollaborationEvidenceInfiniteOptions: () => ({ queryKey: ["collaboration-evidence"], enabled: false }),
 }));
 
 vi.mock("@multica/core/projects/mutations", () => ({

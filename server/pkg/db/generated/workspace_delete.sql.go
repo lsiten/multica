@@ -116,6 +116,9 @@ func (q *Queries) DeleteWorkspaceAdministration(ctx context.Context, workspaceID
 }
 
 const deleteWorkspaceAgents = `-- name: DeleteWorkspaceAgents :exec
+WITH deleted_identities AS (
+    DELETE FROM agent_identity WHERE workspace_id = $1
+)
 DELETE FROM agent WHERE agent.workspace_id = $1
 `
 
@@ -352,6 +355,9 @@ deleted_issue_reactions AS (
 ),
 deleted_activity AS (
     DELETE FROM activity_log WHERE workspace_id = $1
+),
+deleted_workspace_jev_config AS (
+    DELETE FROM workspace_jev_config WHERE workspace_id = $1
 ),
 deleted_inbox AS (
     DELETE FROM inbox_item WHERE workspace_id = $1
@@ -592,6 +598,15 @@ func (q *Queries) DeleteWorkspacePluginData(ctx context.Context, workspaceID pgt
 	return err
 }
 
+const deleteWorkspaceProjectGraphEvents = `-- name: DeleteWorkspaceProjectGraphEvents :exec
+DELETE FROM project_graph_event WHERE workspace_id = $1
+`
+
+func (q *Queries) DeleteWorkspaceProjectGraphEvents(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceProjectGraphEvents, workspaceID)
+	return err
+}
+
 const deleteWorkspacePullRequests = `-- name: DeleteWorkspacePullRequests :exec
 WITH deleted_github_prs AS (
     DELETE FROM github_pull_request
@@ -621,6 +636,24 @@ DELETE FROM project WHERE project.workspace_id = $1
 
 func (q *Queries) DeleteWorkspaceRuntimesAndProjects(ctx context.Context, workspaceID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteWorkspaceRuntimesAndProjects, workspaceID)
+	return err
+}
+
+const deleteWorkspaceSquadCollaborationGraphs = `-- name: DeleteWorkspaceSquadCollaborationGraphs :exec
+DELETE FROM squad_collaboration_graph WHERE workspace_id = $1
+`
+
+func (q *Queries) DeleteWorkspaceSquadCollaborationGraphs(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceSquadCollaborationGraphs, workspaceID)
+	return err
+}
+
+const deleteWorkspaceSquadCollaborationHistory = `-- name: DeleteWorkspaceSquadCollaborationHistory :exec
+DELETE FROM squad_collaboration_history WHERE workspace_id = $1
+`
+
+func (q *Queries) DeleteWorkspaceSquadCollaborationHistory(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceSquadCollaborationHistory, workspaceID)
 	return err
 }
 

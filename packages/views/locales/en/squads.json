@@ -91,6 +91,7 @@
     "last_active_label": "last active {{time}}"
   },
   "detail_tabs": {
+    "graph": "Graph",
     "members": "Members",
     "instructions": "Instructions"
   },

@@ -48,7 +48,17 @@
     "voice_volume": "麦克风音量",
     "voice_done": "完成",
     "voice_setup_progress": "正在准备语音 {{percent}}%",
-    "voice_setup_retry": "重试语音设置"
+    "voice_setup_retry": "重试语音设置",
+    "autonomy_mode": "自主执行",
+    "autonomy_off": "标准模式",
+    "autonomy_configure": "设置上限",
+    "autonomy_duration": "时间上限（秒）",
+    "autonomy_tokens": "Token 上限",
+    "autonomy_cost": "执行成本上限（USD ticks）",
+    "autonomy_enabled": "已启用自主执行",
+    "autonomy_hint": "这些上限只作用于本条消息。",
+    "autonomy_zero_unlimited": "0 表示不限制；这些上限只作用于本条消息。",
+    "autonomy_invalid": "请输入 0 或非负整数；时间上限不能超过 86400 秒。"
   },
   "queue": {
     "title_other": "{{count}} 条排队消息",

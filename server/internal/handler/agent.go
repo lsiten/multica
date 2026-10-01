@@ -358,9 +358,10 @@ type TaskCancellationActor struct {
 }
 
 type AgentTaskResponse struct {
-	StartClaimSupported      bool                   `json:"start_claim_supported,omitempty"`
-	CancelledByCommentChange bool                   `json:"cancelled_by_comment_change,omitempty"`
-	CancelledBy              *TaskCancellationActor `json:"cancelled_by,omitempty"`
+	JevConfig                *protocol.WorkspaceJevConfig `json:"jev_config,omitempty"`
+	StartClaimSupported      bool                         `json:"start_claim_supported,omitempty"`
+	CancelledByCommentChange bool                         `json:"cancelled_by_comment_change,omitempty"`
+	CancelledBy              *TaskCancellationActor       `json:"cancelled_by,omitempty"`
 
 	ID        string `json:"id"`
 	AgentID   string `json:"agent_id"`
@@ -778,7 +779,17 @@ type TaskAgentData struct {
 	// `mode` + `gateway.*` to choose between embedded and gateway routing
 	// (issue #3260). Other providers ignore the payload entirely. Sent
 	// raw so the daemon can evolve its schema without a server roundtrip.
-	RuntimeConfig json.RawMessage `json:"runtime_config,omitempty"`
+	RuntimeConfig         json.RawMessage    `json:"runtime_config,omitempty"`
+	RuntimeConfigOverride json.RawMessage    `json:"runtime_config_override,omitempty"`
+	Identity              *AgentIdentityData `json:"identity,omitempty"`
+}
+
+// AgentIdentityData is task-scoped non-secret identity context. Payment
+// credentials and payment limits are deliberately absent; only the
+// identifiers are useful to the agent when it is acting on the user's behalf.
+type AgentIdentityData struct {
+	Email string `json:"email,omitempty"`
+	Phone string `json:"phone,omitempty"`
 }
 
 // visibleTaskHistory omits unused assignee fallbacks created by older versions.

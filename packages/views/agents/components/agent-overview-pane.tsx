@@ -37,6 +37,7 @@ import { McpConfigTab } from "./tabs/mcp-config-tab";
 import { AgentMcpTab } from "./tabs/agent-mcp-tab";
 import { IntegrationsTab } from "./tabs/integrations-tab";
 import { RuntimeConfigTab } from "./tabs/runtime-config-tab";
+import { IdentityTab } from "./tabs/identity-tab";
 import { AgentDetailInspector } from "./agent-detail-inspector";
 import { AgentAccessSettings } from "./agent-access-settings";
 import { AgentOverviewSummary } from "./agent-overview-summary";
@@ -58,7 +59,8 @@ export type DetailTab =
   | "access"
   | "env"
   | "custom_args"
-  | "runtime_config";
+  | "runtime_config"
+  | "identity";
 
 type SecondaryTab = {
   id: DetailTab;
@@ -72,7 +74,8 @@ type SecondaryTab = {
     | "access"
     | "environment"
     | "custom_args"
-    | "runtime_config";
+    | "runtime_config"
+    | "identity";
 };
 
 const CAPABILITY_TABS: SecondaryTab[] = [
@@ -89,6 +92,7 @@ const SETTINGS_TABS: SecondaryTab[] = [
   { id: "env", labelKey: "environment" },
   { id: "custom_args", labelKey: "custom_args" },
   { id: "runtime_config", labelKey: "runtime_config" },
+  { id: "identity", labelKey: "identity" },
 ];
 
 const TOP_TABS: { id: DetailSection; labelKey: DetailSection }[] = [
@@ -227,6 +231,7 @@ export function AgentOverviewPane({
         // showing the tab to anyone else guarantees a 403 on "Reveal & edit".
         // The server stays the boundary; this only removes a dead entry point.
         if (tab.id === "env") return canEdit;
+        if (tab.id === "identity") return canEdit;
         if (tab.id === "runtime_config") return runtime?.provider === "openclaw";
         return true;
       }),
@@ -514,6 +519,13 @@ export function AgentOverviewPane({
                     <RuntimeConfigTab
                       agent={agent}
                       onSave={(updates) => onUpdate(agent.id, updates)}
+                      onDirtyChange={setActiveDirty}
+                    />
+                  )}
+                  {effectiveView === "identity" && (
+                    <IdentityTab
+                      agent={agent}
+                      canEdit={canEdit}
                       onDirtyChange={setActiveDirty}
                     />
                   )}

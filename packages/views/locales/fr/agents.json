@@ -283,7 +283,8 @@
     "discard_dialog_title": "Abandonner les modifications non enregistrées ?",
     "discard_dialog_description": "Cet onglet contient des modifications non enregistrées. Les quitter maintenant les abandonnera.",
     "discard_keep": "Continuer à modifier",
-    "discard_confirm": "Abandonner les modifications"
+    "discard_confirm": "Abandonner les modifications",
+    "identity": "Identity"
   },
   "creation_studio": {
     "title": "Créer un agent",
@@ -759,6 +760,18 @@
       "started_prefix": "Démarrée {{when}}",
       "dispatched_prefix": "Envoyée {{when}}",
       "queued_prefix": "Mise en file d'attente {{when}}"
+    },
+    "identity": {
+      "description": "Configurez des identifiants stables pour cet Agent. Les identifiants de paiement ne sont jamais stockés ici.",
+      "email_label": "Adresse e-mail",
+      "phone_label": "Numéro de téléphone",
+      "save": "Enregistrer l’identité",
+      "saved_toast": "Identité de l’Agent enregistrée.",
+      "save_failed_toast": "Échec de l’enregistrement de l’identité.",
+      "email_placeholder": "agent@exemple.com",
+      "phone_placeholder": "+8613800138000",
+      "load_failed": "Impossible de charger l’identité de cet Agent.",
+      "retry": "Réessayer"
     }
   },
   "char_counter": {

@@ -13,13 +13,13 @@ import (
 type MirrorInputKind string
 
 const (
-	MirrorInputPointerDown  MirrorInputKind = "pointer:down"
-	MirrorInputPointerUp    MirrorInputKind = "pointer:up"
-	MirrorInputPointerMove  MirrorInputKind = "pointer:move"
-	MirrorInputWheel        MirrorInputKind = "wheel"
-	MirrorInputKeyDown      MirrorInputKind = "key:down"
-	MirrorInputKeyUp        MirrorInputKind = "key:up"
-	MirrorInputType         MirrorInputKind = "type"
+	MirrorInputPointerDown MirrorInputKind = "pointer:down"
+	MirrorInputPointerUp   MirrorInputKind = "pointer:up"
+	MirrorInputPointerMove MirrorInputKind = "pointer:move"
+	MirrorInputWheel       MirrorInputKind = "wheel"
+	MirrorInputKeyDown     MirrorInputKind = "key:down"
+	MirrorInputKeyUp       MirrorInputKind = "key:up"
+	MirrorInputType        MirrorInputKind = "type"
 )
 
 // MirrorPointerButton names the pointer buttons a human may press.
@@ -35,16 +35,16 @@ const (
 // grant and the observed frame geometry. Coordinates are frame pixels; native
 // code owns the transform to the target display.
 type MirrorInputMessage struct {
-	Kind             MirrorInputKind     `json:"kind"`
-	GrantID          string              `json:"grant_id"`
-	GestureID        string              `json:"gesture_id"`
-	Seq              uint64              `json:"seq"`
-	NativeEpoch      string              `json:"native_epoch"`
+	Kind              MirrorInputKind     `json:"kind"`
+	GrantID           string              `json:"grant_id"`
+	GestureID         string              `json:"gesture_id"`
+	Seq               uint64              `json:"seq"`
+	NativeEpoch       string              `json:"native_epoch"`
 	DisplayGeneration string              `json:"display_generation"`
-	GeometryRevision uint64              `json:"geometry_revision"`
-	Pointer          *MirrorPointerInput `json:"pointer,omitempty"`
-	Key              *MirrorKeyInput     `json:"key,omitempty"`
-	Text             *MirrorTextInput    `json:"text,omitempty"`
+	GeometryRevision  uint64              `json:"geometry_revision"`
+	Pointer           *MirrorPointerInput `json:"pointer,omitempty"`
+	Key               *MirrorKeyInput     `json:"key,omitempty"`
+	Text              *MirrorTextInput    `json:"text,omitempty"`
 }
 
 // MirrorPointerInput describes a pointer event in observed frame pixels.

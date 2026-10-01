@@ -41,6 +41,8 @@ import type {
   IssueTableRowsRequest,
   IssueTableRowsResponse,
   Agent,
+  AgentIdentity,
+  UpdateAgentIdentityRequest,
   MikaBootstrapResponse,
   CreateAgentRequest,
   AgentBuilderRuntimeSwitch,
@@ -123,6 +125,13 @@ import type {
   CreateProjectResourceRequest,
   UpdateProjectResourceRequest,
   ListProjectResourcesResponse,
+  ProjectCollaborationGraphResponse,
+  ProjectCollaborationEvidenceResponse,
+  ProjectGraphEventsResponse,
+  WorkspaceJevConfigResponse,
+  UpdateWorkspaceJevConfigRequest,
+  SquadCollaborationGraphResponse,
+  UpdateSquadCollaborationGraphRequest,
   Label,
   IssueProperty,
   IssuePropertyValue,
@@ -360,6 +369,16 @@ import {
   SquadSchema,
   SquadListSchema,
   SquadMemberStatusListResponseSchema,
+  ProjectCollaborationGraphResponseSchema,
+  EMPTY_PROJECT_COLLABORATION_GRAPH_RESPONSE,
+  ProjectCollaborationEvidenceResponseSchema,
+  EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE,
+  ProjectGraphEventsResponseSchema,
+  EMPTY_PROJECT_GRAPH_EVENTS_RESPONSE,
+  WorkspaceJevConfigResponseSchema,
+  SquadCollaborationGraphResponseSchema,
+  SquadCollaborationGraphSaveResponseSchema,
+  EMPTY_SQUAD_COLLABORATION_GRAPH_RESPONSE,
   SubscribersListSchema,
   TaskMessageListSchema,
   TimelineEntriesSchema,
@@ -504,6 +523,7 @@ import {
   type IssueView,
   type IssueViewPreference,
   type CreateIssueViewRequest,
+  AgentIdentitySchema,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -2100,6 +2120,40 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  async getAgentIdentity(id: string): Promise<AgentIdentity> {
+    const raw = await this.fetch<unknown>(`/api/agents/${id}/identity`);
+    const identity = parseWithFallback<AgentIdentity | null>(
+      raw,
+      AgentIdentitySchema,
+      null,
+      { endpoint: "GET /api/agents/{id}/identity" },
+    );
+    if (identity === null || identity.agent_id !== id) {
+      throw new Error("Invalid agent identity response");
+    }
+    return identity;
+  }
+
+  async updateAgentIdentity(
+    id: string,
+    data: UpdateAgentIdentityRequest,
+  ): Promise<AgentIdentity> {
+    const raw = await this.fetch<unknown>(`/api/agents/${id}/identity`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    const identity = parseWithFallback<AgentIdentity | null>(
+      raw,
+      AgentIdentitySchema,
+      null,
+      { endpoint: "PUT /api/agents/{id}/identity" },
+    );
+    if (identity === null || identity.agent_id !== id) {
+      throw new Error("Invalid agent identity response");
+    }
+    return identity;
   }
 
   async archiveAgent(id: string): Promise<Agent> {
@@ -4125,6 +4179,7 @@ export class ApiClient {
     content: string,
     attachmentIds?: string[],
     mirrorSource?: MirrorSourceBinding,
+    autonomyPolicy?: import("../types").ChatAutonomyPolicyOverride | null,
   ): Promise<SendChatMessageResponse> {
     const body: {
       content: string;
@@ -4142,6 +4197,7 @@ export class ApiClient {
         generation: string;
         primary: boolean;
       };
+      autonomy_policy?: import("../types").ChatAutonomyPolicyOverride | null;
     } = { content };
     if (attachmentIds && attachmentIds.length > 0) {
       body.attachment_ids = attachmentIds;
@@ -4161,6 +4217,9 @@ export class ApiClient {
         primary: mirrorSource.primary,
       };
     }
+    // `undefined` inherits the daemon default. Explicit `null` is the normal
+    // chat mode reset and must survive serialization.
+    if (autonomyPolicy !== undefined) body.autonomy_policy = autonomyPolicy;
     const raw = await this.fetch<unknown>(`/api/chat/sessions/${sessionId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
@@ -4389,6 +4448,71 @@ export class ApiClient {
 
   async deleteProject(id: string): Promise<void> {
     await this.fetch(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  async getWorkspaceJevConfig(workspaceId: string): Promise<WorkspaceJevConfigResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/jev-config`);
+    const parsed = WorkspaceJevConfigResponseSchema.safeParse(raw);
+    if (!parsed.success || parsed.data.workspace_id !== workspaceId) {
+      throw new Error("Invalid workspace Jev config response");
+    }
+    return parsed.data;
+  }
+
+  async updateWorkspaceJevConfig(workspaceId: string, data: UpdateWorkspaceJevConfigRequest): Promise<WorkspaceJevConfigResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/jev-config`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    const parsed = WorkspaceJevConfigResponseSchema.safeParse(raw);
+    if (!parsed.success || parsed.data.workspace_id !== workspaceId) {
+      throw new Error("Invalid workspace Jev config response");
+    }
+    return parsed.data;
+  }
+
+  async getProjectCollaborationGraph(
+    projectId: string,
+    params?: { from?: string; to?: string; issue_id?: string; squad_id?: string; agent_id?: string; status?: string; limit?: number; offset?: number },
+  ): Promise<ProjectCollaborationGraphResponse> {
+    const search = new URLSearchParams();
+    for (const key of ["from", "to", "issue_id", "squad_id", "agent_id", "status"] as const) {
+      const value = params?.[key];
+      if (value) search.set(key, value);
+    }
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    const raw = await this.fetch<unknown>(
+      `/api/projects/${projectId}/collaboration-graph${search.toString() ? `?${search}` : ""}`,
+    );
+    return parseWithFallback(raw, ProjectCollaborationGraphResponseSchema, EMPTY_PROJECT_COLLABORATION_GRAPH_RESPONSE, {
+      endpoint: "GET /api/projects/:id/collaboration-graph",
+    });
+  }
+
+  async getProjectCollaborationEvidence(
+    projectId: string,
+    params?: { edge_id?: string; from?: string; to?: string; issue_id?: string; squad_id?: string; agent_id?: string; status?: string; limit?: number; offset?: number },
+  ): Promise<ProjectCollaborationEvidenceResponse> {
+    const search = new URLSearchParams();
+    for (const key of ["edge_id", "from", "to", "issue_id", "squad_id", "agent_id", "status"] as const) {
+      const value = params?.[key];
+      if (value) search.set(key, value);
+    }
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/collaboration-evidence${search.toString() ? `?${search}` : ""}`);
+    return parseWithFallback(raw, ProjectCollaborationEvidenceResponseSchema, EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE, {
+      endpoint: "GET /api/projects/:id/collaboration-evidence",
+    });
+  }
+
+  async listProjectGraphEvents(projectId: string, params?: { limit?: number; offset?: number }): Promise<ProjectGraphEventsResponse> {
+    const search = new URLSearchParams();
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/graph/events${search.toString() ? `?${search}` : ""}`);
+    return parseWithFallback(raw, ProjectGraphEventsResponseSchema, EMPTY_PROJECT_GRAPH_EVENTS_RESPONSE, { endpoint: "GET /api/projects/:id/graph/events" });
   }
 
   // Project resources
@@ -4893,6 +5017,31 @@ export class ApiClient {
 
   async listSquadMembers(squadId: string): Promise<SquadMember[]> {
     return this.fetch(`/api/squads/${squadId}/members`);
+  }
+
+  async getSquadCollaborationGraph(squadId: string, revision?: number): Promise<SquadCollaborationGraphResponse> {
+    const suffix = revision === undefined ? "" : `?revision=${revision}`;
+    const raw = await this.fetch<unknown>(`/api/squads/${squadId}/collaboration-graph${suffix}`);
+    return parseWithFallback(raw, SquadCollaborationGraphResponseSchema, EMPTY_SQUAD_COLLABORATION_GRAPH_RESPONSE, {
+      endpoint: "GET /api/squads/:id/collaboration-graph",
+    });
+  }
+
+  async updateSquadCollaborationGraph(
+    squadId: string,
+    data: UpdateSquadCollaborationGraphRequest,
+  ): Promise<SquadCollaborationGraphResponse> {
+    const raw = await this.fetch<unknown>(`/api/squads/${squadId}/collaboration-graph`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    const next = parseWithFallback<SquadCollaborationGraphResponse | null>(raw, SquadCollaborationGraphSaveResponseSchema, null, {
+      endpoint: "PUT /api/squads/:id/collaboration-graph",
+    });
+    if (!next || next.squad_id !== squadId || next.revision !== data.expected_revision + 1) {
+      throw new Error("Invalid squad collaboration save response; your draft is preserved");
+    }
+    return next;
   }
 
   async addSquadMember(squadId: string, data: { member_type: string; member_id: string; role?: string }): Promise<SquadMember> {

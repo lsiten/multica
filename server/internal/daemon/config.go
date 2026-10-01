@@ -131,6 +131,9 @@ type Config struct {
 	KeepEnvAfterTask               bool                  // preserve env after task for debugging
 	HealthPort                     int                   // local HTTP port for health checks (default: 19514)
 	MaxConcurrentTasks             int                   // max tasks running in parallel (default: 20)
+	LLM2JevEnabled                 bool                  // inject semantic decision MCP when supported (default: true)
+	LLM2JevMaxConcurrency          int                   // per-task semantic MCP call concurrency
+	LLM2JevTimeout                 time.Duration         // per-call semantic MCP timeout
 	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
 	GCInterval                     time.Duration         // how often the GC loop runs (default: 2h)
 	GCTTL                          time.Duration         // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
@@ -505,6 +508,27 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if overrides.MaxConcurrentTasks > 0 {
 		maxConcurrentTasks = overrides.MaxConcurrentTasks
 	}
+	llm2jevEnabled := true
+	if raw, ok := os.LookupEnv("MULTICA_LLM2JEV_ENABLED"); ok {
+		llm2jevEnabled = strings.ToLower(strings.TrimSpace(raw)) != "false" && strings.TrimSpace(raw) != "0"
+	}
+	llm2jevMaxConcurrency, err := intFromEnv("MULTICA_LLM2JEV_MAX_CONCURRENCY", 4)
+	if err != nil {
+		return Config{}, err
+	}
+	if llm2jevMaxConcurrency < 1 {
+		llm2jevMaxConcurrency = 1
+	}
+	if llm2jevMaxConcurrency > 32 {
+		llm2jevMaxConcurrency = 32
+	}
+	llm2jevTimeout, err := durationFromEnv("MULTICA_LLM2JEV_TIMEOUT", 45*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	if llm2jevTimeout <= 0 {
+		llm2jevTimeout = 45 * time.Second
+	}
 
 	// Profile
 	profile := overrides.Profile
@@ -682,6 +706,9 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		AutoReloadEnabled:               autoReloadEnabled,
 		HealthPort:                      healthPort,
 		MaxConcurrentTasks:              maxConcurrentTasks,
+		LLM2JevEnabled:                  llm2jevEnabled,
+		LLM2JevMaxConcurrency:           llm2jevMaxConcurrency,
+		LLM2JevTimeout:                  llm2jevTimeout,
 		PollInterval:                    pollInterval,
 		WSClaimPollInterval:             wsClaimPollInterval,
 		HeartbeatInterval:               heartbeatInterval,

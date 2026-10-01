@@ -620,7 +620,7 @@ func (b *grokBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		}
 	}()
 
-	session := &Session{Messages: msgStream.ch, Result: resCh}
+	session := &Session{Messages: msgStream.ch, Result: resCh, UsageSnapshot: NewReportedUsageSnapshot(c.accumulatedUsage)}
 	if opts.EnableTaskSupplement {
 		session.Supplement = supplements.send
 		session.SupplementReady = supplements.ready

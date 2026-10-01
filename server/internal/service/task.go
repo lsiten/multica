@@ -2350,6 +2350,22 @@ func (s *TaskService) SendDirectChatMessage(
 			return nil, fmt.Errorf("marshal mirror source context: %w", err)
 		}
 	}
+	if policy := chatAutonomyPolicyFromContext(ctx); policy != nil {
+		var contextEnvelope map[string]any
+		if len(taskContext) > 0 {
+			if err := json.Unmarshal(taskContext, &contextEnvelope); err != nil {
+				return nil, fmt.Errorf("decode chat task context: %w", err)
+			}
+		} else {
+			contextEnvelope = make(map[string]any)
+		}
+		contextEnvelope["autonomy_policy"] = policy
+		var err error
+		taskContext, err = json.Marshal(contextEnvelope)
+		if err != nil {
+			return nil, fmt.Errorf("marshal chat autonomy policy: %w", err)
+		}
+	}
 	// Build the per-task Composio overlay before the transaction — it can do
 	// network I/O and must not run with a DB transaction open.
 	overlay := s.buildRuntimeMCPOverlay(ctx, initiatorUserID, agent)

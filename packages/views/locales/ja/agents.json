@@ -265,7 +265,8 @@
     "discard_dialog_title": "保存していない変更を破棄しますか？",
     "discard_dialog_description": "このタブに保存していない変更があります。今移動すると変更は破棄されます。",
     "discard_keep": "編集を続ける",
-    "discard_confirm": "変更を破棄"
+    "discard_confirm": "変更を破棄",
+    "identity": "Identity"
   },
   "create_dialog": {
     "title_create": "エージェントを作成",
@@ -642,6 +643,18 @@
       "started_prefix": "{{when}} に開始",
       "dispatched_prefix": "{{when}} にディスパッチ",
       "queued_prefix": "{{when}} に待機開始"
+    },
+    "identity": {
+      "description": "このAgentに安定したIdentityを設定します。支払い資格情報はここに保存されません。",
+      "email_label": "メールアドレス",
+      "phone_label": "電話番号",
+      "save": "Identityを保存",
+      "saved_toast": "Agent Identityを保存しました。",
+      "save_failed_toast": "Agent Identityの保存に失敗しました。",
+      "email_placeholder": "agent@example.com",
+      "phone_placeholder": "+8613800138000",
+      "load_failed": "このAgentのIdentityを読み込めません。",
+      "retry": "再試行"
     }
   },
   "char_counter": {

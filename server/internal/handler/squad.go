@@ -532,6 +532,14 @@ func (h *Handler) DeleteSquad(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to archive squad")
 		return
 	}
+	// Collaboration configuration is scoped to the archived squad. Historical
+	// revisions remain available to snapshots, while the mutable current graph
+	// is removed so a new squad cannot observe stale relations.
+	if err := h.Queries.DeleteSquadCollaborationGraph(r.Context(), db.DeleteSquadCollaborationGraphParams{
+		SquadID: squad.ID, WorkspaceID: squad.WorkspaceID,
+	}); err != nil {
+		slog.Warn("delete squad collaboration graph failed", "squad_id", uuidToString(squad.ID), "error", err)
+	}
 
 	h.publish(protocol.EventSquadDeleted, workspaceID, "member", userID, map[string]any{
 		"squad_id":  uuidToString(squad.ID),

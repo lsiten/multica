@@ -63,6 +63,17 @@ type AgentBuilderDraft struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AgentIdentity struct {
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	Email          pgtype.Text        `json:"email"`
+	Phone          pgtype.Text        `json:"phone"`
+	WalletAddress  pgtype.Text        `json:"wallet_address"`
+	BudgetUsdTicks int64              `json:"budget_usd_ticks"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Allow-list of who may invoke a public_to agent (MUL-3963). One row per (agent, target_type, target); targets stack and canInvokeAgent OR-matches. workspace rows store the agent workspace_id in target_id; member rows store the user id; team rows are reserved and inert in V1. Rows only matter when agent.permission_mode = public_to. No DB foreign keys: agent_id / created_by / member target_id relationships are maintained in the application layer (see migration comment).
 type AgentInvocationTarget struct {
 	ID         pgtype.UUID        `json:"id"`
@@ -1350,6 +1361,17 @@ type Project struct {
 	DueDate     pgtype.Date        `json:"due_date"`
 }
 
+type ProjectGraphEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	EventType   string             `json:"event_type"`
+	NodeID      pgtype.Text        `json:"node_id"`
+	Data        []byte             `json:"data"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type ProjectResource struct {
 	ID           pgtype.UUID        `json:"id"`
 	ProjectID    pgtype.UUID        `json:"project_id"`
@@ -1503,6 +1525,23 @@ type Squad struct {
 	ArchivedBy   pgtype.UUID        `json:"archived_by"`
 	AvatarUrl    pgtype.Text        `json:"avatar_url"`
 	Instructions string             `json:"instructions"`
+}
+
+type SquadCollaborationGraph struct {
+	SquadID     pgtype.UUID        `json:"squad_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Revision    int32              `json:"revision"`
+	Relations   []byte             `json:"relations"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type SquadCollaborationHistory struct {
+	SquadID     pgtype.UUID        `json:"squad_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Revision    int32              `json:"revision"`
+	Snapshot    []byte             `json:"snapshot"`
+	UpdatedBy   pgtype.UUID        `json:"updated_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type SquadMember struct {
@@ -1796,6 +1835,13 @@ type WorkspaceInvitation struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+}
+
+type WorkspaceJevConfig struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Config      []byte             `json:"config"`
+	Revision    int64              `json:"revision"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WorkspaceMcpServer struct {

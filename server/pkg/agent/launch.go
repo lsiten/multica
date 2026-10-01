@@ -31,6 +31,19 @@ type trustedAgentCommandPositional struct {
 	value string
 }
 
+// ProcessLauncher is the boundary between an Agent backend and the host
+// process environment. LocalProcessLauncher is the only production launcher;
+// keeping the seam makes provider argv and protocol code independently testable.
+type ProcessLauncher interface {
+	Launch(context.Context, string, []string) *exec.Cmd
+}
+
+type LocalProcessLauncher struct{}
+
+func (LocalProcessLauncher) Launch(ctx context.Context, path string, args []string) *exec.Cmd {
+	return exec.CommandContext(ctx, path, args...)
+}
+
 func trustAgentCommandPositional(index int, value string) trustedAgentCommandPositional {
 	return trustedAgentCommandPositional{index: index, value: value}
 }
@@ -78,7 +91,8 @@ type Command struct {
 	Prefix []string
 	// logger reports prefix/argument conflicts at the moment a process is
 	// built. Optional: a zero Command logs nothing.
-	logger *slog.Logger
+	logger   *slog.Logger
+	launcher ProcessLauncher
 }
 
 // NewCommand builds a Command from a resolved executable path and a launch
@@ -89,7 +103,7 @@ type Command struct {
 // fixed_args list only where no protocol channel exists to protect, such as a
 // one-shot `--version` probe.
 func NewCommand(path string, prefix []string) Command {
-	return Command{Path: path, Prefix: append([]string(nil), prefix...)}
+	return Command{Path: path, Prefix: append([]string(nil), prefix...), launcher: LocalProcessLauncher{}}
 }
 
 // Argv returns the full argument vector for one invocation: the command's own
@@ -111,7 +125,11 @@ func (c Command) Argv(args ...string) []string {
 // reintroduce GH #7046. TestOnlyLaunchGoSpawnsRuntimeProcesses enforces it.
 func (c Command) exec(ctx context.Context, args ...string) *exec.Cmd {
 	warnLaunchPrefixOverlap(c.Prefix, args, c.logger)
-	return newRuntimeCmd(exec.CommandContext(ctx, c.Path, c.Argv(args...)...))
+	launcher := c.launcher
+	if launcher == nil {
+		launcher = LocalProcessLauncher{}
+	}
+	return newRuntimeCmd(launcher.Launch(ctx, c.Path, c.Argv(args...)))
 }
 
 // newRuntimeCmd applies the process-lifecycle defaults every runtime process in
@@ -269,7 +287,11 @@ type invocationChooser func(execName, lookedUp string, args []string, logger *sl
 func (c Command) execVia(ctx context.Context, choose invocationChooser, lookedUp string, args []string, logger *slog.Logger) (*exec.Cmd, string, []string) {
 	warnLaunchPrefixOverlap(c.Prefix, args, logger)
 	argv0, cmdArgs := choose(c.Path, lookedUp, c.Argv(args...), logger)
-	return newRuntimeCmd(exec.CommandContext(ctx, argv0, cmdArgs...)), argv0, cmdArgs
+	launcher := c.launcher
+	if launcher == nil {
+		launcher = LocalProcessLauncher{}
+	}
+	return newRuntimeCmd(launcher.Launch(ctx, argv0, cmdArgs)), argv0, cmdArgs
 }
 
 // withFilteredPrefix returns a copy of the command whose prefix has been
@@ -312,7 +334,11 @@ func (c Command) String() string {
 // fallback, which is why the path is a parameter rather than read from
 // Config.ExecutablePath.
 func (c Config) commandAt(path string) Command {
-	return Command{Path: path, Prefix: c.LaunchPrefix, logger: c.Logger}
+	launcher := c.ProcessLauncher
+	if launcher == nil {
+		launcher = LocalProcessLauncher{}
+	}
+	return Command{Path: path, Prefix: c.LaunchPrefix, logger: c.Logger, launcher: launcher}
 }
 
 // logAgentCommand is the only boundary allowed to record runtime process

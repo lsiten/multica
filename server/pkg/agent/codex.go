@@ -941,6 +941,18 @@ func (b *codexBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 	resCh := make(chan Result, 1)
 	var sessionMu sync.RWMutex
 	currentSession := firstSession
+	var completedUsage TokenUsage
+	usageSnapshot := func() (TokenUsage, bool) {
+		sessionMu.RLock()
+		defer sessionMu.RUnlock()
+		total := completedUsage
+		if currentSession != nil && currentSession.UsageSnapshot != nil {
+			if usage, ok := currentSession.UsageSnapshot(); ok {
+				total = addTokenUsage(total, usage)
+			}
+		}
+		return total, total != (TokenUsage{})
+	}
 	supplement := func(supplementCtx context.Context, instruction string) error {
 		sessionMu.RLock()
 		session := currentSession
@@ -1011,6 +1023,18 @@ func (b *codexBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 				resCh <- Result{Status: "failed", Error: "codex attempt closed without result"}
 				return
 			}
+
+			sessionMu.Lock()
+			completedUsage = addTokenUsage(completedUsage, totalTokenUsage(result.Usage))
+			currentSession = nil
+			sessionMu.Unlock()
+			if completedUsage != (TokenUsage{}) {
+				model := opts.Model
+				if model == "" {
+					model = "unknown"
+				}
+				result.Usage = map[string]TokenUsage{model: completedUsage}
+			}
 			retryReason := ""
 			switch {
 			case result.codexInitializeRetrySafe:
@@ -1055,7 +1079,7 @@ func (b *codexBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 		}
 	}()
 
-	return &Session{Supplement: supplement, SupplementReady: supplementReady, Messages: msgCh, Result: resCh}, nil
+	return &Session{Supplement: supplement, SupplementReady: supplementReady, Messages: msgCh, Result: resCh, UsageSnapshot: usageSnapshot}, nil
 }
 
 func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts ExecOptions, attempt int) (*Session, error) {
@@ -1952,7 +1976,9 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 	supplementReady := func() bool {
 		return c.getThreadID() != "" && c.activeTurnID() != ""
 	}
-	return &Session{Supplement: supplement, SupplementReady: supplementReady, Messages: msgCh, Result: resCh}, nil
+	return &Session{Supplement: supplement, SupplementReady: supplementReady, Messages: msgCh, Result: resCh,
+		UsageSnapshot: NewReportedUsageSnapshot(func() TokenUsage { c.usageMu.Lock(); defer c.usageMu.Unlock(); return c.usage }),
+	}, nil
 }
 
 func supplementCodexTurn(ctx context.Context, c *codexClient, instruction string) error {

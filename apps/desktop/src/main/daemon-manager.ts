@@ -26,6 +26,7 @@ import type {
   LocalRuntimeProbe,
   ManagedWorktree,
   ManagedWorktreeCleanupResult,
+  DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
 import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, type LocalReviewTransport } from "./local-review-request";
@@ -192,7 +193,8 @@ interface HealthPayload {
   cli_version?: string;
   active_task_count?: number;
   agents?: string[];
-  workspaces?: unknown[];
+	workspaces?: unknown[];
+	mcp?: DaemonMcpReadiness[];
 }
 
 async function fetchHealthAtPort(
@@ -236,6 +238,7 @@ async function fetchWorktreeManager(
     });
     if (response.status === 404) throw new Error("Update and restart the daemon to manage worktrees.");
     if (!response.ok) throw new Error(await response.text());
+    if (response.status === 204) return null;
     return response.json();
   } finally {
     clearTimeout(timeout);
@@ -454,6 +457,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
     profile: active.name,
     serverUrl: data.server_url,
     externallyManaged,
+    mcp: data.mcp ?? [],
   };
 }
 
@@ -940,7 +944,12 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
     execFile(
       bin,
       ["daemon", "probe-runtimes", ...profileArgs(active.name)],
-      { timeout: 15_000, env: desktopSpawnEnv(), maxBuffer: 64 * 1024 },
+      {
+        cwd: profileDir(active.name),
+        timeout: 15_000,
+        env: desktopSpawnEnv(),
+        maxBuffer: 64 * 1024,
+      },
       (error, stdout) => {
         if (error) {
           resolve({ probeResult: "error" });
@@ -996,7 +1005,30 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
 // applied by fix-path in main/index.ts — as a top-level const it would
 // snapshot process.env at import time, before that block runs.
 function desktopSpawnEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, MULTICA_LAUNCHED_BY: "desktop" };
+  const env = { ...process.env, MULTICA_LAUNCHED_BY: "desktop" };
+
+  // A Desktop process can be opened from a Multica agent task (for example,
+  // while developing the app inside this repository). Never pass the task's
+  // identity, token, config root, or daemon endpoint to the host daemon: the
+  // CLI would treat the lifecycle child as another task process and refuse
+  // `daemon start`, or worse, connect it to the task's remote daemon.
+  const taskEnvKeys = [
+    "MULTICA_AGENT_ID",
+    "MULTICA_AGENT_NAME",
+    "MULTICA_DAEMON_PORT",
+    "MULTICA_SERVER_URL",
+    "MULTICA_TASK_CONFIG_ROOT",
+    "MULTICA_TASK_ID",
+    "MULTICA_TASK_SLOT",
+    "MULTICA_TASK_WORKSPACES_ROOT",
+    "MULTICA_TOKEN",
+    "MULTICA_WORKSPACE_ID",
+  ] as const;
+  if (taskEnvKeys.some((key) => env[key])) {
+    for (const key of taskEnvKeys) delete env[key];
+  }
+
+  return env;
 }
 
 function scheduleStatusRefresh(): void {
@@ -1084,7 +1116,11 @@ async function startDaemon(
     execFile(
       bin,
       args,
-      { timeout: DAEMON_START_EXEC_TIMEOUT_MS, env: desktopSpawnEnv() },
+      {
+        cwd: profileDir(active.name),
+        timeout: DAEMON_START_EXEC_TIMEOUT_MS,
+        env: desktopSpawnEnv(),
+      },
       (err) => {
         if (err) {
           currentState = "stopped";
@@ -1143,15 +1179,20 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
   const args = ["daemon", "stop", ...profileArgs(active.name)];
 
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: 15_000 }, (err) => {
-      if (err) {
-        resolve({ success: false, error: err.message });
-      } else {
-        resolve({ success: true });
-      }
-      currentState = "stopped";
-      sendStatus({ state: "stopped" });
-    });
+    execFile(
+      bin,
+      args,
+      { cwd: profileDir(active.name), timeout: 15_000, env: desktopSpawnEnv() },
+      (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+        currentState = "stopped";
+        sendStatus({ state: "stopped" });
+      },
+    );
   });
 }
 
@@ -1464,9 +1505,37 @@ export function setupDaemonManager(
     return lifecycleOperations.runForeground(() => restartDaemon());
   });
   ipcMain.handle("daemon:get-status", () => fetchHealth());
+  ipcMain.handle("daemon:mcp-readiness", async (): Promise<DaemonMcpReadiness[]> => {
+    const response = await fetchWorktreeManager("/mcp/readiness");
+    if (!response || typeof response !== "object") return [];
+    const value = (response as { mcp?: unknown }).mcp;
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry): entry is DaemonMcpReadiness => {
+      if (!entry || typeof entry !== "object") return false;
+      const item = entry as Partial<DaemonMcpReadiness>;
+      return typeof item.name === "string" && typeof item.enabled === "boolean" && typeof item.scope === "string" && typeof item.ready === "boolean" && typeof item.state === "string";
+    });
+  });
   ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
     parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
   );
+  ipcMain.handle("daemon:jev-models", () => fetchWorktreeManager("/jev/models"));
+  ipcMain.handle("daemon:jev-model-install", (_event, modelId: unknown) => {
+    if (typeof modelId !== "string" || !modelId.trim()) throw new Error("model id is required");
+    return fetchWorktreeManager("/jev/models/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId }),
+    });
+  });
+  ipcMain.handle("daemon:jev-model-cancel", (_event, modelId: unknown) => {
+    if (typeof modelId !== "string" || !modelId.trim()) throw new Error("model id is required");
+    return fetchWorktreeManager("/jev/models/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId }),
+    });
+  });
   ipcMain.handle("daemon:review-inventory", () => requestReviewInventory({
     resolveProfile: ensureActiveProfile,
     health: (profile) => fetchHealthAtPort(profile.port),

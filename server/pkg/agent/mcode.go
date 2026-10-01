@@ -363,7 +363,7 @@ func (b *mcodeBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 		}
 	}()
 
-	return &Session{Messages: msgStream.ch, Result: resCh}, nil
+	return &Session{Messages: msgStream.ch, Result: resCh, UsageSnapshot: NewReportedUsageSnapshot(c.accumulatedUsage)}, nil
 }
 
 func mcodeLoadSessionSupported(result json.RawMessage) bool {

@@ -62,3 +62,37 @@ FROM issue
 WHERE workspace_id = sqlc.arg('workspace_id')::uuid
   AND project_id = ANY(sqlc.arg('project_ids')::uuid[])
 GROUP BY project_id;
+
+-- name: CreateProjectGraphEvent :one
+INSERT INTO project_graph_event (
+    workspace_id, project_id, task_id, event_type, node_id, data
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+)
+RETURNING *;
+
+-- name: GetAgentTaskProjectID :one
+-- Resolve the task's current source project using the claim source precedence.
+-- Issue, chat, and run-only autopilot tasks carry the reference in different
+-- source rows; quick-create keeps it in its JSON context. Invalid context
+-- values are ignored rather than turning a task lookup into a cast failure.
+SELECT CASE
+    WHEN task.issue_id IS NOT NULL THEN issue.project_id
+    WHEN task.chat_session_id IS NOT NULL THEN chat_session.project_id
+    WHEN task.autopilot_run_id IS NOT NULL THEN autopilot.project_id
+    WHEN task.context->>'type' = 'quick_create' THEN CASE
+        WHEN task.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        THEN (task.context->>'project_id')::uuid
+        ELSE NULL
+    END
+    ELSE NULL
+END::uuid AS project_id
+FROM agent_task_queue AS task
+LEFT JOIN issue ON issue.id = task.issue_id
+LEFT JOIN chat_session ON chat_session.id = task.chat_session_id
+LEFT JOIN autopilot_run ON autopilot_run.id = task.autopilot_run_id
+LEFT JOIN autopilot ON autopilot.id = autopilot_run.autopilot_id
+WHERE task.id = $1;
+
+-- name: DeleteProjectGraphEvents :exec
+DELETE FROM project_graph_event WHERE project_id=$1 AND workspace_id=$2;

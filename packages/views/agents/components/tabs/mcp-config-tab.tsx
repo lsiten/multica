@@ -77,10 +77,11 @@ export function McpConfigTab({
    * affordance is hidden rather than left to 403 on click.
    */
   canEdit?: boolean;
-  onSave: (updates: { mcp_config: unknown | null }) => Promise<void>;
+  onSave: (updates: { mcp_config?: unknown | null; runtime_config?: Record<string, unknown> }) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { t } = useT("agents");
+  const { t: collaborationT } = useT("collaboration");
   const canReadRuntime =
     runtime != null && isRuntimeUsableForUser(runtime, currentUserId ?? null);
   const runtimeId =
@@ -144,6 +145,36 @@ export function McpConfigTab({
   const [deletingServer, setDeletingServer] =
     useState<ManagedMcpServer | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [builtInPending, setBuiltInPending] = useState<string | null>(null);
+
+  const autonomy = useMemo(() => {
+    const raw = agent.runtime_config?.multica_autonomy;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { mode: "autonomous", allowed_decision_capabilities: ["decision"] as string[], allowed_identity_actions: [] as string[] };
+    const value = raw as Record<string, unknown>;
+    return {
+      ...value,
+      mode: typeof value.mode === "string" ? value.mode : "autonomous",
+      allowed_decision_capabilities: Array.isArray(value.allowed_decision_capabilities) ? value.allowed_decision_capabilities.filter((item): item is string => typeof item === "string") : ["decision"],
+      allowed_identity_actions: Array.isArray(value.allowed_identity_actions) ? value.allowed_identity_actions.filter((item): item is string => typeof item === "string") : [],
+    };
+  }, [agent.runtime_config]);
+
+  const setBuiltInEnabled = async (kind: "decision" | "email" | "phone", enabled: boolean) => {
+    if (!canEdit || builtInPending) return;
+    setBuiltInPending(kind);
+    const values = kind === "decision" ? autonomy.allowed_decision_capabilities : autonomy.allowed_identity_actions;
+    const key = kind;
+    const nextValues = enabled ? [...new Set([...values, key])] : values.filter((value) => value !== key);
+    const nextAutonomy = { ...autonomy, ...(kind === "decision" ? { allowed_decision_capabilities: nextValues } : { allowed_identity_actions: nextValues }) };
+    try {
+      await onSave({ runtime_config: { ...agent.runtime_config, multica_autonomy: nextAutonomy } });
+      toast.success(collaborationT(($) => $.mcp_builtin_auto));
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : collaborationT(($) => $.save_conflict));
+    } finally {
+      setBuiltInPending(null);
+    }
+  };
 
   useEffect(() => onDirtyChange?.(false), [onDirtyChange]);
 
@@ -313,6 +344,14 @@ export function McpConfigTab({
     // heading is gone: precedence is already shown where it applies (the
     // Overridden badges) and nobody reads a paragraph to press a button.
     <div className="space-y-6">
+      <section className="rounded-lg border">
+        <div className="border-b p-4"><h3 className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_title)}</h3><p className="mt-1 text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_description)}</p></div>
+        <div className="divide-y divide-surface-border">
+          <div className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_decision)}</p><p className="text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_decision_hint)}</p></div>{canEdit ? <Switch checked={autonomy.allowed_decision_capabilities.includes("decision")} disabled={builtInPending !== null} onCheckedChange={(checked) => void setBuiltInEnabled("decision", checked)} aria-label={collaborationT(($) => $.mcp_builtin_decision)} /> : <Badge variant="secondary">{collaborationT(($) => $.mcp_builtin_auto)}</Badge>}</div>
+          <div className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_email)}</p><p className="text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_email_hint)}</p></div>{canEdit ? <Switch checked={autonomy.allowed_identity_actions.includes("email")} disabled={builtInPending !== null} onCheckedChange={(checked) => void setBuiltInEnabled("email", checked)} aria-label={collaborationT(($) => $.mcp_builtin_email)} /> : <Badge variant="outline">{collaborationT(($) => $.mcp_builtin_identity_required)}</Badge>}</div>
+          <div className="flex items-center gap-3 p-4"><div className="min-w-0 flex-1"><p className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_phone)}</p><p className="text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_phone_hint)}</p></div>{canEdit ? <Switch checked={autonomy.allowed_identity_actions.includes("phone")} disabled={builtInPending !== null} onCheckedChange={(checked) => void setBuiltInEnabled("phone", checked)} aria-label={collaborationT(($) => $.mcp_builtin_phone)} /> : <Badge variant="outline">{collaborationT(($) => $.mcp_builtin_identity_required)}</Badge>}</div>
+        </div>
+      </section>
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-4">
           <h3 className="text-body font-medium">

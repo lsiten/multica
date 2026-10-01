@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -163,6 +164,9 @@ func TestIsBlockedEnvKey(t *testing.T) {
 		{key: "CURSOR_MCP_AUTH_SOURCE", want: true},
 		{key: "OPENCLAW_CONFIG_PATH", want: true},
 		{key: "OPENCLAW_INCLUDE_ROOTS", want: true},
+		{key: "TWILIO_AUTH_TOKEN", want: true},
+		{key: "twilio_from_number", want: true},
+		{key: "IMAP_PASSWORD", want: true},
 		{key: "ANTHROPIC_API_KEY", want: false},
 		{key: "CURSOR_AGENT", want: false},
 		// HERMES_HOME is intentionally NOT blocked: a skill-less Hermes task
@@ -1579,6 +1583,23 @@ func TestMergeUsage(t *testing.T) {
 	}
 	if got := mergeUsage(a, nil); len(got) != 1 {
 		t.Fatal("mergeUsage(a, nil) should return a")
+	}
+}
+
+func TestMergeUsageCostSaturatesAndIgnoresNegativeValues(t *testing.T) {
+	merged := mergeUsage(
+		map[string]agent.TokenUsage{"model": {CostUSDTicks: math.MaxInt64}},
+		map[string]agent.TokenUsage{"model": {CostUSDTicks: 1}},
+	)
+	if got := merged["model"].CostUSDTicks; got != math.MaxInt64 {
+		t.Fatalf("overflowing cost=%d, want MaxInt64", got)
+	}
+	merged = mergeUsage(
+		map[string]agent.TokenUsage{"model": {CostUSDTicks: 100}},
+		map[string]agent.TokenUsage{"model": {CostUSDTicks: -50}},
+	)
+	if got := merged["model"].CostUSDTicks; got != 100 {
+		t.Fatalf("negative cost reduced total to %d", got)
 	}
 }
 
@@ -6135,14 +6156,16 @@ func TestWatchTaskCancellation_ReconcileRunningKeepsTickerAlive(t *testing.T) {
 func TestSanitizeAgentEnv(t *testing.T) {
 	t.Parallel()
 	in := map[string]string{
-		"HOME":        "/evil",
-		"PATH":        "/evil/bin",
-		"MULTICA_X":   "1",
-		"TEAM_SKILLS": "/srv/team",
-		"HERMES_HOME": "/some/home",
+		"HOME":              "/evil",
+		"PATH":              "/evil/bin",
+		"MULTICA_X":         "1",
+		"TWILIO_AUTH_TOKEN": "secret",
+		"IMAP_PASSWORD":     "secret",
+		"TEAM_SKILLS":       "/srv/team",
+		"HERMES_HOME":       "/some/home",
 	}
 	got := sanitizeAgentEnv(in)
-	for _, blocked := range []string{"HOME", "PATH", "MULTICA_X"} {
+	for _, blocked := range []string{"HOME", "PATH", "MULTICA_X", "TWILIO_AUTH_TOKEN", "IMAP_PASSWORD"} {
 		if _, ok := got[blocked]; ok {
 			t.Errorf("blocklisted key %q must be dropped from the effective env", blocked)
 		}

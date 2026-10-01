@@ -444,7 +444,7 @@ describe("ChatInput history integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
     expect(onSend).toHaveBeenCalledWith(
-      "![image.png](/api/attachments/historical/download)", undefined, expect.any(Function), [],
+      "![image.png](/api/attachments/historical/download)", undefined, expect.any(Function), [], null,
     );
   });
 
@@ -1163,14 +1163,10 @@ describe("ChatInput attachment wiring", () => {
 
   it("does not render the file upload button when uploads are disabled", () => {
     renderInput({ uploadEnabled: false });
-    // The ChatAddMenu "+" (which hosts file upload) only mounts when upload
-    // wiring is present — without it the chat input falls back to "submit +
-    // extras" only. Probe by counting buttons: with no upload, only the
-    // submit button is in the action row.
+    // The add menu remains available for execution-mode selection even when
+    // file uploads are disabled. The upload entry itself is omitted.
     const buttons = screen.getAllByRole("button");
-    // The agent picker may render zero buttons
-    // in this test (no leftAdornment passed). So a single button = submit.
-    expect(buttons.length).toBe(1);
+    expect(buttons.length).toBe(2);
   });
 });
 
@@ -1296,6 +1292,7 @@ describe("ChatInput async send", () => {
       undefined,
       expect.any(Function),
       [],
+      null,
     );
     expect(useChatStore.getState().clearInputDraft).not.toHaveBeenCalled();
     await waitFor(() => expect(sendButton!).toBeDisabled());
@@ -1334,7 +1331,7 @@ describe("ChatInput async send", () => {
       await Promise.resolve();
     });
 
-    expect(onSend).toHaveBeenCalledWith("retry me", undefined, expect.any(Function), []);
+    expect(onSend).toHaveBeenCalledWith("retry me", undefined, expect.any(Function), [], null);
     expect(useChatStore.getState().clearInputDraft).not.toHaveBeenCalled();
   });
 
@@ -1381,6 +1378,7 @@ describe("ChatInput async send", () => {
       ["att-persisted"],
       expect.any(Function),
       [attachment],
+      null,
     );
   });
 });

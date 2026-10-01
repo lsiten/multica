@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/multica-ai/multica/server/internal/jevmodels"
 )
 
 // HealthResponse is returned by the daemon's local health endpoint.
@@ -86,6 +88,20 @@ type HealthResponse struct {
 	// older consumers see no change. Diagnostic only: nothing keys off it.
 	ReloadPendingReason string            `json:"reload_pending_reason,omitempty"`
 	Workspaces          []healthWorkspace `json:"workspaces"`
+	MCP                 []HealthMCPStatus `json:"mcp"`
+}
+
+type HealthMCPStatus struct {
+	Name        string            `json:"name"`
+	InstanceID  string            `json:"instance_id,omitempty"`
+	WorkspaceID string            `json:"workspace_id,omitempty"`
+	Enabled     bool              `json:"enabled"`
+	Scope       string            `json:"scope"`
+	Ready       bool              `json:"ready"`
+	State       MCPReadinessState `json:"state"`
+	Reason      string            `json:"reason,omitempty"`
+	ToolCount   int               `json:"tool_count,omitempty"`
+	CheckedAt   string            `json:"checked_at,omitempty"`
 }
 
 type healthWorkspace struct {
@@ -360,6 +376,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 
 			ReloadPendingReason: d.reloadPending(),
 			Workspaces:          wsList,
+			MCP:                 healthMCPStatuses(d.mcpReadinessSnapshot()),
 		}
 		if reporter, ok := d.repoCache.(interface{ Activity() repocache.Activity }); ok {
 			activity := reporter.Activity()
@@ -377,6 +394,36 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+func healthMCPStatuses(snapshots []MCPReadinessSnapshot) []HealthMCPStatus {
+	out := make([]HealthMCPStatus, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		out = append(out, HealthMCPStatus{
+			Name: snapshot.Name, InstanceID: snapshot.InstanceID, WorkspaceID: snapshot.WorkspaceID, Enabled: snapshot.Enabled,
+			Scope: snapshot.Scope, Ready: snapshot.Ready, State: snapshot.State,
+			Reason: snapshot.Reason, ToolCount: snapshot.ToolCount, CheckedAt: snapshot.CheckedAt,
+		})
+	}
+	return out
+}
+
+// mcpReadinessHandler returns bounded, non-secret diagnostics for the local
+// profile. It requires the same daemon token and profile header as Jev model
+// management so one workspace/profile cannot inspect another daemon's tasks.
+func (d *Daemon) mcpReadinessHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"mcp": healthMCPStatuses(d.mcpReadinessSnapshot())})
 	}
 }
 
@@ -409,10 +456,14 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	cleanupDesktop := d.registerVscreenDesktop(ctx, mux, startedAt)
 	defer cleanupDesktop()
 	mux.HandleFunc("/health", d.healthHandler(startedAt))
+	mux.HandleFunc("/mcp/readiness", d.mcpReadinessHandler())
 	mux.HandleFunc("/shutdown", d.shutdownHandler())
 	mux.HandleFunc("/repo/checkout", d.repoCheckoutHandler())
 	mux.HandleFunc("/worktrees", d.worktreeManagerHandler())
 	mux.HandleFunc("/worktrees/review", d.worktreeReviewHandler())
+	mux.HandleFunc("/jev/models", d.jevModelsHandler())
+	mux.HandleFunc("/jev/models/install", d.jevModelInstallHandler())
+	mux.HandleFunc("/jev/models/cancel", d.jevModelCancelHandler())
 
 	srv := &http.Server{Handler: mux}
 
@@ -424,6 +475,122 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	d.logger.Info("health server listening", "addr", ln.Addr().String())
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		d.logger.Warn("health server error", "error", err)
+	}
+}
+
+func (d *Daemon) jevLocalAuthorized(r *http.Request) bool {
+	return d.client != nil && d.client.Token() != "" && r.Header.Get("Origin") == "" &&
+		r.Header.Get("X-Multica-Profile") == d.cfg.Profile &&
+		subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+d.client.Token())) == 1
+}
+
+// jevModelsHandler is intentionally daemon-local. It exposes only the curated
+// catalog and host-profile cache status; the server never receives model
+// weights or filesystem paths.
+func (d *Daemon) jevModelsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		manager, err := d.jevModelManager()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		statuses := make([]jevmodels.Status, 0, len(jevmodels.Catalog()))
+		for _, model := range jevmodels.Catalog() {
+			status, statusErr := manager.Status(model.ID)
+			if statusErr != nil {
+				http.Error(w, statusErr.Error(), http.StatusInternalServerError)
+				return
+			}
+			statuses = append(statuses, status)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"models": jevmodels.Catalog(), "status": statuses})
+	}
+}
+
+func (d *Daemon) jevModelInstallHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ModelID string `json:"model_id"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil || strings.TrimSpace(req.ModelID) == "" {
+			http.Error(w, "model_id is required", http.StatusBadRequest)
+			return
+		}
+		manager, err := d.jevModelManager()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if status, statusErr := manager.Status(req.ModelID); statusErr != nil {
+			http.Error(w, statusErr.Error(), http.StatusBadRequest)
+		} else if status.State == "installed" || status.State == "ready" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(status)
+		} else {
+			result, startErr := manager.StartInstall(context.Background(), req.ModelID)
+			if startErr != nil {
+				if errors.Is(startErr, jevmodels.ErrBusy) {
+					http.Error(w, "model download already in progress", http.StatusConflict)
+				} else {
+					http.Error(w, startErr.Error(), http.StatusBadRequest)
+				}
+				return
+			}
+			go func(modelID string, result <-chan error) {
+				if installErr := <-result; installErr != nil && d.logger != nil {
+					d.logger.Warn("jev model download failed", "model_id", modelID, "error", installErr)
+				}
+			}(req.ModelID, result)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true, "status": "queued", "model_id": req.ModelID})
+		}
+	}
+}
+
+func (d *Daemon) jevModelCancelHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			ModelID string `json:"model_id"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil || strings.TrimSpace(req.ModelID) == "" {
+			http.Error(w, "model_id is required", http.StatusBadRequest)
+			return
+		}
+		manager, err := d.jevModelManager()
+		if err == nil {
+			err = manager.CancelInstall(req.ModelID)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

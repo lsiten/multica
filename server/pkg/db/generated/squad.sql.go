@@ -127,6 +127,38 @@ func (q *Queries) CreateSquad(ctx context.Context, arg CreateSquadParams) (Squad
 	return i, err
 }
 
+const deleteSquadCollaborationGraph = `-- name: DeleteSquadCollaborationGraph :exec
+DELETE FROM squad_collaboration_graph WHERE squad_id = $1 AND workspace_id = $2
+`
+
+type DeleteSquadCollaborationGraphParams struct {
+	SquadID     pgtype.UUID `json:"squad_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteSquadCollaborationGraph(ctx context.Context, arg DeleteSquadCollaborationGraphParams) error {
+	_, err := q.db.Exec(ctx, deleteSquadCollaborationGraph, arg.SquadID, arg.WorkspaceID)
+	return err
+}
+
+const deleteSquadCollaborationGraphByWorkspace = `-- name: DeleteSquadCollaborationGraphByWorkspace :exec
+DELETE FROM squad_collaboration_graph WHERE workspace_id = $1
+`
+
+func (q *Queries) DeleteSquadCollaborationGraphByWorkspace(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSquadCollaborationGraphByWorkspace, workspaceID)
+	return err
+}
+
+const deleteSquadCollaborationHistoryByWorkspace = `-- name: DeleteSquadCollaborationHistoryByWorkspace :exec
+DELETE FROM squad_collaboration_history WHERE workspace_id = $1
+`
+
+func (q *Queries) DeleteSquadCollaborationHistoryByWorkspace(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSquadCollaborationHistoryByWorkspace, workspaceID)
+	return err
+}
+
 const getSquad = `-- name: GetSquad :one
 SELECT id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions FROM squad WHERE id = $1
 `
@@ -181,6 +213,48 @@ func (q *Queries) GetSquadByAssignee(ctx context.Context, arg GetSquadByAssignee
 	return i, err
 }
 
+const getSquadCollaborationGraph = `-- name: GetSquadCollaborationGraph :one
+SELECT squad_id, workspace_id, revision, relations, updated_at
+FROM squad_collaboration_graph
+WHERE squad_id = $1 AND workspace_id = $2
+`
+
+type GetSquadCollaborationGraphParams struct {
+	SquadID     pgtype.UUID `json:"squad_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetSquadCollaborationGraph(ctx context.Context, arg GetSquadCollaborationGraphParams) (SquadCollaborationGraph, error) {
+	row := q.db.QueryRow(ctx, getSquadCollaborationGraph, arg.SquadID, arg.WorkspaceID)
+	var i SquadCollaborationGraph
+	err := row.Scan(
+		&i.SquadID,
+		&i.WorkspaceID,
+		&i.Revision,
+		&i.Relations,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getSquadCollaborationHistory = `-- name: GetSquadCollaborationHistory :one
+SELECT snapshot FROM squad_collaboration_history
+WHERE squad_id = $1 AND workspace_id = $2 AND revision = $3
+`
+
+type GetSquadCollaborationHistoryParams struct {
+	SquadID     pgtype.UUID `json:"squad_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Revision    int32       `json:"revision"`
+}
+
+func (q *Queries) GetSquadCollaborationHistory(ctx context.Context, arg GetSquadCollaborationHistoryParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getSquadCollaborationHistory, arg.SquadID, arg.WorkspaceID, arg.Revision)
+	var snapshot []byte
+	err := row.Scan(&snapshot)
+	return snapshot, err
+}
+
 const getSquadInWorkspace = `-- name: GetSquadInWorkspace :one
 SELECT id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions FROM squad WHERE id = $1 AND workspace_id = $2
 `
@@ -208,6 +282,31 @@ func (q *Queries) GetSquadInWorkspace(ctx context.Context, arg GetSquadInWorkspa
 		&i.Instructions,
 	)
 	return i, err
+}
+
+const insertSquadCollaborationHistory = `-- name: InsertSquadCollaborationHistory :exec
+INSERT INTO squad_collaboration_history (squad_id, workspace_id, revision, snapshot, updated_by)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (squad_id, revision) DO NOTHING
+`
+
+type InsertSquadCollaborationHistoryParams struct {
+	SquadID     pgtype.UUID `json:"squad_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Revision    int32       `json:"revision"`
+	Snapshot    []byte      `json:"snapshot"`
+	UpdatedBy   pgtype.UUID `json:"updated_by"`
+}
+
+func (q *Queries) InsertSquadCollaborationHistory(ctx context.Context, arg InsertSquadCollaborationHistoryParams) error {
+	_, err := q.db.Exec(ctx, insertSquadCollaborationHistory,
+		arg.SquadID,
+		arg.WorkspaceID,
+		arg.Revision,
+		arg.Snapshot,
+		arg.UpdatedBy,
+	)
+	return err
 }
 
 const isSquadMember = `-- name: IsSquadMember :one
@@ -769,6 +868,56 @@ func (q *Queries) UpdateSquadMemberRole(ctx context.Context, arg UpdateSquadMemb
 		&i.MemberID,
 		&i.Role,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertSquadCollaborationGraph = `-- name: UpsertSquadCollaborationGraph :one
+WITH updated AS (
+    UPDATE squad_collaboration_graph
+    SET revision = revision + 1, relations = $1, updated_at = now()
+    WHERE squad_collaboration_graph.squad_id = $2 AND squad_collaboration_graph.workspace_id = $3
+      AND revision = $4::integer
+    RETURNING squad_id, workspace_id, revision, relations, updated_at
+), inserted AS (
+    INSERT INTO squad_collaboration_graph (squad_id, workspace_id, revision, relations)
+    SELECT $2, $3, 1, $1
+    WHERE $4::integer = 0
+    ON CONFLICT (squad_id) DO NOTHING
+    RETURNING squad_id, workspace_id, revision, relations, updated_at
+)
+SELECT squad_id, workspace_id, revision, relations, updated_at FROM updated UNION ALL SELECT squad_id, workspace_id, revision, relations, updated_at FROM inserted
+`
+
+type UpsertSquadCollaborationGraphParams struct {
+	Relations        []byte      `json:"relations"`
+	SquadID          pgtype.UUID `json:"squad_id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ExpectedRevision int32       `json:"expected_revision"`
+}
+
+type UpsertSquadCollaborationGraphRow struct {
+	SquadID     pgtype.UUID        `json:"squad_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Revision    int32              `json:"revision"`
+	Relations   []byte             `json:"relations"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpsertSquadCollaborationGraph(ctx context.Context, arg UpsertSquadCollaborationGraphParams) (UpsertSquadCollaborationGraphRow, error) {
+	row := q.db.QueryRow(ctx, upsertSquadCollaborationGraph,
+		arg.Relations,
+		arg.SquadID,
+		arg.WorkspaceID,
+		arg.ExpectedRevision,
+	)
+	var i UpsertSquadCollaborationGraphRow
+	err := row.Scan(
+		&i.SquadID,
+		&i.WorkspaceID,
+		&i.Revision,
+		&i.Relations,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

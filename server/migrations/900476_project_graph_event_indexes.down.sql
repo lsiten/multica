@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS project_graph_event_project_created_idx;

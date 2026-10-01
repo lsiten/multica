@@ -13,6 +13,28 @@ export type DaemonState =
   // this, an auth failure silently sticks at "starting" forever — see #3512.
   | "auth_expired";
 
+
+export type DaemonMcpReadinessState =
+  | "not_configured"
+  | "probing"
+  | "ready"
+  | "offline"
+  | "timeout"
+  | "protocol_error";
+
+export interface DaemonMcpReadiness {
+  name: string;
+  instance_id?: string;
+  workspace_id?: string;
+  enabled: boolean;
+  scope: string;
+  ready: boolean;
+  state: DaemonMcpReadinessState;
+  reason?: string;
+  tool_count?: number;
+  checked_at?: string;
+}
+
 export interface DaemonStatus {
   state: DaemonState;
   pid?: number;
@@ -35,6 +57,8 @@ export interface DaemonStatus {
    * never disables the toggles for a normally-managed native daemon. See #3916.
    */
   externallyManaged?: boolean;
+  /** Built-in and task-managed MCP readiness snapshots from the daemon. */
+  mcp?: DaemonMcpReadiness[];
 }
 
 export interface DaemonPrefs {

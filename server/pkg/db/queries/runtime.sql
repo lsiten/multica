@@ -400,7 +400,11 @@ DELETE FROM agent_runtime WHERE id = $1;
 -- System agents are invisible execution infrastructure (for example the Agent
 -- Builder). Remove them before deleting their runtime so the RESTRICT runtime
 -- FK cannot block an otherwise dependency-free delete.
-DELETE FROM agent WHERE runtime_id = $1 AND kind = 'system';
+WITH deleted_identities AS (
+    DELETE FROM agent_identity
+    WHERE agent_id IN (SELECT agent.id FROM agent WHERE agent.runtime_id = $1 AND agent.kind = 'system')
+)
+DELETE FROM agent WHERE agent.runtime_id = $1 AND agent.kind = 'system';
 
 -- name: CountActiveAgentsByRuntime :one
 SELECT count(*) FROM agent WHERE runtime_id = $1 AND archived_at IS NULL;

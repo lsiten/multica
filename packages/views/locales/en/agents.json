@@ -283,7 +283,8 @@
     "discard_dialog_title": "Discard unsaved changes?",
     "discard_dialog_description": "You have unsaved changes in this tab. Leaving now will discard them.",
     "discard_keep": "Keep editing",
-    "discard_confirm": "Discard changes"
+    "discard_confirm": "Discard changes",
+    "identity": "Identity"
   },
   "creation_studio": {
     "title": "Create an agent",
@@ -759,6 +760,18 @@
       "started_prefix": "Started {{when}}",
       "dispatched_prefix": "Dispatched {{when}}",
       "queued_prefix": "Queued {{when}}"
+    },
+    "identity": {
+      "description": "Give this Agent a stable identity for tasks that require acting on your behalf. These are identifiers only; payment credentials are never stored here.",
+      "email_label": "Email address",
+      "phone_label": "Phone number",
+      "save": "Save identity",
+      "saved_toast": "Agent identity saved.",
+      "save_failed_toast": "Failed to save agent identity.",
+      "email_placeholder": "agent@example.com",
+      "phone_placeholder": "+8613800138000",
+      "load_failed": "Unable to load this Agent identity.",
+      "retry": "Retry"
     }
   },
   "char_counter": {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Loader2, MessageSquare } from "lucide-react";
 import {
   applyDraftModelChange,
@@ -12,6 +12,8 @@ import {
 import { isRuntimeUsableForUser } from "@multica/core/runtimes";
 import type {
   ChatMessage,
+  ChatAutonomyPolicyOverride,
+  Attachment,
   MemberWithUser,
   RuntimeDevice,
 } from "@multica/core/types";
@@ -152,7 +154,7 @@ export function BuilderConversation({
   runtimeOnline: boolean;
   /** `commitInput` is the composer's clear; the owner runs it as soon as the
    *  server accepts the message. The prompt buttons below send without one. */
-  onSend: (content: string, commitInput?: () => void) => Promise<boolean>;
+  onSend: (content: string, commitInput?: () => void, autonomyPolicy?: ChatAutonomyPolicyOverride | null) => Promise<boolean>;
   onStop: () => void;
   restoreDraftRequest: BuilderRestore | null;
   onRestoreDraftApplied: () => void;
@@ -160,6 +162,18 @@ export function BuilderConversation({
 }) {
   const { t } = useT("agents");
   const pending = !!pendingTask?.task_id;
+  const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
+  const handleComposerSend = async (
+    content: string,
+    _attachmentIds: string[] | undefined,
+    commitInput: () => void,
+    _attachments: Attachment[],
+    policy: ChatAutonomyPolicyOverride | null | undefined,
+  ) => {
+    const accepted = await onSend(content, commitInput, policy);
+    if (accepted && policy !== undefined) setAutonomyPolicy(null);
+    return accepted;
+  };
   const draftKey = `agent-builder:${sessionId}`;
   const prompts = [
     t(($) => $.creation_studio.builder.prompt_review),
@@ -238,9 +252,7 @@ export function BuilderConversation({
       ) : null}
 
       <ChatInput
-        onSend={(content, _attachmentIds, commitInput) =>
-          onSend(content, commitInput)
-        }
+        onSend={handleComposerSend}
         onStop={onStop}
         isRunning={pending}
         disabled={!runtimeOnline}
@@ -249,6 +261,8 @@ export function BuilderConversation({
         editorKeyOverride={draftKey}
         restoreDraftRequest={restoreDraftRequest}
         onRestoreDraftApplied={onRestoreDraftApplied}
+        autonomyPolicy={autonomyPolicy}
+        onAutonomyPolicyChange={setAutonomyPolicy}
       />
     </section>
   );

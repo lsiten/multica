@@ -46,6 +46,7 @@ import { createLogger } from "@multica/core/logger";
 import type {
   Agent,
   Attachment,
+  ChatAutonomyPolicyOverride,
   ChatMessage,
   ChatPendingTask,
 } from "@multica/core/types";
@@ -492,6 +493,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       attachmentIds?: string[],
       commitInput?: (options?: { extraDraftKeys?: string[]; clearEditor?: boolean }) => void,
       draftAttachments: Attachment[] = [],
+      autonomyOverride: ChatAutonomyPolicyOverride | null | undefined = undefined,
     ): Promise<boolean> => {
       if (!activeAgent) {
         apiLogger.warn("sendChatMessage skipped: no active agent");
@@ -572,7 +574,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       // the draft for retry (ChatInput never cleared it).
       let result;
       try {
-        result = await api.sendChatMessage(sessionId, finalContent, attachmentIds);
+        result = await api.sendChatMessage(sessionId, finalContent, attachmentIds, undefined, autonomyOverride);
       } catch (err) {
         apiLogger.error("sendChatMessage.error", { sessionId, err });
         // Invoke permission can be revoked mid-session; the send is refused with

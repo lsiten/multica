@@ -273,7 +273,8 @@
     "discard_dialog_title": "저장하지 않은 변경사항을 버릴까요?",
     "discard_dialog_description": "이 탭에 저장하지 않은 변경사항이 있습니다. 지금 나가면 변경사항이 사라집니다.",
     "discard_keep": "계속 편집",
-    "discard_confirm": "변경사항 버리기"
+    "discard_confirm": "변경사항 버리기",
+    "identity": "Identity"
   },
   "create_dialog": {
     "title_create": "에이전트 만들기",
@@ -650,6 +651,18 @@
       "started_prefix": "{{when}} 시작됨",
       "dispatched_prefix": "{{when}} 디스패치됨",
       "queued_prefix": "{{when}} 대기 시작"
+    },
+    "identity": {
+      "description": "이 Agent에 안정적인 Identity를 설정합니다. 결제 자격 증명은 여기에 저장되지 않습니다.",
+      "email_label": "이메일 주소",
+      "phone_label": "전화번호",
+      "save": "Identity 저장",
+      "saved_toast": "Agent Identity를 저장했습니다.",
+      "save_failed_toast": "Agent Identity를 저장하지 못했습니다.",
+      "email_placeholder": "agent@example.com",
+      "phone_placeholder": "+8613800138000",
+      "load_failed": "이 Agent Identity를 불러올 수 없습니다.",
+      "retry": "다시 시도"
     }
   },
   "char_counter": {

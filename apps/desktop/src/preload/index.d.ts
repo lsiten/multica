@@ -21,6 +21,7 @@ import type {
   LocalRuntimeProbe,
   ManagedWorktree,
   ManagedWorktreeCleanupResult,
+  DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import type { TabSelectionShortcutKey } from "../shared/main-renderer-messages";
 
@@ -145,6 +146,7 @@ interface DaemonAPI {
   stop: () => Promise<{ success: boolean; error?: string }>;
   restart: () => Promise<{ success: boolean; error?: string }>;
   getStatus: () => Promise<DaemonStatus>;
+  getMcpReadiness: () => Promise<DaemonMcpReadiness[]>;
   probeRuntimes: () => Promise<LocalRuntimeProbe>;
   getHostName: () => Promise<string>;
   /** List daemon-owned task environments, including active-state protection. */

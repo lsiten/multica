@@ -810,7 +810,8 @@ type SendChatMessageRequest struct {
 	AttachmentIDs []string `json:"attachment_ids"`
 	// MirrorSource is an authenticated, exact display binding. It is validated
 	// against the live daemon catalog before the chat task is persisted.
-	MirrorSource *protocol.MirrorSourceBinding `json:"mirror_source,omitempty"`
+	MirrorSource   *protocol.MirrorSourceBinding `json:"mirror_source,omitempty"`
+	AutonomyPolicy *service.ChatAutonomyPolicy   `json:"autonomy_policy,omitempty"`
 }
 
 type SendChatMessageResponse struct {
@@ -852,6 +853,12 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	if req.Content == "" {
 		writeError(w, http.StatusBadRequest, "content is required")
 		return
+	}
+	if req.AutonomyPolicy != nil {
+		if (req.AutonomyPolicy.Mode != "autonomous" && req.AutonomyPolicy.Mode != "normal") || req.AutonomyPolicy.MaxDurationSeconds < 0 || req.AutonomyPolicy.MaxDurationSeconds > 86400 || req.AutonomyPolicy.MaxTokenCount < 0 || req.AutonomyPolicy.MaxCostUSDTicks < 0 {
+			writeError(w, http.StatusBadRequest, "invalid autonomy policy")
+			return
+		}
 	}
 
 	// Pre-validate attachment ids early so invalid input returns 400 before
@@ -974,7 +981,11 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	// creator-only), so they are the task initiator and the run's originator —
 	// surfaced to the agent under `## On Behalf Of`. actorType/actorID were
 	// resolved above for the invoke gate.
-	sent, err := h.TaskService.SendDirectChatMessage(r.Context(), session, agent, parseUUID(userID), req.Content, attachmentIDs, actorType, parseUUID(actorID), mirrorSource)
+	serviceContext := r.Context()
+	if req.AutonomyPolicy != nil {
+		serviceContext = service.WithChatAutonomyPolicy(serviceContext, req.AutonomyPolicy)
+	}
+	sent, err := h.TaskService.SendDirectChatMessage(serviceContext, session, agent, parseUUID(userID), req.Content, attachmentIDs, actorType, parseUUID(actorID), mirrorSource)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrMirrorChatSourceChanged):

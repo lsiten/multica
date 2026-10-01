@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS squad_collaboration_history_revision_idx;

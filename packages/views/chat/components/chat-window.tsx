@@ -88,7 +88,7 @@ import {
 } from "./use-chat-controller";
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
 import { createLogger } from "@multica/core/logger";
-import type { Agent, Attachment, ChatMessage, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
+import type { Agent, Attachment, ChatAutonomyPolicyOverride, ChatMessage, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
 import { useLocale, useT } from "../../i18n";
 
 const uiLogger = createLogger("chat.ui");
@@ -116,6 +116,10 @@ export function ChatWindow() {
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setSelectedAgentId = useChatStore((s) => s.setSelectedAgentId);
   const setSelectedProjectId = useChatStore((s) => s.setSelectedProjectId);
+  const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
+  useEffect(() => {
+    setAutonomyPolicy(null);
+  }, [activeSessionId, selectedAgentId]);
   const user = useAuthStore((s) => s.user);
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const { data: members = [] } = useQuery(memberListOptions(wsId));
@@ -435,6 +439,7 @@ export function ChatWindow() {
       attachmentIds?: string[],
       commitInput?: (options?: { extraDraftKeys?: string[]; clearEditor?: boolean }) => void,
       draftAttachments: Attachment[] = [],
+      autonomyOverride: ChatAutonomyPolicyOverride | null = null,
     ): Promise<boolean> => {
       if (!activeAgent) {
         apiLogger.warn("sendChatMessage skipped: no active agent");
@@ -513,7 +518,7 @@ export function ChatWindow() {
       // the draft for retry (ChatInput never cleared it).
       let result;
       try {
-        result = await api.sendChatMessage(sessionId, finalContent, attachmentIds);
+        result = await api.sendChatMessage(sessionId, finalContent, attachmentIds, undefined, autonomyOverride);
       } catch (err) {
         apiLogger.error("sendChatMessage.error", { sessionId, err });
         const reason = dispatchReasonCode(err);
@@ -533,6 +538,9 @@ export function ChatWindow() {
         messageId: result.message_id,
         taskId: result.task_id,
       });
+      // Autonomy is a one-message override. Do not silently carry the same
+      // execution policy into the next ordinary chat message.
+      if (autonomyOverride) setAutonomyPolicy(null);
 
       // Render the accepted message from the server response. Seed the message
       // caches BEFORE flipping activeSessionId: if we set the active session
@@ -1022,6 +1030,8 @@ export function ChatWindow() {
         projectId={activeProjectId}
         onProjectChange={handleProjectChange}
         projectContextUnsupported={projectContextSupport === false}
+        autonomyPolicy={autonomyPolicy}
+        onAutonomyPolicyChange={setAutonomyPolicy}
         isProjectUpdating={
           setSessionProject.isPending || (!!activeSessionId && !currentSession)
         }

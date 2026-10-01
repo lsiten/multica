@@ -2,14 +2,16 @@
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { Check, ChevronRight, Link2, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, UserMinus } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Check, ChevronRight, Link2, MoreHorizontal, PanelRight, Pin, PinOff, RefreshCw, Trash2, UserMinus } from "lucide-react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { cn } from "@multica/ui/lib/utils";
 import { copyText } from "@multica/ui/lib/clipboard";
 import { toast } from "sonner";
-import type { ProjectStatus, ProjectPriority } from "@multica/core/types";
+import type { ProjectCollaborationGraphResponse, ProjectStatus, ProjectPriority } from "@multica/core/types";
+import { api } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import { projectDetailOptions } from "@multica/core/projects/queries";
+import { projectCollaborationEvidenceInfiniteOptions, projectCollaborationGraphInfiniteOptions } from "@multica/core/collaboration";
 import { useUpdateProject, useDeleteProject } from "@multica/core/projects/mutations";
 import { pinListOptions } from "@multica/core/pins";
 import { useCreatePin, useDeletePin } from "@multica/core/pins";
@@ -73,6 +75,9 @@ import {
 import { useT } from "../../i18n";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
+import { CollaborationGraphCanvas } from "../../collaboration/components";
+
+type ProjectDetailTab = "issues" | "graph";
 
 // ---------------------------------------------------------------------------
 // Property row — sidebar property display
@@ -101,6 +106,7 @@ function PropRow({
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const { t } = useT("projects");
+  const { t: collaborationT } = useT("collaboration");
   const statusLabels = useProjectStatusLabels();
   const priorityLabels = useProjectPriorityLabels();
   const wsId = useWorkspaceId();
@@ -108,6 +114,20 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const router = useNavigation();
   const userId = useAuthStore((s) => s.user?.id);
   const { data: project, isLoading } = useQuery(projectDetailOptions(wsId, projectId));
+  const [collaborationStatus, setCollaborationStatus] = useState("");
+  const collaborationQuery = useInfiniteQuery(projectCollaborationGraphInfiniteOptions(wsId, projectId, collaborationStatus));
+  const collaborationGraphPages = collaborationQuery.data?.pages ?? [];
+  const collaborationGraph = useMemo<ProjectCollaborationGraphResponse | undefined>(() => {
+    const base = collaborationGraphPages[0];
+    if (!base) return undefined;
+    const nodes = new Map(base.nodes.map((node) => [node.id, node]));
+    const edges = new Map(base.edges.map((edge) => [edge.id, edge]));
+    for (const page of collaborationGraphPages.slice(1)) {
+      for (const node of page.nodes) nodes.set(node.id, node);
+      for (const edge of page.edges) edges.set(edge.id, edge);
+    }
+    return { ...base, nodes: [...nodes.values()], edges: [...edges.values()], has_more: collaborationQuery.hasNextPage ?? false };
+  }, [collaborationGraphPages, collaborationQuery.hasNextPage]);
   const recordRecentContext = useRecentContextStore((s) => s.recordVisit);
   useEffect(() => {
     if (project) {
@@ -150,6 +170,20 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [propertiesOpen, setPropertiesOpen] = useState(true);
   const [progressOpen, setProgressOpen] = useState(true);
   const [descriptionOpen, setDescriptionOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<ProjectDetailTab>("issues");
+  const [selectedCollaborationEdge, setSelectedCollaborationEdge] = useState<string | undefined>();
+  useEffect(() => { setSelectedCollaborationEdge(undefined); }, [wsId, projectId, collaborationStatus]);
+  const collaborationEvidenceQuery = useInfiniteQuery(projectCollaborationEvidenceInfiniteOptions(wsId, projectId, selectedCollaborationEdge, collaborationStatus));
+  const graphEventsQuery = useQuery({ queryKey: ["project-graph-events", wsId, projectId], queryFn: () => api.listProjectGraphEvents(projectId, { limit: 200 }), enabled: activeTab === "graph" });
+  const producedArtifacts = useMemo(() => (graphEventsQuery.data?.events ?? []).flatMap((event) => {
+    const artifact = event.data?.artifact;
+    const attachmentIDs = Array.isArray(event.data?.artifact_attachment_ids) ? event.data.artifact_attachment_ids.filter((id): id is string => typeof id === "string") : [];
+    return artifact && typeof artifact === "object" ? [{ event, artifact: artifact as Record<string, unknown>, attachmentIDs }] : attachmentIDs.length > 0 ? [{ event, artifact: {}, attachmentIDs }] : [];
+  }), [graphEventsQuery.data?.events]);
+  const collaborationEvidence = useMemo(() => {
+    const pages = collaborationEvidenceQuery.data?.pages ?? [];
+    return pages.length === 0 ? undefined : { ...pages[0], evidence: pages.flatMap((page) => page.evidence), has_more: collaborationEvidenceQuery.hasNextPage ?? false };
+  }, [collaborationEvidenceQuery.data?.pages, collaborationEvidenceQuery.hasNextPage]);
 
   // Sidebar panel
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
@@ -412,7 +446,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <PropRow label={t(($) => $.detail.prop_due_date)}>
             <ProjectDueDatePicker dueDate={project.due_date} onUpdate={handleUpdateField} />
           </PropRow>
-        </div>}
+          {producedArtifacts.length > 0 && <section className="mt-4 rounded-md border p-3"><h3 className="text-caption font-medium">成果与来源</h3><div className="mt-2 space-y-2">{producedArtifacts.map(({ event, artifact, attachmentIDs }) => <div key={event.id} className="rounded-md bg-muted/30 p-2 text-[11px]"><div className="font-medium">任务 {event.task_id.slice(0, 8)} · {event.event_type}</div>{typeof artifact.branch_name === "string" && <div className="text-muted-foreground">分支：{artifact.branch_name}</div>}{typeof artifact.durable_work_dir === "string" && <div className="text-muted-foreground">持久工作目录：{artifact.durable_work_dir}</div>}{typeof artifact.derived_from_task_id === "string" && <div className="text-muted-foreground">来源任务：{artifact.derived_from_task_id}</div>}{attachmentIDs.length > 0 && <div className="text-muted-foreground">附件来源：{attachmentIDs.join(", ")}</div>}</div>)}</div></section>}
+          </div>}
       </div>
 
       {/* Progress */}
@@ -470,6 +505,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
+
+
     </div>
   );
 
@@ -548,10 +585,14 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             }
           />
 
-          <IssueSurface
-            scope={issueScope}
-            modes={["board", "list", "table", "swimlane", "gantt"]}
-          />
+          <div className="flex shrink-0 items-center gap-0 overflow-x-auto border-b px-4">
+            <button type="button" onClick={() => setActiveTab("issues")} className={cn("border-b-2 px-3 py-2.5 text-caption font-medium", activeTab === "issues" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{collaborationT(($) => $.project_tab_tasks)}</button>
+            <button type="button" onClick={() => setActiveTab("graph")} className={cn("border-b-2 px-3 py-2.5 text-caption font-medium", activeTab === "graph" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{collaborationT(($) => $.project_tab_graph)}</button>
+          </div>
+          {activeTab === "issues" ? <IssueSurface scope={issueScope} modes={["board", "list", "table", "swimlane", "gantt"]} /> : <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6"><div className="mb-3 flex items-center justify-between gap-2"><div><h2 className="text-body font-medium">{collaborationT(($) => $.project_title)}</h2><p className="text-caption text-muted-foreground">{collaborationT(($) => $.project_description)}</p></div><div className="flex flex-wrap items-center justify-end gap-2">
+<select aria-label={collaborationT(($) => $.status_filter)} className="h-8 rounded-md border bg-background px-2 text-[11px]" value={collaborationStatus} onChange={(event) => setCollaborationStatus(event.target.value)}>
+<option value="">{collaborationT(($) => $.status_all)}</option><option value="running">{collaborationT(($) => $.status_running)}</option><option value="completed">{collaborationT(($) => $.status_completed)}</option><option value="failed">{collaborationT(($) => $.status_failed)}</option>
+</select>{collaborationGraph ? <span className="text-[11px] text-muted-foreground">{collaborationT(($) => $.agents_count, { count: collaborationGraph.summary.agent_count })}</span> : null}<Button size="sm" variant="ghost" onClick={() => { void collaborationQuery.refetch(); }} disabled={collaborationQuery.isFetching}><RefreshCw className="mr-1 h-3.5 w-3.5" />{collaborationT(($) => $.refresh)}</Button></div></div>{collaborationQuery.isLoading ? <Skeleton className="h-64 w-full" /> : collaborationQuery.isError ? <div className="rounded-md border border-dashed p-6 text-center text-caption text-muted-foreground"><p>{collaborationT(($) => $.load_failed)}</p><Button size="sm" variant="outline" className="mt-3" onClick={() => void collaborationQuery.refetch()}>{collaborationT(($) => $.retry)}</Button></div> : <><CollaborationGraphCanvas nodes={collaborationGraph?.nodes ?? []} edges={collaborationGraph?.edges ?? []} coverage={collaborationGraph?.summary.coverage} coverageReasons={collaborationGraph?.coverage_reasons} asOf={collaborationGraph?.as_of} onEdgeClick={(edge) => setSelectedCollaborationEdge(edge.id)} emptyLabel={collaborationT(($) => $.empty_project)} />{collaborationGraph?.has_more ? <div className="mt-3 flex justify-center"><Button size="sm" variant="outline" onClick={() => collaborationQuery.fetchNextPage()} disabled={collaborationQuery.isFetching}>{collaborationQuery.isFetching ? collaborationT(($) => $.loading_more) : collaborationT(($) => $.load_more)}</Button></div> : null}{selectedCollaborationEdge && <div className="mt-4 rounded-md border p-3"><h3 className="text-caption font-medium">{collaborationT(($) => $.evidence_title)}</h3>{collaborationEvidenceQuery.isLoading ? <p className="mt-2 text-[11px] text-muted-foreground">{collaborationT(($) => $.loading_more)}</p> : collaborationEvidenceQuery.isError ? <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-destructive"><span>{collaborationT(($) => $.load_failed)}</span><Button size="sm" variant="outline" onClick={() => void collaborationEvidenceQuery.refetch()}>{collaborationT(($) => $.retry)}</Button></div> : collaborationEvidence?.evidence.length ? <><div className="mt-2 space-y-2">{collaborationEvidence.evidence.map((item) => <div key={item.task_id} className="rounded-md bg-muted/30 p-2 text-[11px]"><div className="font-medium">{item.relation_type} · {item.status}</div><div className="text-muted-foreground">{collaborationT(($) => $.task_events, { id: item.task_id, count: item.event_count })}</div></div>)}</div>{collaborationEvidenceQuery.hasNextPage ? <Button size="sm" variant="ghost" className="mt-2" onClick={() => void collaborationEvidenceQuery.fetchNextPage()} disabled={collaborationEvidenceQuery.isFetchingNextPage}>{collaborationEvidenceQuery.isFetchingNextPage ? collaborationT(($) => $.loading_more) : collaborationT(($) => $.load_more)}</Button> : null}</> : <p className="mt-2 text-[11px] text-muted-foreground">{collaborationT(($) => $.no_evidence)}</p>}</div>}</>}</div>}
           </div>
         </ResizablePanel>
         {!isMobile && <ResizableHandle />}

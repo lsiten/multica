@@ -41,6 +41,7 @@ import {
 import { AppLink, useOptionalNavigation } from "../../navigation";
 import { useComposioAvailable } from "./connected-apps-tab";
 import { settingsHref } from "./settings-navigation";
+import { McpReadinessCard } from "./mcp-readiness-card";
 
 /**
  * The workspace MCP server library (GH #6062).
@@ -59,6 +60,7 @@ import { settingsHref } from "./settings-navigation";
  */
 export function McpTab() {
   const { t } = useT("settings");
+  const { t: collaborationT } = useT("collaboration");
   const workspace = useCurrentWorkspace();
   const wsId = workspace?.id ?? "";
   const currentMember = useCurrentMember(wsId);
@@ -211,6 +213,32 @@ export function McpTab() {
       {!canManage && !currentMember.isLoading ? (
         <SettingsReadOnlyNotice wsId={wsId} />
       ) : null}
+      <SettingsSection
+        title={collaborationT(($) => $.mcp_builtin_title)}
+        description={collaborationT(($) => $.mcp_builtin_description)}
+      >
+        <SettingsCard>
+          <ul className="divide-y divide-surface-border">
+            <li className="flex items-start gap-3 p-4">
+              <Blocks className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_decision)}</p>
+                <p className="mt-1 text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_decision_hint)}</p>
+              </div>
+              <Badge variant="secondary">{collaborationT(($) => $.mcp_builtin_auto)}</Badge>
+            </li>
+            <li className="flex items-start gap-3 p-4">
+              <Plug className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_identity)}</p>
+                <p className="mt-1 text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_identity_hint)}</p>
+              </div>
+              <Badge variant="outline">{collaborationT(($) => $.mcp_builtin_identity_required)}</Badge>
+            </li>
+          </ul>
+        </SettingsCard>
+        <McpReadinessCard />
+      </SettingsSection>
       <ToolSourcesOverview />
       <SettingsSection
         title={t(($) => $.mcp.servers_title)}

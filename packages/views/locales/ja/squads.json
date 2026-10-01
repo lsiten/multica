@@ -90,6 +90,7 @@
     "status_archived": "アーカイブ済み"
   },
   "detail_tabs": {
+    "graph": "グラフ",
     "members": "メンバー",
     "instructions": "指示"
   },

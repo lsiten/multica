@@ -168,3 +168,42 @@ LEFT JOIN issue i
        ON i.id = atq.issue_id
 WHERE sm.squad_id = $1
 ORDER BY sm.created_at ASC, atq.dispatched_at DESC NULLS LAST;
+
+-- name: GetSquadCollaborationGraph :one
+SELECT squad_id, workspace_id, revision, relations, updated_at
+FROM squad_collaboration_graph
+WHERE squad_id = $1 AND workspace_id = $2;
+
+-- name: UpsertSquadCollaborationGraph :one
+WITH updated AS (
+    UPDATE squad_collaboration_graph
+    SET revision = revision + 1, relations = sqlc.arg(relations), updated_at = now()
+    WHERE squad_collaboration_graph.squad_id = sqlc.arg(squad_id) AND squad_collaboration_graph.workspace_id = sqlc.arg(workspace_id)
+      AND revision = sqlc.arg(expected_revision)::integer
+    RETURNING *
+), inserted AS (
+    INSERT INTO squad_collaboration_graph (squad_id, workspace_id, revision, relations)
+    SELECT sqlc.arg(squad_id), sqlc.arg(workspace_id), 1, sqlc.arg(relations)
+    WHERE sqlc.arg(expected_revision)::integer = 0
+    ON CONFLICT (squad_id) DO NOTHING
+    RETURNING *
+)
+SELECT * FROM updated UNION ALL SELECT * FROM inserted;
+
+-- name: DeleteSquadCollaborationGraph :exec
+DELETE FROM squad_collaboration_graph WHERE squad_id = $1 AND workspace_id = $2;
+
+-- name: InsertSquadCollaborationHistory :exec
+INSERT INTO squad_collaboration_history (squad_id, workspace_id, revision, snapshot, updated_by)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (squad_id, revision) DO NOTHING;
+
+-- name: GetSquadCollaborationHistory :one
+SELECT snapshot FROM squad_collaboration_history
+WHERE squad_id = $1 AND workspace_id = $2 AND revision = $3;
+
+-- name: DeleteSquadCollaborationHistoryByWorkspace :exec
+DELETE FROM squad_collaboration_history WHERE workspace_id = $1;
+
+-- name: DeleteSquadCollaborationGraphByWorkspace :exec
+DELETE FROM squad_collaboration_graph WHERE workspace_id = $1;

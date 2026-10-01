@@ -623,6 +623,19 @@ export interface Agent {
   archived_by: string | null;
 }
 
+/** Non-secret identity manifest configured for a digital Agent. */
+export interface AgentIdentity {
+  agent_id: string;
+  email?: string;
+  phone?: string;
+  updated_at?: string;
+}
+
+export interface UpdateAgentIdentityRequest {
+  email: string;
+  phone: string;
+}
+
 export interface AgentConversationStarter {
   /** Short chip label shown in the empty state. */
   label: string;

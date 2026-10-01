@@ -27,7 +27,7 @@ import { attachmentToDraftUpload, type DraftUpload } from "@multica/core/drafts"
 import { createLogger } from "@multica/core/logger";
 import { formatShortcut, useShortcut } from "@multica/core/shortcuts";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
-import type { Attachment, ChatMessage, Project } from "@multica/core/types";
+import type { Attachment, ChatAutonomyPolicyOverride, ChatMessage, Project } from "@multica/core/types";
 import { useChatInputHistory } from "./use-chat-input-history";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ClearablePillButton } from "../../common/pill-button";
@@ -66,6 +66,7 @@ interface ChatInputProps {
     attachmentIds: string[] | undefined,
     commitInput: (options?: { extraDraftKeys?: string[]; clearEditor?: boolean }) => void,
     draftAttachments: Attachment[],
+    autonomyPolicy?: ChatAutonomyPolicyOverride | null,
   ) => void | boolean | Promise<void | boolean>;
   restoreDraftRequest?: {
     id: string;
@@ -139,6 +140,8 @@ interface ChatInputProps {
    *  the composer only surfaces a warning next to the chip and in the
    *  project submenu. */
   projectContextUnsupported?: boolean;
+  autonomyPolicy?: ChatAutonomyPolicyOverride | null;
+  onAutonomyPolicyChange?: (policy: ChatAutonomyPolicyOverride | null) => void;
   /** Monotonic nonce bumped by the owner whenever the compose box should grab
    *  keyboard focus — currently on "new chat" so the user can type right away.
    *  0 (the initial value) is inert, so a plain deep-link open never steals
@@ -179,6 +182,8 @@ export function ChatInput({
   onProjectChange,
   isProjectUpdating,
   projectContextUnsupported,
+  autonomyPolicy,
+  onAutonomyPolicyChange,
   focusRequest,
   draftKeyOverride,
   editorKeyOverride,
@@ -189,6 +194,9 @@ export function ChatInput({
   const editorRef = useRef<ContentEditorRef>(null);
   const voiceRef = useRef<ChatVoiceInputRef>(null);
   const [voiceActive, setVoiceActive] = useState(false);
+  const [uncontrolledAutonomyPolicy, setUncontrolledAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
+  const effectiveAutonomyPolicy = onAutonomyPolicyChange ? autonomyPolicy : uncontrolledAutonomyPolicy;
+  const changeAutonomyPolicy = onAutonomyPolicyChange ?? setUncontrolledAutonomyPolicy;
   const composerRef = useRef<HTMLDivElement>(null);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   // Two keys with deliberately different concerns:
@@ -220,6 +228,12 @@ export function ChatInput({
   // Embedded surfaces (Agent Builder) still pass `editorKeyOverride` to isolate
   // their own composer.
   const draftKey = draftKeyOverride ?? activeSessionId ?? DRAFT_NEW_SESSION;
+  // A mode choice belongs to one agent/session draft. The composer instance is
+  // intentionally stable across navigation, so clear its local fallback when
+  // the target changes instead of leaking limits into another conversation.
+  useEffect(() => {
+    if (!onAutonomyPolicyChange) setUncontrolledAutonomyPolicy(null);
+  }, [agentId, draftKey, onAutonomyPolicyChange]);
   const history = useChatInputHistory({
     scope: JSON.stringify([historyWorkspaceId, draftKey]),
     sessionId: draftKey,
@@ -596,11 +610,16 @@ export function ChatInput({
         draftKey: keyAtSend,
         attachmentCount: uniqueActiveIds.length,
       });
+      const sentAttachments = draftAttachments.filter((attachment) => uniqueActiveIds.includes(attachment.id));
+      // Forward the fifth slot even when it is null: null explicitly resets
+      // autonomy for this message, while undefined means inherit the daemon
+      // default for embedded callers that do not expose the mode menu.
       const accepted = await onSend(
         content,
         uniqueActiveIds.length > 0 ? uniqueActiveIds : undefined,
         commitInput,
-        draftAttachments.filter((attachment) => uniqueActiveIds.includes(attachment.id)),
+        sentAttachments,
+        effectiveAutonomyPolicy,
       );
       // Owner rejected the send (or threw, which useComposerSubmit also treats
       // as a rejection): the draft was never committed, so it stays put for
@@ -821,9 +840,9 @@ export function ChatInput({
             };
           }}
         />}
-        {!voiceActive && (uploadEnabled || projectSelectionEnabled || leftAdornment) && (
+        {!voiceActive && (
           <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
-            {(uploadEnabled || projectSelectionEnabled) && (
+            {(
               <ChatAddMenu
                 onSelectFile={uploadEnabled
                   ? (file) => editorRef.current?.uploadFile(file)
@@ -832,6 +851,8 @@ export function ChatInput({
                 projectId={projectId}
                 onSelectProject={projectSelectionEnabled ? onProjectChange : undefined}
                 projectContextUnsupported={projectContextUnsupported}
+        autonomyPolicy={effectiveAutonomyPolicy}
+        onAutonomyPolicyChange={changeAutonomyPolicy}
               />
             )}
             {leftAdornment}

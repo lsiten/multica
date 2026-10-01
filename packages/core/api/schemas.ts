@@ -93,6 +93,11 @@ import type {
   MirrorNetworkSettings,
   MirrorNetworkMode,
   PinnedItem,
+  ProjectCollaborationGraphResponse,
+  ProjectCollaborationEvidenceResponse,
+  ProjectGraphEventsResponse,
+  WorkspaceJevConfigResponse,
+  SquadCollaborationGraphResponse,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
@@ -1628,6 +1633,113 @@ const SearchProjectResultSchema = ProjectSchema.extend({
   match_source: z.string(),
   matched_snippet: z.string().optional(),
 }).loose();
+
+const CollaborationGraphNodeSchema = z.object({
+  id: z.string(),
+  type: z.string(),
+  label: z.string().default(""),
+  status: z.string().nullable().optional().default(null),
+  data: z.record(z.string(), z.unknown()).optional().default({}),
+}).loose();
+
+const CollaborationGraphEdgeSchema = z.object({
+  id: z.string(),
+  from: z.string(),
+  to: z.string(),
+  type: z.string(),
+  count: z.number().int().nonnegative().default(0),
+  active_count: z.number().int().nonnegative().default(0),
+  evidence_count: z.number().int().nonnegative().default(0),
+  last_event_at: z.string().nullable().optional().default(null),
+}).loose();
+
+export const ProjectCollaborationGraphResponseSchema = z.object({
+  project_id: z.string(),
+  nodes: z.array(CollaborationGraphNodeSchema).default([]),
+  edges: z.array(CollaborationGraphEdgeSchema).default([]),
+  summary: z.object({
+    task_count: z.number().int().nonnegative().default(0),
+    agent_count: z.number().int().nonnegative().default(0),
+    active_count: z.number().int().nonnegative().default(0),
+    coverage: z.string().default("empty"),
+  }).default({ task_count: 0, agent_count: 0, active_count: 0, coverage: "empty" }),
+  as_of: z.string().default(""),
+  limit: z.number().int().nonnegative().default(100),
+  offset: z.number().int().nonnegative().default(0),
+  has_more: z.boolean().default(false),
+  truncated: z.boolean().default(false),
+  coverage_reasons: z.array(z.string()).default([]),
+}).loose().transform((value): ProjectCollaborationGraphResponse => value as ProjectCollaborationGraphResponse);
+
+export const EMPTY_PROJECT_COLLABORATION_GRAPH_RESPONSE: ProjectCollaborationGraphResponse = {
+  project_id: "",
+  nodes: [],
+  edges: [],
+  summary: { task_count: 0, agent_count: 0, active_count: 0, coverage: "empty" },
+  as_of: "",
+  limit: 100,
+  offset: 0,
+  has_more: false,
+  truncated: false,
+  coverage_reasons: [],
+};
+
+const ProjectGraphEventSchema = z.object({
+  id: z.string(), project_id: z.string(), task_id: z.string(), event_type: z.string(),
+  node_id: z.string().default(""), data: z.record(z.string(), z.unknown()).nullable().default(null), created_at: z.string(),
+}).loose();
+export const ProjectGraphEventsResponseSchema = z.object({
+  events: z.array(ProjectGraphEventSchema).default([]), limit: z.number().int().nonnegative().default(100), offset: z.number().int().nonnegative().default(0),
+}).loose().transform((value): ProjectGraphEventsResponse => value as ProjectGraphEventsResponse);
+export const EMPTY_PROJECT_GRAPH_EVENTS_RESPONSE: ProjectGraphEventsResponse = { events: [], limit: 100, offset: 0 };
+
+const WorkspaceJevConfigSchema = z.object({
+  source: z.string(), model_id: z.string().optional(), model_revision: z.string().optional(),
+  device: z.string().optional(), endpoint: z.string().optional(), credential_env: z.string().optional(),
+  timeout_seconds: z.number().int().nonnegative().default(45), revision: z.number().int().nonnegative().default(0),
+}).loose();
+export const WorkspaceJevConfigResponseSchema = z.object({
+  workspace_id: z.string(), config: WorkspaceJevConfigSchema, revision: z.number().int().nonnegative().default(0),
+}).loose().transform((value): WorkspaceJevConfigResponse => value as unknown as WorkspaceJevConfigResponse);
+export const EMPTY_WORKSPACE_JEV_CONFIG_RESPONSE: WorkspaceJevConfigResponse = {
+  workspace_id: "", config: { source: "agent_context", timeout_seconds: 45, revision: 0 }, revision: 0,
+};
+
+const ProjectCollaborationEvidenceSchema = z.object({
+  task_id: z.string(), source_task_id: z.string().nullable().default(null), agent_id: z.string(), source_agent_id: z.string().nullable().default(null),
+  relation_type: z.string().default("root"), status: z.string().default("unknown"), issue_id: z.string().nullable().default(null), squad_id: z.string().nullable().default(null),
+  trigger_comment_id: z.string().nullable().default(null), created_at: z.string(), started_at: z.string().nullable().default(null), completed_at: z.string().nullable().default(null),
+  event_count: z.number().int().nonnegative().default(0), retry_of_task_id: z.string().nullable().optional().default(null), rerun_of_task_id: z.string().nullable().optional().default(null),
+}).loose();
+export const ProjectCollaborationEvidenceResponseSchema = z.object({
+  project_id: z.string(), evidence: z.array(ProjectCollaborationEvidenceSchema).default([]), total: z.number().int().nonnegative().default(0), limit: z.number().int().nonnegative().default(100), offset: z.number().int().nonnegative().default(0), has_more: z.boolean().default(false), as_of: z.string().default(""), truncated: z.boolean().default(false),
+}).loose().transform((value): ProjectCollaborationEvidenceResponse => value as ProjectCollaborationEvidenceResponse);
+export const EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE: ProjectCollaborationEvidenceResponse = { project_id: "", evidence: [], total: 0, limit: 100, offset: 0, has_more: false, as_of: "", truncated: false };
+
+const SquadCollaborationMemberSchema = z.object({
+  member_id: z.string(), member_type: z.string(), label: z.string().default(""), role: z.string().default(""),
+}).loose();
+const SquadCollaborationRelationSchema = z.object({
+  id: z.string(), from_member_id: z.string(), to_member_id: z.string(),
+  from_member_type: z.string(), to_member_type: z.string(), type: z.string(),
+  label: z.string().default(""), trigger: z.string().default(""),
+  deliverables: z.array(z.string()).default([]), acceptance: z.string().default(""),
+}).loose();
+export const SquadCollaborationGraphResponseSchema = z.object({
+  squad_id: z.string(), revision: z.number().int().nonnegative().default(0),
+  updated_at: z.string().nullable().optional().default(null),
+  members: z.array(SquadCollaborationMemberSchema).default([]),
+  relations: z.array(SquadCollaborationRelationSchema).default([]),
+  derived_relations: z.array(SquadCollaborationRelationSchema).default([]),
+}).loose().transform((value): SquadCollaborationGraphResponse => value as unknown as SquadCollaborationGraphResponse);
+export const SquadCollaborationGraphSaveResponseSchema = z.object({
+  squad_id: z.string().min(1), revision: z.number().int().positive(),
+  members: z.array(SquadCollaborationMemberSchema),
+  relations: z.array(SquadCollaborationRelationSchema),
+}).loose().transform((value): SquadCollaborationGraphResponse => value as unknown as SquadCollaborationGraphResponse);
+export const EMPTY_SQUAD_COLLABORATION_GRAPH_RESPONSE: SquadCollaborationGraphResponse = {
+  squad_id: "", revision: 0, updated_at: null, members: [], relations: [], derived_relations: [],
+};
 
 export const SearchProjectsResponseSchema = z.object({
   projects: z.array(SearchProjectResultSchema).default([]),
@@ -3916,3 +4028,10 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+export const AgentIdentitySchema = z.object({
+  agent_id: z.string(),
+  email: z.string().optional().default(""),
+  phone: z.string().optional().default(""),
+  updated_at: z.string().optional(),
+});

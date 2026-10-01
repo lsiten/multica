@@ -12,6 +12,8 @@ export type {
 } from "./issue-status";
 export type {
   Agent,
+  AgentIdentity,
+  UpdateAgentIdentityRequest,
   AgentConversationStarter,
   AgentStatus,
   AgentRuntimeMode,
@@ -93,6 +95,24 @@ export type {
 } from "./agent";
 export { RUNTIME_PROFILE_PROTOCOL_FAMILIES, RUNTIME_PROFILE_RUNTIME_TYPES } from "./agent";
 export type { Workspace, WorkspaceRepo, WorkspaceMcpServer, Member, MemberRole, User, MemberWithUser, Invitation, ShareLink, ShareLinkInfo } from "./workspace";
+export type {
+  CollaborationGraphEdge,
+  CollaborationGraphEdgeType,
+  CollaborationGraphNode,
+  CollaborationGraphNodeType,
+  ProjectCollaborationGraphResponse,
+  ProjectCollaborationEvidence,
+  ProjectCollaborationEvidenceResponse,
+  ProjectCollaborationGraphSummary,
+  SquadCollaborationGraphResponse,
+  SquadCollaborationMember,
+  SquadCollaborationRelation,
+  SquadCollaborationRelationType,
+  UpdateSquadCollaborationGraphRequest,
+} from "./collaboration-graph";
+export type { ChatAutonomyPolicyOverride } from "./chat-autonomy";
+export type { ProjectGraphEvent, ProjectGraphEventsResponse } from "./project-graph";
+export type { JevSource, JevQuestionType, WorkspaceJevConfig, WorkspaceJevConfigResponse, UpdateWorkspaceJevConfigRequest } from "./jev";
 export type {
   MirrorSessionDescription,
   MirrorICEServer,

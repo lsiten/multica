@@ -506,7 +506,7 @@ func (b *reasonixBackend) Execute(ctx context.Context, prompt string, opts ExecO
 		}
 	}()
 
-	return &Session{Messages: msgCh, Result: resCh}, nil
+	return &Session{Messages: msgCh, Result: resCh, UsageSnapshot: NewReportedUsageSnapshot(c.accumulatedUsage)}, nil
 }
 
 // reasonixToolNameFromTitle normalises tool names emitted by Reasonix's ACP

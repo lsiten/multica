@@ -90,6 +90,7 @@
     "last_active_label": "마지막 활동 {{time}}"
   },
   "detail_tabs": {
+    "graph": "그래프",
     "members": "멤버",
     "instructions": "지침"
   },

@@ -41,6 +41,12 @@ export async function startMacDaemon(options: MacDaemonLaunch): Promise<void> {
     const child = spawn(options.binary, [
       "daemon", "start", "--foreground", "--profile", options.profile,
     ], {
+      // Desktop can itself be launched from a daemon-managed task checkout.
+      // Running the CLI from that inherited cwd makes it discover the task
+      // marker and refuse the host daemon start. The profile directory is
+      // Desktop-owned and contains no task marker, so use it as the process
+      // cwd for the lifecycle child.
+      cwd: options.directory,
       env: options.env,
       detached: false,
       stdio: ["ignore", log.fd, log.fd],

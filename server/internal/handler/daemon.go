@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -2526,6 +2527,19 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	if rc := bytes.TrimSpace(agent.RuntimeConfig); len(rc) > 0 && !bytes.Equal(rc, []byte("{}")) && !bytes.Equal(rc, []byte("null")) {
 		runtimeConfig = json.RawMessage(agent.RuntimeConfig)
 	}
+	var identity *AgentIdentityData
+	if row, identityErr := h.Queries.GetAgentIdentity(r.Context(), db.GetAgentIdentityParams{
+		AgentID: agent.ID, WorkspaceID: agent.WorkspaceID,
+	}); identityErr == nil {
+		identity = &AgentIdentityData{
+			Email: row.Email.String, Phone: row.Phone.String,
+		}
+	} else if !errors.Is(identityErr, pgx.ErrNoRows) {
+		// Preserve the task for redelivery when the identity manifest cannot be
+		// loaded rather than launching without the configured identifiers.
+		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount,
+			h.rejectClaimSourceLoad(r.Context(), task, identityErr, "agent identity", uuidToString(agent.ID))
+	}
 	resp.Agent = &TaskAgentData{
 		ID:                    uuidToString(agent.ID),
 		Name:                  agent.Name,
@@ -2537,7 +2551,27 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		ThinkingLevel:         agent.ThinkingLevel.String,
 		ServiceTier:           agent.ServiceTier.String,
 		RuntimeConfig:         runtimeConfig,
+		Identity:              identity,
 		DisabledRuntimeSkills: disabledRuntimeSkillsFor(agent.DisabledRuntimeSkills, runtimeID, runtime.Provider),
+	}
+	var taskContext map[string]json.RawMessage
+	if len(task.Context) > 0 && json.Unmarshal(task.Context, &taskContext) == nil {
+		if override, exists := taskContext["autonomy_policy"]; exists {
+			resp.Agent.RuntimeConfigOverride = json.RawMessage(`{"multica_autonomy":` + string(override) + `}`)
+		}
+	}
+	jeV, jevErr := h.captureWorkspaceJevConfig(r.Context(), *task, parseUUID(runtimeWorkspaceID))
+	if jevErr != nil {
+		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, jevErr, "workspace Jev config", runtimeWorkspaceID)
+	}
+	resp.JevConfig = &jeV
+	if jeV.Source != "agent_context" && !requestHasClientCapability(r, protocol.DaemonCapabilityJevV1) {
+		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(
+			r.Context(), task,
+			"This workspace Jev model requires a newer daemon. Update the daemon before using a local or remote Jev source.",
+			taskfailure.ReasonAgentRuntimeVersionUnsupported,
+			"error_jev_capability_missing", http.StatusConflict, "daemon Jev capability is required",
+		)
 	}
 	// System agents carry a product-owned instruction layer that ships with
 	// this binary instead of being copied into their row at creation. That
@@ -4959,6 +4993,112 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type projectGraphEventRequest struct {
+	ProjectID string          `json:"project_id"`
+	EventType string          `json:"event_type"`
+	NodeID    string          `json:"node_id,omitempty"`
+	Data      json.RawMessage `json:"data,omitempty"`
+}
+
+// ReportProjectGraphEvent accepts only task-scoped events and validates the
+// project against the task workspace before persisting them.
+func (h *Handler) ReportProjectGraphEvent(w http.ResponseWriter, r *http.Request) {
+	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, chi.URLParam(r, "taskId"))
+	if !ok {
+		return
+	}
+	var req projectGraphEventRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 128<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid project graph event")
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid project graph event")
+		return
+	}
+	projectID, ok := parseUUIDOrBadRequest(w, req.ProjectID, "project_id")
+	if !ok {
+		return
+	}
+	if req.EventType != "task_started" && req.EventType != "task_finished" {
+		writeError(w, http.StatusBadRequest, "unsupported project graph event type")
+		return
+	}
+	if req.NodeID != "" && req.NodeID != uuidToString(task.ID) {
+		writeError(w, http.StatusBadRequest, "project graph node must be the reporting task")
+		return
+	}
+	req.NodeID = uuidToString(task.ID)
+	if len(req.NodeID) > 256 {
+		writeError(w, http.StatusBadRequest, "project graph node_id is too long")
+		return
+	}
+	if len(req.Data) > maxProjectGraphEventData || (len(req.Data) > 0 && !json.Valid(req.Data)) {
+		writeError(w, http.StatusBadRequest, "project graph event data is invalid or too large")
+		return
+	}
+	if _, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{
+		ID: projectID, WorkspaceID: parseUUID(workspaceID),
+	}); err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	// The task-scoped token proves workspace access, but it does not by itself
+	// prove that the daemon is reporting against the project selected for this
+	// task. Resolve the source-side project again so a stale or compromised
+	// daemon cannot attach events to an unrelated same-workspace project.
+	resolvedProject, err := h.Queries.GetAgentTaskProjectID(r.Context(), task.ID)
+	if err != nil {
+		slog.Warn("resolve task project for graph event failed", "task_id", task.ID.String(), "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to resolve task project")
+		return
+	}
+	if !resolvedProject.Valid || resolvedProject != projectID {
+		writeError(w, http.StatusConflict, "project does not match task")
+		return
+	}
+	data, err := enrichProjectGraphEventData(req.Data, task)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start graph transaction")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+	if _, err := qtx.LockWorkspaceForChatSessionCreate(r.Context(), parseUUID(workspaceID)); err != nil {
+		writeError(w, http.StatusConflict, "project workspace is unavailable")
+		return
+	}
+	if _, err := qtx.LockProjectForChatSessionCreate(r.Context(), db.LockProjectForChatSessionCreateParams{
+		ID: projectID, WorkspaceID: parseUUID(workspaceID),
+	}); err != nil {
+		writeError(w, http.StatusConflict, "project is unavailable")
+		return
+	}
+	event, err := qtx.CreateProjectGraphEvent(r.Context(), db.CreateProjectGraphEventParams{
+		WorkspaceID: parseUUID(workspaceID), ProjectID: projectID,
+		TaskID: task.ID, EventType: req.EventType,
+		NodeID: pgtype.Text{String: req.NodeID, Valid: req.NodeID != ""},
+		Data:   data,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist project graph event")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit project graph event")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": uuidToString(event.ID)})
 }
 
 // GetTaskStatus returns the current status of a task.

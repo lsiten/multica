@@ -30,6 +30,8 @@
     "./workspace/hooks": "./workspace/hooks.ts",
     "./workspace/workspace-url": "./workspace/workspace-url.ts",
     "./workspace/avatar-url": "./workspace/avatar-url.ts",
+    "./collaboration": "./collaboration/index.ts",
+    "./collaboration/queries": "./collaboration/queries.ts",
     "./issue-statuses": "./issue-statuses/index.ts",
     "./issue-statuses/queries": "./issue-statuses/queries.ts",
     "./issue-statuses/hooks": "./issue-statuses/hooks.ts",

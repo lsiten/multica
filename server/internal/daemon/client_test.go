@@ -58,6 +58,7 @@ func TestClient_IdentityHeaders_PostJSON(t *testing.T) {
 			// Without it the server never hands this daemon the wakeups that
 			// waited for its run; they start runs of their own instead.
 			protocol.DaemonCapabilityJoinedWakeupsV1,
+			protocol.DaemonCapabilityJevV1,
 		} {
 			if !capabilities[want] {
 				t.Errorf("X-Client-Capabilities missing %q: %v", want, capabilities)
@@ -190,6 +191,35 @@ func TestClient_ResolveRemoteMCPCredentialUsesExplicitDaemonToken(t *testing.T) 
 	}
 	if got := headers.Get("Authorization"); got != "Bearer upstream" {
 		t.Fatalf("resolved credential = %q", got)
+	}
+	if got := c.Token(); got != "mul_owner_pat" {
+		t.Fatalf("client PAT was mutated to %q", got)
+	}
+}
+
+func TestClient_SendAgentEmailUsesExplicitTaskToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer mdt_task_email" {
+			t.Errorf("Authorization = %q, want task daemon token", got)
+		}
+		if got := r.URL.Path; got != "/api/daemon/tasks/task-1/identity/email" {
+			t.Errorf("path = %q", got)
+		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["recipient"] != "alice@example.test" || body["subject"] != "hello" || body["body"] != "plain text" {
+			t.Fatalf("body = %#v", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.SetToken("mul_owner_pat")
+	if err := c.SendAgentEmail(context.Background(), "mdt_task_email", "task-1", "alice@example.test", "hello", "plain text"); err != nil {
+		t.Fatalf("SendAgentEmail: %v", err)
 	}
 	if got := c.Token(); got != "mul_owner_pat" {
 		t.Fatalf("client PAT was mutated to %q", got)

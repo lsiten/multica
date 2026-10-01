@@ -1325,8 +1325,24 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceAgents(ctx, requester.WorkspaceID) },
 		},
 		{
+			name: "delete project graph events",
+			run:  func() error { return qtx.DeleteWorkspaceProjectGraphEvents(ctx, requester.WorkspaceID) },
+		},
+		{
+			name: "delete squad collaboration graphs",
+			run:  func() error { return qtx.DeleteWorkspaceSquadCollaborationGraphs(ctx, requester.WorkspaceID) },
+		},
+		{
+			name: "delete squad collaboration history",
+			run:  func() error { return qtx.DeleteWorkspaceSquadCollaborationHistory(ctx, requester.WorkspaceID) },
+		},
+		{
 			name: "delete runtimes and projects",
 			run:  func() error { return qtx.DeleteWorkspaceRuntimesAndProjects(ctx, requester.WorkspaceID) },
+		},
+		{
+			name: "delete workspace Jev config",
+			run:  func() error { return qtx.DeleteWorkspaceJevConfig(ctx, requester.WorkspaceID) },
 		},
 		{
 			name: "delete administration data",

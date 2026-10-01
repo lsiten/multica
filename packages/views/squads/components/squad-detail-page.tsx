@@ -6,6 +6,7 @@ import { api } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { squadCollaborationGraphOptions } from "@multica/core/collaboration";
 import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import { isImeComposing } from "@multica/core/utils";
 import { getShortcut, shortcutMatchesEvent } from "@multica/core/shortcuts";
@@ -15,7 +16,7 @@ import { useNavigation } from "../../navigation";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";
-import { Users, Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save } from "lucide-react";
+import { Users, Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save, GitBranch } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
@@ -61,6 +62,7 @@ import { ChevronDown, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import type { Squad, SquadMember, SquadMemberStatus, SquadMemberStatusValue, Agent, MemberWithUser } from "@multica/core/types";
 import { useT } from "../../i18n";
+import { SquadCollaborationGraphTab } from "../../collaboration/components/squad-collaboration-graph-tab";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
 export function SquadDetailPage() {
@@ -936,11 +938,12 @@ function SquadDescriptionEditorBody({
 // Mirrors AgentOverviewPane: dirty-guard via AlertDialog when switching tabs
 // with unsaved Instructions.
 // ---------------------------------------------------------------------------
-type SquadDetailTab = "members" | "instructions";
+type SquadDetailTab = "members" | "instructions" | "graph";
 
 const squadDetailTabs: { id: SquadDetailTab; icon: typeof FileText }[] = [
   { id: "members", icon: Users },
   { id: "instructions", icon: FileText },
+  { id: "graph", icon: GitBranch },
 ];
 
 function SquadOverviewPane({
@@ -980,7 +983,10 @@ function SquadOverviewPane({
   onSaveInstructions: (next: string) => Promise<void>;
   setLeaderPending: boolean;
 }) {
+  const { t: collaborationT } = useT("collaboration");
   const { t } = useT("squads");
+  const wsId = useWorkspaceId();
+  const { data: collaborationGraph } = useQuery(squadCollaborationGraphOptions(wsId, squad.id));
   const [activeTab, setActiveTab] = useState<SquadDetailTab>("members");
   const [activeDirty, setActiveDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<SquadDetailTab | null>(null);
@@ -1046,6 +1052,15 @@ function SquadOverviewPane({
               onSave={onSaveInstructions}
               onDirtyChange={setActiveDirty}
             />
+          </div>
+        )}
+        {activeTab === "graph" && (
+          <div className="flex h-full flex-col gap-3 p-4 md:p-6">
+            <div>
+              <h3 className="text-body font-medium">{collaborationT(($) => $.squad_title)}</h3>
+              <p className="text-caption text-muted-foreground">{collaborationT(($) => $.squad_description)}</p>
+            </div>
+            <SquadCollaborationGraphTab squadId={squad.id} graph={collaborationGraph} canManage={canManage} onDirtyChange={setActiveDirty} />
           </div>
         )}
       </div>
