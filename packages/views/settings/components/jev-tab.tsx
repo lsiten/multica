@@ -174,7 +174,7 @@ export function JevTab() {
     return <SettingsTab title={t(($) => $.page.tabs.jev)} scope="workspace"><p className="text-caption text-muted-foreground">{t(($) => $.jev.admin_only)}</p></SettingsTab>;
   }
   if (query.isError) {
-    return <SettingsTab title={t(($) => $.page.tabs.jev)} scope="workspace"><div className="space-y-2"><p role="alert" className="text-caption text-destructive">{t(($) => $.jev.load_failed)}</p>{query.error instanceof Error && <code className="block max-w-xl break-words rounded bg-muted p-2 text-[11px]">{query.error.message}</code>}<Button size="sm" variant="outline" onClick={() => void query.refetch()}>{t(($) => $.jev.retry)}</Button></div></SettingsTab>;
+    return <SettingsTab title={t(($) => $.page.tabs.jev)} scope="workspace"><div className="space-y-2"><p role="alert" className="text-caption text-destructive">{t(($) => $.jev.load_failed)}</p>{query.error instanceof Error && <code className="block max-w-xl break-words rounded-xs bg-muted p-2 text-[11px]">{query.error.message}</code>}<Button size="sm" variant="outline" onClick={() => void query.refetch()}>{t(($) => $.jev.retry)}</Button></div></SettingsTab>;
   }
   if (query.isLoading || !draft || draftWorkspaceID !== workspaceID) {
     return <SettingsTab title={t(($) => $.page.tabs.jev)} scope="workspace"><p className="text-caption text-muted-foreground">{t(($) => $.jev.loading)}</p></SettingsTab>;
