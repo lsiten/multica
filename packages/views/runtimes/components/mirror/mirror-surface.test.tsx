@@ -135,8 +135,11 @@ vi.mock("./use-video-session", () => ({
   }),
 }));
 
+let platformOpenFloating:
+  | ((scope: VscreenScope, title: string) => Promise<void>)
+  | undefined = undefined;
 vi.mock("./mirror-platform", () => ({
-  useMirrorPlatform: () => ({ openFloating: undefined }),
+  useMirrorPlatform: () => ({ openFloating: platformOpenFloating }),
 }));
 
 vi.mock("./mirror-handoff", () => ({ MirrorHandoff: () => null }));
@@ -251,5 +254,73 @@ describe("MirrorSurface interaction", () => {
     controlBarProps.onCommand("enable_interaction");
 
     await waitFor(() => expect(startControl).toHaveBeenCalledOnce());
+  });
+});
+describe("MirrorSurface toolbar buttons", () => {
+  it("keeps the refresh button clickable and refetches sources", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <I18nProvider locale="en" resources={RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </I18nProvider>
+    );
+    render(<MirrorSurface scope={scope} runtime={runtime} />, { wrapper });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["state"])).toBeDefined(),
+    );
+    const refresh = screen.getByRole("button", { name: "Reconnect" });
+    expect(refresh).toBeEnabled();
+    fireEvent.click(refresh);
+  });
+
+  it("clicks the float button and opens the floating window", async () => {
+    const openFloating = vi.fn(async () => undefined);
+    platformOpenFloating = openFloating;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <I18nProvider locale="en" resources={RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </I18nProvider>
+    );
+    render(<MirrorSurface scope={scope} runtime={runtime} />, { wrapper });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["state"])).toBeDefined(),
+    );
+    const float = screen.getByRole("button", { name: "Open floating screen" });
+    expect(float).toBeEnabled();
+    fireEvent.click(float);
+    await waitFor(() => expect(openFloating).toHaveBeenCalledOnce());
+    expect(openFloating).toHaveBeenCalledWith(
+      expect.objectContaining({ runtimeId: "runtime" }),
+      expect.any(String),
+    );
+    platformOpenFloating = undefined;
+  });
+
+  it("hides float and clear-screen in compact (floating window) mode but keeps refresh operable", async () => {
+    platformOpenFloating = vi.fn(async () => undefined);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <I18nProvider locale="en" resources={RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </I18nProvider>
+    );
+    render(
+      <MirrorSurface scope={scope} runtime={runtime} compact />,
+      { wrapper },
+    );
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["state"])).toBeDefined(),
+    );
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Open floating screen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear screen" })).not.toBeInTheDocument();
+    platformOpenFloating = undefined;
   });
 });
