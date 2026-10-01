@@ -53,6 +53,7 @@ import type {
   TaskMessagePayload,
 } from "@multica/core/types";
 import type { AgentAvailability } from "@multica/core/agents";
+import { canContinueChatFailure } from "@multica/core/chat";
 import { continuousCorners } from "@/lib/radius";
 import { taskMessagesOptions } from "@/data/queries/chat";
 import { Text } from "@/components/ui/text";
@@ -102,6 +103,8 @@ interface Props {
   /** Resolved availability — drives the StatusPill's "Offline" /
    *  "Reconnecting" stages. Pass `undefined` while loading. */
   availability?: AgentAvailability;
+  onFailureAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  failureActionsDisabled?: boolean;
 }
 
 export function ChatMessageList({
@@ -115,6 +118,8 @@ export function ChatMessageList({
   pendingTask,
   liveTaskMessages,
   availability,
+  onFailureAction,
+  failureActionsDisabled = false,
 }: Props) {
   // Top-level selection subscription gates the outer "tap-outside-to-dismiss"
   // Pressable below. When null, the Pressable stays disabled and every tap
@@ -139,6 +144,13 @@ export function ChatMessageList({
       })),
     [messages],
   );
+  const inputMessageByTaskId = useMemo(() => {
+    const result = new Map<string, ChatMessage>();
+    for (const message of messages) {
+      if (message.role === "user" && message.task_id) result.set(message.task_id, message);
+    }
+    return result;
+  }, [messages]);
 
   if (loading && messages.length === 0) {
     return (
@@ -208,6 +220,11 @@ export function ChatMessageList({
           message={item}
           onQuickAction={onQuickAction}
           quickActionsDisabled={quickActionsDisabled}
+          onFailureAction={onFailureAction}
+          failureActionsDisabled={failureActionsDisabled}
+          failureInput={item.task_id
+            ? inputMessageByTaskId.get(item.input_task_id ?? item.task_id)
+            : undefined}
         />
       )}
       ItemSeparatorComponent={MessageSeparator}
@@ -268,10 +285,16 @@ function MessageRow({
   message,
   onQuickAction,
   quickActionsDisabled,
+  onFailureAction,
+  failureActionsDisabled,
+  failureInput,
 }: {
   message: ChatMessage;
   onQuickAction?: (action: ChatQuickAction) => void | Promise<unknown>;
   quickActionsDisabled: boolean;
+  onFailureAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  failureActionsDisabled: boolean;
+  failureInput?: ChatMessage;
 }) {
   const isUser = message.role === "user";
   const { t } = useT("chat");
@@ -289,6 +312,10 @@ function MessageRow({
         elapsedMs={message.elapsed_ms ?? null}
         isSelecting={isSelecting}
         longPress={longPress}
+        message={message}
+        hasOriginalInput={!!failureInput}
+        onAction={onFailureAction}
+        disabled={failureActionsDisabled}
       />
     );
   }
@@ -344,6 +371,9 @@ function MessageRow({
       longPress={longPress}
       onQuickAction={onQuickAction}
       quickActionsDisabled={quickActionsDisabled}
+      onFailureAction={onFailureAction}
+      failureActionsDisabled={failureActionsDisabled}
+      failureInput={failureInput}
     />
   );
 }
@@ -368,12 +398,18 @@ function AssistantRow({
   longPress,
   onQuickAction,
   quickActionsDisabled,
+  onFailureAction,
+  failureActionsDisabled,
+  failureInput,
 }: {
   message: ChatMessage;
   isSelecting: boolean;
   longPress: ReturnType<typeof useChatMessageLongPress>;
   onQuickAction?: (action: ChatQuickAction) => void | Promise<unknown>;
   quickActionsDisabled: boolean;
+  onFailureAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  failureActionsDisabled: boolean;
+  failureInput?: ChatMessage;
 }) {
   // Read the cached timeline if any. `enabled` (in taskMessagesOptions) is
   // gated on isTaskMessageTaskId — optimistic id prefixes never fetch, so
@@ -533,15 +569,34 @@ function FailureBubble({
   elapsedMs,
   isSelecting,
   longPress,
+  message,
+  hasOriginalInput,
+  onAction,
+  disabled,
 }: {
   reasonLabel: string;
   rawError: string;
   elapsedMs: number | null;
   isSelecting: boolean;
   longPress: ReturnType<typeof useChatMessageLongPress>;
+  message: ChatMessage;
+  hasOriginalInput: boolean;
+  onAction?: (message: ChatMessage, action: "retry" | "continue") => void | Promise<unknown>;
+  disabled: boolean;
 }) {
   const hasRawError = rawError.trim().length > 0;
   const { t } = useT("chat");
+  const [pendingAction, setPendingAction] = useState<"retry" | "continue" | null>(null);
+  const canContinue = canContinueChatFailure(message.failure_reason);
+  const runAction = async (action: "retry" | "continue") => {
+    if (!onAction || !hasOriginalInput || disabled || pendingAction) return;
+    setPendingAction(action);
+    try {
+      await onAction(message, action);
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   // B6: pass `selectable={isSelecting}` rather than hard-coding
   // `selectable` — otherwise UIKit's text-selection gesture pre-empts
@@ -591,6 +646,48 @@ function FailureBubble({
               </View>
             </CollapsibleContent>
           </Collapsible>
+        ) : null}
+        {onAction && hasOriginalInput ? (
+          <View className="mt-2 flex-row flex-wrap gap-2">
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: disabled || pendingAction !== null }}
+              disabled={disabled || pendingAction !== null}
+              onPress={() => void runAction("retry")}
+              className={cn(
+                "min-h-10 rounded-full border border-border bg-background px-3 justify-center active:opacity-70",
+                (disabled || pendingAction !== null) && "opacity-50",
+              )}
+            >
+              {pendingAction === "retry" ? (
+                <ActivityIndicator size="small" />
+              ) : (
+                <Text className="text-sm font-medium text-foreground">
+                  {t("failure_actions.retry")}
+                </Text>
+              )}
+            </Pressable>
+            {canContinue ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: disabled || pendingAction !== null }}
+                disabled={disabled || pendingAction !== null}
+                onPress={() => void runAction("continue")}
+                className={cn(
+                  "min-h-10 rounded-full px-3 justify-center active:opacity-70",
+                  (disabled || pendingAction !== null) && "opacity-50",
+                )}
+              >
+                {pendingAction === "continue" ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <Text className="text-sm font-medium text-primary">
+                    {t("failure_actions.continue")}
+                  </Text>
+                )}
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
       </View>
       {elapsedMs != null ? (

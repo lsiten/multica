@@ -868,6 +868,14 @@ WHERE message.chat_session_id = $1
   )
 ORDER BY message.created_at ASC, message.id ASC;
 
+-- name: ListChatTaskInputOwners :many
+-- Retry children keep the original direct-chat input owner in
+-- chat_input_task_id. The chat transcript exposes that stable owner so every
+-- client can associate a failed retry attempt with the original user message.
+SELECT id, chat_input_task_id
+FROM agent_task_queue
+WHERE chat_session_id = $1;
+
 -- name: ListChatMessagesForLegacyTask :many
 -- Legacy/reclaimed daemon tasks use trailing history, but must not absorb a
 -- newer queued successor that is already bound to its own user message.

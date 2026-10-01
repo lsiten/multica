@@ -48,6 +48,7 @@ import type {
   SearchProjectsResponse,
   ListIssueStatusesResponse,
   SendChatMessageResponse,
+  ContinueChatTaskResponse,
   Squad,
   NotificationPreferenceResponse,
   NotificationPreferences,
@@ -127,6 +128,7 @@ import {
   SearchIssuesResponseSchema,
   SearchProjectsResponseSchema,
   SendChatMessageResponseSchema,
+  ContinueChatTaskResponseSchema,
   SquadListSchema,
   TaskMessageListSchema,
   EMPTY_TASK_MESSAGE_LIST,
@@ -1186,6 +1188,24 @@ class ApiClient {
         issues: parsed.error.issues,
       });
       throw new ApiError("Send message response invalid", 0, raw);
+    }
+    return parsed.data;
+  }
+
+  async continueChatTask(
+    sessionId: string,
+    taskId: string,
+  ): Promise<ContinueChatTaskResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/chat/sessions/${sessionId}/tasks/${taskId}/continue`,
+      { method: "POST" },
+    );
+    const parsed = ContinueChatTaskResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.error("[api] ← shape mismatch POST /api/chat/sessions/:id/tasks/:taskId/continue", {
+        issues: parsed.error.issues,
+      });
+      throw new ApiError("Continue chat task response invalid", 0, raw);
     }
     return parsed.data;
   }

@@ -18,6 +18,7 @@ import type {
   ChatDraftRestoresResponse,
   ChatPendingTask,
   ChatSession,
+  ContinueChatTaskResponse,
   PrioritizeQueuedChatTaskResponse,
   SendChatMessageResponse,
   StartMikaOnboardingResponse,
@@ -1039,6 +1040,7 @@ export const ChatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]).catch("assistant"),
   content: z.string().default(""),
   task_id: z.string().nullable().default(null),
+  input_task_id: z.string().nullable().optional(),
   created_at: z.string().default(""),
   attachments: z.array(AttachmentSchema).optional(),
   failure_reason: z.string().nullable().optional(),
@@ -2439,6 +2441,12 @@ export const SendChatMessageResponseSchema: z.ZodType<SendChatMessageResponse> =
   queued: z.boolean().optional().catch(undefined),
   created_at: z.string().min(1),
   attachment_ids: z.array(z.string()).nullish().transform((ids) => ids ?? undefined),
+}).loose();
+
+export const ContinueChatTaskResponseSchema: z.ZodType<ContinueChatTaskResponse> = z.object({
+  task_id: z.string().min(1),
+  status: z.string().min(1),
+  created_at: z.string().min(1),
 }).loose();
 
 // `started` is the only field the flow branches on, and a malformed response

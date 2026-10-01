@@ -88,6 +88,7 @@ import { Header } from "@/components/ui/header";
 import { ChatTitleButton } from "@/components/chat/chat-title-button";
 import { ChatSessionActions } from "@/components/chat/chat-session-actions";
 import { ChatMessageList } from "@/components/chat/chat-message-list";
+import { findOriginalChatInputMessage } from "@/lib/chat-failure-action";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { AgentPickerSheet } from "@/components/chat/agent-picker-sheet";
 import { NoAgentBanner } from "@/components/chat/no-agent-banner";
@@ -442,6 +443,35 @@ export default function ChatTab() {
       .finally(() => invalidatePendingTask(qc, sessionId));
   }, [pendingTask?.task_id, pendingTask?.status, activeSessionId, qc]);
 
+  const handleFailureAction = useCallback(
+    async (message: ChatMessage, action: "retry" | "continue") => {
+      if (action === "continue") {
+        if (!message.task_id) {
+          Alert.alert(t("alerts.not_sent"), t("failure.default"));
+          return;
+        }
+        try {
+          await api.continueChatTask(message.chat_session_id, message.task_id);
+          await qc.invalidateQueries({ queryKey: chatKeys.pendingTask(message.chat_session_id) });
+        } catch (err) {
+          Alert.alert(t("alerts.not_sent"), sendFailureMessage(err));
+        }
+        return;
+      }
+      const original = findOriginalChatInputMessage(messages, message);
+      if (!original) {
+        Alert.alert(t("alerts.not_sent"), t("failure.default"));
+        return;
+      }
+      await handleSend(
+        original.content,
+        original.attachments?.map((attachment) => attachment.id) ?? [],
+        { clearDraft: false },
+      );
+    },
+    [handleSend, messages, qc, sendFailureMessage, t],
+  );
+
   // ── Header / sheet actions ─────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
     if (availableAgents.length > 1) {
@@ -545,6 +575,8 @@ export default function ChatTab() {
             handleSend(action.prompt, [], { clearDraft: false })
           }
           quickActionsDisabled={sending || disabled}
+          onFailureAction={handleFailureAction}
+          failureActionsDisabled={sending || disabled}
           pendingTask={pendingTask}
           liveTaskMessages={liveTaskMessages}
           availability={presenceAvailability}

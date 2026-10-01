@@ -33,6 +33,137 @@ func withChatTestWorkspaceCtx(t *testing.T, req *http.Request) *http.Request {
 	return req.WithContext(middleware.SetMemberContext(req.Context(), testWorkspaceID, memberRow))
 }
 
+func TestContinueChatTask_IsIdempotentAfterRecoveryChildSettles(t *testing.T) {
+	ctx := context.Background()
+	agentID := createHandlerTestAgent(t, "ChatContinuationIdempotencyAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	var sourceTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			attempt, max_attempts, failure_reason
+		)
+		SELECT id, runtime_id, $2, 'failed', 2, 1, 1, 'timeout'
+		FROM agent
+		WHERE id = $1
+		RETURNING id
+	`, agentID, sessionID).Scan(&sourceTaskID); err != nil {
+		t.Fatalf("insert failed chat task: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent_task_queue SET chat_input_task_id = id WHERE id = $1`, sourceTaskID); err != nil {
+		t.Fatalf("stamp chat input owner: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO chat_message (chat_session_id, role, content, task_id)
+		VALUES ($1, 'user', 'resume this turn', $2)
+	`, sessionID, sourceTaskID); err != nil {
+		t.Fatalf("insert chat input: %v", err)
+	}
+
+	continueTask := func(taskID string) (int, ContinueChatTaskResponse, string) {
+		req := httptest.NewRequest(http.MethodPost, "/api/chat/sessions/"+sessionID+"/tasks/"+taskID+"/continue", nil)
+		req.Header.Set("X-User-ID", testUserID)
+		req = withURLParams(req, "sessionId", sessionID, "taskId", taskID)
+		req = withChatTestWorkspaceCtx(t, req)
+		w := httptest.NewRecorder()
+		testHandler.ContinueChatTask(w, req)
+		var response ContinueChatTaskResponse
+		_ = json.Unmarshal(w.Body.Bytes(), &response)
+		return w.Code, response, w.Body.String()
+	}
+
+	status, first, body := continueTask(sourceTaskID)
+	if status != http.StatusAccepted || first.TaskID == "" {
+		t.Fatalf("first continuation status=%d response=%s", status, body)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent_task_queue SET status = 'completed', completed_at = now() WHERE id = $1`, first.TaskID); err != nil {
+		t.Fatalf("settle continuation child: %v", err)
+	}
+
+	status, _, body = continueTask(sourceTaskID)
+	if status != http.StatusConflict || !bytes.Contains([]byte(body), []byte(`"chat_continuation_unavailable"`)) {
+		t.Fatalf("second continuation status=%d response=%s", status, body)
+	}
+	var childCount int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM agent_task_queue WHERE retry_of_task_id = $1`, sourceTaskID).Scan(&childCount); err != nil {
+		t.Fatalf("count continuation children: %v", err)
+	}
+	if childCount != 1 {
+		t.Fatalf("continuation children = %d, want 1", childCount)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent_task_queue SET status = 'failed', failure_reason = 'timeout' WHERE id = $1`, first.TaskID); err != nil {
+		t.Fatalf("fail continuation child: %v", err)
+	}
+	status, _, body = continueTask(first.TaskID)
+	if status != http.StatusConflict || !bytes.Contains([]byte(body), []byte(`"chat_continuation_unavailable"`)) {
+		t.Fatalf("continuation child retry status=%d response=%s", status, body)
+	}
+}
+
+func TestListChatMessages_ExposesStableInputTaskIDForRetryFailure(t *testing.T) {
+	ctx := context.Background()
+	agentID := createHandlerTestAgent(t, "ChatRetryInputOwnerAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	var sourceTaskID, retryTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority, chat_input_task_id)
+		SELECT id, runtime_id, $2, 'failed', 2, NULL FROM agent WHERE id = $1
+		RETURNING id
+	`, agentID, sessionID).Scan(&sourceTaskID); err != nil {
+		t.Fatalf("insert source chat task: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent_task_queue SET chat_input_task_id = id WHERE id = $1`, sourceTaskID); err != nil {
+		t.Fatalf("stamp source input owner: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			parent_task_id, retry_of_task_id, chat_input_task_id
+		)
+		SELECT id, runtime_id, $2, 'failed', 2, $3, $3, $3
+		FROM agent WHERE id = $1
+		RETURNING id
+	`, agentID, sessionID, sourceTaskID).Scan(&retryTaskID); err != nil {
+		t.Fatalf("insert retry chat task: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO chat_message (chat_session_id, role, content, task_id)
+		VALUES ($1, 'user', 'original request', $2),
+		       ($1, 'assistant', 'provider unavailable', $3)
+	`, sessionID, sourceTaskID, retryTaskID); err != nil {
+		t.Fatalf("insert retry transcript: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/chat/sessions/"+sessionID+"/messages", nil)
+	req.Header.Set("X-User-ID", testUserID)
+	req = withURLParam(req, "sessionId", sessionID)
+	req = withChatTestWorkspaceCtx(t, req)
+	w := httptest.NewRecorder()
+	testHandler.ListChatMessages(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ListChatMessages: status=%d body=%s", w.Code, w.Body.String())
+	}
+	var messages []ChatMessageResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &messages); err != nil {
+		t.Fatalf("decode chat messages: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("retry transcript = %#v", messages)
+	}
+	var failure *ChatMessageResponse
+	for i := range messages {
+		if messages[i].Role == "assistant" {
+			failure = &messages[i]
+		}
+	}
+	if failure == nil || failure.TaskID == nil || *failure.TaskID != retryTaskID {
+		t.Fatalf("retry failure message = %#v", messages)
+	}
+	if failure.InputTaskID == nil || *failure.InputTaskID != sourceTaskID {
+		t.Fatalf("retry failure input_task_id = %#v, want %s", failure.InputTaskID, sourceTaskID)
+	}
+}
+
 func TestSendChatMessage_ReportsPositionInsteadOfQueuedStatus(t *testing.T) {
 	agentID := createHandlerTestAgent(t, "ChatSendQueuePositionAgent", []byte("[]"))
 	sessionID := createHandlerTestChatSession(t, agentID)

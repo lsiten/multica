@@ -71,6 +71,7 @@ import { useChatDraftRestore } from "./use-chat-draft-restore";
 import { useChatTaskActions } from "./use-chat-task-actions";
 import { useChatInputFocus } from "./use-chat-input-focus";
 import { ChatMessageList, ChatMessageSkeleton } from "./chat-message-list";
+import { findOriginalChatInputMessage } from "./chat-failure-action";
 import { ChatInput } from "./chat-input";
 import { ChatQueue } from "./chat-queue";
 import { EmptyState } from "./chat-empty-state";
@@ -650,6 +651,35 @@ export function ChatWindow() {
     });
   }, [pendingTaskId, activeSessionId, cancelChatTask]);
 
+  const handleFailureAction = useCallback(
+    async (message: ChatMessage, action: "retry" | "continue") => {
+      if (action === "continue") {
+        if (!message.task_id) {
+          toast.error(t(($) => $.input.send_failed_toast));
+          return;
+        }
+        try {
+          await api.continueChatTask(message.chat_session_id, message.task_id);
+          await qc.invalidateQueries({ queryKey: chatKeys.pendingTask(message.chat_session_id) });
+        } catch (err) {
+          apiLogger.error("continueChatTask.error", { sessionId: message.chat_session_id, taskId: message.task_id, err });
+          toast.error(t(($) => $.input.send_failed_toast));
+        }
+        return;
+      }
+      const original = findOriginalChatInputMessage(messages, message);
+      if (!original) {
+        toast.error(t(($) => $.input.send_failed_toast));
+        return;
+      }
+      await handleSend(
+        original.content,
+        original.attachments?.map((attachment) => attachment.id),
+      );
+    },
+    [handleSend, messages, qc, t],
+  );
+
   const handleSelectAgent = useCallback(
     (agent: Agent) => {
       // No-op when clicking the already-active agent — don't clobber the
@@ -955,6 +985,15 @@ export function ChatWindow() {
               : undefined
           }
           quickActionsPendingMessageId={quickActionsPending?.message_id ?? null}
+          onFailureAction={handleFailureAction}
+          failureActionsDisabled={
+            !!pendingTaskId ||
+            isSessionArchived ||
+            isAgentArchived ||
+            isAgentAccessRevoked ||
+            !activeAgentRuntimeBound ||
+            noAgent
+          }
         />
       ) : (
         <EmptyState
