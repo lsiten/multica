@@ -3,6 +3,7 @@ const RESUMABLE_FAILURE_REASONS = new Set([
   "timeout",
   "runtime_offline",
   "runtime_recovery",
+  "skill_bundle_unavailable",
   "agent_error.provider_network",
   "agent_error.provider_capacity_or_rate_limit",
   "agent_error.provider_server_error",

@@ -4,6 +4,7 @@ import { canContinueChatFailure } from "./failure-recovery";
 describe("canContinueChatFailure", () => {
   it("allows continuation for transient provider and runtime failures", () => {
     expect(canContinueChatFailure("runtime_offline")).toBe(true);
+    expect(canContinueChatFailure("skill_bundle_unavailable")).toBe(true);
     expect(canContinueChatFailure("agent_error.provider_network")).toBe(true);
     expect(canContinueChatFailure("agent_error.provider_capacity_or_rate_limit")).toBe(true);
   });

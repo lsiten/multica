@@ -886,7 +886,7 @@ describe("ChatMessageList failure copy (MUL-5370 regression)", () => {
                 task_id: "retry-child-task",
                 input_task_id: TASK_ID,
                 created_at: new Date(1).toISOString(),
-                failure_reason: "agent_error.provider_network",
+                failure_reason: "skill_bundle_unavailable",
               },
             ]}
             pendingTask={undefined}
