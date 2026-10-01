@@ -34,6 +34,10 @@ export function useVideoSession(
   const [authorization, setAuthorization] = useState<MirrorAuthorizationRequest | null>(null);
   const [authorizationPending, setAuthorizationPending] = useState(false);
   const [authorizationFailed, setAuthorizationFailed] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [autoRetry, setAutoRetry] = useState(0);
+  const autoRetryAttempt = useRef(0);
+  const autoRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const decisionInFlight = useRef(false);
   const authorizationID = useRef<string | null>(null);
   const sessionRef = useRef<MirrorVideoSession | null>(null);
@@ -67,7 +71,13 @@ export function useVideoSession(
               if (active) setMetadata(value);
             },
             state: (state, reason) => {
-              if (active) setStatus({ state, reason });
+              if (active) {
+                setStatus({ state, reason });
+                if (state === "decoding" || state === "streaming") {
+                  autoRetryAttempt.current = 0;
+                  setReconnecting(false);
+                }
+              }
             },
             control: (value) => {
               if (active) setControlState(value);
@@ -97,6 +107,7 @@ export function useVideoSession(
     authorizationID.current = null;
     setAuthorizationPending(false);
     setAuthorizationFailed(false);
+    setReconnecting(false);
     decisionInFlight.current = false;
     const pageClosed = () => {
       void session?.close();
@@ -109,12 +120,41 @@ export function useVideoSession(
     return () => {
       window.removeEventListener("pagehide", pageClosed);
       active = false;
+      clearTimeout(autoRetryTimer.current);
+      autoRetryTimer.current = undefined;
       sessionRef.current = null;
       closing.current = session?.close() ?? Promise.resolve();
     };
     // The serialized identity is the exact immutable peer scope and source binding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, retry]);
+  }, [identity, retry, autoRetry]);
+
+  useEffect(() => {
+    // Only retry failures that can clear without changing permissions or the
+    // selected source. Permanent capture/auth failures remain actionable.
+    const retryable = new Set([
+      "transport",
+      "negotiation_timeout",
+      "negotiation-failed",
+      "negotiation_failed",
+      "session-expired",
+    ]);
+    if (!binding || status.state !== "failed" || !retryable.has(status.reason ?? "")) {
+      return;
+    }
+    const attempt = autoRetryAttempt.current;
+    autoRetryAttempt.current += 1;
+    const delay = Math.min(1_000 * 2 ** Math.min(attempt, 4), 16_000);
+    setReconnecting(true);
+    autoRetryTimer.current = setTimeout(() => {
+      autoRetryTimer.current = undefined;
+      setAutoRetry((value) => value + 1);
+    }, delay);
+    return () => {
+      clearTimeout(autoRetryTimer.current);
+      autoRetryTimer.current = undefined;
+    };
+  }, [binding, status.reason, status.state]);
   useEffect(() => {
     if (!authorization) return;
     const delay = Math.max(0, Date.parse(authorization.expires_at) - Date.now());
@@ -152,6 +192,7 @@ export function useVideoSession(
     authorization: current ? authorization : null,
     authorizationPending,
     authorizationFailed,
+    reconnecting,
     dismissAuthorization: () => setAuthorization(null),
     respondAuthorization: async (requestId: string, approved: boolean) => {
       if (!currentSession || decisionInFlight.current) return;

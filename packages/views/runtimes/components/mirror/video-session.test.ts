@@ -151,6 +151,12 @@ describe("Video viewer lease lifecycle", () => {
     await session.start();
     const peer = Peer.latest;
     if (!peer) throw new Error("Peer was not created");
+    peer.connectionState = "disconnected";
+    peer.onconnectionstatechange?.();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(state.mock.calls.some(([value, reason]) => value === "failed" && reason === "transport")).toBe(false);
+    peer.connectionState = "connected";
+    peer.onconnectionstatechange?.();
     // When
     await vi.advanceTimersByTimeAsync(11000);
     peer.ontrack?.({

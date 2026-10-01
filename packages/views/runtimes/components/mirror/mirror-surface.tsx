@@ -2,7 +2,15 @@
 import { MirrorHandoff } from "./mirror-handoff";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Monitor, PictureInPicture2, RefreshCw, MessageSquare, EyeOff } from "lucide-react";
+import {
+  EyeOff,
+  Maximize2,
+  MessageSquare,
+  Minimize2,
+  Monitor,
+  PictureInPicture2,
+  RefreshCw,
+} from "lucide-react";
 import type {
   RuntimeDevice,
   VscreenCommandKind,
@@ -71,6 +79,8 @@ export function MirrorSurface({
   const previousSelectedSource = useRef<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [floatingError, setFloatingError] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const surfaceRef = useRef<HTMLElement>(null);
   const [commandId, setCommandId] = useState<string | null>(null);
   const autoStartControl = useRef(false);
   const command = useVscreenCommand(scope);
@@ -176,6 +186,8 @@ export function MirrorSurface({
               ? t(($) => $.vscreen.source_gone)
               : sources.isPending || video.state === "preparing"
                 ? t(($) => $.vscreen.preparing)
+                : video.reconnecting
+                  ? t(($) => $.vscreen.reconnecting)
                 : sources.isError || video.state === "failed"
                   ? t(($) => $.vscreen.failed)
                   : !catalog.length
@@ -187,6 +199,26 @@ export function MirrorSurface({
                         : t(($) => $.vscreen.negotiating);
   const label = runtimeDisplayLabel(runtime);
   const quality = video.quality ?? video.metadata?.quality;
+  useEffect(() => {
+    const onFullscreenChange = () =>
+      setFullscreen(document.fullscreenElement === surfaceRef.current);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+  const toggleFullscreen = async () => {
+    const surface = surfaceRef.current;
+    if (!surface || typeof document === "undefined") return;
+    try {
+      if (document.fullscreenElement === surface) {
+        await document.exitFullscreen();
+      } else if (surface.requestFullscreen) {
+        await surface.requestFullscreen();
+      }
+    } catch {
+      // Browsers can reject fullscreen when the gesture is no longer active.
+      setFullscreen(false);
+    }
+  };
   const controlActive = video.control.status === "active";
   const sendType = (text: string) =>
     video.sendInput({
@@ -249,8 +281,10 @@ export function MirrorSurface({
   }, [source, state.data?.state.humanInteraction, video]);
   return (
     <section
+      ref={surfaceRef}
       aria-label={t(($) => $.mirror.frame_label)}
-      className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card"
+      className={`flex min-h-0 flex-col overflow-hidden border bg-card ${fullscreen ? "h-dvh w-dvw rounded-none" : "rounded-lg"}`}
+      data-fullscreen={fullscreen ? "true" : "false"}
     >
       <div className="flex flex-wrap items-center gap-2 border-b p-2">
         <MirrorSourcePicker
@@ -292,6 +326,15 @@ export function MirrorSurface({
             <PictureInPicture2 aria-hidden="true" />
           </Button>
         )}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t(($) => fullscreen ? $.vscreen.exit_fullscreen : $.vscreen.fullscreen)}
+          aria-pressed={fullscreen}
+          onClick={() => void toggleFullscreen()}
+        >
+          {fullscreen ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+        </Button>
         {!compact && (
           <Button
             size="sm"
@@ -314,7 +357,7 @@ export function MirrorSurface({
         enabled={online && readable}
         catalog={catalog}
       />
-      <div className="relative aspect-video min-h-0 w-full bg-muted/30">
+      <div className={`relative min-h-0 w-full bg-muted/30 ${fullscreen ? "flex-1" : "aspect-video"}`}>
         {video.authorization && (
           <MirrorAuthorizationPrompt
             request={video.authorization}
@@ -376,7 +419,7 @@ export function MirrorSurface({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-caption text-muted-foreground">
-        <span role={video.state === "failed" ? "alert" : "status"}>
+        <span role={video.state === "failed" && !video.reconnecting ? "alert" : "status"}>
           {status}
         </span>
         {!compact && quality && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { RuntimeMirrorPage } from "@multica/views/runtimes";
+import { MirrorPlatformProvider, RuntimeMirrorPage } from "@multica/views/runtimes";
 
 export default function RuntimeMirrorRoute({
   params,
@@ -9,5 +9,17 @@ export default function RuntimeMirrorRoute({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  return <RuntimeMirrorPage runtimeId={id} />;
+  return (
+    <MirrorPlatformProvider
+      value={{
+        openFloating: async () => {
+          const presentation = window.open(window.location.href, "_blank");
+          if (!presentation) throw new Error("Presentation view was blocked");
+          presentation.opener = null;
+        },
+      }}
+    >
+      <RuntimeMirrorPage runtimeId={id} />
+    </MirrorPlatformProvider>
+  );
 }
