@@ -68,9 +68,9 @@ describe("worktree management", () => {
       { ...row("agent-id", "/second"), agentName: "", workspaceId: "other" },
     ]);
     vi.mocked(api.listAgents).mockImplementation(async (params) => [
-      { id: "agent-id", runtime_id: "runtime", name: params?.workspace_id === "ws" ? "开发智能体" : "测试智能体" },
-      { id: "second-agent", runtime_id: "runtime", name: "另一个业务智能体" },
-      { id: "no-local-worktree", runtime_id: "runtime", name: "没有本地目录的智能体" },
+      { id: "agent-id", runtime_id: "runtime", workspace_id: params?.workspace_id, name: params?.workspace_id === "ws" ? "开发智能体" : "测试智能体" },
+      { id: "second-agent", runtime_id: "runtime", workspace_id: params?.workspace_id, name: "另一个业务智能体" },
+      { id: "no-local-worktree", runtime_id: "runtime", workspace_id: params?.workspace_id, name: "没有本地目录的智能体" },
     ] as Awaited<ReturnType<typeof api.listAgents>>);
     vi.mocked(api.listRuntimes).mockImplementation(async (params) => [
       { id: "runtime", name: "codex", custom_name: "本机 Codex", daemon_id: params?.workspace_id === "ws" ? "daemon" : "other-device" },
