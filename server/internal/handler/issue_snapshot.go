@@ -28,9 +28,9 @@ import (
 // REMOVING a field does not qualify and must not bump: the remaining fields are
 // still present in old rows and still mean the same thing, so the comparison
 // stays correct and the extra key is simply ignored. Dropping status (MUL-7344
-// review) is that case, which is why this is still 1 even though rows written
-// by the previous shape already exist.
-const issueSnapshotVersion = 1
+// review) is that case. Scope fields were added in v2 so rows from v1 cannot
+// authorize provider session or workdir reuse after a project/squad move.
+const issueSnapshotVersion = 2
 
 // Compared field names, in the fixed order they are reported.
 //
@@ -75,6 +75,8 @@ type issueStateSnapshot struct {
 	Version           int    `json:"v"`
 	TitleSHA256       string `json:"title_sha256"`
 	DescriptionSHA256 string `json:"description_sha256"`
+	ProjectID         string `json:"project_id"`
+	SquadID           string `json:"squad_id"`
 }
 
 func sha256Hex(s string) string {
@@ -84,11 +86,31 @@ func sha256Hex(s string) string {
 
 // buildIssueStateSnapshot captures the compared fields of an issue as of now.
 func buildIssueStateSnapshot(issue db.Issue) issueStateSnapshot {
+	return buildIssueStateSnapshotForTask(issue, pgtype.UUID{})
+}
+
+func buildIssueStateSnapshotForTask(issue db.Issue, squadID pgtype.UUID) issueStateSnapshot {
 	return issueStateSnapshot{
 		Version:           issueSnapshotVersion,
 		TitleSHA256:       sha256Hex(issue.Title),
 		DescriptionSHA256: sha256Hex(issue.Description.String),
+		ProjectID:         uuidToString(issue.ProjectID),
+		SquadID:           uuidToString(squadID),
 	}
+}
+
+// issueSnapshotMatchesTaskScope is fail-closed: snapshots written before the
+// scope fields existed, or malformed snapshots, cannot authorize provider
+// session/workdir reuse even when the current issue is unscoped. There is no
+// evidence that the prior run was unscoped, so fresh execution is safer.
+func issueSnapshotMatchesTaskScope(raw []byte, issue db.Issue, squadID pgtype.UUID) bool {
+	snapshot, ok := decodeIssueStateSnapshot(raw)
+	if !ok {
+		// Unknown, legacy, or malformed snapshots cannot prove that the prior
+		// provider session/workdir belonged to the current project and squad.
+		return false
+	}
+	return snapshot.ProjectID == uuidToString(issue.ProjectID) && snapshot.SquadID == uuidToString(squadID)
 }
 
 // changedFieldsSince reports which compared fields differ from prev, in the

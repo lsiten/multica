@@ -67,6 +67,30 @@ func projectOutbound(eventType string, payload any) any {
 	return projected
 }
 
+// projectScopedOutbound keeps the workspace boundary explicit in the client
+// payload as well as in the WebSocket room. A client can briefly keep the old
+// socket alive while switching workspaces, so relying only on room routing
+// leaves it unable to reject a delayed frame from the previous room. The
+// field is additive and preserves every existing payload shape.
+func projectScopedOutbound(eventType string, payload any, workspaceID string) any {
+	projected := projectOutbound(eventType, payload)
+	if workspaceID == "" {
+		return projected
+	}
+	raw, err := json.Marshal(projected)
+	if err != nil {
+		return projected
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return projected
+	}
+	// The event envelope is authoritative. Do not preserve a stale or forged
+	// payload value: the client uses this field as its cache-routing boundary.
+	object["workspace_id"] = workspaceID
+	return object
+}
+
 // registerListeners wires up event bus listeners for WS broadcasting.
 // Personal events (inbox, invites) are sent only to the target user via
 // SendToUser. All other events are broadcast to the workspace room.
@@ -96,7 +120,7 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 		if recipientID == "" {
 			return
 		}
-		data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectOutbound(e.Type, e.Payload), "actor_id": e.ActorID, "actor_type": e.ActorType})
+		data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectScopedOutbound(e.Type, e.Payload, e.WorkspaceID), "actor_id": e.ActorID, "actor_type": e.ActorType})
 		if err != nil {
 			return
 		}
@@ -145,7 +169,7 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 			// Fallback for map encoding.
 			if invMap, ok := payload["invitation"].(map[string]any); ok {
 				if uid, _ := invMap["invitee_user_id"].(*string); uid != nil && *uid != "" {
-					data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectOutbound(e.Type, e.Payload), "actor_id": e.ActorID, "actor_type": e.ActorType})
+					data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectScopedOutbound(e.Type, e.Payload, e.WorkspaceID), "actor_id": e.ActorID, "actor_type": e.ActorType})
 					if err != nil {
 						return
 					}
@@ -156,7 +180,7 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 			return
 		}
 		if inv.InviteeUserID != nil && *inv.InviteeUserID != "" {
-			data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectOutbound(e.Type, e.Payload), "actor_id": e.ActorID, "actor_type": e.ActorType})
+			data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectScopedOutbound(e.Type, e.Payload, e.WorkspaceID), "actor_id": e.ActorID, "actor_type": e.ActorType})
 			if err != nil {
 				return
 			}
@@ -192,7 +216,7 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 			if e.ActorID == "" {
 				return
 			}
-			data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectOutbound(e.Type, e.Payload), "actor_id": e.ActorID, "actor_type": e.ActorType})
+			data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectScopedOutbound(e.Type, e.Payload, e.WorkspaceID), "actor_id": e.ActorID, "actor_type": e.ActorType})
 			if err != nil {
 				return
 			}
@@ -231,7 +255,7 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 		if userID == "" {
 			return
 		}
-		data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectOutbound(e.Type, e.Payload), "actor_id": e.ActorID, "actor_type": e.ActorType})
+		data, err := json.Marshal(map[string]any{"type": e.Type, "payload": projectScopedOutbound(e.Type, e.Payload, e.WorkspaceID), "actor_id": e.ActorID, "actor_type": e.ActorType})
 		if err != nil {
 			return
 		}
@@ -248,7 +272,7 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 
 		msg := map[string]any{
 			"type":       e.Type,
-			"payload":    projectOutbound(e.Type, e.Payload),
+			"payload":    projectScopedOutbound(e.Type, e.Payload, e.WorkspaceID),
 			"actor_id":   e.ActorID,
 			"actor_type": e.ActorType,
 		}

@@ -384,7 +384,8 @@ SELECT
     $7,
     $8,
     COALESCE($9::boolean, FALSE),
-    $10,
+    COALESCE($10::jsonb, '{}'::jsonb)
+      || jsonb_build_object('project_id', (SELECT project_id::text FROM chat_session WHERE id = $4)),
     $11,
     $12,
     $13,
@@ -950,6 +951,9 @@ WITH retired_sessions AS (
     SELECT DISTINCT r.retired_session_id AS session_id
     FROM agent_task_queue r
     WHERE r.chat_session_id = $1
+      AND r.context->>'project_id' IS NOT DISTINCT FROM (
+        SELECT project_id::text FROM chat_session WHERE id = $1
+      )
       AND (
         $2::bigint IS NULL
         OR COALESCE(r.channel_context_revision, 1) = $2::bigint
@@ -963,6 +967,9 @@ WITH retired_sessions AS (
     SELECT MAX(t.completed_at) AS at
     FROM agent_task_queue t
     WHERE t.chat_session_id = $1
+      AND t.context->>'project_id' IS NOT DISTINCT FROM (
+        SELECT project_id::text FROM chat_session WHERE id = $1
+      )
       AND (
         $2::bigint IS NULL
         OR COALESCE(t.channel_context_revision, 1) = $2::bigint
@@ -977,6 +984,9 @@ WITH retired_sessions AS (
         t.session_id, t.work_dir, t.runtime_id, t.status, t.failure_reason, t.error, t.completed_at
     FROM agent_task_queue t
     WHERE t.chat_session_id = $1
+      AND t.context->>'project_id' IS NOT DISTINCT FROM (
+        SELECT project_id::text FROM chat_session WHERE id = $1
+      )
       AND (
         $2::bigint IS NULL
         OR COALESCE(t.channel_context_revision, 1) = $2::bigint
@@ -3670,7 +3680,10 @@ func (q *Queries) UpdateChatMessageContentForChannelMedia(ctx context.Context, a
 
 const updateChatSessionProject = `-- name: UpdateChatSessionProject :one
 UPDATE chat_session
-SET project_id = $1
+SET project_id = $1,
+    session_id = CASE WHEN project_id IS DISTINCT FROM $1::uuid THEN NULL ELSE session_id END,
+    work_dir = CASE WHEN project_id IS DISTINCT FROM $1::uuid THEN NULL ELSE work_dir END,
+    runtime_id = CASE WHEN project_id IS DISTINCT FROM $1::uuid THEN NULL ELSE runtime_id END
 WHERE id = $2 AND workspace_id = $3
 RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
 `
@@ -3714,7 +3727,15 @@ SET session_id = COALESCE($1, session_id),
     work_dir = COALESCE($2, work_dir),
     runtime_id = COALESCE($3, runtime_id),
     updated_at = now()
-WHERE id = $4
+WHERE chat_session.id = $4
+  AND (
+    EXISTS (
+      SELECT 1 FROM agent_task_queue
+      WHERE agent_task_queue.id = $5
+        AND context ? 'project_id'
+        AND chat_session.project_id IS NOT DISTINCT FROM NULLIF(context->>'project_id', '')::uuid
+    )
+  )
 `
 
 type UpdateChatSessionSessionParams struct {
@@ -3722,6 +3743,7 @@ type UpdateChatSessionSessionParams struct {
 	WorkDir   pgtype.Text `json:"work_dir"`
 	RuntimeID pgtype.UUID `json:"runtime_id"`
 	ID        pgtype.UUID `json:"id"`
+	TaskID    pgtype.UUID `json:"task_id"`
 }
 
 // Updates the resume pointer for a chat session. Empty/NULL inputs are
@@ -3735,6 +3757,7 @@ func (q *Queries) UpdateChatSessionSession(ctx context.Context, arg UpdateChatSe
 		arg.WorkDir,
 		arg.RuntimeID,
 		arg.ID,
+		arg.TaskID,
 	)
 	return err
 }

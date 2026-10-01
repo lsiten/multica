@@ -232,7 +232,10 @@ RETURNING *;
 -- Project context is user-editable session metadata. Do not touch updated_at:
 -- changing context is not conversation activity and must not reorder history.
 UPDATE chat_session
-SET project_id = sqlc.narg('project_id')
+SET project_id = sqlc.narg('project_id'),
+    session_id = CASE WHEN project_id IS DISTINCT FROM sqlc.narg('project_id')::uuid THEN NULL ELSE session_id END,
+    work_dir = CASE WHEN project_id IS DISTINCT FROM sqlc.narg('project_id')::uuid THEN NULL ELSE work_dir END,
+    runtime_id = CASE WHEN project_id IS DISTINCT FROM sqlc.narg('project_id')::uuid THEN NULL ELSE runtime_id END
 WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
 RETURNING *;
 
@@ -282,7 +285,15 @@ SET session_id = COALESCE(sqlc.narg('session_id'), session_id),
     work_dir = COALESCE(sqlc.narg('work_dir'), work_dir),
     runtime_id = COALESCE(sqlc.narg('runtime_id'), runtime_id),
     updated_at = now()
-WHERE id = sqlc.arg('id');
+WHERE chat_session.id = sqlc.arg('id')
+  AND (
+    EXISTS (
+      SELECT 1 FROM agent_task_queue
+      WHERE agent_task_queue.id = sqlc.narg('task_id')
+        AND context ? 'project_id'
+        AND chat_session.project_id IS NOT DISTINCT FROM NULLIF(context->>'project_id', '')::uuid
+    )
+  );
 
 -- name: ClearChatSessionSessionIfMatches :exec
 -- Drops the chat session's resume pointer, but only while it still points at
@@ -1145,7 +1156,8 @@ SELECT
     sqlc.narg(originator_user_id),
     sqlc.narg(accountable_user_id),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
-    sqlc.narg(context),
+    COALESCE(sqlc.narg(context)::jsonb, '{}'::jsonb)
+      || jsonb_build_object('project_id', (SELECT project_id::text FROM chat_session WHERE id = $4)),
     sqlc.narg(runtime_mcp_overlay),
     sqlc.narg(runtime_connected_apps),
     sqlc.narg(originator_source),
@@ -1238,6 +1250,9 @@ WITH retired_sessions AS (
     SELECT DISTINCT r.retired_session_id AS session_id
     FROM agent_task_queue r
     WHERE r.chat_session_id = sqlc.arg('chat_session_id')
+      AND r.context->>'project_id' IS NOT DISTINCT FROM (
+        SELECT project_id::text FROM chat_session WHERE id = sqlc.arg('chat_session_id')
+      )
       AND (
         sqlc.narg('channel_context_revision')::bigint IS NULL
         OR COALESCE(r.channel_context_revision, 1) = sqlc.narg('channel_context_revision')::bigint
@@ -1251,6 +1266,9 @@ WITH retired_sessions AS (
     SELECT MAX(t.completed_at) AS at
     FROM agent_task_queue t
     WHERE t.chat_session_id = sqlc.arg('chat_session_id')
+      AND t.context->>'project_id' IS NOT DISTINCT FROM (
+        SELECT project_id::text FROM chat_session WHERE id = sqlc.arg('chat_session_id')
+      )
       AND (
         sqlc.narg('channel_context_revision')::bigint IS NULL
         OR COALESCE(t.channel_context_revision, 1) = sqlc.narg('channel_context_revision')::bigint
@@ -1265,6 +1283,9 @@ WITH retired_sessions AS (
         t.session_id, t.work_dir, t.runtime_id, t.status, t.failure_reason, t.error, t.completed_at
     FROM agent_task_queue t
     WHERE t.chat_session_id = sqlc.arg('chat_session_id')
+      AND t.context->>'project_id' IS NOT DISTINCT FROM (
+        SELECT project_id::text FROM chat_session WHERE id = sqlc.arg('chat_session_id')
+      )
       AND (
         sqlc.narg('channel_context_revision')::bigint IS NULL
         OR COALESCE(t.channel_context_revision, 1) = sqlc.narg('channel_context_revision')::bigint

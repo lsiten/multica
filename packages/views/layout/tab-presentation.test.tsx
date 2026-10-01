@@ -92,7 +92,7 @@ function seed(qc: QueryClient) {
     hasMore: false, nextCursor: null,
   });
   qc.setQueryData(agentListOptions("ws1").queryKey, [
-    { id: "ag1", name: "Robby", avatar_url: null },
+    { id: "ag1", workspace_id: "ws1", name: "Robby", avatar_url: null },
   ] as never);
   qc.setQueryData(runtimeListOptions("ws1").queryKey, [
     { id: "rt1", name: "Claude (host)", custom_name: "Prod Box", status: "online" },

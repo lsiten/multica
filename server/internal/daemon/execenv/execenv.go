@@ -159,6 +159,7 @@ type TaskContextForEnv struct {
 	DisabledRuntimeSkills         []RuntimeSkillRefForEnv
 	Repos                         []RepoContextForEnv     // workspace repos available for checkout
 	ProjectID                     string                  // active project for this task, when present
+	SquadID                       string                  // active squad scope for this task, when present
 	ProjectTitle                  string                  // human-readable project title
 	ProjectDescription            string                  // durable project-level context, rendered into the brief's Project Context section
 	ProjectResources              []ProjectResourceForEnv // resources attached to the project

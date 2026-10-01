@@ -98,6 +98,7 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
     });
 
     handlers["comment:created"]?.({
+      workspace_id: "ws-1",
       comment: { id: "c1", issue_id: "issue-1" },
     });
 
@@ -128,6 +129,7 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
     });
 
     handlers["comment:updated"]?.({
+      workspace_id: "ws-1",
       comment: { id: "c1", issue_id: "issue-1" },
       issue_revision: 2,
     });
@@ -145,6 +147,7 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
     qc.setQueryData<ListIssuesCache>(lastActivityBoardKey, bucketed());
 
     handlers["comment:deleted"]?.({
+      workspace_id: "ws-1",
       comment_id: "c1",
       issue_id: "issue-1",
       issue_revision: 3,

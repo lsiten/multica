@@ -7995,6 +7995,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		DisabledRuntimeSkills:            convertDisabledRuntimeSkillsForEnv(task.Agent, task.RuntimeID, provider),
 		Repos:                            convertReposForEnv(task.Repos),
 		ProjectID:                        task.ProjectID,
+		SquadID:                          task.SquadID,
 		ProjectTitle:                     task.ProjectTitle,
 		ProjectDescription:               task.ProjectDescription,
 		ProjectResources:                 convertProjectResourcesForEnv(task.ProjectResources),

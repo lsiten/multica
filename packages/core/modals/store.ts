@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { getCurrentWsId } from "../platform/workspace-storage";
 
 type ModalType =
   | "create-issue"
@@ -20,6 +21,8 @@ export type IssueLimitRecoveryReason = "issue_limit" | "autopilot_quota";
 interface ModalStore {
   modal: ModalType;
   data: Record<string, unknown> | null;
+  /** Workspace that owned the modal when it was opened. */
+  workspaceId: string | null;
   issueLimitRecoveryWorkspaceId: string | null;
   issueLimitRecoveryReason: IssueLimitRecoveryReason;
   open: (modal: NonNullable<ModalType>, data?: Record<string, unknown> | null) => void;
@@ -34,10 +37,12 @@ interface ModalStore {
 export const useModalStore = create<ModalStore>((set) => ({
   modal: null,
   data: null,
+  workspaceId: null,
   issueLimitRecoveryWorkspaceId: null,
   issueLimitRecoveryReason: "issue_limit",
-  open: (modal, data = null) => set({ modal, data }),
-  close: () => set({ modal: null, data: null }),
+  open: (modal, data = null) =>
+    set({ modal, data, workspaceId: getCurrentWsId() }),
+  close: () => set({ modal: null, data: null, workspaceId: null }),
   showIssueLimitRecovery: (workspaceId, reason = "issue_limit") =>
     set({
       issueLimitRecoveryWorkspaceId: workspaceId,

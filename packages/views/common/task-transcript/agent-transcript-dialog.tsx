@@ -47,6 +47,7 @@ import { plainTriggerSummary } from "../../issues/components/task-run-labels";
 import { cancellationActorLabel, cancelReasonLabel, failureReasonLabel } from "../../agents/components/tabs/task-failure";
 import { RichContent } from "../../rich-content";
 import { api } from "@multica/core/api";
+import { getCurrentSlug } from "@multica/core/platform";
 import {
   useTranscriptViewStore,
   type TranscriptFilterKey,
@@ -324,7 +325,8 @@ export function AgentTranscriptDialog({
 }: AgentTranscriptDialogProps) {
   const { t } = useT("agents");
   const locale = useLocale();
-  const formatText = useTraceIssueLabels(useWorkspaceId(), task.issue_id, items, open);
+  const workspaceId = useWorkspaceId();
+  const formatText = useTraceIssueLabels(workspaceId, task.issue_id, items, open);
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(() => new Set());
   const [query, setQuery] = useState("");
@@ -603,23 +605,27 @@ export function AgentTranscriptDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setAgentInfo(null);
+    setRuntimeInfo(null);
 
     if (task.agent_id) {
-      api.getAgent(task.agent_id).then((agent) => {
-        if (!cancelled) setAgentInfo(agent);
+      api.getAgent(task.agent_id, getCurrentSlug() ?? undefined).then((agent) => {
+        // The dialog is global to the shell; a late response from the old
+        // workspace must never populate the new task's header.
+        if (!cancelled && agent.workspace_id === workspaceId) setAgentInfo(agent);
       }).catch(() => {});
     }
 
     if (task.runtime_id) {
-      api.listRuntimes().then((runtimes) => {
+      api.listRuntimes({ workspace_id: workspaceId }, getCurrentSlug() ?? undefined).then((runtimes) => {
         if (cancelled) return;
-        const rt = runtimes.find((r) => r.id === task.runtime_id);
+        const rt = runtimes.find((r) => r.id === task.runtime_id && r.workspace_id === workspaceId);
         if (rt) setRuntimeInfo(rt);
       }).catch(() => {});
     }
 
     return () => { cancelled = true; };
-  }, [open, task.agent_id, task.runtime_id]);
+  }, [open, task.agent_id, task.runtime_id, workspaceId]);
 
   // Elapsed time for live tasks
   useEffect(() => {

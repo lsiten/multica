@@ -34,6 +34,10 @@ func seedPriorRunWithSnapshot(t *testing.T, agentID, runtimeID, issueID, snapsho
 	}
 	if snapshot != "" {
 		cols["issue_snapshot"] = snapshot
+	} else {
+		// Explicit NULL models a pre-snapshot row; the fixture's automatic
+		// scope seeding must not turn this compatibility case into v2 data.
+		cols["issue_snapshot"] = nil
 	}
 	dbfx.Task(t, agentID, cols)
 }
@@ -53,6 +57,39 @@ func issueSnapshotJSON(t *testing.T, version int, title, description string) str
 		t.Fatalf("marshal snapshot: %v", err)
 	}
 	return string(raw)
+}
+
+func TestIssueStateSnapshotScopeMismatchForcesFreshSession(t *testing.T) {
+	// Given a completed run recorded under project A and squad A.
+	issue := db.Issue{Title: "scope", ProjectID: parseUUID("11111111-1111-1111-1111-111111111111")}
+	squadA := parseUUID("22222222-2222-2222-2222-222222222222")
+	snapshot := buildIssueStateSnapshotForTask(issue, squadA)
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When the same issue is claimed after its project or squad changes.
+	projectB := issue
+	projectB.ProjectID = parseUUID("33333333-3333-3333-3333-333333333333")
+	squadB := parseUUID("44444444-4444-4444-4444-444444444444")
+
+	// Then the old provider session is not eligible for either scope.
+	if issueSnapshotMatchesTaskScope(raw, projectB, squadB) {
+		t.Fatal("scope change must reject prior session resume")
+	}
+}
+
+func TestChatTaskProjectScopeMismatchDoesNotReusePointer(t *testing.T) {
+	projectA := parseUUID("11111111-1111-1111-1111-111111111111")
+	projectB := parseUUID("22222222-2222-2222-2222-222222222222")
+	task := db.AgentTaskQueue{Context: []byte(`{"project_id":"11111111-1111-1111-1111-111111111111"}`)}
+	if !chatTaskProjectScopeMatchesProject(task, projectA) {
+		t.Fatal("same project scope must be reusable")
+	}
+	if chatTaskProjectScopeMatchesProject(task, projectB) {
+		t.Fatal("different project scope must not reuse session or workdir")
+	}
 }
 
 // TestClaimTaskByRuntime_IssueUnchangedReportsEmptyDelta: the previous run saw

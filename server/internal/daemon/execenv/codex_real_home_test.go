@@ -127,6 +127,26 @@ func TestCodexSessionStoreKeyUsesChatSessionIDWhenIssueAbsent(t *testing.T) {
 	}
 }
 
+func TestCodexSessionStoreKeyIncludesProjectAndSquadScope(t *testing.T) {
+	// Given the same agent and issue moved between project/squad scopes.
+	base := TaskContextForEnv{AgentID: "agent-1", IssueID: "issue-1", ProjectID: "project-a", SquadID: "squad-a"}
+	projectB := base
+	projectB.ProjectID = "project-b"
+	squadB := base
+	squadB.SquadID = "squad-b"
+
+	// Then each scope gets an isolated persistent store.
+	if got, want := codexSessionStoreKey("", base), codexSessionStoreKey("", base); got != want {
+		t.Fatalf("same scope produced unstable key: %q != %q", got, want)
+	}
+	if codexSessionStoreKey("", base) == codexSessionStoreKey("", projectB) {
+		t.Fatal("different projects must not share a Codex session store")
+	}
+	if codexSessionStoreKey("", base) == codexSessionStoreKey("", squadB) {
+		t.Fatal("different squads must not share a Codex session store")
+	}
+}
+
 // TestReuseCodexToleratesLegacyTaskHome covers an env root prepared by an older
 // daemon: its leftover `home/` directory (including the credential symlinks it
 // seeded) must neither break reuse nor be adopted as a HOME again.

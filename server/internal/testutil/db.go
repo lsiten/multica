@@ -2,6 +2,8 @@ package testutil
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -246,11 +248,47 @@ func (f *Fixture) Agent(t TB, name, runtimeID string, over ...Cols) string {
 // Task queues a task for agentID.
 func (f *Fixture) Task(t TB, agentID string, over ...Cols) string {
 	t.Helper()
-	return f.Insert(t, "agent_task_queue", merge(Cols{
+	cols := merge(Cols{
 		"agent_id": agentID,
 		"status":   "queued",
 		"priority": 0,
-	}, over))
+	}, over)
+	if _, explicit := cols["issue_snapshot"]; !explicit {
+		issueID, hasIssue := cols["issue_id"].(string)
+		_, hasSession := cols["session_id"]
+		_, hasWorkDir := cols["work_dir"]
+		_, hasRetry := cols["retry_of_task_id"]
+		_, hasRerun := cols["rerun_of_task_id"]
+		if hasIssue && (hasSession || hasWorkDir || hasRetry || hasRerun) {
+			var title, description, projectID *string
+			if err := f.Pool.QueryRow(context.Background(), `
+				SELECT title, COALESCE(description, ''), project_id::text FROM issue WHERE id = $1
+			`, issueID).Scan(&title, &description, &projectID); err != nil {
+				t.Fatalf("load issue scope for task fixture: %v", err)
+			}
+			squadID, _ := cols["squad_id"].(string)
+			cols["issue_snapshot"] = Raw(fmt.Sprintf(
+				`jsonb_build_object('v', 2, 'title_sha256', %s, 'description_sha256', %s, 'project_id', %s, 'squad_id', %s)`,
+				quoteLiteral(sha256Hex(valueOrEmpty(title))),
+				quoteLiteral(sha256Hex(valueOrEmpty(description))),
+				quoteLiteral(valueOrEmpty(projectID)),
+				quoteLiteral(squadID),
+			))
+		}
+	}
+	return f.Insert(t, "agent_task_queue", cols)
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func sha256Hex(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }
 
 // Squad inserts a squad led by leaderID.

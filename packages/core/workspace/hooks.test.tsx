@@ -141,8 +141,8 @@ describe("useActorName", () => {
     // first render — this guards that stabilizing the loading default did not
     // break name resolution when data IS present.
     const members = [{ user_id: "user-1", name: "Ada", avatar_url: null }];
-    const agents = [{ id: "agent-1", name: "Walt", avatar_url: null }];
-    const squads = [{ id: "squad-1", name: "Core", avatar_url: null }];
+    const agents = [{ id: "agent-1", workspace_id: "ws-1", name: "Walt", avatar_url: null }];
+    const squads = [{ id: "squad-1", workspace_id: "ws-1", name: "Core", avatar_url: null }];
     setApiInstance({
       listMembers: () => Promise.resolve(members),
       listAgents: () => Promise.resolve(agents),

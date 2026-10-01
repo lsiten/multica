@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
+import { getCurrentSlug } from "@multica/core/platform";
 import { useAuthStore } from "@multica/core/auth";
 import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -76,7 +77,13 @@ export function SquadDetailPage() {
 
   const { data: squad, refetch: refetchSquad } = useQuery<Squad>({
     queryKey: [...workspaceKeys.squads(wsId), squadId],
-    queryFn: () => api.getSquad(squadId),
+    queryFn: async () => {
+      const value = await api.getSquad(squadId, getCurrentSlug() ?? undefined);
+      if (value.workspace_id !== wsId) {
+        throw new Error("squad response belongs to another workspace");
+      }
+      return value;
+    },
     enabled: !!workspace?.id && !!squadId,
   });
 

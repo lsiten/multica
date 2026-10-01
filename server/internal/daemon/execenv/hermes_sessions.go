@@ -94,11 +94,19 @@ func HermesSessionStorePath(daemonProfile, agentID, sourceHome string, task Task
 // session database task-local rather than inventing a shard nothing will
 // resume.
 func hermesConversationSegment(task TaskContextForEnv) string {
+	project := sanitizePathSegment(task.ProjectID)
+	if project == "" {
+		project = "_"
+	}
+	squad := sanitizePathSegment(task.SquadID)
+	if squad == "" {
+		squad = "_"
+	}
 	if issue := sanitizePathSegment(task.IssueID); issue != "" {
-		return issue
+		return filepath.Join(project, squad, issue)
 	}
 	if chat := sanitizePathSegment(task.ChatSessionID); chat != "" {
-		return "chat_" + chat
+		return filepath.Join(project, squad, "chat_"+chat)
 	}
 	return ""
 }
@@ -422,17 +430,13 @@ func PruneHermesSessionStores(daemonProfile string, retention time.Duration, now
 				continue
 			}
 			profileStoreDir := filepath.Join(agentDir, p.Name())
-			conversations, err := os.ReadDir(profileStoreDir)
-			if err != nil {
-				keptProfiles++
-				continue
-			}
+			// A profile may contain either legacy profile/conversation stores or
+			// the scoped profile/project/squad/conversation layout. Discover
+			// exact conversation leaves by their state.db marker; never treat a
+			// scope parent as a removable store.
+			conversations := collectHermesStoreDirs(profileStoreDir)
 			kept := 0
-			for _, conv := range conversations {
-				if !conv.IsDir() {
-					continue
-				}
-				storeDir := filepath.Join(profileStoreDir, conv.Name())
+			for _, storeDir := range conversations {
 				// Same "newest mtime is last activity, plus total size" walk the
 				// memory store prunes on; SQLite bumps the database's mtime on
 				// every commit, so an advancing conversation keeps its shard fresh.
@@ -461,6 +465,7 @@ func PruneHermesSessionStores(daemonProfile string, retention time.Duration, now
 				}
 				removed++
 				bytesFreed += size
+				removeEmptyParents(storeDir, profileStoreDir)
 			}
 			// Drop the profile dir once its last conversation is gone, then the
 			// agent dir once its last profile is, so the tree does not leave
@@ -479,4 +484,43 @@ func PruneHermesSessionStores(daemonProfile string, retention time.Duration, now
 		}
 	}
 	return removed, bytesFreed
+}
+
+// collectHermesStoreDirs returns only directories that own a Hermes state.db.
+// It supports both profile/conversation (legacy) and
+// profile/project/squad/conversation (scoped) layouts. WalkDir never follows
+// symlink directories, preventing a malformed store from escaping its root.
+func collectHermesStoreDirs(profileDir string) []string {
+	var stores []string
+	_ = filepath.WalkDir(profileDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry == nil {
+			return nil
+		}
+		if path != profileDir && entry.Type()&os.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() && path != profileDir && isHermesStoreLeaf(path) {
+			stores = append(stores, path)
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return stores
+}
+
+func isHermesStoreLeaf(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Name() != "state.db" {
+			continue
+		}
+		// A symlink is unlinkable and does not make us traverse outside the
+		// root; regular files are the normal SQLite database. Other types fail
+		// closed and are not considered a reclaimable store.
+		return entry.Type().IsRegular() || entry.Type()&os.ModeSymlink != 0
+	}
+	return false
 }

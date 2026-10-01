@@ -1,7 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useModalStore } from "@multica/core/modals";
+import {
+  getCurrentSlug,
+  getCurrentWsId,
+  subscribeToCurrentSlug,
+} from "@multica/core/platform";
 import { CreateIssueDialog } from "./create-issue-dialog";
 import { CreateProjectModal } from "./create-project";
 import { CreateSquadModal } from "./create-squad";
@@ -17,6 +22,25 @@ export function ModalRegistry() {
   const modal = useModalStore((s) => s.modal);
   const data = useModalStore((s) => s.data);
   const close = useModalStore((s) => s.close);
+  const modalWorkspaceId = useModalStore((s) => s.workspaceId);
+  // ModalRegistry is global to the desktop shell, while its forms are
+  // workspace-owned. Subscribe to the platform identity so a tab switch can
+  // never leave an agent/squad/project picker mounted with the previous
+  // workspace's selected IDs.
+  const currentWorkspaceId = useSyncExternalStore(
+    subscribeToCurrentSlug,
+    getCurrentWsId,
+    () => null,
+  );
+  const currentWorkspaceSlug = useSyncExternalStore(
+    subscribeToCurrentSlug,
+    getCurrentSlug,
+    () => null,
+  );
+
+  useEffect(() => {
+    if (modal && modalWorkspaceId !== currentWorkspaceId) close();
+  }, [close, currentWorkspaceId, currentWorkspaceSlug, modal, modalWorkspaceId]);
 
   let activeModal: ReactNode = null;
   switch (modal) {

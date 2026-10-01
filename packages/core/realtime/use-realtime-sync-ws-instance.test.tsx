@@ -182,7 +182,7 @@ describe("useRealtimeSync — ws instance change", () => {
       expect(onAny).toBeDefined();
 
       invalidateSpy.mockClear();
-      onAny!({ type: "daemon:register", payload: {} } as never);
+      onAny!({ type: "daemon:register", payload: { workspace_id: "ws-1" } } as never);
       vi.advanceTimersByTime(100);
 
       expect(invalidateSpy).toHaveBeenCalledWith({
@@ -270,7 +270,7 @@ describe("useRealtimeSync — ws instance change", () => {
       .mock.calls.find(([event]) => event === "issue_attachments:changed")?.[1];
     expect(attachmentChanged).toBeDefined();
 
-    (attachmentChanged as (payload: unknown) => void)({ issue_id: "issue-1" });
+    (attachmentChanged as (payload: unknown) => void)({ workspace_id: "ws-1", issue_id: "issue-1" });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: issueKeys.attachments("issue-1"),
@@ -284,7 +284,7 @@ describe("useRealtimeSync — ws instance change", () => {
     const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
     expect(onAny).toBeDefined();
 
-    onAny!({ type: "issue_status:changed", payload: { action: "created" } } as never);
+    onAny!({ type: "issue_status:changed", payload: { workspace_id: "ws-1", action: "created" } } as never);
     await new Promise((resolve) => setTimeout(resolve, 120));
 
     expect(invalidateSpy).toHaveBeenCalledWith({
@@ -361,6 +361,7 @@ describe("useRealtimeSync — queued chat promotion", () => {
 
     invalidate.mockClear();
     (dispatch as (payload: unknown) => void)({
+      workspace_id: "ws-1",
       task_id: "task-follow-up",
       chat_session_id: "session-1",
     });
@@ -397,7 +398,7 @@ describe("useRealtimeSync — Table server membership invalidation", () => {
     const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
     expect(onAny).toBeDefined();
 
-    onAny!({ type: "task:completed", payload: {} } as never);
+    onAny!({ type: "task:completed", payload: { workspace_id: "ws-1" } } as never);
     vi.advanceTimersByTime(100);
 
     expect(invalidate).toHaveBeenCalledWith({
@@ -419,7 +420,7 @@ describe("useRealtimeSync — Table server membership invalidation", () => {
       .mock.calls.find(([event]) => event === "property:updated")?.[1];
     expect(propertyUpdated).toBeDefined();
 
-    (propertyUpdated as (payload: unknown) => void)({});
+    (propertyUpdated as (payload: unknown) => void)({ workspace_id: "ws-1" });
 
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: issueKeys.tableAll("ws-1"),

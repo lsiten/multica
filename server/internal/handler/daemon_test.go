@@ -2952,9 +2952,9 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id,
 			status, priority, started_at, completed_at,
-			session_id, work_dir
+			session_id, work_dir, issue_snapshot
 		)
-		VALUES ($1, $2, $3, 'completed', 0, now(), now(), 'old-runtime-session', '/tmp/old-runtime-workdir')
+		VALUES ($1, $2, $3, 'completed', 0, now(), now(), 'old-runtime-session', '/tmp/old-runtime-workdir', '{"v":2,"title_sha256":"","description_sha256":"","project_id":"","squad_id":""}')
 	`, agentID, oldRuntimeID, skipIssueID)
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
@@ -2989,9 +2989,9 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id,
 			status, priority, started_at, completed_at,
-			session_id, work_dir
+			session_id, work_dir, issue_snapshot
 		)
-		VALUES ($1, $2, $3, 'completed', 0, now(), now(), 'same-runtime-session', '/tmp/same-runtime-workdir')
+		VALUES ($1, $2, $3, 'completed', 0, now(), now(), 'same-runtime-session', '/tmp/same-runtime-workdir', '{"v":2,"title_sha256":"","description_sha256":"","project_id":"","squad_id":""}')
 	`, agentID, runtimeID, resumeIssueID)
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
@@ -3019,9 +3019,9 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id,
 			status, priority, started_at, completed_at,
-			session_id, work_dir
+			session_id, work_dir, issue_snapshot
 		)
-		VALUES ($1, $2, $3, 'completed', 0, now(), now(), 'comment-prior-session', '/tmp/comment-prior-workdir')
+		VALUES ($1, $2, $3, 'completed', 0, now(), now(), 'comment-prior-session', '/tmp/comment-prior-workdir', '{"v":2,"title_sha256":"","description_sha256":"","project_id":"","squad_id":""}')
 	`, agentID, runtimeID, commentIssueID)
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (

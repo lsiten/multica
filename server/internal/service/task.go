@@ -4480,6 +4480,7 @@ func (s *TaskService) CompleteTaskWithTransition(ctx context.Context, taskID pgt
 			// existing resume pointer; we still surface DB errors.
 			if err := qtx.UpdateChatSessionSession(ctx, db.UpdateChatSessionSessionParams{
 				ID:        t.ChatSessionID,
+				TaskID:    t.ID,
 				SessionID: pgtype.Text{String: sessionID, Valid: sessionID != ""},
 				WorkDir:   pgtype.Text{String: workDir, Valid: workDir != ""},
 				RuntimeID: sessionRuntimeID,
@@ -5019,6 +5020,7 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 			}
 			if err := qtx.UpdateChatSessionSession(ctx, db.UpdateChatSessionSessionParams{
 				ID:        t.ChatSessionID,
+				TaskID:    t.ID,
 				SessionID: pgtype.Text{String: sessionID, Valid: sessionID != ""},
 				WorkDir:   pgtype.Text{String: workDir, Valid: workDir != ""},
 				RuntimeID: sessionRuntimeID,

@@ -1,6 +1,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { Agent, Squad, Workspace } from "../types";
+import { getCurrentSlug } from "../platform/workspace-storage";
 
 export const workspaceKeys = {
   all: (wsId: string) => ["workspaces", wsId] as const,
@@ -52,8 +53,13 @@ export function memberListOptions(wsId: string) {
 export function agentListOptions(wsId: string) {
   return queryOptions({
     queryKey: workspaceKeys.agents(wsId),
-    queryFn: () =>
-      api.listAgents({ workspace_id: wsId, include_archived: true }),
+    queryFn: () => {
+      const slug = getCurrentSlug();
+      return slug
+        ? api.listAgents({ workspace_id: wsId, include_archived: true }, slug)
+        : api.listAgents({ workspace_id: wsId, include_archived: true });
+    },
+    select: (agents) => agents.filter((agent) => agent.workspace_id === wsId),
     // Projected unstable can age offline without an event; polling online also
     // covers a missed demotion. Offline recovery is event/reconnect-driven.
     refetchInterval: (query) =>
@@ -71,7 +77,13 @@ export function agentListOptions(wsId: string) {
 export function agentDetailOptions(wsId: string, agentId: string) {
   return queryOptions({
     queryKey: workspaceKeys.agent(wsId, agentId),
-    queryFn: () => api.getAgent(agentId),
+    queryFn: async () => {
+      const agent = await api.getAgent(agentId, getCurrentSlug() ?? undefined);
+      if (agent.workspace_id !== wsId) {
+        throw new Error("agent response belongs to another workspace");
+      }
+      return agent;
+    },
     enabled: !!wsId && !!agentId,
     retry: false,
   });
@@ -104,7 +116,11 @@ export function cacheAgentResponse(
 export function squadListOptions(wsId: string) {
   return queryOptions<Squad[]>({
     queryKey: workspaceKeys.squads(wsId),
-    queryFn: () => api.listSquads(),
+    queryFn: () => {
+      const slug = getCurrentSlug();
+      return slug ? api.listSquads(slug) : api.listSquads();
+    },
+    select: (squads) => squads.filter((squad) => squad.workspace_id === wsId),
     enabled: !!wsId,
   });
 }
@@ -116,7 +132,7 @@ export function squadListOptions(wsId: string) {
 export function squadMemberStatusOptions(wsId: string, squadId: string) {
   return queryOptions({
     queryKey: workspaceKeys.squadMemberStatus(wsId, squadId),
-    queryFn: () => api.getSquadMemberStatus(squadId),
+    queryFn: () => api.getSquadMemberStatus(squadId, getCurrentSlug() ?? undefined),
     enabled: !!wsId && !!squadId,
     staleTime: 30 * 1000,
     refetchOnWindowFocus: true,

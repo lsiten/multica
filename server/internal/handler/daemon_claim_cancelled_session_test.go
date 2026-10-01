@@ -47,9 +47,9 @@ func TestClaimTask_ChatResumesCancelledTurnSession(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id,
-			status, priority, started_at, completed_at, session_id, work_dir
+			status, priority, started_at, completed_at, session_id, work_dir, issue_snapshot
 		)
-		VALUES ($1, $2, $3, 'cancelled', 0, now(), now(), 'cancelled-turn-session', '/tmp/cancelled-turn-workdir')
+		VALUES ($1, $2, $3, 'cancelled', 0, now(), now(), 'cancelled-turn-session', '/tmp/cancelled-turn-workdir', '{"project_id":null}')
 	`, agentID, runtimeID, chatSessionID)
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
@@ -83,10 +83,10 @@ func TestClaimTask_ChatCancelledSessionStaysExcludedWhenRetired(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id,
-			status, priority, started_at, completed_at, session_id, work_dir
+			status, priority, started_at, completed_at, session_id, work_dir, issue_snapshot
 		)
 		VALUES ($1, $2, $3, 'cancelled', 0, now() - interval '5 minutes', now() - interval '4 minutes',
-		        'retired-cancelled-session', '/tmp/retired-cancelled-workdir')
+		        'retired-cancelled-session', '/tmp/retired-cancelled-workdir', '{"project_id":null}')
 	`, agentID, runtimeID, chatSessionID)
 	// A later run resumed that session, could not use it, and retired it.
 	dbfx.Exec(t, `
@@ -126,9 +126,9 @@ func TestClaimTask_IssueResumesCancelledTaskSession(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id,
-			status, priority, started_at, completed_at, session_id, work_dir
+			status, priority, started_at, completed_at, session_id, work_dir, issue_snapshot
 		)
-		VALUES ($1, $2, $3, 'cancelled', 0, now(), now(), 'cancelled-issue-session', '/tmp/cancelled-issue-workdir')
+		VALUES ($1, $2, $3, 'cancelled', 0, now(), now(), 'cancelled-issue-session', '/tmp/cancelled-issue-workdir', '{"v":2,"title_sha256":"","description_sha256":"","project_id":"","squad_id":""}')
 	`, agentID, runtimeID, issueID)
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority)

@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
+import { getCurrentSlug } from "../platform/workspace-storage";
 
 export const projectKeys = {
   all: (wsId: string) => ["projects", wsId] as const,
@@ -11,14 +12,23 @@ export const projectKeys = {
 export function projectListOptions(wsId: string) {
   return queryOptions({
     queryKey: projectKeys.list(wsId),
-    queryFn: () => api.listProjects(),
-    select: (data) => data.projects,
+    queryFn: () => {
+      const slug = getCurrentSlug();
+      return slug ? api.listProjects(undefined, slug) : api.listProjects();
+    },
+    select: (data) => data.projects.filter((project) => project.workspace_id === wsId),
   });
 }
 
 export function projectDetailOptions(wsId: string, id: string) {
   return queryOptions({
     queryKey: projectKeys.detail(wsId, id),
-    queryFn: () => api.getProject(id),
+    queryFn: async () => {
+      const project = await api.getProject(id, getCurrentSlug() ?? undefined);
+      if (project.workspace_id !== wsId) {
+        throw new Error("project response belongs to another workspace");
+      }
+      return project;
+    },
   });
 }

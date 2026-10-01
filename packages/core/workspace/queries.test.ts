@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Agent, Workspace } from "../types";
-import { agentListOptions, workspaceBySlugOptions } from "./queries";
+import type { Agent, Squad, Workspace } from "../types";
+import { agentListOptions, squadListOptions, workspaceBySlugOptions } from "./queries";
 
 function makeWorkspace(slug: string): Workspace {
   return {
@@ -33,6 +33,17 @@ describe("workspaceBySlugOptions", () => {
 });
 
 describe("agentListOptions", () => {
+  it("drops responses that belong to another workspace before caching", () => {
+    const options = agentListOptions("ws-1");
+    const select = options.select as (agents: Agent[]) => Agent[];
+    expect(
+      select([
+        { id: "a", workspace_id: "ws-1" } as Agent,
+        { id: "foreign", workspace_id: "ws-2" } as Agent,
+      ]),
+    ).toEqual([{ id: "a", workspace_id: "ws-1" }]);
+  });
+
   it("polls only while projected runtime availability can age offline", () => {
     const options = agentListOptions("ws-1");
     const interval = options.refetchInterval;
@@ -63,5 +74,18 @@ describe("agentListOptions", () => {
       ]),
     ).toBe(false);
     expect(queryState([])).toBe(false);
+  });
+});
+
+describe("squadListOptions", () => {
+  it("drops squads from a different workspace before caching", () => {
+    const options = squadListOptions("ws-1");
+    const select = options.select as (squads: Squad[]) => Squad[];
+    expect(
+      select([
+        { id: "s1", workspace_id: "ws-1" } as Squad,
+        { id: "s2", workspace_id: "ws-2" } as Squad,
+      ]),
+    ).toEqual([{ id: "s1", workspace_id: "ws-1" }]);
   });
 });

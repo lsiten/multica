@@ -2671,7 +2671,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// run that resumes this one's session can compare against what THIS run
 		// was actually handed. Building it here, from the issue row already
 		// loaded, is what makes the snapshot mean "the issue as of this claim".
-		currentSnapshot := buildIssueStateSnapshot(issue)
+		currentSnapshot := buildIssueStateSnapshotForTask(issue, task.SquadID)
 		if encoded, err := json.Marshal(currentSnapshot); err != nil {
 			// A snapshot that cannot be encoded is simply not recorded; the
 			// next run reports "not compared" and reads the issue, which is
@@ -2950,31 +2950,37 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			// its 400/invalid_request_error text defense for legacy /
 			// mis-classified rows that the exact-source path would otherwise miss.
 			//
-			// When the source workdir is gone (GC'd), absent on this runtime, or
-			// was never recorded (failed too early), execenv.Reuse falls back to a
-			// fresh Prepare and gateResumeToReusedWorkdir drops the now-unusable
-			// session — reuse is best-effort, never a silent swap onto a stale
-			// directory. PriorWorkDir is offered regardless of runtime (a shared
-			// mount may still resolve it); only the per-cwd session is
-			// runtime-gated.
+			// When the source scope matches and its workdir is gone (GC'd), absent
+			// on this runtime, or was never recorded (failed too early),
+			// execenv.Reuse falls back to a fresh Prepare and
+			// gateResumeToReusedWorkdir drops the now-unusable session. A scope
+			// mismatch skips both fields above: reuse is best-effort, never a
+			// silent swap onto another project's directory. PriorWorkDir is
+			// offered regardless of runtime (a shared mount may still resolve it);
+			// only the per-cwd session is runtime-gated.
 			if src, err := h.Queries.GetAgentTask(r.Context(), task.RerunOfTaskID); err == nil && rerunSourceMatchesTaskScope(*task, src) {
-				if src.WorkDir.Valid {
-					resp.PriorWorkDir = src.WorkDir.String
-				}
-				if !service.ResumeUnsafeFailure(src.FailureReason.String, src.Error.String) &&
-					src.SessionID.Valid && src.RuntimeID == task.RuntimeID {
-					resp.PriorSessionID = src.SessionID.String
-					// The deltas date from the run we actually resume, which on
-					// this path is the operator-chosen source — routinely NOT
-					// the newest run on the issue. nil unless that run proved it
-					// delivered its prompt to the provider (MUL-7344).
-					resumeAnchor = newResumedRunAnchor(src.Status, src.StartedAt, src.IssueSnapshot)
-				}
-				// MUL-5305: if the source task withheld its Codex session because
-				// the rollout was missing, this rerun has nothing resumable from it
-				// — disclose the gap rather than silently starting fresh.
-				if src.SessionRolloutMissing {
-					resp.PriorSessionResumeUnavailable = true
+				scopeMatches := issueSnapshotMatchesTaskScope(src.IssueSnapshot, issue, task.SquadID)
+				if !scopeMatches {
+					resp.PriorSessionResumeUnavailable = src.SessionID.Valid || src.WorkDir.Valid
+				} else {
+					if src.WorkDir.Valid {
+						resp.PriorWorkDir = src.WorkDir.String
+					}
+					if !service.ResumeUnsafeFailure(src.FailureReason.String, src.Error.String) &&
+						src.SessionID.Valid && src.RuntimeID == task.RuntimeID {
+						resp.PriorSessionID = src.SessionID.String
+						// The deltas date from the run we actually resume, which on
+						// this path is the operator-chosen source — routinely NOT
+						// the newest run on the issue. nil unless that run proved it
+						// delivered its prompt to the provider (MUL-7344).
+						resumeAnchor = newResumedRunAnchor(src.Status, src.StartedAt, src.IssueSnapshot)
+					}
+					// MUL-5305: if the source task withheld its Codex session because
+					// the rollout was missing, this rerun has nothing resumable from it
+					// — disclose the gap rather than silently starting fresh.
+					if src.SessionRolloutMissing {
+						resp.PriorSessionResumeUnavailable = true
+					}
 				}
 			} else if err == nil {
 				slog.Warn("daemon claim: rerun source belongs to another agent or scope; starting fresh",
@@ -2996,8 +3002,8 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			if prior, err := h.Queries.GetLastTaskSession(r.Context(), db.GetLastTaskSessionParams{
 				AgentID: task.AgentID,
 				IssueID: task.IssueID,
-			}); err == nil && prior.SessionID.Valid {
-				if prior.RuntimeID == task.RuntimeID {
+			}); err == nil && issueSnapshotMatchesTaskScope(prior.IssueSnapshot, issue, task.SquadID) {
+				if prior.SessionID.Valid && prior.RuntimeID == task.RuntimeID {
 					resp.PriorSessionID = prior.SessionID.String
 					// Same rule as the rerun path: date the deltas from the run
 					// this session belongs to. GetLastTaskSession skips poisoned
@@ -3027,7 +3033,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			// Automatic retry that must start a fresh session: continue in the
 			// parent's workdir, never its session. A force_fresh task with no
 			// retry lineage still resumes nothing.
-			applyFreshSessionRetryWorkdir(*task, &resp, requestHasClientCapability(r, protocol.DaemonCapabilityCheckoutKeepsWorkV1))
+			if issueSnapshotMatchesTaskScope(task.IssueSnapshot, issue, task.SquadID) {
+				applyFreshSessionRetryWorkdir(*task, &resp, requestHasClientCapability(r, protocol.DaemonCapabilityCheckoutKeepsWorkV1))
+			}
 		}
 
 		// Both deltas, now that the resume source is known (MUL-7344).
@@ -3146,7 +3154,17 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			}
 		}
 		projectCtx.applyTo(&resp)
-		if !task.RerunOfTaskID.Valid && !task.ForceFreshSession && !task.ChannelContextRevision.Valid {
+		chatScopeMatches := chatTaskProjectScopeMatchesProject(*task, cs.ProjectID)
+		if !chatScopeMatches {
+			// The task was enqueued under a different project generation than the
+			// session currently carries. Do not trust either pointer field read
+			// above; the task must start with a fresh provider conversation and
+			// workdir rather than crossing the project boundary.
+			resp.PriorSessionResumeUnavailable = cs.SessionID.Valid || cs.WorkDir.Valid
+			resp.PriorSessionID = ""
+			resp.PriorWorkDir = ""
+		}
+		if chatScopeMatches && !task.RerunOfTaskID.Valid && !task.ForceFreshSession && !task.ChannelContextRevision.Valid {
 			// Resume chat sessions only when the stored pointer was produced
 			// by the same runtime as the claiming task. When the chat_session
 			// pointer is missing (legacy NULL runtime_id), stale (last task
@@ -3205,10 +3223,16 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// reads belong after it: a task that cannot load its input is preserved
 		// for redelivery and must not spend two more queries before returning.
 		if task.RerunOfTaskID.Valid {
-			if err := h.applyExactChatRerun(r.Context(), *task, &resp); err != nil {
-				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "rerun source", uuidToString(task.RerunOfTaskID))
+			if chatScopeMatches {
+				if err := h.applyExactChatRerun(r.Context(), *task, &resp); err != nil {
+					return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "rerun source", uuidToString(task.RerunOfTaskID))
+				}
+			} else {
+				resp.PriorSessionID = ""
+				resp.PriorWorkDir = ""
+				resp.PriorSessionResumeUnavailable = true
 			}
-		} else if !task.ForceFreshSession {
+		} else if chatScopeMatches && !task.ForceFreshSession {
 			contextRevision := pgtype.Int8{}
 			if task.ChannelContextRevision.Valid {
 				contextRevision = task.ChannelContextRevision
@@ -3259,7 +3283,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			if err == nil && missing {
 				resp.PriorSessionResumeUnavailable = true
 			}
-		} else if task.RetryOfTaskID.Valid {
+		} else if chatScopeMatches && task.RetryOfTaskID.Valid {
 			// Same as the issue branch. The retry lineage is what separates this
 			// from a user-requested fresh start (the Lark fresh-session command),
 			// which still inherits nothing.
@@ -6251,4 +6275,28 @@ func (h *Handler) GetAutopilotRunGCCheck(w http.ResponseWriter, r *http.Request)
 		"status":       run.Status,
 		"completed_at": run.CompletedAt.Time,
 	})
+}
+
+// chatTaskProjectScopeMatchesProject compares the immutable project snapshot
+// stamped into a chat task with the session's current project. A missing
+// project is a valid unscoped legacy value; malformed JSON or a malformed
+// project id fails closed so an old pointer cannot cross a project boundary.
+func chatTaskProjectScopeMatchesProject(task db.AgentTaskQueue, projectID pgtype.UUID) bool {
+	var contextData struct {
+		ProjectID *string `json:"project_id"`
+	}
+	if len(task.Context) == 0 {
+		return !projectID.Valid
+	}
+	if err := json.Unmarshal(task.Context, &contextData); err != nil {
+		return false
+	}
+	if contextData.ProjectID == nil || strings.TrimSpace(*contextData.ProjectID) == "" {
+		return !projectID.Valid
+	}
+	parsed, err := uuid.Parse(strings.TrimSpace(*contextData.ProjectID))
+	if err != nil {
+		return false
+	}
+	return parsed.String() == uuidToString(projectID)
 }

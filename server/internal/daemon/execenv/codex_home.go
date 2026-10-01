@@ -424,7 +424,15 @@ func codexSessionStoreKey(profile string, task TaskContextForEnv) string {
 	if agent == "" {
 		agent = "_"
 	}
-	return filepath.Join(codexSessionStoreNamespace(profile), agent, storeID)
+	project := sanitizePathSegment(task.ProjectID)
+	if project == "" {
+		project = "_"
+	}
+	squad := sanitizePathSegment(task.SquadID)
+	if squad == "" {
+		squad = "_"
+	}
+	return filepath.Join(codexSessionStoreNamespace(profile), agent, project, squad, storeID)
 }
 
 // sanitizePathSegment reduces s to the characters a UUID uses (hex plus
@@ -482,16 +490,9 @@ func PruneCodexSessionStores(profile string, retention time.Duration, now time.T
 			continue
 		}
 		agentDir := filepath.Join(root, a.Name())
-		issues, err := os.ReadDir(agentDir)
-		if err != nil {
-			continue
-		}
 		kept := 0
-		for _, is := range issues {
-			if !is.IsDir() {
-				continue
-			}
-			storeDir := filepath.Join(agentDir, is.Name())
+		stores := collectCodexStoreDirs(agentDir)
+		for _, storeDir := range stores {
 			newest, size := dirStat(storeDir)
 			if newest.IsZero() || now.Sub(newest) <= retention {
 				kept++
@@ -520,6 +521,7 @@ func PruneCodexSessionStores(profile string, retention time.Duration, now time.T
 			}
 			removed++
 			bytesFreed += size
+			removeEmptyParents(storeDir, agentDir)
 		}
 		// Remove the agent dir once its last issue store is gone, so the tree
 		// does not leave empty <agent>/ shells behind.
@@ -528,6 +530,88 @@ func PruneCodexSessionStores(profile string, retention time.Duration, now time.T
 		}
 	}
 	return removed, bytesFreed
+}
+
+// collectCodexStoreDirs returns only conversation leaf directories. Current
+// stores are agent/project/squad/issue; legacy stores are agent/issue. A
+// parent scope is never returned, so removing one conversation cannot remove a
+// sibling or an active scope. WalkDir does not follow symlink directories.
+func collectCodexStoreDirs(agentDir string) []string {
+	var stores []string
+	_ = filepath.WalkDir(agentDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry == nil {
+			return nil
+		}
+		if path != agentDir && entry.Type()&os.ModeSymlink != 0 {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() && path != agentDir && isCodexStoreLeaf(path) {
+			stores = append(stores, path)
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return stores
+}
+
+func isCodexStoreLeaf(dir string) bool {
+	years, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, year := range years {
+		if !year.IsDir() && strings.HasPrefix(year.Name(), "rollout-") {
+			return true
+		}
+		if !year.IsDir() || !isCodexRolloutDateSegment(year.Name()) {
+			continue
+		}
+		months, err := os.ReadDir(filepath.Join(dir, year.Name()))
+		if err != nil {
+			continue
+		}
+		for _, month := range months {
+			if !month.IsDir() || !isTwoDigitSegment(month.Name()) {
+				continue
+			}
+			days, err := os.ReadDir(filepath.Join(dir, year.Name(), month.Name()))
+			if err != nil {
+				continue
+			}
+			for _, day := range days {
+				if day.IsDir() && isTwoDigitSegment(day.Name()) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func isTwoDigitSegment(name string) bool {
+	return len(name) == 2 && name[0] >= '0' && name[0] <= '9' && name[1] >= '0' && name[1] <= '9'
+}
+
+func removeEmptyParents(path, stop string) {
+	for path != stop {
+		parent := filepath.Dir(path)
+		if err := os.Remove(path); err != nil {
+			return
+		}
+		path = parent
+	}
+}
+
+func isCodexRolloutDateSegment(name string) bool {
+	if len(name) != 4 {
+		return false
+	}
+	for i := range name {
+		if name[i] < '0' || name[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // dirStat walks dir once, returning the newest modification time seen (the

@@ -1,5 +1,6 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { getCurrentSlug } from "../platform/workspace-storage";
 import { projectKeys } from "./queries";
 import type {
   CreateProjectResourceRequest,
@@ -16,8 +17,8 @@ export const projectResourceKeys = {
 export function projectResourcesOptions(wsId: string, projectId: string) {
   return queryOptions({
     queryKey: projectResourceKeys.list(wsId, projectId),
-    queryFn: () => api.listProjectResources(projectId),
-    select: (data) => data.resources,
+    queryFn: () => api.listProjectResources(projectId, getCurrentSlug() ?? undefined),
+    select: (data) => data.resources.filter((resource) => resource.workspace_id === wsId),
   });
 }
 

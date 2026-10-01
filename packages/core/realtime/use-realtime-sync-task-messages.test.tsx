@@ -62,6 +62,7 @@ function msg(taskId: string, seq: number, extra: Partial<TaskMessagePayload> = {
   return {
     task_id: taskId,
     issue_id: "issue-1",
+    workspace_id: "ws-1",
     seq,
     type: "tool_use",
     ...extra,

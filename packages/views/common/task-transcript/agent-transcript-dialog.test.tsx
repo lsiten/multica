@@ -12,7 +12,7 @@ import { renderWithI18n } from "../../test/i18n";
 import { AgentTranscriptDialog } from "./agent-transcript-dialog";
 import type { TimelineItem } from "./build-timeline";
 
-vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace" }));
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 vi.mock("./use-trace-issue-labels", () => ({
   useTraceIssueLabels: () => (text: string) => text.replaceAll("01a07eca-8e82-775e-be06-e4a97ccfa299", "DEV-17"),
 }));

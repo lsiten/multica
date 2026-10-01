@@ -135,6 +135,7 @@ export interface IssueLabelsChangedPayload {
 }
 
 export interface IssueAttachmentsChangedPayload {
+  workspace_id?: string;
   issue_id: string;
   issue_revision?: number;
 }
@@ -168,6 +169,7 @@ export interface PropertyChangedPayload {
  * refreshes the catalog correctly.
  */
 export interface IssueStatusChangedPayload {
+  workspace_id?: string;
   action?: "created" | "updated" | "archived" | "reordered";
 }
 
@@ -239,16 +241,19 @@ export interface RuntimeMirrorControlPayload {
 }
 
 export interface CommentCreatedPayload {
+  workspace_id?: string;
   comment: Comment;
   issue_revision?: number;
 }
 
 export interface CommentUpdatedPayload {
+  workspace_id?: string;
   comment: Comment;
   issue_revision?: number;
 }
 
 export interface CommentDeletedPayload {
+  workspace_id?: string;
   comment_id: string;
   issue_id: string;
   issue_revision?: number;
@@ -309,6 +314,8 @@ export interface TaskMessagePayload {
   call_id?: string;
   task_id: string;
   issue_id: string;
+  /** Workspace scope stamped on server fanout frames. */
+  workspace_id?: string;
   chat_session_id?: string;
   seq: number;
   type: "text" | "thinking" | "tool_use" | "tool_result" | "error";

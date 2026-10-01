@@ -121,8 +121,8 @@ func TestClaimTaskByRuntime_RerunSourceRolloutMissingDisclosesGap(t *testing.T) 
 	// Source task whose Codex session was withheld (rollout missing).
 	var srcID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, started_at, completed_at, session_rollout_missing)
-		VALUES ($1, $2, $3, 'completed', 0, now() - interval '2 minutes', now() - interval '2 minutes', TRUE)
+		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, started_at, completed_at, session_rollout_missing, issue_snapshot)
+		VALUES ($1, $2, $3, 'completed', 0, now() - interval '2 minutes', now() - interval '2 minutes', TRUE, '{"v":2,"title_sha256":"","description_sha256":"","project_id":"","squad_id":""}')
 		RETURNING id
 	`, agentID, runtimeID, issueID).Scan(&srcID); err != nil {
 		t.Fatalf("insert source task: %v", err)
@@ -132,8 +132,8 @@ func TestClaimTaskByRuntime_RerunSourceRolloutMissingDisclosesGap(t *testing.T) 
 	// force_fresh_session=true; the disclosure must still fire from the source).
 	var taskID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, rerun_of_task_id, force_fresh_session)
-		VALUES ($1, $2, $3, 'queued', 1000, $4, TRUE) RETURNING id
+		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, rerun_of_task_id, force_fresh_session, issue_snapshot)
+		VALUES ($1, $2, $3, 'queued', 1000, $4, TRUE, '{"v":2,"title_sha256":"","description_sha256":"","project_id":"","squad_id":""}') RETURNING id
 	`, agentID, runtimeID, issueID, srcID).Scan(&taskID); err != nil {
 		t.Fatalf("create rerun task: %v", err)
 	}

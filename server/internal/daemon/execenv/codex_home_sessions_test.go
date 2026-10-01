@@ -689,6 +689,40 @@ func TestPruneCodexSessionStores_RemovesEmptyAgentDir(t *testing.T) {
 	assertAbsent(t, filepath.Join(storeRoot, "agent-lonely"))
 }
 
+func TestPruneCodexSessionStores_ScopedLeavesAndSiblingProtection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	now := time.Now()
+	old := now.Add(-30 * 24 * time.Hour)
+	stale := codexSessionStoreDir(home, codexSessionStoreKey("", TaskContextForEnv{AgentID: "agent", ProjectID: "project", SquadID: "squad", IssueID: "stale"}))
+	active := codexSessionStoreDir(home, codexSessionStoreKey("", TaskContextForEnv{AgentID: "agent", ProjectID: "project", SquadID: "squad", IssueID: "active"}))
+	fresh := codexSessionStoreDir(home, codexSessionStoreKey("", TaskContextForEnv{AgentID: "agent", ProjectID: "project", SquadID: "squad", IssueID: "fresh"}))
+	for _, dir := range []string{stale, active, fresh} {
+		seedRolloutAt(t, filepath.Join(dir, "2026", "06", "01", "rollout.jsonl"), 8)
+	}
+	chtimesTree(t, stale, old)
+	chtimesTree(t, active, old)
+	reserve := func(path string) (func(), bool) {
+		if sameCodexPath(path, active) {
+			return nil, false
+		}
+		return func() {}, true
+	}
+	if removed, _ := PruneCodexSessionStores("", 14*24*time.Hour, now, reserve, testLogger()); removed != 1 {
+		t.Fatalf("removed=%d, want 1", removed)
+	}
+	assertAbsent(t, stale)
+	assertPresent(t, active)
+	assertPresent(t, fresh)
+	// A second pass can reclaim the formerly active leaf, but never its parent
+	// scope while the fresh sibling remains.
+	if removed, _ := PruneCodexSessionStores("", 14*24*time.Hour, now, nil, testLogger()); removed != 1 {
+		t.Fatalf("second removed=%d, want 1", removed)
+	}
+	assertAbsent(t, active)
+	assertPresent(t, fresh)
+}
+
 // chtimesTree sets the atime/mtime of every entry under root to ts.
 func chtimesTree(t *testing.T, root string, ts time.Time) {
 	t.Helper()

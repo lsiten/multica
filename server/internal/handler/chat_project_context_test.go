@@ -179,6 +179,7 @@ func TestUpdateChatSession_UpdatesProjectContext(t *testing.T) {
 	replacementProjectID := createChatProjectTestProject(t, testWorkspaceID, "Replacement chat project", "")
 	agentID := createHandlerTestAgent(t, "RemoveChatProjectAgent", []byte("[]"))
 	sessionID := createChatSessionWithProjectForTest(t, agentID, projectID)
+	dbfx.Exec(t, `UPDATE chat_session SET session_id = 'project-a-session', work_dir = '/project-a/workdir' WHERE id = $1`, sessionID)
 
 	updateProject := func(projectID any) *httptest.ResponseRecorder {
 		t.Helper()
@@ -207,6 +208,15 @@ func TestUpdateChatSession_UpdatesProjectContext(t *testing.T) {
 	}
 	if response.ProjectID == nil || *response.ProjectID != replacementProjectID {
 		t.Fatalf("response project_id = %v, want %s", response.ProjectID, replacementProjectID)
+	}
+	var resumedSession, resumedWorkDir *string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT session_id, work_dir FROM chat_session WHERE id = $1
+	`, sessionID).Scan(&resumedSession, &resumedWorkDir); err != nil {
+		t.Fatalf("load cleared resume pointers: %v", err)
+	}
+	if resumedSession != nil || resumedWorkDir != nil {
+		t.Fatalf("project switch retained old resume pointers: session=%v work_dir=%v", resumedSession, resumedWorkDir)
 	}
 
 	var foreignWorkspaceID string

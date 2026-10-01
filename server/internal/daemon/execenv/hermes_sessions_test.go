@@ -12,7 +12,7 @@ import (
 
 // TestHermesSessionStorePathLayout pins the on-disk layout an operator (and
 // the GC below) depends on:
-// <profile dir>/hermes-sessions/<agent>/<hermes profile>/<conversation>.
+// <profile dir>/hermes-sessions/<agent>/<hermes profile>/<project>/<squad>/<conversation>.
 func TestHermesSessionStorePathLayout(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -22,7 +22,7 @@ func TestHermesSessionStorePathLayout(t *testing.T) {
 	issue := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	got := HermesSessionStorePath("", agent, filepath.Join(platformDefaultHermesHome(), "profiles", "research"),
 		TaskContextForEnv{AgentID: agent, IssueID: issue})
-	want := filepath.Join(home, ".multica", hermesSessionStoreRoot, agent, "research", issue)
+	want := filepath.Join(home, ".multica", hermesSessionStoreRoot, agent, "research", "_", "_", issue)
 	if got != want {
 		t.Fatalf("store path = %q, want %q", got, want)
 	}
@@ -324,6 +324,46 @@ func TestPruneHermesSessionStoresDisabled(t *testing.T) {
 	if _, err := os.Stat(store); err != nil {
 		t.Fatalf("store was reclaimed with retention disabled: %v", err)
 	}
+}
+
+func TestPruneHermesSessionStores_ScopedLeavesAndSiblingProtection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := filepath.Join(home, ".multica", hermesSessionStoreRoot, "agent", "profile", "project", "squad")
+	idle := filepath.Join(root, "idle")
+	held := filepath.Join(root, "held")
+	fresh := filepath.Join(root, "fresh")
+	for _, dir := range []string{idle, held, fresh} {
+		mustWrite(t, filepath.Join(dir, "state.db"), "transcript")
+	}
+	now := time.Now()
+	old := now.Add(-30 * 24 * time.Hour)
+	for _, dir := range []string{idle, held} {
+		if err := os.Chtimes(filepath.Join(dir, "state.db"), old, old); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(dir, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	heldReserve := func(path string) (func(), bool) {
+		if sameCodexPath(path, held) {
+			return nil, false
+		}
+		return func() {}, true
+	}
+	if removed, _ := PruneHermesSessionStores("", 14*24*time.Hour, now, heldReserve, testLogger()); removed != 1 {
+		t.Fatalf("removed=%d, want 1", removed)
+	}
+	assertAbsent(t, idle)
+	assertPresent(t, held)
+	assertPresent(t, fresh)
+	if removed, _ := PruneHermesSessionStores("", 14*24*time.Hour, now, nil, testLogger()); removed != 1 {
+		t.Fatalf("second removed=%d, want 1", removed)
+	}
+	assertAbsent(t, held)
+	assertPresent(t, fresh)
 }
 
 // TestPrepareHermesHomeLinkFailureKeepsTaskLocalDB is the degradation contract:

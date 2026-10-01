@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -64,7 +65,9 @@ func (h *Handler) applyExactChatRerun(ctx context.Context, task db.AgentTaskQueu
 	}
 	resp.PriorSessionID = ""
 	resp.PriorWorkDir = ""
-	if !rerunSourceMatchesTaskScope(task, source) || source.ChannelContextRevision != task.ChannelContextRevision {
+	if !rerunSourceMatchesTaskScope(task, source) ||
+		!chatTaskProjectScopesMatch(task, source) ||
+		source.ChannelContextRevision != task.ChannelContextRevision {
 		return service.InterventionError("source_mismatch")
 	}
 	resp.PriorWorkDir = source.WorkDir.String
@@ -73,4 +76,28 @@ func (h *Handler) applyExactChatRerun(ctx context.Context, task db.AgentTaskQueu
 	}
 	resp.PriorSessionResumeUnavailable = source.SessionRolloutMissing
 	return nil
+}
+
+func chatTaskProjectScopesMatch(task, source db.AgentTaskQueue) bool {
+	var taskContext, sourceContext struct {
+		ProjectID *string `json:"project_id"`
+	}
+	if len(task.Context) > 0 {
+		if err := json.Unmarshal(task.Context, &taskContext); err != nil {
+			return false
+		}
+	}
+	if len(source.Context) > 0 {
+		if err := json.Unmarshal(source.Context, &sourceContext); err != nil {
+			return false
+		}
+	}
+	return strings.TrimSpace(valueOrEmpty(taskContext.ProjectID)) == strings.TrimSpace(valueOrEmpty(sourceContext.ProjectID))
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

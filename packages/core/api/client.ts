@@ -1026,7 +1026,10 @@ export class ApiClient {
     return res;
   }
 
-  private async fetch<T>(path: string, init?: RequestInit): Promise<T> {
+  private async fetch<T>(
+    path: string,
+    init?: RequestInit & { extraHeaders?: Record<string, string> },
+  ): Promise<T> {
     const res = await this.fetchRaw(path, {
       ...init,
       extraHeaders: { "Content-Type": "application/json" },
@@ -1987,15 +1990,20 @@ export class ApiClient {
   }
 
   // Agents
-  async listAgents(params?: { workspace_id?: string; include_archived?: boolean }): Promise<Agent[]> {
+  async listAgents(
+    params?: { workspace_id?: string; include_archived?: boolean },
+    workspaceSlug?: string,
+  ): Promise<Agent[]> {
     const search = new URLSearchParams();
     if (params?.workspace_id) search.set("workspace_id", params.workspace_id);
     if (params?.include_archived) search.set("include_archived", "true");
-    return this.fetch(`/api/agents?${search}`);
+    return this.fetch(`/api/agents?${search}`, {
+      headers: workspaceHeader(workspaceSlug),
+    });
   }
 
-  async getAgent(id: string): Promise<Agent> {
-    return this.fetch(`/api/agents/${id}`);
+  async getAgent(id: string, workspaceSlug?: string): Promise<Agent> {
+    return this.fetch(`/api/agents/${id}`, { headers: workspaceHeader(workspaceSlug) });
   }
 
   async createAgent(data: CreateAgentRequest): Promise<Agent> {
@@ -4422,14 +4430,19 @@ export class ApiClient {
   }
 
   // Projects
-  async listProjects(params?: { status?: string }): Promise<ListProjectsResponse> {
+  async listProjects(
+    params?: { status?: string },
+    workspaceSlug?: string,
+  ): Promise<ListProjectsResponse> {
     const search = new URLSearchParams();
     if (params?.status) search.set("status", params.status);
-    return this.fetch(`/api/projects?${search}`);
+    return this.fetch(`/api/projects?${search}`, {
+      headers: workspaceHeader(workspaceSlug),
+    });
   }
 
-  async getProject(id: string): Promise<Project> {
-    return this.fetch(`/api/projects/${id}`);
+  async getProject(id: string, workspaceSlug?: string): Promise<Project> {
+    return this.fetch(`/api/projects/${id}`, { headers: workspaceHeader(workspaceSlug) });
   }
 
   async createProject(data: CreateProjectRequest): Promise<Project> {
@@ -4518,8 +4531,11 @@ export class ApiClient {
   // Project resources
   async listProjectResources(
     projectId: string,
+    workspaceSlug?: string,
   ): Promise<ListProjectResourcesResponse> {
-    return this.fetch(`/api/projects/${projectId}/resources`);
+    return this.fetch(`/api/projects/${projectId}/resources`, {
+      headers: workspaceHeader(workspaceSlug),
+    });
   }
 
   async createProjectResource(
@@ -4983,15 +4999,19 @@ export class ApiClient {
   }
 
   // Squads
-  async listSquads(): Promise<Squad[]> {
-    const raw = await this.fetch<unknown>(`/api/squads`);
+  async listSquads(workspaceSlug?: string): Promise<Squad[]> {
+    const raw = await this.fetch<unknown>(`/api/squads`, {
+      headers: workspaceHeader(workspaceSlug),
+    });
     return parseWithFallback(raw, SquadListSchema, EMPTY_SQUAD_LIST, {
       endpoint: "GET /api/squads",
     }) as Squad[];
   }
 
-  async getSquad(id: string): Promise<Squad> {
-    const raw = await this.fetch<unknown>(`/api/squads/${id}`);
+  async getSquad(id: string, workspaceSlug?: string): Promise<Squad> {
+    const raw = await this.fetch<unknown>(`/api/squads/${id}`, {
+      headers: workspaceHeader(workspaceSlug),
+    });
     return parseWithFallback(raw, SquadSchema, EMPTY_SQUAD, {
       endpoint: "GET /api/squads/:id",
     }) as Squad;
@@ -5060,8 +5080,10 @@ export class ApiClient {
   // working/idle/offline/unstable plus the issues each agent is currently
   // running. Parsed with a lenient schema so a new server-side status
   // value or extra field can't white-screen the Squad page (#2143).
-  async getSquadMemberStatus(squadId: string): Promise<SquadMemberStatusListResponse> {
-    const raw = await this.fetch<unknown>(`/api/squads/${squadId}/members/status`);
+  async getSquadMemberStatus(squadId: string, workspaceSlug?: string): Promise<SquadMemberStatusListResponse> {
+    const raw = await this.fetch<unknown>(`/api/squads/${squadId}/members/status`, {
+      headers: workspaceHeader(workspaceSlug),
+    });
     return parseWithFallback(raw, SquadMemberStatusListResponseSchema, EMPTY_SQUAD_MEMBER_STATUS_LIST, {
       endpoint: "GET /api/squads/:id/members/status",
     }) as SquadMemberStatusListResponse;
