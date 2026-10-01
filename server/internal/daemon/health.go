@@ -16,6 +16,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
 	"github.com/multica-ai/multica/server/internal/jevmodels"
+	"github.com/multica-ai/multica/server/internal/util"
 )
 
 // HealthResponse is returned by the daemon's local health endpoint.
@@ -295,24 +296,22 @@ func (d *Daemon) writeRepoCheckoutAuthError(w http.ResponseWriter, result repoCh
 
 func authorizeRepoCheckoutWorkDir(activeRoot, requested string) (string, error) {
 	root, err := filepath.Abs(activeRoot)
-	if err != nil {
-		return "", err
+	if err == nil {
+		root, err = util.ResolveSymlinks(root)
 	}
-	root, err = filepath.EvalSymlinks(root)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve active task workdir: %w", err)
 	}
 	workdir, err := filepath.Abs(requested)
-	if err != nil {
-		return "", err
+	if err == nil {
+		workdir, err = util.ResolveSymlinks(workdir)
 	}
-	workdir, err = filepath.EvalSymlinks(workdir)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve requested workdir: %w", err)
 	}
 	rel, err := filepath.Rel(root, workdir)
 	if err != nil || !filepath.IsLocal(rel) {
-		return "", errors.New("workdir is outside the active task workdir")
+		return "", fmt.Errorf("%s is outside the active task workdir %s", workdir, root)
 	}
 	return workdir, nil
 }
