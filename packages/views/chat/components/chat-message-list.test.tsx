@@ -862,6 +862,49 @@ describe("ChatMessageList failure copy (MUL-5370 regression)", () => {
     renderFailure("something_entirely_new");
     expect(await screen.findByText(FALLBACK)).toBeInTheDocument();
   });
+
+  it("offers retry and continuation only when the original input is present", async () => {
+    const onFailureAction = vi.fn();
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "input",
+                chat_session_id: "s1",
+                role: "user",
+                content: "retry this request",
+                task_id: TASK_ID,
+                created_at: new Date(0).toISOString(),
+              },
+              {
+                id: "failure",
+                chat_session_id: "s1",
+                role: "assistant",
+                content: "provider unavailable",
+                task_id: TASK_ID,
+                created_at: new Date(1).toISOString(),
+                failure_reason: "agent_error.provider_network",
+              },
+            ]}
+            pendingTask={undefined}
+            availability="online"
+            onFailureAction={onFailureAction}
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    const retry = await screen.findByRole("button", { name: "Retry this message" });
+    const continueButton = screen.getByRole("button", { name: "Continue this message" });
+    fireEvent.click(retry);
+    expect(onFailureAction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "failure" }),
+      "retry",
+    );
+    expect(continueButton).toBeDisabled();
+  });
 });
 
 describe("ChatMessageList onboarding starter cards", () => {

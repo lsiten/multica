@@ -78,6 +78,10 @@
     "default": "消息无法发送，请重试。",
     "runtime_access_recovery": "该智能体无法在其私有运行时上运行。请将该运行时设为公开，或将智能体重新绑定/复制到其所有者可用的运行时。"
   },
+  "failure_actions": {
+    "retry": "重试",
+    "continue": "继续"
+  },
   "a11y": {
     "suggested_followups": "建议的后续操作",
     "show_error_details": "显示错误详情",

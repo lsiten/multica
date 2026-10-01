@@ -642,6 +642,25 @@ export function ChatWindow() {
     });
   }, [pendingTaskId, activeSessionId, cancelChatTask]);
 
+  const handleFailureAction = useCallback(
+    async (message: ChatMessage, _action: "retry" | "continue") => {
+      const original = messages.find(
+        (candidate) =>
+          candidate.role === "user" &&
+          candidate.task_id === message.task_id,
+      );
+      if (!original) {
+        toast.error(t(($) => $.input.send_failed_toast));
+        return;
+      }
+      await handleSend(
+        original.content,
+        original.attachments?.map((attachment) => attachment.id),
+      );
+    },
+    [handleSend, messages, t],
+  );
+
   const handleSelectAgent = useCallback(
     (agent: Agent) => {
       // No-op when clicking the already-active agent — don't clobber the
@@ -947,6 +966,15 @@ export function ChatWindow() {
               : undefined
           }
           quickActionsPendingMessageId={quickActionsPending?.message_id ?? null}
+          onFailureAction={handleFailureAction}
+          failureActionsDisabled={
+            !!pendingTaskId ||
+            isSessionArchived ||
+            isAgentArchived ||
+            isAgentAccessRevoked ||
+            !activeAgentRuntimeBound ||
+            noAgent
+          }
         />
       ) : (
         <EmptyState

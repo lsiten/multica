@@ -442,6 +442,26 @@ export default function ChatTab() {
       .finally(() => invalidatePendingTask(qc, sessionId));
   }, [pendingTask?.task_id, pendingTask?.status, activeSessionId, qc]);
 
+  const handleFailureAction = useCallback(
+    async (message: ChatMessage, _action: "retry" | "continue") => {
+      const original = messages.find(
+        (candidate) =>
+          candidate.role === "user" &&
+          candidate.task_id === message.task_id,
+      );
+      if (!original) {
+        Alert.alert(t("alerts.not_sent"), t("failure.default"));
+        return;
+      }
+      await handleSend(
+        original.content,
+        original.attachments?.map((attachment) => attachment.id) ?? [],
+        { clearDraft: false },
+      );
+    },
+    [handleSend, messages, t],
+  );
+
   // ── Header / sheet actions ─────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
     if (availableAgents.length > 1) {
@@ -545,6 +565,8 @@ export default function ChatTab() {
             handleSend(action.prompt, [], { clearDraft: false })
           }
           quickActionsDisabled={sending || disabled}
+          onFailureAction={handleFailureAction}
+          failureActionsDisabled={sending || disabled}
           pendingTask={pendingTask}
           liveTaskMessages={liveTaskMessages}
           availability={presenceAvailability}

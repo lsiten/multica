@@ -87,7 +87,13 @@
       "context_overflow": "이 대화가 모델의 컨텍스트 길이를 초과했습니다. 새 세션을 시작하거나 요청을 더 작게 나눠 보세요.",
       "runtime_missing_executable": "이 기기에서 에이전트의 CLI를 실행할 수 없습니다. 올바르게 설치되어 있고 PATH에 있는지 확인한 뒤 다시 시도해 주세요.",
       "runtime_version_unsupported": "에이전트의 CLI 버전이 너무 낮습니다. 업그레이드한 뒤 다시 시도해 주세요.",
-      "fallback": "문제가 발생하여 에이전트가 답변을 완료하지 못했습니다. 다시 시도해 주세요."
+      "fallback": "문제가 발생하여 에이전트가 답변을 완료하지 못했습니다. 다시 시도해 주세요.",
+      "retry": "다시 시도",
+      "retrying": "다시 시도 중…",
+      "retry_aria": "이 메시지 다시 시도",
+      "continue": "계속",
+      "continuing": "계속하는 중…",
+      "continue_aria": "이 메시지 계속"
     },
     "tools_other": "도구 {{count}}개",
     "tool_result_named": "{{tool}} 결과: ",

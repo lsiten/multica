@@ -78,6 +78,10 @@
     "default": "Your message could not be sent. Please try again.",
     "runtime_access_recovery": "This agent can't run on its private runtime. Make the runtime public, or rebind/copy the agent to a runtime its owner can use."
   },
+  "failure_actions": {
+    "retry": "Retry",
+    "continue": "Continue"
+  },
   "a11y": {
     "suggested_followups": "Suggested follow-ups",
     "show_error_details": "Show error details",
