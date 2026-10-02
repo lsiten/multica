@@ -33,6 +33,8 @@
     "add_tooltip": "Add",
     "upload_file": "Image or files",
     "project_context": "Project context",
+    "squad_context": "Squad",
+    "workspace_context": "Workspace",
     "change_project_context": "Change project context",
     "remove_project_context": "Remove project context",
     "no_projects": "No projects yet",

@@ -64,6 +64,7 @@ vi.mock("@multica/core/pins", () => ({
 vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
+  squadListOptions: () => ({ queryKey: ["squads"] }),
 }));
 
 vi.mock("@multica/core/hooks", () => ({

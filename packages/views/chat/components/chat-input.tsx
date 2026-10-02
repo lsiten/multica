@@ -759,7 +759,7 @@ export function ChatInput({
         )}
         {onSquadChange && (
           <div className="flex items-center gap-2 px-3 pt-2">
-            <label className="text-caption text-muted-foreground" htmlFor={squadSelectId}>Squad</label>
+            <label className="text-caption text-muted-foreground" htmlFor={squadSelectId}>{t(($) => $.input.squad_context)}</label>
             <select
               id={squadSelectId}
               value={selectedSquad?.id ?? ""}
@@ -767,7 +767,7 @@ export function ChatInput({
               disabled={!projectSelectionEnabled}
               className="h-6 min-w-24 rounded border border-surface-border bg-surface-raised px-1 text-caption"
             >
-              <option value="">Workspace</option>
+              <option value="">{t(($) => $.input.workspace_context)}</option>
               {squads.map((squad) => <option key={squad.id} value={squad.id}>{squad.name}</option>)}
             </select>
           </div>
