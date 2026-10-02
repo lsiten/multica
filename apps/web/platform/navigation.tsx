@@ -7,6 +7,7 @@ import {
   type NavigationAdapter,
 } from "@multica/views/navigation";
 import { canGoBackInApp } from "./in-app-history";
+import { runGuardedNavigation } from "@multica/core/platform";
 
 /**
  * Web half of the `multica:navigate` bridge — the event shared content
@@ -37,7 +38,7 @@ function useInternalLinkHandler(router: ReturnType<typeof useRouter>) {
         );
         return;
       }
-      router.push(path);
+      runGuardedNavigation(() => router.push(path));
     };
     window.addEventListener("multica:navigate", handler);
     return () => window.removeEventListener("multica:navigate", handler);

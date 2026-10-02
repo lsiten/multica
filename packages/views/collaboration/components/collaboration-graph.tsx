@@ -1,89 +1,120 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, CircleDot, GitBranch, Minus, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { ZoomIn, ZoomOut, Expand, RotateCcw } from "lucide-react";
 import { cn } from "@multica/ui/lib/utils";
+import { Button } from "@multica/ui/components/ui/button";
 import type { CollaborationGraphEdge, CollaborationGraphNode } from "@multica/core/types";
 import { useT } from "../../i18n";
 
 export interface CollaborationGraphCanvasProps {
-  readonly nodes: readonly CollaborationGraphNode[];
-  readonly edges: readonly CollaborationGraphEdge[];
-  readonly emptyLabel: string;
-  readonly coverage?: string;
-  readonly coverageReasons?: readonly string[];
-  readonly asOf?: string;
-  readonly className?: string;
-  readonly onNodeClick?: (node: CollaborationGraphNode) => void;
-  readonly onEdgeClick?: (edge: CollaborationGraphEdge) => void;
+ readonly nodes: readonly CollaborationGraphNode[];
+ readonly edges: readonly CollaborationGraphEdge[];
+ readonly emptyLabel: string;
+ readonly coverage?: string;
+ readonly coverageReasons?: readonly string[];
+ readonly asOf?: string;
+ readonly className?: string;
+ readonly showEvidence?: boolean;
+ readonly showAggregateCounts?: boolean;
+ readonly ariaLabel?: string;
+ readonly footer?: string;
+ readonly onNodeClick?: (node: CollaborationGraphNode) => void;
+ readonly onEdgeClick?: (edge: CollaborationGraphEdge) => void;
+ readonly onSelectionClear?: () => void;
 }
-
-const EDGE_COLORS: Record<string, string> = { delegated: "#2563eb", retry: "#f59e0b", rerun: "#8b5cf6", assigned: "#64748b", produced: "#16a34a", derived_from: "#0f766e", coordinate: "#64748b", handoff: "#2563eb", review: "#f59e0b", accept: "#16a34a" };
-const VIEWBOX_WIDTH = 760;
-const NODE_WIDTH = 164;
-const NODE_HEIGHT = 42;
-
-function statusClass(status: string | null | undefined): string {
-  if (status === "running" || status === "working") return "fill-blue-500";
-  if (status === "completed" || status === "done") return "fill-emerald-500";
-  if (status === "failed" || status === "cancelled") return "fill-red-500";
-  return "fill-muted-foreground/50";
-}
-
-function edgeTypeLabel(type: CollaborationGraphEdge["type"], labels: Readonly<Record<string, string>>): string {
-  return labels[type] ?? type;
-}
-
-export function CollaborationGraphCanvas({ nodes, edges, emptyLabel, coverage, coverageReasons, asOf, className, onNodeClick, onEdgeClick }: CollaborationGraphCanvasProps) {
-  const { t } = useT("collaboration");
-  const edgeLabels: Readonly<Record<string, string>> = {
-    delegated: t(($) => $.handoff), retry: t(($) => $.retry), rerun: t(($) => $.rerun), assigned: t(($) => $.coordinate), produced: t(($) => $.handoff), derived_from: t(($) => $.derived_from),
-    coordinate: t(($) => $.coordinate), handoff: t(($) => $.handoff), review: t(($) => $.review), accept: t(($) => $.accept),
+const NODE_WIDTH=180, NODE_HEIGHT=62;
+export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,coverageReasons,asOf,className,showEvidence=true,showAggregateCounts=false,ariaLabel,footer,onNodeClick,onEdgeClick,onSelectionClear}:CollaborationGraphCanvasProps){
+ const {t}=useT("collaboration");
+ const markerId=useId().replace(/:/g,"");
+ const canvasRef=useRef<HTMLDivElement>(null);
+ const drag=useRef<{x:number;y:number; moved:boolean}|null>(null);
+ const [selectedNode,setSelectedNode]=useState<string|null>(null);
+ const [selectedEdge,setSelectedEdge]=useState<string|null>(null);
+ const [zoom,setZoom]=useState(1);
+ const [pan,setPan]=useState({x:0,y:0});
+ const hasNodes=nodes.length>0;
+ useEffect(()=>{
+  const canvas=canvasRef.current;
+  if(!canvas)return;
+  const wheel=(event:WheelEvent)=>{
+   event.preventDefault();
+   setZoom(current=>Math.min(2,Math.max(0.2,current*Math.exp(-event.deltaY*0.002))));
   };
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
-  const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
-  const graphWidth = Math.max(VIEWBOX_WIDTH, columns * (NODE_WIDTH + 28));
-  const positions = useMemo(() => {
-    const columnWidth = graphWidth / columns;
-    return new Map(nodes.map((node, index) => [node.id, { x: columnWidth * (index % columns) + columnWidth / 2, y: 46 + Math.floor(index / columns) * 82 }]));
-  }, [columns, graphWidth, nodes]);
-  const rows = Math.max(1, Math.ceil(nodes.length / columns));
-  const height = Math.max(170, 92 + rows * 82);
-  const relatedEdges = selectedNode ? edges.filter((edge) => edge.from === selectedNode || edge.to === selectedNode) : [];
-  const activeEdge = selectedEdge ? edges.find((edge) => edge.id === selectedEdge) : undefined;
-
-  const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (event.target !== event.currentTarget) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-  };
-  const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    setPan((current) => ({ x: current.x + event.clientX - drag.x, y: current.y + event.clientY - drag.y }));
-    dragRef.current = { ...drag, x: event.clientX, y: event.clientY };
-  };
-  const stopPointer = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
-  };
-
-  if (nodes.length === 0) return <div className={cn("flex min-h-40 items-center justify-center rounded-lg border border-dashed p-6 text-center text-caption text-muted-foreground", className)}><div className="flex flex-col items-center gap-2"><CircleDot className="h-5 w-5" /><span>{emptyLabel}</span></div></div>;
-
-  return <div className={cn("space-y-3", className)}>
-    {coverage === "partial" && <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-caption text-warning-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div><p>{t(($) => $.coverage_partial)}</p>{coverageReasons?.length ? <p className="mt-1 text-[11px]">{coverageReasons.join(" · ")}</p> : null}</div></div>}
-    <div className="relative overflow-hidden rounded-lg border bg-muted/10 p-2" onWheel={(event) => { event.preventDefault(); setZoom((current) => Math.min(2, Math.max(0.55, current * (event.deltaY < 0 ? 1.08 : 0.92)))); }}>
-      <div className="absolute right-3 top-3 z-10 flex gap-1 rounded-md border bg-background/90 p-1 shadow-sm"><button type="button" className="rounded-xs p-1 hover:bg-accent" aria-label="放大" onClick={() => setZoom((current) => Math.min(2, current + 0.1))}><ZoomIn className="h-3.5 w-3.5" /></button><button type="button" className="rounded-xs p-1 hover:bg-accent" aria-label="缩小" onClick={() => setZoom((current) => Math.max(0.55, current - 0.1))}><ZoomOut className="h-3.5 w-3.5" /></button><button type="button" className="rounded-xs px-1 text-[11px] hover:bg-accent" aria-label="重置缩放" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>100%</button></div>
-      <svg className="min-h-[170px] min-w-[600px] touch-none select-none" width={graphWidth} height={height} viewBox={`0 0 ${graphWidth} ${height}`} role="img" aria-label={t(($) => $.evidence_title)} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopPointer} onPointerCancel={stopPointer}>
-        <defs><marker id="collaboration-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="currentColor" /></marker></defs>
-        <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
-          {edges.map((edge) => { const from = positions.get(edge.from); const to = positions.get(edge.to); if (!from || !to) return null; const dx = to.x - from.x, dy = to.y - from.y; const ratio = Math.max(Math.abs(dx) / (NODE_WIDTH / 2 + 4), Math.abs(dy) / (NODE_HEIGHT / 2 + 4), 1); const endX = to.x - dx / ratio, endY = to.y - dy / ratio; const color = EDGE_COLORS[edge.type] ?? "#64748b"; const isSelected = selectedEdge === edge.id; const highlighted = !selectedNode || edge.from === selectedNode || edge.to === selectedNode; return <g key={edge.id} role="button" tabIndex={0} opacity={highlighted ? 1 : 0.18} className="cursor-pointer" onClick={() => { setSelectedEdge(edge.id); onEdgeClick?.(edge); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedEdge(edge.id); onEdgeClick?.(edge); } }}><line x1={from.x} y1={from.y} x2={endX} y2={endY} stroke="transparent" strokeWidth="12" /><line x1={from.x} y1={from.y} x2={endX} y2={endY} stroke={color} strokeWidth={isSelected ? 4 : Math.min(5, 1 + edge.count / 3)} markerEnd="url(#collaboration-arrow)" /><text x={(from.x + to.x) / 2} y={(from.y + to.y) / 2 - 6} textAnchor="middle" className="fill-muted-foreground text-[10px]">{edgeTypeLabel(edge.type, edgeLabels)} · {edge.count}</text></g>; })}
-          {nodes.map((node) => { const point = positions.get(node.id); if (!point) return null; const isSelected = selectedNode === node.id; return <g key={node.id} role="button" tabIndex={0} aria-label={node.label} className="cursor-pointer outline-none" onClick={() => { setSelectedNode(node.id); setSelectedEdge(null); onNodeClick?.(node); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedNode(node.id); setSelectedEdge(null); onNodeClick?.(node); } }}><rect x={point.x - NODE_WIDTH / 2} y={point.y - NODE_HEIGHT / 2} width={NODE_WIDTH} height={NODE_HEIGHT} rx="8" fill="var(--background)" stroke={isSelected ? "var(--foreground)" : "var(--border)"} strokeWidth={isSelected ? 2 : 1} /><circle cx={point.x - NODE_WIDTH / 2 + 16} cy={point.y} r="5" className={statusClass(node.status)} /><text x={point.x - NODE_WIDTH / 2 + 28} y={point.y + 4} fill="var(--foreground)" className="text-[11px]">{node.label.length > 20 ? `${node.label.slice(0, 19)}…` : node.label}</text></g>; })}
-        </g>
-      </svg>
-    </div>
-    {(selectedNode || activeEdge) && <div className="rounded-md border bg-background p-3 text-caption" aria-live="polite"><div className="mb-2 flex items-center gap-2 font-medium"><GitBranch className="h-3.5 w-3.5" />{t(($) => $.evidence_title)}</div>{activeEdge ? <div className="space-y-1.5 text-muted-foreground"><p>{edgeTypeLabel(activeEdge.type, edgeLabels)} · {activeEdge.count}</p><p>{t(($) => $.evidence_count, { count: activeEdge.evidence_count })} · {t(($) => $.active_count, { count: activeEdge.active_count })}</p>{activeEdge.last_event_at ? <p>{t(($) => $.last_event, { time: new Date(activeEdge.last_event_at).toLocaleString() })}</p> : null}</div> : relatedEdges.length ? <div className="space-y-1.5 text-muted-foreground">{relatedEdges.map((edge) => <div key={edge.id} className="flex items-center justify-between gap-3"><span>{edgeTypeLabel(edge.type, edgeLabels)}</span><span>{t(($) => $.evidence_count, { count: edge.evidence_count })} · {t(($) => $.active_count, { count: edge.active_count })}</span></div>)}</div> : <p className="text-muted-foreground">{t(($) => $.node_no_edges)}</p>}</div>}
-    <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span className="flex items-center gap-1"><Minus className="h-3 w-3" />{t(($) => $.footer)}</span>{asOf ? <span className="flex items-center gap-1"><RefreshCw className="h-3 w-3" />{new Date(asOf).toLocaleString()}</span> : null}</div>
-  </div>;
+  canvas.addEventListener("wheel",wheel,{passive:false});
+  return()=>canvas.removeEventListener("wheel",wheel);
+ },[hasNodes]);
+ const focusedNode=nodes.some(node=>node.id===selectedNode)?selectedNode:null;
+ const aggregate=showAggregateCounts || nodes.some(n=>n.data && "task_count" in n.data);
+ const columns=Math.max(1,Math.ceil(Math.sqrt(nodes.length)));
+ const width=Math.max(760,columns*240);
+ const lanes=useMemo(()=>{
+  const groups=new Map<string,CollaborationGraphEdge[]>();
+  for(const edge of edges){const key=JSON.stringify([edge.from,edge.to].sort());groups.set(key,[...(groups.get(key)??[]),edge])}
+  const result=new Map<string,{index:number;count:number}>();
+  for(const group of groups.values())group.sort((a,b)=>a.id.localeCompare(b.id)).forEach((edge,index)=>result.set(edge.id,{index,count:group.length}));
+  return result;
+ },[edges]);
+ const laneCount=Math.max(1,...[...lanes.values()].map(lane=>lane.count));
+ const topMargin=Math.max(100,70+laneCount*24);
+ const height=Math.max(260,Math.ceil(nodes.length/columns)*140+topMargin);
+ const positions=useMemo(()=>new Map(nodes.map((node,i)=>[node.id,{x:(i%columns)*240+120,y:Math.floor(i/columns)*140+topMargin}])),[nodes,columns,topMargin]);
+ const labels:Record<string,string>={parent_child:t($=>$.parent_child),delegated:t($=>$.delegated),retry:t($=>$.retry),rerun:t($=>$.rerun),coordinate:t($=>$.coordinate),handoff:t($=>$.handoff),review:t($=>$.review),accept:t($=>$.accept),assigned:t($=>$.coordinate),produced:t($=>$.handoff),derived_from:t($=>$.derived_from)};
+ const clear=()=>{setSelectedNode(null);setSelectedEdge(null);onSelectionClear?.()};
+ const fit=()=>{const available=canvasRef.current?.clientWidth ?? width;setZoom(Math.min(1,Math.max(0.2,(available-24)/width)));setPan({x:0,y:0})};
+ const related=(id:string)=>!focusedNode || id===focusedNode || edges.some(e=>(e.from===focusedNode && e.to===id)||(e.to===focusedNode && e.from===id));
+ const down=(event:ReactPointerEvent<SVGSVGElement>)=>{if((event.target as Element).closest('[data-graph-control]'))return;event.currentTarget.setPointerCapture(event.pointerId);drag.current={x:event.clientX,y:event.clientY,moved:false}};
+ const move=(event:ReactPointerEvent<SVGSVGElement>)=>{if(!drag.current)return;const dx=event.clientX-drag.current.x,dy=event.clientY-drag.current.y;if(Math.abs(dx)+Math.abs(dy)>2)drag.current.moved=true;setPan(p=>({x:p.x+dx,y:p.y+dy}));drag.current={...drag.current,x:event.clientX,y:event.clientY}};
+ const up=()=>{if(drag.current && !drag.current.moved)clear();drag.current=null};
+ if(!nodes.length)return <div className="rounded-lg border border-dashed p-8 text-center text-caption text-muted-foreground">{emptyLabel}</div>;
+ return <div className={cn("space-y-3",className)}>
+  {coverage==="partial" && <p role="status" className="rounded-md bg-warning/10 p-2 text-caption">{t($=>$.coverage_partial)} <span>{coverageReasons?.map(reason=>reason==="unresolved_lineage"?t($=>$.source_missing):reason==="scan_limit"?t($=>$.truncated):reason).join(" · ")}</span></p>}
+  <div ref={canvasRef} className="relative overflow-hidden rounded-lg border bg-muted/10">
+   <div className="absolute right-2 top-2 z-10 flex gap-1 rounded-md border bg-background p-1 text-foreground">
+    <Button size="icon-sm" variant="ghost" aria-label={t($=>$.zoom_in)} onClick={()=>setZoom(z=>Math.min(2,z+0.1))}><ZoomIn/></Button>
+    <Button size="icon-sm" variant="ghost" aria-label={t($=>$.zoom_out)} onClick={()=>setZoom(z=>Math.max(0.2,z-0.1))}><ZoomOut/></Button>
+    <Button size="icon-sm" variant="ghost" aria-label={t($=>$.fit_canvas)} onClick={fit}><Expand/></Button>
+    <Button size="icon-sm" variant="ghost" aria-label={t($=>$.reset_canvas)} onClick={()=>{setPan({x:0,y:0});setZoom(1);clear()}}><RotateCcw/></Button>
+   </div>
+   <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel ?? t($=>$.evidence_title)} className="touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={()=>{drag.current=null}}>
+    <defs><marker id={markerId} markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="context-stroke"/></marker></defs>
+    <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
+     {edges.map(edge=>{
+      const from=positions.get(edge.from),to=positions.get(edge.to);if(!from||!to)return null;
+      const dx=to.x-from.x,dy=to.y-from.y,len=Math.max(1,Math.hypot(dx,dy));
+      const horizontal=Math.abs(dx)>Math.abs(dy);
+      const start={x:from.x+(horizontal?Math.sign(dx)*NODE_WIDTH/2:0),y:from.y+(!horizontal?Math.sign(dy)*NODE_HEIGHT/2:0)};
+      const end={x:to.x-(horizontal?Math.sign(dx)*NODE_WIDTH/2:0),y:to.y-(!horizontal?Math.sign(dy)*NODE_HEIGHT/2:0)};
+      const lane=lanes.get(edge.id);
+      const offset=(lane?.count??1)>1?60+20*(lane?.index??0):60;
+      const control={x:(from.x+to.x)/2-dy/len*offset,y:(from.y+to.y)/2+dx/len*offset};
+      const path=`M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
+      const color=edge.source_incomplete?"var(--warning)":aggregate && edge.active_count===0?"var(--muted-foreground)":"var(--info)";
+      const text=aggregate?t($=>$.relation_counts,{relation:labels[edge.type]??edge.type,active:edge.active_count,total:edge.count}):`${labels[edge.type]??edge.type} · ${edge.count}`;
+      const activate=()=>{setSelectedEdge(edge.id);setSelectedNode(null);onEdgeClick?.(edge)};
+      return <g key={edge.id} data-graph-control role="button" aria-label={text} tabIndex={0} opacity={!focusedNode||edge.from===focusedNode||edge.to===focusedNode?1:0.15} className="cursor-pointer focus-visible:outline-ring" onClick={activate} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();activate()}}}>
+       <path d={path} fill="none" stroke="transparent" strokeWidth={14}/>
+       <path d={path} fill="none" stroke={color} strokeWidth={selectedEdge===edge.id?3:Math.min(3,1+edge.count/8)} strokeDasharray={edge.source_incomplete?"2 4":aggregate&&edge.active_count===0?"6 4":undefined} markerEnd={`url(#${markerId})`}/>
+       <rect x={Math.max(120,Math.min(width-120,control.x))-115} y={control.y-24} width={230} height={22} rx={4} fill="var(--background)" />
+       <text x={Math.max(120,Math.min(width-120,control.x))} y={control.y-8} textAnchor="middle" className="fill-muted-foreground text-caption"><title>{text}</title>{text}</text>
+      </g>
+     })}
+     {nodes.map(node=>{
+      const p=positions.get(node.id);if(!p)return null;
+      const taskCount=typeof node.data?.task_count==="number"?node.data.task_count:0;
+      const active=typeof node.data?.active_count==="number"?node.data.active_count:0;
+      const activate=()=>{setSelectedNode(node.id);setSelectedEdge(null);onNodeClick?.(node)};
+      const color=node.status==="running"||node.status==="working"?"var(--info)":node.status==="queued"||node.status==="waiting_local_directory"?"var(--warning)":node.status==="failed"||node.status==="error"?"var(--destructive)":"var(--muted-foreground)";
+      return <g key={node.id} data-graph-control role="button" tabIndex={0} aria-label={node.label} opacity={related(node.id)?1:0.2} className="cursor-pointer focus-visible:outline-ring" onClick={activate} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();activate()}}}>
+       <rect x={p.x-NODE_WIDTH/2} y={p.y-NODE_HEIGHT/2} width={NODE_WIDTH} height={NODE_HEIGHT} rx={8} fill="var(--background)" stroke={selectedNode===node.id?"var(--foreground)":"var(--border)"} strokeWidth={selectedNode===node.id?2:1}/>
+       <circle cx={p.x-72} cy={p.y-8} r={4} fill={color}/>
+       <text x={p.x-60} y={p.y-4} className="fill-foreground text-caption"><title>{node.label}</title>{node.label.length>13?`${node.label.slice(0,12)}…`:node.label}</text>
+       {aggregate&&<text x={p.x-72} y={p.y+17} className="fill-muted-foreground text-caption">{t($=>$.node_counts,{active,total:taskCount})}</text>}
+      </g>
+     })}
+    </g>
+   </svg>
+  </div>
+  {aggregate&&<p className="text-caption text-muted-foreground">{t($=>$.graph_legend)}</p>}
+  {showEvidence && selectedNode && <p className="text-caption text-muted-foreground">{t($=>$.evidence_count,{count:edges.filter(e=>e.from===selectedNode||e.to===selectedNode).reduce((n,e)=>n+e.evidence_count,0)})}</p>}
+  <div className="flex flex-wrap justify-between gap-2 text-caption text-muted-foreground"><span>{footer??t($=>$.footer)}</span>{asOf&&<time dateTime={asOf}>{new Date(asOf).toLocaleString()}</time>}</div>
+ </div>;
 }

@@ -24,8 +24,12 @@ export interface Project {
 }
 
 export interface ProjectExecutionScopeBindings {
+  sources?: Array<{agent_id: string; source: string; squad_id?: string}>;
   agent_ids: string[];
   squad_ids: string[];
+  auto_agent_ids?: string[];
+  inherited_agent_ids?: string[];
+  effective_agent_ids?: string[];
 }
 
 export interface CreateProjectRequest {

@@ -381,7 +381,6 @@ import {
   WorkspaceJevConfigResponseSchema,
   SquadCollaborationGraphResponseSchema,
   SquadCollaborationGraphSaveResponseSchema,
-  EMPTY_SQUAD_COLLABORATION_GRAPH_RESPONSE,
   SubscribersListSchema,
   TaskMessageListSchema,
   TimelineEntriesSchema,
@@ -4483,7 +4482,9 @@ export class ApiClient {
 
   async getProjectExecutionScopeBindings(id: string): Promise<import("../types/project").ProjectExecutionScopeBindings> {
     const raw: unknown = await this.fetch(`/api/projects/${id}/execution-scope-bindings`);
-    return ProjectExecutionScopeBindingsSchema.parse(raw);
+    const parsed = parseWithFallback<import("../types/project").ProjectExecutionScopeBindings | null>(raw, ProjectExecutionScopeBindingsSchema, null, {endpoint:"GET /api/projects/:id/execution-scope-bindings"});
+    if (!parsed) throw new Error("Invalid project execution scope response");
+    return parsed;
   }
 
   async updateProjectExecutionScopeBindings(
@@ -4494,7 +4495,16 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
-    return ProjectExecutionScopeBindingsSchema.parse(raw);
+    const parsed = parseWithFallback<import("../types/project").ProjectExecutionScopeBindings | null>(raw, ProjectExecutionScopeBindingsSchema, null, {endpoint:"PUT /api/projects/:id/execution-scope-bindings"});
+    if (!parsed) throw new Error("Invalid project execution scope save response");
+    const sameIds = (actual: string[], expected: string[]) => {
+      const actualIds = new Set(actual), expectedIds = new Set(expected);
+      return actualIds.size === expectedIds.size && [...expectedIds].every(id => actualIds.has(id));
+    };
+    if (!sameIds(parsed.agent_ids, data.agent_ids) || !sameIds(parsed.squad_ids, data.squad_ids)) {
+      throw new Error("Project execution scope save was not confirmed");
+    }
+    return parsed;
   }
 
   async deleteProject(id: string): Promise<void> {
@@ -4524,15 +4534,16 @@ export class ApiClient {
 
   async getProjectCollaborationGraph(
     projectId: string,
-    params?: { from?: string; to?: string; issue_id?: string; squad_id?: string; agent_id?: string; status?: string; limit?: number; offset?: number },
+    params?: { complete?: boolean; from?: string; to?: string; issue_id?: string; squad_id?: string; agent_id?: string; status?: string; activity?: string; task_query?: string; relation_type?: string; limit?: number; offset?: number },
   ): Promise<ProjectCollaborationGraphResponse> {
     const search = new URLSearchParams();
-    for (const key of ["from", "to", "issue_id", "squad_id", "agent_id", "status"] as const) {
+    for (const key of ["from", "to", "issue_id", "squad_id", "agent_id", "status", "activity", "relation_type", "task_query"] as const) {
       const value = params?.[key];
       if (value) search.set(key, value);
     }
     if (params?.limit !== undefined) search.set("limit", String(params.limit));
     if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    if (params?.complete) search.set("complete", "true");
     const raw = await this.fetch<unknown>(
       `/api/projects/${projectId}/collaboration-graph${search.toString() ? `?${search}` : ""}`,
     );
@@ -4543,15 +4554,16 @@ export class ApiClient {
 
   async getProjectCollaborationEvidence(
     projectId: string,
-    params?: { edge_id?: string; from?: string; to?: string; issue_id?: string; squad_id?: string; agent_id?: string; status?: string; limit?: number; offset?: number },
+    params?: { sort?: "newest" | "oldest"; node_agent_id?: string; run_id?: string; cursor?: string; cursor_mode?: boolean; snapshot_at?: string; edge_id?: string; from?: string; to?: string; issue_id?: string; squad_id?: string; agent_id?: string; status?: string; activity?: string; task_query?: string; relation_type?: string; limit?: number; offset?: number },
   ): Promise<ProjectCollaborationEvidenceResponse> {
     const search = new URLSearchParams();
-    for (const key of ["edge_id", "from", "to", "issue_id", "squad_id", "agent_id", "status"] as const) {
+    for (const key of ["edge_id", "from", "to", "issue_id", "squad_id", "agent_id", "status", "activity", "relation_type", "task_query", "sort", "node_agent_id", "run_id", "cursor", "snapshot_at"] as const) {
       const value = params?.[key];
       if (value) search.set(key, value);
     }
     if (params?.limit !== undefined) search.set("limit", String(params.limit));
     if (params?.offset !== undefined) search.set("offset", String(params.offset));
+    if (params?.cursor_mode) search.set("cursor_mode", "true");
     const raw = await this.fetch<unknown>(`/api/projects/${projectId}/collaboration-evidence${search.toString() ? `?${search}` : ""}`);
     return parseWithFallback(raw, ProjectCollaborationEvidenceResponseSchema, EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE, {
       endpoint: "GET /api/projects/:id/collaboration-evidence",
@@ -5080,9 +5092,13 @@ export class ApiClient {
   async getSquadCollaborationGraph(squadId: string, revision?: number): Promise<SquadCollaborationGraphResponse> {
     const suffix = revision === undefined ? "" : `?revision=${revision}`;
     const raw = await this.fetch<unknown>(`/api/squads/${squadId}/collaboration-graph${suffix}`);
-    return parseWithFallback(raw, SquadCollaborationGraphResponseSchema, EMPTY_SQUAD_COLLABORATION_GRAPH_RESPONSE, {
+    const graph = parseWithFallback<SquadCollaborationGraphResponse | null>(raw, SquadCollaborationGraphResponseSchema, null, {
       endpoint: "GET /api/squads/:id/collaboration-graph",
     });
+    if (!graph || graph.squad_id !== squadId) {
+      throw new Error("Invalid squad collaboration graph response");
+    }
+    return graph;
   }
 
   async updateSquadCollaborationGraph(

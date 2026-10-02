@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"encoding/base64"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -52,7 +54,34 @@ func (h *Handler) loadProjectCollaboration(w http.ResponseWriter, r *http.Reques
 	out.ProjectID = uuidToString(projectID)
 	params := db.ListProjectCollaborationRunsParams{WorkspaceID: workspaceID, ProjectID: projectID, UserID: member.UserID, IsAdmin: roleAllowed(member.Role, "owner", "admin"), ScanLimit: projectCollaborationScanLimit + 1}
 	q := r.URL.Query()
-	for name, dest := range map[string]*pgtype.UUID{"issue_id": &params.IssueID, "squad_id": &params.SquadID, "agent_id": &params.AgentID} {
+	if snapshot := q.Get("snapshot_at"); snapshot != "" {
+		at, err := time.Parse(time.RFC3339Nano, snapshot)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid snapshot timestamp")
+			return out, false
+		}
+		out.AsOf = at.UTC().Format(time.RFC3339Nano)
+	}
+	if cursor := q.Get("cursor"); cursor != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+		parts := strings.SplitN(string(decoded), "|", 2)
+		if err != nil || len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid collaboration cursor")
+			return out, false
+		}
+		at, err := time.Parse(time.RFC3339Nano, parts[0])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid collaboration cursor")
+			return out, false
+		}
+		id, valid := parseUUIDOrBadRequest(w, parts[1], "cursor id")
+		if !valid {
+			return out, false
+		}
+		params.CursorAt = pgtype.Timestamptz{Time: at, Valid: true}
+		params.CursorID = id
+	}
+	for name, dest := range map[string]*pgtype.UUID{"issue_id": &params.IssueID, "squad_id": &params.SquadID, "agent_id": &params.AgentID, "node_agent_id": &params.NodeAgentID, "run_id": &params.RunID} {
 		if value := q.Get(name); value != "" {
 			id, valid := parseUUIDOrBadRequest(w, value, name)
 			if !valid {
@@ -75,11 +104,44 @@ func (h *Handler) loadProjectCollaboration(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "from must not be after to")
 		return out, false
 	}
+	if q.Get("cursor_mode") == "true" {
+		at, err := time.Parse(time.RFC3339Nano, out.AsOf)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "invalid collaboration snapshot")
+			return out, false
+		}
+		if !params.ToAt.Valid || params.ToAt.Time.After(at) {
+			params.ToAt = pgtype.Timestamptz{Time: at, Valid: true}
+		}
+	}
 	params.StatusFilter = q.Get("status")
+	params.ActivityFilter = q.Get("activity")
+	params.RelationType = q.Get("relation_type")
+	params.TaskQuery = q.Get("task_query")
+	if sort := q.Get("sort"); sort != "" && sort != "newest" && sort != "oldest" {
+		writeError(w, http.StatusBadRequest, "invalid collaboration sort")
+		return out, false
+	}
+	params.OldestFirst = q.Get("sort") == "oldest"
+	if params.StatusFilter == "" && params.ActivityFilter == "" {
+		params.ActivityFilter = "active"
+	}
 	switch params.StatusFilter {
 	case "", "queued", "dispatched", "running", "waiting_local_directory", "completed", "failed", "cancelled":
 	default:
 		writeError(w, http.StatusBadRequest, "invalid task status")
+		return out, false
+	}
+	switch params.ActivityFilter {
+	case "", "active", "all", "ended":
+	default:
+		writeError(w, http.StatusBadRequest, "invalid activity filter")
+		return out, false
+	}
+	switch params.RelationType {
+	case "", "root", "delegated", "retry", "rerun", "parent_child":
+	default:
+		writeError(w, http.StatusBadRequest, "invalid relation type")
 		return out, false
 	}
 	for name, dest := range map[string]*int{"limit": &out.Limit, "offset": &out.Offset} {
@@ -103,37 +165,8 @@ func (h *Handler) loadProjectCollaboration(w http.ResponseWriter, r *http.Reques
 		rows = rows[:projectCollaborationScanLimit]
 	}
 	out.Runs = rows
-	// Load graph events through the same tenant and member visibility query.
-	// The aggregate graph uses these rows only to materialize proven artifact
-	// and derived_from edges; missing provenance remains absent from the graph.
-	events, eventsErr := h.Queries.ListVisibleProjectGraphEvents(r.Context(), db.ListVisibleProjectGraphEventsParams{
-		WorkspaceID: workspaceID, ProjectID: projectID, PageOffset: 0,
-		PageLimit: projectCollaborationScanLimit, UserID: member.UserID,
-		IsAdmin: roleAllowed(member.Role, "owner", "admin"),
-	})
-	if eventsErr != nil {
-		// Collaboration evidence remains useful on older databases that have not
-		// applied the optional graph-event migration yet; report partial coverage
-		// instead of failing the whole project graph request.
-		out.CoverageReasons = append(out.CoverageReasons, "graph_events_unavailable")
-	} else {
-		out.GraphEvents = events
-	}
-	if len(events) >= projectCollaborationScanLimit {
-		out.Truncated = true
-		seenScanLimit := false
-		for _, reason := range out.CoverageReasons {
-			if reason == "scan_limit" {
-				seenScanLimit = true
-				break
-			}
-		}
-		if !seenScanLimit {
-			out.CoverageReasons = append(out.CoverageReasons, "scan_limit")
-		}
-	}
 	for _, row := range rows {
-		if row.RelationType != "root" && !row.SourceTaskID.Valid {
+		if row.RelationType != "root" && !row.SourceTaskID.Valid && !row.SourceIssueID.Valid {
 			out.CoverageReasons = append(out.CoverageReasons, "unresolved_lineage")
 			break
 		}
@@ -147,6 +180,13 @@ func (h *Handler) GetProjectCollaborationGraph(w http.ResponseWriter, r *http.Re
 		return
 	}
 	graph := buildProjectCollaboration(data)
+	if r.URL.Query().Get("complete") == "true" {
+		graph.Limit = len(graph.Edges)
+		graph.Offset = 0
+		graph.HasMore = false
+		writeJSON(w, http.StatusOK, graph)
+		return
+	}
 	start, end := collaborationPageBounds(len(graph.Edges), data.projectCollaborationPage)
 	graph.HasMore = end < len(graph.Edges)
 	graph.Edges = graph.Edges[start:end]

@@ -890,6 +890,7 @@ export function useRealtimeSync(
         const wsId = getCurrentWsId();
         if (wsId) {
           qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+          qc.invalidateQueries({ queryKey: ["project-execution-scope-bindings", wsId] });
           // The issue table can filter on a project's status, so a
           // project create/update/delete changes which issues a filtered
           // window holds. The payload carries no previous status to compare
@@ -901,6 +902,7 @@ export function useRealtimeSync(
       squad: () => {
         const wsId = getCurrentWsId();
         if (wsId) {
+          qc.invalidateQueries({ queryKey: ["project-execution-scope-bindings", wsId] });
           qc.invalidateQueries({ queryKey: workspaceKeys.squads(wsId) });
           // squad:deleted triggers assignee transfer — refresh issues too.
           qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });

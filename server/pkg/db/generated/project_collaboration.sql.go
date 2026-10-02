@@ -11,76 +11,283 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const listProjectCollaborationRuns = `-- name: ListProjectCollaborationRuns :many
-WITH visible AS MATERIALIZED (
-    SELECT t.id, t.agent_id, a.name AS agent_name, t.issue_id, t.squad_id,
-           t.trigger_comment_id, t.status, t.created_at, t.started_at, t.completed_at,
-           t.delegated_from_task_id, t.retry_of_task_id, t.rerun_of_task_id,
-           CASE
-               WHEN t.issue_id IS NOT NULL THEN i.project_id
-               WHEN t.chat_session_id IS NOT NULL THEN cs.project_id
-               WHEN t.autopilot_run_id IS NOT NULL THEN ap.project_id
-               WHEN t.context->>'type' = 'quick_create'
-                    AND t.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-               THEN (t.context->>'project_id')::uuid
-           END::uuid AS project_id
-    FROM agent_task_queue t
-    JOIN agent a ON a.id = t.agent_id AND a.workspace_id = $2::uuid
-    LEFT JOIN issue i ON i.id = t.issue_id AND i.workspace_id = a.workspace_id
-    LEFT JOIN chat_session cs ON cs.id = t.chat_session_id AND cs.workspace_id = a.workspace_id
-    LEFT JOIN autopilot_run ar ON ar.id = t.autopilot_run_id
-    LEFT JOIN autopilot ap ON ap.id = ar.autopilot_id AND ap.workspace_id = a.workspace_id
-    WHERE (
-        $3::boolean OR a.owner_id = $4::uuid
-        OR (a.permission_mode = 'public_to' AND EXISTS (
-            SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id = a.id
-              AND (ait.target_type = 'workspace' OR (ait.target_type = 'member' AND ait.target_id = $4::uuid))
-        ))
-    )
-    AND (t.chat_session_id IS NULL OR (cs.creator_id = $4::uuid AND (
-        cs.explicitly_created_at IS NOT NULL OR EXISTS (
-            SELECT 1 FROM chat_message cm WHERE cm.chat_session_id = cs.id AND cm.message_kind != 'channel_command'
-        )
-    )))
-), selected AS (
-    SELECT id, agent_id, agent_name, issue_id, squad_id, trigger_comment_id, status, created_at, started_at, completed_at, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, project_id FROM visible v
-    WHERE v.project_id = $1::uuid
-      AND ($5::timestamptz IS NULL OR v.created_at >= $5)
-      AND ($6::timestamptz IS NULL OR v.created_at <= $6)
-      AND ($7::uuid IS NULL OR v.issue_id = $7)
-      AND ($8::uuid IS NULL OR v.squad_id = $8)
-      AND ($9::uuid IS NULL OR v.agent_id = $9)
-      AND ($10::text = '' OR v.status = $10::text)
-    ORDER BY v.created_at DESC, v.id DESC
-    LIMIT $11::int
+const listCollaborationIssueHierarchy = `-- name: ListCollaborationIssueHierarchy :many
+WITH RECURSIVE eligible AS MATERIALIZED (
+    SELECT i.id, i.parent_issue_id, i.title, i.status, (w.issue_prefix || '-' || i.number::text)::text AS issue_key
+    FROM issue i JOIN workspace w ON w.id=i.workspace_id
+    LEFT JOIN agent a ON i.assignee_type='agent' AND a.id=i.assignee_id AND a.workspace_id=i.workspace_id
+    WHERE i.workspace_id= $1::uuid AND i.project_id= $2::uuid
+      AND ($3::boolean OR i.id=ANY($4::uuid[]) OR COALESCE(i.assignee_type,'') <> 'agent' OR a.owner_id= $5::uuid OR
+        (a.permission_mode='public_to' AND EXISTS (SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id=a.id
+          AND (ait.target_type='workspace' OR (ait.target_type='member' AND ait.target_id= $5::uuid)))))
+), lineage AS (
+    SELECT e.id, e.parent_issue_id, e.title, e.status, e.issue_key, ARRAY[e.id] AS path FROM eligible e WHERE e.id=ANY($4::uuid[])
+    UNION ALL
+    SELECT p.id, p.parent_issue_id, p.title, p.status, p.issue_key, l.path || p.id FROM lineage l JOIN eligible p ON p.id=l.parent_issue_id
+    WHERE NOT p.id=ANY(l.path) AND cardinality(l.path)<32
 )
-SELECT s.id, s.agent_id, s.agent_name, s.issue_id, s.squad_id, s.trigger_comment_id, s.status, s.created_at, s.started_at, s.completed_at, s.delegated_from_task_id, s.retry_of_task_id, s.rerun_of_task_id, s.project_id, p.id AS source_task_id, p.agent_id AS source_agent_id,
-       COALESCE(p.agent_name, '')::text AS source_agent_name,
-       CASE WHEN s.retry_of_task_id IS NOT NULL THEN 'retry'
-            WHEN s.rerun_of_task_id IS NOT NULL THEN 'rerun'
-            WHEN s.delegated_from_task_id IS NOT NULL THEN 'delegated'
-            ELSE 'root' END::text AS relation_type,
-       (SELECT COUNT(DISTINCT e.event_type) FROM project_graph_event e
-        WHERE e.task_id = s.id AND e.project_id = $1::uuid
-          AND e.workspace_id = $2::uuid)::bigint AS event_count
-FROM selected s
-LEFT JOIN visible p ON p.id = COALESCE(s.retry_of_task_id, s.rerun_of_task_id, s.delegated_from_task_id)
-                   AND p.project_id = s.project_id
-ORDER BY s.created_at DESC, s.id DESC
+SELECT DISTINCT l.id, l.title, l.status, l.issue_key,
+       CASE WHEN EXISTS(SELECT 1 FROM eligible p WHERE p.id=l.parent_issue_id) THEN l.parent_issue_id ELSE NULL END::uuid AS parent_issue_id
+FROM lineage l ORDER BY l.id
+`
+
+type ListCollaborationIssueHierarchyParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	ProjectID   pgtype.UUID   `json:"project_id"`
+	IsAdmin     bool          `json:"is_admin"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	UserID      pgtype.UUID   `json:"user_id"`
+}
+
+type ListCollaborationIssueHierarchyRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Title         string      `json:"title"`
+	Status        string      `json:"status"`
+	IssueKey      string      `json:"issue_key"`
+	ParentIssueID pgtype.UUID `json:"parent_issue_id"`
+}
+
+func (q *Queries) ListCollaborationIssueHierarchy(ctx context.Context, arg ListCollaborationIssueHierarchyParams) ([]ListCollaborationIssueHierarchyRow, error) {
+	rows, err := q.db.Query(ctx, listCollaborationIssueHierarchy,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.IsAdmin,
+		arg.IssueIds,
+		arg.UserID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCollaborationIssueHierarchyRow{}
+	for rows.Next() {
+		var i ListCollaborationIssueHierarchyRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Status,
+			&i.IssueKey,
+			&i.ParentIssueID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCollaborationRunArtifacts = `-- name: ListCollaborationRunArtifacts :many
+SELECT a.id, a.task_id, a.filename, a.created_at
+FROM attachment a
+WHERE a.workspace_id= $1::uuid AND a.task_id=ANY($2::uuid[])
+ORDER BY a.created_at, a.id
+`
+
+type ListCollaborationRunArtifactsParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	TaskIds     []pgtype.UUID `json:"task_ids"`
+}
+
+type ListCollaborationRunArtifactsRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TaskID    pgtype.UUID        `json:"task_id"`
+	Filename  string             `json:"filename"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListCollaborationRunArtifacts(ctx context.Context, arg ListCollaborationRunArtifactsParams) ([]ListCollaborationRunArtifactsRow, error) {
+	rows, err := q.db.Query(ctx, listCollaborationRunArtifacts, arg.WorkspaceID, arg.TaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCollaborationRunArtifactsRow{}
+	for rows.Next() {
+		var i ListCollaborationRunArtifactsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Filename,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCollaborationRunEvents = `-- name: ListCollaborationRunEvents :many
+SELECT e.id,e.task_id,e.event_type,e.created_at
+FROM project_graph_event e
+WHERE e.workspace_id = $1::uuid AND e.project_id = $2::uuid AND e.task_id=ANY($3::uuid[])
+ORDER BY e.created_at,e.id
+`
+
+type ListCollaborationRunEventsParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	ProjectID   pgtype.UUID   `json:"project_id"`
+	TaskIds     []pgtype.UUID `json:"task_ids"`
+}
+
+type ListCollaborationRunEventsRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	TaskID    pgtype.UUID        `json:"task_id"`
+	EventType string             `json:"event_type"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListCollaborationRunEvents(ctx context.Context, arg ListCollaborationRunEventsParams) ([]ListCollaborationRunEventsRow, error) {
+	rows, err := q.db.Query(ctx, listCollaborationRunEvents, arg.WorkspaceID, arg.ProjectID, arg.TaskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCollaborationRunEventsRow{}
+	for rows.Next() {
+		var i ListCollaborationRunEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.EventType,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectCollaborationRuns = `-- name: ListProjectCollaborationRuns :many
+WITH RECURSIVE base AS (
+ SELECT t.id,t.agent_id,a.name AS agent_name,t.issue_id,t.squad_id,t.trigger_comment_id,
+        t.status,t.created_at,t.started_at,t.completed_at,t.delegated_from_task_id,
+        t.retry_of_task_id,t.rerun_of_task_id,t.parent_task_id,i.parent_issue_id,
+        COALESCE(i.title,cs.title,'')::text AS issue_title,
+        CASE WHEN i.id IS NULL THEN '' ELSE w.issue_prefix || '-' || i.number::text END::text AS issue_key,
+        COALESCE(i.status,'')::text AS issue_status,
+        COALESCE(i.status NOT IN ('done','cancelled') AND COALESCE(ist.category,'') NOT IN ('done','closed'),false)::boolean AS task_active,
+        CASE
+         WHEN t.issue_id IS NOT NULL THEN i.project_id
+         WHEN t.chat_session_id IS NOT NULL THEN cs.project_id
+         WHEN t.autopilot_run_id IS NOT NULL THEN ap.project_id
+         WHEN t.context->>'type'='quick_create' AND t.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (t.context->>'project_id')::uuid
+        END::uuid AS project_id
+ FROM agent_task_queue t
+ JOIN agent a ON a.id=t.agent_id AND a.workspace_id = $2::uuid
+ JOIN workspace w ON w.id=a.workspace_id
+ LEFT JOIN issue i ON i.id=t.issue_id AND i.workspace_id=a.workspace_id
+ LEFT JOIN issue_status ist ON ist.workspace_id=i.workspace_id AND ist.key=i.status
+ LEFT JOIN chat_session cs ON cs.id=t.chat_session_id AND cs.workspace_id=a.workspace_id
+ LEFT JOIN autopilot_run ar ON ar.id=t.autopilot_run_id
+ LEFT JOIN autopilot ap ON ap.id=ar.autopilot_id AND ap.workspace_id=a.workspace_id
+ WHERE ($4::boolean OR a.owner_id = $5::uuid OR
+  (a.permission_mode='public_to' AND EXISTS(SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id=a.id
+   AND (ait.target_type='workspace' OR (ait.target_type='member' AND ait.target_id = $5::uuid)))))
+ AND (t.chat_session_id IS NULL OR (cs.creator_id = $5::uuid AND (cs.explicitly_created_at IS NOT NULL OR
+  EXISTS(SELECT 1 FROM chat_message cm WHERE cm.chat_session_id=cs.id AND cm.message_kind!='channel_command'))))
+), visible AS MATERIALIZED (
+ SELECT id, agent_id, agent_name, issue_id, squad_id, trigger_comment_id, status, created_at, started_at, completed_at, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, parent_task_id, parent_issue_id, issue_title, issue_key, issue_status, task_active, project_id FROM base WHERE project_id = $1::uuid
+), resolved AS (
+ SELECT v.id, v.agent_id, v.agent_name, v.issue_id, v.squad_id, v.trigger_comment_id, v.status, v.created_at, v.started_at, v.completed_at, v.delegated_from_task_id, v.retry_of_task_id, v.rerun_of_task_id, v.parent_task_id, v.parent_issue_id, v.issue_title, v.issue_key, v.issue_status, v.task_active, v.project_id,source.id AS source_task_id,
+        CASE WHEN source.id IS NOT NULL THEN source.agent_id ELSE pa.id END::uuid AS source_agent_id,
+        COALESCE(source.agent_name,pa.name,'')::text AS source_agent_name,
+        CASE WHEN source.id IS NOT NULL THEN source.issue_id WHEN pa.id IS NOT NULL OR parent.assignee_type IS DISTINCT FROM 'agent' THEN parent.id ELSE NULL END::uuid AS source_issue_id,
+        CASE WHEN v.retry_of_task_id IS NOT NULL THEN 'retry'
+             WHEN v.rerun_of_task_id IS NOT NULL THEN 'rerun'
+             WHEN v.delegated_from_task_id IS NOT NULL THEN 'delegated'
+             WHEN v.parent_task_id IS NOT NULL OR v.parent_issue_id IS NOT NULL THEN 'parent_child'
+             ELSE 'root' END::text AS relation_type
+ FROM visible v
+ LEFT JOIN visible source ON source.id=COALESCE(v.retry_of_task_id,v.rerun_of_task_id,v.delegated_from_task_id,v.parent_task_id)
+                         AND source.project_id=v.project_id
+ LEFT JOIN issue parent ON parent.id=v.parent_issue_id AND parent.workspace_id = $2::uuid AND parent.project_id=v.project_id
+     AND v.retry_of_task_id IS NULL AND v.rerun_of_task_id IS NULL AND v.delegated_from_task_id IS NULL AND v.parent_task_id IS NULL
+ LEFT JOIN agent pa ON parent.assignee_type='agent' AND pa.id=parent.assignee_id AND pa.workspace_id=parent.workspace_id
+     AND ($4::boolean OR pa.owner_id = $5::uuid OR
+       (pa.permission_mode='public_to' AND EXISTS(SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id=pa.id
+        AND (ait.target_type='workspace' OR (ait.target_type='member' AND ait.target_id = $5::uuid)))))
+), searchable_parents AS MATERIALIZED (
+ SELECT p.id, p.workspace_id, p.title, p.description, p.status, p.priority, p.assignee_type, p.assignee_id, p.creator_type, p.creator_id, p.parent_issue_id, p.acceptance_criteria, p.context_refs, p.position, p.due_date, p.created_at, p.updated_at, p.number, p.project_id, p.origin_type, p.origin_id, p.first_executed_at, p.start_date, p.metadata, p.stage, p.properties, p.revision, p.last_activity_at, p.triage_state, p.duplicate_of_issue_id FROM issue p LEFT JOIN agent a ON p.assignee_type='agent' AND a.id=p.assignee_id AND a.workspace_id=p.workspace_id
+ WHERE p.workspace_id = $2::uuid AND p.project_id = $1::uuid AND $6::text<>''
+  AND ($4::boolean OR COALESCE(p.assignee_type,'') <> 'agent' OR a.owner_id = $5::uuid OR
+   (a.permission_mode='public_to' AND EXISTS(SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id=a.id AND
+    (ait.target_type='workspace' OR (ait.target_type='member' AND ait.target_id = $5::uuid)))))
+), issue_ancestors AS (
+ SELECT child.id AS root_issue_id,p.id,p.parent_issue_id,p.title,p.number,p.assignee_type,p.assignee_id,ARRAY[p.id] AS path
+ FROM issue child JOIN searchable_parents p ON p.id=child.parent_issue_id AND p.workspace_id=child.workspace_id AND p.project_id=child.project_id
+ WHERE child.workspace_id = $2::uuid AND child.project_id = $1::uuid AND $6::text<>''
+ UNION ALL
+ SELECT child.root_issue_id,p.id,p.parent_issue_id,p.title,p.number,p.assignee_type,p.assignee_id,child.path || p.id
+ FROM issue_ancestors child JOIN searchable_parents p ON p.id=child.parent_issue_id
+ WHERE p.workspace_id = $2::uuid AND p.project_id = $1::uuid AND NOT p.id=ANY(child.path) AND cardinality(child.path)<32
+), selected AS (
+ SELECT id, agent_id, agent_name, issue_id, squad_id, trigger_comment_id, status, created_at, started_at, completed_at, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, parent_task_id, parent_issue_id, issue_title, issue_key, issue_status, task_active, project_id, source_task_id, source_agent_id, source_agent_name, source_issue_id, relation_type FROM resolved v
+ WHERE v.project_id = $1::uuid
+  AND ($7::timestamptz IS NULL OR v.created_at>=$7)
+  AND ($8::timestamptz IS NULL OR v.created_at<=$8)
+  AND ($9::uuid IS NULL OR v.issue_id=$9)
+  AND ($10::uuid IS NULL OR v.squad_id=$10)
+  AND ($11::uuid IS NULL OR v.agent_id=$11 OR v.source_agent_id=$11)
+  AND ($12::uuid IS NULL OR v.agent_id=$12 OR v.source_agent_id=$12)
+  AND ($13::uuid IS NULL OR v.id=$13)
+  AND ($14::text IN ('','all') OR
+       ($14::text='active' AND v.issue_id IS NOT NULL AND v.task_active) OR
+       ($14::text='ended' AND v.issue_id IS NOT NULL AND NOT v.task_active))
+  AND ($15::text='' OR v.relation_type=$15::text)
+  AND ($16::text='' OR v.status = $16::text)
+  AND ($17::timestamptz IS NULL OR
+       ($3::boolean AND (v.created_at,v.id) > ($17::timestamptz,$18::uuid)) OR
+       (NOT $3::boolean AND (v.created_at,v.id) < ($17::timestamptz,$18::uuid)))
+  AND ($6::text='' OR v.issue_title ILIKE '%' || $6::text || '%' OR v.issue_key ILIKE '%' || $6::text || '%'
+       OR EXISTS (
+        SELECT 1 FROM issue_ancestors p LEFT JOIN agent a ON p.assignee_type='agent' AND a.id=p.assignee_id AND a.workspace_id = $2::uuid
+        JOIN workspace w ON w.id = $2::uuid
+        WHERE p.root_issue_id=v.issue_id AND (p.title ILIKE '%' || $6::text || '%' OR (w.issue_prefix || '-' || p.number::text) ILIKE '%' || $6::text || '%')
+         AND ($4::boolean OR COALESCE(p.assignee_type,'') <> 'agent' OR a.owner_id = $5::uuid OR
+          (a.permission_mode='public_to' AND EXISTS(SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id=a.id AND
+           (ait.target_type='workspace' OR (ait.target_type='member' AND ait.target_id = $5::uuid)))))
+       ))
+ ORDER BY CASE WHEN $3::boolean THEN v.created_at END ASC,
+          CASE WHEN $3::boolean THEN v.id END ASC,
+          v.created_at DESC,v.id DESC LIMIT $19::int
+)
+SELECT s.id, s.agent_id, s.agent_name, s.issue_id, s.squad_id, s.trigger_comment_id, s.status, s.created_at, s.started_at, s.completed_at, s.delegated_from_task_id, s.retry_of_task_id, s.rerun_of_task_id, s.parent_task_id, s.parent_issue_id, s.issue_title, s.issue_key, s.issue_status, s.task_active, s.project_id, s.source_task_id, s.source_agent_id, s.source_agent_name, s.source_issue_id, s.relation_type,(SELECT count(*) FROM project_graph_event e WHERE e.task_id=s.id AND e.project_id = $1::uuid AND e.workspace_id = $2::uuid)::bigint AS event_count
+FROM selected s ORDER BY CASE WHEN $3::boolean THEN s.created_at END ASC,
+                        CASE WHEN $3::boolean THEN s.id END ASC,
+                        s.created_at DESC,s.id DESC
 `
 
 type ListProjectCollaborationRunsParams struct {
-	ProjectID    pgtype.UUID        `json:"project_id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	IsAdmin      bool               `json:"is_admin"`
-	UserID       pgtype.UUID        `json:"user_id"`
-	FromAt       pgtype.Timestamptz `json:"from_at"`
-	ToAt         pgtype.Timestamptz `json:"to_at"`
-	IssueID      pgtype.UUID        `json:"issue_id"`
-	SquadID      pgtype.UUID        `json:"squad_id"`
-	AgentID      pgtype.UUID        `json:"agent_id"`
-	StatusFilter string             `json:"status_filter"`
-	ScanLimit    int32              `json:"scan_limit"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	OldestFirst    bool               `json:"oldest_first"`
+	IsAdmin        bool               `json:"is_admin"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	TaskQuery      string             `json:"task_query"`
+	FromAt         pgtype.Timestamptz `json:"from_at"`
+	ToAt           pgtype.Timestamptz `json:"to_at"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	SquadID        pgtype.UUID        `json:"squad_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	NodeAgentID    pgtype.UUID        `json:"node_agent_id"`
+	RunID          pgtype.UUID        `json:"run_id"`
+	ActivityFilter string             `json:"activity_filter"`
+	RelationType   string             `json:"relation_type"`
+	StatusFilter   string             `json:"status_filter"`
+	CursorAt       pgtype.Timestamptz `json:"cursor_at"`
+	CursorID       pgtype.UUID        `json:"cursor_id"`
+	ScanLimit      int32              `json:"scan_limit"`
 }
 
 type ListProjectCollaborationRunsRow struct {
@@ -97,28 +304,42 @@ type ListProjectCollaborationRunsRow struct {
 	DelegatedFromTaskID pgtype.UUID        `json:"delegated_from_task_id"`
 	RetryOfTaskID       pgtype.UUID        `json:"retry_of_task_id"`
 	RerunOfTaskID       pgtype.UUID        `json:"rerun_of_task_id"`
+	ParentTaskID        pgtype.UUID        `json:"parent_task_id"`
+	ParentIssueID       pgtype.UUID        `json:"parent_issue_id"`
+	IssueTitle          string             `json:"issue_title"`
+	IssueKey            string             `json:"issue_key"`
+	IssueStatus         string             `json:"issue_status"`
+	TaskActive          bool               `json:"task_active"`
 	ProjectID           pgtype.UUID        `json:"project_id"`
 	SourceTaskID        pgtype.UUID        `json:"source_task_id"`
 	SourceAgentID       pgtype.UUID        `json:"source_agent_id"`
 	SourceAgentName     string             `json:"source_agent_name"`
+	SourceIssueID       pgtype.UUID        `json:"source_issue_id"`
 	RelationType        string             `json:"relation_type"`
 	EventCount          int64              `json:"event_count"`
 }
 
-// Resolve source ownership before filtering. Parent rows intentionally precede
-// child filters and pagination, so older parents remain provable evidence.
+// Resolve recorded run sources and structural parent issues before filtering.
 func (q *Queries) ListProjectCollaborationRuns(ctx context.Context, arg ListProjectCollaborationRunsParams) ([]ListProjectCollaborationRunsRow, error) {
 	rows, err := q.db.Query(ctx, listProjectCollaborationRuns,
 		arg.ProjectID,
 		arg.WorkspaceID,
+		arg.OldestFirst,
 		arg.IsAdmin,
 		arg.UserID,
+		arg.TaskQuery,
 		arg.FromAt,
 		arg.ToAt,
 		arg.IssueID,
 		arg.SquadID,
 		arg.AgentID,
+		arg.NodeAgentID,
+		arg.RunID,
+		arg.ActivityFilter,
+		arg.RelationType,
 		arg.StatusFilter,
+		arg.CursorAt,
+		arg.CursorID,
 		arg.ScanLimit,
 	)
 	if err != nil {
@@ -142,10 +363,17 @@ func (q *Queries) ListProjectCollaborationRuns(ctx context.Context, arg ListProj
 			&i.DelegatedFromTaskID,
 			&i.RetryOfTaskID,
 			&i.RerunOfTaskID,
+			&i.ParentTaskID,
+			&i.ParentIssueID,
+			&i.IssueTitle,
+			&i.IssueKey,
+			&i.IssueStatus,
+			&i.TaskActive,
 			&i.ProjectID,
 			&i.SourceTaskID,
 			&i.SourceAgentID,
 			&i.SourceAgentName,
+			&i.SourceIssueID,
 			&i.RelationType,
 			&i.EventCount,
 		); err != nil {

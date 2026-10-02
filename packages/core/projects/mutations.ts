@@ -50,6 +50,10 @@ export function useUpdateProject() {
     },
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: projectKeys.detail(wsId, vars.id) });
+      if ("lead_id" in vars || "lead_type" in vars) {
+        qc.invalidateQueries({ queryKey: ["project-execution-scope-bindings", wsId, vars.id] });
+        qc.invalidateQueries({ queryKey: ["chat-execution-scope", wsId] });
+      }
       qc.invalidateQueries({ queryKey: projectKeys.list(wsId) });
       // A project's status is a filter dimension of the issue table, so
       // changing it moves issues in and out of a filtered window. Nothing

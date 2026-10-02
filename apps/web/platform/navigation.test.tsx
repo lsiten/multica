@@ -24,6 +24,7 @@ vi.mock("next/navigation", () => ({
 
 import { WebNavigationProvider } from "./navigation";
 import { useNavigation, type NavigationAdapter } from "@multica/views/navigation";
+import { registerNavigationGuard } from "@multica/core/platform";
 
 function navigate(path: string) {
   window.dispatchEvent(
@@ -50,6 +51,14 @@ beforeEach(() => {
 });
 
 describe("WebNavigationProvider internal link bridge", () => {
+  it("honors unsaved view protection for content links", () => {
+    render(<WebNavigationProvider>{null}</WebNavigationProvider>);
+    const unregister = registerNavigationGuard(() => false);
+    try {
+      navigate("/acme/issues/MUL-1");
+      expect(router.push).not.toHaveBeenCalled();
+    } finally { unregister(); }
+  });
   it("pushes the path a content link resolved to", () => {
     render(<WebNavigationProvider>{null}</WebNavigationProvider>);
 

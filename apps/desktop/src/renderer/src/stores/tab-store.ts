@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { arrayMove } from "@dnd-kit/sortable";
-import { createPersistStorage, defaultStorage } from "@multica/core/platform";
+import { createPersistStorage, defaultStorage, mayLeaveNavigation } from "@multica/core/platform";
 import { createSafeId } from "@multica/core/utils";
 import { isReservedSlug } from "@multica/core/paths";
 
@@ -727,6 +727,7 @@ export const useTabStore = create<TabStore>()(
         // NavigationAdapter's path-parser should already have filtered
         // these, but belt-and-braces keeps garbage out of the store.
         if (!slug) return;
+        if ((slug !== get().activeWorkspaceSlug || openPath) && !mayLeaveNavigation()) return;
         const { byWorkspace } = get();
         const existing = byWorkspace[slug];
 
@@ -814,6 +815,7 @@ export const useTabStore = create<TabStore>()(
         // filters/anchor are its view state); we only focus it.
         const key = resourceKeyForUrl(clean);
         const existing = group.tabs.find((t) => t.resourceKey === key);
+        if ((existing ? existing.id !== group.activeTabId : opts?.activate === true) && !mayLeaveNavigation()) return "";
         if (existing) {
           const historyBase = withActiveSessionVisit(
             group,
@@ -912,6 +914,8 @@ export const useTabStore = create<TabStore>()(
         if (!hit) return;
         const { slug, group, index } = hit;
 
+        if (slug === get().activeWorkspaceSlug && group.activeTabId === tabId && !mayLeaveNavigation()) return;
+
         if (group.tabs.length === 1) {
           // Last tab in this workspace — reseed a default so the workspace
           // always has at least one tab. Closing a workspace as an explicit
@@ -950,6 +954,8 @@ export const useTabStore = create<TabStore>()(
         const { byWorkspace } = get();
         const next = buildCloseOtherTabsResult(byWorkspace, tabId);
         if (!next) return;
+        const slug = get().activeWorkspaceSlug;
+        if (slug && next[slug]?.activeTabId !== byWorkspace[slug]?.activeTabId && !mayLeaveNavigation()) return;
         set({ byWorkspace: next });
       },
 
@@ -959,6 +965,7 @@ export const useTabStore = create<TabStore>()(
         if (!hit) return;
         const { slug, group } = hit;
         if (slug === activeWorkspaceSlug && group.activeTabId === tabId) return;
+        if (!mayLeaveNavigation()) return;
         set({
           activeWorkspaceSlug: slug,
           byWorkspace: {
@@ -1007,6 +1014,7 @@ export const useTabStore = create<TabStore>()(
 
         const current = group.tabs[index];
         if (current.url === clean) return;
+        if (!mayLeaveNavigation()) return;
 
         const replace = opts?.replace === true;
         const stack = replace
@@ -1148,6 +1156,7 @@ export const useTabStore = create<TabStore>()(
         const group = byWorkspace[activeWorkspaceSlug];
         if (!group) return;
         if (!group.tabs.some((t) => t.id === group.activeTabId)) return;
+        if (!mayLeaveNavigation()) return;
         set({ mountGeneration: mountGeneration + 1 });
       },
 
@@ -1474,6 +1483,7 @@ function setHistoryIndex(
     return;
   }
   const url = current.history.stack[historyIndex];
+  if (!mayLeaveNavigation()) return;
   const next: TabSession = {
     ...current,
     url,

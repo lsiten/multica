@@ -10,6 +10,9 @@ import {
   useTransition,
 } from "react";
 import type { NavigationAdapter } from "./types";
+import { registerNavigationGuard, runGuardedNavigation } from "@multica/core/platform";
+
+const NavigationGuardContext = createContext<((guard: () => boolean) => () => void) | null>(null);
 
 const NavigationContext = createContext<NavigationAdapter | null>(null);
 const NavigationPendingContext = createContext<boolean>(false);
@@ -45,12 +48,16 @@ export function NavigationProvider({
   const wrapped = useMemo<NavigationAdapter>(
     () => ({
       ...value,
-      push: (path: string) => startTransition(() => value.push(path)),
-      replace: (path: string) => startTransition(() => value.replace(path)),
+      // Session cleanup must always reach the pre-workspace login route.
+      push: (path: string) => runGuardedNavigation(() => startTransition(() => value.push(path)), path.split(/[?#]/, 1)[0] === "/login" || path === value.pathname),
+      replace: (path: string) => runGuardedNavigation(() => startTransition(() => value.replace(path)), path.split(/[?#]/, 1)[0] === "/login" || path === value.pathname),
+      back: () => runGuardedNavigation(() => value.back()),
+      forward: value.forward ? () => runGuardedNavigation(() => value.forward?.()) : undefined,
     }),
     [value],
   );
   return (
+    <NavigationGuardContext.Provider value={registerNavigationGuard}>
     <NavigationContext.Provider value={wrapped}>
       <NavigationPendingReportContext.Provider value={report}>
         <NavigationPendingContext.Provider
@@ -60,6 +67,7 @@ export function NavigationProvider({
         </NavigationPendingContext.Provider>
       </NavigationPendingReportContext.Provider>
     </NavigationContext.Provider>
+    </NavigationGuardContext.Provider>
   );
 }
 
@@ -108,4 +116,10 @@ export function useReportNavigating(pending: boolean): void {
     report(1);
     return () => report(-1);
   }, [pending, report]);
+}
+
+/** Register a synchronous leave guard at the shared navigation boundary. */
+export function useNavigationGuard(guard: () => boolean): void {
+ const register = use(NavigationGuardContext);
+ useEffect(() => register?.(guard), [register, guard]);
 }

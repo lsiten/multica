@@ -51,7 +51,13 @@ func squadDerivedRelations(squad db.Squad, members []db.SquadMember) []squadColl
 		if to == leader || member.MemberType != "agent" {
 			continue
 		}
-		rel := squadCollaborationRelationInput{FromMemberID: leader, ToMemberID: to, FromMemberType: "agent", ToMemberType: member.MemberType, Type: "coordinate", Label: "Squad leader coordination"}
+		// API clients expect an array, including when no deliverables are required.
+		rel := squadCollaborationRelationInput{
+			FromMemberID: leader, ToMemberID: to,
+			FromMemberType: "agent", ToMemberType: member.MemberType,
+			Type: "coordinate", Label: "Squad leader coordination",
+			Deliverables: []string{},
+		}
 		rel.ID = stableSquadRelationID(rel)
 		out = append(out, rel)
 	}
@@ -78,7 +84,7 @@ func (h *Handler) squadCollaborationGraphResponse(ctx context.Context, squad db.
 			updatedAt = timestampToString(row.UpdatedAt)
 		}
 	}
-	var relations []squadCollaborationRelationInput
+	relations := []squadCollaborationRelationInput{}
 	if err := json.Unmarshal(rawRelations, &relations); err != nil {
 		return nil, err
 	}
@@ -86,13 +92,16 @@ func (h *Handler) squadCollaborationGraphResponse(ctx context.Context, squad db.
 	for _, member := range members {
 		validMembers[member.MemberType+":"+uuidToString(member.MemberID)] = true
 	}
-	activeRelations := relations[:0]
+	activeRelations := make([]squadCollaborationRelationInput, 0, len(relations))
 	for i := range relations {
 		if !validMembers[relations[i].FromMemberType+":"+relations[i].FromMemberID] || !validMembers[relations[i].ToMemberType+":"+relations[i].ToMemberID] {
 			continue
 		}
 		if relations[i].ID == "" {
 			relations[i].ID = stableSquadRelationID(relations[i])
+		}
+		if relations[i].Deliverables == nil {
+			relations[i].Deliverables = []string{}
 		}
 		activeRelations = append(activeRelations, relations[i])
 	}
@@ -125,6 +134,28 @@ func (h *Handler) GetSquadCollaborationGraph(w http.ResponseWriter, r *http.Requ
 		if err := json.Unmarshal(snapshot, &response); err != nil {
 			writeError(w, http.StatusInternalServerError, "invalid squad collaboration revision")
 			return
+		}
+		// Normalize old persisted snapshots without changing their member/revision data.
+		for _, key := range []string{"relations", "derived_relations"} {
+			if response[key] == nil {
+				response[key] = []any{}
+				continue
+			}
+			relations, valid := response[key].([]any)
+			if !valid {
+				writeError(w, http.StatusInternalServerError, "invalid squad collaboration revision")
+				return
+			}
+			for _, rawRelation := range relations {
+				relation, valid := rawRelation.(map[string]any)
+				if !valid {
+					writeError(w, http.StatusInternalServerError, "invalid squad collaboration revision")
+					return
+				}
+				if relation["deliverables"] == nil {
+					relation["deliverables"] = []string{}
+				}
+			}
 		}
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -207,6 +238,12 @@ func (h *Handler) UpdateSquadCollaborationGraph(w http.ResponseWriter, r *http.R
 			return
 		}
 		seen[rel.ID] = true
+		if rel.Deliverables == nil {
+			rel.Deliverables = []string{}
+		}
+	}
+	if req.Relations == nil {
+		req.Relations = []squadCollaborationRelationInput{}
 	}
 	payload, err := json.Marshal(req.Relations)
 	if err != nil {

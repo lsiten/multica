@@ -1,6 +1,7 @@
 export type CollaborationGraphNodeType = "project" | "task" | "agent";
 
 export type CollaborationGraphEdgeType =
+  | "parent_child"
   | "delegated"
   | "retry"
   | "rerun"
@@ -27,6 +28,8 @@ export interface CollaborationGraphEdge {
   type: CollaborationGraphEdgeType;
   count: number;
   active_count: number;
+  ended_count?: number;
+  source_incomplete?: boolean;
   evidence_count: number;
   last_event_at: string | null;
 }
@@ -34,6 +37,7 @@ export interface CollaborationGraphEdge {
 export type CollaborationGraphCoverage = "complete" | "partial" | "empty";
 
 export interface ProjectCollaborationGraphSummary {
+  run_count?: number;
   task_count: number;
   agent_count: number;
   active_count: number;
@@ -54,6 +58,15 @@ export interface ProjectCollaborationGraphResponse {
 }
 
 export interface ProjectCollaborationEvidence {
+  source_issue_id?: string | null;
+  agent_name?: string;
+  source_agent_name?: string;
+  issue_title?: string;
+  issue_key?: string;
+  issue_status?: string;
+  task_active?: boolean;
+  artifacts?: Array<{ id: string; filename: string }>;
+  events?: Array<{id: string; event_type: string; created_at: string}>;
   task_id: string;
   source_task_id: string | null;
   agent_id: string;
@@ -72,6 +85,8 @@ export interface ProjectCollaborationEvidence {
 }
 
 export interface ProjectCollaborationEvidenceResponse {
+  next_cursor?: string | null;
+  issues?: Array<{ id: string; title: string; key: string; status: string; parent_issue_id: string | null; context_only: boolean }>;
   project_id: string;
   evidence: ProjectCollaborationEvidence[];
   total: number;

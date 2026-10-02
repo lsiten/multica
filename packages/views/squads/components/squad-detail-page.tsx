@@ -993,7 +993,8 @@ function SquadOverviewPane({
   const { t: collaborationT } = useT("collaboration");
   const { t } = useT("squads");
   const wsId = useWorkspaceId();
-  const { data: collaborationGraph } = useQuery(squadCollaborationGraphOptions(wsId, squad.id));
+  const collaborationGraphQuery = useQuery(squadCollaborationGraphOptions(wsId, squad.id));
+  const collaborationGraph = collaborationGraphQuery.data;
   const [activeTab, setActiveTab] = useState<SquadDetailTab>("members");
   const [activeDirty, setActiveDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<SquadDetailTab | null>(null);
@@ -1067,7 +1068,17 @@ function SquadOverviewPane({
               <h3 className="text-body font-medium">{collaborationT(($) => $.squad_title)}</h3>
               <p className="text-caption text-muted-foreground">{collaborationT(($) => $.squad_description)}</p>
             </div>
-            <SquadCollaborationGraphTab squadId={squad.id} graph={collaborationGraph} canManage={canManage} onDirtyChange={setActiveDirty} />
+            {collaborationGraphQuery.isError && (
+              <div role="alert" className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 p-3 text-caption text-destructive">
+                <span>{collaborationT(($) => $.squad_load_failed)}</span>
+                <Button size="sm" variant="outline" disabled={collaborationGraphQuery.isFetching} onClick={() => void collaborationGraphQuery.refetch()}>{collaborationT(($) => $.retry)}</Button>
+              </div>
+            )}
+            {collaborationGraph ? (
+              <SquadCollaborationGraphTab squadId={squad.id} graph={collaborationGraph} canManage={canManage} onDirtyChange={setActiveDirty} />
+            ) : collaborationGraphQuery.isPending ? (
+              <p role="status" className="text-caption text-muted-foreground">{collaborationT(($) => $.loading_more)}</p>
+            ) : null}
           </div>
         )}
       </div>

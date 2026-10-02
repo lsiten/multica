@@ -22,6 +22,8 @@ vi.mock("@multica/ui/lib/clipboard", () => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
+ useMutation: () => ({isPending:false,isError:false,mutate:vi.fn(),reset:vi.fn()}),
+ useQueryClient: () => ({ invalidateQueries: vi.fn() }),
  useInfiniteQuery: () => ({data:undefined,isLoading:false,hasNextPage:false,refetch:vi.fn()}),
   useQuery: (options: { queryKey?: readonly unknown[] }) => {
     switch (options.queryKey?.[0]) {
@@ -46,7 +48,7 @@ vi.mock("@multica/core/projects/queries", () => ({
 }));
 
 vi.mock("@multica/core/collaboration", () => ({
-  projectCollaborationGraphInfiniteOptions: () => ({ queryKey: ["collaboration-graph"] }),
+  projectCollaborationGraphOptions: () => ({ queryKey: ["collaboration-graph"] }),
   projectCollaborationEvidenceInfiniteOptions: () => ({ queryKey: ["collaboration-evidence"], enabled: false }),
 }));
 

@@ -1,5 +1,6 @@
 export {
   NavigationProvider,
+  useNavigationGuard,
   useNavigation,
   useOptionalNavigation,
   useIsNavigating,

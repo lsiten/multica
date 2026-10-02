@@ -62,12 +62,54 @@ func TestReviewRawGraphEventsRespectPrivateChatVisibility(t *testing.T) {
 
 func TestReviewWaitingDirectoryCountsAgree(t *testing.T) {
 	child, parent := graphTestUUID(1), graphTestUUID(2)
-	graph := buildProjectCollaboration(projectCollaborationDataset{Runs: []db.ListProjectCollaborationRunsRow{{AgentID: child, AgentName: "child", SourceAgentID: parent, SourceAgentName: "parent", Status: "waiting_local_directory", RelationType: "delegated"}}})
+	graph := buildProjectCollaboration(projectCollaborationDataset{Runs: []db.ListProjectCollaborationRunsRow{{IssueID: graphTestUUID(5), AgentID: child, AgentName: "child", SourceAgentID: parent, SourceAgentName: "parent", Status: "waiting_local_directory", TaskActive: true, RelationType: "delegated"}}})
 	if len(graph.Edges) != 1 || graph.Edges[0].ActiveCount != 1 {
 		t.Fatal("fixture edge is not active")
 	}
 	if graph.Summary.ActiveCount != 1 {
 		t.Fatalf("edge active=1 but summary active=%d", graph.Summary.ActiveCount)
+	}
+}
+
+func TestProjectCollaborationActivityUsesUnfinishedIssueState(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	project := dbfx.Project(t, "activity-by-issue-state")
+	runtime := dbfx.Runtime(t, "activity-by-issue-runtime")
+	agent := dbfx.Agent(t, "activity-by-issue-agent", runtime)
+	issue := dbfx.Issue(t, "unfinished project task", testutil.Cols{"project_id": project, "status": "in_review", "assignee_type": "agent", "assignee_id": agent})
+	dbfx.Task(t, agent, testutil.Cols{"issue_id": issue, "runtime_id": runtime, "status": "completed"})
+	member, err := testHandler.Queries.GetMemberByUserAndWorkspace(context.Background(), db.GetMemberByUserAndWorkspaceParams{UserID: parseUUID(testUserID), WorkspaceID: parseUUID(testWorkspaceID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(activity string) struct {
+		TaskCount int `json:"task_count"`
+	} {
+		r := withURLParam(newRequest(http.MethodGet, "/api/projects/"+project+"/collaboration-graph?activity="+activity, nil), "id", project)
+		r.Header.Set("X-User-ID", testUserID)
+		r = r.WithContext(middleware.SetMemberContext(r.Context(), testWorkspaceID, member))
+		w := httptest.NewRecorder()
+		testHandler.GetProjectCollaborationGraph(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("activity=%s status=%d body=%s", activity, w.Code, w.Body.String())
+		}
+		var response struct {
+			Summary struct {
+				TaskCount int `json:"task_count"`
+			} `json:"summary"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.Summary
+	}
+	if got := call("active").TaskCount; got != 1 {
+		t.Fatalf("active unfinished issue task count=%d, want 1", got)
+	}
+	if got := call("ended").TaskCount; got != 0 {
+		t.Fatalf("ended unfinished issue task count=%d, want 0", got)
 	}
 }
 

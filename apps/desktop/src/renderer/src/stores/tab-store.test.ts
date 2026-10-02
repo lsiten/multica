@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { registerNavigationGuard, runGuardedNavigation } from "@multica/core/platform";
 
 import {
   sanitizeTabPath,
@@ -16,6 +17,48 @@ import {
 
 beforeEach(() => {
   useTabStore.getState().reset();
+});
+
+describe("unsaved view protection", () => {
+  it("protects native switching, closing, history, reload and workspace changes", () => {
+    const store = useTabStore.getState();
+    store.switchWorkspace("acme", "/acme/projects/one");
+    store.navigateActiveSession("/acme/projects/two");
+    store.goBack();
+    const active = getActiveTab(useTabStore.getState())!;
+    const other = store.addTab("/acme/projects/other", "Other");
+    const before = useTabStore.getState();
+    const unregister = registerNavigationGuard(() => false);
+    try {
+      const actions = [
+        () => store.setActiveTab(other), () => store.closeTab(active.id),
+        () => store.closeOtherTabs(other), () => store.goForward(),
+        () => store.reloadActiveTab(), () => store.switchWorkspace("another"),
+        () => store.navigateActiveSession("/acme/issues"),
+        () => store.openTab("/acme/agents", "Agents", { activate: true }),
+      ];
+      for (const action of actions) {
+        action();
+        expect(useTabStore.getState()).toBe(before);
+      }
+      // Background creation and closing an inactive tab do not discard this view.
+      const background = store.openTab("/acme/inbox", "Inbox");
+      expect(getActiveTab(useTabStore.getState())?.id).toBe(active.id);
+      store.closeTab(background);
+      expect(getActiveTab(useTabStore.getState())?.id).toBe(active.id);
+    } finally { unregister(); }
+    store.setActiveTab(other);
+    expect(getActiveTab(useTabStore.getState())?.id).toBe(other);
+  });
+  it("asks only once when the shared adapter delegates to the tab store", () => {
+    const store = useTabStore.getState();
+    store.switchWorkspace("acme");
+    const guard = vi.fn(() => true);
+    const unregister = registerNavigationGuard(guard);
+    try { runGuardedNavigation(() => store.navigateActiveSession("/acme/projects/one")); }
+    finally { unregister(); }
+    expect(guard).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("sanitizeTabPath", () => {

@@ -1651,6 +1651,8 @@ const CollaborationGraphEdgeSchema = z.object({
   type: z.string(),
   count: z.number().int().nonnegative().default(0),
   active_count: z.number().int().nonnegative().default(0),
+  ended_count: z.number().int().nonnegative().default(0),
+  source_incomplete: z.boolean().default(false),
   evidence_count: z.number().int().nonnegative().default(0),
   last_event_at: z.string().nullable().optional().default(null),
 }).loose();
@@ -1660,6 +1662,7 @@ export const ProjectCollaborationGraphResponseSchema = z.object({
   nodes: z.array(CollaborationGraphNodeSchema).default([]),
   edges: z.array(CollaborationGraphEdgeSchema).default([]),
   summary: z.object({
+    run_count: z.number().int().nonnegative().optional(),
     task_count: z.number().int().nonnegative().default(0),
     agent_count: z.number().int().nonnegative().default(0),
     active_count: z.number().int().nonnegative().default(0),
@@ -1708,12 +1711,19 @@ export const EMPTY_WORKSPACE_JEV_CONFIG_RESPONSE: WorkspaceJevConfigResponse = {
 };
 
 const ProjectCollaborationEvidenceSchema = z.object({
+  source_issue_id: z.string().nullable().default(null),
+  agent_name: z.string().default(""), source_agent_name: z.string().default(""),
+  issue_title: z.string().default(""), issue_key: z.string().default(""), issue_status: z.string().default(""), task_active: z.boolean().default(false),
+  artifacts: z.array(z.object({id: z.string(), filename: z.string()})).default([]),
+  events: z.array(z.object({id:z.string(),event_type:z.string(),created_at:z.string()})).default([]),
   task_id: z.string(), source_task_id: z.string().nullable().default(null), agent_id: z.string(), source_agent_id: z.string().nullable().default(null),
   relation_type: z.string().default("root"), status: z.string().default("unknown"), issue_id: z.string().nullable().default(null), squad_id: z.string().nullable().default(null),
   trigger_comment_id: z.string().nullable().default(null), created_at: z.string(), started_at: z.string().nullable().default(null), completed_at: z.string().nullable().default(null),
   event_count: z.number().int().nonnegative().default(0), retry_of_task_id: z.string().nullable().optional().default(null), rerun_of_task_id: z.string().nullable().optional().default(null),
 }).loose();
 export const ProjectCollaborationEvidenceResponseSchema = z.object({
+  next_cursor: z.string().nullable().default(null),
+  issues: z.array(z.object({ id: z.string(), title: z.string(), key: z.string(), status: z.string(), parent_issue_id: z.string().nullable(), context_only: z.boolean() })).default([]),
   project_id: z.string(), evidence: z.array(ProjectCollaborationEvidenceSchema).default([]), total: z.number().int().nonnegative().default(0), limit: z.number().int().nonnegative().default(100), offset: z.number().int().nonnegative().default(0), has_more: z.boolean().default(false), as_of: z.string().default(""), truncated: z.boolean().default(false),
 }).loose().transform((value): ProjectCollaborationEvidenceResponse => value as ProjectCollaborationEvidenceResponse);
 export const EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE: ProjectCollaborationEvidenceResponse = { project_id: "", evidence: [], total: 0, limit: 100, offset: 0, has_more: false, as_of: "", truncated: false };
@@ -1721,23 +1731,33 @@ export const EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE: ProjectCollaboration
 const SquadCollaborationMemberSchema = z.object({
   member_id: z.string(), member_type: z.string(), label: z.string().default(""), role: z.string().default(""),
 }).loose();
+// Older server responses and persisted snapshots can encode empty slices as null.
+const SquadCollaborationDeliverablesSchema = z.preprocess(
+  (value) => value ?? [],
+  z.array(z.string()).default([]),
+);
+const SquadCollaborationTextSchema = z.preprocess(
+  (value) => value ?? "",
+  z.string().default(""),
+);
 const SquadCollaborationRelationSchema = z.object({
   id: z.string(), from_member_id: z.string(), to_member_id: z.string(),
   from_member_type: z.string(), to_member_type: z.string(), type: z.string(),
-  label: z.string().default(""), trigger: z.string().default(""),
-  deliverables: z.array(z.string()).default([]), acceptance: z.string().default(""),
+  label: SquadCollaborationTextSchema, trigger: SquadCollaborationTextSchema,
+  deliverables: SquadCollaborationDeliverablesSchema, acceptance: SquadCollaborationTextSchema,
 }).loose();
 export const SquadCollaborationGraphResponseSchema = z.object({
   squad_id: z.string(), revision: z.number().int().nonnegative().default(0),
   updated_at: z.string().nullable().optional().default(null),
   members: z.array(SquadCollaborationMemberSchema).default([]),
-  relations: z.array(SquadCollaborationRelationSchema).default([]),
-  derived_relations: z.array(SquadCollaborationRelationSchema).default([]),
+  relations: z.array(SquadCollaborationRelationSchema).nullish().transform((value) => value ?? []),
+  derived_relations: z.array(SquadCollaborationRelationSchema).nullish().transform((value) => value ?? []),
 }).loose().transform((value): SquadCollaborationGraphResponse => value as unknown as SquadCollaborationGraphResponse);
 export const SquadCollaborationGraphSaveResponseSchema = z.object({
   squad_id: z.string().min(1), revision: z.number().int().positive(),
   members: z.array(SquadCollaborationMemberSchema),
   relations: z.array(SquadCollaborationRelationSchema),
+  derived_relations: z.array(SquadCollaborationRelationSchema).default([]),
 }).loose().transform((value): SquadCollaborationGraphResponse => value as unknown as SquadCollaborationGraphResponse);
 export const EMPTY_SQUAD_COLLABORATION_GRAPH_RESPONSE: SquadCollaborationGraphResponse = {
   squad_id: "", revision: 0, updated_at: null, members: [], relations: [], derived_relations: [],
@@ -2290,8 +2310,12 @@ export const AgentTaskPageSchema = z.object({
 });
 
 export const ProjectExecutionScopeBindingsSchema = z.object({
-  agent_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
-  squad_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
+  sources: z.array(z.object({agent_id:z.string(),source:z.string(),squad_id:z.string().optional()})).default([]),
+  agent_ids: z.array(z.string()).nullable().transform(value => value ?? []),
+  squad_ids: z.array(z.string()).nullable().transform(value => value ?? []),
+  auto_agent_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
+  inherited_agent_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
+  effective_agent_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
 }).loose();
 
 // One row of a run transcript. `output_truncated` gates a completeness claim
