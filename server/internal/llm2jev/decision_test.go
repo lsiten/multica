@@ -21,6 +21,17 @@ func TestNormalizeModelResponseRequiresEveryCandidate(t *testing.T) {
 	}
 }
 
+func TestNormalizeModelResponsePreservesOptionalConfidenceAndProbabilities(t *testing.T) {
+	request := Request{Question: "q", Candidates: []Candidate{{ID: "a", Content: "x"}}}
+	response, err := NormalizeModelResponse([]byte(`{"confidence":0.8,"probabilities":{"a":0.8},"decisions":[{"candidate_id":"a","verdict":"yes"}]}`), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Confidence == nil || *response.Confidence != 0.8 || response.Probabilities["a"] != 0.8 {
+		t.Fatalf("optional decision metadata was lost: %+v", response)
+	}
+}
+
 func TestNormalizeModelResponseRejectsUnknownDuplicateAndInvalidVerdicts(t *testing.T) {
 	request := Request{Question: "q", Candidates: []Candidate{{ID: "a", Content: "x"}}}
 	for _, raw := range []string{
@@ -70,6 +81,17 @@ func TestNormalizeCompletionResponse(t *testing.T) {
 	}
 	if response.Mode != ModeSemanticRuntime || response.Verdict != CompletionSatisfied || response.Calibrated {
 		t.Fatalf("unexpected completion response: %+v", response)
+	}
+}
+
+func TestNormalizeCompletionResponsePreservesOptionalConfidence(t *testing.T) {
+	request := CompletionRequest{Goal: "finish", Criteria: []string{"done"}}
+	response, err := NormalizeCompletionResponse([]byte(`{"verdict":"satisfied","confidence":0.9,"probabilities":{"satisfied":0.9,"incomplete":0.1}}`), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Confidence == nil || *response.Confidence != 0.9 || response.Probabilities["satisfied"] != 0.9 {
+		t.Fatalf("optional completion metadata was lost: %+v", response)
 	}
 }
 

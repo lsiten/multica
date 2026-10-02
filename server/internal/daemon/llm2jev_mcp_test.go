@@ -253,6 +253,15 @@ func TestJevSystemOneMCPVerifiesBoundCompletion(t *testing.T) {
 	if completion["verdict"] != "satisfied" || completion["mode"] != "system_one" {
 		t.Fatalf("unexpected completion: %v", completion)
 	}
+	if confidence, ok := completion["confidence"].(float64); !ok || confidence != 0.9 {
+		t.Fatalf("systemone confidence = %#v", completion["confidence"])
+	}
+	probabilities, ok := completion["probabilities"].(map[string]any)
+	satisfied, satisfiedOK := probabilities["satisfied"].(float64)
+	incomplete, incompleteOK := probabilities["incomplete"].(float64)
+	if !ok || !satisfiedOK || !incompleteOK || satisfied < 0.899 || incomplete < 0.099 || incomplete > 0.101 {
+		t.Fatalf("systemone probabilities = %#v", completion["probabilities"])
+	}
 	if got := set.completionVerification(); !got.Verified {
 		t.Fatalf("completion gate not verified: %+v", got)
 	}

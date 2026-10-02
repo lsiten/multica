@@ -612,10 +612,17 @@ func (s *llm2jevMCPServer) evaluateCompletion(ctx context.Context, raw json.RawM
 	if s.gate != nil {
 		s.gate.recordForAttempt(attempt, input.TaskID, input.Goal, input.Criteria, input.Evidence, result.Verdict)
 	}
-	return json.Marshal(map[string]any{
+	resultPayload := map[string]any{
 		"mode": result.Mode, "calibrated": result.Calibrated,
 		"verdict": result.Verdict, "missing": result.Missing, "reason_code": result.ReasonCode,
-	})
+	}
+	if result.Confidence != nil {
+		resultPayload["confidence"] = *result.Confidence
+	}
+	if len(result.Probabilities) > 0 {
+		resultPayload["probabilities"] = result.Probabilities
+	}
+	return json.Marshal(resultPayload)
 }
 
 func (s *llm2jevMCPServer) evaluateCompletionSystemOne(ctx context.Context, raw json.RawMessage, attempt uint64) ([]byte, error) {
@@ -666,7 +673,16 @@ func (s *llm2jevMCPServer) evaluateCompletionSystemOne(ctx context.Context, raw 
 		verdict = llm2jev.CompletionIncomplete
 		missing = append([]string(nil), input.Criteria...)
 	}
-	result := map[string]any{"mode": "system_one", "calibrated": true, "verdict": verdict, "missing": missing, "reason_code": "systemone_noul_threshold"}
+	confidence := probability
+	if confidence < 0.5 {
+		confidence = 1 - confidence
+	}
+	result := map[string]any{
+		"mode": "system_one", "calibrated": true,
+		"confidence":    confidence,
+		"probabilities": map[string]float64{"satisfied": probability, "incomplete": 1 - probability},
+		"verdict":       verdict, "missing": missing, "reason_code": "systemone_noul_threshold",
+	}
 	if s.gate != nil {
 		s.gate.recordForAttempt(attempt, input.TaskID, input.Goal, input.Criteria, input.Evidence, verdict)
 	}

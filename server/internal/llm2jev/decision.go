@@ -55,9 +55,11 @@ type Decision struct {
 }
 
 type Response struct {
-	Mode       string     `json:"mode"`
-	Calibrated bool       `json:"calibrated"`
-	Decisions  []Decision `json:"decisions"`
+	Mode          string             `json:"mode"`
+	Calibrated    bool               `json:"calibrated"`
+	Confidence    *float64           `json:"confidence,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+	Decisions     []Decision         `json:"decisions"`
 }
 
 type CompletionRequest struct {
@@ -67,11 +69,13 @@ type CompletionRequest struct {
 }
 
 type CompletionResponse struct {
-	Mode       string   `json:"mode"`
-	Calibrated bool     `json:"calibrated"`
-	Verdict    string   `json:"verdict"`
-	Missing    []string `json:"missing,omitempty"`
-	ReasonCode string   `json:"reason_code,omitempty"`
+	Mode          string             `json:"mode"`
+	Calibrated    bool               `json:"calibrated"`
+	Confidence    *float64           `json:"confidence,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+	Verdict       string             `json:"verdict"`
+	Missing       []string           `json:"missing,omitempty"`
+	ReasonCode    string             `json:"reason_code,omitempty"`
 }
 
 type Provider interface {
@@ -133,7 +137,9 @@ func NormalizeModelResponse(raw []byte, request Request) (Response, error) {
 		return Response{}, err
 	}
 	var model struct {
-		Decisions []Decision `json:"decisions"`
+		Confidence    *float64           `json:"confidence"`
+		Probabilities map[string]float64 `json:"probabilities"`
+		Decisions     []Decision         `json:"decisions"`
 	}
 	if err := strictJSON(raw, &model); err != nil || len(model.Decisions) != len(request.Candidates) {
 		return Response{}, ErrInvalidResponse
@@ -160,7 +166,13 @@ func NormalizeModelResponse(raw []byte, request Request) (Response, error) {
 			return Response{}, fmt.Errorf("%w: invalid verdict", ErrInvalidResponse)
 		}
 	}
-	return Response{Mode: ModeSemanticRuntime, Calibrated: false, Decisions: model.Decisions}, nil
+	if model.Confidence != nil && !validProbability(*model.Confidence) {
+		return Response{}, fmt.Errorf("%w: invalid confidence", ErrInvalidResponse)
+	}
+	if err := validateProbabilities(model.Probabilities); err != nil {
+		return Response{}, err
+	}
+	return Response{Mode: ModeSemanticRuntime, Calibrated: false, Confidence: model.Confidence, Probabilities: model.Probabilities, Decisions: model.Decisions}, nil
 }
 
 func NormalizeCompletionResponse(raw []byte, request CompletionRequest) (CompletionResponse, error) {
@@ -168,9 +180,11 @@ func NormalizeCompletionResponse(raw []byte, request CompletionRequest) (Complet
 		return CompletionResponse{}, err
 	}
 	var model struct {
-		Verdict    string   `json:"verdict"`
-		Missing    []string `json:"missing"`
-		ReasonCode string   `json:"reason_code"`
+		Confidence    *float64           `json:"confidence"`
+		Probabilities map[string]float64 `json:"probabilities"`
+		Verdict       string             `json:"verdict"`
+		Missing       []string           `json:"missing"`
+		ReasonCode    string             `json:"reason_code"`
 	}
 	if err := strictJSON(raw, &model); err != nil {
 		return CompletionResponse{}, ErrInvalidResponse
@@ -183,7 +197,29 @@ func NormalizeCompletionResponse(raw []byte, request CompletionRequest) (Complet
 	if len(model.Missing) > len(request.Criteria) || len(model.ReasonCode) > maxReasonCodeLength {
 		return CompletionResponse{}, ErrInvalidResponse
 	}
-	return CompletionResponse{Mode: ModeSemanticRuntime, Calibrated: false, Verdict: model.Verdict, Missing: model.Missing, ReasonCode: model.ReasonCode}, nil
+	if model.Confidence != nil && !validProbability(*model.Confidence) {
+		return CompletionResponse{}, fmt.Errorf("%w: invalid confidence", ErrInvalidResponse)
+	}
+	if err := validateProbabilities(model.Probabilities); err != nil {
+		return CompletionResponse{}, err
+	}
+	return CompletionResponse{Mode: ModeSemanticRuntime, Calibrated: false, Confidence: model.Confidence, Probabilities: model.Probabilities, Verdict: model.Verdict, Missing: model.Missing, ReasonCode: model.ReasonCode}, nil
+}
+
+func validProbability(value float64) bool {
+	return value >= 0 && value <= 1
+}
+
+func validateProbabilities(values map[string]float64) error {
+	if len(values) == 0 {
+		return nil
+	}
+	for _, value := range values {
+		if !validProbability(value) {
+			return fmt.Errorf("%w: invalid probability", ErrInvalidResponse)
+		}
+	}
+	return nil
 }
 
 func strictJSON(raw []byte, out any) error {
