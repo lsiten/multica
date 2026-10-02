@@ -16,8 +16,11 @@ export type DaemonState =
 
 export type DaemonMcpReadinessState =
   | "not_configured"
+  | "broker_ready"
   | "probing"
   | "ready"
+  | "provider_unavailable"
+  | "capability_required"
   | "offline"
   | "timeout"
   | "protocol_error";

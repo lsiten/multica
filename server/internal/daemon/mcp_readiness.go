@@ -16,12 +16,15 @@ import (
 type MCPReadinessState string
 
 const (
-	MCPReadinessNotConfigured MCPReadinessState = "not_configured"
-	MCPReadinessProbing       MCPReadinessState = "probing"
-	MCPReadinessReady         MCPReadinessState = "ready"
-	MCPReadinessOffline       MCPReadinessState = "offline"
-	MCPReadinessTimeout       MCPReadinessState = "timeout"
-	MCPReadinessProtocolError MCPReadinessState = "protocol_error"
+	MCPReadinessNotConfigured       MCPReadinessState = "not_configured"
+	MCPReadinessBrokerReady         MCPReadinessState = "broker_ready"
+	MCPReadinessProbing             MCPReadinessState = "probing"
+	MCPReadinessReady               MCPReadinessState = "ready"
+	MCPReadinessProviderUnavailable MCPReadinessState = "provider_unavailable"
+	MCPReadinessCapabilityRequired  MCPReadinessState = "capability_required"
+	MCPReadinessOffline             MCPReadinessState = "offline"
+	MCPReadinessTimeout             MCPReadinessState = "timeout"
+	MCPReadinessProtocolError       MCPReadinessState = "protocol_error"
 )
 
 // MCPReadinessSnapshot is intentionally diagnostic only. It omits endpoint,
@@ -132,8 +135,8 @@ func (d *Daemon) mcpReadinessSnapshot() []MCPReadinessSnapshot {
 	out := make([]MCPReadinessSnapshot, 0, len(entries)+2)
 	if d.builtinMCP != nil && d.builtinMCP.ready() {
 		out = append(out,
-			MCPReadinessSnapshot{Name: llm2jevMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessReady, Reason: "broker_listening"},
-			MCPReadinessSnapshot{Name: identityActionsMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessReady, Reason: "broker_listening"},
+			MCPReadinessSnapshot{Name: llm2jevMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessBrokerReady, Reason: "broker_listening"},
+			MCPReadinessSnapshot{Name: identityActionsMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessBrokerReady, Reason: "broker_listening"},
 		)
 	}
 	for _, entry := range entries {

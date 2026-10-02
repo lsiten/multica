@@ -56,7 +56,7 @@ func TestBuiltinMCPBrokerReadinessExposesBothBuiltIns(t *testing.T) {
 	}
 	for _, name := range []string{llm2jevMCPName, identityActionsMCPName} {
 		status, ok := seen[name]
-		if !ok || !status.Ready || status.State != MCPReadinessReady || status.Reason != "broker_listening" {
+		if !ok || !status.Ready || status.State != MCPReadinessBrokerReady || status.Reason != "broker_listening" {
 			t.Fatalf("missing ready built-in %q: %+v", name, statuses)
 		}
 	}

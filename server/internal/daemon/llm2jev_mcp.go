@@ -447,7 +447,11 @@ func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, re
 		if s.logger != nil {
 			s.logger.Info("llm2jev decision failed", "task_id", s.taskID, "error", safeLLM2JevError(err))
 		}
-		writeLLM2JevMCPResult(w, req.ID, map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": safeLLM2JevError(err)}}})
+		writeLLM2JevMCPResult(w, req.ID, map[string]any{
+			"isError":    true,
+			"error_code": llm2jevErrorCode(err),
+			"content":    []map[string]any{{"type": "text", "text": safeLLM2JevError(err)}},
+		})
 		return
 	}
 	writeLLM2JevMCPResult(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": string(result)}}})
@@ -808,6 +812,31 @@ func safeLLM2JevError(err error) string {
 		return "llm2jev: decision provider timed out"
 	default:
 		return "llm2jev: decision provider unavailable"
+	}
+}
+
+func llm2jevErrorCode(err error) string {
+	if err == nil {
+		return "provider_unavailable"
+	}
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "credential") || strings.Contains(message, "401") || strings.Contains(message, "403"):
+		return "credential_rejected_or_missing"
+	case strings.Contains(message, "context deadline exceeded"):
+		return "provider_timeout"
+	case strings.Contains(message, "model request failed") || strings.Contains(message, "connection refused") || strings.Contains(message, "no such host"):
+		return "provider_unreachable"
+	case strings.Contains(message, "HTTP 429"):
+		return "provider_rate_limited"
+	case strings.Contains(message, "HTTP "):
+		return "provider_http_error"
+	case strings.Contains(message, "invalid JSON") || strings.Contains(message, "no choices"):
+		return "provider_invalid_response"
+	case strings.Contains(message, "invalid decision request"):
+		return "invalid_request"
+	default:
+		return "provider_unavailable"
 	}
 }
 

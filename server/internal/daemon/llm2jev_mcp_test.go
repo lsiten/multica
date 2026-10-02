@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,21 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/llm2jev"
 )
+
+func TestLLM2JevErrorCodesClassifyProviderFailures(t *testing.T) {
+	cases := map[string]string{
+		"credential_rejected_or_missing": "jev: credential rejected",
+		"provider_unreachable":           "llm2jev: model request failed: dial tcp: connection refused",
+		"provider_timeout":               "llm2jev: model request failed: context deadline exceeded",
+		"provider_http_error":            "llm2jev: model returned HTTP 500",
+		"provider_invalid_response":      "llm2jev: model returned invalid JSON",
+	}
+	for want, message := range cases {
+		if got := llm2jevErrorCode(errors.New(message)); got != want {
+			t.Errorf("llm2jevErrorCode(%q) = %q, want %q", message, got, want)
+		}
+	}
+}
 
 func llm2jevMCPURL(t *testing.T, config json.RawMessage) string {
 	t.Helper()

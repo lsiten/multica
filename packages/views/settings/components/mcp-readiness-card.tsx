@@ -13,7 +13,7 @@ type DaemonMcpReadiness = {
   scope: string;
   ready: boolean;
   reason?: string;
-  state: "not_configured" | "probing" | "ready" | "offline" | "timeout" | "protocol_error";
+  state: "not_configured" | "broker_ready" | "probing" | "ready" | "provider_unavailable" | "capability_required" | "offline" | "timeout" | "protocol_error";
 };
 
 interface DaemonMcpAPI {
@@ -29,14 +29,17 @@ function StatusBadge({ state }: { state: DaemonMcpReadiness["state"] }) {
   const { t } = useT("settings");
   const label = (() => {
     switch (state) {
+      case "broker_ready": return t(($) => $.jev.broker_ready);
       case "ready": return t(($) => $.jev.ready);
       case "probing": return t(($) => $.jev.loading);
       case "not_configured": return t(($) => $.jev.not_installed);
+      case "provider_unavailable": return t(($) => $.jev.provider_unavailable);
+      case "capability_required": return t(($) => $.jev.capability_required);
       case "protocol_error": return t(($) => $.jev.daemon_invalid);
       default: return t(($) => $.jev.daemon_failed);
     }
   })();
-  return <Badge variant={state === "ready" ? "secondary" : "outline"}>{label}</Badge>;
+  return <Badge variant={state === "ready" || state === "broker_ready" ? "secondary" : "outline"}>{label}</Badge>;
 }
 
 /**
@@ -105,7 +108,13 @@ export function McpReadinessCard() {
           <li key={`${status.workspace_id ?? "daemon"}:${status.name}:${status.instance_id ?? "default"}`} className="flex items-center gap-3 p-4">
             <div className="min-w-0 flex-1">
               <p className="text-body font-medium">{status.name}</p>
-              <p className="text-caption text-muted-foreground">{status.scope}{status.reason ? ` · ${status.reason}` : ""}</p>
+              <p className="text-caption text-muted-foreground">
+                {status.state === "not_configured" && status.reason === "task_not_started"
+                  ? t(($) => $.jev.task_not_started)
+                  : status.state === "broker_ready"
+                    ? t(($) => $.jev.broker_ready_detail)
+                    : `${status.scope}${status.reason ? ` · ${status.reason}` : ""}`}
+              </p>
             </div>
             <StatusBadge state={status.state} />
           </li>
