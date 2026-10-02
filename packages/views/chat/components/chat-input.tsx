@@ -765,7 +765,7 @@ export function ChatInput({
               value={selectedSquad?.id ?? ""}
               onChange={(event) => onSquadChange(event.target.value || null)}
               disabled={!projectSelectionEnabled}
-              className="h-6 min-w-24 rounded border border-surface-border bg-surface-raised px-1 text-caption"
+              className="h-6 min-w-24 rounded-md border border-surface-border bg-surface-raised px-1 text-caption"
             >
               <option value="">{t(($) => $.input.workspace_context)}</option>
               {squads.map((squad) => <option key={squad.id} value={squad.id}>{squad.name}</option>)}

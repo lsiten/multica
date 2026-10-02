@@ -784,19 +784,17 @@ function eventWorkspaceId(payload: unknown): string | undefined {
   return undefined;
 }
 
-function belongsToCurrentWorkspace(payload: unknown, eventType?: string): boolean {
+function belongsToCurrentWorkspace(payload: unknown): boolean {
   const source = eventWorkspaceId(payload);
   const current = getCurrentWsId();
   if (!source) {
-    // Project/squad deletion and older opaque events may omit workspace_id.
-    // Dropping those invalidations is safer than applying a delayed frame
-    // from the previous workspace to the current cache. Inbox summary remains
-    // cross-workspace by contract and does not pass through this guard.
-    const prefix = eventType?.split(":", 1)[0];
-    // Inbox and workspace/account notifications intentionally fan out across
-    // workspaces. Every other event mutates workspace-scoped caches and must
-    // carry a scope-bearing payload; an old or opaque frame is dropped.
-    return prefix === "inbox" || prefix === "workspace" || prefix === "invitation";
+    // A workspace WebSocket room is already scoped by the server. Older
+    // servers omit workspace_id from several established event payloads
+    // (daemon, task, property and attachment events), so dropping those
+    // frames would silently disable realtime updates for the active room.
+    // When an envelope does carry a workspace_id, the equality check below
+    // still prevents a delayed frame from another workspace mutating caches.
+    return true;
   }
   // A scoped frame is actionable only while a concrete workspace is active.
   // If the identity store is between workspaces (or has not hydrated yet),
@@ -845,7 +843,7 @@ export function useRealtimeSync(
       handler: (payload: WSEventPayload<E>, actorId?: string, actorType?: string) => void,
     ) =>
       ws.on(event, (payload, actorId, actorType) => {
-        if (!belongsToCurrentWorkspace(payload, event)) return;
+        if (!belongsToCurrentWorkspace(payload)) return;
         handler(payload as WSEventPayload<E>, actorId, actorType);
       });
 
@@ -1123,7 +1121,7 @@ export function useRealtimeSync(
     ]);
 
     const unsubAny = ws.onAny((msg) => {
-      if (!belongsToCurrentWorkspace(msg.payload, msg.type)) return;
+      if (!belongsToCurrentWorkspace(msg.payload)) return;
       if (specificEvents.has(msg.type)) return;
       const prefix = msg.type.split(":")[0] ?? "";
       if (prefix === "agent" || (prefix === "task" && msg.type !== "task:progress")) {

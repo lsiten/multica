@@ -33,6 +33,8 @@
     "add_tooltip": "Ajouter",
     "upload_file": "Image ou fichiers",
     "project_context": "Contexte de projet",
+    "squad_context": "Équipe",
+    "workspace_context": "Espace de travail",
     "change_project_context": "Changer le contexte de projet",
     "remove_project_context": "Retirer le contexte de projet",
     "no_projects": "Aucun projet pour l'instant",

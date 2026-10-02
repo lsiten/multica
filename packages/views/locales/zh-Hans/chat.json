@@ -32,6 +32,8 @@
     "add_tooltip": "添加",
     "upload_file": "图片或文件",
     "project_context": "项目上下文",
+    "squad_context": "小队",
+    "workspace_context": "空间",
     "change_project_context": "更改项目上下文",
     "remove_project_context": "移除项目上下文",
     "no_projects": "还没有项目",

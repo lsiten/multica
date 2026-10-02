@@ -32,6 +32,8 @@
     "add_tooltip": "追加",
     "upload_file": "画像・ファイル",
     "project_context": "プロジェクトコンテキスト",
+    "squad_context": "スクワッド",
+    "workspace_context": "ワークスペース",
     "change_project_context": "プロジェクトコンテキストを変更",
     "remove_project_context": "プロジェクトコンテキストを削除",
     "no_projects": "プロジェクトがまだありません",

@@ -32,6 +32,8 @@
     "add_tooltip": "추가",
     "upload_file": "이미지 또는 파일",
     "project_context": "프로젝트 컨텍스트",
+    "squad_context": "스쿼드",
+    "workspace_context": "워크스페이스",
     "change_project_context": "프로젝트 컨텍스트 변경",
     "remove_project_context": "프로젝트 컨텍스트 제거",
     "no_projects": "아직 프로젝트가 없습니다",
