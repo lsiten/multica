@@ -10,8 +10,13 @@ import (
 // narrow evidence gate, not a claim that semantic output proves business
 // correctness.
 type completionVerification struct {
-	Verified bool
-	Reason   string
+	Verified      bool
+	Reason        string
+	Mode          string
+	Calibrated    bool
+	Verdict       string
+	Confidence    *float64
+	Probabilities map[string]float64
 }
 
 func autonomousCompletionFailure(verification completionVerification) string {
@@ -71,6 +76,10 @@ func (g *completionGate) record(goal string, criteria, evidence []string, verdic
 }
 
 func (g *completionGate) recordForAttempt(sequence uint64, taskID, goal string, criteria, evidence []string, verdict string) {
+	g.recordForAttemptWithDetails(sequence, taskID, goal, criteria, evidence, verdict, "", false, nil, nil)
+}
+
+func (g *completionGate) recordForAttemptWithDetails(sequence uint64, taskID, goal string, criteria, evidence []string, verdict, mode string, calibrated bool, confidence *float64, probabilities map[string]float64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if sequence != 0 && sequence != g.sequence {
@@ -80,7 +89,7 @@ func (g *completionGate) recordForAttempt(sequence uint64, taskID, goal string, 
 		g.result = completionVerification{Reason: "verification_task_mismatch"}
 		return
 	}
-	g.result = completionVerification{Reason: "verification_not_satisfied"}
+	g.result = completionVerification{Reason: "verification_not_satisfied", Mode: mode, Calibrated: calibrated, Verdict: verdict, Confidence: confidence, Probabilities: probabilities}
 	if strings.TrimSpace(goal) == "" || len(criteria) == 0 || len(evidence) == 0 {
 		g.result.Reason = "verification_request_missing_goal_criteria_or_evidence"
 		return
@@ -94,7 +103,7 @@ func (g *completionGate) recordForAttempt(sequence uint64, taskID, goal string, 
 	if verdict != "satisfied" {
 		return
 	}
-	g.result = completionVerification{Verified: true, Reason: "semantic_evidence_accepted"}
+	g.result = completionVerification{Verified: true, Reason: "semantic_evidence_accepted", Mode: mode, Calibrated: calibrated, Verdict: verdict, Confidence: confidence, Probabilities: probabilities}
 }
 
 func (g *completionGate) status() completionVerification {

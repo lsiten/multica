@@ -248,6 +248,7 @@ type terminalTaskReport struct {
 	// run on the issue or chat can select it again, however many clean rows
 	// still reference it.
 	retiredSessionID string
+	jevVerification  *JevVerification
 }
 
 type terminalReportSendFunc func(context.Context, terminalTaskReport, []time.Duration) error
@@ -6391,6 +6392,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			durableWorkDir:        result.DurableWorkDir,
 			sessionRolloutMissing: result.SessionRolloutMissing,
 			retiredSessionID:      result.RetiredSessionID,
+			jevVerification:       result.JevVerification,
 		})
 		if err == nil {
 			return
@@ -6433,6 +6435,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			// they want to see how far it got.
 			branchName:            result.BranchName,
 			failureReason:         failureReason,
+			jevVerification:       result.JevVerification,
 			sessionRolloutMissing: result.SessionRolloutMissing,
 			retiredSessionID:      result.RetiredSessionID,
 		}); err != nil {
@@ -6538,7 +6541,7 @@ func (d *Daemon) sendTerminalTaskReport(ctx context.Context, report terminalTask
 	}
 	switch report.kind {
 	case terminalTaskReportComplete:
-		return d.client.completeTaskWithRetrySchedule(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, schedule)
+		return d.client.completeTaskWithJevRetrySchedule(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, report.jevVerification, schedule)
 	case terminalTaskReportFail:
 		return d.client.failTaskWithRetrySchedule(ctx, report.taskID, report.errorMessage, report.sessionID, report.workDir, report.branchName, report.failureReason, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, schedule)
 	default:
@@ -8262,6 +8265,18 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		taskCtx.AgentInstructions += "\nPhone identity action was requested but no supported host phone provider is configured; do not claim that a call was placed."
 	}
 	var completionVerifier interface{ completionVerification() completionVerification }
+	defer func() {
+		if completionVerifier == nil {
+			return
+		}
+		verification := completionVerifier.completionVerification()
+		taskResult.JevVerification = &JevVerification{
+			Verified: verification.Verified, ReasonCode: verification.Reason,
+			Mode: verification.Mode, Calibrated: verification.Calibrated,
+			Verdict: verification.Verdict, Confidence: verification.Confidence,
+			Probabilities: verification.Probabilities,
+		}
+	}()
 	if d.cfg.LLM2JevEnabled && autonomyPolicy.allows("decision") {
 
 		var llm2jevConfig json.RawMessage

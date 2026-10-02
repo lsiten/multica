@@ -325,6 +325,21 @@ type TaskResult struct {
 	// precisely when the abandoned id would otherwise stay selectable.
 	RetiredSessionID string           `json:"-"`
 	Usage            []TaskUsageEntry `json:"usage,omitempty"` // per-model token usage
+	JevVerification  *JevVerification `json:"jev_verification,omitempty"`
+}
+
+// JevVerification is the structured semantic evidence produced by the
+// task-local Jev verifier. It is persisted with the terminal task result so
+// downstream UI, audit, and automation paths can distinguish a verified
+// completion from an ordinary provider message.
+type JevVerification struct {
+	Mode          string             `json:"mode,omitempty"`
+	Calibrated    bool               `json:"calibrated,omitempty"`
+	Verified      bool               `json:"verified"`
+	Verdict       string             `json:"verdict,omitempty"`
+	Confidence    *float64           `json:"confidence,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+	ReasonCode    string             `json:"reason_code,omitempty"`
 }
 
 // PluginHookTool is one agent-trigger plugin hook, as the agent will see it.

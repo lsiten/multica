@@ -4326,7 +4326,36 @@ type TaskCompleteRequest struct {
 	// (GH #6066). Distinct from an empty SessionID, which only means "nothing
 	// to report" — this says "never hand this id to a later run". Older
 	// daemons omit it, which is exactly the pre-fix behaviour.
-	RetiredSessionID string `json:"retired_session_id,omitempty"`
+	RetiredSessionID string               `json:"retired_session_id,omitempty"`
+	JevVerification  *TaskJevVerification `json:"jev_verification,omitempty"`
+}
+
+type TaskJevVerification struct {
+	Mode          string             `json:"mode,omitempty"`
+	Calibrated    bool               `json:"calibrated,omitempty"`
+	Verified      bool               `json:"verified"`
+	Verdict       string             `json:"verdict,omitempty"`
+	Confidence    *float64           `json:"confidence,omitempty"`
+	Probabilities map[string]float64 `json:"probabilities,omitempty"`
+	ReasonCode    string             `json:"reason_code,omitempty"`
+}
+
+func validateTaskJevVerification(value *TaskJevVerification) error {
+	if value == nil {
+		return nil
+	}
+	if len(value.Mode) > 64 || len(value.Verdict) > 64 || len(value.ReasonCode) > 1024 || len(value.Probabilities) > 256 {
+		return errors.New("invalid Jev verification metadata")
+	}
+	if value.Confidence != nil && (*value.Confidence < 0 || *value.Confidence > 1) {
+		return errors.New("invalid Jev verification confidence")
+	}
+	for _, probability := range value.Probabilities {
+		if probability < 0 || probability > 1 {
+			return errors.New("invalid Jev verification probability")
+		}
+	}
+	return nil
 }
 
 // sanitizeTaskCompleteRequest / sanitizeTaskFailRequest scrub every
@@ -4344,6 +4373,11 @@ func sanitizeTaskCompleteRequest(req *TaskCompleteRequest) {
 	req.DurableWorkDir = util.SanitizeTextForPostgres(req.DurableWorkDir)
 	req.BranchName = util.SanitizeTextForPostgres(req.BranchName)
 	req.RetiredSessionID = util.SanitizeTextForPostgres(req.RetiredSessionID)
+	if req.JevVerification != nil {
+		req.JevVerification.Mode = util.SanitizeTextForPostgres(req.JevVerification.Mode)
+		req.JevVerification.Verdict = util.SanitizeTextForPostgres(req.JevVerification.Verdict)
+		req.JevVerification.ReasonCode = util.SanitizeTextForPostgres(req.JevVerification.ReasonCode)
+	}
 }
 
 func sanitizeTaskFailRequest(req *TaskFailRequest) {
@@ -4368,6 +4402,10 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	var req TaskCompleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validateTaskJevVerification(req.JevVerification); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// Strip bytes PostgreSQL cannot store BEFORE anything reads this payload

@@ -614,7 +614,7 @@ func (s *llm2jevMCPServer) evaluateCompletion(ctx context.Context, raw json.RawM
 		return nil, err
 	}
 	if s.gate != nil {
-		s.gate.recordForAttempt(attempt, input.TaskID, input.Goal, input.Criteria, input.Evidence, result.Verdict)
+		s.gate.recordForAttemptWithDetails(attempt, input.TaskID, input.Goal, input.Criteria, input.Evidence, result.Verdict, result.Mode, result.Calibrated, result.Confidence, result.Probabilities)
 	}
 	resultPayload := map[string]any{
 		"mode": result.Mode, "calibrated": result.Calibrated,
@@ -688,7 +688,7 @@ func (s *llm2jevMCPServer) evaluateCompletionSystemOne(ctx context.Context, raw 
 		"verdict":       verdict, "missing": missing, "reason_code": "systemone_noul_threshold",
 	}
 	if s.gate != nil {
-		s.gate.recordForAttempt(attempt, input.TaskID, input.Goal, input.Criteria, input.Evidence, verdict)
+		s.gate.recordForAttemptWithDetails(attempt, input.TaskID, input.Goal, input.Criteria, input.Evidence, verdict, "system_one", true, &confidence, map[string]float64{"satisfied": probability, "incomplete": 1 - probability})
 	}
 	return json.Marshal(result)
 }
