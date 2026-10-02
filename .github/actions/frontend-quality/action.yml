@@ -19,4 +19,9 @@ runs:
     - name: Check for dead code and phantom dependencies (knip)
       continue-on-error: true
       shell: bash
-      run: pnpm knip
+      # Knip is intentionally advisory: its inventory includes long-lived
+      # desktop entrypoints and package-level compatibility dependencies that
+      # are not safe to delete as part of a product change. Keep the explicit
+      # fallback as well as continue-on-error so composite-action runners do
+      # not turn the advisory result into the frontend gate's failure status.
+      run: pnpm knip || true
