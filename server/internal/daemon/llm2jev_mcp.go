@@ -790,6 +790,12 @@ func safeLLM2JevError(err error) string {
 	}
 	message := err.Error()
 	switch {
+	case strings.Contains(message, "credential") || strings.Contains(message, "401") || strings.Contains(message, "403"):
+		return "llm2jev: decision provider credentials rejected or missing"
+	case strings.Contains(message, "model request failed") || strings.Contains(message, "connection refused") || strings.Contains(message, "no such host"):
+		return "llm2jev: decision provider unreachable"
+	case strings.Contains(message, "invalid JSON") || strings.Contains(message, "no choices"):
+		return "llm2jev: decision provider returned an invalid response"
 	case strings.Contains(message, "invalid decision request"):
 		return "llm2jev: invalid decision request"
 	case strings.Contains(message, "invalid decision response"), strings.Contains(message, "invalid verdict"), strings.Contains(message, "unknown candidate"), strings.Contains(message, "duplicate candidate"):
