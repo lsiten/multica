@@ -680,9 +680,33 @@ func TestCommentSourceContextLifecycle(t *testing.T) {
 	if _, err := cleanupTx.Exec(ctx, `LOCK TABLE issue_source_context_object_intent IN SHARE ROW EXCLUSIVE MODE`); err != nil {
 		t.Fatalf("lock target intent table: %v", err)
 	}
+	// Keep unrelated due intents out of this fixture's bounded cleanup batch.
+	// SKIP LOCKED ignores these rows; rolling back releases them unchanged.
+	unrelatedTx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin unrelated intent isolation: %v", err)
+	}
+	defer unrelatedTx.Rollback(ctx)
+	lockedRows, err := unrelatedTx.Query(ctx, `SELECT storage_key FROM issue_source_context_object_intent WHERE source_context_id IS DISTINCT FROM $1 FOR UPDATE`, contextID)
+	if err != nil {
+		t.Fatalf("lock unrelated cleanup intents: %v", err)
+	}
+	for lockedRows.Next() {
+		var storageKey string
+		if err := lockedRows.Scan(&storageKey); err != nil {
+			lockedRows.Close()
+			t.Fatalf("read unrelated cleanup intent: %v", err)
+		}
+	}
+	if err := lockedRows.Err(); err != nil {
+		lockedRows.Close()
+		t.Fatalf("read locked cleanup intents: %v", err)
+	}
+	lockedRows.Close()
 	if _, err := cleanupTx.Exec(ctx, `
 		UPDATE issue_source_context_object_intent
-		SET created_at = now() - interval '2 hours', next_attempt_at = '-infinity'::timestamptz
+		SET created_at = now() - interval '2 hours', next_attempt_at = '-infinity'::timestamptz,
+		    lease_expires_at = '-infinity'::timestamptz
 		WHERE source_context_id = $1
 	`, contextID); err != nil {
 		t.Fatalf("age target delete intents: %v", err)
@@ -695,6 +719,17 @@ func TestCommentSourceContextLifecycle(t *testing.T) {
 	testHandler.TaskService.SourceContextStorage = originalObjectStore
 	testHandler.TaskService.Queries = originalQueries
 	if err != nil || cleaned < 3 {
+		rows, diagnosticErr := cleanupTx.Query(ctx, `SELECT state, COALESCE(lease_expires_at <= now(), true), next_attempt_at <= now(), created_at <= now() - interval '1 hour' FROM issue_source_context_object_intent WHERE source_context_id=$1`, contextID)
+		if diagnosticErr == nil {
+			for rows.Next() {
+				var state string
+				var expired, due, old bool
+				if scanErr := rows.Scan(&state, &expired, &due, &old); scanErr == nil {
+					t.Logf("remaining fixture intent state=%s lease_expired=%v due=%v old=%v", state, expired, due, old)
+				}
+			}
+			rows.Close()
+		}
 		t.Fatalf("cleanup target delete intents = %d, err=%v", cleaned, err)
 	}
 	if err := cleanupTx.Commit(ctx); err != nil {
