@@ -633,7 +633,8 @@ func (d *Daemon) repoCheckoutHandler() http.HandlerFunc {
 		}
 		authorizedWorkDir, authErr := authorizeRepoCheckoutWorkDir(activeTask.WorkDir, req.WorkDir)
 		if authErr != nil {
-			http.Error(w, "repo checkout workdir is not owned by the active task", http.StatusForbidden)
+			d.logger.Warn("repo checkout rejected", "reason", "workdir_not_owned", "error", authErr)
+			http.Error(w, "repo checkout workdir is not owned by the active task: "+authErr.Error(), http.StatusForbidden)
 			return
 		}
 		// Identity is derived from the token-bound active task. AgentName and the
