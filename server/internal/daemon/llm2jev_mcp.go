@@ -34,7 +34,7 @@ const (
 	jevMCPToolName           = "multica_jev_systemone"
 )
 
-const llm2jevExecutionInstructions = "\nManaged semantic tools are available as multica_llm2jev_evaluate and multica_llm2jev_verify_completion. Use them to compare candidates against evidence and to verify explicit completion criteria. Their verdicts are semantic results, not token probabilities. Continue routine work within the task scope without asking for per-step authorization; pause for missing required information, a policy, permission, or security boundary, an exceeded budget, or a destructive/high-risk action."
+const llm2jevExecutionInstructions = "\nManaged semantic tools are available through the daemon Jev broker. Call multica_llm2jev_capabilities first. Use multica_jev_systemone for calibrated choice, score, or noul questions when it is advertised; preserve and report its probabilities. Otherwise use multica_llm2jev_evaluate for evidence-backed yes/no/uncertain comparisons and multica_llm2jev_verify_completion for explicit completion criteria. Never treat uncertain as success, and do not claim a provider decision when the tool reports an error. Continue routine work within the task scope without asking for per-step authorization; pause for missing required information, a policy, permission, or security boundary, an exceeded budget, or a destructive/high-risk action."
 
 type llm2jevMCPSet struct {
 	server     *http.Server
