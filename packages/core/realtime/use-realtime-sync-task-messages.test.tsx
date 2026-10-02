@@ -132,6 +132,38 @@ describe("useRealtimeSync — task:message fanout guards (MUL-6396)", () => {
     release();
   });
 
+  it("keeps legacy task:message frames without workspace_id for a held timeline", () => {
+    const handler = mount();
+    const release = holdTimeline(HELD_TASK);
+
+    const legacy = msg(HELD_TASK, 1);
+    delete (legacy as Partial<TaskMessagePayload>).workspace_id;
+    handler(legacy);
+
+    expect(cached(qc, HELD_TASK)?.map((m) => m.seq)).toEqual([1]);
+    release();
+  });
+
+  it("keeps a held timeline when the frame scope briefly differs during a tab switch", () => {
+    const handler = mount();
+    const release = holdTimeline(HELD_TASK);
+
+    handler(msg(HELD_TASK, 1, { workspace_id: "stale-workspace" }));
+
+    expect(cached(qc, HELD_TASK)?.map((m) => m.seq)).toEqual([1]);
+    release();
+  });
+
+  it("still drops legacy task:message frames for an unheld timeline", () => {
+    const handler = mount();
+    const legacy = msg(UNHELD_TASK, 1);
+    delete (legacy as Partial<TaskMessagePayload>).workspace_id;
+    handler(legacy);
+    vi.advanceTimersByTime(FLUSH_MS * 2);
+
+    expect(cached(qc, UNHELD_TASK)).toBeUndefined();
+  });
+
   it("writes a burst's first frame immediately and coalesces its tail", () => {
     const handler = mount();
     const release = holdTimeline(HELD_TASK);

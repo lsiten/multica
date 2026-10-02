@@ -133,6 +133,15 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) er
 	return err
 }
 
+const deleteProjectAgentBindings = `-- name: DeleteProjectAgentBindings :exec
+DELETE FROM agent_project_binding WHERE project_id = $1
+`
+
+func (q *Queries) DeleteProjectAgentBindings(ctx context.Context, projectID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteProjectAgentBindings, projectID)
+	return err
+}
+
 const deleteProjectGraphEvents = `-- name: DeleteProjectGraphEvents :exec
 DELETE FROM project_graph_event WHERE project_id=$1 AND workspace_id=$2
 `
@@ -144,6 +153,15 @@ type DeleteProjectGraphEventsParams struct {
 
 func (q *Queries) DeleteProjectGraphEvents(ctx context.Context, arg DeleteProjectGraphEventsParams) error {
 	_, err := q.db.Exec(ctx, deleteProjectGraphEvents, arg.ProjectID, arg.WorkspaceID)
+	return err
+}
+
+const deleteProjectSquadBindings = `-- name: DeleteProjectSquadBindings :exec
+DELETE FROM squad_project_binding WHERE project_id = $1
+`
+
+func (q *Queries) DeleteProjectSquadBindings(ctx context.Context, projectID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteProjectSquadBindings, projectID)
 	return err
 }
 
@@ -241,6 +259,70 @@ func (q *Queries) GetProjectIssueStats(ctx context.Context, arg GetProjectIssueS
 	for rows.Next() {
 		var i GetProjectIssueStatsRow
 		if err := rows.Scan(&i.ProjectID, &i.TotalCount, &i.DoneCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectAgentBindings = `-- name: ListProjectAgentBindings :many
+SELECT agent_id, project_id
+FROM agent_project_binding
+WHERE project_id = $1 AND active
+ORDER BY agent_id
+`
+
+type ListProjectAgentBindingsRow struct {
+	AgentID   pgtype.UUID `json:"agent_id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListProjectAgentBindings(ctx context.Context, projectID pgtype.UUID) ([]ListProjectAgentBindingsRow, error) {
+	rows, err := q.db.Query(ctx, listProjectAgentBindings, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectAgentBindingsRow{}
+	for rows.Next() {
+		var i ListProjectAgentBindingsRow
+		if err := rows.Scan(&i.AgentID, &i.ProjectID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectSquadBindings = `-- name: ListProjectSquadBindings :many
+SELECT squad_id, project_id
+FROM squad_project_binding
+WHERE project_id = $1 AND active
+ORDER BY squad_id
+`
+
+type ListProjectSquadBindingsRow struct {
+	SquadID   pgtype.UUID `json:"squad_id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) ListProjectSquadBindings(ctx context.Context, projectID pgtype.UUID) ([]ListProjectSquadBindingsRow, error) {
+	rows, err := q.db.Query(ctx, listProjectSquadBindings, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectSquadBindingsRow{}
+	for rows.Next() {
+		var i ListProjectSquadBindingsRow
+		if err := rows.Scan(&i.SquadID, &i.ProjectID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -398,4 +480,40 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.DueDate,
 	)
 	return i, err
+}
+
+const upsertAgentProjectBinding = `-- name: UpsertAgentProjectBinding :exec
+INSERT INTO agent_project_binding (agent_id, project_id, active, created_by, updated_at)
+VALUES ($1, $2, TRUE, $3, now())
+ON CONFLICT (agent_id, project_id) DO UPDATE
+SET active = TRUE, updated_at = now()
+`
+
+type UpsertAgentProjectBindingParams struct {
+	AgentID   pgtype.UUID `json:"agent_id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+	CreatedBy pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) UpsertAgentProjectBinding(ctx context.Context, arg UpsertAgentProjectBindingParams) error {
+	_, err := q.db.Exec(ctx, upsertAgentProjectBinding, arg.AgentID, arg.ProjectID, arg.CreatedBy)
+	return err
+}
+
+const upsertSquadProjectBinding = `-- name: UpsertSquadProjectBinding :exec
+INSERT INTO squad_project_binding (squad_id, project_id, active, created_by, updated_at)
+VALUES ($1, $2, TRUE, $3, now())
+ON CONFLICT (squad_id, project_id) DO UPDATE
+SET active = TRUE, updated_at = now()
+`
+
+type UpsertSquadProjectBindingParams struct {
+	SquadID   pgtype.UUID `json:"squad_id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+	CreatedBy pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) UpsertSquadProjectBinding(ctx context.Context, arg UpsertSquadProjectBindingParams) error {
+	_, err := q.db.Exec(ctx, upsertSquadProjectBinding, arg.SquadID, arg.ProjectID, arg.CreatedBy)
+	return err
 }

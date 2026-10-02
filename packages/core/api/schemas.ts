@@ -2289,6 +2289,11 @@ export const AgentTaskPageSchema = z.object({
   nextCursor: z.string().min(1).nullable(),
 });
 
+export const ProjectExecutionScopeBindingsSchema = z.object({
+  agent_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
+  squad_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
+}).loose();
+
 // One row of a run transcript. `output_truncated` gates a completeness claim
 // the UI makes about a tool's output, so it stays `.optional()` with no
 // default: a server that does not send it means "unknown", and defaulting it
@@ -2358,6 +2363,7 @@ export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   agent_id: z.string().default(""),
   creator_id: z.string().default(""),
   project_id: z.string().nullable().optional(),
+  squad_id: z.string().nullable().optional(),
   title: z.string().default(""),
   status: z.enum(["active", "archived"]).catch("active"),
   has_unread: z.boolean().default(false),

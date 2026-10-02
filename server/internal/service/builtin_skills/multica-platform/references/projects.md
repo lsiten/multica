@@ -153,3 +153,7 @@ is task-local checkout state.
 Project create/update/delete/status and project resource add/update/remove
 mutate durable workspace state and affect future tasks. Ask before changing
 `local_directory` unless the user explicitly requested that exact local path.
+
+## Execution scope
+
+`multica project execution-scope get <project-id> --output json` reads the project's agent and squad bindings. `set` replaces the binding set atomically. An agent selected as the project's lead is implicitly bound. Agents that belong to a squad inherit that squad's active project bindings. When none of these narrower relationships exists, the agent remains workspace-scoped. Scope conflicts are server-enforced and return `agent_project_scope_conflict`, `squad_project_scope_conflict`, or `agent_squad_scope_conflict`.

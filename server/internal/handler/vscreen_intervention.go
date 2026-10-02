@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -55,7 +56,7 @@ func (h *Handler) ListVscreenInterventions(w http.ResponseWriter, r *http.Reques
 	}
 	rows, err := h.Queries.ListVscreenInterventions(r.Context(), db.ListVscreenInterventionsParams{WorkspaceID: rt.WorkspaceID, RuntimeID: rt.ID})
 	if err != nil {
-		writeInterventionError(w, err)
+		writeError(w, http.StatusInternalServerError, "failed to list interventions")
 		return
 	}
 	visible := make([]db.RuntimeVscreenIntervention, 0, len(rows))
@@ -85,7 +86,7 @@ func (h *Handler) loadVscreenIntervention(w http.ResponseWriter, r *http.Request
 	}
 	task, err := h.Queries.GetAgentTask(r.Context(), taskID)
 	if err != nil {
-		writeInterventionError(w, err)
+		writeError(w, http.StatusInternalServerError, "failed to load task")
 		return empty, rt, false
 	}
 	if !task.RuntimeID.Valid {
@@ -164,6 +165,7 @@ func (h *Handler) ContinueVscreenIntervention(w http.ResponseWriter, r *http.Req
 	}
 	task, err := h.TaskService.ContinueAfterIntervention(r.Context(), service.InterventionContinuation{Intervention: row, ActorID: actor, HumanSummary: body.HumanSummary, FreshSession: body.FreshSession, Observation: observation})
 	if err != nil {
+		slog.Error("continue vscreen intervention failed", "intervention_id", uuidToString(row.ID), "error", err)
 		writeInterventionError(w, err)
 		return
 	}

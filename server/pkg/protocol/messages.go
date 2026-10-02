@@ -222,6 +222,7 @@ type TaskMessagePayload struct {
 	// CallID is an opaque tool-call identity scoped to one backend execution.
 	CallID  string         `json:"call_id,omitempty"`
 	TaskID  string         `json:"task_id"`
+	ChatSessionID string   `json:"chat_session_id,omitempty"`
 	IssueID string         `json:"issue_id,omitempty"`
 	Seq     int            `json:"seq"`
 	Type    string         `json:"type"`              // "text", "tool_use", "tool_result", "error"
@@ -361,6 +362,8 @@ type ChatSessionCreatedPayload struct {
 	AgentID               string                   `json:"agent_id"`
 	CreatorID             string                   `json:"creator_id"`
 	Title                 string                   `json:"title"`
+	ProjectID             *string                  `json:"project_id,omitempty"`
+	SquadID               *string                  `json:"squad_id,omitempty"`
 	ChannelSource         ChatSessionChannelSource `json:"channel_source"`
 	IsCurrentChannelRoute bool                     `json:"is_current_channel_route"`
 }
@@ -388,6 +391,8 @@ type ChatSessionUpdatedPayload struct {
 	// ProjectID is set only by the project-context update path. The double
 	// pointer distinguishes an omitted field from an explicit JSON null.
 	ProjectID **string `json:"project_id,omitempty"`
+	// SquadID follows the same omitted-vs-null convention as ProjectID.
+	SquadID **string `json:"squad_id,omitempty"`
 	// Pinned is set only by the pin/unpin path; nil on a plain rename so a
 	// receiver leaves the existing pin state untouched.
 	Pinned *bool `json:"pinned,omitempty"`

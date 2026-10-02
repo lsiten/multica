@@ -91,6 +91,15 @@ type AgentMcpServer struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type AgentProjectBinding struct {
+	AgentID   pgtype.UUID        `json:"agent_id"`
+	ProjectID pgtype.UUID        `json:"project_id"`
+	Active    bool               `json:"active"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AgentRuntime struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -553,6 +562,7 @@ type ChatSession struct {
 	PinnedAt            pgtype.Timestamptz `json:"pinned_at"`
 	ProjectID           pgtype.UUID        `json:"project_id"`
 	ExplicitlyCreatedAt pgtype.Timestamptz `json:"explicitly_created_at"`
+	SquadID             pgtype.UUID        `json:"squad_id"`
 }
 
 type ClientUsageDaily struct {
@@ -1551,6 +1561,15 @@ type SquadMember struct {
 	MemberID   pgtype.UUID        `json:"member_id"`
 	Role       string             `json:"role"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type SquadProjectBinding struct {
+	SquadID   pgtype.UUID        `json:"squad_id"`
+	ProjectID pgtype.UUID        `json:"project_id"`
+	Active    bool               `json:"active"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SysCronExecution struct {

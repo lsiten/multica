@@ -258,3 +258,7 @@ These actions can trigger agent work or mutate durable state:
 - Getting the leader briefing does NOT imply status authority. A squad
   `@`-mentioned into an issue assigned to someone else is a guest: roster and
   delegation rules yes, `multica issue status` no.
+
+## Execution scope
+
+Squad membership is also an execution relationship. A squad with active project bindings may run only those projects; a squad with no bindings remains workspace-scoped. The leader is the execution target, but the member roster is the authority for whether an agent may act for the squad.

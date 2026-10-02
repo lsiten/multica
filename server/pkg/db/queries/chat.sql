@@ -1,6 +1,75 @@
 -- name: CreateChatSession :one
-INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, id)
-VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, sqlc.narg('project_id'), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()))
+INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, squad_id, id)
+VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, sqlc.narg('project_id'), sqlc.narg('squad_id'), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()))
+RETURNING *;
+
+-- name: AgentMayUseProject :one
+-- Project lead, explicit agent bindings, and squad project bindings are
+-- narrower scopes. Only an agent with none of those relationships remains
+-- workspace-wide.
+WITH agent_scope AS (
+    SELECT
+        EXISTS (SELECT 1 FROM project AS lead_project WHERE lead_project.lead_type = 'agent' AND lead_project.lead_id = $1) AS has_lead_project,
+        EXISTS (SELECT 1 FROM agent_project_binding WHERE agent_id = $1 AND active) AS has_agent_binding,
+        EXISTS (
+            SELECT 1
+            FROM squad_member AS member
+            JOIN squad_project_binding AS binding ON binding.squad_id = member.squad_id
+            WHERE member.member_type = 'agent' AND member.member_id = $1 AND binding.active
+        ) AS has_squad_binding
+)
+SELECT (
+    NOT (has_lead_project OR has_agent_binding OR has_squad_binding)
+    OR EXISTS (SELECT 1 FROM project AS lead_project WHERE lead_project.id = $2 AND lead_project.lead_type = 'agent' AND lead_project.lead_id = $1)
+    OR EXISTS (SELECT 1 FROM agent_project_binding WHERE agent_id = $1 AND project_id = $2 AND active)
+    OR EXISTS (
+        SELECT 1
+        FROM squad_member AS member
+        JOIN squad_project_binding AS binding ON binding.squad_id = member.squad_id
+        WHERE member.member_type = 'agent' AND member.member_id = $1
+          AND binding.project_id = $2 AND binding.active
+    )
+) AS allowed
+FROM agent_scope;
+
+-- name: SquadMayUseProject :one
+WITH squad_scope AS (
+    SELECT
+        squad.leader_id,
+        EXISTS (SELECT 1 FROM squad_project_binding AS binding WHERE binding.squad_id = $1 AND binding.active) AS has_squad_binding,
+        EXISTS (SELECT 1 FROM project WHERE lead_type = 'agent' AND lead_id = squad.leader_id) AS leader_has_lead_project
+    FROM squad
+    WHERE squad.id = $1
+)
+SELECT (
+    NOT (has_squad_binding OR leader_has_lead_project)
+    OR EXISTS (SELECT 1 FROM squad_project_binding AS binding WHERE binding.squad_id = $1 AND binding.project_id = $2 AND binding.active)
+    OR EXISTS (SELECT 1 FROM project WHERE id = $2 AND lead_type = 'agent' AND lead_id = squad_scope.leader_id)
+) AS allowed
+FROM squad_scope;
+
+-- name: GetSquadInWorkspaceForChat :one
+SELECT * FROM squad
+WHERE id = $1 AND workspace_id = $2;
+
+-- name: UpdateChatSessionContext :one
+UPDATE chat_session
+SET project_id = sqlc.narg('project_id'),
+    squad_id = sqlc.narg('squad_id'),
+    session_id = CASE
+        WHEN project_id IS DISTINCT FROM sqlc.narg('project_id')::uuid
+          OR squad_id IS DISTINCT FROM sqlc.narg('squad_id')::uuid
+        THEN NULL ELSE session_id END,
+    work_dir = CASE
+        WHEN project_id IS DISTINCT FROM sqlc.narg('project_id')::uuid
+          OR squad_id IS DISTINCT FROM sqlc.narg('squad_id')::uuid
+        THEN NULL ELSE work_dir END,
+    runtime_id = CASE
+        WHEN project_id IS DISTINCT FROM sqlc.narg('project_id')::uuid
+          OR squad_id IS DISTINCT FROM sqlc.narg('squad_id')::uuid
+        THEN NULL ELSE runtime_id END,
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
 RETURNING *;
 
 -- name: ClearChatSessionProjectByProject :exec
@@ -1152,7 +1221,7 @@ WHERE id = $1;
 -- attribution provenance is stamped so this path is not a NULL-source enqueue
 -- bypass (MUL-4302 §2).
 INSERT INTO agent_task_queue (
-    agent_id, runtime_id, issue_id, status, priority, chat_session_id,
+    agent_id, runtime_id, issue_id, status, priority, chat_session_id, squad_id,
     initiator_user_id, originator_user_id, accountable_user_id, force_fresh_session, context, runtime_mcp_overlay,
     runtime_connected_apps, originator_source, trigger_evidence_kind, trigger_evidence_ref_id,
     fire_at, channel_context_revision, id
@@ -1160,12 +1229,17 @@ INSERT INTO agent_task_queue (
 SELECT
     $1, $2, NULL,
     CASE WHEN sqlc.narg('fire_at')::timestamptz IS NULL THEN 'queued' ELSE 'deferred' END,
-    $3, $4, $5,
+    $3, $4,
+    (SELECT squad_id FROM chat_session WHERE id = $4),
+    $5,
     sqlc.narg(originator_user_id),
     sqlc.narg(accountable_user_id),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     COALESCE(sqlc.narg(context)::jsonb, '{}'::jsonb)
-      || jsonb_build_object('project_id', (SELECT project_id::text FROM chat_session WHERE id = $4)),
+      || jsonb_build_object(
+          'project_id', (SELECT project_id::text FROM chat_session WHERE id = $4),
+          'squad_id', (SELECT squad_id::text FROM chat_session WHERE id = $4)
+      ),
     sqlc.narg(runtime_mcp_overlay),
     sqlc.narg(runtime_connected_apps),
     sqlc.narg(originator_source),

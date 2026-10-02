@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { Minus, Maximize2, Minimize2, ChevronDown, Plus, Check, Archive, Pencil, Loader2, Square } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
@@ -15,7 +15,7 @@ import {
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
-import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
+import { agentListOptions, memberListOptions, squadListOptions } from "@multica/core/workspace/queries";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { canAssignAgent } from "../../issues/components/pickers/assignee-picker";
 import { api, dispatchReasonCode } from "@multica/core/api";
@@ -113,10 +113,12 @@ export function ChatWindow() {
   const regenerateQuickActions = useRegenerateChatQuickActions();
   const selectedAgentId = useChatStore((s) => s.selectedAgentId);
   const selectedProjectId = useChatStore((s) => s.selectedProjectId);
+  const selectedSquadId = useChatStore((s) => s.selectedSquadId);
   const setOpen = useChatStore((s) => s.setOpen);
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setSelectedAgentId = useChatStore((s) => s.setSelectedAgentId);
   const setSelectedProjectId = useChatStore((s) => s.setSelectedProjectId);
+  const setSelectedSquadId = useChatStore((s) => s.setSelectedSquadId);
   const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
   useEffect(() => {
     setAutonomyPolicy(null);
@@ -132,6 +134,17 @@ export function ChatWindow() {
   const { data: projects = [], isSuccess: projectsLoaded } = useQuery(
     projectListOptions(wsId),
   );
+  const { data: squads = [], isSuccess: squadsLoaded } = useQuery(
+    squadListOptions(wsId),
+  );
+  const projectScopeQueries = useQueries({
+    queries: projects.map((project) => ({
+      queryKey: ["project-execution-scope-bindings", wsId, project.id],
+      queryFn: () => api.getProjectExecutionScopeBindings(project.id),
+      enabled: !!wsId,
+      staleTime: 30_000,
+    })),
+  });
   const {
     data: rawMessagePages,
     isLoading: messagesLoading,
@@ -229,12 +242,18 @@ export function ChatWindow() {
     (!projectsLoaded || projects.some((project) => project.id === candidateProjectId))
     ? candidateProjectId
     : null;
+  const activeSquadId = currentSession ? currentSession.squad_id ?? null : selectedSquadId;
 
   useEffect(() => {
     if (!projectsLoaded || !selectedProjectId) return;
     if (projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId(null);
   }, [projectsLoaded, projects, selectedProjectId, setSelectedProjectId]);
+  useEffect(() => {
+    if (!squadsLoaded || !selectedSquadId) return;
+    if (squads.some((squad) => squad.id === selectedSquadId)) return;
+    setSelectedSquadId(null);
+  }, [squadsLoaded, squads, selectedSquadId, setSelectedSquadId]);
 
   const qc = useQueryClient();
   const createSession = useCreateChatSession();
@@ -265,6 +284,12 @@ export function ChatWindow() {
     availableAgents.find((a) => a.id === selectedAgentId) ??
     availableAgents[0] ??
     null;
+  const availableProjects = projects.filter((_project, index) => {
+    const bindings = projectScopeQueries[index]?.data;
+    if (!bindings) return true;
+    return (bindings.agent_ids.length === 0 || !activeAgent || bindings.agent_ids.includes(activeAgent.id)) &&
+      (bindings.squad_ids.length === 0 || !activeSquadId || bindings.squad_ids.includes(activeSquadId));
+  });
   const activeAgentRuntimeBound =
     !!activeAgent && isAgentRuntimeBound(activeAgent);
 
@@ -409,6 +434,7 @@ export function ChatWindow() {
             agent_id: activeAgent.id,
             title: titleSeed.slice(0, 50),
             project_id: activeProjectId,
+            squad_id: activeSquadId,
           });
           return session.id;
         } finally {
@@ -422,6 +448,7 @@ export function ChatWindow() {
       activeSessionId,
       activeAgent,
       activeProjectId,
+      activeSquadId,
       createSession,
       sessions,
       sessionsLoaded,
@@ -788,6 +815,13 @@ export function ChatWindow() {
     ],
   );
 
+  const handleSquadChange = useCallback((squadId: string | null) => {
+    if (squadId === activeSquadId) return;
+    setSelectedSquadId(squadId);
+    if (activeSessionId) setActiveSession(null);
+    requestInputFocus();
+  }, [activeSquadId, activeSessionId, requestInputFocus, setActiveSession, setSelectedSquadId]);
+
   const handleMinimize = useCallback(() => {
     uiLogger.info("minimize (close)", {
       activeSessionId,
@@ -1065,9 +1099,12 @@ export function ChatWindow() {
         agentRuntimeRequired={!activeAgentRuntimeBound}
         agentName={activeAgent?.name}
         agentId={activeAgent?.id}
-        projects={projects}
+        projects={availableProjects}
         projectId={activeProjectId}
         onProjectChange={handleProjectChange}
+        squads={squads}
+        squadId={activeSquadId}
+        onSquadChange={handleSquadChange}
         projectContextUnsupported={projectContextSupport === false}
         autonomyPolicy={autonomyPolicy}
         onAutonomyPolicyChange={setAutonomyPolicy}

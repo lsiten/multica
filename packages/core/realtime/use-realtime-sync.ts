@@ -345,10 +345,23 @@ type ChatSessionUpdatedPayload = {
   chat_session_id: string;
   title?: string;
   project_id?: string | null;
+  squad_id?: string | null;
   pinned?: boolean;
   status?: "active" | "archived";
   updated_at?: string;
 };
+
+function isHeldChatTaskMessage(
+  qc: QueryClient,
+  payload: TaskMessagePayload,
+): boolean {
+  if (!isTaskMessageTimelineHeld(qc, payload.task_id)) return false;
+  if (!payload.chat_session_id) return true;
+  return qc.getQueriesData<ChatPendingTask>({ queryKey: chatKeys.pendingTaskAll() })
+    .some(([key, task]) =>
+      key[key.length - 1] === payload.chat_session_id && task?.task_id === payload.task_id,
+    );
+}
 
 /**
  * Patch the cached sessions row for a `chat:session_updated` event (rename,
@@ -380,6 +393,7 @@ export function applyChatSessionUpdatedToCache(
             ...s,
             title: payload.title ?? s.title,
             ...("project_id" in payload ? { project_id: payload.project_id } : {}),
+            ...("squad_id" in payload ? { squad_id: payload.squad_id } : {}),
             pinned: payload.pinned ?? s.pinned,
             status: payload.status ?? s.status,
             updated_at: payload.updated_at ?? s.updated_at,
@@ -1480,11 +1494,16 @@ export function useRealtimeSync(
       taskMessageBatches.clear();
     };
 
-    const unsubTaskMessage = scopedOn("task:message", (p) => {
+    const unsubTaskMessage = ws.on("task:message", (p) => {
       const payload = p as TaskMessagePayload;
       // Cheap Map lookup, and it runs before anything allocates — this is the
       // hot path for every run in the workspace, not just the visible ones.
-      if (!isTaskMessageTimelineHeld(qc, payload.task_id)) return;
+      // The WebSocket room is already workspace-scoped on the server. The
+      // held-timeline gate keeps this workspace-wide stream from constructing
+      // caches for runs the user never opened, and also covers 1.0.8 frames
+      // whose workspace identity can briefly lag the renderer singleton while
+      // a desktop tab is switching.
+      if (!isHeldChatTaskMessage(qc, payload)) return;
 
       // Leading edge: render the first frame after an idle window now. The
       // timer is still armed so the remainder of a burst is coalesced and a

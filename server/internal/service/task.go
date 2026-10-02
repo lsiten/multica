@@ -1245,6 +1245,52 @@ func (s *TaskService) ResolveIssueReviewSHAParam(ctx context.Context, issueID pg
 	return headShaText(s.ResolveIssueReviewSHA(ctx, issueID))
 }
 
+// validateTaskExecutionScope is the enqueue-side counterpart to the chat
+// session scope gate. It covers issue, mention, rerun, and quick-create paths
+// so a project binding cannot be bypassed by choosing another task entrypoint.
+func (s *TaskService) validateTaskExecutionScope(ctx context.Context, workspaceID, agentID, projectID, squadID pgtype.UUID) error {
+	if projectID.Valid {
+		allowed, err := s.Queries.AgentMayUseProject(ctx, db.AgentMayUseProjectParams{LeadID: agentID, ID: projectID})
+		if err != nil {
+			return fmt.Errorf("check agent project scope: %w", err)
+		}
+		if !allowed.Valid || !allowed.Bool {
+			return fmt.Errorf("agent is not available for this project")
+		}
+	}
+	if !squadID.Valid {
+		return nil
+	}
+	squad, err := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{ID: squadID, WorkspaceID: workspaceID})
+	if err != nil {
+		return fmt.Errorf("squad is not available in this workspace: %w", err)
+	}
+	members, err := s.Queries.ListSquadMembers(ctx, squad.ID)
+	if err != nil {
+		return fmt.Errorf("load squad members: %w", err)
+	}
+	inSquad := squad.LeaderID == agentID
+	for _, member := range members {
+		if member.MemberType == "agent" && member.MemberID == agentID {
+			inSquad = true
+			break
+		}
+	}
+	if !inSquad {
+		return fmt.Errorf("agent is not a member of this squad")
+	}
+	if projectID.Valid {
+		allowed, err := s.Queries.SquadMayUseProject(ctx, db.SquadMayUseProjectParams{SquadID: squadID, ProjectID: projectID})
+		if err != nil {
+			return fmt.Errorf("check squad project scope: %w", err)
+		}
+		if !allowed.Valid || !allowed.Bool {
+			return fmt.Errorf("squad is not available for this project")
+		}
+	}
+	return nil
+}
+
 func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, forceFreshSession bool, handoffNote string, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID, fireAt pgtype.Timestamptz, origin RunOrigin) (db.AgentTaskQueue, error) {
 	return s.enqueueIssueTaskWithCommentPlan(ctx, issue, triggerCommentID, nil, forceFreshSession, handoffNote, actorUserID, rerunOfTaskID, fireAt, origin)
 }
@@ -1255,6 +1301,13 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		return db.AgentTaskQueue{}, fmt.Errorf("issue has no assignee")
 	}
 	if err := guardIssueNotInTriage(ctx, s.Queries, issue.ID, origin); err != nil {
+		return db.AgentTaskQueue{}, err
+	}
+	squadID := pgtype.UUID{}
+	if issue.AssigneeType.Valid && issue.AssigneeType.String == "squad" {
+		squadID = issue.AssigneeID
+	}
+	if err := s.validateTaskExecutionScope(ctx, issue.WorkspaceID, issue.AssigneeID, issue.ProjectID, squadID); err != nil {
 		return db.AgentTaskQueue{}, err
 	}
 
@@ -1430,6 +1483,9 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 	if err := guardIssueNotInTriage(ctx, s.Queries, issue.ID, origin); err != nil {
 		return db.AgentTaskQueue{}, err
 	}
+	if err := s.validateTaskExecutionScope(ctx, issue.WorkspaceID, agentID, issue.ProjectID, squadID); err != nil {
+		return db.AgentTaskQueue{}, err
+	}
 	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {
 		slog.Error("mention task enqueue failed: agent not found", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
@@ -1578,6 +1634,9 @@ func (s *TaskService) EnqueueQuickCreateTaskWithSourceContext(ctx context.Contex
 func (s *TaskService) enqueueQuickCreateTask(ctx context.Context, workspaceID, requesterID pgtype.UUID, agentID, squadID pgtype.UUID, prompt, priority, dueDate string, projectID, parentIssueID pgtype.UUID, attachmentIDs []pgtype.UUID, capture *SourceContextCapture) (db.AgentTaskQueue, error) {
 	if err := CheckIssueCreateCapacity(ctx, s.Queries, s.Entitlements, workspaceID); err != nil {
 		return db.AgentTaskQueue{}, fmt.Errorf("preflight quick-create issue capacity: %w", err)
+	}
+	if err := s.validateTaskExecutionScope(ctx, workspaceID, agentID, projectID, squadID); err != nil {
+		return db.AgentTaskQueue{}, err
 	}
 	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {

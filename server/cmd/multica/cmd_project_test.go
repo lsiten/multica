@@ -385,3 +385,18 @@ func TestBuildResourceRefFromFlagsLocalDirectoryExecutionMode(t *testing.T) {
 		}
 	})
 }
+
+func TestProjectExecutionScopeCommandsRegistered(t *testing.T) {
+	found := false
+	for _, command := range projectCmd.Commands() {
+		if command.Name() == "execution-scope" {
+			found = true
+			if len(command.Commands()) != 2 {
+				t.Fatalf("execution-scope subcommands = %d, want 2", len(command.Commands()))
+			}
+		}
+	}
+	if !found {
+		t.Fatal("project execution-scope command is not registered")
+	}
+}

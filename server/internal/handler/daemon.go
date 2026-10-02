@@ -3154,7 +3154,21 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			}
 		}
 		projectCtx.applyTo(&resp)
-		chatScopeMatches := chatTaskProjectScopeMatchesProject(*task, cs.ProjectID)
+		if task.SquadID.Valid {
+			squad, squadErr := h.Queries.GetSquadInWorkspace(r.Context(), db.GetSquadInWorkspaceParams{
+				ID: task.SquadID, WorkspaceID: cs.WorkspaceID,
+			})
+			if squadErr != nil {
+				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, &claimBuildFailure{
+					outcome: "error_squad_context",
+					status:  http.StatusConflict,
+					message: "chat squad context is no longer available",
+				}
+			}
+			resp.SquadID = uuidToString(squad.ID)
+			resp.SquadName = squad.Name
+		}
+		chatScopeMatches := chatTaskExecutionScopeMatches(*task, cs.ProjectID, cs.SquadID)
 		if !chatScopeMatches {
 			// The task was enqueued under a different project generation than the
 			// session currently carries. Do not trust either pointer field read
@@ -5409,7 +5423,7 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 			// in order, so the conversion is checked by the compiler and breaks
 			// loudly if the query ever stops returning the whole row.
 			h.publishTask(protocol.EventTaskMessage, workspaceID, "system", "", taskID,
-				taskMessageToPayload(db.TaskMessage(m), taskID, uuidToString(task.IssueID)))
+				taskMessageToPayload(db.TaskMessage(m), taskID, uuidToString(task.IssueID), uuidToString(task.ChatSessionID)))
 		}
 	}
 
@@ -5517,7 +5531,7 @@ func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func taskMessageToPayload(m db.TaskMessage, taskID, issueID string) protocol.TaskMessagePayload {
+func taskMessageToPayload(m db.TaskMessage, taskID, issueID string, sessionID ...string) protocol.TaskMessagePayload {
 	var input map[string]any
 	if m.Input != nil {
 		json.Unmarshal(m.Input, &input)
@@ -5526,7 +5540,7 @@ func taskMessageToPayload(m db.TaskMessage, taskID, issueID string) protocol.Tas
 	if m.CreatedAt.Valid {
 		createdAt = m.CreatedAt.Time.UTC().Format(time.RFC3339Nano)
 	}
-	return protocol.TaskMessagePayload{
+	payload := protocol.TaskMessagePayload{
 		TaskID:          taskID,
 		IssueID:         issueID,
 		Seq:             int(m.Seq),
@@ -5539,6 +5553,10 @@ func taskMessageToPayload(m db.TaskMessage, taskID, issueID string) protocol.Tas
 		OutputTruncated: util.BoolToPtr(m.OutputTruncated),
 		CreatedAt:       createdAt,
 	}
+	if len(sessionID) > 0 {
+		payload.ChatSessionID = sessionID[0]
+	}
+	return payload
 }
 
 // boolArrayElement encodes a tri-state bool for the text[] parameters the batch
@@ -6299,4 +6317,12 @@ func chatTaskProjectScopeMatchesProject(task db.AgentTaskQueue, projectID pgtype
 		return false
 	}
 	return parsed.String() == uuidToString(projectID)
+}
+
+func chatTaskExecutionScopeMatches(task db.AgentTaskQueue, projectID, squadID pgtype.UUID) bool {
+	if !chatTaskProjectScopeMatchesProject(task, projectID) {
+		return false
+	}
+	return task.SquadID.Valid == squadID.Valid &&
+		(!task.SquadID.Valid || task.SquadID == squadID)
 }

@@ -370,6 +370,9 @@ export function ChatPage() {
         projectId={c.activeProjectId}
         projectContextUnsupported={c.projectContextUnsupported}
         onProjectChange={changeProjectContext}
+        squads={c.squads}
+        squadId={c.activeSquadId}
+        onSquadChange={c.handleSquadChange}
         isProjectUpdating={c.isProjectUpdating}
         focusRequest={c.focusInputRequest}
         autonomyPolicy={autonomyPolicy}

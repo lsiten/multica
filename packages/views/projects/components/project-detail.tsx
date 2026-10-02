@@ -16,6 +16,7 @@ import { useUpdateProject, useDeleteProject } from "@multica/core/projects/mutat
 import { pinListOptions } from "@multica/core/pins";
 import { useCreatePin, useDeletePin } from "@multica/core/pins";
 import { memberListOptions, agentListOptions } from "@multica/core/workspace/queries";
+import { squadListOptions } from "@multica/core/workspace/queries";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useIssuesScope } from "@multica/core/issues/stores";
 import { useRecentContextStore } from "@multica/core/chat";
@@ -147,7 +148,40 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     [projectId, issueTab],
   );
   const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const isWorkspaceAdmin = useMemo(() => {
+    if (!userId) return false;
+    const me = members.find((m) => m.user_id === userId);
+    return me?.role === "owner" || me?.role === "admin";
+  }, [members, userId]);
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const { data: squads = [] } = useQuery(squadListOptions(wsId));
+  const { data: scopeBindings } = useQuery({
+    queryKey: ["project-execution-scope-bindings", wsId, projectId],
+    queryFn: () => api.getProjectExecutionScopeBindings(projectId),
+    enabled: !!projectId && isWorkspaceAdmin,
+  });
+  const [scopeAgentIds, setScopeAgentIds] = useState<string[]>([]);
+  const [scopeSquadIds, setScopeSquadIds] = useState<string[]>([]);
+  const [scopeSaving, setScopeSaving] = useState(false);
+  useEffect(() => {
+    setScopeAgentIds(scopeBindings?.agent_ids ?? []);
+    setScopeSquadIds(scopeBindings?.squad_ids ?? []);
+  }, [scopeBindings]);
+  const updateScopeBindings = useCallback(async (agentIds: string[], squadIds: string[]) => {
+    const previous = { agentIds: scopeAgentIds, squadIds: scopeSquadIds };
+    setScopeAgentIds(agentIds);
+    setScopeSquadIds(squadIds);
+    setScopeSaving(true);
+    try {
+      await api.updateProjectExecutionScopeBindings(projectId, { agent_ids: agentIds, squad_ids: squadIds });
+    } catch (error) {
+      setScopeAgentIds(previous.agentIds);
+      setScopeSquadIds(previous.squadIds);
+      toast.error(error instanceof Error ? error.message : "Failed to update execution scope");
+    } finally {
+      setScopeSaving(false);
+    }
+  }, [projectId, scopeAgentIds, scopeSquadIds]);
   const { getActorName } = useActorName();
   const updateProject = useUpdateProject();
   const deleteProject = useDeleteProject();
@@ -156,11 +190,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     enabled: !!userId,
   });
   const isPinned = pinnedItems.some((p) => p.item_type === "project" && p.item_id === projectId);
-  const isWorkspaceAdmin = useMemo(() => {
-    if (!userId) return false;
-    const me = members.find((m) => m.user_id === userId);
-    return me?.role === "owner" || me?.role === "admin";
-  }, [members, userId]);
   const createPin = useCreatePin();
   const deletePinMut = useDeletePin();
   const descEditorRef = useRef<ContentEditorRef>(null);
@@ -447,6 +476,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             <ProjectDueDatePicker dueDate={project.due_date} onUpdate={handleUpdateField} />
           </PropRow>
           {producedArtifacts.length > 0 && <section className="mt-4 rounded-md border p-3"><h3 className="text-caption font-medium">{t(($) => $.detail.artifact_section)}</h3><div className="mt-2 space-y-2">{producedArtifacts.map(({ event, artifact, attachmentIDs }) => <div key={event.id} className="rounded-md bg-muted/30 p-2 text-[11px]"><div className="font-medium">{t(($) => $.detail.artifact_task, { id: event.task_id.slice(0, 8), event: event.event_type })}</div>{typeof artifact.branch_name === "string" && <div className="text-muted-foreground">{t(($) => $.detail.artifact_branch, { value: artifact.branch_name })}</div>}{typeof artifact.durable_work_dir === "string" && <div className="text-muted-foreground">{t(($) => $.detail.artifact_workdir, { value: artifact.durable_work_dir })}</div>}{typeof artifact.derived_from_task_id === "string" && <div className="text-muted-foreground">{t(($) => $.detail.artifact_derived_from, { value: artifact.derived_from_task_id })}</div>}{attachmentIDs.length > 0 && <div className="text-muted-foreground">{t(($) => $.detail.artifact_attachments, { value: attachmentIDs.join(", ") })}</div>}</div>)}</div></section>}
+          {isWorkspaceAdmin && <section className="mt-4 rounded-md border p-3"><h3 className="text-caption font-medium">Execution scope</h3><p className="mt-1 text-[11px] text-muted-foreground">Limit which agents and squads may run this project.</p><div className="mt-2 space-y-1">{agents.map((agent) => <label key={agent.id} className="flex items-center gap-2 text-caption"><input type="checkbox" disabled={scopeSaving} checked={scopeAgentIds.includes(agent.id)} onChange={(event) => { const next = event.target.checked ? [...scopeAgentIds, agent.id] : scopeAgentIds.filter((id) => id !== agent.id); void updateScopeBindings(next, scopeSquadIds); }} />{agent.name}</label>)}{squads.map((squad) => <label key={squad.id} className="flex items-center gap-2 text-caption"><input type="checkbox" disabled={scopeSaving} checked={scopeSquadIds.includes(squad.id)} onChange={(event) => { const next = event.target.checked ? [...scopeSquadIds, squad.id] : scopeSquadIds.filter((id) => id !== squad.id); void updateScopeBindings(scopeAgentIds, next); }} />{squad.name}</label>)}</div>{scopeSaving && <p className="mt-2 text-[11px] text-muted-foreground">Saving…</p>}</section>}
           </div>}
       </div>
 

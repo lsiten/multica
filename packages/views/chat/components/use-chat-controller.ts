@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useInfiniteQuery,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -10,7 +11,7 @@ import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
 import { getCurrentWsId } from "@multica/core/platform";
-import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
+import { agentListOptions, memberListOptions, squadListOptions } from "@multica/core/workspace/queries";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { canAssignAgent } from "../../issues/components/pickers/assignee-picker";
 import { api, dispatchReasonCode } from "@multica/core/api";
@@ -211,9 +212,11 @@ export function useChatController(opts?: { isActive?: boolean }) {
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const selectedAgentId = useChatStore((s) => s.selectedAgentId);
   const selectedProjectId = useChatStore((s) => s.selectedProjectId);
+  const selectedSquadId = useChatStore((s) => s.selectedSquadId);
   const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setSelectedAgentId = useChatStore((s) => s.setSelectedAgentId);
   const setSelectedProjectId = useChatStore((s) => s.setSelectedProjectId);
+  const setSelectedSquadId = useChatStore((s) => s.setSelectedSquadId);
   const user = useAuthStore((s) => s.user);
   const { data: agents = [], isSuccess: agentsLoaded } = useQuery(
     agentListOptions(wsId),
@@ -227,6 +230,17 @@ export function useChatController(opts?: { isActive?: boolean }) {
   const { data: projects = [], isSuccess: projectsLoaded } = useQuery(
     projectListOptions(wsId),
   );
+  const { data: squads = [], isSuccess: squadsLoaded } = useQuery(
+    squadListOptions(wsId),
+  );
+  const projectScopeQueries = useQueries({
+    queries: projects.map((project) => ({
+      queryKey: ["project-execution-scope-bindings", wsId, project.id],
+      queryFn: () => api.getProjectExecutionScopeBindings(project.id),
+      enabled: !!wsId,
+      staleTime: 30_000,
+    })),
+  });
   const {
     data: rawMessagePages,
     isLoading: messagesLoading,
@@ -311,6 +325,9 @@ export function useChatController(opts?: { isActive?: boolean }) {
     (!projectsLoaded || projects.some((project) => project.id === candidateProjectId))
     ? candidateProjectId
     : null;
+  const activeSquadId = currentSession
+    ? currentSession.squad_id ?? null
+    : selectedSquadId;
 
   // A project may be deleted on another client while this workspace's next
   // chat preference is still persisted locally. Normalize it as soon as the
@@ -322,7 +339,13 @@ export function useChatController(opts?: { isActive?: boolean }) {
     if (!projectsLoaded || !selectedProjectId) return;
     if (projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId(null);
+    setSelectedSquadId(null);
   }, [wsId, projectsLoaded, projects, selectedProjectId, setSelectedProjectId]);
+  useEffect(() => {
+    if (!squadsLoaded || !selectedSquadId) return;
+    if (squads.some((squad) => squad.id === selectedSquadId)) return;
+    setSelectedSquadId(null);
+  }, [squadsLoaded, squads, selectedSquadId, setSelectedSquadId]);
 
   const qc = useQueryClient();
   const createSession = useCreateChatSession();
@@ -363,6 +386,13 @@ export function useChatController(opts?: { isActive?: boolean }) {
     availableAgents.find((a) => a.id === selectedAgentId) ??
     availableAgents[0] ??
     null;
+  const availableProjects = projects.filter((_project, index) => {
+    const bindings = projectScopeQueries[index]?.data;
+    if (!bindings) return true;
+    const agentAllowed = bindings.agent_ids.length === 0 || !activeAgent || bindings.agent_ids.includes(activeAgent.id);
+    const squadAllowed = bindings.squad_ids.length === 0 || !activeSquadId || bindings.squad_ids.includes(activeSquadId);
+    return agentAllowed && squadAllowed;
+  });
   const isAgentRuntimeBound = !!activeAgent && hasAgentRuntime(activeAgent);
 
   // A session outlives the permission that created it. The agent can be flipped
@@ -451,6 +481,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
             agent_id: activeAgent.id,
             title: deriveChatTitle(titleSeed),
             project_id: activeProjectId,
+            squad_id: activeSquadId,
           });
           return session.id;
         } finally {
@@ -464,6 +495,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       activeSessionId,
       activeAgent,
       activeProjectId,
+      activeSquadId,
       createSession,
       sessions,
       sessionsLoaded,
@@ -717,6 +749,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     activeSessionId,
     pendingTaskId,
     setSelectedProjectId,
+    setSelectedSquadId,
     setActiveSession,
     requestInputFocus,
   ]);
@@ -733,6 +766,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       });
       setSelectedAgentId(agent.id);
       setSelectedProjectId(null);
+      setSelectedSquadId(null);
       setActiveSession(null);
       requestInputFocus();
     },
@@ -740,6 +774,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       activeSessionId,
       setSelectedAgentId,
       setSelectedProjectId,
+      setSelectedSquadId,
       setActiveSession,
       requestInputFocus,
     ],
@@ -798,10 +833,18 @@ export function useChatController(opts?: { isActive?: boolean }) {
       setSessionProject,
       setSelectedAgentId,
       setSelectedProjectId,
+      setSelectedSquadId,
       setActiveSession,
       requestInputFocus,
     ],
   );
+
+  const handleSquadChange = useCallback((squadId: string | null) => {
+    if (squadId === activeSquadId) return;
+    setSelectedSquadId(squadId);
+    if (activeSessionId) setActiveSession(null);
+    requestInputFocus();
+  }, [activeSquadId, activeSessionId, requestInputFocus, setActiveSession, setSelectedSquadId]);
 
   // Archiving the chat currently in view would otherwise strand the
   // conversation pane on a now read-only, "dangling" session. Mirror the Inbox
@@ -840,10 +883,12 @@ export function useChatController(opts?: { isActive?: boolean }) {
     availableAgents,
     agentsSettled,
     sessions,
-    projects,
+    projects: availableProjects,
     activeSessionId,
     selectedAgentId,
     activeProjectId,
+    activeSquadId,
+    squads,
     projectContextUnsupported: projectContextSupport === false,
     isProjectUpdating:
       setSessionProject.isPending || (!!activeSessionId && !currentSession),
@@ -886,6 +931,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     handleStartNewChat,
     handleSelectSession,
     handleProjectChange,
+    handleSquadChange,
     advanceSelectionAfterArchive,
     archiveSession,
     // store setters (for surfaces that sync selection to the URL, etc.)

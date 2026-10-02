@@ -91,6 +91,8 @@ export interface ChatSession {
   /** Durable project context for every turn in this session. Null when the
    *  conversation uses workspace context only; optional for older servers. */
   project_id?: string | null;
+  /** Optional squad context for collaboration-aware sessions. */
+  squad_id?: string | null;
   title: string;
   status: "active" | "archived";
   /** True when the session has any unread assistant replies. List-only.

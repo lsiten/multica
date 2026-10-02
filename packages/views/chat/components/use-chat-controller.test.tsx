@@ -24,6 +24,10 @@ const h = vi.hoisted(() => {
     setSelectedProjectId: vi.fn((id: string | null) => {
       store.selectedProjectId = id;
     }),
+    selectedSquadId: null as string | null,
+    setSelectedSquadId: vi.fn((id: string | null) => {
+      store.selectedSquadId = id;
+    }),
     appliedDraftRestoreIds: [] as string[],
     markDraftRestoreApplied: vi.fn((id: string) => {
       if (!store.appliedDraftRestoreIds.includes(id)) {
@@ -94,6 +98,7 @@ vi.mock("@multica/core/auth", () => ({
 vi.mock("@multica/core/workspace/queries", () => ({
   agentListOptions: () => ({ queryKey: ["agents"] }),
   memberListOptions: () => ({ queryKey: ["members"] }),
+  squadListOptions: () => ({ queryKey: ["squads"] }),
 }));
 vi.mock("@multica/core/projects/queries", () => ({
   projectListOptions: () => ({ queryKey: ["projects"] }),
@@ -180,6 +185,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
       if (key.includes("draft-restores")) return { data: h.draftRestores };
       return { data: null };
     },
+    useQueries: ({ queries }: { queries: unknown[] }) => queries.map(() => ({ data: undefined })),
     useInfiniteQuery: () => ({
       data: undefined,
       isLoading: false,

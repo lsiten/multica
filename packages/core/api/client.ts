@@ -372,6 +372,7 @@ import {
   SquadListSchema,
   SquadMemberStatusListResponseSchema,
   ProjectCollaborationGraphResponseSchema,
+  ProjectExecutionScopeBindingsSchema,
   EMPTY_PROJECT_COLLABORATION_GRAPH_RESPONSE,
   ProjectCollaborationEvidenceResponseSchema,
   EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE,
@@ -4053,6 +4054,7 @@ export class ApiClient {
       agent_id: string;
       title?: string;
       project_id?: string | null;
+      squad_id?: string | null;
     },
     workspaceSlug?: string,
   ): Promise<ChatSession> {
@@ -4089,7 +4091,7 @@ export class ApiClient {
 
   async updateChatSession(
     id: string,
-    data: { title: string } | { project_id: string | null },
+    data: { title: string } | { project_id?: string | null; squad_id?: string | null },
   ): Promise<ChatSession> {
     return this.fetch(`/api/chat/sessions/${id}`, {
       method: "PATCH",
@@ -4477,6 +4479,22 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  async getProjectExecutionScopeBindings(id: string): Promise<import("../types/project").ProjectExecutionScopeBindings> {
+    const raw: unknown = await this.fetch(`/api/projects/${id}/execution-scope-bindings`);
+    return ProjectExecutionScopeBindingsSchema.parse(raw);
+  }
+
+  async updateProjectExecutionScopeBindings(
+    id: string,
+    data: import("../types/project").ProjectExecutionScopeBindings,
+  ): Promise<import("../types/project").ProjectExecutionScopeBindings> {
+    const raw: unknown = await this.fetch(`/api/projects/${id}/execution-scope-bindings`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return ProjectExecutionScopeBindingsSchema.parse(raw);
   }
 
   async deleteProject(id: string): Promise<void> {

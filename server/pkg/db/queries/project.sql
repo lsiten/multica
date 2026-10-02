@@ -50,6 +50,36 @@ RETURNING *;
 -- Defense-in-depth: workspace_id is a SQL-layer tenant guard. See DeleteIssue.
 DELETE FROM project WHERE id = $1 AND workspace_id = $2;
 
+-- name: ListProjectAgentBindings :many
+SELECT agent_id, project_id
+FROM agent_project_binding
+WHERE project_id = $1 AND active
+ORDER BY agent_id;
+
+-- name: ListProjectSquadBindings :many
+SELECT squad_id, project_id
+FROM squad_project_binding
+WHERE project_id = $1 AND active
+ORDER BY squad_id;
+
+-- name: DeleteProjectAgentBindings :exec
+DELETE FROM agent_project_binding WHERE project_id = $1;
+
+-- name: DeleteProjectSquadBindings :exec
+DELETE FROM squad_project_binding WHERE project_id = $1;
+
+-- name: UpsertAgentProjectBinding :exec
+INSERT INTO agent_project_binding (agent_id, project_id, active, created_by, updated_at)
+VALUES ($1, $2, TRUE, $3, now())
+ON CONFLICT (agent_id, project_id) DO UPDATE
+SET active = TRUE, updated_at = now();
+
+-- name: UpsertSquadProjectBinding :exec
+INSERT INTO squad_project_binding (squad_id, project_id, active, created_by, updated_at)
+VALUES ($1, $2, TRUE, $3, now())
+ON CONFLICT (squad_id, project_id) DO UPDATE
+SET active = TRUE, updated_at = now();
+
 -- name: CountIssuesByProject :one
 SELECT count(*) FROM issue
 WHERE project_id = $1;

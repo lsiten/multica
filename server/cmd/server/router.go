@@ -2169,6 +2169,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/graph/events", h.ListProjectGraphEvents)
 					r.Put("/", h.UpdateProject)
 					r.Delete("/", h.DeleteProject)
+					r.Get("/execution-scope-bindings", h.GetProjectExecutionScopeBindings)
+					r.Put("/execution-scope-bindings", h.UpdateProjectExecutionScopeBindings)
 					r.Get("/resources", h.ListProjectResources)
 					r.Post("/resources", h.CreateProjectResource)
 					r.Put("/resources/{resourceId}", h.UpdateProjectResource)

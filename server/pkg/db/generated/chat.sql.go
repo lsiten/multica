@@ -96,6 +96,48 @@ func (q *Queries) AdvanceCancelledChatSessionPointer(ctx context.Context, taskID
 	return err
 }
 
+const agentMayUseProject = `-- name: AgentMayUseProject :one
+WITH agent_scope AS (
+    SELECT
+        EXISTS (SELECT 1 FROM project AS lead_project WHERE lead_project.lead_type = 'agent' AND lead_project.lead_id = $1) AS has_lead_project,
+        EXISTS (SELECT 1 FROM agent_project_binding WHERE agent_id = $1 AND active) AS has_agent_binding,
+        EXISTS (
+            SELECT 1
+            FROM squad_member AS member
+            JOIN squad_project_binding AS binding ON binding.squad_id = member.squad_id
+            WHERE member.member_type = 'agent' AND member.member_id = $1 AND binding.active
+        ) AS has_squad_binding
+)
+SELECT (
+    NOT (has_lead_project OR has_agent_binding OR has_squad_binding)
+    OR EXISTS (SELECT 1 FROM project AS lead_project WHERE lead_project.id = $2 AND lead_project.lead_type = 'agent' AND lead_project.lead_id = $1)
+    OR EXISTS (SELECT 1 FROM agent_project_binding WHERE agent_id = $1 AND project_id = $2 AND active)
+    OR EXISTS (
+        SELECT 1
+        FROM squad_member AS member
+        JOIN squad_project_binding AS binding ON binding.squad_id = member.squad_id
+        WHERE member.member_type = 'agent' AND member.member_id = $1
+          AND binding.project_id = $2 AND binding.active
+    )
+) AS allowed
+FROM agent_scope
+`
+
+type AgentMayUseProjectParams struct {
+	LeadID pgtype.UUID `json:"lead_id"`
+	ID     pgtype.UUID `json:"id"`
+}
+
+// Project lead, explicit agent bindings, and squad project bindings are
+// narrower scopes. Only an agent with none of those relationships remains
+// workspace-wide.
+func (q *Queries) AgentMayUseProject(ctx context.Context, arg AgentMayUseProjectParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, agentMayUseProject, arg.LeadID, arg.ID)
+	var allowed pgtype.Bool
+	err := row.Scan(&allowed)
+	return allowed, err
+}
+
 const chatSessionHasPublicUserMessage = `-- name: ChatSessionHasPublicUserMessage :one
 SELECT EXISTS (
     SELECT 1 FROM chat_message
@@ -322,9 +364,9 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 }
 
 const createChatSession = `-- name: CreateChatSession :one
-INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, id)
-VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, $6, COALESCE($7::uuid, gen_random_uuid()))
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, squad_id, id)
+VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, $6, $7, COALESCE($8::uuid, gen_random_uuid()))
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type CreateChatSessionParams struct {
@@ -334,6 +376,7 @@ type CreateChatSessionParams struct {
 	Title        string      `json:"title"`
 	IsAgentIntro bool        `json:"is_agent_intro"`
 	ProjectID    pgtype.UUID `json:"project_id"`
+	SquadID      pgtype.UUID `json:"squad_id"`
 	ID           pgtype.UUID `json:"id"`
 }
 
@@ -345,6 +388,7 @@ func (q *Queries) CreateChatSession(ctx context.Context, arg CreateChatSessionPa
 		arg.Title,
 		arg.IsAgentIntro,
 		arg.ProjectID,
+		arg.SquadID,
 		arg.ID,
 	)
 	var i ChatSession
@@ -366,13 +410,14 @@ func (q *Queries) CreateChatSession(ctx context.Context, arg CreateChatSessionPa
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
 
 const createChatTask = `-- name: CreateChatTask :one
 INSERT INTO agent_task_queue (
-    agent_id, runtime_id, issue_id, status, priority, chat_session_id,
+    agent_id, runtime_id, issue_id, status, priority, chat_session_id, squad_id,
     initiator_user_id, originator_user_id, accountable_user_id, force_fresh_session, context, runtime_mcp_overlay,
     runtime_connected_apps, originator_source, trigger_evidence_kind, trigger_evidence_ref_id,
     fire_at, channel_context_revision, id
@@ -380,12 +425,17 @@ INSERT INTO agent_task_queue (
 SELECT
     $1, $2, NULL,
     CASE WHEN $6::timestamptz IS NULL THEN 'queued' ELSE 'deferred' END,
-    $3, $4, $5,
+    $3, $4,
+    (SELECT squad_id FROM chat_session WHERE id = $4),
+    $5,
     $7,
     $8,
     COALESCE($9::boolean, FALSE),
     COALESCE($10::jsonb, '{}'::jsonb)
-      || jsonb_build_object('project_id', (SELECT project_id::text FROM chat_session WHERE id = $4)),
+      || jsonb_build_object(
+          'project_id', (SELECT project_id::text FROM chat_session WHERE id = $4),
+          'squad_id', (SELECT squad_id::text FROM chat_session WHERE id = $4)
+      ),
     $11,
     $12,
     $13,
@@ -882,7 +932,7 @@ func (q *Queries) GetChatMessageByTaskAssistant(ctx context.Context, taskID pgty
 }
 
 const getChatSession = `-- name: GetChatSession :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id FROM chat_session
 WHERE id = $1
 `
 
@@ -907,12 +957,13 @@ func (q *Queries) GetChatSession(ctx context.Context, id pgtype.UUID) (ChatSessi
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
 
 const getChatSessionInWorkspace = `-- name: GetChatSessionInWorkspace :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id FROM chat_session
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -942,6 +993,7 @@ func (q *Queries) GetChatSessionInWorkspace(ctx context.Context, arg GetChatSess
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -1126,7 +1178,7 @@ func (q *Queries) GetLatestAssistantChatMessageForSession(ctx context.Context, c
 }
 
 const getOldestActiveChatSessionForCreatorAgent = `-- name: GetOldestActiveChatSessionForCreatorAgent :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id FROM chat_session
 WHERE workspace_id = $1
   AND creator_id = $2
   AND agent_id = $3
@@ -1167,6 +1219,7 @@ func (q *Queries) GetOldestActiveChatSessionForCreatorAgent(ctx context.Context,
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -1201,7 +1254,7 @@ func (q *Queries) GetPendingChatTask(ctx context.Context, chatSessionID pgtype.U
 }
 
 const getPublicChatSessionInWorkspace = `-- name: GetPublicChatSessionInWorkspace :one
-SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.last_read_at, cs.is_agent_intro, cs.pinned_at, cs.project_id, cs.explicitly_created_at FROM chat_session AS cs
+SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.last_read_at, cs.is_agent_intro, cs.pinned_at, cs.project_id, cs.explicitly_created_at, cs.squad_id FROM chat_session AS cs
 WHERE cs.id = $1
   AND cs.workspace_id = $2
   AND (
@@ -1246,6 +1299,37 @@ func (q *Queries) GetPublicChatSessionInWorkspace(ctx context.Context, arg GetPu
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
+	)
+	return i, err
+}
+
+const getSquadInWorkspaceForChat = `-- name: GetSquadInWorkspaceForChat :one
+SELECT id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions FROM squad
+WHERE id = $1 AND workspace_id = $2
+`
+
+type GetSquadInWorkspaceForChatParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetSquadInWorkspaceForChat(ctx context.Context, arg GetSquadInWorkspaceForChatParams) (Squad, error) {
+	row := q.db.QueryRow(ctx, getSquadInWorkspaceForChat, arg.ID, arg.WorkspaceID)
+	var i Squad
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Description,
+		&i.LeaderID,
+		&i.CreatorID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+		&i.ArchivedBy,
+		&i.AvatarUrl,
+		&i.Instructions,
 	)
 	return i, err
 }
@@ -1438,7 +1522,7 @@ WHERE session.id = $2
       AND other_message.message_kind != 'channel_command'
       AND other_message.id != $3
   )
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type InitializeChatSessionMediaTitleParams struct {
@@ -1468,6 +1552,7 @@ func (q *Queries) InitializeChatSessionMediaTitle(ctx context.Context, arg Initi
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -1483,7 +1568,7 @@ WHERE session.id = $2
       AND message.role = 'user'
       AND message.message_kind != 'channel_command'
   )
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type InitializeChatSessionTitleParams struct {
@@ -1512,6 +1597,7 @@ func (q *Queries) InitializeChatSessionTitle(ctx context.Context, arg Initialize
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -1705,7 +1791,7 @@ func (q *Queries) ListAgentBuilderSessionsByCreator(ctx context.Context, arg Lis
 }
 
 const listAllChatSessionsByCreator = `-- name: ListAllChatSessionsByCreator :many
-SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.last_read_at, cs.is_agent_intro, cs.pinned_at, cs.project_id, cs.explicitly_created_at,
+SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.last_read_at, cs.is_agent_intro, cs.pinned_at, cs.project_id, cs.explicitly_created_at, cs.squad_id,
        CASE WHEN cs.status = 'archived' THEN 0
             ELSE (SELECT count(*) FROM chat_message m
                     WHERE m.chat_session_id = cs.id
@@ -1758,6 +1844,7 @@ type ListAllChatSessionsByCreatorRow struct {
 	PinnedAt                 pgtype.Timestamptz `json:"pinned_at"`
 	ProjectID                pgtype.UUID        `json:"project_id"`
 	ExplicitlyCreatedAt      pgtype.Timestamptz `json:"explicitly_created_at"`
+	SquadID                  pgtype.UUID        `json:"squad_id"`
 	UnreadCount              int32              `json:"unread_count"`
 	LastMessageContent       string             `json:"last_message_content"`
 	LastMessageRole          string             `json:"last_message_role"`
@@ -1800,6 +1887,7 @@ func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllC
 			&i.PinnedAt,
 			&i.ProjectID,
 			&i.ExplicitlyCreatedAt,
+			&i.SquadID,
 			&i.UnreadCount,
 			&i.LastMessageContent,
 			&i.LastMessageRole,
@@ -2292,7 +2380,7 @@ func (q *Queries) ListChatMessagesPageForChannelContext(ctx context.Context, arg
 }
 
 const listChatSessionsByCreator = `-- name: ListChatSessionsByCreator :many
-SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.last_read_at, cs.is_agent_intro, cs.pinned_at, cs.project_id, cs.explicitly_created_at,
+SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_id, cs.work_dir, cs.status, cs.created_at, cs.updated_at, cs.unread_since, cs.runtime_id, cs.last_read_at, cs.is_agent_intro, cs.pinned_at, cs.project_id, cs.explicitly_created_at, cs.squad_id,
        (SELECT count(*) FROM chat_message m
           WHERE m.chat_session_id = cs.id
             AND m.role = 'assistant'
@@ -2343,6 +2431,7 @@ type ListChatSessionsByCreatorRow struct {
 	PinnedAt                 pgtype.Timestamptz `json:"pinned_at"`
 	ProjectID                pgtype.UUID        `json:"project_id"`
 	ExplicitlyCreatedAt      pgtype.Timestamptz `json:"explicitly_created_at"`
+	SquadID                  pgtype.UUID        `json:"squad_id"`
 	UnreadCount              int32              `json:"unread_count"`
 	LastMessageContent       string             `json:"last_message_content"`
 	LastMessageRole          string             `json:"last_message_role"`
@@ -2381,6 +2470,7 @@ func (q *Queries) ListChatSessionsByCreator(ctx context.Context, arg ListChatSes
 			&i.PinnedAt,
 			&i.ProjectID,
 			&i.ExplicitlyCreatedAt,
+			&i.SquadID,
 			&i.UnreadCount,
 			&i.LastMessageContent,
 			&i.LastMessageRole,
@@ -2656,7 +2746,7 @@ func (q *Queries) LockChatSessionForDelete(ctx context.Context, id pgtype.UUID) 
 }
 
 const lockChatSessionForDraftWrite = `-- name: LockChatSessionForDraftWrite :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id FROM chat_session
 WHERE id = $1
 FOR UPDATE
 `
@@ -2702,12 +2792,13 @@ func (q *Queries) LockChatSessionForDraftWrite(ctx context.Context, id pgtype.UU
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
 
 const lockChatSessionForEnqueue = `-- name: LockChatSessionForEnqueue :one
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id FROM chat_session
 WHERE id = $1
 FOR NO KEY UPDATE
 `
@@ -2769,6 +2860,7 @@ func (q *Queries) LockChatSessionForEnqueue(ctx context.Context, id pgtype.UUID)
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -2905,7 +2997,7 @@ const markChatSessionExplicitlyCreated = `-- name: MarkChatSessionExplicitlyCrea
 UPDATE chat_session
 SET explicitly_created_at = COALESCE(explicitly_created_at, now())
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 func (q *Queries) MarkChatSessionExplicitlyCreated(ctx context.Context, id pgtype.UUID) (ChatSession, error) {
@@ -2929,6 +3021,7 @@ func (q *Queries) MarkChatSessionExplicitlyCreated(ctx context.Context, id pgtyp
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -3327,7 +3420,7 @@ WHERE session.id = $2
       AND message.role = 'user'
       AND message.message_kind != 'channel_command'
   )
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type ReplaceImplicitChatSessionTitleParams struct {
@@ -3360,6 +3453,7 @@ func (q *Queries) ReplaceImplicitChatSessionTitle(ctx context.Context, arg Repla
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -3448,7 +3542,7 @@ UPDATE chat_session
 SET status = CASE WHEN $2::bool THEN 'archived' ELSE 'active' END,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type SetChatSessionArchivedParams struct {
@@ -3481,6 +3575,7 @@ func (q *Queries) SetChatSessionArchived(ctx context.Context, arg SetChatSession
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -3489,7 +3584,7 @@ const setChatSessionPinned = `-- name: SetChatSessionPinned :one
 UPDATE chat_session
 SET pinned_at = CASE WHEN $2::bool THEN COALESCE(pinned_at, now()) ELSE NULL END
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type SetChatSessionPinnedParams struct {
@@ -3523,6 +3618,7 @@ func (q *Queries) SetChatSessionPinned(ctx context.Context, arg SetChatSessionPi
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -3606,6 +3702,35 @@ func (q *Queries) SetChatTaskInputOwnerSelf(ctx context.Context, id pgtype.UUID)
 		&i.IssueSnapshot,
 	)
 	return i, err
+}
+
+const squadMayUseProject = `-- name: SquadMayUseProject :one
+WITH squad_scope AS (
+    SELECT
+        squad.leader_id,
+        EXISTS (SELECT 1 FROM squad_project_binding AS binding WHERE binding.squad_id = $1 AND binding.active) AS has_squad_binding,
+        EXISTS (SELECT 1 FROM project WHERE lead_type = 'agent' AND lead_id = squad.leader_id) AS leader_has_lead_project
+    FROM squad
+    WHERE squad.id = $1
+)
+SELECT (
+    NOT (has_squad_binding OR leader_has_lead_project)
+    OR EXISTS (SELECT 1 FROM squad_project_binding AS binding WHERE binding.squad_id = $1 AND binding.project_id = $2 AND binding.active)
+    OR EXISTS (SELECT 1 FROM project WHERE id = $2 AND lead_type = 'agent' AND lead_id = squad_scope.leader_id)
+) AS allowed
+FROM squad_scope
+`
+
+type SquadMayUseProjectParams struct {
+	SquadID   pgtype.UUID `json:"squad_id"`
+	ProjectID pgtype.UUID `json:"project_id"`
+}
+
+func (q *Queries) SquadMayUseProject(ctx context.Context, arg SquadMayUseProjectParams) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, squadMayUseProject, arg.SquadID, arg.ProjectID)
+	var allowed pgtype.Bool
+	err := row.Scan(&allowed)
+	return allowed, err
 }
 
 const taskHasChannelIngestedMessages = `-- name: TaskHasChannelIngestedMessages :one
@@ -3712,6 +3837,65 @@ func (q *Queries) UpdateChatMessageContentForChannelMedia(ctx context.Context, a
 	return result.RowsAffected(), nil
 }
 
+const updateChatSessionContext = `-- name: UpdateChatSessionContext :one
+UPDATE chat_session
+SET project_id = $3,
+    squad_id = $4,
+    session_id = CASE
+        WHEN project_id IS DISTINCT FROM $3::uuid
+          OR squad_id IS DISTINCT FROM $4::uuid
+        THEN NULL ELSE session_id END,
+    work_dir = CASE
+        WHEN project_id IS DISTINCT FROM $3::uuid
+          OR squad_id IS DISTINCT FROM $4::uuid
+        THEN NULL ELSE work_dir END,
+    runtime_id = CASE
+        WHEN project_id IS DISTINCT FROM $3::uuid
+          OR squad_id IS DISTINCT FROM $4::uuid
+        THEN NULL ELSE runtime_id END,
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
+`
+
+type UpdateChatSessionContextParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	SquadID     pgtype.UUID `json:"squad_id"`
+}
+
+func (q *Queries) UpdateChatSessionContext(ctx context.Context, arg UpdateChatSessionContextParams) (ChatSession, error) {
+	row := q.db.QueryRow(ctx, updateChatSessionContext,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ProjectID,
+		arg.SquadID,
+	)
+	var i ChatSession
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.CreatorID,
+		&i.Title,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnreadSince,
+		&i.RuntimeID,
+		&i.LastReadAt,
+		&i.IsAgentIntro,
+		&i.PinnedAt,
+		&i.ProjectID,
+		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
+	)
+	return i, err
+}
+
 const updateChatSessionProject = `-- name: UpdateChatSessionProject :one
 UPDATE chat_session
 SET project_id = $1,
@@ -3719,7 +3903,7 @@ SET project_id = $1,
     work_dir = CASE WHEN project_id IS DISTINCT FROM $1::uuid THEN NULL ELSE work_dir END,
     runtime_id = CASE WHEN project_id IS DISTINCT FROM $1::uuid THEN NULL ELSE runtime_id END
 WHERE id = $2 AND workspace_id = $3
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type UpdateChatSessionProjectParams struct {
@@ -3751,6 +3935,7 @@ func (q *Queries) UpdateChatSessionProject(ctx context.Context, arg UpdateChatSe
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -3799,7 +3984,7 @@ func (q *Queries) UpdateChatSessionSession(ctx context.Context, arg UpdateChatSe
 const updateChatSessionTitle = `-- name: UpdateChatSessionTitle :one
 UPDATE chat_session SET title = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type UpdateChatSessionTitleParams struct {
@@ -3828,6 +4013,7 @@ func (q *Queries) UpdateChatSessionTitle(ctx context.Context, arg UpdateChatSess
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }
@@ -3835,7 +4021,7 @@ func (q *Queries) UpdateChatSessionTitle(ctx context.Context, arg UpdateChatSess
 const updateChatSessionTitleIfCurrent = `-- name: UpdateChatSessionTitleIfCurrent :one
 UPDATE chat_session SET title = $1, updated_at = now()
 WHERE id = $2 AND title = $3
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id
 `
 
 type UpdateChatSessionTitleIfCurrentParams struct {
@@ -3873,6 +4059,7 @@ func (q *Queries) UpdateChatSessionTitleIfCurrent(ctx context.Context, arg Updat
 		&i.PinnedAt,
 		&i.ProjectID,
 		&i.ExplicitlyCreatedAt,
+		&i.SquadID,
 	)
 	return i, err
 }

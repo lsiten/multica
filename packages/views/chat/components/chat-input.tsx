@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { cn } from "@multica/ui/lib/utils";
 import {
@@ -27,7 +27,7 @@ import { attachmentToDraftUpload, type DraftUpload } from "@multica/core/drafts"
 import { createLogger } from "@multica/core/logger";
 import { formatShortcut, useShortcut } from "@multica/core/shortcuts";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
-import type { Attachment, ChatAutonomyPolicyOverride, ChatMessage, Project } from "@multica/core/types";
+import type { Attachment, ChatAutonomyPolicyOverride, ChatMessage, Project, Squad } from "@multica/core/types";
 import { useChatInputHistory } from "./use-chat-input-history";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ClearablePillButton } from "../../common/pill-button";
@@ -140,6 +140,9 @@ interface ChatInputProps {
    *  the composer only surfaces a warning next to the chip and in the
    *  project submenu. */
   projectContextUnsupported?: boolean;
+  squads?: Squad[];
+  squadId?: string | null;
+  onSquadChange?: (squadId: string | null) => void;
   autonomyPolicy?: ChatAutonomyPolicyOverride | null;
   onAutonomyPolicyChange?: (policy: ChatAutonomyPolicyOverride | null) => void;
   /** Monotonic nonce bumped by the owner whenever the compose box should grab
@@ -182,6 +185,9 @@ export function ChatInput({
   onProjectChange,
   isProjectUpdating,
   projectContextUnsupported,
+  squads = [],
+  squadId,
+  onSquadChange,
   autonomyPolicy,
   onAutonomyPolicyChange,
   focusRequest,
@@ -670,6 +676,8 @@ export function ChatInput({
     !submitting &&
     !isProjectUpdating;
   const selectedProject = projects.find((project) => project.id === projectId);
+  const selectedSquad = squads.find((squad) => squad.id === squadId);
+  const squadSelectId = useId();
 
   return (
     <div
@@ -747,6 +755,21 @@ export function ChatInput({
                 {t(($) => $.input.project_context_unsupported)}
               </span>
             )}
+          </div>
+        )}
+        {onSquadChange && (
+          <div className="flex items-center gap-2 px-3 pt-2">
+            <label className="text-caption text-muted-foreground" htmlFor={squadSelectId}>Squad</label>
+            <select
+              id={squadSelectId}
+              value={selectedSquad?.id ?? ""}
+              onChange={(event) => onSquadChange(event.target.value || null)}
+              disabled={!projectSelectionEnabled}
+              className="h-6 min-w-24 rounded border border-surface-border bg-surface-raised px-1 text-caption"
+            >
+              <option value="">Workspace</option>
+              {squads.map((squad) => <option key={squad.id} value={squad.id}>{squad.name}</option>)}
+            </select>
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">

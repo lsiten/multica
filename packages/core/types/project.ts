@@ -23,6 +23,11 @@ export interface Project {
   resource_count: number;
 }
 
+export interface ProjectExecutionScopeBindings {
+  agent_ids: string[];
+  squad_ids: string[];
+}
+
 export interface CreateProjectRequest {
   title: string;
   description?: string;

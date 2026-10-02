@@ -89,3 +89,7 @@ the user, say so and propose a scoped change.
 Do not silently alter routing, briefing, or trigger behavior to make a complaint
 go away. Those are product contracts, and changing one without confirmation
 moves the surprise to somebody else.
+
+## Execution context
+
+Project lead, squad membership, and project/squad bindings determine whether an agent may run a task. Agents with no narrower relationship remain workspace-scoped. Do not bypass `agent_project_scope_conflict`, `squad_project_scope_conflict`, or `agent_squad_scope_conflict` by choosing another target; inspect the project, agent, and squad scope first.

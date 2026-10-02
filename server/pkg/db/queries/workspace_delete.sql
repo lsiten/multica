@@ -623,7 +623,11 @@ WITH deleted_github_installations AS (
 DELETE FROM vcs_connection WHERE vcs_connection.workspace_id = $1;
 
 -- name: DeleteWorkspaceSquadsAndSkills :exec
-WITH deleted_squads AS (
+WITH deleted_squad_project_bindings AS (
+    DELETE FROM squad_project_binding
+    WHERE squad_id IN (SELECT id FROM squad WHERE workspace_id = $1)
+),
+deleted_squads AS (
     DELETE FROM squad WHERE squad.workspace_id = $1
 )
 DELETE FROM skill WHERE skill.workspace_id = $1;
@@ -681,6 +685,10 @@ DELETE FROM plugin_installation WHERE id IN (SELECT id FROM installations);
 -- name: DeleteWorkspaceAgents :exec
 WITH deleted_identities AS (
     DELETE FROM agent_identity WHERE workspace_id = $1
+),
+deleted_agent_project_bindings AS (
+    DELETE FROM agent_project_binding
+    WHERE agent_id IN (SELECT id FROM agent WHERE workspace_id = $1)
 )
 DELETE FROM agent WHERE agent.workspace_id = $1;
 

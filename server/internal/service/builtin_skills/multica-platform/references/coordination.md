@@ -100,3 +100,7 @@ status". See `references/squads.md`, "Issue assignment behavior".
 | who a squad routes to, roster, activity | `references/squads.md` |
 | a `@squad` / `@agent` mention that enqueues | `references/mentions.md` |
 | a scheduled or triggered run | `references/autopilots.md` |
+
+## Execution scope
+
+Project leads are implicitly allowed to run their project. Agent members inherit active project bindings from their squads. An agent with no project-lead, agent-project, or squad-project relationship remains workspace-scoped. Empty binding lists therefore mean workspace scope, not no access. Scope conflicts are rejected at every enqueue path and must be investigated by reading the project, agent, and squad first; do not retry with an arbitrary target.

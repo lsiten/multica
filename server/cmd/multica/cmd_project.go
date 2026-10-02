@@ -58,6 +58,10 @@ var projectStatusCmd = &cobra.Command{
 	RunE:  runProjectStatus,
 }
 
+var projectExecutionScopeCmd = &cobra.Command{Use: "execution-scope", Short: "Manage project agent and squad execution scope"}
+var projectExecutionScopeGetCmd = &cobra.Command{Use: "get <project-id>", Short: "Read project execution scope", Args: exactArgs(1), RunE: runProjectExecutionScopeGet}
+var projectExecutionScopeSetCmd = &cobra.Command{Use: "set <project-id>", Short: "Replace project execution scope", Args: exactArgs(1), RunE: runProjectExecutionScopeSet}
+
 var projectResourceCmd = &cobra.Command{
 	Use:   "resource",
 	Short: "Manage resources attached to a project",
@@ -114,6 +118,8 @@ func init() {
 	projectCmd.AddCommand(projectUpdateCmd)
 	projectCmd.AddCommand(projectDeleteCmd)
 	projectCmd.AddCommand(projectStatusCmd)
+	projectCmd.AddCommand(projectExecutionScopeCmd)
+	projectExecutionScopeCmd.AddCommand(projectExecutionScopeGetCmd, projectExecutionScopeSetCmd)
 	projectCmd.AddCommand(projectResourceCmd)
 
 	projectResourceCmd.AddCommand(projectResourceListCmd)
@@ -191,6 +197,10 @@ func init() {
 
 	// project status
 	projectStatusCmd.Flags().String("output", "table", "Output format: table or json")
+	projectExecutionScopeGetCmd.Flags().String("output", "json", "Output format: json")
+	projectExecutionScopeSetCmd.Flags().StringArray("agent-id", nil, "Allowed agent UUID (repeatable)")
+	projectExecutionScopeSetCmd.Flags().StringArray("squad-id", nil, "Allowed squad UUID (repeatable)")
+	projectExecutionScopeSetCmd.Flags().String("output", "json", "Output format: json")
 }
 
 // ---------------------------------------------------------------------------
@@ -984,4 +994,43 @@ func formatLead(project map[string]any, actors actorDisplayLookup) string {
 		return ""
 	}
 	return actors.actor(lType, lID)
+}
+
+func runProjectExecutionScopeGet(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	ref, err := resolveProjectID(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve project: %w", err)
+	}
+	var result map[string]any
+	if err := client.GetJSON(ctx, "/api/projects/"+ref.ID+"/execution-scope-bindings", &result); err != nil {
+		return fmt.Errorf("get execution scope: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
+}
+
+func runProjectExecutionScopeSet(cmd *cobra.Command, args []string) error {
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+	ref, err := resolveProjectID(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve project: %w", err)
+	}
+	agents, _ := cmd.Flags().GetStringArray("agent-id")
+	squads, _ := cmd.Flags().GetStringArray("squad-id")
+	body := map[string]any{"agent_ids": agents, "squad_ids": squads}
+	var result map[string]any
+	if err := client.PutJSON(ctx, "/api/projects/"+ref.ID+"/execution-scope-bindings", body, &result); err != nil {
+		return fmt.Errorf("set execution scope: %w", err)
+	}
+	return cli.PrintJSON(os.Stdout, result)
 }

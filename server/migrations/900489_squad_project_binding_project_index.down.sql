@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS squad_project_binding_project_idx;

@@ -115,7 +115,7 @@ export function useCreateChatSession() {
   const wsId = useWorkspaceId();
 
   return useMutation({
-    mutationFn: (data: { agent_id: string; title?: string; project_id?: string | null }) => {
+    mutationFn: (data: { agent_id: string; title?: string; project_id?: string | null; squad_id?: string | null }) => {
       logger.info("createChatSession.start", {
         agent_id: data.agent_id,
         project_id: data.project_id,
@@ -243,6 +243,22 @@ export function useSetChatSessionProject() {
       });
       if (ctx?.prevSessions) qc.setQueryData(chatKeys.sessions(wsId), ctx.prevSessions);
     },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+    },
+  });
+}
+
+/** Update both execution-context dimensions atomically. */
+export function useSetChatSessionContext() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (data: { sessionId: string; projectId?: string | null; squadId?: string | null }) =>
+      api.updateChatSession(data.sessionId, {
+        ...(data.projectId !== undefined ? { project_id: data.projectId } : {}),
+        ...(data.squadId !== undefined ? { squad_id: data.squadId } : {}),
+      }),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
     },

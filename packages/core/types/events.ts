@@ -313,10 +313,10 @@ export interface TaskMessagePayload {
   /** Opaque tool-call identity, scoped to one backend execution. */
   call_id?: string;
   task_id: string;
+  chat_session_id?: string;
   issue_id: string;
   /** Workspace scope stamped on server fanout frames. */
   workspace_id?: string;
-  chat_session_id?: string;
   seq: number;
   type: "text" | "thinking" | "tool_use" | "tool_result" | "error";
   tool?: string;
@@ -570,6 +570,8 @@ export interface ChatSessionCreatedPayload {
   agent_id: string;
   creator_id: string;
   title: string;
+  project_id?: string | null;
+  squad_id?: string | null;
   channel_source: {
     channel_type: string;
     installation_id: string;

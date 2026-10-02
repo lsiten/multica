@@ -48,7 +48,11 @@ func TestVscreenInterventionPersistsAcrossServiceReconstruction(t *testing.T) {
 	f.sendReport(t, protocol.VscreenInterventionAwaitingTakeover, 200)
 	f.sendReport(t, protocol.VscreenInterventionHuman, 200)
 	f.sendReport(t, protocol.VscreenInterventionReadyToContinue, 200)
-	pool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+	}
+	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
 		t.Fatal(err)
 	}

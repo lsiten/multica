@@ -35,6 +35,29 @@ type CreateChatSessionRequest struct {
 	AgentID   string  `json:"agent_id"`
 	Title     string  `json:"title"`
 	ProjectID *string `json:"project_id"`
+	SquadID   *string `json:"squad_id"`
+}
+
+var (
+	errChatProjectNotFound = errors.New("project not found in workspace")
+	errChatSquadNotFound   = errors.New("squad not found in workspace")
+)
+
+func writeChatScopeError(w http.ResponseWriter, err error) {
+	status := http.StatusConflict
+	code := "chat_context_conflict"
+	switch err.Error() {
+	case "agent is not available for this project":
+		code = "agent_project_scope_conflict"
+	case "squad is not available for this project":
+		code = "squad_project_scope_conflict"
+	case "agent is not a member of this squad":
+		code = "agent_squad_scope_conflict"
+	}
+	if errors.Is(err, errChatProjectNotFound) || errors.Is(err, errChatSquadNotFound) {
+		status = http.StatusNotFound
+	}
+	writeErrorCode(w, status, code, err.Error())
 }
 
 func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +91,13 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	squadID := pgtype.UUID{Valid: false}
+	if req.SquadID != nil && strings.TrimSpace(*req.SquadID) != "" {
+		squadID, ok = parseUUIDOrBadRequest(w, strings.TrimSpace(*req.SquadID), "squad_id")
+		if !ok {
+			return
+		}
+	}
 
 	// Verify agent exists in workspace.
 	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
@@ -80,6 +110,10 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if agent.ArchivedAt.Valid {
 		writeError(w, http.StatusBadRequest, "agent is archived")
+		return
+	}
+	if err := h.validateChatExecutionScope(r.Context(), workspaceUUID, agent.ID, projectID, squadID); err != nil {
+		writeChatScopeError(w, err)
 		return
 	}
 	// Invocation gate: starting a chat produces agent runs, so it uses the
@@ -133,6 +167,7 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		CreatorID:   parseUUID(userID),
 		Title:       req.Title,
 		ProjectID:   projectID,
+		SquadID:     squadID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create chat session")
@@ -201,6 +236,7 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				AgentID:     uuidToString(s.AgentID),
 				CreatorID:   uuidToString(s.CreatorID),
 				ProjectID:   uuidToPtr(s.ProjectID),
+				SquadID:     uuidToPtr(s.SquadID),
 				Title:       s.Title,
 				Status:      s.Status,
 				HasUnread:   s.UnreadCount > 0,
@@ -231,6 +267,7 @@ func (h *Handler) ListChatSessions(w http.ResponseWriter, r *http.Request) {
 				AgentID:     uuidToString(s.AgentID),
 				CreatorID:   uuidToString(s.CreatorID),
 				ProjectID:   uuidToPtr(s.ProjectID),
+				SquadID:     uuidToPtr(s.SquadID),
 				Title:       s.Title,
 				Status:      s.Status,
 				HasUnread:   s.UnreadCount > 0,
@@ -345,6 +382,7 @@ func (h *Handler) GetChatSession(w http.ResponseWriter, r *http.Request) {
 type UpdateChatSessionRequest struct {
 	Title     *string         `json:"title"`
 	ProjectID json.RawMessage `json:"project_id"`
+	SquadID   json.RawMessage `json:"squad_id"`
 }
 
 // UpdateChatSession updates one user-editable field on a chat session. Title
@@ -367,8 +405,9 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 	hasTitle := req.Title != nil
 	hasProjectID := req.ProjectID != nil
-	if hasTitle == hasProjectID {
-		writeError(w, http.StatusBadRequest, "exactly one of title or project_id is required")
+	hasSquadID := req.SquadID != nil
+	if hasTitle == (hasProjectID || hasSquadID) {
+		writeError(w, http.StatusBadRequest, "exactly one of title or execution context is required")
 		return
 	}
 
@@ -381,7 +420,7 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 		updated db.ChatSession
 		err     error
 	)
-	var projectIDChanged bool
+	var contextChanged bool
 	if hasTitle {
 		title := strings.TrimSpace(*req.Title)
 		if title == "" {
@@ -397,22 +436,27 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 			Title: title,
 		})
 	} else {
-		projectID := pgtype.UUID{Valid: false}
-		if string(req.ProjectID) != "null" {
-			var rawProjectID string
-			if err := json.Unmarshal(req.ProjectID, &rawProjectID); err != nil {
-				writeError(w, http.StatusBadRequest, "project_id must be a UUID or null")
-				return
-			}
-			rawProjectID = strings.TrimSpace(rawProjectID)
-			if rawProjectID == "" {
-				writeError(w, http.StatusBadRequest, "project_id must be a UUID or null")
-				return
-			}
-			projectID, ok = parseUUIDOrBadRequest(w, rawProjectID, "project_id")
+		projectID := session.ProjectID
+		squadID := session.SquadID
+		if hasProjectID {
+			var parsed pgtype.UUID
+			parsed, ok = parseOptionalUUIDField(w, req.ProjectID, "project_id")
 			if !ok {
 				return
 			}
+			projectID = parsed
+		}
+		if hasSquadID {
+			var parsed pgtype.UUID
+			parsed, ok = parseOptionalUUIDField(w, req.SquadID, "squad_id")
+			if !ok {
+				return
+			}
+			squadID = parsed
+		}
+		if err := h.validateChatExecutionScope(r.Context(), session.WorkspaceID, session.AgentID, projectID, squadID); err != nil {
+			writeChatScopeError(w, err)
+			return
 		}
 
 		tx, txErr := h.TxStarter.Begin(r.Context())
@@ -437,15 +481,16 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		updated, err = qtx.UpdateChatSessionProject(r.Context(), db.UpdateChatSessionProjectParams{
+		updated, err = qtx.UpdateChatSessionContext(r.Context(), db.UpdateChatSessionContextParams{
 			ID:          session.ID,
 			WorkspaceID: session.WorkspaceID,
 			ProjectID:   projectID,
+			SquadID:     squadID,
 		})
 		if err == nil {
 			err = tx.Commit(r.Context())
 		}
-		projectIDChanged = true
+		contextChanged = hasProjectID || hasSquadID
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update chat session")
@@ -458,9 +503,11 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 		Title:         updated.Title,
 		UpdatedAt:     timestampToString(updated.UpdatedAt),
 	}
-	if projectIDChanged {
+	if contextChanged {
 		projectID := uuidToPtr(updated.ProjectID)
 		payload.ProjectID = &projectID
+		squadID := uuidToPtr(updated.SquadID)
+		payload.SquadID = &squadID
 	}
 	h.publishChat(protocol.EventChatSessionUpdated, workspaceID, "member", userID, resolvedSessionID, payload)
 
@@ -2025,6 +2072,7 @@ type ChatSessionResponse struct {
 	AgentID     string  `json:"agent_id"`
 	CreatorID   string  `json:"creator_id"`
 	ProjectID   *string `json:"project_id"`
+	SquadID     *string `json:"squad_id"`
 	Title       string  `json:"title"`
 	Status      string  `json:"status"`
 	// Only populated by list endpoints — single-session fetches return 0/false/nil.
@@ -2146,12 +2194,72 @@ func chatSessionToResponse(s db.ChatSession) ChatSessionResponse {
 		AgentID:     uuidToString(s.AgentID),
 		CreatorID:   uuidToString(s.CreatorID),
 		ProjectID:   uuidToPtr(s.ProjectID),
+		SquadID:     uuidToPtr(s.SquadID),
 		Title:       s.Title,
 		Status:      s.Status,
 		Pinned:      s.PinnedAt.Valid,
 		CreatedAt:   timestampToString(s.CreatedAt),
 		UpdatedAt:   timestampToString(s.UpdatedAt),
 	}
+}
+
+// validateChatExecutionScope enforces the agent/project/squad combination at
+// every session boundary. Binding rows are optional: an agent or squad with no
+// active project bindings remains workspace-scoped for backwards compatibility;
+// once configured, the binding becomes an allow-list.
+func (h *Handler) validateChatExecutionScope(ctx context.Context, workspaceID, agentID, projectID, squadID pgtype.UUID) error {
+	if projectID.Valid {
+		project, err := h.Queries.GetProjectInWorkspace(ctx, db.GetProjectInWorkspaceParams{
+			ID: projectID, WorkspaceID: workspaceID,
+		})
+		if err != nil {
+			return errChatProjectNotFound
+		}
+		allowed, err := h.Queries.AgentMayUseProject(ctx, db.AgentMayUseProjectParams{LeadID: agentID, ID: project.ID})
+		if err != nil || !allowed.Valid || !allowed.Bool {
+			return errors.New("agent is not available for this project")
+		}
+	}
+	if !squadID.Valid {
+		return nil
+	}
+	squad, err := h.Queries.GetSquadInWorkspaceForChat(ctx, db.GetSquadInWorkspaceForChatParams{ID: squadID, WorkspaceID: workspaceID})
+	if err != nil {
+		return errChatSquadNotFound
+	}
+	members, err := h.Queries.ListSquadMembers(ctx, squad.ID)
+	if err != nil {
+		return errors.New("failed to load squad members")
+	}
+	inSquad := uuidToString(squad.LeaderID) == uuidToString(agentID)
+	for _, member := range members {
+		if member.MemberType == "agent" && uuidToString(member.MemberID) == uuidToString(agentID) {
+			inSquad = true
+			break
+		}
+	}
+	if !inSquad {
+		return errors.New("agent is not a member of this squad")
+	}
+	if projectID.Valid {
+		allowed, err := h.Queries.SquadMayUseProject(ctx, db.SquadMayUseProjectParams{SquadID: squad.ID, ProjectID: projectID})
+		if err != nil || !allowed.Valid || !allowed.Bool {
+			return errors.New("squad is not available for this project")
+		}
+	}
+	return nil
+}
+
+func parseOptionalUUIDField(w http.ResponseWriter, raw json.RawMessage, field string) (pgtype.UUID, bool) {
+	if string(raw) == "null" {
+		return pgtype.UUID{Valid: false}, true
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil || strings.TrimSpace(value) == "" {
+		writeError(w, http.StatusBadRequest, field+" must be a UUID or null")
+		return pgtype.UUID{}, false
+	}
+	return parseUUIDOrBadRequest(w, strings.TrimSpace(value), field)
 }
 
 func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse, inputTaskID *string) ChatMessageResponse {

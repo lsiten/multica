@@ -15,6 +15,7 @@ const logger = createLogger("chat.store");
 
 const AGENT_STORAGE_KEY = "multica:chat:selectedAgentId";
 const PROJECT_STORAGE_KEY = "multica:chat:selectedProjectId";
+const SQUAD_STORAGE_KEY = "multica:chat:selectedSquadId";
 const SESSION_STORAGE_KEY = "multica:chat:activeSessionId";
 /** Drafts are stored as one JSON blob per workspace: { [sessionId]: text }. */
 const DRAFTS_KEY = "multica:chat:drafts";
@@ -309,6 +310,7 @@ export interface ChatState {
   /** Project context for the next session. Existing sessions remain bound to
    *  their server-persisted project_id. */
   selectedProjectId: string | null;
+  selectedSquadId: string | null;
   /** Drafts per session: sessionId (or DRAFT_NEW_SESSION) → markdown text. */
   inputDrafts: Record<string, string>;
   /** Attachment rows referenced by each input draft. */
@@ -328,6 +330,7 @@ export interface ChatState {
   setActiveSession: (id: string | null) => void;
   setSelectedAgentId: (id: string) => void;
   setSelectedProjectId: (id: string | null) => void;
+  setSelectedSquadId: (id: string | null) => void;
   /** sessionId accepts a real session UUID or DRAFT_NEW_SESSION. */
   setInputDraft: (sessionId: string, draft: string) => void;
   /** Append a markdown fragment to a draft slot's text (upload write-back). */
@@ -394,6 +397,7 @@ export function createChatStore(options: ChatStoreOptions) {
     activeSessionId: storage.getItem(wsKey(SESSION_STORAGE_KEY)),
     selectedAgentId: initialAgentId,
     selectedProjectId: storage.getItem(wsKey(PROJECT_STORAGE_KEY)),
+    selectedSquadId: storage.getItem(wsKey(SQUAD_STORAGE_KEY)),
     inputDrafts: initialDraftSlots.inputDrafts,
     inputDraftAttachments: initialDraftSlots.inputDraftAttachments,
     appliedDraftRestoreIds: readAppliedRestores(storage, wsKey(APPLIED_RESTORES_KEY)),
@@ -439,6 +443,12 @@ export function createChatStore(options: ChatStoreOptions) {
       if (id) storage.setItem(wsKey(PROJECT_STORAGE_KEY), id);
       else storage.removeItem(wsKey(PROJECT_STORAGE_KEY));
       set({ selectedProjectId: id });
+    },
+    setSelectedSquadId: (id) => {
+      logger.info("setSelectedSquadId", { from: get().selectedSquadId, to: id });
+      if (id) storage.setItem(wsKey(SQUAD_STORAGE_KEY), id);
+      else storage.removeItem(wsKey(SQUAD_STORAGE_KEY));
+      set({ selectedSquadId: id });
     },
     // Append-only until the server confirms. There is deliberately no capacity
     // cap: every entry in here is an UNconfirmed consume, and evicting one
@@ -651,6 +661,7 @@ export function createChatStore(options: ChatStoreOptions) {
     const nextSession = storage.getItem(wsKey(SESSION_STORAGE_KEY));
     const nextAgent = storage.getItem(wsKey(AGENT_STORAGE_KEY));
     const nextProject = storage.getItem(wsKey(PROJECT_STORAGE_KEY));
+    const nextSquad = storage.getItem(wsKey(SQUAD_STORAGE_KEY));
     // Drafts are namespaced per workspace, so the workspace being switched TO
     // has its own legacy slots to fold — migrate against that workspace's own
     // persisted agent, not the one we are leaving.
@@ -674,6 +685,7 @@ export function createChatStore(options: ChatStoreOptions) {
       activeSessionId: nextSession,
       selectedAgentId: nextAgent,
       selectedProjectId: nextProject,
+      selectedSquadId: nextSquad,
       inputDrafts: nextDrafts,
       inputDraftAttachments: nextDraftAttachments,
       appliedDraftRestoreIds: readAppliedRestores(storage, wsKey(APPLIED_RESTORES_KEY)),
