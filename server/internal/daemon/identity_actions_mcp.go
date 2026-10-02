@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -32,11 +33,12 @@ type identityActionsMCPServer struct {
 }
 
 type identityActionsMCPSet struct {
-	server   *http.Server
-	listener net.Listener
-	once     sync.Once
-	cancel   context.CancelFunc
-	done     chan struct{}
+	server     *http.Server
+	listener   net.Listener
+	unregister func()
+	once       sync.Once
+	cancel     context.CancelFunc
+	done       chan struct{}
 }
 
 func (set *identityActionsMCPSet) Close() {
@@ -44,6 +46,9 @@ func (set *identityActionsMCPSet) Close() {
 		return
 	}
 	set.once.Do(func() {
+		if set.unregister != nil {
+			set.unregister()
+		}
 		if set.cancel != nil {
 			set.cancel()
 		}
@@ -61,51 +66,69 @@ func (set *identityActionsMCPSet) Close() {
 	})
 }
 
-// startTaskIdentityActionsMCP exposes only the explicitly granted identity
-// actions. The daemon-owned callback sends via host SMTP; tool arguments
-// never accept credentials or a configurable From address.
+// startTaskIdentityActionsMCP registers only explicitly granted identity
+// actions. The daemon-owned broker is persistent in production, while the
+// callback and task id remain scoped to the task context; tool arguments never
+// accept credentials or a configurable From address.
 func startTaskIdentityActionsMCP(lifetimeCtx context.Context, taskID string, allowEmail bool, sendEmail identityEmailInvoker, logger *slog.Logger) (json.RawMessage, *identityActionsMCPSet, error) {
 	return startTaskIdentityActionsMCPAt(lifetimeCtx, taskID, allowEmail, sendEmail, logger, "127.0.0.1", "")
 }
 
 func startTaskIdentityActionsMCPAt(lifetimeCtx context.Context, taskID string, allowEmail bool, sendEmail identityEmailInvoker, logger *slog.Logger, listenHost, advertisedHost string) (json.RawMessage, *identityActionsMCPSet, error) {
+	return startTaskIdentityActionsMCPAtWithBroker(lifetimeCtx, taskID, allowEmail, sendEmail, logger, listenHost, advertisedHost, nil)
+}
+
+func startTaskIdentityActionsMCPAtWithBroker(lifetimeCtx context.Context, taskID string, allowEmail bool, sendEmail identityEmailInvoker, logger *slog.Logger, listenHost, advertisedHost string, broker *builtinMCPBroker) (json.RawMessage, *identityActionsMCPSet, error) {
 	if !allowEmail || sendEmail == nil {
 		return nil, nil, nil
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(listenHost, "0"))
-	if err != nil {
-		return nil, nil, fmt.Errorf("listen for identity actions MCP server: %w", err)
-	}
 	token, err := randomBrokerToken()
 	if err != nil {
-		_ = listener.Close()
 		return nil, nil, fmt.Errorf("create identity actions MCP token: %w", err)
 	}
 	handler := &identityActionsMCPServer{taskID: taskID, path: "/" + token, sendEmail: sendEmail, logger: logger}
 	serviceCtx, cancelService := context.WithCancel(lifetimeCtx)
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, BaseContext: func(net.Listener) context.Context { return serviceCtx }}
-	set := &identityActionsMCPSet{server: server, listener: listener, cancel: cancelService, done: make(chan struct{})}
-	go func() {
-		if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) && logger != nil {
-			logger.Warn("identity actions MCP server stopped unexpectedly", "task_id", taskID, "error", serveErr)
+	var listener net.Listener
+	var server *http.Server
+	var unregister func()
+	var endpoint string
+	if broker != nil {
+		endpoint, unregister = broker.register(handler.path, handler)
+		if endpoint == "" {
+			cancelService()
+			return nil, nil, errors.New("built-in MCP broker is closed")
 		}
-	}()
-	go func() {
-		select {
-		case <-lifetimeCtx.Done():
-			set.Close()
-		case <-set.done:
+	} else {
+		listener, err = net.Listen("tcp", net.JoinHostPort(listenHost, "0"))
+		if err != nil {
+			cancelService()
+			return nil, nil, fmt.Errorf("listen for identity actions MCP server: %w", err)
 		}
-	}()
-	host := advertisedHost
-	if host == "" {
-		host, _, _ = net.SplitHostPort(listener.Addr().String())
+		server = &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, BaseContext: func(net.Listener) context.Context { return serviceCtx }}
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	set := &identityActionsMCPSet{server: server, listener: listener, unregister: unregister, cancel: cancelService, done: make(chan struct{})}
+	if broker == nil {
+		go func() {
+			if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) && logger != nil {
+				logger.Warn("identity actions MCP server stopped unexpectedly", "task_id", taskID, "error", serveErr)
+			}
+		}()
+	}
+	go func() {
+		<-lifetimeCtx.Done()
+		set.Close()
+	}()
+	if broker == nil {
+		host := advertisedHost
+		if host == "" {
+			host, _, _ = net.SplitHostPort(listener.Addr().String())
+		}
+		endpoint = "http://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)) + handler.path
+	}
 	config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{
 		identityActionsMCPName: map[string]any{
 			"type": "http",
-			"url":  "http://" + net.JoinHostPort(host, fmt.Sprintf("%d", port)) + handler.path,
+			"url":  endpoint,
 		},
 	}})
 	if err != nil {

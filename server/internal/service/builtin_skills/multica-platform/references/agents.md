@@ -321,6 +321,25 @@ because nothing is inherited in the first place.
 The stored entry is **write-only** — reads return the server's name and
 transport, never urls, commands, headers, or env, for any role.
 
+#### Built-in MCP broker
+
+`multica-llm2jev` and `multica-identity-actions` are daemon-provided MCP
+services. The daemon starts their loopback broker when the desktop runtime
+starts, so their transport is available before the first task. A task still
+gets an isolated route and context at claim time:
+
+- `multica-llm2jev` resolves the task's captured workspace Jev configuration
+  and provider credentials. Decision capability must be enabled for the task;
+  a broker being online does not grant a provider or a decision permission.
+- `multica-identity-actions` exposes identity tools only when the task has the
+  matching explicit capability. Its task id and daemon callback remain bound to
+  that task and are removed when the task ends.
+
+The settings readiness card therefore reports two layers: daemon broker
+availability and task/provider readiness. `provider_unavailable` means the
+broker started but the configured Jev endpoint, credential, or local model
+could not serve the request; it is not an MCP download failure.
+
 ## Skill binding
 
 Creating an agent does NOT bind any workspace skill — binding is a separate

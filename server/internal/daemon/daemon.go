@@ -395,6 +395,7 @@ type Daemon struct {
 	repoCache     repoCacheBackend
 	skillCache    *SkillBundleCache
 	logger        *slog.Logger
+	builtinMCP    *builtinMCPBroker
 
 	// terminalReports is the durable outbox for complete/fail callbacks. The
 	// sender hook is production-wired through Client and overridable in focused
@@ -2132,6 +2133,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	builtinMCP, err := startBuiltinMCPBroker(ctx)
+	if err != nil {
+		_ = healthLn.Close()
+		return err
+	}
+	d.builtinMCP = builtinMCP
+	defer func() {
+		builtinMCP.close()
+		d.builtinMCP = nil
+	}()
 
 	agentNames := make([]string, 0, len(d.agents()))
 	for name := range d.agents() {
@@ -8181,9 +8192,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// configuration consumed by every provider. All managed capability services
 	// stay on loopback because execution is host-native.
 	listenHost, advertisedHost := "127.0.0.1", ""
-	identityMCPConfig, identityMCPServer, identityMCPErr := startTaskIdentityActionsMCPAt(
+	identityMCPConfig, identityMCPServer, identityMCPErr := startTaskIdentityActionsMCPAtWithBroker(
 		ctx, task.ID, autonomyPolicy.allowsIdentityAction("email"),
-		hostIdentityEmailInvoker(task, communicationReceiptPath(d.cfg.WorkspacesRoot, task, "email")), taskLog, listenHost, advertisedHost,
+		hostIdentityEmailInvoker(task, communicationReceiptPath(d.cfg.WorkspacesRoot, task, "email")), taskLog, listenHost, advertisedHost, d.builtinMCP,
 	)
 	if identityMCPErr != nil {
 		return TaskResult{}, identityMCPErr
@@ -8260,8 +8271,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			llm2jevConfig, llm2jevServer, llm2jevErr = d.startTaskConfiguredJevMCP(ctx, task, provider, taskLog)
 		} else {
 			var legacyServer *llm2jevMCPSet
-			llm2jevConfig, legacyServer, llm2jevErr = startTaskLLM2JevMCPAtWithLimits(
-				ctx, task.ID, provider, task, taskLog, listenHost, advertisedHost, d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32,
+			llm2jevConfig, legacyServer, llm2jevErr = startTaskLLM2JevMCPAtWithLimitsAndBroker(
+				ctx, task.ID, provider, task, taskLog, listenHost, advertisedHost, d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.builtinMCP,
 			)
 			if legacyServer != nil {
 				llm2jevServer = legacyServer

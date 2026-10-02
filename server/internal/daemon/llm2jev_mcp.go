@@ -37,12 +37,20 @@ const (
 const llm2jevExecutionInstructions = "\nManaged semantic tools are available as multica_llm2jev_evaluate and multica_llm2jev_verify_completion. Use them to compare candidates against evidence and to verify explicit completion criteria. Their verdicts are semantic results, not token probabilities. Continue routine work within the task scope without asking for per-step authorization; pause for missing required information, a policy, permission, or security boundary, an exceeded budget, or a destructive/high-risk action."
 
 type llm2jevMCPSet struct {
-	server   *http.Server
-	gate     *completionGate
-	listener net.Listener
-	cancel   context.CancelFunc
-	once     sync.Once
-	done     chan struct{}
+	server     *http.Server
+	gate       *completionGate
+	listener   net.Listener
+	unregister func()
+	cancel     context.CancelFunc
+	once       sync.Once
+	doneOnce   sync.Once
+	done       chan struct{}
+}
+
+func (set *llm2jevMCPSet) finish() {
+	if set != nil && set.done != nil {
+		set.doneOnce.Do(func() { close(set.done) })
+	}
 }
 
 func (set *llm2jevMCPSet) Close() {
@@ -50,6 +58,9 @@ func (set *llm2jevMCPSet) Close() {
 		return
 	}
 	set.once.Do(func() {
+		if set.unregister != nil {
+			set.unregister()
+		}
 		if set.cancel != nil {
 			set.cancel()
 		}
@@ -61,6 +72,7 @@ func (set *llm2jevMCPSet) Close() {
 		if set.listener != nil {
 			_ = set.listener.Close()
 		}
+		set.finish()
 		if set.done != nil {
 			<-set.done
 		}
@@ -84,10 +96,10 @@ type llm2jevMCPServer struct {
 	systemOne   bool
 }
 
-// startTaskLLM2JevMCP exposes the semantic decision provider through the same
-// task-scoped MCP path used by the existing managed tools. It deliberately
-// returns no server when the task's Agent has no OpenAI-compatible endpoint;
-// the existing Agent execution path remains usable without this optional tool.
+// startTaskLLM2JevMCP registers one task context with the daemon-owned MCP
+// broker (or, in tests/legacy callers, a task-local listener). The broker
+// itself starts with the daemon; provider credentials and completion gates
+// remain task-scoped.
 func startTaskLLM2JevMCP(lifetimeCtx context.Context, taskID, provider string, task Task, logger *slog.Logger) (json.RawMessage, *llm2jevMCPSet, error) {
 	return startTaskLLM2JevMCPAt(lifetimeCtx, taskID, provider, task, logger, "127.0.0.1", "")
 }
@@ -97,23 +109,27 @@ func startTaskLLM2JevMCPAt(lifetimeCtx context.Context, taskID, provider string,
 }
 
 func startTaskLLM2JevMCPAtWithLimits(lifetimeCtx context.Context, taskID, provider string, task Task, logger *slog.Logger, listenHost, advertisedHost string, maxConcurrent int, callTimeout time.Duration, maxCalls int64) (json.RawMessage, *llm2jevMCPSet, error) {
+	return startTaskLLM2JevMCPAtWithLimitsAndBroker(lifetimeCtx, taskID, provider, task, logger, listenHost, advertisedHost, maxConcurrent, callTimeout, maxCalls, nil)
+}
+
+func startTaskLLM2JevMCPAtWithLimitsAndBroker(lifetimeCtx context.Context, taskID, provider string, task Task, logger *slog.Logger, listenHost, advertisedHost string, maxConcurrent int, callTimeout time.Duration, maxCalls int64, broker *builtinMCPBroker) (json.RawMessage, *llm2jevMCPSet, error) {
 	if task.Agent == nil || len(task.Agent.CustomEnv) == 0 || task.Agent.Model == "" || !providerSupportsLLM2JevMCP(provider) {
 		return nil, nil, nil
 	}
-	endpoint := strings.TrimSpace(task.Agent.CustomEnv["OPENAI_BASE_URL"])
-	if endpoint == "" {
-		endpoint = strings.TrimSpace(task.Agent.CustomEnv["OPENAI_API_BASE"])
+	providerEndpoint := strings.TrimSpace(task.Agent.CustomEnv["OPENAI_BASE_URL"])
+	if providerEndpoint == "" {
+		providerEndpoint = strings.TrimSpace(task.Agent.CustomEnv["OPENAI_API_BASE"])
 	}
 	apiKey := strings.TrimSpace(task.Agent.CustomEnv["OPENAI_API_KEY"])
-	if endpoint == "" {
+	if providerEndpoint == "" {
 		return nil, nil, nil
 	}
 	systemOne := task.Agent.CustomEnv["MULTICA_JEV_SYSTEMONE"] == "1"
 	var err error
 	if systemOne {
-		endpoint, err = normalizeJevSystemOneEndpoint(endpoint)
+		providerEndpoint, err = normalizeJevSystemOneEndpoint(providerEndpoint)
 	} else {
-		endpoint, err = normalizeLLM2JevEndpoint(endpoint)
+		providerEndpoint, err = normalizeLLM2JevEndpoint(providerEndpoint)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -121,20 +137,24 @@ func startTaskLLM2JevMCPAtWithLimits(lifetimeCtx context.Context, taskID, provid
 	if err := lifetimeCtx.Err(); err != nil {
 		return nil, nil, err
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(listenHost, "0"))
-	if err != nil {
-		return nil, nil, fmt.Errorf("listen for llm2jev MCP: %w", err)
-	}
 	token, err := randomBrokerToken()
 	if err != nil {
-		_ = listener.Close()
 		return nil, nil, err
 	}
 	serverCtx, cancel := context.WithCancel(lifetimeCtx)
 	gate := newCompletionGate(taskID)
-	set := &llm2jevMCPSet{listener: listener, cancel: cancel, done: make(chan struct{}), gate: gate}
+	var listener net.Listener
+	var unregister func()
+	var endpoint string
+	if broker == nil {
+		listener, err = net.Listen("tcp", net.JoinHostPort(listenHost, "0"))
+		if err != nil {
+			cancel()
+			return nil, nil, fmt.Errorf("listen for llm2jev MCP: %w", err)
+		}
+	}
 	handler := &llm2jevMCPServer{
-		taskID: taskID, goalAnchors: completionGoalAnchors(task), model: task.Agent.Model, endpoint: endpoint, apiKey: apiKey,
+		taskID: taskID, goalAnchors: completionGoalAnchors(task), model: task.Agent.Model, endpoint: providerEndpoint, apiKey: apiKey,
 		client: &http.Client{
 			Timeout: callTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -145,25 +165,39 @@ func startTaskLLM2JevMCPAtWithLimits(lifetimeCtx context.Context, taskID, provid
 		path:   "/" + token, semaphore: make(chan struct{}, maxConcurrent), maxCalls: maxCalls, callTimeout: callTimeout, gate: gate,
 		systemOne: task.Agent.CustomEnv["MULTICA_JEV_SYSTEMONE"] == "1",
 	}
-	set.server = &http.Server{
-		Handler: handler, ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: callTimeout, WriteTimeout: callTimeout,
-		BaseContext: func(net.Listener) context.Context { return serverCtx },
-	}
-	go func() {
-		defer close(set.done)
-		if serveErr := set.server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) && logger != nil {
-			logger.Warn("llm2jev MCP stopped unexpectedly", "task_id", taskID, "error", serveErr)
+	if broker != nil {
+		endpoint, unregister = broker.register(handler.path, handler)
+		if endpoint == "" {
+			cancel()
+			return nil, nil, errors.New("built-in MCP broker is closed")
 		}
-	}()
-	context.AfterFunc(lifetimeCtx, set.Close)
-	host := advertisedHost
-	if host == "" {
-		host, _, _ = net.SplitHostPort(listener.Addr().String())
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	set := &llm2jevMCPSet{listener: listener, unregister: unregister, cancel: cancel, done: make(chan struct{}), gate: gate}
+	if broker == nil {
+		set.server = &http.Server{
+			Handler: handler, ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout: callTimeout, WriteTimeout: callTimeout,
+			BaseContext: func(net.Listener) context.Context { return serverCtx },
+		}
+		go func() {
+			defer set.finish()
+			if serveErr := set.server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) && logger != nil {
+				logger.Warn("llm2jev MCP stopped unexpectedly", "task_id", taskID, "error", serveErr)
+			}
+		}()
+	} else {
+		go func() { <-lifetimeCtx.Done(); set.Close() }()
+	}
+	context.AfterFunc(lifetimeCtx, set.Close)
+	if broker == nil {
+		host := advertisedHost
+		if host == "" {
+			host, _, _ = net.SplitHostPort(listener.Addr().String())
+		}
+		endpoint = "http://" + net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)) + handler.path
+	}
 	config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{
-		llm2jevMCPName: map[string]any{"type": "http", "url": "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + handler.path},
+		llm2jevMCPName: map[string]any{"type": "http", "url": endpoint},
 	}})
 	if err != nil {
 		set.Close()

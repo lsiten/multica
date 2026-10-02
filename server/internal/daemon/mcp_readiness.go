@@ -130,16 +130,22 @@ func (d *Daemon) mcpReadinessSnapshot() []MCPReadinessSnapshot {
 	}
 	registry.mu.RUnlock()
 	out := make([]MCPReadinessSnapshot, 0, len(entries)+2)
+	if d.builtinMCP != nil && d.builtinMCP.ready() {
+		out = append(out,
+			MCPReadinessSnapshot{Name: llm2jevMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessReady, Reason: "broker_listening"},
+			MCPReadinessSnapshot{Name: identityActionsMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessReady, Reason: "broker_listening"},
+		)
+	}
 	for _, entry := range entries {
 		entry.mu.RLock()
 		snapshot := entry.MCPReadinessSnapshot
 		entry.mu.RUnlock()
 		out = append(out, snapshot)
 	}
-	// Built-ins are task-owned. Exposing them as ready before a task creates
-	// and probes their ephemeral endpoint was the original false-positive. Keep
-	// their explicit not-configured state even when a task also has custom MCP
-	// entries, so the settings surface never hides built-ins behind the overlay.
+	// A current daemon reports the daemon-scoped broker entries above. Keep the
+	// legacy task_not_started fallback only for older fixtures/daemons that do
+	// not have a broker yet; this preserves response compatibility while the
+	// desktop update rolls out.
 	names := make(map[string]struct{}, len(out))
 	for _, snapshot := range out {
 		names[snapshot.Name] = struct{}{}

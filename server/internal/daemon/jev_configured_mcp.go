@@ -77,7 +77,7 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 	default:
 		return nil, nil, fmt.Errorf("unsupported Jev source %q", cfg.Source)
 	}
-	config, set, err := startTaskLLM2JevMCPAtWithLimits(ctx, task.ID, provider, effective, logger, "127.0.0.1", "", d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32)
+	config, set, err := startTaskLLM2JevMCPAtWithLimitsAndBroker(ctx, task.ID, provider, effective, logger, "127.0.0.1", "", d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.builtinMCP)
 	if err != nil {
 		if lease != nil {
 			lease.Release()
