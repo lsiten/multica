@@ -143,6 +143,7 @@ interface ChatInputProps {
   squads?: Squad[];
   squadId?: string | null;
   onSquadChange?: (squadId: string | null) => void;
+  workspaceScopeAllowed?: boolean;
   autonomyPolicy?: ChatAutonomyPolicyOverride | null;
   onAutonomyPolicyChange?: (policy: ChatAutonomyPolicyOverride | null) => void;
   /** Monotonic nonce bumped by the owner whenever the compose box should grab
@@ -188,6 +189,7 @@ export function ChatInput({
   squads = [],
   squadId,
   onSquadChange,
+  workspaceScopeAllowed = true,
   autonomyPolicy,
   onAutonomyPolicyChange,
   focusRequest,
@@ -735,6 +737,7 @@ export function ChatInput({
             >
               <ProjectPicker
                 projectId={selectedProject.id}
+                projects={projects}
                 onUpdate={(updates) => onProjectChange?.(updates.project_id ?? null)}
                 disabled={!projectSelectionEnabled}
                 triggerRender={
@@ -767,7 +770,9 @@ export function ChatInput({
               disabled={!projectSelectionEnabled}
               className="h-6 min-w-24 rounded-md border border-surface-border bg-surface-raised px-1 text-caption"
             >
-              <option value="">{t(($) => $.input.workspace_context)}</option>
+              {workspaceScopeAllowed && (
+                <option value="">{t(($) => $.input.workspace_context)}</option>
+              )}
               {squads.map((squad) => <option key={squad.id} value={squad.id}>{squad.name}</option>)}
             </select>
           </div>

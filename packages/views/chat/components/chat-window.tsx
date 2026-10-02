@@ -88,6 +88,7 @@ import {
   seedAcceptedPendingTask,
 } from "./use-chat-controller";
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
+import { resolveChatExecutionScope } from "./execution-scope";
 import { createLogger } from "@multica/core/logger";
 import type { Agent, Attachment, ChatAutonomyPolicyOverride, ChatMessage, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
 import { useLocale, useT } from "../../i18n";
@@ -239,11 +240,7 @@ export function ChatWindow() {
   const candidateProjectId = currentSession
     ? currentSession.project_id ?? null
     : selectedProjectId;
-  const activeProjectId = candidateProjectId &&
-    (!projectsLoaded || projects.some((project) => project.id === candidateProjectId))
-    ? candidateProjectId
-    : null;
-  const activeSquadId = currentSession ? currentSession.squad_id ?? null : selectedSquadId;
+  const candidateSquadId = currentSession ? currentSession.squad_id ?? null : selectedSquadId;
 
   useEffect(() => {
     if (!projectsLoaded || !selectedProjectId) return;
@@ -285,12 +282,52 @@ export function ChatWindow() {
     availableAgents.find((a) => a.id === selectedAgentId) ??
     availableAgents[0] ??
     null;
-  const availableProjects = projects.filter((_project, index) => {
-    const bindings = projectScopeQueries[index]?.data;
-    if (!bindings) return true;
-    return (bindings.agent_ids.length === 0 || !activeAgent || bindings.agent_ids.includes(activeAgent.id)) &&
-      (bindings.squad_ids.length === 0 || !activeSquadId || bindings.squad_ids.includes(activeSquadId));
+  const executionScope = resolveChatExecutionScope({
+    projects,
+    squads,
+    bindingsByProject: new Map(
+      projects.map((project, index) => [project.id, projectScopeQueries[index]?.data]),
+    ),
+    agent: activeAgent,
+    selectedSquadId: candidateSquadId,
   });
+  const executionScopeLoaded =
+    projectsLoaded && squadsLoaded && projectScopeQueries.every((query) => query.isSuccess || query.isError);
+  const availableProjects = executionScopeLoaded
+    ? executionScope.availableProjects
+    : projects;
+  const availableSquads = executionScopeLoaded
+    ? executionScope.availableSquads
+    : squads;
+  const workspaceScopeAllowed = executionScopeLoaded
+    ? executionScope.workspaceScopeAllowed
+    : true;
+  const activeSquadId = currentSession
+    ? candidateSquadId
+    : (executionScopeLoaded
+      ? (availableSquads.some((squad) => squad.id === selectedSquadId)
+        ? selectedSquadId
+        : executionScope.defaultSquadId)
+      : selectedSquadId);
+  const activeProjectId = currentSession
+    ? (candidateProjectId && projects.some((project) => project.id === candidateProjectId)
+      ? candidateProjectId
+      : null)
+    : (executionScopeLoaded
+      ? (selectedProjectId && availableProjects.some((project) => project.id === selectedProjectId)
+        ? selectedProjectId
+        : executionScope.defaultProjectId)
+      : candidateProjectId);
+  useEffect(() => {
+    if (currentSession || !executionScopeLoaded || !activeAgent) return;
+    if (selectedSquadId === activeSquadId) return;
+    setSelectedSquadId(activeSquadId);
+  }, [activeAgent, activeSquadId, currentSession, executionScopeLoaded, selectedSquadId, setSelectedSquadId]);
+  useEffect(() => {
+    if (currentSession || !executionScopeLoaded || !activeAgent) return;
+    if (selectedProjectId === activeProjectId) return;
+    setSelectedProjectId(activeProjectId);
+  }, [activeAgent, activeProjectId, currentSession, executionScopeLoaded, selectedProjectId, setSelectedProjectId]);
   const activeAgentRuntimeBound =
     !!activeAgent && isAgentRuntimeBound(activeAgent);
 
@@ -1104,9 +1141,10 @@ export function ChatWindow() {
         projects={availableProjects}
         projectId={activeProjectId}
         onProjectChange={handleProjectChange}
-        squads={squads}
+        squads={availableSquads}
         squadId={activeSquadId}
         onSquadChange={handleSquadChange}
+        workspaceScopeAllowed={workspaceScopeAllowed}
         projectContextUnsupported={projectContextSupport === false}
         autonomyPolicy={autonomyPolicy}
         onAutonomyPolicyChange={setAutonomyPolicy}

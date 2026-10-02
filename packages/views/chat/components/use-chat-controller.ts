@@ -44,6 +44,7 @@ import {
 import { useChatDraftRestore } from "./use-chat-draft-restore";
 import { useChatTaskActions } from "./use-chat-task-actions";
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
+import { resolveChatExecutionScope } from "./execution-scope";
 import { createLogger } from "@multica/core/logger";
 import type {
   Agent,
@@ -321,11 +322,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
   const candidateProjectId = currentSession
     ? currentSession.project_id ?? null
     : selectedProjectId;
-  const activeProjectId = candidateProjectId &&
-    (!projectsLoaded || projects.some((project) => project.id === candidateProjectId))
-    ? candidateProjectId
-    : null;
-  const activeSquadId = currentSession
+  const candidateSquadId = currentSession
     ? currentSession.squad_id ?? null
     : selectedSquadId;
 
@@ -386,13 +383,52 @@ export function useChatController(opts?: { isActive?: boolean }) {
     availableAgents.find((a) => a.id === selectedAgentId) ??
     availableAgents[0] ??
     null;
-  const availableProjects = projects.filter((_project, index) => {
-    const bindings = projectScopeQueries[index]?.data;
-    if (!bindings) return true;
-    const agentAllowed = bindings.agent_ids.length === 0 || !activeAgent || bindings.agent_ids.includes(activeAgent.id);
-    const squadAllowed = bindings.squad_ids.length === 0 || !activeSquadId || bindings.squad_ids.includes(activeSquadId);
-    return agentAllowed && squadAllowed;
+  const executionScope = resolveChatExecutionScope({
+    projects,
+    squads,
+    bindingsByProject: new Map(
+      projects.map((project, index) => [project.id, projectScopeQueries[index]?.data]),
+    ),
+    agent: activeAgent,
+    selectedSquadId: candidateSquadId,
   });
+  const executionScopeLoaded =
+    projectsLoaded && squadsLoaded && projectScopeQueries.every((query) => query.isSuccess || query.isError);
+  const availableProjects = executionScopeLoaded
+    ? executionScope.availableProjects
+    : projects;
+  const availableSquads = executionScopeLoaded
+    ? executionScope.availableSquads
+    : squads;
+  const workspaceScopeAllowed = executionScopeLoaded
+    ? executionScope.workspaceScopeAllowed
+    : true;
+  const activeSquadId = currentSession
+    ? candidateSquadId
+    : (executionScopeLoaded
+      ? (availableSquads.some((squad) => squad.id === selectedSquadId)
+        ? selectedSquadId
+        : executionScope.defaultSquadId)
+      : selectedSquadId);
+  const activeProjectId = currentSession
+    ? (candidateProjectId && projects.some((project) => project.id === candidateProjectId)
+      ? candidateProjectId
+      : null)
+    : (executionScopeLoaded
+      ? (selectedProjectId && availableProjects.some((project) => project.id === selectedProjectId)
+        ? selectedProjectId
+        : executionScope.defaultProjectId)
+      : candidateProjectId);
+  useEffect(() => {
+    if (currentSession || !executionScopeLoaded || !activeAgent) return;
+    if (selectedSquadId === activeSquadId) return;
+    setSelectedSquadId(activeSquadId);
+  }, [activeAgent, activeSquadId, currentSession, executionScopeLoaded, selectedSquadId, setSelectedSquadId]);
+  useEffect(() => {
+    if (currentSession || !executionScopeLoaded || !activeAgent) return;
+    if (selectedProjectId === activeProjectId) return;
+    setSelectedProjectId(activeProjectId);
+  }, [activeAgent, activeProjectId, currentSession, executionScopeLoaded, selectedProjectId, setSelectedProjectId]);
   const isAgentRuntimeBound = !!activeAgent && hasAgentRuntime(activeAgent);
 
   // A session outlives the permission that created it. The agent can be flipped
@@ -888,7 +924,8 @@ export function useChatController(opts?: { isActive?: boolean }) {
     selectedAgentId,
     activeProjectId,
     activeSquadId,
-    squads,
+    squads: availableSquads,
+    workspaceScopeAllowed,
     projectContextUnsupported: projectContextSupport === false,
     isProjectUpdating:
       setSessionProject.isPending || (!!activeSessionId && !currentSession),

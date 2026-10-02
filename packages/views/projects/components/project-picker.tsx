@@ -5,7 +5,7 @@ import { FolderKanban } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { useWorkspaceId } from "@multica/core/hooks";
-import type { UpdateIssueRequest } from "@multica/core/types";
+import type { Project, UpdateIssueRequest } from "@multica/core/types";
 import { ProjectIcon } from "./project-icon";
 import {
   PropertyPicker,
@@ -25,6 +25,7 @@ export function ProjectPicker({
   open: controlledOpen,
   onOpenChange,
   disabled = false,
+  projects: projectsProp,
 }: {
   projectId: string | null;
   onUpdate: (updates: Partial<UpdateIssueRequest>) => void;
@@ -41,10 +42,16 @@ export function ProjectPicker({
    *  the menu locks clearing too. Callers that must freeze the selection
    *  during a transient window (an in-flight chat send) pass this. */
   disabled?: boolean;
+  /** Optional scoped list supplied by chat/autopilot surfaces. */
+  projects?: Project[];
 }) {
   const { t } = useT("projects");
   const wsId = useWorkspaceId();
-  const { data: projects = [] } = useQuery(projectListOptions(wsId));
+  const { data: fetchedProjects = [] } = useQuery({
+    ...projectListOptions(wsId),
+    enabled: projectsProp === undefined,
+  });
+  const projects = projectsProp ?? fetchedProjects;
   const current = projects.find((p) => p.id === projectId);
   const [filter, setFilter] = useState("");
   // Normalize to an always-boolean controlled `open`, matching the other

@@ -373,6 +373,7 @@ export function ChatPage() {
         squads={c.squads}
         squadId={c.activeSquadId}
         onSquadChange={c.handleSquadChange}
+        workspaceScopeAllowed={c.workspaceScopeAllowed}
         isProjectUpdating={c.isProjectUpdating}
         focusRequest={c.focusInputRequest}
         autonomyPolicy={autonomyPolicy}

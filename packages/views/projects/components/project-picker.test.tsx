@@ -110,6 +110,16 @@ describe("ProjectPicker", () => {
     expect(screen.getByRole("button", { name: /mobile web/i })).toBeInTheDocument();
   });
 
+  it("uses the caller's scoped project list instead of reopening the workspace list", async () => {
+    const user = userEvent.setup();
+    renderPicker({
+      projects: [{ id: "project-1", title: "Launch Command Center", icon: null } as never],
+    });
+
+    await user.click(screen.getByRole("button", { name: /launch command center/i }));
+    expect(screen.queryByRole("button", { name: /mobile web/i })).not.toBeInTheDocument();
+  });
+
   it("locks every mutation path when disabled", async () => {
     // Regression (MUL-5150): a keyboard user could Tab to the inline clear
     // button and detach the project while a chat send was in flight,
