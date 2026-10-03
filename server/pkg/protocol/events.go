@@ -94,12 +94,13 @@ const (
 	EventChatSessionUpdated  = "chat:session_updated"
 
 	// Project events
-	EventProjectCreated         = "project:created"
-	EventProjectUpdated         = "project:updated"
-	EventProjectDeleted         = "project:deleted"
-	EventProjectResourceCreated = "project_resource:created"
-	EventProjectResourceUpdated = "project_resource:updated"
-	EventProjectResourceDeleted = "project_resource:deleted"
+	EventProjectCreated            = "project:created"
+	EventProjectUpdated            = "project:updated"
+	EventProjectSupervisionUpdated = "project_supervision:updated"
+	EventProjectDeleted            = "project:deleted"
+	EventProjectResourceCreated    = "project_resource:created"
+	EventProjectResourceUpdated    = "project_resource:updated"
+	EventProjectResourceDeleted    = "project_resource:deleted"
 
 	// Label events
 	EventLabelCreated       = "label:created"

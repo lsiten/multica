@@ -201,11 +201,12 @@ type DaemonRegisterRequest struct {
 	// may have registered under before switching to a persistent UUID. The
 	// handler merges any matching runtime rows into the new row so agents
 	// and tasks keep working without manual intervention.
-	LegacyDaemonIDs []string `json:"legacy_daemon_ids"`
-	DeviceName      string   `json:"device_name"`
-	CLIVersion      string   `json:"cli_version"` // multica CLI version
-	LaunchedBy      string   `json:"launched_by"` // "desktop" when spawned by the Electron app
-	Runtimes        []struct {
+	LegacyDaemonIDs    []string `json:"legacy_daemon_ids"`
+	DeviceName         string   `json:"device_name"`
+	CLIVersion         string   `json:"cli_version"` // multica CLI version
+	LaunchedBy         string   `json:"launched_by"` // "desktop" when spawned by the Electron app
+	MaxConcurrentTasks int      `json:"max_concurrent_tasks"`
+	Runtimes           []struct {
 		Name    string `json:"name"`
 		Type    string `json:"type"`
 		Version string `json:"version"` // agent CLI version (claude/codex)
@@ -413,6 +414,10 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 	req.WorkspaceID = strings.TrimSpace(req.WorkspaceID)
 	req.DaemonID = strings.TrimSpace(req.DaemonID)
 	req.DeviceName = strings.TrimSpace(req.DeviceName)
+	if req.MaxConcurrentTasks < 0 || req.MaxConcurrentTasks > 1000 {
+		writeError(w, http.StatusBadRequest, "invalid daemon execution capacity")
+		return
+	}
 
 	if req.DaemonID == "" {
 		writeError(w, http.StatusBadRequest, "daemon_id is required")
@@ -485,11 +490,12 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		// same signal the claim path uses, instead of re-deriving it from a
 		// version string (MUL-5707).
 		metadata, _ := json.Marshal(map[string]any{
-			"version":      runtime.Version,
-			"cli_version":  req.CLIVersion,
-			"client_os":    strings.TrimSpace(r.Header.Get("X-Client-OS")),
-			"launched_by":  req.LaunchedBy,
-			"capabilities": requestClientCapabilities(r),
+			"version":         runtime.Version,
+			"cli_version":     req.CLIVersion,
+			"client_os":       strings.TrimSpace(r.Header.Get("X-Client-OS")),
+			"launched_by":     req.LaunchedBy,
+			"capabilities":    requestClientCapabilities(r),
+			"execution_slots": req.MaxConcurrentTasks,
 		})
 
 		var registered db.AgentRuntime
@@ -3592,6 +3598,26 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				}
 			}
 		}
+	}
+
+	if coordination, ok := service.ProjectCoordination(*task); ok {
+		if !requestHasClientCapability(r, protocol.DaemonCapabilityProjectSupervisionV1) {
+			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Update the daemon to run project supervision.", taskfailure.ReasonInvalidTaskIdentity, "error_capability", http.StatusConflict, "project supervision requires an updated daemon")
+		}
+		resp.WorkspaceID = coordination.WorkspaceID
+		if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, true); failure != nil {
+			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, failure
+		}
+		projectID, err := util.ParseUUID(coordination.ProjectID)
+		if err != nil {
+			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, &claimBuildFailure{outcome: "error_project", status: http.StatusConflict, message: "invalid supervision project"}
+		}
+		projectContext, err := h.resolveClaimProjectContext(r.Context(), projectID, parseUUID(resp.WorkspaceID))
+		if err != nil {
+			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, &claimBuildFailure{outcome: "error_project", status: http.StatusConflict, message: "supervision project unavailable"}
+		}
+		projectContext.applyTo(&resp)
+		resp.ProjectSupervisionPrompt = coordination.Prompt
 	}
 
 	// Catch-all workspace isolation check. Every context branch above already

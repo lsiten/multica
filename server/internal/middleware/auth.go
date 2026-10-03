@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -120,6 +121,37 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 					return
 				}
 				userID := uuidToString(tt.UserID)
+				task, taskErr := queries.GetAgentTask(r.Context(), tt.TaskID)
+				if taskErr != nil {
+					http.Error(w, `{"error":"invalid task token"}`, http.StatusUnauthorized)
+					return
+				}
+				var scope struct {
+					Type        string `json:"type"`
+					ProjectID   string `json:"project_id"`
+					WorkspaceID string `json:"workspace_id"`
+				}
+				if len(task.Context) > 0 && json.Unmarshal(task.Context, &scope) != nil {
+					http.Error(w, `{"error":"invalid task context"}`, http.StatusForbidden)
+					return
+				}
+				if scope.Type == "project_supervision" {
+					if task.AgentID != tt.AgentID || scope.WorkspaceID != uuidToString(tt.WorkspaceID) {
+						http.Error(w, `{"error":"coordination token scope mismatch"}`, http.StatusForbidden)
+						return
+					}
+					if task.Status != "running" && task.Status != "dispatched" {
+						http.Error(w, `{"error":"coordination task is no longer active"}`, http.StatusForbidden)
+						return
+					}
+					if r.Method != http.MethodGet && r.Method != http.MethodHead {
+						prefix := "/api/projects/" + scope.ProjectID + "/supervision/"
+						if r.Method != http.MethodPost || (r.URL.Path != prefix+"actions" && r.URL.Path != prefix+"report") {
+							http.Error(w, `{"error":"coordination writes must use bound project actions"}`, http.StatusForbidden)
+							return
+						}
+					}
+				}
 				if rejectTemporarilyDisabledUser(w, r, userID, "", "task_token") {
 					return
 				}

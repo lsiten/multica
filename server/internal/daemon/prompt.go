@@ -210,6 +210,9 @@ func BuildPrompt(task Task, provider string, options ...PromptOption) string {
 }
 
 func buildPromptBody(task Task, provider string) string {
+	if task.ProjectSupervisionPrompt != "" {
+		return task.ProjectSupervisionPrompt + "\nCurrent coordination task_id: " + task.ID + "\nStart with `multica project supervision get " + task.ProjectID + " --output json`. Apply a bounded batch with `multica project supervision apply`, then submit a structured `multica project supervision report` and end the run. This run has no assigned issue."
+	}
 	if task.WakeupID != "" {
 		var b strings.Builder
 		fmt.Fprintf(&b, "You are running as a local coding agent for a Multica workspace.\n\nYour assigned issue ID is: %s\n\n[WAKEUP]\n%s\n\n", task.IssueID, task.HandoffNote)

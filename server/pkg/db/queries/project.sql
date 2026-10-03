@@ -110,7 +110,7 @@ SELECT CASE
     WHEN task.issue_id IS NOT NULL THEN issue.project_id
     WHEN task.chat_session_id IS NOT NULL THEN chat_session.project_id
     WHEN task.autopilot_run_id IS NOT NULL THEN autopilot.project_id
-    WHEN task.context->>'type' = 'quick_create' THEN CASE
+    WHEN task.context->>'type' IN ('quick_create','project_supervision') THEN CASE
         WHEN task.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
         THEN (task.context->>'project_id')::uuid
         ELSE NULL

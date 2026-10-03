@@ -628,6 +628,11 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
 
+	locked, err := qtx.TryProjectSupervisionLock(r.Context(), uuidToString(project.ID))
+	if err != nil || !locked {
+		writeError(w, http.StatusConflict, "project coordination is updating; retry")
+		return
+	}
 	if _, err := qtx.LockProjectForDelete(r.Context(), db.LockProjectForDeleteParams{
 		ID:          project.ID,
 		WorkspaceID: project.WorkspaceID,
@@ -666,6 +671,14 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: project.WorkspaceID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete project")
+		return
+	}
+	if err := qtx.DeleteProjectSupervision(r.Context(), db.DeleteProjectSupervisionParams{ProjectID: project.ID, WorkspaceID: project.WorkspaceID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete project supervision")
+		return
+	}
+	if _, err := qtx.CancelQueuedProjectCoordination(r.Context(), uuidToString(project.ID)); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to stop project coordination")
 		return
 	}
 	if err := tx.Commit(r.Context()); err != nil {

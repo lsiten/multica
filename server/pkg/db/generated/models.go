@@ -1394,6 +1394,26 @@ type ProjectResource struct {
 	CreatedBy    pgtype.UUID        `json:"created_by"`
 }
 
+type ProjectSupervision struct {
+	ProjectID          pgtype.UUID        `json:"project_id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	ConfiguredBy       pgtype.UUID        `json:"configured_by"`
+	Enabled            bool               `json:"enabled"`
+	Config             []byte             `json:"config"`
+	Revision           int64              `json:"revision"`
+	DirtyVersion       int64              `json:"dirty_version"`
+	HandledVersion     int64              `json:"handled_version"`
+	NextCheckAt        pgtype.Timestamptz `json:"next_check_at"`
+	LastCheckedAt      pgtype.Timestamptz `json:"last_checked_at"`
+	LastTaskID         pgtype.UUID        `json:"last_task_id"`
+	LastFingerprint    string             `json:"last_fingerprint"`
+	NoProgressCount    int32              `json:"no_progress_count"`
+	LastReason         string             `json:"last_reason"`
+	LastResult         []byte             `json:"last_result"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	LastCoordinationAt pgtype.Timestamptz `json:"last_coordination_at"`
+}
+
 type QuickAction struct {
 	ID            pgtype.UUID        `json:"id"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`

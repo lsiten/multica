@@ -389,7 +389,7 @@ export interface AgentTask {
    * remains quick_create after its result issue is linked, so consumers can
    * distinguish creation work from later direct runs on that issue.
    */
-  kind?: "comment" | "autopilot" | "chat" | "quick_create" | "direct";
+  kind?: "comment" | "autopilot" | "chat" | "quick_create" | "direct" | "project_supervision";
   /**
    * Local working directory pinned for this task by the daemon. Empty until
    * the daemon reports a work_dir (typically once execution starts). This is

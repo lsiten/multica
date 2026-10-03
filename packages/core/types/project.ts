@@ -2,6 +2,24 @@ export type ProjectStatus = "planned" | "in_progress" | "paused" | "completed" |
 
 export type ProjectPriority = "urgent" | "high" | "medium" | "low" | "none";
 
+export interface ProjectSupervisionConfig {
+  auto_advance: boolean; max_in_flight: number; batch_size: number;
+  scan_interval_seconds: number; stale_after_seconds: number; no_progress_limit: number;
+  ready_statuses: string[];
+}
+export interface ProjectSupervision {
+  project_id: string; workspace_id: string; enabled: boolean; config: ProjectSupervisionConfig;
+  revision: number; dirty_version: number; handled_version: number; checked_version: number;
+  last_reason: string; no_progress_count: number; last_task_id: string | null; last_task_status: string;
+  next_check_at: string | null; last_checked_at: string | null;
+  last_result: { decision?: string; summary?: string; wait_reason?: string; verified_actions?: number };
+  snapshot: {
+    counts: Record<"ready" | "unassigned" | "executing" | "review" | "blocked" | "paused" | "stalled", number>;
+    issues: Array<{id:string;identifier:string;title:string;status:string;revision:number;assignee_type:string;assignee_id:string|null;category:string;reason:string;active_runs:number;age_seconds:number}>;
+    fingerprint: string; oldest_ready_seconds: number; actionable: number;
+  };
+}
+
 export interface Project {
   id: string;
   workspace_id: string;

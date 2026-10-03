@@ -1,6 +1,6 @@
 ---
 name: multica-platform
-description: "Use for Multica platform actions the runtime brief does not fully cover: issue and PR contracts, charts and files in comments, mentions, agents, squads, autopilots, projects, runtimes, skill import, notifications. Not for the product code you are working on."
+description: "Use for Multica platform actions the runtime brief does not fully cover: issue and PR contracts, issue wakeups, coordination graphs, chat, charts and files in comments, mentions, agents, squads, autopilots, projects, runtimes, skill import, notifications. Not for the product code you are working on."
 user-invocable: false
 allowed-tools: Bash(multica *), Bash(git *), Bash(gh *)
 ---
@@ -19,14 +19,15 @@ Read the invariants below, then open the reference(s) your task actually needs
 
 | Open | When the task is about |
 |---|---|
-| `references/issues.md` | Issues: PR linking, reading a linked PR's state, custom properties, status side effects, sub-issues and stages, who else is running (runs / rerun / cancel-task / run-messages / usage / search), metadata KV, subscribers, labels, comment reads, wakeups (events, conditions, timers, check-ins), charts vs attached files in a comment |
+| `references/issues.md` | Issues: PR linking, reading a linked PR's state, custom properties, status side effects, sub-issues and stages, who else is running (runs / rerun / cancel-task / run-messages / usage / search), subscribers, labels, comment reads, charts vs attached files in a comment |
+| `references/issue-wakeups.md` | Issue wakeups: events, conditions, timers, recurring checks and check-ins |
 | `references/coordination.md` | The coordination graph: how a task's project, sub-issues/stages, runs, and squad (leader / members / routing) connect — read it before acting on one node in isolation |
 | `references/mentions.md` | Writing a `mention://` link: which types enqueue a run, which are inert, why one silently did nothing |
 | `references/notifications.md` | Personal inbox notification bots: platform credentials, workspace scope, delivery and test-send boundaries |
 | `references/agents.md` | Creating, copying or debugging an agent definition: fields, secrets, MCP config, skill binding |
 | `references/squads.md` | Squads: leader routing, roster, recording leader activity, why a squad did or did not run |
 | `references/autopilots.md` | Autopilots: schedule / webhook / manual triggers, `create_issue` vs `run_only`, why one did not fire |
-| `references/projects.md` | Projects and their durable resources (`github_repo`, `local_directory`, worktree mode) |
+| `references/projects.md` | Projects, bounded project supervision and their durable resources (`github_repo`, `local_directory`, worktree mode) |
 | `references/runtimes.md` | Runtimes, daemons, `repo checkout`, and the task CLI boundary |
 | `references/chat.md` | Reading the current chat conversation: `chat history` (channel + thread list) and `chat thread [id]` (one thread's messages) |
 | `references/skill-import.md` | Importing a skill into this workspace from a URL or a local archive |
@@ -44,7 +45,7 @@ pick by domain and skip the rest.
 
 These hold across every reference and are not repeated there.
 
-**Match the installed CLI version.** This skill documents the **v1.0.6** CLI. An older build can reject a command this reference names — for example, 0.4.x has no `issue wakeup` — even though most other commands and their flags exist. If your `multica` rejects a reference command with `unknown command` or a missing-flag error, the installed CLI is behind — run `multica version`, then `multica update`; do not improvise a substitute command.
+**Match the installed CLI capability.** This skill ships with the corresponding CLI. Older builds may lack `issue wakeup` or `project supervision`; an unknown command or flag means you must check `multica version` and update the CLI. Do not improvise another write path. Project coordination also requires a daemon advertising `project-supervision-v1`.
 
 **Read before you write.** Start with the read-only commands the reference you
 opened names — most domains have a `list` and a `get` that take `--output json`

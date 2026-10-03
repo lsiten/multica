@@ -1,5 +1,13 @@
 # Projects and resources
 
+## Project supervision
+
+Project supervision runs a short, issue-less coordination task for the current project lead. Events coalesce and periodic checks recover missed signals. Never create patrol issues or sleep/poll in a coordination run. `multica project supervision get <project-id>` reads the policy, classified backlog and checked version. Owners/admins use `configure --body-file policy.json` (enabled, revision, config) and `check`. Stage auto-advancement is opt-in.
+
+During coordination only the bound project's `apply` and `report` accept writes. Read live evidence. `apply --body-file actions.json` accepts `{"checked_version":1,"actions":[{"kind":"assign","issue_id":"UUID","revision":1,"assignee_type":"agent","assignee_id":"UUID"}]}`. Actions: assign unassigned ready work, advance eligible staged backlog, review in-progress work with completed delivery evidence. The server validates scope, permissions, issue revisions and the whole-run action budget. Intentional backlog and cancelled stages are never silently advanced.
+
+Always finish with `report --body-file report.json`: `{"task_id":"CURRENT_TASK_UUID","checked_version":1,"decision":"action","summary":"Assigned ready work"}`. Decisions: action, wait, blocked, needs_human; wait/blocked may include wait_reason. Only persisted actions count as progress. Report the captured checked_version. New dirty versions remain pending until the run ends. Repeated no-progress reports surface needs_human. `retry` restarts failed in-progress work while preserving ownership; `delegate_review` dispatches an independent reviewer for delivered work in review. Both require a reason, assignee_type and assignee_id, and respect project, agent and daemon capacity. A cancelled stage requires human decision; never bypass it.
+
 A project groups work and carries durable resources. A resource is not just
 display metadata; it is context later injected into task briefs and
 `.multica/project/resources.json`.

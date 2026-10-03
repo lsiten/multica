@@ -358,6 +358,7 @@ type TaskCancellationActor struct {
 }
 
 type AgentTaskResponse struct {
+	ProjectSupervisionPrompt string                       `json:"project_supervision_prompt,omitempty"`
 	JevConfig                *protocol.WorkspaceJevConfig `json:"jev_config,omitempty"`
 	StartClaimSupported      bool                         `json:"start_claim_supported,omitempty"`
 	CancelledByCommentChange bool                         `json:"cancelled_by_comment_change,omitempty"`
@@ -1063,6 +1064,9 @@ func computeTaskKind(t db.AgentTaskQueue) string {
 	}
 	var contextKind struct {
 		Type string `json:"type"`
+	}
+	if _, ok := service.ProjectCoordination(t); ok {
+		return "project_supervision"
 	}
 	if json.Unmarshal(t.Context, &contextKind) == nil && contextKind.Type == service.QuickCreateContextType {
 		return "quick_create"

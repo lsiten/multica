@@ -3084,14 +3084,15 @@ func (d *Daemon) registerRuntimesForWorkspaceBatchLocked(ctx context.Context, wo
 	}
 
 	req := map[string]any{
-		"workspace_id":      workspaceID,
-		"daemon_id":         d.cfg.DaemonID,
-		"legacy_daemon_ids": d.cfg.LegacyDaemonIDs,
-		"device_name":       d.cfg.DeviceName,
-		"cli_version":       d.cfg.CLIVersion,
-		"launched_by":       d.cfg.LaunchedBy,
-		"runtimes":          runtimes,
-		"failed_profiles":   failedProfiles,
+		"workspace_id":         workspaceID,
+		"daemon_id":            d.cfg.DaemonID,
+		"legacy_daemon_ids":    d.cfg.LegacyDaemonIDs,
+		"device_name":          d.cfg.DeviceName,
+		"cli_version":          d.cfg.CLIVersion,
+		"launched_by":          d.cfg.LaunchedBy,
+		"runtimes":             runtimes,
+		"failed_profiles":      failedProfiles,
+		"max_concurrent_tasks": d.cfg.MaxConcurrentTasks,
 	}
 
 	resp, err := d.client.Register(ctx, req)
@@ -3129,13 +3130,14 @@ func (d *Daemon) registerBuiltinRuntimesForWorkspaceLocked(ctx context.Context, 
 		return nil, ErrNoRuntimesToRegister
 	}
 	req := map[string]any{
-		"workspace_id":      workspaceID,
-		"daemon_id":         d.cfg.DaemonID,
-		"legacy_daemon_ids": d.cfg.LegacyDaemonIDs,
-		"device_name":       d.cfg.DeviceName,
-		"cli_version":       d.cfg.CLIVersion,
-		"launched_by":       d.cfg.LaunchedBy,
-		"runtimes":          runtimes,
+		"workspace_id":         workspaceID,
+		"daemon_id":            d.cfg.DaemonID,
+		"legacy_daemon_ids":    d.cfg.LegacyDaemonIDs,
+		"device_name":          d.cfg.DeviceName,
+		"cli_version":          d.cfg.CLIVersion,
+		"launched_by":          d.cfg.LaunchedBy,
+		"runtimes":             runtimes,
+		"max_concurrent_tasks": d.cfg.MaxConcurrentTasks,
 		// Deliberately empty: this call carries no profiles, so it must not
 		// report profile failures either.
 		"failed_profiles": []map[string]string{},
@@ -6566,6 +6568,8 @@ func gcMetaForTask(task Task) (execenv.GCMeta, bool) {
 	case task.ChatSessionID != "":
 		meta.Kind = execenv.GCKindChat
 		meta.ChatSessionID = task.ChatSessionID
+	case task.ProjectSupervisionPrompt != "":
+		meta.Kind = execenv.GCKindProjectSupervision
 	case task.AutopilotRunID != "":
 		meta.Kind = execenv.GCKindAutopilotRun
 		meta.AutopilotRunID = task.AutopilotRunID
@@ -7871,6 +7875,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		defer cancelPolicy()
 		ctx = policyCtx
 	}
+	if task.ProjectSupervisionPrompt != "" {
+		shortCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		ctx = shortCtx
+	}
 
 	ctx, taskBudget, cancelTaskBudget := newTaskUsageBudget(ctx, autonomyPolicy)
 	taskBudget.primaryProvider = provider
@@ -8023,6 +8032,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		AutopilotSource:                  task.AutopilotSource,
 		AutopilotTriggerPayload:          strings.TrimSpace(string(task.AutopilotTriggerPayload)),
 		QuickCreatePrompt:                task.QuickCreatePrompt,
+		ProjectSupervisionPrompt:         task.ProjectSupervisionPrompt,
 		IsSquadLeader:                    taskIsSquadLeader(task),
 		RequestingUserName:               task.RequestingUserName,
 		RequestingUserProfileDescription: task.RequestingUserProfileDescription,

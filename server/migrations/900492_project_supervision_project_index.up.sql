@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY project_supervision_project_idx ON project_supervision(project_id);

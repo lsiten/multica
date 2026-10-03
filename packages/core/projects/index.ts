@@ -1,4 +1,5 @@
 export { projectKeys, projectListOptions, projectDetailOptions } from "./queries";
+export { projectSupervisionKey, projectSupervisionOptions } from "./supervision";
 export { useCreateProject, useUpdateProject, useDeleteProject } from "./mutations";
 export { useProjectDraftStore } from "./draft-store";
 export {

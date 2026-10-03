@@ -3602,6 +3602,7 @@ func (s *TaskService) claimTask(ctx context.Context, agentID, runtimeID pgtype.U
 	outcome := "unknown"
 	var getAgentMs, countRunningMs, claimAgentMs, reanchorMs, updateStatusMs, dispatchMs int64
 	var claimed *db.AgentTaskQueue
+	var rejectedCoordination *db.AgentTaskQueue
 	var reclaimCheckAfter time.Time
 	defer func() {
 		s.maybeLogClaimSlow(agentID, outcome, start, getAgentMs, countRunningMs, claimAgentMs, reanchorMs, updateStatusMs, dispatchMs)
@@ -3665,6 +3666,13 @@ func (s *TaskService) claimTask(ctx context.Context, agentID, runtimeID pgtype.U
 			return fmt.Errorf("claim task: %w", err)
 		}
 
+		if err = s.checkProjectAdmission(ctx, qtx, task); err != nil {
+			if errors.Is(err, ErrProjectSupervisionForbidden) {
+				rejectedCoordination = &task
+			}
+			return err
+		}
+
 		// An idle task-owned direct-chat row may already be visible as the
 		// positional queue head. Normal completion reanchors a successor beside
 		// the assistant outcome before commit; this claim-time query is the
@@ -3691,6 +3699,15 @@ func (s *TaskService) claimTask(ctx context.Context, agentID, runtimeID pgtype.U
 		return nil
 	})
 	if err != nil {
+		if rejectedCoordination != nil {
+			if _, cancelErr := s.CancelTaskWithReason(ctx, rejectedCoordination.ID, "project coordination authority changed", "scope_changed"); cancelErr != nil {
+				return nil, cancelErr
+			}
+			return nil, nil
+		}
+		if errors.Is(err, ErrProjectExecutionCapacity) {
+			return nil, nil
+		}
 		if outcome == "unknown" {
 			outcome = "error_transaction"
 		}

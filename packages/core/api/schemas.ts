@@ -2318,6 +2318,23 @@ export const ProjectExecutionScopeBindingsSchema = z.object({
   effective_agent_ids: z.preprocess((value) => value ?? [], z.array(z.string()).default([])),
 }).loose();
 
+export const ProjectSupervisionConfigSchema = z.object({
+  auto_advance:z.boolean().default(false), max_in_flight:z.number().int().positive().default(3),batch_size:z.number().int().positive().default(3),
+  scan_interval_seconds:z.number().int().positive().default(300),stale_after_seconds:z.number().int().positive().default(900),no_progress_limit:z.number().int().positive().default(3),ready_statuses:z.array(z.string()).default(["todo"]),
+});
+export const ProjectSupervisionSchema = z.object({
+  project_id:z.string(),workspace_id:z.string(),enabled:z.boolean(),config:ProjectSupervisionConfigSchema,
+  revision:z.number().int().nonnegative(),dirty_version:z.number().int().nonnegative(),handled_version:z.number().int().nonnegative(),
+	checked_version:z.number().int().nonnegative().default(0),
+  last_reason:z.string().default(""),no_progress_count:z.number().int().nonnegative().default(0),last_task_id:z.string().nullable().default(null),last_task_status:z.string().default(""),next_check_at:z.string().nullable().default(null),last_checked_at:z.string().nullable().default(null),
+  last_result:z.object({decision:z.string().optional(),summary:z.string().optional(),wait_reason:z.string().optional(),verified_actions:z.number().optional()}).default({}),
+  snapshot:z.object({
+    counts:z.object({ready:z.number().nonnegative(),unassigned:z.number().nonnegative(),executing:z.number().nonnegative(),review:z.number().nonnegative(),blocked:z.number().nonnegative(),paused:z.number().nonnegative(),stalled:z.number().nonnegative()}),
+    issues:z.array(z.object({id:z.string(),identifier:z.string(),title:z.string(),status:z.string(),revision:z.number(),assignee_type:z.string(),assignee_id:z.string().nullable(),category:z.string(),reason:z.string(),active_runs:z.number(),age_seconds:z.number()})).default([]),
+    fingerprint:z.string(),oldest_ready_seconds:z.number().nonnegative(),actionable:z.number().nonnegative(),
+  }),
+});
+
 // One row of a run transcript. `output_truncated` gates a completeness claim
 // the UI makes about a tool's output, so it stays `.optional()` with no
 // default: a server that does not send it means "unknown", and defaulting it

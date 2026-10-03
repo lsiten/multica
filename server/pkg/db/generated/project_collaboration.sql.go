@@ -181,7 +181,7 @@ WITH RECURSIVE base AS (
          WHEN t.issue_id IS NOT NULL THEN i.project_id
          WHEN t.chat_session_id IS NOT NULL THEN cs.project_id
          WHEN t.autopilot_run_id IS NOT NULL THEN ap.project_id
-         WHEN t.context->>'type'='quick_create' AND t.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (t.context->>'project_id')::uuid
+         WHEN t.context->>'type' IN ('quick_create','project_supervision') AND t.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (t.context->>'project_id')::uuid
         END::uuid AS project_id
  FROM agent_task_queue t
  JOIN agent a ON a.id=t.agent_id AND a.workspace_id = $2::uuid
@@ -396,7 +396,7 @@ WITH visible AS MATERIALIZED (
                WHEN t.issue_id IS NOT NULL THEN i.project_id
                WHEN t.chat_session_id IS NOT NULL THEN cs.project_id
                WHEN t.autopilot_run_id IS NOT NULL THEN ap.project_id
-               WHEN t.context->>'type' = 'quick_create'
+               WHEN t.context->>'type' IN ('quick_create','project_supervision')
                     AND t.context->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
                THEN (t.context->>'project_id')::uuid
            END::uuid AS project_id

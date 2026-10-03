@@ -219,27 +219,28 @@ type RuntimeRecoveryNotifier interface {
 
 type Handler struct {
 	// Query snapshots shallow-copy Handler, so relay state and its mutex must stay shared.
-	localReviewRelay       *localReviewRelay
-	NotificationBots       *notificationbot.Worker
-	Queries                *db.Queries
-	ReadSelector           *dbreader.Selector
-	DB                     dbExecutor
-	TxStarter              txStarter
-	Hub                    *realtime.Hub
-	DaemonHub              *daemonws.Hub
-	MirrorSessions         *mirror.SessionStore
-	MirrorGrants           *mirror.ViewerGrantStore
-	MirrorControlGrants    *mirror.ControlGrantStore
-	MirrorViewers          *mirror.ViewerTracker
-	MirrorControlStates    *mirror.ControlStateTracker
-	DaemonProfileRefresh   RuntimeProfileRefreshNotifier
-	DaemonWorkspaceRefresh WorkspaceSetRefreshNotifier
-	DaemonRuntimeGone      RuntimeGoneNotifier
-	Bus                    *events.Bus
-	TaskService            *service.TaskService
-	PluginService          *service.PluginService
-	IssueService           *service.IssueService
-	AutopilotService       *service.AutopilotService
+	localReviewRelay          *localReviewRelay
+	NotificationBots          *notificationbot.Worker
+	Queries                   *db.Queries
+	ReadSelector              *dbreader.Selector
+	DB                        dbExecutor
+	TxStarter                 txStarter
+	Hub                       *realtime.Hub
+	DaemonHub                 *daemonws.Hub
+	MirrorSessions            *mirror.SessionStore
+	MirrorGrants              *mirror.ViewerGrantStore
+	MirrorControlGrants       *mirror.ControlGrantStore
+	MirrorViewers             *mirror.ViewerTracker
+	MirrorControlStates       *mirror.ControlStateTracker
+	DaemonProfileRefresh      RuntimeProfileRefreshNotifier
+	DaemonWorkspaceRefresh    WorkspaceSetRefreshNotifier
+	DaemonRuntimeGone         RuntimeGoneNotifier
+	Bus                       *events.Bus
+	TaskService               *service.TaskService
+	ProjectSupervisionService *service.ProjectSupervisionService
+	PluginService             *service.PluginService
+	IssueService              *service.IssueService
+	AutopilotService          *service.AutopilotService
 	// Entitlements supplies workspace-scoped commercial gates. A nil provider
 	// preserves self-hosted behavior without extra reads.
 	Entitlements entitlement.Provider
@@ -524,6 +525,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		DaemonRuntimeGone:            daemonRuntimeGone,
 		Bus:                          bus,
 		TaskService:                  taskSvc,
+		ProjectSupervisionService:    &service.ProjectSupervisionService{Tasks: taskSvc},
 		PluginService:                service.NewPluginService(queries, txStarter),
 		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
 		AutopilotService:             service.NewAutopilotService(queries, txStarter, bus, taskSvc),

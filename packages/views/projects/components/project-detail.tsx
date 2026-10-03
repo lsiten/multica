@@ -76,6 +76,7 @@ import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { ProjectCollaborationPanel } from "../../collaboration/components/project-collaboration-panel";
 import { ProjectExecutionScope } from "./project-execution-scope";
+import { ProjectSupervisionPanel } from "./project-supervision-panel";
 
 type ProjectDetailTab = "issues" | "graph";
 
@@ -562,7 +563,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             <button type="button" onClick={() => setActiveTab("issues")} className={cn("border-b-2 px-3 py-2.5 text-caption font-medium", activeTab === "issues" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{collaborationT(($) => $.project_tab_tasks)}</button>
             <button type="button" onClick={() => setActiveTab("graph")} className={cn("border-b-2 px-3 py-2.5 text-caption font-medium", activeTab === "graph" ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{collaborationT(($) => $.project_tab_graph)}</button>
           </div>
-          {activeTab === "issues" ? <IssueSurface scope={issueScope} modes={["board", "list", "table", "swimlane", "gantt"]} /> :
+          {activeTab === "issues" ? <><ProjectSupervisionPanel key={project.id} project={project} canManage={isWorkspaceAdmin}/><IssueSurface scope={issueScope} modes={["board", "list", "table", "swimlane", "gantt"]} /></> :
             <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6"><ProjectCollaborationPanel key={projectId} projectId={projectId} agents={agents} squads={squads} /></div>}
           </div>
         </ResizablePanel>

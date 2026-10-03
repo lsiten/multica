@@ -255,6 +255,10 @@ func sanitizeBriefCodeToken(s string) string {
 // behaviour as the legacy brief on that path.
 func writeAvailableCommands(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("## Available Commands\n\n")
+	if ctx.ProjectSupervisionPrompt != "" {
+		b.WriteString("Use `multica project supervision get <project-id> --output json` for classified backlog and the captured checked version. Read task, issue, agent and squad evidence as needed. Writes are restricted to `multica project supervision apply <project-id> --body-file actions.json` and `multica project supervision report <project-id> --body-file report.json`. Run `multica project supervision --help` and load the multica-platform projects reference for JSON contracts. Use the current task ID in your report. Make one bounded batch, report, then end; never poll or sleep.\n\n")
+		return
+	}
 	b.WriteString("Prefer `--output json` for structured data. The default brief lists only the core agent loop and common issue create/update tasks; for everything else run `multica --help` or `multica <command> --help`.\n\n")
 	b.WriteString("`--output json` writes JSON to stdout; confirmations and warnings go to stderr. Do not merge them (`2>&1`) into anything that parses the output — that makes a write that SUCCEEDED look like it failed and invites a duplicate retry.\n\n")
 	b.WriteString("### Core\n")
@@ -979,6 +983,8 @@ func writeInlineBlocksPolicy(b *strings.Builder) {
 func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 	b.WriteString("## Output\n\n")
 	switch kind {
+	case kindProjectSupervision:
+		b.WriteString("This is a short project coordination run. Use the scoped project supervision action and report commands. The project panel records the verified outcome. There is no patrol issue or issue comment to create.\n\n")
 	case kindAutopilotRunOnly:
 		b.WriteString("This is a run-only autopilot task, so there may be no issue comment to post. Your final assistant output is captured automatically as the autopilot run result. Keep it concise and state the outcome.\n\n")
 		b.WriteString("**Delivering files here:** this surface is text-only — the run result carries no attachments. Describe what you produced; do not link its path.\n")
@@ -1095,6 +1101,8 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 		writeWorkflowChat(&b)
 	case kindQuickCreate:
 		writeWorkflowQuickCreate(&b)
+	case kindProjectSupervision:
+		b.WriteString("Inspect only the bound project's supervision snapshot. Apply a small batch through the supervision API, report action/wait/blocked/needs_human with the supplied checked version, then end. Do not poll or sleep; the server retains pending facts and waits for capacity.\n\n")
 	case kindAutopilotRunOnly:
 		writeWorkflowAutopilot(&b)
 	case kindIssue:

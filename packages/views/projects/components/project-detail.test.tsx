@@ -21,6 +21,8 @@ vi.mock("@multica/ui/lib/clipboard", () => ({
   copyText: mocks.copyText,
 }));
 
+vi.mock("./project-supervision-panel",()=>({ProjectSupervisionPanel:()=>null}));
+
 vi.mock("@tanstack/react-query", () => ({
  useMutation: () => ({isPending:false,isError:false,mutate:vi.fn(),reset:vi.fn()}),
  useQueryClient: () => ({ invalidateQueries: vi.fn() }),

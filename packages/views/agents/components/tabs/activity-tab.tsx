@@ -565,6 +565,7 @@ function TaskRow({
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
   const paths = useWorkspacePaths();
+	const {t:projectT}=useT("projects");
   const [cancelling, setCancelling] = useState(false);
   const cfg = taskStatusConfig[task.status] ?? taskStatusConfig.queued!;
   const Icon = cfg.icon;
@@ -601,7 +602,7 @@ function TaskRow({
     task.status === "failed" ||
     task.status === "cancelled";
   const sourceFallback = !hasIssue
-    ? task.kind === "quick_create"
+    ? task.kind === "project_supervision" ? projectT($=>$.supervision.title) : task.kind === "quick_create"
       ? isTerminalStatus
         ? t(($) => $.tab_body.activity.source_quick_create)
         : t(($) => $.tab_body.activity.source_creating_issue)

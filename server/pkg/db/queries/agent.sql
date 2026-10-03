@@ -802,6 +802,13 @@ WHERE id = (
       AND atq.runtime_id = @runtime_id
       AND atq.status = 'queued'
       AND (atq.context->>'wakeup_id' IS NULL OR EXISTS (SELECT 1 FROM issue_wakeup w WHERE w.id=(atq.context->>'wakeup_id')::uuid AND w.disabled_at IS NULL AND w.revision=(atq.context->>'wakeup_revision')::bigint))
+      AND NOT EXISTS (
+          SELECT 1 FROM issue candidate_issue JOIN project_supervision ps ON ps.project_id=candidate_issue.project_id AND ps.workspace_id=candidate_issue.workspace_id
+		  JOIN project supervised_project ON supervised_project.id=ps.project_id
+          WHERE candidate_issue.id=atq.issue_id AND ps.enabled
+          AND (supervised_project.status<>'in_progress' OR (SELECT count(*) FROM agent_task_queue execution JOIN issue ei ON ei.id=execution.issue_id
+               WHERE ei.project_id=ps.project_id AND ei.workspace_id=ps.workspace_id AND execution.status IN ('dispatched','running','waiting_local_directory')) >= COALESCE((ps.config->>'max_in_flight')::int,3))
+      )
       AND EXISTS (
           SELECT 1
           FROM agent a

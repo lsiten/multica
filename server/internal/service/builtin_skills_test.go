@@ -354,6 +354,9 @@ func TestPlatformSkillDescriptionNamesEveryDomain(t *testing.T) {
 	triggerWords := map[string]string{
 		"references/notifications.md": "notification",
 		"references/issues.md":        "issue",
+		"references/issue-wakeups.md": "issue wakeup",
+		"references/chat.md":          "chat",
+		"references/coordination.md":  "coordination",
 		"references/mentions.md":      "mention",
 		"references/agents.md":        "agent",
 		"references/squads.md":        "squad",

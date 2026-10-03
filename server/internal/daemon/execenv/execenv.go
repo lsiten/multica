@@ -190,14 +190,15 @@ type TaskContextForEnv struct {
 	// of the brief.
 	ChatChannelDeliversFiles bool
 
-	AutopilotRunID          string // non-empty for autopilot run_only tasks
-	AutopilotID             string
-	AutopilotTitle          string
-	AutopilotDescription    string
-	AutopilotSource         string
-	AutopilotTriggerPayload string
-	QuickCreatePrompt       string // non-empty for quick-create tasks
-	IsSquadLeader           bool   // true when THIS TASK runs the agent in the squad-leader role (may exit silently on no_action); derived from the claim's is_leader_task / squad_id, never sniffed from instructions text (MUL-5811)
+	AutopilotRunID           string // non-empty for autopilot run_only tasks
+	AutopilotID              string
+	AutopilotTitle           string
+	AutopilotDescription     string
+	AutopilotSource          string
+	AutopilotTriggerPayload  string
+	QuickCreatePrompt        string // non-empty for quick-create tasks
+	ProjectSupervisionPrompt string
+	IsSquadLeader            bool // true when THIS TASK runs the agent in the squad-leader role (may exit silently on no_action); derived from the claim's is_leader_task / squad_id, never sniffed from instructions text (MUL-5811)
 	// WorkspaceContext is the workspace-level system prompt (workspace.context
 	// in the DB). Rendered into the brief as `## Workspace Context` when
 	// non-empty so every agent in the workspace sees the same shared context,
@@ -1090,10 +1091,11 @@ func hydrateCodexSkills(codexHome string, workspaceSkills []SkillContextForEnv, 
 type GCMetaKind string
 
 const (
-	GCKindIssue        GCMetaKind = "issue"
-	GCKindChat         GCMetaKind = "chat"
-	GCKindAutopilotRun GCMetaKind = "autopilot_run"
-	GCKindQuickCreate  GCMetaKind = "quick_create"
+	GCKindIssue              GCMetaKind = "issue"
+	GCKindChat               GCMetaKind = "chat"
+	GCKindAutopilotRun       GCMetaKind = "autopilot_run"
+	GCKindQuickCreate        GCMetaKind = "quick_create"
+	GCKindProjectSupervision GCMetaKind = "project_supervision"
 )
 
 // GCMeta is persisted to .gc_meta.json inside the env root so the GC loop

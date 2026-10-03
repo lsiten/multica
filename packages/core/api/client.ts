@@ -373,6 +373,7 @@ import {
   SquadMemberStatusListResponseSchema,
   ProjectCollaborationGraphResponseSchema,
   ProjectExecutionScopeBindingsSchema,
+	ProjectSupervisionSchema,
   EMPTY_PROJECT_COLLABORATION_GRAPH_RESPONSE,
   ProjectCollaborationEvidenceResponseSchema,
   EMPTY_PROJECT_COLLABORATION_EVIDENCE_RESPONSE,
@@ -4484,6 +4485,23 @@ export class ApiClient {
     const raw: unknown = await this.fetch(`/api/projects/${id}/execution-scope-bindings`);
     const parsed = parseWithFallback<import("../types/project").ProjectExecutionScopeBindings | null>(raw, ProjectExecutionScopeBindingsSchema, null, {endpoint:"GET /api/projects/:id/execution-scope-bindings"});
     if (!parsed) throw new Error("Invalid project execution scope response");
+    return parsed;
+  }
+
+  async getProjectSupervision(id:string):Promise<import("../types/project").ProjectSupervision> {
+    return this.parseProjectSupervision(await this.fetch<unknown>(`/api/projects/${id}/supervision`),id);
+  }
+  async saveProjectSupervision(id:string,data:{enabled:boolean;revision:number;config:import("../types/project").ProjectSupervisionConfig}):Promise<import("../types/project").ProjectSupervision>{
+    const saved=this.parseProjectSupervision(await this.fetch<unknown>(`/api/projects/${id}/supervision`,{method:"PUT",body:JSON.stringify(data)}),id);
+    if(saved.revision<=data.revision||saved.enabled!==data.enabled)throw new Error("Project supervision save was not confirmed");
+    return saved;
+  }
+  async checkProjectSupervision(id:string):Promise<import("../types/project").ProjectSupervision>{
+    return this.parseProjectSupervision(await this.fetch<unknown>(`/api/projects/${id}/supervision/check`,{method:"POST",body:"{}"}),id);
+  }
+  private parseProjectSupervision(raw:unknown,id:string):import("../types/project").ProjectSupervision{
+    const parsed=parseWithFallback<import("../types/project").ProjectSupervision|null>(raw,ProjectSupervisionSchema,null,{endpoint:"/api/projects/:id/supervision"});
+    if(!parsed||parsed.project_id!==id)throw new Error("Invalid project supervision response");
     return parsed;
   }
 

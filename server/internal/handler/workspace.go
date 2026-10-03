@@ -1344,6 +1344,7 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			name: "delete workspace Jev config",
 			run:  func() error { return qtx.DeleteWorkspaceJevConfig(ctx, requester.WorkspaceID) },
 		},
+		{name: "delete project supervision", run: func() error { return qtx.DeleteWorkspaceProjectSupervision(ctx, requester.WorkspaceID) }},
 		{
 			name: "delete administration data",
 			run:  func() error { return qtx.DeleteWorkspaceAdministration(ctx, requester.WorkspaceID) },

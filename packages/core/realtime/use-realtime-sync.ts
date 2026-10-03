@@ -886,6 +886,9 @@ export function useRealtimeSync(
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
       },
+      project_supervision: () => {
+        const wsId=getCurrentWsId();if(wsId)void qc.invalidateQueries({queryKey:["project_supervision",wsId]});
+      },
       project: () => {
         const wsId = getCurrentWsId();
         if (wsId) {
@@ -1124,6 +1127,9 @@ export function useRealtimeSync(
 
     const unsubAny = ws.onAny((msg) => {
       if (!belongsToCurrentWorkspace(msg.payload)) return;
+	  if(["task:completed","task:failed","task:cancelled","task:dispatch"].includes(msg.type)){
+		const wsId=getCurrentWsId();if(wsId)void qc.invalidateQueries({queryKey:["project_supervision",wsId]});
+	  }
       if (specificEvents.has(msg.type)) return;
       const prefix = msg.type.split(":")[0] ?? "";
       if (prefix === "agent" || (prefix === "task" && msg.type !== "task:progress")) {
