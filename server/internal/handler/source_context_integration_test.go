@@ -711,13 +711,8 @@ func TestCommentSourceContextLifecycle(t *testing.T) {
 	`, contextID); err != nil {
 		t.Fatalf("age target delete intents: %v", err)
 	}
-	originalObjectStore := testHandler.TaskService.SourceContextStorage
-	originalQueries := testHandler.TaskService.Queries
-	testHandler.TaskService.SourceContextStorage = store
-	testHandler.TaskService.Queries = originalQueries.WithTx(cleanupTx)
-	cleaned, err := testHandler.TaskService.CleanupSourceContextObjectIntents(ctx, 10)
-	testHandler.TaskService.SourceContextStorage = originalObjectStore
-	testHandler.TaskService.Queries = originalQueries
+	cleanupService := &service.TaskService{Queries: testHandler.Queries.WithTx(cleanupTx), SourceContextStorage: store}
+	cleaned, err := cleanupService.CleanupSourceContextObjectIntents(ctx, 10)
 	if err != nil || cleaned < 3 {
 		rows, diagnosticErr := cleanupTx.Query(ctx, `SELECT state, COALESCE(lease_expires_at <= now(), true), next_attempt_at <= now(), created_at <= now() - interval '1 hour' FROM issue_source_context_object_intent WHERE source_context_id=$1`, contextID)
 		if diagnosticErr == nil {

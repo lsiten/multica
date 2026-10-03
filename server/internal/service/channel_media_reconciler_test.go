@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -75,6 +77,32 @@ type reconcilerFixture struct {
 	workspaceID string
 	sessionID   string
 	messageID   string
+}
+
+func newChannelMediaReconcilerPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	shared := sharedTestPool(t)
+	schema := fmt.Sprintf("media_reconciler_%d", time.Now().UnixNano())
+	quoted := pgx.Identifier{schema}.Sanitize()
+	if _, err := shared.Exec(t.Context(), "CREATE SCHEMA "+quoted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := shared.Exec(t.Context(), "CREATE TABLE "+quoted+".channel_media_pending_object (LIKE public.channel_media_pending_object INCLUDING ALL)"); err != nil {
+		t.Fatal(err)
+	}
+	config := shared.Config().Copy()
+	config.ConnConfig.RuntimeParams["search_path"] = quoted + ",public"
+	pool, err := pgxpool.NewWithConfig(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		pool.Close()
+		if _, err := shared.Exec(context.Background(), "DROP SCHEMA "+quoted+" CASCADE"); err != nil {
+			t.Errorf("drop isolated media fixture: %v", err)
+		}
+	})
+	return pool
 }
 
 func seedReconcilerFixture(t *testing.T, pool *pgxpool.Pool) reconcilerFixture {
@@ -196,7 +224,7 @@ func (f reconcilerFixture) bindAttachment(t *testing.T, url string) {
 // cleared), an unreferenced settled object is deleted (row cleared), and a
 // row younger than the settle delay is untouched.
 func TestChannelMediaReconciler_SettlesThreeStates(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{}
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: deleter}
@@ -228,7 +256,7 @@ func TestChannelMediaReconciler_SettlesThreeStates(t *testing.T) {
 // A worker that claimed rows and crashed: the rows sit in 'deleting' with an
 // expired lease and must be reclaimable by the next sweep.
 func TestChannelMediaReconciler_ReclaimsExpiredLease(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{}
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: deleter}
@@ -256,7 +284,7 @@ func TestChannelMediaReconciler_ReclaimsExpiredLease(t *testing.T) {
 // attach it), releases the lease, and backs off; a later sweep after
 // next_attempt_at retries and settles it.
 func TestChannelMediaReconciler_DeleteFailureBacksOffThenRetries(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{err: errors.New("storage unavailable")}
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: deleter}
@@ -302,7 +330,7 @@ func TestChannelMediaReconciler_DeleteFailureBacksOffThenRetries(t *testing.T) {
 // claim is keyed off due-time and state only, but every settle decision joins
 // through the row's own workspace_id.
 func TestChannelMediaReconciler_LeavesFreshPendingToBind(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{}
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: deleter}
@@ -330,7 +358,7 @@ func TestChannelMediaReconciler_LeavesFreshPendingToBind(t *testing.T) {
 // deleter must never panic the worker — and must not claim rows either, or
 // they would sit stranded in 'deleting' until lease expiry.
 func TestChannelMediaReconciler_NilStorageSkipsSweepWithoutClaiming(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: nil}
 
@@ -347,7 +375,7 @@ func TestChannelMediaReconciler_NilStorageSkipsSweepWithoutClaiming(t *testing.T
 // string: release and delete with the right lease but the wrong workspace
 // must touch nothing.
 func TestChannelMediaReconciler_WrongWorkspaceCannotReleaseOrDelete(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	q := db.New(pool)
 
@@ -405,7 +433,7 @@ func (blockingDeleter) DeleteObject(ctx context.Context, _ string) error {
 }
 
 func TestChannelMediaReconciler_StalledDeleteIsBoundedAndBacksOff(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	// Every due row the sweep reaches waits this out in full, so keep it small.
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: blockingDeleter{}, deleteTimeout: 10 * time.Millisecond}
@@ -427,7 +455,7 @@ func TestChannelMediaReconciler_StalledDeleteIsBoundedAndBacksOff(t *testing.T) 
 // it must settle nothing and stay silent rather than page someone with a
 // claim-failure warning for its own cancellation.
 func TestChannelMediaReconciler_CancelledSweepIsQuiet(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	key := "ws/lark/cancelled"
 	f.seedLedgerRow(t, key, "https://cdn.test/cancelled", "pending", ChannelMediaReconcileSettleDelay+time.Minute)
@@ -462,7 +490,7 @@ func TestChannelMediaReconciler_CancelledSweepIsQuiet(t *testing.T) {
 // there is nothing to record: writing the backoff would fail on the same
 // cancelled context and log twice per in-flight row on every shutdown.
 func TestChannelMediaReconciler_CancelledSettleIsQuiet(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	key := "ws/lark/cancelled-mid-settle"
 	f.seedLedgerRow(t, key, "https://cdn.test/cancelled-mid-settle", "pending", ChannelMediaReconcileSettleDelay+time.Minute)
@@ -496,7 +524,7 @@ func TestChannelMediaReconciler_CancelledSettleIsQuiet(t *testing.T) {
 // before its first DELETE was ever tried, so attempt/backoff counted attempts
 // that never happened.
 func TestChannelMediaReconciler_TailRowIsUnclaimedUntilItsTurn(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{}
 	var tailState string
@@ -566,7 +594,7 @@ func (d *reappearingDeleter) state(t *testing.T) (present bool, calls int) {
 // closes it: the row survives the delete and each due pass re-deletes, so a
 // late materialization is reclaimed by a later pass and no object survives.
 func TestChannelMediaReconciler_LatePutAfterDeleteIsReclaimedByTombstone(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	// The object reappears exactly once, right after the first delete.
 	deleter := &reappearingDeleter{present: true, lateMaterial: func(call int) bool { return call == 1 }}
@@ -617,7 +645,7 @@ func TestChannelMediaReconciler_LatePutAfterDeleteIsReclaimedByTombstone(t *test
 // clears, and the object-deleted metric counts the object once (not once per
 // re-delete pass).
 func TestChannelMediaReconciler_TombstoneSchedulesThenClears(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{}
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: deleter}
@@ -652,7 +680,7 @@ func TestChannelMediaReconciler_TombstoneSchedulesThenClears(t *testing.T) {
 // anomaly — deleting it would manufacture the dangling attachment the whole
 // ledger exists to prevent.
 func TestChannelMediaReconciler_TombstoneKeepsReferencedObject(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{}
 	m := metrics.NewChannelMediaReconcilerMetrics()
@@ -688,7 +716,7 @@ func TestChannelMediaReconciler_TombstoneKeepsReferencedObject(t *testing.T) {
 // a lease that is born expired, or compress the tombstone schedule. This pins
 // that the persisted timestamps track the DATABASE clock.
 func TestChannelMediaReconciler_DeadlinesComeFromTheDatabaseClock(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	key := "ws/lark/db-clock"
 	f.seedLedgerRow(t, key, "https://cdn.test/db-clock", "pending", ChannelMediaReconcileSettleDelay+time.Minute)
@@ -729,7 +757,7 @@ func TestChannelMediaReconciler_DeadlinesComeFromTheDatabaseClock(t *testing.T) 
 // would never reach the end of the schedule and never be dropped. The position
 // lives in its own column, so a failure only costs one backed-off retry.
 func TestChannelMediaReconciler_TombstonePassSurvivesDeleteFailure(t *testing.T) {
-	pool := newCancelFinalizePool(t)
+	pool := newChannelMediaReconcilerPool(t)
 	f := seedReconcilerFixture(t, pool)
 	deleter := &fakeObjectDeleter{}
 	rec := &ChannelMediaReconciler{Queries: db.New(pool), Storage: deleter}

@@ -33,8 +33,6 @@ import (
 // the ready-file guard below fails loudly rather than vacuously if a slower
 // machine ever misses it.
 func TestCodexInitializeParentDeadlineDoesNotPersistOpaqueEnv(t *testing.T) {
-	t.Parallel()
-
 	const secret = "opaque-init-parent-deadline-sentinel-8842"
 	readyFile := filepath.Join(t.TempDir(), "stderr-written")
 	fakePath := writeFakeCodexAppServer(t, ""+
