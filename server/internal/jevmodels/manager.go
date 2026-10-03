@@ -14,9 +14,13 @@ type Config struct {
 	PythonPath   string
 	ReadyTimeout time.Duration
 	IdleTimeout  time.Duration
+	modelSpec    *modelSpec
+	engineRoot   string
+	engineMu     *sync.Mutex
 }
 
 type Status struct {
+	Installed       bool   `json:"installed"`
 	ModelID         string `json:"model_id"`
 	Revision        string `json:"revision"`
 	State           string `json:"state"`
@@ -30,6 +34,7 @@ type Status struct {
 
 type Manager struct {
 	mu                sync.Mutex
+	catalogMu         sync.Mutex
 	ctx               context.Context
 	cancel            context.CancelFunc
 	cfg               Config
@@ -47,6 +52,10 @@ type Manager struct {
 	closed            bool
 	installed         bool
 	lock              *os.File
+	model             Model
+	files             []modelFile
+	registered        map[string]modelSpec
+	children          map[string]*Manager
 }
 
 // New only inspects the cache. It never installs dependencies or downloads weights.
@@ -72,9 +81,26 @@ func New(ctx context.Context, cfg Config) (*Manager, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	m := &Manager{lock: lock, ctx: ctx, cancel: cancel, cfg: cfg, status: Status{ModelID: ModelID, Revision: Revision, State: "not_installed", TotalBytes: Catalog()[0].DownloadBytes}}
+	model, files := Catalog()[0], modelFiles
+	if cfg.modelSpec != nil {
+		model, files = cfg.modelSpec.Model, cfg.modelSpec.Files
+	}
+	if cfg.engineRoot == "" {
+		cfg.engineRoot = cfg.RootDir
+	}
+	if cfg.engineMu == nil {
+		cfg.engineMu = &sync.Mutex{}
+	}
+	m := &Manager{lock: lock, ctx: ctx, cancel: cancel, cfg: cfg, model: model, files: files, registered: map[string]modelSpec{}, children: map[string]*Manager{}, status: Status{ModelID: model.ID, Revision: model.Revision, State: "not_installed", TotalBytes: model.DownloadBytes}}
+	if cfg.modelSpec == nil {
+		if err := m.loadCatalog(); err != nil {
+			cancel()
+			lock.Close()
+			return nil, err
+		}
+	}
 	if _, err := os.Stat(filepath.Join(m.modelDir(), "installed.json")); err == nil {
-		if err = verifyFiles(ctx, m.modelDir(), modelFiles); err == nil {
+		if err = verifyFiles(ctx, m.modelDir(), m.files); err == nil {
 			m.installed = true
 			m.status.State = "installed"
 			m.status.DownloadedBytes = m.status.TotalBytes
@@ -86,21 +112,31 @@ func New(ctx context.Context, cfg Config) (*Manager, error) {
 	return m, nil
 }
 
-func (m *Manager) modelDir() string { return filepath.Join(m.cfg.RootDir, Revision) }
+func (m *Manager) modelDir() string { return filepath.Join(m.cfg.RootDir, m.model.Revision) }
 
-func (m *Manager) Status(id string) (Status, error) {
-	if id != ModelID {
-		return Status{}, ErrUnknownModel
+func (m *Manager) Status(id string, revisions ...string) (Status, error) {
+	if !m.matches(id, revisions) {
+		child, err := m.child(id, revisions)
+		if err != nil {
+			return Status{}, err
+		}
+		return child.Status(id)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.detectExitLocked()
-	return m.status, nil
+	status := m.status
+	status.Installed = m.installed
+	return status, nil
 }
 
-func (m *Manager) CancelInstall(id string) error {
-	if id != ModelID {
-		return ErrUnknownModel
+func (m *Manager) CancelInstall(id string, revisions ...string) error {
+	if !m.matches(id, revisions) {
+		child, err := m.child(id, revisions)
+		if err != nil {
+			return err
+		}
+		return child.CancelInstall(id)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -127,9 +163,13 @@ func (m *Manager) CancelInstall(id string) error {
 	return nil
 }
 
-func (m *Manager) Stop(id string) error {
-	if id != ModelID {
-		return ErrUnknownModel
+func (m *Manager) Stop(id string, revisions ...string) error {
+	if !m.matches(id, revisions) {
+		child, err := m.child(id, revisions)
+		if err != nil {
+			return err
+		}
+		return child.Stop(id)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -155,9 +195,13 @@ func (m *Manager) stopLocked() error {
 	return err
 }
 
-func (m *Manager) Remove(id string) error {
-	if id != ModelID {
-		return ErrUnknownModel
+func (m *Manager) Remove(id string, revisions ...string) error {
+	if !m.matches(id, revisions) {
+		child, err := m.child(id, revisions)
+		if err != nil {
+			return err
+		}
+		return child.Remove(id)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -186,13 +230,23 @@ func (m *Manager) Close() error {
 	m.installQueued = false
 	starting := m.starting
 	m.mu.Unlock()
+	m.catalogMu.Lock()
+	children := make([]*Manager, 0, len(m.children))
+	for _, child := range m.children {
+		children = append(children, child)
+	}
+	m.catalogMu.Unlock()
 	if starting != nil {
 		<-starting
 	}
 	m.installWG.Wait()
+	var childErr error
+	for _, child := range children {
+		childErr = errors.Join(childErr, child.Close())
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	err := m.stopLocked()
+	err := errors.Join(childErr, m.stopLocked())
 	if m.lock != nil {
 		err = errors.Join(err, m.lock.Close())
 		m.lock = nil
@@ -203,9 +257,13 @@ func (m *Manager) Close() error {
 // StartInstall atomically reserves an explicit model installation and starts it.
 // The returned channel receives exactly one result. A reservation generation
 // prevents a cancelled worker from completing a later retry's job.
-func (m *Manager) StartInstall(ctx context.Context, id string) (<-chan error, error) {
-	if id != ModelID {
-		return nil, ErrUnknownModel
+func (m *Manager) StartInstall(ctx context.Context, id string, revisions ...string) (<-chan error, error) {
+	if !m.matches(id, revisions) {
+		child, err := m.child(id, revisions)
+		if err != nil {
+			return nil, err
+		}
+		return child.StartInstall(ctx, id)
 	}
 	m.mu.Lock()
 	if m.closed {

@@ -236,7 +236,11 @@ async function fetchWorktreeManager(
       headers: { ...init?.headers, Authorization: `Bearer ${config.token}`, "X-Multica-Profile": active.name },
       signal: init?.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
     });
-    if (response.status === 404) throw new Error("Update and restart the daemon to manage worktrees.");
+    if (response.status === 404) {
+      if (path.startsWith("/jev/")) throw new Error("Update and restart the daemon to manage Jev models.");
+      if (path.startsWith("/mcp/")) throw new Error("Update and restart the daemon to view MCP services.");
+      throw new Error("Update and restart the daemon to manage worktrees.");
+    }
     if (!response.ok) throw new Error(await response.text());
     if (response.status === 204) return null;
     return response.json();
@@ -1519,21 +1523,31 @@ export function setupDaemonManager(
   ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
     parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
   );
+  ipcMain.handle("daemon:mcp-services", () => fetchWorktreeManager("/mcp/services"));
   ipcMain.handle("daemon:jev-models", () => fetchWorktreeManager("/jev/models"));
-  ipcMain.handle("daemon:jev-model-install", (_event, modelId: unknown) => {
+  ipcMain.handle("daemon:jev-model-register", (_event, modelId: unknown, revision: unknown) => {
+    if (typeof modelId !== "string" || !modelId.trim() || typeof revision !== "string") throw new Error("model ID and revision are required");
+    return fetchWorktreeManager("/jev/models/register", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId, revision }),
+    });
+  });
+  ipcMain.handle("daemon:jev-model-install", (_event, modelId: unknown, revision?: unknown) => {
     if (typeof modelId !== "string" || !modelId.trim()) throw new Error("model id is required");
+    if (revision !== undefined && typeof revision !== "string") throw new Error("invalid model revision");
     return fetchWorktreeManager("/jev/models/install", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model_id: modelId }),
+      body: JSON.stringify({ model_id: modelId, revision }),
     });
   });
-  ipcMain.handle("daemon:jev-model-cancel", (_event, modelId: unknown) => {
+  ipcMain.handle("daemon:jev-model-cancel", (_event, modelId: unknown, revision?: unknown) => {
     if (typeof modelId !== "string" || !modelId.trim()) throw new Error("model id is required");
+    if (revision !== undefined && typeof revision !== "string") throw new Error("invalid model revision");
     return fetchWorktreeManager("/jev/models/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model_id: modelId }),
+      body: JSON.stringify({ model_id: modelId, revision }),
     });
   });
   ipcMain.handle("daemon:review-inventory", () => requestReviewInventory({

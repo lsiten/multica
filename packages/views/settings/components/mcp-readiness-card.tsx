@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Badge } from "@multica/ui/components/ui/badge";
+import { McpReadinessBadge } from "./mcp-readiness-status";
 import { SettingsCard } from "./settings-layout";
 import { useT } from "../../i18n";
+import { BuiltinMcpDetailsButton } from "./builtin-mcp-details";
 type DaemonMcpReadiness = {
   name: string;
   instance_id?: string;
@@ -25,22 +26,6 @@ function daemonAPI(): DaemonMcpAPI | undefined {
   return (window as unknown as { daemonAPI?: DaemonMcpAPI }).daemonAPI;
 }
 
-function StatusBadge({ state }: { state: DaemonMcpReadiness["state"] }) {
-  const { t } = useT("settings");
-  const label = (() => {
-    switch (state) {
-      case "broker_ready": return t(($) => $.jev.broker_ready);
-      case "ready": return t(($) => $.jev.ready);
-      case "probing": return t(($) => $.jev.loading);
-      case "not_configured": return t(($) => $.jev.not_installed);
-      case "provider_unavailable": return t(($) => $.jev.provider_unavailable);
-      case "capability_required": return t(($) => $.jev.capability_required);
-      case "protocol_error": return t(($) => $.jev.daemon_invalid);
-      default: return t(($) => $.jev.daemon_failed);
-    }
-  })();
-  return <Badge variant={state === "ready" || state === "broker_ready" ? "secondary" : "outline"}>{label}</Badge>;
-}
 
 /**
  * Shows readiness returned by the host daemon's bounded MCP probe. The web
@@ -116,7 +101,7 @@ export function McpReadinessCard() {
                     : `${status.scope}${status.reason ? ` · ${status.reason}` : ""}`}
               </p>
             </div>
-            <StatusBadge state={status.state} />
+            <div className="flex flex-wrap items-center gap-2">{(status.name==="multica-llm2jev"||status.name==="multica-identity-actions")&&<BuiltinMcpDetailsButton name={status.name}/>}<McpReadinessBadge state={status.state} /></div>
           </li>
         ))}
       </ul>

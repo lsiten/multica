@@ -52,7 +52,7 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 		if err != nil {
 			return nil, nil, err
 		}
-		lease, err = manager.Acquire(ctx, jevmodels.Selection{ModelID: cfg.ModelID, Device: cfg.Device})
+		lease, err = manager.Acquire(ctx, jevmodels.Selection{ModelID: cfg.ModelID, Revision: cfg.ModelRevision, Device: cfg.Device})
 		if err != nil {
 			return nil, nil, fmt.Errorf("acquire local Jev model: %w", err)
 		}

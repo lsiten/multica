@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -14,6 +15,13 @@ const (
 	EventJevOperation       = "jev:operation"
 	EventJevResult          = "jev:result"
 )
+
+var huggingFaceModelID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$`)
+var huggingFaceRevision = regexp.MustCompile(`^[a-f0-9]{40}$`)
+
+func ValidLocalJevModel(id, revision string) bool {
+	return huggingFaceModelID.MatchString(id) && !strings.Contains(id, "..") && huggingFaceRevision.MatchString(revision)
+}
 
 type WorkspaceJevConfig struct {
 	Source         string `json:"source"`
@@ -40,7 +48,7 @@ func (c WorkspaceJevConfig) Validate() error {
 			return invalid
 		}
 	case "local":
-		if c.ModelID != "Mapika/decider-2b" || c.ModelRevision != MapikaDecider2BRevision || c.Endpoint != "" || c.CredentialEnv != "" {
+		if !ValidLocalJevModel(c.ModelID, c.ModelRevision) || c.Endpoint != "" || c.CredentialEnv != "" {
 			return invalid
 		}
 		switch c.Device {

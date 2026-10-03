@@ -2,6 +2,7 @@ package jevmodels
 
 import (
 	"context"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -10,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -25,8 +25,8 @@ func (p progressWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-func downloadFile(ctx context.Context, client *http.Client, target string, f modelFile, update func(int64)) (err error) {
-	u := "https://huggingface.co/" + ModelID + "/resolve/" + Revision + "/" + f.Name
+func downloadFile(ctx context.Context, client *http.Client, target string, model Model, f modelFile, update func(int64)) (err error) {
+	u := "https://huggingface.co/" + model.ID + "/resolve/" + model.Revision + "/" + f.Name
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
@@ -45,11 +45,14 @@ func downloadFile(ctx context.Context, client *http.Client, target string, f mod
 	}
 	defer func() { err = errors.Join(err, file.Close()) }()
 	h := sha256.New()
-	n, err := io.Copy(progressWriter{writer: io.MultiWriter(file, h), update: update}, io.LimitReader(res.Body, f.Size+1))
+	gitHash := sha1.New()
+	fmt.Fprintf(gitHash, "blob %d\x00", f.Size)
+	n, err := io.Copy(progressWriter{writer: io.MultiWriter(file, h, gitHash), update: update}, io.LimitReader(res.Body, f.Size+1))
 	if err != nil {
 		return err
 	}
-	if n != f.Size || hex.EncodeToString(h.Sum(nil)) != f.SHA256 {
+	validHash := f.SHA256 != "" && hex.EncodeToString(h.Sum(nil)) == f.SHA256 || f.SHA256 == "" && f.GitSHA1 != "" && hex.EncodeToString(gitHash.Sum(nil)) == f.GitSHA1
+	if n != f.Size || !validHash {
 		return fmt.Errorf("model integrity verification failed: %s", f.Name)
 	}
 	return file.Sync()
@@ -73,12 +76,15 @@ func verifyFiles(ctx context.Context, dir string, files []modelFile) error {
 			return err
 		}
 		h := sha256.New()
-		_, copyErr := io.Copy(h, &contextReader{ctx: ctx, reader: file})
+		gitHash := sha1.New()
+		fmt.Fprintf(gitHash, "blob %d\x00", f.Size)
+		_, copyErr := io.Copy(io.MultiWriter(h, gitHash), &contextReader{ctx: ctx, reader: file})
 		closeErr := file.Close()
 		if err = errors.Join(copyErr, closeErr); err != nil {
 			return err
 		}
-		if hex.EncodeToString(h.Sum(nil)) != f.SHA256 {
+		validHash := f.SHA256 != "" && hex.EncodeToString(h.Sum(nil)) == f.SHA256 || f.SHA256 == "" && f.GitSHA1 != "" && hex.EncodeToString(gitHash.Sum(nil)) == f.GitSHA1
+		if !validHash {
 			return fmt.Errorf("model checksum mismatch: %s", f.Name)
 		}
 	}
@@ -99,8 +105,8 @@ func (r *contextReader) Read(b []byte) (int, error) {
 
 // Install blocks until completion. Call only for an explicit user download action.
 // StartInstall owns the reservation so a cancelled worker cannot claim a retry.
-func (m *Manager) Install(ctx context.Context, id string) error {
-	result, err := m.StartInstall(ctx, id)
+func (m *Manager) Install(ctx context.Context, id string, revisions ...string) error {
+	result, err := m.StartInstall(ctx, id, revisions...)
 	if err != nil {
 		return err
 	}
@@ -116,14 +122,7 @@ func (m *Manager) installBody(ctx context.Context, generation uint64) (err error
 		return err
 	}
 	defer func() { err = errors.Join(err, os.RemoveAll(stage)) }()
-	client := &http.Client{Timeout: 2 * time.Hour, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		host := req.URL.Hostname()
-		trusted := host == "huggingface.co" || strings.HasSuffix(host, ".huggingface.co") || host == "hf.co" || strings.HasSuffix(host, ".hf.co")
-		if req.URL.Scheme != "https" || !trusted || len(via) > 10 {
-			return errors.New("unsafe model download redirect")
-		}
-		return nil
-	}}
+	client := hubClient(2 * time.Hour)
 	m.mu.Lock()
 	if generation != m.installGeneration {
 		m.mu.Unlock()
@@ -131,8 +130,8 @@ func (m *Manager) installBody(ctx context.Context, generation uint64) (err error
 	}
 	m.status.Phase = "weights"
 	m.mu.Unlock()
-	for _, f := range modelFiles {
-		if err = downloadFile(ctx, client, stage, f, func(n int64) {
+	for _, f := range m.files {
+		if err = downloadFile(ctx, client, stage, m.model, f, func(n int64) {
 			m.mu.Lock()
 			if generation == m.installGeneration {
 				m.status.DownloadedBytes += n
@@ -149,10 +148,10 @@ func (m *Manager) installBody(ctx context.Context, generation uint64) (err error
 	}
 	m.status.State = "verifying"
 	m.mu.Unlock()
-	if err = verifyFiles(ctx, stage, modelFiles); err != nil {
+	if err = verifyFiles(ctx, stage, m.files); err != nil {
 		return err
 	}
-	if err = os.WriteFile(filepath.Join(stage, "installed.json"), []byte(`{"revision":"`+Revision+`","engine_version":"`+EngineVersion+`"}`), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(stage, "installed.json"), []byte(`{"revision":"`+m.model.Revision+`","engine_version":"`+EngineVersion+`"}`), 0600); err != nil {
 		return err
 	}
 	if err = os.RemoveAll(m.modelDir()); err != nil {

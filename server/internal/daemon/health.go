@@ -456,11 +456,13 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	defer cleanupDesktop()
 	mux.HandleFunc("/health", d.healthHandler(startedAt))
 	mux.HandleFunc("/mcp/readiness", d.mcpReadinessHandler())
+	mux.HandleFunc("/mcp/services", d.builtinMCPDetailsHandler())
 	mux.HandleFunc("/shutdown", d.shutdownHandler())
 	mux.HandleFunc("/repo/checkout", d.repoCheckoutHandler())
 	mux.HandleFunc("/worktrees", d.worktreeManagerHandler())
 	mux.HandleFunc("/worktrees/review", d.worktreeReviewHandler())
 	mux.HandleFunc("/jev/models", d.jevModelsHandler())
+	mux.HandleFunc("/jev/models/register", d.jevModelRegisterHandler())
 	mux.HandleFunc("/jev/models/install", d.jevModelInstallHandler())
 	mux.HandleFunc("/jev/models/cancel", d.jevModelCancelHandler())
 
@@ -483,8 +485,8 @@ func (d *Daemon) jevLocalAuthorized(r *http.Request) bool {
 		subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+d.client.Token())) == 1
 }
 
-// jevModelsHandler is intentionally daemon-local. It exposes only the curated
-// catalog and host-profile cache status; the server never receives model
+// jevModelsHandler is intentionally daemon-local. It exposes registered model
+// metadata and host-profile cache status; the server never receives model
 // weights or filesystem paths.
 func (d *Daemon) jevModelsHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -501,9 +503,10 @@ func (d *Daemon) jevModelsHandler() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		statuses := make([]jevmodels.Status, 0, len(jevmodels.Catalog()))
-		for _, model := range jevmodels.Catalog() {
-			status, statusErr := manager.Status(model.ID)
+		models := manager.Catalog()
+		statuses := make([]jevmodels.Status, 0, len(models))
+		for _, model := range models {
+			status, statusErr := manager.Status(model.ID, model.Revision)
 			if statusErr != nil {
 				http.Error(w, statusErr.Error(), http.StatusInternalServerError)
 				return
@@ -511,7 +514,7 @@ func (d *Daemon) jevModelsHandler() http.HandlerFunc {
 			statuses = append(statuses, status)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"models": jevmodels.Catalog(), "status": statuses})
+		_ = json.NewEncoder(w).Encode(map[string]any{"models": models, "status": statuses})
 	}
 }
 
@@ -526,7 +529,8 @@ func (d *Daemon) jevModelInstallHandler() http.HandlerFunc {
 			return
 		}
 		var req struct {
-			ModelID string `json:"model_id"`
+			ModelID  string `json:"model_id"`
+			Revision string `json:"revision"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil || strings.TrimSpace(req.ModelID) == "" {
 			http.Error(w, "model_id is required", http.StatusBadRequest)
@@ -537,13 +541,21 @@ func (d *Daemon) jevModelInstallHandler() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if status, statusErr := manager.Status(req.ModelID); statusErr != nil {
+		status, statusErr := manager.Status(req.ModelID, req.Revision)
+		if errors.Is(statusErr, jevmodels.ErrUnknownModel) && req.Revision != "" {
+			if _, registerErr := manager.Register(r.Context(), req.ModelID, req.Revision, nil); registerErr != nil {
+				http.Error(w, registerErr.Error(), http.StatusBadRequest)
+				return
+			}
+			status, statusErr = manager.Status(req.ModelID, req.Revision)
+		}
+		if statusErr != nil {
 			http.Error(w, statusErr.Error(), http.StatusBadRequest)
 		} else if status.State == "installed" || status.State == "ready" {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(status)
 		} else {
-			result, startErr := manager.StartInstall(context.Background(), req.ModelID)
+			result, startErr := manager.StartInstall(context.Background(), req.ModelID, req.Revision)
 			if startErr != nil {
 				if errors.Is(startErr, jevmodels.ErrBusy) {
 					http.Error(w, "model download already in progress", http.StatusConflict)
@@ -559,7 +571,7 @@ func (d *Daemon) jevModelInstallHandler() http.HandlerFunc {
 			}(req.ModelID, result)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true, "status": "queued", "model_id": req.ModelID})
+			_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true, "status": "queued", "model_id": req.ModelID, "revision": req.Revision})
 		}
 	}
 }
@@ -575,7 +587,8 @@ func (d *Daemon) jevModelCancelHandler() http.HandlerFunc {
 			return
 		}
 		var req struct {
-			ModelID string `json:"model_id"`
+			ModelID  string `json:"model_id"`
+			Revision string `json:"revision"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil || strings.TrimSpace(req.ModelID) == "" {
 			http.Error(w, "model_id is required", http.StatusBadRequest)
@@ -583,7 +596,7 @@ func (d *Daemon) jevModelCancelHandler() http.HandlerFunc {
 		}
 		manager, err := d.jevModelManager()
 		if err == nil {
-			err = manager.CancelInstall(req.ModelID)
+			err = manager.CancelInstall(req.ModelID, req.Revision)
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

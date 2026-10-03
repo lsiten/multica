@@ -4,12 +4,14 @@ import { render, screen } from "@testing-library/react";
 import settings from "../../locales/en/settings.json";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { McpReadinessCard } from "./mcp-readiness-card";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+vi.mock("@multica/core/paths",()=>({useCurrentWorkspace:()=>({id:"ws"})}));
 
 function renderCard() {
   return render(
-    <I18nProvider locale="en" resources={{ en: { settings } }}>
+    <QueryClientProvider client={new QueryClient()}><I18nProvider locale="en" resources={{ en: { settings } }}>
       <McpReadinessCard />
-    </I18nProvider>,
+    </I18nProvider></QueryClientProvider>,
   );
 }
 

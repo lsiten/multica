@@ -30,7 +30,7 @@ type modelProcess struct {
 func (p *modelProcess) stop() error { p.cancel(); <-p.done; return nil }
 
 func (m *Manager) start(ctx context.Context, s Selection) (*modelProcess, error) {
-	if err := verifyFiles(ctx, m.modelDir(), modelFiles); err != nil {
+	if err := verifyFiles(ctx, m.modelDir(), m.files); err != nil {
 		return nil, err
 	}
 	worker := filepath.Join(m.cfg.RootDir, "worker.py")

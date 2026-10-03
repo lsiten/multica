@@ -288,8 +288,10 @@ const daemonAPI = {
   listWorktrees: (): Promise<ManagedWorktree[]> =>
     ipcRenderer.invoke("daemon:list-worktrees"),
   getJevModels: (): Promise<unknown> => ipcRenderer.invoke("daemon:jev-models"),
-  installJevModel: (modelId: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-install", modelId),
-  cancelJevModelInstall: (modelId: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-cancel", modelId),
+  getBuiltinMcpServices: (): Promise<unknown> => ipcRenderer.invoke("daemon:mcp-services"),
+  registerJevModel: (modelId: string, revision: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-register", modelId, revision),
+  installJevModel: (modelId: string, revision?: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-install", modelId, revision),
+  cancelJevModelInstall: (modelId: string, revision?: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-cancel", modelId, revision),
   cleanupWorktrees: (paths: string[], discardChanges = false): Promise<ManagedWorktreeCleanupResult> =>
     ipcRenderer.invoke("daemon:cleanup-worktrees", paths, discardChanges),
   onStatusChange: (callback: (status: DaemonStatus) => void) => {

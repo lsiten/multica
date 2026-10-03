@@ -31,7 +31,7 @@ const data = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(options: T) => options,
-  useQuery: () => ({ data: data.servers, isLoading: data.isLoading }),
+  useQuery: (options:{queryKey:readonly unknown[]}) => options.queryKey[0]==="builtin-mcp-details" ? {data:undefined,isPending:false,isError:false} : ({ data: data.servers, isLoading: data.isLoading }),
 }));
 
 vi.mock("@multica/core/workspace/queries", () => ({

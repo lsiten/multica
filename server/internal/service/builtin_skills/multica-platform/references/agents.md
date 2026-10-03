@@ -340,6 +340,15 @@ availability and task/provider readiness. `provider_unavailable` means the
 broker started but the configured Jev endpoint, credential, or local model
 could not serve the request; it is not an MCP download failure.
 
+Built-in MCP rows expose public tool contracts and profile-authenticated service
+diagnostics through the desktop details view. This view does not contain task
+routes or credentials. Local Jev models can be added from public Hugging Face
+repositories containing Decider configuration and safetensors weights. Checking
+a repository resolves its branch/tag to a fixed commit and records file hashes;
+weights and dependencies download only after confirmation. The workspace stores
+the selected model ID, commit and device, while the host profile owns the cache.
+Different commits stay isolated, and running tasks keep their captured selection.
+
 ## Skill binding
 
 Creating an agent does NOT bind any workspace skill — binding is a separate

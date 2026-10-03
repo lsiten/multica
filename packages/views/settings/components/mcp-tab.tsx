@@ -42,6 +42,7 @@ import { AppLink, useOptionalNavigation } from "../../navigation";
 import { useComposioAvailable } from "./connected-apps-tab";
 import { settingsHref } from "./settings-navigation";
 import { McpReadinessCard } from "./mcp-readiness-card";
+import { BuiltinMcpDetailsButton } from "./builtin-mcp-details";
 
 /**
  * The workspace MCP server library (GH #6062).
@@ -225,7 +226,7 @@ export function McpTab() {
                 <p className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_decision)}</p>
                 <p className="mt-1 text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_decision_hint)}</p>
               </div>
-              <Badge variant="secondary">{collaborationT(($) => $.mcp_builtin_auto)}</Badge>
+              <div className="flex flex-wrap items-center gap-2"><BuiltinMcpDetailsButton name="multica-llm2jev"/><Badge variant="secondary">{collaborationT(($) => $.mcp_builtin_auto)}</Badge></div>
             </li>
             <li className="flex items-start gap-3 p-4">
               <Plug className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -233,7 +234,7 @@ export function McpTab() {
                 <p className="text-body font-medium">{collaborationT(($) => $.mcp_builtin_identity)}</p>
                 <p className="mt-1 text-caption text-muted-foreground">{collaborationT(($) => $.mcp_builtin_identity_hint)}</p>
               </div>
-              <Badge variant="outline">{collaborationT(($) => $.mcp_builtin_identity_required)}</Badge>
+              <div className="flex flex-wrap items-center gap-2"><BuiltinMcpDetailsButton name="multica-identity-actions"/><Badge variant="outline">{collaborationT(($) => $.mcp_builtin_identity_required)}</Badge></div>
             </li>
           </ul>
         </SettingsCard>

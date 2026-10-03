@@ -16,7 +16,7 @@ var workerSource []byte
 
 const engineWheel = "https://files.pythonhosted.org/packages/59/46/72898a32aca3ed95d3807304c10d3635d0448d00a4f68ed878e7de4d0571/decider_ai-1.8.1-py3-none-any.whl#sha256=ac9414054b29a44d34eae1b057844cf8f997e41cf2e8ee952320fb12ba35bb55"
 
-func (m *Manager) engineDir() string { return filepath.Join(m.cfg.RootDir, "engine-"+EngineVersion) }
+func (m *Manager) engineDir() string { return filepath.Join(m.cfg.engineRoot, "engine-"+EngineVersion) }
 func (m *Manager) python() string {
 	if runtime.GOOS == "windows" {
 		return filepath.Join(m.engineDir(), "Scripts", "python.exe")
@@ -25,6 +25,11 @@ func (m *Manager) python() string {
 }
 
 func (m *Manager) installEngine(ctx context.Context) error {
+	m.cfg.engineMu.Lock()
+	defer m.cfg.engineMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := os.Stat(filepath.Join(m.engineDir(), "ready")); err == nil {
 		return nil
 	}

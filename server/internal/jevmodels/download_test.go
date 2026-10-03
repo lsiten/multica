@@ -31,7 +31,7 @@ func TestDownloadVerifiesExactRevisionAndHash(t *testing.T) {
 				}
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
 			})}
-			err := downloadFile(t.Context(), client, dir, f, func(n int64) { progress += n })
+			err := downloadFile(t.Context(), client, dir, Catalog()[0], f, func(n int64) { progress += n })
 			if body == content {
 				if err != nil {
 					t.Fatal(err)

@@ -17,6 +17,13 @@ type Lease struct {
 
 // Acquire never installs anything. Concurrent tasks share one ready host process.
 func (m *Manager) Acquire(ctx context.Context, s Selection) (*Lease, error) {
+	if !m.matches(s.ModelID, []string{s.Revision}) {
+		child, err := m.child(s.ModelID, []string{s.Revision})
+		if err != nil {
+			return nil, err
+		}
+		return child.Acquire(ctx, s)
+	}
 	if s.Device == "" {
 		s.Device = "auto"
 	}

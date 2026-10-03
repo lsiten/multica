@@ -13,6 +13,8 @@ export type {
   ClientUsageRequest,
 } from "./client";
 export { parseWithFallback, setSchemaLogger } from "./schema";
+export { parseDaemonJevModel, parseDaemonJevModels, parseBuiltinMcpServices } from "./daemon-jev";
+export type { DaemonJevModel, DaemonJevModels, BuiltinMcpServices } from "./daemon-jev";
 export type { ParseOptions } from "./schema";
 export {
   parseMirrorAuthorizationRequest,
