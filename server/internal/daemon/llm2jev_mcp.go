@@ -35,7 +35,12 @@ const (
 	jevMCPToolName           = "multica_jev_systemone"
 )
 
-const llm2jevExecutionInstructions = "\nManaged semantic tools are available through the daemon Jev broker. Call multica_llm2jev_capabilities first. Use multica_jev_systemone for calibrated choice, score, or noul questions when it is advertised; preserve and report its probabilities. Otherwise use multica_llm2jev_evaluate for evidence-backed yes/no/uncertain comparisons and multica_llm2jev_verify_completion for explicit completion criteria. Never treat uncertain as success, and do not claim a provider decision when the tool reports an error. Continue routine work within the task scope without asking for per-step authorization; pause for missing required information, a policy, permission, or security boundary, an exceeded budget, or a destructive/high-risk action."
+var (
+	errCompletionTaskMismatch = errors.New("llm2jev: completion request is bound to another task")
+	errCompletionGoalMismatch = errors.New("llm2jev: completion goal is not bound to this task")
+)
+
+const llm2jevExecutionInstructions = "\nManaged decision tools are available through the daemon Jev broker. Call multica_llm2jev_capabilities first and use the advertised input schemas and examples; replace all example placeholders with actual task data. Use multica_jev_systemone for typed choice, score, or noul questions when advertised; otherwise use multica_llm2jev_evaluate for candidate comparisons. In BOTH modes, use multica_llm2jev_verify_completion to verify completion: criteria and evidence must be arrays of nonempty strings describing actual acceptance conditions and observed results. You may omit task_id and goal because this task-scoped service supplies their defaults. If provided, use the current run ID and include a goal_anchor, not another task identity. For retryable parameter errors, correct the reported fields using the returned input_schema and example_arguments; never blindly repeat invalid input or invent evidence. Preserve actual provider probabilities when returned; never treat uncertain or a tool error as success. Continue routine work within the task scope without asking for per-step authorization; pause for missing required information, a policy, permission, or security boundary, an exceeded budget, or a destructive/high-risk action."
 
 type llm2jevMCPSet struct {
 	server     *http.Server
@@ -323,9 +328,9 @@ func (s *llm2jevMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "ping":
 		writeLLM2JevMCPResult(w, req.ID, map[string]any{})
 	case "tools/list":
-		tools := []map[string]any{llm2jevToolDescriptor(), llm2jevCompletionDescriptor(), llm2jevCapabilitiesDescriptor()}
+		tools := []map[string]any{llm2jevToolDescriptor(), s.completionDescriptor(), llm2jevCapabilitiesDescriptor()}
 		if s.systemOne {
-			tools = []map[string]any{jevSystemOneDescriptor(), llm2jevCompletionDescriptor(), llm2jevCapabilitiesDescriptor()}
+			tools = []map[string]any{jevSystemOneDescriptor(), s.completionDescriptor(), llm2jevCapabilitiesDescriptor()}
 		}
 		writeLLM2JevMCPResult(w, req.ID, map[string]any{"tools": tools})
 	case "tools/call":
@@ -355,6 +360,7 @@ func llm2jevToolDescriptor() map[string]any {
 				}},
 			},
 			"required": []string{"question", "candidates"},
+			"examples": []any{map[string]any{"question": "<question to decide>", "candidates": []map[string]string{{"id": "a", "content": "<candidate A>"}, {"id": "b", "content": "<candidate B>"}}, "evidence": []string{"<actual observed evidence>"}}},
 		},
 	}
 }
@@ -370,18 +376,40 @@ func llm2jevCapabilitiesDescriptor() map[string]any {
 func llm2jevCompletionDescriptor() map[string]any {
 	return map[string]any{
 		"name":        llm2jevMCPCompletionTool,
-		"description": "Verify whether a goal satisfies explicit completion criteria using evidence. Returns satisfied, incomplete, or uncertain with missing criteria; never returns probabilities.",
+		"description": "Verify this task's completion against actual acceptance criteria and observed evidence. task_id and goal default to the current task. Returns satisfied, incomplete, or uncertain; native SystemOne may also return calibrated probabilities.",
 		"inputSchema": map[string]any{
 			"type": "object", "additionalProperties": false,
 			"properties": map[string]any{
-				"task_id":  map[string]any{"type": "string", "minLength": 1, "maxLength": 256},
-				"goal":     map[string]any{"type": "string", "minLength": 1, "maxLength": 16000},
+				"task_id":  map[string]any{"type": "string", "minLength": 1, "maxLength": 256, "description": "Optional; defaults to this run. If provided, use task_id from capabilities, not the issue ID or task number."},
+				"goal":     map[string]any{"type": "string", "minLength": 1, "maxLength": 16000, "description": "Optional; defaults to this task's bound goal. If provided, include a goal_anchor from capabilities when nonempty."},
 				"criteria": map[string]any{"type": "array", "minItems": 1, "maxItems": 64, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 12000}},
-				"evidence": map[string]any{"type": "array", "maxItems": 64, "items": map[string]any{"type": "string", "maxLength": 12000}},
+				"evidence": map[string]any{"type": "array", "minItems": 1, "maxItems": 64, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 12000}, "description": "Actual observed results, test outcomes or artifacts supporting the criteria. Never fabricate evidence or copy example placeholders."},
 			},
-			"required": []string{"task_id", "goal", "criteria"},
+			"required": []string{"criteria", "evidence"},
 		},
 	}
+}
+
+func (s *llm2jevMCPServer) defaultCompletionGoal() string {
+	anchor := s.taskID
+	if len(s.goalAnchors) > 0 {
+		anchor = s.goalAnchors[len(s.goalAnchors)-1]
+	}
+	return "Verify completion of " + anchor
+}
+
+func (s *llm2jevMCPServer) completionExample() map[string]any {
+	return map[string]any{"criteria": []string{"<acceptance condition for this task>"}, "evidence": []string{"<actual observed result or artifact supporting that condition>"}}
+}
+
+func (s *llm2jevMCPServer) completionDescriptor() map[string]any {
+	descriptor := llm2jevCompletionDescriptor()
+	schema := descriptor["inputSchema"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	properties["task_id"].(map[string]any)["default"] = s.taskID
+	properties["goal"].(map[string]any)["default"] = s.defaultCompletionGoal()
+	schema["examples"] = []any{s.completionExample()}
+	return descriptor
 }
 
 func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, req pluginHookMCPRequest) {
@@ -394,12 +422,23 @@ func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, re
 		writeLLM2JevMCPError(w, req.ID, -32602, "unknown or invalid tool parameters")
 		return
 	}
-	if params.Name == llm2jevMCPCapabilityTool && s.systemOne {
-		writeLLM2JevMCPResult(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": `{"mode":"system_one","supports_choice":true,"supports_score":true,"supports_noul":true,"calibrated":true}`}}})
-		return
-	}
 	if params.Name == llm2jevMCPCapabilityTool {
-		capabilities, _ := json.Marshal(llm2jev.SemanticCapabilities())
+		capability := struct {
+			llm2jev.Capabilities
+			TaskID                string         `json:"task_id"`
+			GoalAnchors           []string       `json:"goal_anchors"`
+			CompletionExample     map[string]any `json:"completion_example"`
+			CompletionInputSchema map[string]any `json:"completion_input_schema"`
+			SupportsChoice        bool           `json:"supports_choice,omitempty"`
+			SupportsScore         bool           `json:"supports_score,omitempty"`
+			SupportsNoul          bool           `json:"supports_noul,omitempty"`
+			Calibrated            bool           `json:"calibrated,omitempty"`
+		}{Capabilities: llm2jev.SemanticCapabilities(), TaskID: s.taskID, GoalAnchors: append([]string{}, s.goalAnchors...), CompletionExample: s.completionExample(), CompletionInputSchema: s.completionDescriptor()["inputSchema"].(map[string]any)}
+		if s.systemOne {
+			capability.Mode = "system_one"
+			capability.SupportsChoice, capability.SupportsScore, capability.SupportsNoul, capability.Calibrated = true, true, true, true
+		}
+		capabilities, _ := json.Marshal(capability)
 		writeLLM2JevMCPResult(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": string(capabilities)}}})
 		return
 	}
@@ -459,14 +498,48 @@ func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, re
 		if s.gate != nil {
 			s.gate.fail(completionAttempt, "verification_call_failed")
 		}
-		respond(map[string]any{
+		failure := map[string]any{
 			"isError":    true,
 			"error_code": llm2jevErrorCode(err),
 			"content":    []map[string]any{{"type": "text", "text": safeLLM2JevError(err)}},
-		}, "error", llm2jevErrorCode(err))
+		}
+		code := llm2jevErrorCode(err)
+		if code == "invalid_request" || code == "completion_task_mismatch" || code == "completion_goal_mismatch" {
+			descriptor := llm2jevToolDescriptor()
+			if s.systemOne {
+				descriptor = jevSystemOneDescriptor()
+			}
+			if params.Name == llm2jevMCPCompletionTool {
+				descriptor = s.completionDescriptor()
+			}
+			failure["retryable"], failure["input_schema"] = true, descriptor["inputSchema"]
+			if examples, ok := descriptor["inputSchema"].(map[string]any)["examples"].([]any); ok && len(examples) > 0 {
+				failure["example_arguments"] = examples[0]
+			}
+			var fieldError *llm2jev.InputError
+			if errors.As(err, &fieldError) {
+				failure["invalid_field"] = fieldError.Field
+			}
+			hint, _ := json.Marshal(map[string]any{"retryable": true, "invalid_field": failure["invalid_field"], "input_schema": failure["input_schema"], "example_arguments": failure["example_arguments"]})
+			failure["content"] = append(failure["content"].([]map[string]any), map[string]any{"type": "text", "text": string(hint)})
+		}
+		respond(failure, "error", code)
 		return
 	}
 	respond(map[string]any{"content": []map[string]any{{"type": "text", "text": string(result)}}}, "success", "")
+}
+
+func jevQuestionSchema() map[string]any {
+	description := map[string]any{"not": map[string]any{"enum": []any{nil, ""}}}
+	return map[string]any{
+		"type": "object", "additionalProperties": false, "required": []string{"type"},
+		"properties": map[string]any{"type": map[string]any{"enum": []string{"choice", "score", "noul"}}, "instructions": map[string]any{"description": "The question to decide; required for choice and score"}, "criteria": map[string]any{"description": "choice: named option object; score: ordered level array; noul: true/false descriptions"}},
+		"oneOf": []any{
+			map[string]any{"properties": map[string]any{"type": map[string]any{"const": "choice"}, "instructions": description, "criteria": map[string]any{"type": "object", "minProperties": 2, "maxProperties": 255, "propertyNames": map[string]any{"minLength": 1, "maxLength": 256}}}, "required": []string{"instructions", "criteria"}},
+			map[string]any{"properties": map[string]any{"type": map[string]any{"const": "score"}, "instructions": description, "criteria": map[string]any{"type": "array", "minItems": 2, "maxItems": 10}}, "required": []string{"instructions", "criteria"}},
+			map[string]any{"properties": map[string]any{"type": map[string]any{"const": "noul"}, "criteria": map[string]any{"type": "object", "properties": map[string]any{"true": map[string]any{}, "false": map[string]any{}}, "additionalProperties": false}}, "anyOf": []any{map[string]any{"required": []string{"instructions"}, "properties": map[string]any{"instructions": description}}, map[string]any{"required": []string{"criteria"}, "properties": map[string]any{"criteria": map[string]any{"minProperties": 1}}}}},
+		},
+	}
 }
 
 func jevSystemOneDescriptor() map[string]any {
@@ -476,10 +549,15 @@ func jevSystemOneDescriptor() map[string]any {
 		"inputSchema": map[string]any{
 			"type": "object", "additionalProperties": false,
 			"properties": map[string]any{
-				"state":     map[string]any{"description": "Evidence/state as a string, object, or array"},
-				"questions": map[string]any{"type": "object", "minProperties": 1, "maxProperties": 64, "additionalProperties": map[string]any{"type": "object", "required": []string{"type"}, "properties": map[string]any{"type": map[string]any{"enum": []string{"choice", "score", "noul"}}, "instructions": map[string]any{"description": "Question text, required for choice and score"}, "criteria": map[string]any{"description": "choice: map of 2-255 named options to descriptions; score: ordered array of 2-10 descriptions; noul: optional true/false descriptions"}}}},
+				"state":     map[string]any{"description": "Actual evidence/state as a string, object, or array", "anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "object"}, map[string]any{"type": "array"}}},
+				"questions": map[string]any{"type": "object", "minProperties": 1, "maxProperties": 64, "propertyNames": map[string]any{"minLength": 1, "maxLength": 256}, "additionalProperties": jevQuestionSchema()},
 			},
 			"required": []string{"state", "questions"},
+			"examples": []any{
+				map[string]any{"state": "<actual task evidence>", "questions": map[string]any{"ready": map[string]any{"type": "noul", "instructions": "<yes/no question supported by this evidence>"}}},
+				map[string]any{"state": "<actual task evidence>", "questions": map[string]any{"route": map[string]any{"type": "choice", "instructions": "<which candidate satisfies the requirements?>", "criteria": map[string]string{"a": "<candidate A description>", "b": "<candidate B description>"}}}},
+				map[string]any{"state": "<actual task evidence>", "questions": map[string]any{"quality": map[string]any{"type": "score", "instructions": "<quality question>", "criteria": []string{"<lowest level description>", "<highest level description>"}}}},
+			},
 		},
 	}
 }
@@ -487,6 +565,10 @@ func jevSystemOneDescriptor() map[string]any {
 func (s *llm2jevMCPServer) evaluateSystemOne(ctx context.Context, raw json.RawMessage) ([]byte, error) {
 	var input llm2jev.SystemOneRequest
 	if err := strictVscreenJSON(raw, &input); err != nil {
+		var fieldError *json.UnmarshalTypeError
+		if errors.As(err, &fieldError) && fieldError.Field == "questions" {
+			return nil, &llm2jev.InputError{Field: "questions", Expected: "provide an object mapping names to question objects, not an array"}
+		}
 		return nil, llm2jev.ErrInvalidRequest
 	}
 	if err := input.Validate(); err != nil {
@@ -588,18 +670,58 @@ type completionInput struct {
 	llm2jev.CompletionRequest
 }
 
-func (s *llm2jevMCPServer) evaluateCompletion(ctx context.Context, raw json.RawMessage, attempt uint64) ([]byte, error) {
+func (s *llm2jevMCPServer) prepareCompletionInput(raw json.RawMessage) (completionInput, error) {
 	var input completionInput
 	if err := strictVscreenJSON(raw, &input); err != nil {
-		return nil, errors.New("llm2jev: invalid completion request")
+		var fieldError *json.UnmarshalTypeError
+		if errors.As(err, &fieldError) {
+			field := fieldError.Field[strings.LastIndex(fieldError.Field, ".")+1:]
+			switch field {
+			case "criteria", "evidence":
+				return input, &llm2jev.InputError{Field: field, Expected: "use an array of nonempty strings"}
+			case "task_id", "goal":
+				return input, &llm2jev.InputError{Field: field, Expected: "use a string or omit this field to use the current task default"}
+			}
+		}
+		return input, fmt.Errorf("%w: invalid completion request", llm2jev.ErrInvalidRequest)
+	}
+	if strings.TrimSpace(input.TaskID) == "" {
+		input.TaskID = s.taskID
+	}
+	if strings.TrimSpace(input.Goal) == "" {
+		input.Goal = s.defaultCompletionGoal()
 	}
 	if strings.TrimSpace(input.TaskID) != s.taskID {
-		return nil, errors.New("llm2jev: completion request is bound to another task")
+		return input, fmt.Errorf("%w: use task_id %q, not the issue ID or task number", errCompletionTaskMismatch, s.taskID)
 	}
 	if !s.completionGoalBound(input.Goal) {
-		return nil, errors.New("llm2jev: completion goal is not bound to this task")
+		return input, fmt.Errorf("%w: include %s in the goal", errCompletionGoalMismatch, strings.Join(s.goalAnchors, " or "))
+	}
+	if len(input.Criteria) == 0 || len(input.Criteria) > 64 {
+		return input, &llm2jev.InputError{Field: "criteria", Expected: "provide 1 to 64 acceptance conditions as strings"}
+	}
+	for _, criterion := range input.Criteria {
+		if strings.TrimSpace(criterion) == "" || len(criterion) > 12000 {
+			return input, &llm2jev.InputError{Field: "criteria", Expected: "each condition must be a nonempty string of at most 12000 bytes"}
+		}
+	}
+	if len(input.Evidence) == 0 || len(input.Evidence) > 64 {
+		return input, &llm2jev.InputError{Field: "evidence", Expected: "provide 1 to 64 actual observed results or artifacts as strings"}
+	}
+	for _, evidence := range input.Evidence {
+		if strings.TrimSpace(evidence) == "" || len(evidence) > 12000 {
+			return input, &llm2jev.InputError{Field: "evidence", Expected: "each observed result must be a nonempty string of at most 12000 bytes"}
+		}
 	}
 	if err := llm2jev.ValidateCompletionRequest(input.CompletionRequest); err != nil {
+		return input, err
+	}
+	return input, nil
+}
+
+func (s *llm2jevMCPServer) evaluateCompletion(ctx context.Context, raw json.RawMessage, attempt uint64) ([]byte, error) {
+	input, err := s.prepareCompletionInput(raw)
+	if err != nil {
 		return nil, err
 	}
 	payload, err := json.Marshal(map[string]any{
@@ -644,17 +766,8 @@ func (s *llm2jevMCPServer) evaluateCompletion(ctx context.Context, raw json.RawM
 }
 
 func (s *llm2jevMCPServer) evaluateCompletionSystemOne(ctx context.Context, raw json.RawMessage, attempt uint64) ([]byte, error) {
-	var input completionInput
-	if err := strictVscreenJSON(raw, &input); err != nil {
-		return nil, errors.New("llm2jev: invalid completion request")
-	}
-	if strings.TrimSpace(input.TaskID) != s.taskID {
-		return nil, errors.New("llm2jev: completion request is bound to another task")
-	}
-	if !s.completionGoalBound(input.Goal) {
-		return nil, errors.New("llm2jev: completion goal is not bound to this task")
-	}
-	if err := llm2jev.ValidateCompletionRequest(input.CompletionRequest); err != nil {
+	input, err := s.prepareCompletionInput(raw)
+	if err != nil {
 		return nil, err
 	}
 	state, err := json.Marshal(map[string]any{"goal": input.Goal, "criteria": input.Criteria, "evidence": input.Evidence})
@@ -815,12 +928,20 @@ func safeLLM2JevError(err error) string {
 		return "llm2jev: decision failed"
 	}
 	message := err.Error()
+	var inputField *llm2jev.InputError
+	if errors.As(err, &inputField) {
+		return inputField.Error()
+	}
 	switch {
+	case errors.Is(err, errCompletionTaskMismatch), errors.Is(err, errCompletionGoalMismatch):
+		return message
+	case errors.Is(err, context.DeadlineExceeded):
+		return "llm2jev: decision provider timed out"
 	case strings.Contains(message, "credential") || strings.Contains(message, "401") || strings.Contains(message, "403"):
 		return "llm2jev: decision provider credentials rejected or missing"
 	case strings.Contains(message, "model request failed") || strings.Contains(message, "connection refused") || strings.Contains(message, "no such host"):
 		return "llm2jev: decision provider unreachable"
-	case strings.Contains(message, "invalid JSON") || strings.Contains(message, "no choices"):
+	case strings.Contains(message, "invalid JSON") || strings.Contains(message, "no choices") || strings.Contains(message, "no completion choices"):
 		return "llm2jev: decision provider returned an invalid response"
 	case strings.Contains(message, "invalid decision request"):
 		return "llm2jev: invalid decision request"
@@ -843,6 +964,14 @@ func llm2jevErrorCode(err error) string {
 	}
 	message := err.Error()
 	switch {
+	case errors.Is(err, errCompletionTaskMismatch), strings.Contains(message, "completion request is bound to another task"):
+		return "completion_task_mismatch"
+	case errors.Is(err, errCompletionGoalMismatch), strings.Contains(message, "completion goal is not bound to this task"):
+		return "completion_goal_mismatch"
+	case errors.Is(err, llm2jev.ErrInvalidRequest), strings.Contains(message, "invalid completion request"):
+		return "invalid_request"
+	case errors.Is(err, llm2jev.ErrInvalidResponse):
+		return "provider_invalid_response"
 	case strings.Contains(message, "credential") || strings.Contains(message, "401") || strings.Contains(message, "403"):
 		return "credential_rejected_or_missing"
 	case strings.Contains(message, "context deadline exceeded"):
@@ -853,7 +982,7 @@ func llm2jevErrorCode(err error) string {
 		return "provider_rate_limited"
 	case strings.Contains(message, "HTTP "):
 		return "provider_http_error"
-	case strings.Contains(message, "invalid JSON") || strings.Contains(message, "no choices"):
+	case strings.Contains(message, "invalid JSON") || strings.Contains(message, "no choices") || strings.Contains(message, "no completion choices"):
 		return "provider_invalid_response"
 	case strings.Contains(message, "invalid decision request"):
 		return "invalid_request"

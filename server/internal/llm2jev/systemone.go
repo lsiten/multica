@@ -3,6 +3,7 @@ package llm2jev
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -23,14 +24,21 @@ type SystemOneQuestion struct {
 
 func (r SystemOneRequest) Validate() error {
 	state := bytes.TrimSpace(r.State)
-	if len(state) == 0 || len(state) > 256*1024 || !json.Valid(state) || (state[0] != '"' && state[0] != '{' && state[0] != '[') || len(r.Questions) == 0 || len(r.Questions) > 64 {
-		return ErrInvalidRequest
+	if len(state) == 0 || len(state) > 256*1024 || !json.Valid(state) || (state[0] != '"' && state[0] != '{' && state[0] != '[') {
+		return invalidInput("state", "provide a string, object or array of actual evidence, at most 256 KiB")
+	}
+	if len(r.Questions) == 0 || len(r.Questions) > 64 {
+		return invalidInput("questions", "provide an object containing 1 to 64 named questions")
 	}
 	for id, q := range r.Questions {
 		if strings.TrimSpace(id) == "" || len(id) > 256 {
-			return ErrInvalidRequest
+			return invalidInput("questions", "question keys must be nonempty and at most 256 bytes")
 		}
 		if err := q.validate(); err != nil {
+			var fieldError *InputError
+			if errors.As(err, &fieldError) {
+				return invalidInput("questions.*."+fieldError.Field, fieldError.Expected)
+			}
 			return fmt.Errorf("%w: question %q", err, id)
 		}
 	}
@@ -42,42 +50,48 @@ func hasDescription(raw json.RawMessage) bool {
 }
 func (q SystemOneQuestion) validate() error {
 	if len(q.Instructions)+len(q.Criteria) > 16*1024 {
-		return ErrInvalidRequest
+		return invalidInput("criteria", "instructions and criteria together must not exceed 16 KiB")
 	}
 	if len(q.Instructions) > 0 && !json.Valid(q.Instructions) {
-		return ErrInvalidRequest
+		return invalidInput("instructions", "provide a valid JSON description")
 	}
 	switch q.Type {
 	case "choice":
 		var criteria map[string]json.RawMessage
-		if !hasDescription(q.Instructions) || json.Unmarshal(q.Criteria, &criteria) != nil || len(criteria) < 2 || len(criteria) > 255 {
-			return ErrInvalidRequest
+		if !hasDescription(q.Instructions) {
+			return invalidInput("instructions", "choice requires a question description")
+		}
+		if json.Unmarshal(q.Criteria, &criteria) != nil || len(criteria) < 2 || len(criteria) > 255 {
+			return invalidInput("criteria", "choice requires an object mapping 2 to 255 named options to descriptions")
 		}
 		for key := range criteria {
 			if strings.TrimSpace(key) == "" || len(key) > 256 {
-				return ErrInvalidRequest
+				return invalidInput("criteria", "choice option keys must be nonempty and at most 256 bytes")
 			}
 		}
 	case "score":
 		var criteria []json.RawMessage
-		if !hasDescription(q.Instructions) || json.Unmarshal(q.Criteria, &criteria) != nil || len(criteria) < 2 || len(criteria) > 10 {
-			return ErrInvalidRequest
+		if !hasDescription(q.Instructions) {
+			return invalidInput("instructions", "score requires a question description")
+		}
+		if json.Unmarshal(q.Criteria, &criteria) != nil || len(criteria) < 2 || len(criteria) > 10 {
+			return invalidInput("criteria", "score requires an ordered array of 2 to 10 level descriptions")
 		}
 	case "noul":
 		var criteria map[string]json.RawMessage
 		if len(q.Criteria) > 0 && json.Unmarshal(q.Criteria, &criteria) != nil {
-			return ErrInvalidRequest
+			return invalidInput("criteria", "noul criteria must be an object containing only true and false descriptions")
 		}
 		for key := range criteria {
 			if key != "true" && key != "false" {
-				return ErrInvalidRequest
+				return invalidInput("criteria", "noul criteria keys must be true and false, not yes and no")
 			}
 		}
 		if !hasDescription(q.Instructions) && !hasDescription(criteria["true"]) && !hasDescription(criteria["false"]) {
-			return ErrInvalidRequest
+			return invalidInput("instructions", "noul requires instructions or a true/false criterion description")
 		}
 	default:
-		return ErrInvalidRequest
+		return invalidInput("type", "use choice, score or noul")
 	}
 	return nil
 }

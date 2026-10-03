@@ -22,6 +22,9 @@ func TestLLM2JevErrorCodesClassifyProviderFailures(t *testing.T) {
 		"provider_timeout":               "llm2jev: model request failed: context deadline exceeded",
 		"provider_http_error":            "llm2jev: model returned HTTP 500",
 		"provider_invalid_response":      "llm2jev: model returned invalid JSON",
+		"invalid_request":                "llm2jev: invalid completion request",
+		"completion_task_mismatch":       "llm2jev: completion request is bound to another task",
+		"completion_goal_mismatch":       "llm2jev: completion goal is not bound to this task",
 	}
 	for want, message := range cases {
 		if got := llm2jevErrorCode(errors.New(message)); got != want {
@@ -225,6 +228,188 @@ func TestLLM2JevMCPRejectsUnboundCompletionGoal(t *testing.T) {
 	})
 	if result["isError"] != true {
 		t.Fatalf("unbound goal accepted: %v", result)
+	}
+	if result["error_code"] != "completion_goal_mismatch" {
+		t.Fatalf("unbound goal was misreported as a provider failure: %v", result)
+	}
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "MUL-42") || strings.Contains(text, "provider unavailable") {
+		t.Fatalf("completion rejection does not explain how to bind the goal: %v", result)
+	}
+}
+
+func TestJevCompletionUsesAdvertisedTaskBinding(t *testing.T) {
+	for _, native := range []bool{false, true} {
+		t.Run(map[bool]string{false: "semantic", true: "systemone"}[native], func(t *testing.T) {
+			calls := 0
+			model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if native {
+					_, _ = io.WriteString(w, `{"answers":{"completion":{"type":"noul","noul":0.9}}}`)
+					return
+				}
+				_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"verdict\":\"satisfied\",\"missing\":[]}"}}]}`)
+			}))
+			defer model.Close()
+			task := Task{ID: "actual-run-id", IssueIdentifier: "MUL-42", Agent: &AgentData{Model: "fixture", CustomEnv: map[string]string{"OPENAI_BASE_URL": model.URL}}}
+			if native {
+				task.Agent.CustomEnv["MULTICA_JEV_SYSTEMONE"] = "1"
+			}
+			config, set, err := startTaskLLM2JevMCP(context.Background(), task.ID, "claude", task, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer set.Close()
+			endpoint := llm2jevMCPURL(t, config)
+			capabilities := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": llm2jevMCPCapabilityTool, "arguments": map[string]any{}})
+			var binding struct {
+				TaskID      string   `json:"task_id"`
+				GoalAnchors []string `json:"goal_anchors"`
+			}
+			if err := json.Unmarshal([]byte(capabilities["content"].([]any)[0].(map[string]any)["text"].(string)), &binding); err != nil {
+				t.Fatal(err)
+			}
+			if binding.TaskID != task.ID || len(binding.GoalAnchors) != 1 || binding.GoalAnchors[0] != "MUL-42" {
+				t.Fatalf("the tool did not advertise its required completion binding: %+v", binding)
+			}
+			arguments := map[string]any{"task_id": task.ID, "goal": "Finish the report", "criteria": []string{"report exists"}, "evidence": []string{"report.md"}}
+			arguments["task_id"] = task.IssueIdentifier
+			wrongTask := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": llm2jevMCPCompletionTool, "arguments": arguments})
+			if wrongTask["error_code"] != "completion_task_mismatch" || calls != 0 || !strings.Contains(wrongTask["content"].([]any)[0].(map[string]any)["text"].(string), task.ID) {
+				t.Fatalf("wrong task rejection did not identify the correct run ID: %v / %d", wrongTask, calls)
+			}
+			arguments["task_id"] = binding.TaskID
+			failed := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": llm2jevMCPCompletionTool, "arguments": arguments})
+			if failed["error_code"] != "completion_goal_mismatch" || calls != 0 {
+				t.Fatalf("preflight rejection misclassified or sent to the model: %v / %d", failed, calls)
+			}
+			arguments["goal"] = "Complete " + binding.GoalAnchors[0] + ": finish the report"
+			passed := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": llm2jevMCPCompletionTool, "arguments": arguments})
+			if passed["isError"] == true || calls != 1 || !set.completionVerification().Verified {
+				t.Fatalf("advertised binding did not permit a provider-verified result: %v / %d", passed, calls)
+			}
+		})
+	}
+}
+
+func TestJevCompletionDefaultsIdentityAndGoalWithoutInventingEvidence(t *testing.T) {
+	for _, native := range []bool{false, true} {
+		t.Run(map[bool]string{false: "semantic", true: "systemone"}[native], func(t *testing.T) {
+			calls := 0
+			model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				body, _ := io.ReadAll(r.Body)
+				if !strings.Contains(string(body), "MUL-42") || !strings.Contains(string(body), "report.md exists") {
+					t.Errorf("task binding or real evidence missing from provider request: %s", body)
+				}
+				if native {
+					_, _ = io.WriteString(w, `{"answers":{"completion":{"type":"noul","noul":0.9}}}`)
+					return
+				}
+				_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"verdict\":\"satisfied\",\"missing\":[]}"}}]}`)
+			}))
+			defer model.Close()
+			task := Task{ID: "current-run", IssueIdentifier: "MUL-42", Agent: &AgentData{Model: "fixture", CustomEnv: map[string]string{"OPENAI_BASE_URL": model.URL}}}
+			if native {
+				task.Agent.CustomEnv["MULTICA_JEV_SYSTEMONE"] = "1"
+			}
+			config, set, err := startTaskLLM2JevMCP(context.Background(), task.ID, "claude", task, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer set.Close()
+			endpoint := llm2jevMCPURL(t, config)
+			arguments := map[string]any{"criteria": []string{"report exists"}, "evidence": []string{"report.md exists"}}
+			passed := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": llm2jevMCPCompletionTool, "arguments": arguments})
+			if passed["isError"] == true || calls != 1 || !set.completionVerification().Verified {
+				t.Fatalf("task-bound defaults should allow minimal valid input: %v / %d", passed, calls)
+			}
+			delete(arguments, "evidence")
+			failed := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": llm2jevMCPCompletionTool, "arguments": arguments})
+			if failed["error_code"] != "invalid_request" || calls != 1 || failed["retryable"] != true {
+				t.Fatalf("missing evidence should be rejected before inference with actionable recovery: %v / %d", failed, calls)
+			}
+			if failed["input_schema"] == nil || failed["example_arguments"] == nil {
+				t.Fatalf("missing recovery schema/example: %v", failed)
+			}
+			if failed["invalid_field"] != "evidence" {
+				t.Fatalf("missing evidence was not identified: %v", failed)
+			}
+			arguments["evidence"] = []string{"report.md exists"}
+			arguments["criteria"] = []map[string]string{{"description": "report exists"}}
+			wrongShape := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": llm2jevMCPCompletionTool, "arguments": arguments})
+			if wrongShape["invalid_field"] != "criteria" || calls != 1 {
+				t.Fatalf("wrong criteria shape must be corrected before inference: %v / %d", wrongShape, calls)
+			}
+		})
+	}
+}
+
+func TestJevToolExamplesMatchTheirActualValidationContracts(t *testing.T) {
+	semantic := llm2jevToolDescriptor()["inputSchema"].(map[string]any)["examples"].([]any)
+	for _, example := range semantic {
+		raw, err := json.Marshal(example)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var input llm2jev.Request
+		if json.Unmarshal(raw, &input) != nil || llm2jev.ValidateRequest(input) != nil {
+			t.Fatalf("invalid semantic example: %s", raw)
+		}
+	}
+	native := jevSystemOneDescriptor()["inputSchema"].(map[string]any)["examples"].([]any)
+	if len(native) != 3 {
+		t.Fatal("examples must cover choice, score and noul")
+	}
+	for _, example := range native {
+		raw, err := json.Marshal(example)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var input llm2jev.SystemOneRequest
+		if json.Unmarshal(raw, &input) != nil || input.Validate() != nil {
+			t.Fatalf("invalid SystemOne example: %s", raw)
+		}
+	}
+	s := &llm2jevMCPServer{taskID: "current-run", goalAnchors: []string{"MUL-42"}}
+	raw, err := json.Marshal(s.completionExample())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := s.prepareCompletionInput(raw)
+	if err != nil || input.TaskID != s.taskID || !s.completionGoalBound(input.Goal) {
+		t.Fatalf("completion example does not use its task defaults: %+v / %v", input, err)
+	}
+}
+
+func TestJevSystemOneAgentCanRepairCriteriaFromReturnedGuidance(t *testing.T) {
+	calls := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = io.WriteString(w, `{"answers":{"route":{"type":"choice","choice":"a","probabilities":{"a":0.9,"b":0.1}}}}`)
+	}))
+	defer model.Close()
+	task := Task{ID: "native-agent", Agent: &AgentData{Model: "fixture", CustomEnv: map[string]string{"OPENAI_BASE_URL": model.URL, "MULTICA_JEV_SYSTEMONE": "1"}}}
+	config, set, err := startTaskLLM2JevMCP(context.Background(), task.ID, "claude", task, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer set.Close()
+	endpoint := llm2jevMCPURL(t, config)
+	question := map[string]any{"type": "choice", "instructions": "Choose the tested route", "criteria": []string{"a", "b"}}
+	arguments := map[string]any{"state": "Route A passed, route B failed", "questions": map[string]any{"route": question}}
+	failed := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": jevMCPToolName, "arguments": arguments})
+	if failed["invalid_field"] != "questions.*.criteria" || failed["retryable"] != true || failed["input_schema"] == nil || calls != 0 {
+		t.Fatalf("wrong choice shape did not produce actionable preflight feedback: %v / %d", failed, calls)
+	}
+	question["criteria"] = map[string]string{"a": "tested route", "b": "failed route"}
+	passed := callLLM2JevMCP(t, endpoint, "tools/call", map[string]any{"name": jevMCPToolName, "arguments": arguments})
+	if passed["isError"] == true || calls != 1 {
+		t.Fatalf("corrected arguments did not reach the provider: %v / %d", passed, calls)
+	}
+	var result map[string]any
+	if json.Unmarshal([]byte(passed["content"].([]any)[0].(map[string]any)["text"].(string)), &result) != nil || result["answers"] == nil {
+		t.Fatal("corrected call did not return provider answers")
 	}
 }
 
