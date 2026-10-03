@@ -286,7 +286,7 @@ export function MirrorSurface({
       className={`flex min-h-0 flex-col overflow-hidden border bg-card ${fullscreen ? "h-dvh w-dvw rounded-none" : "rounded-lg"}`}
       data-fullscreen={fullscreen ? "true" : "false"}
     >
-      <div className="flex flex-wrap items-center gap-2 border-b p-2">
+      <div className="flex flex-wrap items-center gap-2 border-b p-2 [-webkit-app-region:no-drag]">
         <MirrorSourcePicker
           catalog={catalog}
           selected={selected}

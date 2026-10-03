@@ -190,13 +190,29 @@ describe("MirrorSurface emergency stop", () => {
 });
 
 describe("MirrorSurface interaction", () => {
-  it("requests browser fullscreen for the mirror surface", async () => {
+  it("keeps fullscreen toolbar actions operable and exits fullscreen", async () => {
     const originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
-    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-      configurable: true,
-      value: requestFullscreen,
+    const originalExitFullscreen = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+    const originalFullscreenElement = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    let fullscreenElement: Element | null = null;
+    const requestFullscreen = vi.fn(async () => {
+      fullscreenElement = screen.getByRole("region", { name: "Runtime screen" });
+      document.dispatchEvent(new Event("fullscreenchange"));
     });
+    const exitFullscreen = vi.fn(async () => {
+      fullscreenElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+    });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true, value: requestFullscreen,
+    });
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true, get: () => fullscreenElement,
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true, value: exitFullscreen,
+    });
+    platformOpenFloating = vi.fn(async () => undefined);
     try {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       render(<I18nProvider locale="en" resources={RESOURCES}>
@@ -206,11 +222,23 @@ describe("MirrorSurface interaction", () => {
       </I18nProvider>);
       fireEvent.click(await screen.findByRole("button", { name: "Enter full screen" }));
       expect(requestFullscreen).toHaveBeenCalledOnce();
+      await screen.findByRole("button", { name: "Exit full screen" });
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: "Open presentation view" })));
+      expect(platformOpenFloating).toHaveBeenCalledWith(scope, "Fixture runtime");
+      fireEvent.click(screen.getByRole("button", { name: "Clear screen" }));
+      expect(screen.getByRole("button", { name: "Show chat" })).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(screen.getByRole("button", { name: "Exit full screen" }));
+      await screen.findByRole("button", { name: "Enter full screen" });
+      expect(exitFullscreen).toHaveBeenCalledOnce();
     } finally {
       Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-        configurable: true,
-        value: originalRequestFullscreen,
+        configurable: true, value: originalRequestFullscreen,
       });
+      if (originalExitFullscreen) Object.defineProperty(document, "exitFullscreen", originalExitFullscreen);
+      else Reflect.deleteProperty(document, "exitFullscreen");
+      if (originalFullscreenElement) Object.defineProperty(document, "fullscreenElement", originalFullscreenElement);
+      else Reflect.deleteProperty(document, "fullscreenElement");
+      platformOpenFloating = undefined;
     }
   });
 

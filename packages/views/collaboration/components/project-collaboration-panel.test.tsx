@@ -32,6 +32,8 @@ describe("project collaboration interactions",()=>{
   fireEvent.click(screen.getByText(/乙 · 失败/));
   expect(screen.getByRole("button",{name:"review.txt"})).toBeInTheDocument();
   expect(screen.getByRole("link",{name:"查看触发评论"})).toHaveAttribute("href","/qa/issues/QA-2#comment-comment");
+  fireEvent.click(screen.getByRole("button",{name:"Close"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
  });
  it("hides independent agents by default and can reveal them",async()=>{
   vi.mocked(api.getProjectCollaborationGraph).mockResolvedValue({...graph,edges:[]});

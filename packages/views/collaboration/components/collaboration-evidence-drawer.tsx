@@ -61,7 +61,7 @@ export function CollaborationEvidenceDrawer({projectId,filters,selection,graph,o
  const related=(graph?.edges??[]).filter(e=>!node||e.from===node.id||e.to===node.id);
  const title=edge?`${graph?.nodes.find(n=>n.id===edge.from)?.label??edge.from} → ${graph?.nodes.find(n=>n.id===edge.to)?.label??edge.to}`:node?.label??t($=>$.evidence_title);
  return <Sheet open onOpenChange={open=>{if(!open)onClose()}}>
-  <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl" aria-describedby={undefined}>
+  <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl [-webkit-app-region:no-drag]" aria-describedby={undefined}>
    <SheetHeader><SheetTitle>{title}</SheetTitle></SheetHeader>
    <div className="space-y-3 px-4 pb-6">
     {node&&<p className="text-caption">{t($=>$.node_counts,{active:typeof node.data?.active_count==="number"?node.data.active_count:0,total:typeof node.data?.task_count==="number"?node.data.task_count:0})}</p>}
