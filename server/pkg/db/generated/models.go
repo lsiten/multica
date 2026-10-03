@@ -1089,6 +1089,25 @@ type IssueWakeupReceipt struct {
 	CoalesceKey pgtype.Text        `json:"coalesce_key"`
 }
 
+type JevDecisionLog struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	TaskID          pgtype.UUID        `json:"task_id"`
+	AgentID         pgtype.UUID        `json:"agent_id"`
+	AgentName       string             `json:"agent_name"`
+	IssueIdentifier string             `json:"issue_identifier"`
+	Tool            string             `json:"tool"`
+	Source          string             `json:"source"`
+	Model           string             `json:"model"`
+	ResultClass     string             `json:"result_class"`
+	ErrorCode       string             `json:"error_code"`
+	StartedAt       pgtype.Timestamptz `json:"started_at"`
+	DurationMs      int64              `json:"duration_ms"`
+	Phase           int32              `json:"phase"`
+	Payload         []byte             `json:"payload"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 type LarkBindingToken struct {
 	TokenHash      string             `json:"token_hash"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`

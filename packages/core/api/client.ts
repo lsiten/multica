@@ -1,4 +1,6 @@
 import type { ZodType } from "zod";
+import type { JevDecisionLogDetail, JevDecisionLogFilters, JevDecisionLogListResponse } from "../types/jev-decision-logs";
+import { JevDecisionLogDetailSchema, JevDecisionLogListResponseSchema } from "./jev-decision-logs";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
 import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSchema, PausedWakeupSchema, SystemWakeupSchema, WakeupRunSchema, WorkspaceSystemWakeupSchema } from "./schemas";
@@ -4536,6 +4538,26 @@ export class ApiClient {
       throw new Error("Invalid workspace Jev config response");
     }
     return parsed.data;
+  }
+
+  async listJevDecisionLogs(workspaceId: string, filters: JevDecisionLogFilters = {}): Promise<JevDecisionLogListResponse> {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    }
+    const endpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/jev-decision-logs`;
+    const raw = await this.fetch<unknown>(`${endpoint}?${query}`);
+    const parsed = parseWithFallback<JevDecisionLogListResponse | null>(raw, JevDecisionLogListResponseSchema, null, { endpoint });
+    if (!parsed || parsed.items.some((item) => item.workspace_id !== workspaceId)) throw new Error("Invalid Jev decision log response");
+    return parsed;
+  }
+
+  async getJevDecisionLog(workspaceId: string, decisionId: string): Promise<JevDecisionLogDetail> {
+    const endpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/jev-decision-logs/${encodeURIComponent(decisionId)}`;
+    const raw = await this.fetch<unknown>(endpoint);
+    const parsed = parseWithFallback<JevDecisionLogDetail | null>(raw, JevDecisionLogDetailSchema, null, { endpoint });
+    if (!parsed || parsed.workspace_id !== workspaceId || parsed.id !== decisionId) throw new Error("Invalid Jev decision log detail response");
+    return parsed;
   }
 
   async updateWorkspaceJevConfig(workspaceId: string, data: UpdateWorkspaceJevConfigRequest): Promise<WorkspaceJevConfigResponse> {

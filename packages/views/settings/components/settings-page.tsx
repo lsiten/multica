@@ -57,6 +57,7 @@ import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
 import { JevTab } from "./jev-tab";
+import { JevDecisionLogsTab } from "./jev-decision-logs-tab";
 import { MirrorNetworkTab } from "./mirror-network-tab";
 import { BillingTab } from "./billing-tab";
 import { SETTINGS_ANCHOR_ATTR } from "./settings-layout";
@@ -258,6 +259,7 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
               adminOnly: true,
             }),
             entry("jev", t(($) => $.page.tabs.jev), Blocks, <JevTab />, { adminOnly: true }),
+            entry("jev-logs", t(($) => $.jev_logs.title), ListPlus, <JevDecisionLogsTab />, { wide: true, adminOnly: true }),
             ...(pluginsEnabled
               ? [
                   entry("plugins", t(($) => $.page.tabs.plugins), Blocks, <PluginsTab />, {

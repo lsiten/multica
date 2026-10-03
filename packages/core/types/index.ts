@@ -113,6 +113,7 @@ export type {
 export type { ChatAutonomyPolicyOverride } from "./chat-autonomy";
 export type { ProjectGraphEvent, ProjectGraphEventsResponse } from "./project-graph";
 export type { JevSource, JevQuestionType, WorkspaceJevConfig, WorkspaceJevConfigResponse, UpdateWorkspaceJevConfigRequest } from "./jev";
+export type { JevDecisionResult, JevDecisionSource, JevDecisionLogSummary, JevDecisionLogDetail, JevDecisionRequestLog, JevDecisionLogFilters, JevDecisionLogListResponse } from "./jev-decision-logs";
 export type {
   MirrorSessionDescription,
   MirrorICEServer,

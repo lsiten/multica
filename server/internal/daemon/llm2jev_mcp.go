@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/llm2jev"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 const (
@@ -80,20 +81,24 @@ func (set *llm2jevMCPSet) Close() {
 }
 
 type llm2jevMCPServer struct {
-	taskID      string
-	goalAnchors []string
-	model       string
-	endpoint    string
-	apiKey      string
-	client      *http.Client
-	logger      *slog.Logger
-	path        string
-	semaphore   chan struct{}
-	gate        *completionGate
-	calls       atomic.Int64
-	maxCalls    int64
-	callTimeout time.Duration
-	systemOne   bool
+	taskID             string
+	goalAnchors        []string
+	model              string
+	endpoint           string
+	apiKey             string
+	client             *http.Client
+	logger             *slog.Logger
+	path               string
+	semaphore          chan struct{}
+	gate               *completionGate
+	calls              atomic.Int64
+	maxCalls           int64
+	callTimeout        time.Duration
+	systemOne          bool
+	decisionLogAttrs   []any
+	decisionLogSecrets []string
+	decisionLogRecord  protocol.JevDecisionLog
+	decisionReporter   jevDecisionReportFunc
 }
 
 // startTaskLLM2JevMCP registers one task context with the daemon-owned MCP
@@ -165,6 +170,8 @@ func startTaskLLM2JevMCPAtWithLimitsAndBroker(lifetimeCtx context.Context, taskI
 		path:   "/" + token, semaphore: make(chan struct{}, maxConcurrent), maxCalls: maxCalls, callTimeout: callTimeout, gate: gate,
 		systemOne: task.Agent.CustomEnv["MULTICA_JEV_SYSTEMONE"] == "1",
 	}
+	handler.configureDecisionLogging(task, provider)
+	handler.decisionReporter, _ = lifetimeCtx.Value(jevDecisionReporterContextKey{}).(jevDecisionReportFunc)
 	if broker != nil {
 		endpoint, unregister = broker.register(handler.path, handler)
 		if endpoint == "" {
@@ -404,11 +411,19 @@ func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, re
 		writeLLM2JevMCPError(w, req.ID, -32602, "unknown or invalid tool parameters")
 		return
 	}
+	decisionLog := s.startDecisionLog(params.Name, params.Arguments)
+	var loggedOutput map[string]any
+	resultClass, errorCode := "error", "decision_interrupted"
+	defer func() { decisionLog.complete(loggedOutput, resultClass, errorCode) }()
+	respond := func(output map[string]any, class, code string) {
+		loggedOutput, resultClass, errorCode = output, class, code
+		writeLLM2JevMCPResult(w, req.ID, output)
+	}
 	select {
 	case s.semaphore <- struct{}{}:
 		defer func() { <-s.semaphore }()
 	default:
-		writeLLM2JevMCPResult(w, req.ID, map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": "llm2jev: concurrency limit exceeded"}}})
+		respond(map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": "llm2jev: concurrency limit exceeded"}}}, "rejected", "concurrency_limit_exceeded")
 		return
 	}
 	maxCalls := s.maxCalls
@@ -416,14 +431,14 @@ func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, re
 		maxCalls = llm2jevMCPMaxCalls
 	}
 	if s.calls.Add(1) > maxCalls {
-		writeLLM2JevMCPResult(w, req.ID, map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": "llm2jev: task call limit exceeded"}}})
+		respond(map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": "llm2jev: task call limit exceeded"}}}, "rejected", "task_call_limit_exceeded")
 		return
 	}
 	callTimeout := s.callTimeout
 	if callTimeout <= 0 {
 		callTimeout = llm2jevMCPCallTimeout
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), callTimeout)
+	ctx, cancel := context.WithTimeout(context.WithValue(r.Context(), jevDecisionLogContextKey{}, decisionLog), callTimeout)
 	defer cancel()
 	var result []byte
 	var err error
@@ -444,17 +459,14 @@ func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, re
 		if s.gate != nil {
 			s.gate.fail(completionAttempt, "verification_call_failed")
 		}
-		if s.logger != nil {
-			s.logger.Info("llm2jev decision failed", "task_id", s.taskID, "error", safeLLM2JevError(err))
-		}
-		writeLLM2JevMCPResult(w, req.ID, map[string]any{
+		respond(map[string]any{
 			"isError":    true,
 			"error_code": llm2jevErrorCode(err),
 			"content":    []map[string]any{{"type": "text", "text": safeLLM2JevError(err)}},
-		})
+		}, "error", llm2jevErrorCode(err))
 		return
 	}
-	writeLLM2JevMCPResult(w, req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": string(result)}}})
+	respond(map[string]any{"content": []map[string]any{{"type": "text", "text": string(result)}}}, "success", "")
 }
 
 func jevSystemOneDescriptor() map[string]any {
@@ -506,23 +518,25 @@ func (s *llm2jevMCPServer) requestSystemOne(ctx context.Context, body []byte) ([
 	started := time.Now()
 	response, err := s.client.Do(request)
 	if err != nil {
+		s.logModelRequest(ctx, "systemone", 0, "transport_error", time.Since(started), body, nil)
 		_ = taskBudgetFromContext(ctx).RejectUnreportedUsage()
 		return nil, fmt.Errorf("jev: model request failed: %w", err)
 	}
 	defer response.Body.Close()
 	data, readErr := io.ReadAll(io.LimitReader(response.Body, llm2jevMCPMaxResponse+1))
 	if readErr != nil || len(data) > llm2jevMCPMaxResponse {
+		s.logModelRequest(ctx, "systemone", response.StatusCode, "response_too_large", time.Since(started), body, data)
 		_ = taskBudgetFromContext(ctx).RejectUnreportedUsage()
 		return nil, errors.New("jev: model response exceeded the allowed limit")
-	}
-	if err := recordJevCompletionUsage(ctx, s.model, data, response.StatusCode >= 200 && response.StatusCode < 300); err != nil {
-		return nil, err
 	}
 	resultClass := "provider_error"
 	if response.StatusCode >= 200 && response.StatusCode < 300 {
 		resultClass = "success"
 	}
-	s.logModelRequest("systemone", response.StatusCode, resultClass, time.Since(started))
+	s.logModelRequest(ctx, "systemone", response.StatusCode, resultClass, time.Since(started), body, data)
+	if err := recordJevCompletionUsage(ctx, s.model, data, response.StatusCode >= 200 && response.StatusCode < 300); err != nil {
+		return nil, err
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("jev: model returned HTTP %d", response.StatusCode)
 	}
@@ -747,34 +761,42 @@ func (s *llm2jevMCPServer) requestCompletionWithSystem(ctx context.Context, user
 		request.Close = true
 		response, err := s.client.Do(request)
 		if err != nil {
-			s.logModelRequest(variantNames[index], 0, "transport_error", time.Since(started))
+			s.logModelRequest(ctx, variantNames[index], 0, "transport_error", time.Since(started), body, nil)
 			_ = taskBudgetFromContext(ctx).RejectUnreportedUsage()
 			return nil, fmt.Errorf("llm2jev: model request failed: %w", err)
 		}
 		responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, llm2jevMCPMaxResponse+1))
 		response.Body.Close()
 		if readErr != nil || len(responseBody) > llm2jevMCPMaxResponse {
-			s.logModelRequest(variantNames[index], response.StatusCode, "response_too_large", time.Since(started))
+			s.logModelRequest(ctx, variantNames[index], response.StatusCode, "response_too_large", time.Since(started), body, responseBody)
 			_ = taskBudgetFromContext(ctx).RejectUnreportedUsage()
 			return nil, errors.New("llm2jev: model response exceeded the allowed limit")
 		}
+		resultClass := "bad_request_retry"
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			resultClass = "success"
+		} else if response.StatusCode != http.StatusBadRequest || index == len(variants)-1 {
+			resultClass = "provider_error"
+		}
+		s.logModelRequest(ctx, variantNames[index], response.StatusCode, resultClass, time.Since(started), body, responseBody)
 		if err := recordJevCompletionUsage(ctx, s.model, responseBody, response.StatusCode >= 200 && response.StatusCode < 300); err != nil {
 			return nil, err
 		}
 		if response.StatusCode >= 200 && response.StatusCode < 300 {
-			s.logModelRequest(variantNames[index], response.StatusCode, "success", time.Since(started))
 			return responseBody, nil
 		}
 		if response.StatusCode != http.StatusBadRequest || index == len(variants)-1 {
-			s.logModelRequest(variantNames[index], response.StatusCode, "provider_error", time.Since(started))
 			return nil, fmt.Errorf("llm2jev: model returned HTTP %d", response.StatusCode)
 		}
-		s.logModelRequest(variantNames[index], response.StatusCode, "bad_request_retry", time.Since(started))
 	}
 	return nil, errors.New("llm2jev: model request failed")
 }
 
-func (s *llm2jevMCPServer) logModelRequest(variant string, status int, resultClass string, duration time.Duration) {
+func (s *llm2jevMCPServer) logModelRequest(ctx context.Context, variant string, status int, resultClass string, duration time.Duration, input, output []byte) {
+	if decision := jevDecisionLogFromContext(ctx); decision != nil {
+		decision.modelRequest(variant, status, resultClass, duration, input, output)
+		return
+	}
 	if s.logger == nil {
 		return
 	}

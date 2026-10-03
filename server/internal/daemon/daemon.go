@@ -2222,6 +2222,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Start workspace sync loop to discover newly created workspaces.
 	go d.workspaceSyncLoop(ctx)
 	go d.terminalReportReplayLoop(ctx)
+	jevReportsDone := make(chan struct{})
+	go func() { defer close(jevReportsDone); d.jevDecisionReportLoop(ctx) }()
+	defer func() { cancel(); <-jevReportsDone }()
 
 	// Discover agent CLIs installed after startup (MUL-5439). Separate from the
 	// workspace sync loop because that one runs on a thirty-minute consistency
@@ -8288,6 +8291,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 	}()
 	if d.cfg.LLM2JevEnabled && autonomyPolicy.allows("decision") {
+		ctx = withJevDecisionReporter(ctx, d.enqueueJevDecision)
 
 		var llm2jevConfig json.RawMessage
 		var llm2jevServer interface{ Close() }

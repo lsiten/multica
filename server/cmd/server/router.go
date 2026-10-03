@@ -1617,6 +1617,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/tasks/{taskId}/fail", h.FailTask)
 		r.Post("/tasks/{taskId}/usage", h.ReportTaskUsage)
 		r.Post("/tasks/{taskId}/project-graph/events", h.ReportProjectGraphEvent)
+		r.Post("/tasks/{taskId}/jev-decision-logs", h.ReportJevDecisionLog)
 		r.Post("/tasks/{taskId}/identity/email", h.SendAgentEmail)
 		r.Post("/tasks/{taskId}/messages", h.ReportTaskMessages)
 		r.Get("/tasks/{taskId}/messages", h.ListTaskMessages)
@@ -1761,6 +1762,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
 					r.Put("/jev-config", h.UpdateWorkspaceJevConfig)
+					r.Get("/jev-decision-logs", h.ListJevDecisionLogs)
+					r.Get("/jev-decision-logs/{decisionId}", h.GetJevDecisionLog)
 					r.Put("/", h.UpdateWorkspace)
 					r.Patch("/", h.UpdateWorkspace)
 					r.Patch("/mirror/network", h.UpdateWorkspaceMirrorNetwork)
