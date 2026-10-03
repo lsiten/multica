@@ -22,11 +22,22 @@ export interface CollaborationGraphCanvasProps {
  readonly onSelectionClear?: () => void;
 }
 const NODE_WIDTH=180, NODE_HEIGHT=62;
+type GraphPosition = { x: number; y: number };
+type GraphDrag = {
+ pointerId: number;
+ start: GraphPosition;
+ origin: GraphPosition;
+ nodeId: string | null;
+ scale: number;
+ moved: boolean;
+};
 export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,coverageReasons,asOf,className,showEvidence=true,showAggregateCounts=false,ariaLabel,footer,onNodeClick,onEdgeClick,onSelectionClear}:CollaborationGraphCanvasProps){
  const {t}=useT("collaboration");
  const markerId=useId().replace(/:/g,"");
  const canvasRef=useRef<HTMLDivElement>(null);
- const drag=useRef<{x:number;y:number; moved:boolean}|null>(null);
+ const drag=useRef<GraphDrag|null>(null);
+ const suppressClick=useRef(false);
+ const [nodePositions,setNodePositions]=useState<ReadonlyMap<string,GraphPosition>>(()=>new Map());
  const [selectedNode,setSelectedNode]=useState<string|null>(null);
  const [selectedEdge,setSelectedEdge]=useState<string|null>(null);
  const [zoom,setZoom]=useState(1);
@@ -37,6 +48,7 @@ export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,covera
   if(!canvas)return;
   const wheel=(event:WheelEvent)=>{
    event.preventDefault();
+   if(drag.current)return;
    setZoom(current=>Math.min(2,Math.max(0.2,current*Math.exp(-event.deltaY*0.002))));
   };
   canvas.addEventListener("wheel",wheel,{passive:false});
@@ -56,14 +68,46 @@ export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,covera
  const laneCount=Math.max(1,...[...lanes.values()].map(lane=>lane.count));
  const topMargin=Math.max(100,70+laneCount*24);
  const height=Math.max(260,Math.ceil(nodes.length/columns)*140+topMargin);
- const positions=useMemo(()=>new Map(nodes.map((node,i)=>[node.id,{x:(i%columns)*240+120,y:Math.floor(i/columns)*140+topMargin}])),[nodes,columns,topMargin]);
+ const positions=useMemo(()=>new Map(nodes.map((node,i)=>[node.id,nodePositions.get(node.id)??{x:(i%columns)*240+120,y:Math.floor(i/columns)*140+topMargin}])),[nodes,columns,topMargin,nodePositions]);
  const labels:Record<string,string>={parent_child:t($=>$.parent_child),delegated:t($=>$.delegated),retry:t($=>$.retry),rerun:t($=>$.rerun),coordinate:t($=>$.coordinate),handoff:t($=>$.handoff),review:t($=>$.review),accept:t($=>$.accept),assigned:t($=>$.coordinate),produced:t($=>$.handoff),derived_from:t($=>$.derived_from)};
  const clear=()=>{setSelectedNode(null);setSelectedEdge(null);onSelectionClear?.()};
  const fit=()=>{const available=canvasRef.current?.clientWidth ?? width;setZoom(Math.min(1,Math.max(0.2,(available-24)/width)));setPan({x:0,y:0})};
  const related=(id:string)=>!focusedNode || id===focusedNode || edges.some(e=>(e.from===focusedNode && e.to===id)||(e.to===focusedNode && e.from===id));
- const down=(event:ReactPointerEvent<SVGSVGElement>)=>{if((event.target as Element).closest('[data-graph-control]'))return;event.currentTarget.setPointerCapture(event.pointerId);drag.current={x:event.clientX,y:event.clientY,moved:false}};
- const move=(event:ReactPointerEvent<SVGSVGElement>)=>{if(!drag.current)return;const dx=event.clientX-drag.current.x,dy=event.clientY-drag.current.y;if(Math.abs(dx)+Math.abs(dy)>2)drag.current.moved=true;setPan(p=>({x:p.x+dx,y:p.y+dy}));drag.current={...drag.current,x:event.clientX,y:event.clientY}};
- const up=()=>{if(drag.current && !drag.current.moved)clear();drag.current=null};
+ const down=(event:ReactPointerEvent<SVGSVGElement>)=>{
+  if(event.button!==0 || drag.current)return;
+  suppressClick.current=false;
+  const target=event.target as Element;
+  const nodeElement=target.closest<SVGGElement>('[data-graph-node]');
+  if(!nodeElement && target.closest('[data-graph-control]'))return;
+  const nodeId=nodeElement?.getAttribute("data-graph-node")??null;
+  const origin=nodeId?positions.get(nodeId):pan;
+  if(!origin)return;
+  const screenScale=event.currentTarget.getBoundingClientRect().width/width || 1;
+  (nodeElement??event.currentTarget).setPointerCapture(event.pointerId);
+  drag.current={pointerId:event.pointerId,start:{x:event.clientX,y:event.clientY},origin,nodeId,scale:screenScale*(nodeId?zoom:1),moved:false};
+ };
+ const move=(event:ReactPointerEvent<SVGSVGElement>)=>{
+  const gesture=drag.current;
+  if(!gesture || gesture.pointerId!==event.pointerId)return;
+  const dx=event.clientX-gesture.start.x,dy=event.clientY-gesture.start.y;
+  if(!gesture.moved && Math.hypot(dx,dy)<=3)return;
+  gesture.moved=true;
+  suppressClick.current=true;
+  const position={x:gesture.origin.x+dx/gesture.scale,y:gesture.origin.y+dy/gesture.scale};
+  const nodeId=gesture.nodeId;
+  if(nodeId)setNodePositions(current=>new Map(current).set(nodeId,position));
+  else setPan(position);
+ };
+ const up=(event:ReactPointerEvent<SVGSVGElement>)=>{
+  const gesture=drag.current;
+  if(!gesture || gesture.pointerId!==event.pointerId)return;
+  drag.current=null;
+  if(!gesture.nodeId && !gesture.moved)clear();
+  const target=event.target as Element;
+  const captureTarget=target.closest<SVGGElement>('[data-graph-node]')??event.currentTarget;
+  if(captureTarget.hasPointerCapture(event.pointerId))captureTarget.releasePointerCapture(event.pointerId);
+ };
+ const cancel=(event:ReactPointerEvent<SVGSVGElement>)=>{if(drag.current?.pointerId===event.pointerId)drag.current=null};
  if(!nodes.length)return <div className="rounded-lg border border-dashed p-8 text-center text-caption text-muted-foreground">{emptyLabel}</div>;
  return <div className={cn("space-y-3",className)}>
   {coverage==="partial" && <p role="status" className="rounded-md bg-warning/10 p-2 text-caption">{t($=>$.coverage_partial)} <span>{coverageReasons?.map(reason=>reason==="unresolved_lineage"?t($=>$.source_missing):reason==="scan_limit"?t($=>$.truncated):reason).join(" · ")}</span></p>}
@@ -72,9 +116,9 @@ export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,covera
     <Button size="icon-sm" variant="ghost" aria-label={t($=>$.zoom_in)} onClick={()=>setZoom(z=>Math.min(2,z+0.1))}><ZoomIn/></Button>
     <Button size="icon-sm" variant="ghost" aria-label={t($=>$.zoom_out)} onClick={()=>setZoom(z=>Math.max(0.2,z-0.1))}><ZoomOut/></Button>
     <Button size="icon-sm" variant="ghost" aria-label={t($=>$.fit_canvas)} onClick={fit}><Expand/></Button>
-    <Button size="icon-sm" variant="ghost" aria-label={t($=>$.reset_canvas)} onClick={()=>{setPan({x:0,y:0});setZoom(1);clear()}}><RotateCcw/></Button>
+    <Button size="icon-sm" variant="ghost" aria-label={t($=>$.reset_canvas)} onClick={()=>{setPan({x:0,y:0});setZoom(1);setNodePositions(new Map());suppressClick.current=false;clear()}}><RotateCcw/></Button>
    </div>
-   <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel ?? t($=>$.evidence_title)} className="touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={()=>{drag.current=null}}>
+   <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel ?? t($=>$.evidence_title)} className="touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={cancel} onClickCapture={event=>{if(suppressClick.current){suppressClick.current=false;event.preventDefault();event.stopPropagation()}}}>
     <defs><marker id={markerId} markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="context-stroke"/></marker></defs>
     <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
      {edges.map(edge=>{
@@ -103,7 +147,7 @@ export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,covera
       const active=typeof node.data?.active_count==="number"?node.data.active_count:0;
       const activate=()=>{setSelectedNode(node.id);setSelectedEdge(null);onNodeClick?.(node)};
       const color=node.status==="running"||node.status==="working"?"var(--info)":node.status==="queued"||node.status==="waiting_local_directory"?"var(--warning)":node.status==="failed"||node.status==="error"?"var(--destructive)":"var(--muted-foreground)";
-      return <g key={node.id} data-graph-control role="button" tabIndex={0} aria-label={node.label} opacity={related(node.id)?1:0.2} className="cursor-pointer focus-visible:outline-ring" onClick={activate} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();activate()}}}>
+      return <g key={node.id} data-graph-control data-graph-node={node.id} role="button" tabIndex={0} aria-label={node.label} opacity={related(node.id)?1:0.2} className="cursor-grab active:cursor-grabbing focus-visible:outline-ring" onClick={activate} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();activate()}}}>
        <rect x={p.x-NODE_WIDTH/2} y={p.y-NODE_HEIGHT/2} width={NODE_WIDTH} height={NODE_HEIGHT} rx={8} fill="var(--background)" stroke={selectedNode===node.id?"var(--foreground)":"var(--border)"} strokeWidth={selectedNode===node.id?2:1}/>
        <circle cx={p.x-72} cy={p.y-8} r={4} fill={color}/>
        <text x={p.x-60} y={p.y-4} className="fill-foreground text-caption"><title>{node.label}</title>{node.label.length>13?`${node.label.slice(0,12)}…`:node.label}</text>
