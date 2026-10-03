@@ -135,6 +135,9 @@ type Config struct {
 	LLM2JevMaxConcurrency          int                   // per-task semantic MCP call concurrency
 	LLM2JevTimeout                 time.Duration         // per-call semantic MCP timeout
 	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
+	EnvironmentArchiveEnabled      bool                  // preserve and archive idle environments before reclamation
+	EnvironmentArchiveTTL          time.Duration         // minimum idle terminal-run retention before automatic archival
+	EnvironmentRecycleInterval     time.Duration         // parent-lifecycle scan interval
 	GCInterval                     time.Duration         // how often the GC loop runs (default: 2h)
 	GCTTL                          time.Duration         // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
 	WorktreeStaleTTL               time.Duration         // reminder age from authoritative business activity; never deletion authorization
@@ -614,6 +617,20 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	environmentArchiveTTL, err := durationFromEnv("MULTICA_ENVIRONMENT_ARCHIVE_TTL", 24*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	if environmentArchiveTTL < 0 {
+		return Config{}, fmt.Errorf("MULTICA_ENVIRONMENT_ARCHIVE_TTL must not be negative")
+	}
+	environmentRecycleInterval, err := durationFromEnv("MULTICA_ENVIRONMENT_RECYCLE_INTERVAL", 5*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	if environmentRecycleInterval <= 0 {
+		return Config{}, fmt.Errorf("MULTICA_ENVIRONMENT_RECYCLE_INTERVAL must be positive")
+	}
 	gcOrphanTTL, err := durationFromEnv("MULTICA_GC_ORPHAN_TTL", DefaultGCOrphanTTL)
 	if err != nil {
 		return Config{}, err
@@ -692,6 +709,9 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		GCTTL:                           gcTTL,
 		WorktreeStaleTTL:                worktreeStaleTTL,
 		GCCompletedTaskTTL:              gcCompletedTaskTTL,
+		EnvironmentArchiveEnabled:       boolFromEnv("MULTICA_ENVIRONMENT_ARCHIVE_ENABLED", true),
+		EnvironmentArchiveTTL:           environmentArchiveTTL,
+		EnvironmentRecycleInterval:      environmentRecycleInterval,
 		GCOrphanTTL:                     gcOrphanTTL,
 		GCArtifactTTL:                   gcArtifactTTL,
 		GCArtifactPatterns:              gcArtifactPatterns,

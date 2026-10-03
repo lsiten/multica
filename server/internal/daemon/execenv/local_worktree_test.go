@@ -1829,12 +1829,18 @@ func TestIsolatedPrepareCarriesTheStateFinalizeNeeds(t *testing.T) {
 
 	first := turn(turnOneTask)
 	wt := first.LocalWorktree
+	expectedOwner := testBranchOwner
+	var err error
+	expectedOwner.RepositoryScope, err = RepositoryScopeFingerprint(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if wt.Branch != "agent/j/mul-6881" {
 		t.Fatalf("branch = %q", wt.Branch)
 	}
 	// The proofs Finalize makes all hang off state that crosses as JSON —
 	// createdBranch among them, without which a read-only turn keeps its branch.
-	if !wt.tracksState || wt.userState == "" || wt.owner != testBranchOwner || !wt.createdBranch {
+	if !wt.tracksState || wt.userState == "" || wt.owner != expectedOwner || !wt.createdBranch {
 		t.Fatalf("state lost crossing the helper boundary: tracksState=%v userState=%q owner=%+v createdBranch=%v",
 			wt.tracksState, wt.userState, wt.owner, wt.createdBranch)
 	}
@@ -1856,8 +1862,8 @@ func TestIsolatedPrepareCarriesTheStateFinalizeNeeds(t *testing.T) {
 	if record.checkpoint != delivered {
 		t.Errorf("checkpoint = %s, want the delivered tip %s", record.checkpoint, delivered)
 	}
-	if record.owner != testBranchOwner {
-		t.Errorf("record owner = %+v, want %+v", record.owner, testBranchOwner)
+	if record.owner != expectedOwner {
+		t.Errorf("record owner = %+v, want %+v", record.owner, expectedOwner)
 	}
 
 	// And the continuation the whole feature is for still holds across it.

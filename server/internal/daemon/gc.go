@@ -218,6 +218,10 @@ func (d *Daemon) gcWorkspace(ctx context.Context, wsDir string, stats *gcStats) 
 		}
 		meta, metaErr := execenv.ReadGCMeta(taskDir)
 		d.maintainIdleReviewCache(ctx, taskDir)
+		if d.cfg.EnvironmentArchiveEnabled {
+			d.automaticRecycleWorkspace(ctx, taskDir, meta, stats)
+			continue
+		}
 		if metaErr == nil && meta.AutoCleanup && !meta.LocalDirectory && !d.cfg.KeepEnvAfterTask {
 			if reason := d.cleanupManagedWorktree(ctx, worktreeCleanup{path: taskDir, automatic: true}); reason == "" {
 				cleanedHere++

@@ -268,6 +268,9 @@ type SkillFileContextForEnv struct {
 type Environment struct {
 	// RootDir is the top-level env directory ({workspacesRoot}/{task_id_short}/).
 	RootDir string
+	// CodeRootDir owns a reused working tree when runtime configuration lives
+	// in a different per-run RootDir.
+	CodeRootDir string
 	// WorkDir is the directory to pass as Cwd to the agent. Normally
 	// ({RootDir}/workdir/); when the task is bound to a local_directory
 	// project_resource, it is the user's path instead. See LocalDirectory.
@@ -535,6 +538,11 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		wtParams.ConversationKey, wtParams.ConversationID = localWorktreeConversation(params)
 		wtParams.WorkspaceID = params.WorkspaceID
 		wtParams.AgentID = params.Task.AgentID
+		wtParams.ProjectID, wtParams.SquadID, wtParams.RuntimeID = params.Task.ProjectID, params.Task.SquadID, params.RuntimeID
+		wtParams.RepositoryScope, err = RepositoryScopeFingerprint(params.Task.Repos, params.Task.ProjectResources)
+		if err != nil {
+			return nil, err
+		}
 		var err error
 		localWorktree, err = PrepareLocalWorktree(wtParams, logger)
 		if err != nil {
@@ -617,17 +625,26 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// follow-up can be claimed the instant the prior task completes — before
 	// the prior handler writes .gc_meta.json — so reuse eligibility must be
 	// provable from an artifact that exists the moment the env is created. Only
-	// managed (non-local_directory) issue and chat envs get this marker; that is
-	// exactly the set with a durable conversation scope. Non-fatal: a write failure
+	// managed (non-local_directory) issue, chat and automation envs get this marker;
+	// each has a durable workline identity. Non-fatal: a write failure
 	// only costs the next follow-up its session reuse (it falls back to a fresh
 	// session), which must never block dispatching this task.
-	if params.LocalWorkDir == "" && (params.Task.IssueID != "" || params.Task.ChatSessionID != "") {
+	if params.LocalWorkDir == "" && (params.Task.IssueID != "" || params.Task.ChatSessionID != "" || params.Task.AutopilotID != "") {
+		repositoryScope, err := RepositoryScopeFingerprint(params.Task.Repos, params.Task.ProjectResources)
+		if err != nil {
+			return nil, err
+		}
 		if err := WriteManagedEnvProvenance(envRoot, ManagedEnvProvenance{
-			WorkspaceID:   params.WorkspaceID,
-			IssueID:       params.Task.IssueID,
-			ChatSessionID: params.Task.ChatSessionID,
-			AgentID:       params.Task.AgentID,
-			AgentName:     params.AgentName,
+			WorkspaceID:     params.WorkspaceID,
+			RuntimeID:       params.RuntimeID,
+			ProjectID:       params.Task.ProjectID,
+			SquadID:         params.Task.SquadID,
+			RepositoryScope: repositoryScope,
+			IssueID:         params.Task.IssueID,
+			ChatSessionID:   params.Task.ChatSessionID,
+			AutopilotID:     params.Task.AutopilotID,
+			AgentID:         params.Task.AgentID,
+			AgentName:       params.AgentName,
 		}); err != nil && logger != nil {
 			logger.Warn("execenv: write managed env provenance failed (non-fatal); a follow-up may start a fresh session", "error", err)
 		}
@@ -761,10 +778,12 @@ type ReuseParams struct {
 	// Passed on reuse so the root-level fail-closed marker is self-healed here
 	// too — a marker removed while the daemon runs is restored before a reused
 	// task spawns, not only on the fresh-Prepare path.
-	WorkspacesRoot string
-	WorkDir        string
-	Provider       string
-	CodexVersion   string // only used when Provider == "codex"
+	WorkspacesRoot      string
+	RunRoot             string
+	ReusedLocalWorktree *LocalWorktree
+	WorkDir             string
+	Provider            string
+	CodexVersion        string // only used when Provider == "codex"
 	// ResumeSessionID is the prior Codex thread/session ID this reused task
 	// intends to resume, when any. Only consulted when Provider == "codex" and
 	// only used while migrating a legacy per-task home whose sessions/ still
@@ -832,6 +851,21 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	}
 
 	rootDir := filepath.Dir(params.WorkDir)
+	codeRoot := rootDir
+	var reusedWorktree *LocalWorktree
+	if params.ReusedLocalWorktree != nil {
+		reusedWorktree = params.ReusedLocalWorktree
+		codeRoot = filepath.Dir(reusedWorktree.Path)
+		params.WorkDir = reusedWorktree.WorkDir
+	}
+	if params.RunRoot != "" {
+		owner, err := ReadEnvRootOwner(params.RunRoot)
+		if err != nil || owner == nil || owner.TaskID == "" || owner.WorkspaceID == "" || ValidateEnvRootOwnerPath(params.WorkspacesRoot, params.RunRoot, *owner) != nil {
+			logger.Warn("execenv: per-run configuration root has no valid owner")
+			return nil
+		}
+		rootDir = params.RunRoot
+	}
 	if params.LocalDirectory {
 		// For local_directory tasks the user's WorkDir is unrelated to
 		// envRoot (envRoot still lives under workspacesRoot/{wsID}/...),
@@ -849,6 +883,10 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 		WorkDir:        params.WorkDir,
 		LocalDirectory: params.LocalDirectory,
 		logger:         logger,
+		LocalWorktree:  reusedWorktree,
+	}
+	if codeRoot != rootDir && !params.LocalDirectory {
+		env.CodeRootDir = codeRoot
 	}
 	if env.RootDir != "" {
 		env.MulticaConfigRoot = filepath.Join(env.RootDir, "multica-config")
@@ -891,10 +929,14 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	// No-op when RootDir is empty (legacy local_directory reuse, which the
 	// daemon skips anyway) or when no prior manifest exists (older build).
 	if env.RootDir != "" {
-		if err := removeReusedManagedSkillDirs(env.RootDir, skillsDirPath(params.WorkDir, params.Provider)); err != nil {
+		if err := removeReusedManagedSkillDirs(codeRoot, skillsDirPath(params.WorkDir, params.Provider)); err != nil {
 			logger.Warn("execenv: reclaim managed skill dirs on reuse failed", "error", err)
 		}
-		if err := CleanupSidecars(env.RootDir); err != nil {
+		cleanup := CleanupSidecars
+		if env.CodeRootDir != "" {
+			cleanup = func(root string) error { return cleanupReusedCodeSidecars(root, params.WorkDir) }
+		}
+		if err := cleanup(codeRoot); err != nil {
 			logger.Warn("execenv: roll back prior sidecars on reuse failed", "error", err)
 		}
 	}
@@ -1022,6 +1064,13 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 			logger.Warn("execenv: refresh sidecar manifest failed", "error", err)
 		}
 	}
+	if env.CodeRootDir != "" {
+		codeManifest := sidecarsWithinWorkdir(manifest, params.WorkDir)
+		if err := writeSidecarManifest(env.CodeRootDir, codeManifest); err != nil {
+			logger.Warn("execenv: save reused code sidecar manifest failed", "error", err)
+			return nil
+		}
+	}
 
 	// Refresh the per-task OpenClaw config on reuse — the user may have
 	// added/removed agents or rotated providers since the prior task ran,
@@ -1113,13 +1162,20 @@ type GCMeta struct {
 	IssueID        string     `json:"issue_id,omitempty"`
 	ChatSessionID  string     `json:"chat_session_id,omitempty"`
 	AutopilotRunID string     `json:"autopilot_run_id,omitempty"`
+	AutopilotID    string     `json:"autopilot_id,omitempty"`
 	TaskID         string     `json:"task_id,omitempty"`
+	LatestTaskID   string     `json:"latest_task_id,omitempty"`
 	WorkspaceID    string     `json:"workspace_id"`
 	// AgentID and AgentName make completed task environments attributable in
 	// the local worktree manager. They are diagnostic metadata only; task
 	// authorization continues to use TaskID and the server-side task record.
 	AgentID     string    `json:"agent_id,omitempty"`
 	AgentName   string    `json:"agent_name,omitempty"`
+	RuntimeID   string    `json:"runtime_id,omitempty"`
+	ProjectID   string    `json:"project_id,omitempty"`
+	ProjectName string    `json:"project_name,omitempty"`
+	SquadID     string    `json:"squad_id,omitempty"`
+	SquadName   string    `json:"squad_name,omitempty"`
 	CompletedAt time.Time `json:"completed_at"`
 	AutoCleanup bool      `json:"auto_cleanup,omitempty"`
 	// LocalDirectory marks tasks whose WorkDir pointed at a user-owned
@@ -1192,16 +1248,21 @@ const ManagedEnvProvenanceManagedBy = "multica-daemon-managed-env"
 // eligibility off .gc_meta.json therefore raced: the successor read a
 // not-yet-written file and started a fresh session (MUL-4886). This marker is
 // on disk from the moment the env is created, so the successor can prove reuse
-// safety inside that window. It is written only for non-local managed issue or
-// chat envs, so its presence is itself the "safe to reuse, not a user
+// safety inside that window. It is written only for non-local managed issue,
+// chat or automation envs, so its presence is itself the "safe to reuse, not a user
 // local_directory" assertion; see shouldReusePriorWorkdir.
 type ManagedEnvProvenance struct {
-	ManagedBy     string `json:"managed_by"`
-	WorkspaceID   string `json:"workspace_id"`
-	IssueID       string `json:"issue_id,omitempty"`
-	ChatSessionID string `json:"chat_session_id,omitempty"`
-	AgentID       string `json:"agent_id"`
-	AgentName     string `json:"agent_name,omitempty"`
+	ManagedBy       string `json:"managed_by"`
+	WorkspaceID     string `json:"workspace_id"`
+	RuntimeID       string `json:"runtime_id,omitempty"`
+	ProjectID       string `json:"project_id,omitempty"`
+	SquadID         string `json:"squad_id,omitempty"`
+	RepositoryScope string `json:"repository_scope"`
+	IssueID         string `json:"issue_id,omitempty"`
+	ChatSessionID   string `json:"chat_session_id,omitempty"`
+	AutopilotID     string `json:"autopilot_id,omitempty"`
+	AgentID         string `json:"agent_id"`
+	AgentName       string `json:"agent_name,omitempty"`
 }
 
 // WriteManagedEnvProvenance persists the reuse-eligibility marker at the env
@@ -1274,6 +1335,9 @@ func (env *Environment) Cleanup(removeAll bool) error {
 	}
 
 	// Partial cleanup: remove workdir, keep output/ and logs/.
+	if env.CodeRootDir != "" {
+		return nil
+	}
 	if err := os.RemoveAll(env.WorkDir); err != nil {
 		env.logger.Warn("execenv: cleanup workdir failed", "error", err)
 		return err

@@ -70,6 +70,7 @@ export interface DaemonPrefs {
 }
 
 export type { ManagedWorktree, ManagedWorktreeCleanupResult } from "@multica/core/types/managed-worktree";
+export type { WorktreeCacheResult, WorktreeCacheSelection } from "@multica/core/types/managed-worktree";
 
 export type LocalRuntimeProbe =
   | {

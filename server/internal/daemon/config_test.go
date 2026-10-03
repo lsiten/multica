@@ -142,6 +142,33 @@ func TestLoadConfig_CompletedTaskTTLDefaultsDisabledOnSelfHostAndReadsEnv(t *tes
 	}
 }
 
+func TestLoadConfigAutomaticEnvironmentRecycling(t *testing.T) {
+	stageFakeAgent(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SHELL", filepath.Join(t.TempDir(), "missing-shell"))
+	t.Setenv("MULTICA_ENVIRONMENT_ARCHIVE_ENABLED", "")
+	t.Setenv("MULTICA_ENVIRONMENT_ARCHIVE_TTL", "")
+	t.Setenv("MULTICA_ENVIRONMENT_RECYCLE_INTERVAL", "")
+	overrides := Overrides{ServerURL: "http://localhost:0", WorkspacesRoot: t.TempDir()}
+	cfg, err := LoadConfig(overrides)
+	if err != nil || !cfg.EnvironmentArchiveEnabled || cfg.EnvironmentArchiveTTL != 24*time.Hour || cfg.EnvironmentRecycleInterval != 5*time.Minute {
+		t.Fatalf("automatic recycling defaults: enabled=%v ttl=%s interval=%s err=%v", cfg.EnvironmentArchiveEnabled, cfg.EnvironmentArchiveTTL, cfg.EnvironmentRecycleInterval, err)
+	}
+	t.Setenv("MULTICA_ENVIRONMENT_ARCHIVE_ENABLED", "false")
+	t.Setenv("MULTICA_ENVIRONMENT_ARCHIVE_TTL", "48h")
+	t.Setenv("MULTICA_ENVIRONMENT_RECYCLE_INTERVAL", "10m")
+	cfg, err = LoadConfig(overrides)
+	if err != nil || cfg.EnvironmentArchiveEnabled || cfg.EnvironmentArchiveTTL != 48*time.Hour || cfg.EnvironmentRecycleInterval != 10*time.Minute {
+		t.Fatalf("automatic recycling overrides: enabled=%v ttl=%s interval=%s err=%v", cfg.EnvironmentArchiveEnabled, cfg.EnvironmentArchiveTTL, cfg.EnvironmentRecycleInterval, err)
+	}
+	for _, value := range []string{"0s", "-1s", "bad"} {
+		t.Setenv("MULTICA_ENVIRONMENT_RECYCLE_INTERVAL", value)
+		if _, err := LoadConfig(overrides); err == nil || !strings.Contains(err.Error(), "MULTICA_ENVIRONMENT_RECYCLE_INTERVAL") {
+			t.Fatalf("interval %q accepted: %v", value, err)
+		}
+	}
+}
+
 func TestLoadConfig_WSClaimPollIntervalPrecedence(t *testing.T) {
 	stageFakeAgent(t)
 	t.Setenv("HOME", t.TempDir())

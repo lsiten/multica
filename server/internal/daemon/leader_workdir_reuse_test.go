@@ -424,9 +424,11 @@ func writeLeaderManagedEnvProvenance(t *testing.T, workDir, workspaceID, issueID
 		t.Fatalf("mkdir env root: %v", err)
 	}
 	if err := execenv.WriteManagedEnvProvenance(envRoot, execenv.ManagedEnvProvenance{
-		WorkspaceID: workspaceID,
-		IssueID:     issueID,
-		AgentID:     agentID,
+		WorkspaceID:     workspaceID,
+		RuntimeID:       "rt-leader",
+		RepositoryScope: emptyRepositoryScope(t),
+		IssueID:         issueID,
+		AgentID:         agentID,
 	}); err != nil {
 		t.Fatalf("write managed env provenance: %v", err)
 	}
@@ -440,12 +442,23 @@ func writeChatManagedEnvProvenance(t *testing.T, workDir, workspaceID, chatSessi
 		t.Fatalf("mkdir env root: %v", err)
 	}
 	if err := execenv.WriteManagedEnvProvenance(envRoot, execenv.ManagedEnvProvenance{
-		WorkspaceID:   workspaceID,
-		ChatSessionID: chatSessionID,
-		AgentID:       agentID,
+		WorkspaceID:     workspaceID,
+		RuntimeID:       "rt-leader",
+		RepositoryScope: emptyRepositoryScope(t),
+		ChatSessionID:   chatSessionID,
+		AgentID:         agentID,
 	}); err != nil {
 		t.Fatalf("write managed env provenance: %v", err)
 	}
+}
+
+func emptyRepositoryScope(t *testing.T) string {
+	t.Helper()
+	scope, err := execenv.RepositoryScopeFingerprint(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scope
 }
 
 func leaderReuseTestTask(id string) Task {

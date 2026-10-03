@@ -250,6 +250,13 @@ The variables below are read on the computer that runs your agents, not in the A
 | `MULTICA_WORKSPACES_ROOT` | `~/multica_workspaces` | Root directory for run working directories |
 | `MULTICA_AGENT_TEMP_BASE` | `/tmp` (Linux/macOS) | Linux/macOS only. Parent directory for private per-run temp dirs; must be an existing, writable absolute directory, and an invalid value fails run startup instead of falling back to `/tmp`. Pick a short path — child tools may bind AF_UNIX sockets under it, and `sun_path` is limited to 108 bytes on Linux and 104 on macOS |
 | `MULTICA_KEEP_ENV_AFTER_TASK` | `false` | Keep run directories for debugging |
+| `MULTICA_ENVIRONMENT_ARCHIVE_ENABLED` | `true` | Automatically archive idle completed-run environments before reclaiming their working directories; requires GC enabled and `MULTICA_KEEP_ENV_AFTER_TASK=false` |
+| `MULTICA_ENVIRONMENT_ARCHIVE_TTL` | `24h` | Minimum retention after completion, chat archival, automation completion, or manual restore (whichever is latest); nonnegative duration |
+| `MULTICA_ENVIRONMENT_RECYCLE_INTERVAL` | `5m` | Positive interval for checking archived chats and completed automations, independent of ordinary GC |
+
+For issue runs, the issue must also be completed or closed. An agent run finishing while its issue is awaiting review does not make its environment eligible for automatic reclamation.
+
+Task completion checks eligibility immediately. Parent changes are checked periodically; active chats remain resumable. Running tasks, active reviews and locked repositories are retained. Reclamation requires a verified archive preserving code changes, outputs, logs and session files; only verified regenerable caches are excluded. Archives stay on the same host and continue to use disk space. In Settings → Runtime environments, select the owning runtime to inspect automatic/manual receipts and restore without overwriting an existing directory. Failed or interrupted operations retain recovery data.
 
 For the internal context that the daemon injects into agent tasks, see [Task runtime environment](/daemon-runtimes#task-runtime-environment).
 
@@ -265,6 +272,22 @@ Cursor's verified background cleanup requires Linux 6.9 or newer (process-group 
 Owned Cursor background processes are also stopped when the run completes normally, so a background server started by that run does not intentionally survive finalization. macOS can recognize late children through retained original-parent identities, but cannot prove a chain whose intermediate processes disappeared before observation. Such processes, work that leaves the tracked group, or persistent ownership/signalling errors can leave background work behind. Unconfirmed cleanup is logged and never grants a successful-cleanup recovery window; unknown processes are not killed based only on their numeric PID or process group.
 
 Precedence is command-line flag → environment variable → `~/.multica/config.json` → built-in default. For watchdog behavior, see [Daemon and runtimes](/daemon-runtimes).
+
+### Capacity policy
+
+Settings → Runtime environments → Automatic reclamation stores policy separately for each owning workspace/runtime on the selected daemon. Defaults are 100 idle environments, 20 GiB of logical directory bytes and 5 GiB of host free space. Crossing a threshold permits verified cache reclamation after 1 hour instead of 12 hours; archive retention stays at 24 hours. Active executions, reviews and locked repositories remain protected. Archives are retained on the host and are not automatically deleted to meet a quota. A policy cannot override disabled daemon GC or debug retention. Each capacity cleanup has a durable operation receipt; the page shows the last scan and actual host free space.
+
+### Managed working-directory reuse
+
+Local worktree mode retains successfully finalized conversation checkouts for subsequent turns. The next turn takes an exclusive environment lease, replays new user edits and reuses the same checkout. Busy checkouts fork separately; dirty or changed retained state is preserved for inspection. Branch ownership includes project, squad, runtime and repository scope, so a changed execution scope starts another branch. The user's working directory is not used as the agent's checkout.
+
+Shared storage uses the existing workspace/repository bare cache, content-addressed skill bundles and revision-pinned Jev models. Verified skill objects are reused without replacement, and models retain active leases so cleanup cannot remove a running model. Runtime credentials and writable provider configuration remain per-run.
+
+A continuation restores its recorded code directory from a matching verified cold archive when necessary. Workspace, project, squad, agent, runtime and repository configuration must still match; a corrupt matching archive stops preparation. Every run keeps its provider and Multica configuration in its own run directory while shared code is exclusively leased. Reclaiming a run directory does not remove its shared code.
+
+Managed issue/chat directories are reused only within the same workspace, agent, runtime, project, squad and repository configuration, with an exclusive writer lease. Changed or missing ownership evidence starts a separate environment and retains the previous one. A `run_only` automation may reuse code from its earlier terminal run on the same runtime; each new run starts a fresh provider session. An explicit retry uses its selected source instead of the newest unrelated execution.
+
+A shared directory retains its original physical owner and records the latest task separately. Inventory, cache cleanup, archival and restore validate the latest task’s server-recorded workspace, agent, runtime and working directory. Running successors remain protected, and cancellation updates completion metadata as well.
 
 ### Persisting daemon configuration
 

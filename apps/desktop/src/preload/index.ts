@@ -30,8 +30,11 @@ import type {
   LocalRuntimeProbe,
   ManagedWorktree,
   ManagedWorktreeCleanupResult,
+  WorktreeCacheResult,
+  WorktreeCacheSelection,
   DaemonMcpReadiness,
 } from "../shared/daemon-types";
+import type { WorktreeArchiveRequest, WorktreeArchiveResult, WorktreeArchiveSummary } from "@multica/core/types/worktree-archives";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
   parseTabSelectionShortcutKey,
@@ -294,6 +297,14 @@ const daemonAPI = {
   cancelJevModelInstall: (modelId: string, revision?: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-cancel", modelId, revision),
   cleanupWorktrees: (paths: string[], discardChanges = false): Promise<ManagedWorktreeCleanupResult> =>
     ipcRenderer.invoke("daemon:cleanup-worktrees", paths, discardChanges),
+  previewWorktreeCaches: (workspaceId?: string): Promise<WorktreeCacheResult[]> =>
+    ipcRenderer.invoke("daemon:preview-worktree-caches", workspaceId),
+  cleanWorktreeCaches: (selections: WorktreeCacheSelection[], workspaceId?: string): Promise<WorktreeCacheResult[]> =>
+    ipcRenderer.invoke("daemon:clean-worktree-caches", selections, workspaceId),
+  listEnvironmentArchives: (workspaceId?: string): Promise<WorktreeArchiveSummary[]> =>
+    ipcRenderer.invoke("daemon:list-environment-archives", workspaceId),
+  environmentArchiveOperation: (request: WorktreeArchiveRequest): Promise<WorktreeArchiveResult[]> =>
+    ipcRenderer.invoke("daemon:environment-archive-operation", request),
   onStatusChange: (callback: (status: DaemonStatus) => void) => {
     const handler = (_: unknown, status: DaemonStatus) => callback(status);
     ipcRenderer.on("daemon:status", handler);

@@ -21,6 +21,8 @@ import type {
   LocalRuntimeProbe,
   ManagedWorktree,
   ManagedWorktreeCleanupResult,
+  WorktreeCacheResult,
+  WorktreeCacheSelection,
   DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import type { TabSelectionShortcutKey } from "../shared/main-renderer-messages";
@@ -163,6 +165,10 @@ interface DaemonAPI {
   reviewInventory: () => Promise<unknown>;
   /** Remove selected inactive daemon-owned task environments. */
   cleanupWorktrees: (paths: string[], discardChanges?: boolean) => Promise<ManagedWorktreeCleanupResult>;
+  previewWorktreeCaches: (workspaceId?: string) => Promise<WorktreeCacheResult[]>;
+  cleanWorktreeCaches: (selections: WorktreeCacheSelection[], workspaceId?: string) => Promise<WorktreeCacheResult[]>;
+  listEnvironmentArchives: (workspaceId?: string) => Promise<import("@multica/core/types/worktree-archives").WorktreeArchiveSummary[]>;
+  environmentArchiveOperation: (request: import("@multica/core/types/worktree-archives").WorktreeArchiveRequest) => Promise<import("@multica/core/types/worktree-archives").WorktreeArchiveResult[]>;
   onStatusChange: (callback: (status: DaemonStatus) => void) => () => void;
   setTargetApiUrl: (url: string) => Promise<void>;
   syncToken: (token: string, userId: string) => Promise<void>;

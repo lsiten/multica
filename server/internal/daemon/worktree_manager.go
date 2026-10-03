@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
@@ -19,11 +20,18 @@ import (
 type ManagedWorktree struct {
 	TaskDiskUsage
 	protocol.WorktreeLifecycle
-	Active           bool     `json:"active"`
-	ProtectionReason string   `json:"protection_reason"`
-	TaskID           string   `json:"task_id"`
-	RuntimeID        string   `json:"runtime_id,omitempty"`
-	Repositories     []string `json:"repositories"`
+	Active           bool                  `json:"active"`
+	ProtectionReason string                `json:"protection_reason"`
+	TaskID           string                `json:"task_id"`
+	RuntimeID        string                `json:"runtime_id,omitempty"`
+	EnvironmentID    string                `json:"environment_id"`
+	Repositories     []string              `json:"repositories"`
+	EnvironmentKind  string                `json:"environment_kind"`
+	Storage          *worktreeStorageUsage `json:"storage,omitempty"`
+	ProjectID        string                `json:"project_id,omitempty"`
+	ProjectName      string                `json:"project_name,omitempty"`
+	SquadID          string                `json:"squad_id,omitempty"`
+	SquadName        string                `json:"squad_name,omitempty"`
 }
 
 type managedWorktreeCleanupRequest struct {
@@ -47,11 +55,21 @@ func (d *Daemon) worktreeManagerHandler() http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		if r.URL.Path == "/worktrees/archives" {
+			d.manageEnvironmentArchives(w, r)
+			return
+		}
+		if r.URL.Path == "/worktrees/operations" {
+			d.environmentOperationsHandler(w, r)
+			return
+		}
 		switch r.Method {
 		case http.MethodGet:
 			d.writeManagedWorktrees(w, r)
 		case http.MethodDelete:
 			d.deleteManagedWorktrees(w, r)
+		case http.MethodPost:
+			d.manageWorktreeResources(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -59,14 +77,20 @@ func (d *Daemon) worktreeManagerHandler() http.HandlerFunc {
 }
 
 func (d *Daemon) managedWorktrees(ctx context.Context) ([]ManagedWorktree, error) {
+	return d.managedWorktreesForPaths(ctx, nil)
+}
+
+func (d *Daemon) managedWorktreesForPaths(ctx context.Context, allowed map[string]bool) ([]ManagedWorktree, error) {
 	report, err := ScanDiskUsage(d.cfg.WorkspacesRoot, d.cfg.GCArtifactPatterns)
 	if err != nil {
 		return nil, err
 	}
 	worktrees := make([]ManagedWorktree, 0, len(report.Tasks))
-	lifecycleCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
+	allocatedFiles := make(map[string]bool)
 	for _, task := range report.Tasks {
+		if allowed != nil && !allowed[task.Path] {
+			continue
+		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -123,11 +147,47 @@ func (d *Daemon) managedWorktrees(ctx context.Context) ([]ManagedWorktree, error
 			TaskID:           taskID,
 			RuntimeID:        runtimeID,
 			Repositories:     repositories,
+			EnvironmentID:    d.managedEnvironmentID(task.Path, task.WorkspaceID, taskID),
 		}
-		d.describeManagedWorktree(lifecycleCtx, &row)
+		row.EnvironmentKind = "directory"
+		if len(repositories) > 0 {
+			row.EnvironmentKind = "git_worktree"
+		}
+		if usage, err := scanWorktreeStorage(ctx, task.Path, allocatedFiles); err == nil {
+			row.Storage = &usage
+		}
+		if meta, err := execenv.ReadGCMeta(task.Path); err == nil && meta.WorkspaceID == task.WorkspaceID && meta.TaskID == taskID {
+			row.ProjectID, row.ProjectName = meta.ProjectID, meta.ProjectName
+			row.SquadID, row.SquadName = meta.SquadID, meta.SquadName
+			if row.RuntimeID == "" {
+				row.RuntimeID = meta.RuntimeID
+			}
+		}
 		worktrees = append(worktrees, row)
 	}
+	d.describeManagedWorktreeInventory(ctx, worktrees)
 	return worktrees, nil
+}
+
+// Lifecycle requests share a bounded pool and start after local disk inspection.
+// A large scan must not exhaust the lifecycle deadline before the first lookup.
+func (d *Daemon) describeManagedWorktreeInventory(ctx context.Context, rows []ManagedWorktree) {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	queue := make(chan int, len(rows))
+	for index := range rows {
+		queue <- index
+	}
+	close(queue)
+	var workers sync.WaitGroup
+	for range min(8, len(rows)) {
+		workers.Go(func() {
+			for index := range queue {
+				d.describeManagedWorktree(ctx, &rows[index])
+			}
+		})
+	}
+	workers.Wait()
 }
 
 func (d *Daemon) writeManagedWorktrees(w http.ResponseWriter, r *http.Request) {

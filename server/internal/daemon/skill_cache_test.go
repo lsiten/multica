@@ -74,6 +74,34 @@ func TestSkillBundleCacheRejectsCorruptBundle(t *testing.T) {
 	}
 }
 
+func TestSkillBundleCacheKeepsVerifiedContentAddressedEntryImmutable(t *testing.T) {
+	cache := NewSkillBundleCache(t.TempDir())
+	bundle := testSkillBundle()
+	if err := cache.Store("ws-1", bundle); err != nil {
+		t.Fatal(err)
+	}
+	path := cache.bundlePath("ws-1", skillRefFromBundle(bundle))
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache.removeAll = func(string) error { return fs.ErrPermission }
+	if err := cache.Store("ws-1", bundle); err != nil {
+		t.Fatalf("valid shared cache was replaced: %v", err)
+	}
+	after, err := os.Stat(path)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatal("immutable cached object changed identity")
+	}
+	bundle.Content += "tampered"
+	if err := cache.Store("ws-1", bundle); err == nil {
+		t.Fatal("payload with stale hash published")
+	}
+	if _, ok := cache.Load("ws-1", skillRefFromBundle(testSkillBundle())); !ok {
+		t.Fatal("bad writer damaged shared object")
+	}
+}
+
 func testSkillBundle() SkillData {
 	bundle := SkillData{
 		ID:      "skill-1",

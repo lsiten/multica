@@ -230,6 +230,40 @@ func writeSidecarManifest(envRoot string, m *sidecarManifest) error {
 	return os.WriteFile(filepath.Join(envRoot, sidecarManifestFile), data, 0o644)
 }
 
+func sidecarsWithinWorkdir(m *sidecarManifest, workdir string) *sidecarManifest {
+	filtered := &sidecarManifest{}
+	within := func(path string) bool {
+		rel, err := filepath.Rel(workdir, path)
+		return err == nil && rel != "." && filepath.IsLocal(rel)
+	}
+	for _, path := range m.Files {
+		if within(path) {
+			filtered.Files = append(filtered.Files, path)
+		}
+	}
+	for _, path := range m.Dirs {
+		if within(path) {
+			filtered.Dirs = append(filtered.Dirs, path)
+		}
+	}
+	return filtered
+}
+
+func cleanupReusedCodeSidecars(root, workdir string) error {
+	data, err := os.ReadFile(filepath.Join(root, sidecarManifestFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var manifest sidecarManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return err
+	}
+	return rollBackManifest(*sidecarsWithinWorkdir(&manifest, workdir), filepath.Join(root, sidecarManifestFile))
+}
+
 // CleanupSidecars rolls the user's workdir back to its pre-Prepare
 // state by removing every file the manifest at envRoot records and
 // then rmdir-ing every directory it records, deepest first.

@@ -14,6 +14,9 @@ import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReview
 import { localIndexCapabilitySchema } from "../types/local-review-index";
 import { selectedMergeCapabilitySchema } from "../types/local-review-selection";
 import { localReviewBranchesSchema, localReviewCapabilitySchema, localReviewRelayResponseSchema, remoteWorktreesSchema } from "../types/local-review";
+import { environmentCommandSchema, parseEnvironmentPolicyStatus, parseEnvironmentRuntimes, parseEnvironmentOperationList, parseEnvironmentOperationStatus, type EnvironmentCommand } from "../types/environment-operations";
+import { parseManagedWorktrees, parseWorktreeCacheResults } from "../types/managed-worktree";
+import { parseWorktreeArchiveResults, parseWorktreeArchiveSummaries } from "../types/worktree-archives";
 import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
   Issue,
@@ -1081,6 +1084,31 @@ export class ApiClient {
       body: JSON.stringify({ task_id: request.task_id, path: request.path, target: request.target,
         action: request.action ?? "read", snapshot_id: request.snapshot_id, comment: request.comment, command_id: request.command_id }),
     }));
+  }
+
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "inventory" }, signal?: AbortSignal): Promise<import("../types/managed-worktree").ManagedWorktree[]>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "cache_preview" }, signal?: AbortSignal): Promise<import("../types/managed-worktree").WorktreeCacheResult[]>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "archive_preview" }, signal?: AbortSignal): Promise<import("../types/worktree-archives").WorktreeArchiveResult[]>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "archives" }, signal?: AbortSignal): Promise<import("../types/worktree-archives").WorktreeArchiveSummary[]>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "operations" }, signal?: AbortSignal): Promise<import("../types/environment-operations").EnvironmentOperationStatus[]>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "policy" } | Extract<EnvironmentCommand, { action: "policy_update" }>, signal?: AbortSignal): Promise<import("../types/environment-operations").EnvironmentPolicyStatus>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: Exclude<EnvironmentCommand, { action: "inventory" | "cache_preview" | "archive_preview" | "archives" | "operations" | "policy" | "policy_update" }>, signal?: AbortSignal): Promise<import("../types/environment-operations").EnvironmentOperationStatus>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: EnvironmentCommand, signal?: AbortSignal) {
+    const command = environmentCommandSchema.parse(input);
+    const timeout = AbortSignal.timeout(55000);
+    const raw = await this.fetch<unknown>(`/api/runtimes/${encodeURIComponent(runtimeId)}/environments/execute`, {
+      method: "POST", body: JSON.stringify(command), headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
+    switch (command.action) {
+      case "inventory": return parseManagedWorktrees(raw);
+      case "cache_preview": return parseWorktreeCacheResults(raw);
+      case "archive_preview": return parseWorktreeArchiveResults(raw);
+      case "archives": return parseWorktreeArchiveSummaries(raw);
+      case "operations": return parseEnvironmentOperationList(raw);
+      case "policy": case "policy_update": return parseEnvironmentPolicyStatus(raw);
+      default: return parseEnvironmentOperationStatus(raw);
+    }
   }
 
   async supportsLocalIndex(signal?: AbortSignal): Promise<boolean> {
@@ -2223,6 +2251,14 @@ export class ApiClient {
     return this.fetch(`/api/runtimes?${search}`, {
       headers: workspaceHeader(workspaceSlug),
     });
+  }
+
+  async listEnvironmentRuntimes(workspaceId: string, workspaceSlug: string) {
+    const search = new URLSearchParams({ workspace_id: workspaceId, owner: "me" });
+    const value = await this.fetch<unknown>(`/api/runtimes?${search}`, {
+      headers: { ...workspaceHeader(workspaceSlug), "X-Workspace-ID": workspaceId },
+    });
+    return parseEnvironmentRuntimes(value);
   }
 
   async getMirrorICEConfig(

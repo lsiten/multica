@@ -20,7 +20,11 @@ func (d *Daemon) describeManagedWorktree(ctx context.Context, row *ManagedWorktr
 	if row.TaskID == "" || d.client == nil || row.ProtectionReason == "unowned" || row.ProtectionReason == "unavailable" {
 		return
 	}
-	status, err := d.client.GetTaskGCCheck(ctx, row.TaskID)
+	owner, err := d.gcTaskDirOwner(row.Path)
+	if err != nil {
+		return
+	}
+	status, err := d.environmentTaskGCStatus(ctx, row.Path, owner, nil)
 	if err != nil {
 		return
 	}

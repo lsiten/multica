@@ -103,14 +103,19 @@ type LocalWorktreeParams struct {
 	// later task continues it, so a same-named branch belonging to the user,
 	// to another agent, or to another workspace is never adopted. All three
 	// empty means "no conversation": the task gets a task-scoped branch.
-	WorkspaceID    string
-	AgentID        string
-	ConversationID string
+	WorkspaceID     string
+	AgentID         string
+	ConversationID  string
+	ProjectID       string
+	SquadID         string
+	RuntimeID       string
+	RepositoryScope string
+	RetainCheckout  bool
 }
 
 // owner is the identity a branch created for this task is recorded under.
 func (p LocalWorktreeParams) owner() branchOwner {
-	return branchOwner{WorkspaceID: p.WorkspaceID, AgentID: p.AgentID, ConversationID: p.ConversationID}
+	return branchOwner{WorkspaceID: p.WorkspaceID, AgentID: p.AgentID, ConversationID: p.ConversationID, ProjectID: p.ProjectID, SquadID: p.SquadID, RuntimeID: p.RuntimeID, RepositoryScope: p.RepositoryScope}
 }
 
 // localWorktreeConversation names the work line a worktree task belongs to, so
@@ -125,6 +130,9 @@ func (p LocalWorktreeParams) owner() branchOwner {
 // Tasks with neither an issue nor a chat session have no conversation to
 // continue and get "", "".
 func localWorktreeConversation(params PrepareParams) (key, id string) {
+	if params.Task.ChatSessionID != "" {
+		return "chat-" + taskKey(params.Task.ChatSessionID), params.Task.ChatSessionID
+	}
 	if params.Task.IssueID != "" {
 		if params.IssueIdentifier != "" {
 			return params.IssueIdentifier, params.Task.IssueID
@@ -134,7 +142,14 @@ func localWorktreeConversation(params PrepareParams) (key, id string) {
 	if params.Task.ChatSessionID != "" {
 		return "chat-" + taskKey(params.Task.ChatSessionID), params.Task.ChatSessionID
 	}
+	if params.Task.AutopilotID != "" {
+		return "automation-" + taskKey(params.Task.AutopilotID), params.Task.AutopilotID
+	}
 	return "", ""
+}
+
+func LocalWorktreeConversation(params PrepareParams) (string, string) {
+	return localWorktreeConversation(params)
 }
 
 // LocalWorktree is a prepared worktree plus everything the daemon needs to
@@ -176,6 +191,7 @@ type LocalWorktree struct {
 	// version is right — so this is what the turn's prompt tells it to fix.
 	// Finalize refuses to deliver while any of them are still unmerged.
 	ReplayConflicts []string
+	RetainCheckout  bool
 	// createdBranch records that this prepare put the branch where it is, so
 	// dropping it discards nothing an earlier turn delivered. False for a
 	// continued branch: that one has to survive even a turn that produced
@@ -385,16 +401,17 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 	}
 
 	wt := &LocalWorktree{
-		GitRoot:       gitRoot,
-		Path:          worktreePath,
-		WorkDir:       filepath.Join(worktreePath, rel),
-		Branch:        actualBranch,
-		BaseCommit:    plan.base,
-		Continued:     plan.continues,
-		createdBranch: createdBranch,
-		userState:     userState,
-		priorState:    plan.priorState,
-		owner:         plan.owner,
+		GitRoot:        gitRoot,
+		Path:           worktreePath,
+		WorkDir:        filepath.Join(worktreePath, rel),
+		Branch:         actualBranch,
+		BaseCommit:     plan.base,
+		Continued:      plan.continues,
+		createdBranch:  createdBranch,
+		userState:      userState,
+		priorState:     plan.priorState,
+		owner:          plan.owner,
+		RetainCheckout: params.RetainCheckout && plan.owner.valid(),
 		// A branch a sibling task forked because the conversation's own branch
 		// was busy is delivered once and never continued, so it records nothing.
 		tracksState: plan.tracksState && actualBranch == plan.name,
@@ -617,7 +634,7 @@ func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, err
 	// would take their work with it.
 	tip, err := runGitTrimmed(w.Path, "rev-parse", "--verify", "HEAD")
 	producedWork := err != nil || tip != w.BaseCommit
-	dropped := !producedWork && w.createdBranch
+	dropped := !producedWork && w.createdBranch && !w.RetainCheckout
 
 	// A turn that started mid-merge only gets to advance the branch's recorded
 	// state if it committed something after resolving. When the branch is still
@@ -689,6 +706,13 @@ func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, err
 				return outcome, fmt.Errorf("could not save local review delivery; worktree preserved: %w", bindingErr)
 			}
 		}
+	}
+	if w.RetainCheckout && !dropped {
+		if err := writeRetainedLocalWorktree(w); err != nil {
+			outcome.PreservedPath = w.Path
+			return outcome, err
+		}
+		return outcome, nil
 	}
 	if removeErr := removeLocalWorktreeDir(w.GitRoot, w.Path, logger); removeErr != nil {
 		outcome.PreservedPath = w.Path
@@ -1017,9 +1041,13 @@ func snapshotExcludes() []string {
 // which two workspaces can mint identically, so the name alone can never
 // establish that a branch is ours to append to (MUL-6881 review).
 type branchOwner struct {
-	WorkspaceID    string
-	AgentID        string
-	ConversationID string
+	WorkspaceID     string
+	AgentID         string
+	ConversationID  string
+	ProjectID       string
+	SquadID         string
+	RuntimeID       string
+	RepositoryScope string
 }
 
 func (o branchOwner) valid() bool {
@@ -1030,14 +1058,18 @@ func (o branchOwner) valid() bool {
 // used to name a branch when the readable name is already taken by someone
 // else's. Stable across turns, so the fallback branch is continued too.
 func (o branchOwner) fingerprint() string {
-	sum := sha256.Sum256([]byte(o.WorkspaceID + "\x00" + o.AgentID + "\x00" + o.ConversationID))
+	sum := sha256.Sum256([]byte(o.WorkspaceID + "\x00" + o.AgentID + "\x00" + o.ConversationID + "\x00" + o.ProjectID + "\x00" + o.SquadID + "\x00" + o.RuntimeID + "\x00" + o.RepositoryScope))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
 const (
-	ownerTrailerWorkspace    = "Multica-Workspace"
-	ownerTrailerAgent        = "Multica-Agent"
-	ownerTrailerConversation = "Multica-Conversation"
+	ownerTrailerWorkspace       = "Multica-Workspace"
+	ownerTrailerAgent           = "Multica-Agent"
+	ownerTrailerConversation    = "Multica-Conversation"
+	ownerTrailerProject         = "Multica-Project"
+	ownerTrailerSquad           = "Multica-Squad"
+	ownerTrailerRuntime         = "Multica-Runtime"
+	ownerTrailerRepositoryScope = "Multica-Repository-Scope"
 )
 
 // branchRecord is what refs/multica/local-state/<branch> holds: a commit whose
@@ -1094,6 +1126,10 @@ func branchRecordMessage(owner branchOwner) string {
 	fmt.Fprintf(&b, "%s: %s\n", ownerTrailerWorkspace, owner.WorkspaceID)
 	fmt.Fprintf(&b, "%s: %s\n", ownerTrailerAgent, owner.AgentID)
 	fmt.Fprintf(&b, "%s: %s\n", ownerTrailerConversation, owner.ConversationID)
+	fmt.Fprintf(&b, "%s: %s\n", ownerTrailerProject, owner.ProjectID)
+	fmt.Fprintf(&b, "%s: %s\n", ownerTrailerSquad, owner.SquadID)
+	fmt.Fprintf(&b, "%s: %s\n", ownerTrailerRuntime, owner.RuntimeID)
+	fmt.Fprintf(&b, "%s: %s\n", ownerTrailerRepositoryScope, owner.RepositoryScope)
 	return b.String()
 }
 
@@ -1119,6 +1155,14 @@ func readBranchRecord(gitRoot, commit string) (branchRecord, error) {
 			record.owner.AgentID = value
 		case ownerTrailerConversation:
 			record.owner.ConversationID = value
+		case ownerTrailerProject:
+			record.owner.ProjectID = value
+		case ownerTrailerSquad:
+			record.owner.SquadID = value
+		case ownerTrailerRuntime:
+			record.owner.RuntimeID = value
+		case ownerTrailerRepositoryScope:
+			record.owner.RepositoryScope = value
 		}
 	}
 	if checkpoint, err := runGitTrimmed(gitRoot, "rev-parse", "--verify", "--quiet", commit+"^2"); err == nil {

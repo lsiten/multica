@@ -15,6 +15,10 @@ import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { canCleanWorktree, canDiscardWorktree } from "@multica/core/types/managed-worktree";
 import { compareWorktreeLifecycle, type WorktreeAction } from "@multica/core/types/worktree-lifecycle";
 import { invalidateWorktreeInventory } from "@multica/views/platform";
+import { WorktreeCacheManager } from "./worktree-cache-manager";
+import { WorktreeInventoryFilters } from "@multica/views/settings/worktree-inventory-filters";
+import { WorktreeArchiveManager } from "./worktree-archive-manager";
+import { emptyWorktreeFilters, filterWorktreeInventory } from "@multica/core/types/worktree-filters";
 
 export function WorktreeManager({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
@@ -31,6 +35,9 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
     refetchInterval: enabled ? 30_000 : false,
   });
   const [grouped, setGrouped] = useState(true);
+  const [filters, setFilters] = useState(emptyWorktreeFilters);
+  const [cachePending, setCachePending] = useState(false);
+  const [archivePending, setArchivePending] = useState(false);
   const [pending, setPending] = useState<readonly ManagedWorktree[] | null>(null);
   const [discardChanges, setDiscardChanges] = useState(false);
   const [retained, setRetained] = useState<Record<string, string>>({});
@@ -62,7 +69,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
     onError: (error) => toast.error(t(($) => $.desktop.worktrees.cleanup_failed), { description: error.message }),
     onSettled: () => invalidateWorktreeInventory(client),
   });
-  const rows = inventory.data ?? [];
+  const rows = useMemo(() => filterWorktreeInventory(inventory.data ?? [], filters), [inventory.data, filters]);
   const workspaceIds = useMemo(
     () => [...new Set((inventory.data ?? []).map((row) => row.workspaceId).filter(Boolean))],
     [inventory.data],
@@ -76,7 +83,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
   });
   const groups = useMemo(() => {
     const result = new Map<string, { name: string; action: WorktreeAction; rows: ManagedWorktree[] }>();
-    for (const row of (inventory.data ?? []).toSorted(compareWorktreeLifecycle)) {
+    for (const row of rows.toSorted(compareWorktreeLifecycle)) {
       const workspaceIndex = workspaceIds.indexOf(row.workspaceId);
       const currentAgent = agentQueries[workspaceIndex]?.data?.find((agent) => agent.id === row.agentId);
       // Inventory defines local scope; agent identity defines grouping, not its runtime.
@@ -87,7 +94,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
       result.set(key, group);
     }
     return [...result.entries()];
-  }, [inventory.data, grouped, t, agentQueries, workspaceIds]);
+  }, [rows, grouped, t, agentQueries, workspaceIds]);
   const cleanable = (items: readonly ManagedWorktree[]) => items.filter(canCleanWorktree);
   const reasonLabel = (reason: string) => {
     switch (reason) {
@@ -101,7 +108,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
       default: return t(($) => $.desktop.worktrees.unavailable);
     }
   };
-  const blocked = !enabled || inventory.isError || cleanup.isPending || inventory.isFetching;
+  const blocked = !enabled || inventory.isError || cleanup.isPending || inventory.isFetching || cachePending || archivePending;
   return (
     <SettingsSection title={t(($) => $.desktop.worktrees.title)} description={t(($) => $.desktop.worktrees.description)}>
       <SettingsCard>
@@ -118,6 +125,9 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
         <SettingsRow label={t(($) => $.desktop.worktrees.group_by_agent)}>
           <Switch checked={grouped} onCheckedChange={setGrouped} aria-label={t(($) => $.desktop.worktrees.group_by_agent)} />
         </SettingsRow>
+        <WorktreeInventoryFilters rows={inventory.data ?? []} filters={filters} onChange={setFilters} disabled={cleanup.isPending || cachePending || archivePending} />
+        <WorktreeCacheManager key={`cache:${userId}:${status.profile}:${status.daemonId}:${JSON.stringify(filters)}`} rows={rows} disabled={blocked} workspaceId={filters.workspace || undefined} onPendingChange={setCachePending} />
+        <WorktreeArchiveManager key={`archive:${userId}:${status.profile}:${status.daemonId}:${JSON.stringify(filters)}`} rows={rows} enabled={enabled} disabled={blocked} filters={filters} onPendingChange={setArchivePending} queryKey={["desktop-environment-archives", userId, status.profile, status.daemonId, filters.workspace]} />
         {!enabled && <p className="px-4 py-3 text-body text-muted-foreground">{t(($) => $.desktop.worktrees.offline)}</p>}
         {inventory.isError && <p role="alert" className="px-4 py-3 text-body text-destructive">{t(($) => $.desktop.worktrees.load_failed)} {inventory.error.message}</p>}
         {Object.keys(retained).length > 0 && <div role="status" className="space-y-2 px-4 py-3"><p className="text-body">{t(($) => $.desktop.worktrees.retained, { count: Object.keys(retained).length })}</p>{Object.entries(retained).map(([path, reason]) => <div key={path}><p className="break-all font-mono text-caption">{path}</p><WorktreeReason reason={reason} /></div>)}</div>}
@@ -135,6 +145,8 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
                     <p className="truncate font-medium text-foreground" title={row.taskName}>{row.taskName}</p>
                     <p className="break-all font-mono" title={row.path}>{row.path}</p>
                     <p>{(row.sizeBytes / 1024 ** 2).toFixed(1)} MB · {reasonLabel(row.active ? "active" : row.protectionReason)}</p>
+                    {row.storage && <p>{t(($) => $.desktop.worktrees.storage_breakdown, { code: (row.storage.codeBytes / 1024 ** 2).toFixed(1), output: (row.storage.outputBytes / 1024 ** 2).toFixed(1), logs: (row.storage.logBytes / 1024 ** 2).toFixed(1), runtime: (row.storage.runtimeBytes / 1024 ** 2).toFixed(1) })}</p>}
+                    {row.storage?.allocatedBytes != null && <p>{t(($) => $.desktop.worktrees.allocated_size, { size: (row.storage.allocatedBytes / 1024 ** 2).toFixed(1) })}</p>}
                     <WorktreeLifecycle row={row} />
                     {row.repositories?.map((path) => {
                       const repository = row.repositoryDetails?.find((entry) => entry.path === path);

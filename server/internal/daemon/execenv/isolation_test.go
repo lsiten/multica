@@ -175,6 +175,26 @@ func TestPreparationHelperRoundTripsProjectResources(t *testing.T) {
 	}
 }
 
+func TestPreparationHelperKeepsReusedCodeAndRunConfigurationSeparate(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	params := PrepareParams{WorkspacesRoot: t.TempDir(), WorkspaceID: "ws-helper-isolation", TaskID: "first-helper", Provider: "claude", Task: TaskContextForEnv{AgentID: "agent", IssueID: "issue"}}
+	env, err := PrepareIsolated(ctx, preparationHelperTestCommand(), params, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := ClaimEnvRoot(RootDirParams{WorkspacesRoot: params.WorkspacesRoot, WorkspaceID: params.WorkspaceID, TaskID: "second-helper"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer claim.Release()
+	reused, err := ReuseIsolated(ctx, preparationHelperTestCommand(), ReuseParams{WorkspacesRoot: params.WorkspacesRoot, RunRoot: claim.RootDir(), WorkDir: env.WorkDir, Provider: "claude", Task: params.Task}, logger)
+	if err != nil || reused == nil || reused.RootDir != claim.RootDir() || reused.CodeRootDir != env.RootDir || reused.WorkDir != env.WorkDir || reused.MulticaConfigRoot == env.MulticaConfigRoot {
+		t.Fatalf("helper lost per-run isolation: %+v %v", reused, err)
+	}
+}
+
 // TestPreparationHelperAcceptsFieldsFromAnOlderParent pins the version-skew
 // half of the helper protocol. The parent is the running daemon process and
 // the helper is the binary currently at its executable path, so an upgrade

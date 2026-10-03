@@ -15,7 +15,9 @@ func (h *Handler) GetTaskGCCheck(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result := protocol.TaskGCStatus{Status: task.Status, CompletedAt: task.CompletedAt.Time, LifecycleSupported: true}
+	result := protocol.TaskGCStatus{Status: task.Status, CompletedAt: task.CompletedAt.Time, LifecycleSupported: true,
+		WorkspaceID: workspace, RuntimeID: uuidToString(task.RuntimeID), AgentID: uuidToString(task.AgentID),
+		ChatSessionID: uuidToString(task.ChatSessionID), AutopilotRunID: uuidToString(task.AutopilotRunID), WorkDir: task.WorkDir.String}
 	if task.IssueID.Valid {
 		issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(workspace)})
 		if err != nil {

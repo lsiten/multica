@@ -35,6 +35,9 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		result.Error = "runtime is no longer registered here"
 		return result
 	}
+	if command.Action == "environment" || command.Environment != nil {
+		return d.runRemoteEnvironment(ctx, command)
+	}
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
 	input.VersionID, input.FilePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.Offset, command.Limit
 	input.Side = command.Side

@@ -33,7 +33,10 @@ import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage,
 import { LocalReviewCancellation } from "./local-review-cancellation";
 import { isPagedReviewDecision, pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
 import { requestReviewInventory } from "./local-review-inventory";
-import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
+import { parseManagedWorktrees, parseManagedWorktreeCleanup, parseWorktreeCacheResults } from "@multica/core/types/managed-worktree";
+import { requestWorktreeCaches } from "./worktree-cache-request";
+import { requestWorktreeArchive } from "./worktree-archive-request";
+import { parseWorktreeArchiveResults, parseWorktreeArchiveSummaries } from "@multica/core/types/worktree-archives";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
 import { readDaemonParentPid, startMacDaemon } from "./daemon-launch";
@@ -1596,6 +1599,27 @@ export function setupDaemonManager(
     }));
   });
   ipcMain.handle("daemon:probe-runtimes", () => probeLocalRuntimes());
+  ipcMain.handle("daemon:list-environment-archives", async (_event, workspaceId: unknown) => {
+    if (workspaceId !== undefined && (typeof workspaceId !== "string" || !workspaceId)) throw new Error("Invalid workspace id");
+    const query = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+    return parseWorktreeArchiveSummaries(await fetchWorktreeManager(`/worktrees/archives${query}`));
+  });
+  ipcMain.handle("daemon:environment-archive-operation", (_event, request: unknown) => requestWorktreeArchive(request, async (body) =>
+    parseWorktreeArchiveResults(await fetchWorktreeManager("/worktrees/archives", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    })),
+  ));
+  ipcMain.handle("daemon:preview-worktree-caches", (_event, workspaceId: unknown) =>
+    requestWorktreeCaches({ action: "preview_cache", workspace_id: workspaceId }, async (request) =>
+      parseWorktreeCacheResults(await fetchWorktreeManager("/worktrees", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request),
+      }))),
+  );
+  ipcMain.handle("daemon:clean-worktree-caches", (_event, selections: unknown, workspaceId: unknown) => {
+    return requestWorktreeCaches({ action: "clean_cache", workspace_id: workspaceId, selections }, async (body) => parseWorktreeCacheResults(await fetchWorktreeManager("/worktrees", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    })));
+  });
   // The host's OS name, available regardless of daemon state. The Runtimes
   // page uses it as a fallback identity for "this machine" when no
   // app-managed daemon is reporting a device name (e.g. the daemon runs

@@ -19,6 +19,7 @@ type SkillBundleCache struct {
 	rename    func(string, string) error
 	removeAll func(string) error
 	mu        sync.Mutex
+	storeMu   sync.Mutex
 	locks     map[string]*sync.Mutex
 }
 
@@ -52,7 +53,15 @@ func (c *SkillBundleCache) Store(workspaceID string, bundle SkillData) error {
 	if c == nil || c.root == "" {
 		return nil
 	}
-	ref := SkillRefData{ID: bundle.ID, Source: bundle.Source, Hash: bundle.Hash}
+	c.storeMu.Lock()
+	defer c.storeMu.Unlock()
+	ref := SkillRefData{ID: bundle.ID, Source: bundle.Source, Hash: bundle.Hash, FileCount: len(bundle.Files)}
+	if !validateSkillBundle(ref, bundle) {
+		return errors.New("skill cache payload does not match content hash")
+	}
+	if _, ok := c.Load(workspaceID, ref); ok {
+		return nil
+	}
 	dir := filepath.Dir(c.bundlePath(workspaceID, ref))
 	tmp, err := os.MkdirTemp(filepath.Dir(dir), ".bundle-*")
 	if err != nil {
@@ -79,6 +88,9 @@ func (c *SkillBundleCache) Store(workspaceID string, bundle SkillData) error {
 	if err := c.rename(tmp, dir); err != nil {
 		if !errors.Is(err, fs.ErrExist) {
 			return err
+		}
+		if _, ok := c.Load(workspaceID, ref); ok {
+			return nil
 		}
 		if err := c.removeAll(dir); err != nil {
 			return err

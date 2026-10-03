@@ -3449,6 +3449,16 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			}
 		}
 		projectCtx.applyTo(&resp)
+		if !task.IssueID.Valid && !task.ChatSessionID.Valid && resp.PriorWorkDir == "" {
+			prior, priorErr := h.automationPriorWorkdir(r.Context(), *task, ap.WorkspaceID, ap.ID)
+			if priorErr != nil {
+				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, priorErr, "automation workline", uuidToString(ap.ID))
+			}
+			if prior.Valid {
+				resp.PriorWorkDir = prior.String
+			}
+		}
 	}
 
 	// Quick-create task: no issue / chat / autopilot link — workspace and

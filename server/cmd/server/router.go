@@ -2541,6 +2541,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/execute", h.ForwardLocalReview)
 				r.Get("/worktrees", h.ListLocalReviewWorktrees)
 			})
+			r.With(handler.RequireHumanActor).Post("/api/runtimes/{runtimeId}/environments/execute", h.ForwardRuntimeEnvironment)
 
 			r.Route("/api/notification-preferences", func(r chi.Router) {
 				r.Get("/", h.GetNotificationPreferences)

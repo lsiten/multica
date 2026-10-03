@@ -9,11 +9,45 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 )
+
+func TestWorktreeInventoryUsesBoundedConcurrentLifecycleLookups(t *testing.T) {
+	var requests atomic.Int32
+	gate := make(chan struct{})
+	var release sync.Once
+	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) >= 2 {
+			release.Do(func() { close(gate) })
+		}
+		select {
+		case <-gate:
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","lifecycle_supported":true}`))
+	}))
+	for _, id := range []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"} {
+		createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", id, nil)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	rows, err := d.managedWorktrees(ctx)
+	if err != nil || len(rows) != 9 {
+		t.Fatalf("inventory: %d rows, %v", len(rows), err)
+	}
+	for _, row := range rows {
+		if row.RunStatus != "completed" || row.NextAction != "cleanup" {
+			t.Fatalf("lifecycle lookup not completed: %+v", row)
+		}
+	}
+}
 
 func worktreeTestDaemon(t *testing.T) *Daemon {
 	return newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

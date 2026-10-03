@@ -9,6 +9,9 @@ import (
 
 func (d *Daemon) runClaimedReview(ctx context.Context, command protocol.LocalReviewCommand) (protocol.LocalReviewResult, bool) {
 	read := command.Action == "read" || command.Action == "branches" || isPagedReviewRead(command.Action)
+	if command.Environment != nil && command.Action == "environment" {
+		read = command.Environment.Action == "inventory" || command.Environment.Action == "cache_preview" || command.Environment.Action == "archive_preview" || command.Environment.Action == "archives"
+	}
 	if !read || !command.CancellationSupported {
 		return d.runRemoteReview(ctx, command), true
 	}

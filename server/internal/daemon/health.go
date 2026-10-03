@@ -460,6 +460,8 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	mux.HandleFunc("/shutdown", d.shutdownHandler())
 	mux.HandleFunc("/repo/checkout", d.repoCheckoutHandler())
 	mux.HandleFunc("/worktrees", d.worktreeManagerHandler())
+	mux.HandleFunc("/worktrees/archives", d.worktreeManagerHandler())
+	mux.HandleFunc("/worktrees/operations", d.worktreeManagerHandler())
 	mux.HandleFunc("/worktrees/review", d.worktreeReviewHandler())
 	mux.HandleFunc("/jev/models", d.jevModelsHandler())
 	mux.HandleFunc("/jev/models/register", d.jevModelRegisterHandler())

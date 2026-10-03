@@ -263,7 +263,21 @@ Les processus d'arrière-plan de Cursor qui appartiennent à l'exécution sont a
 
 L'ordre de priorité est : option de ligne de commande → variable d'environnement → `~/.multica/config.json` → valeur par défaut intégrée. Pour le comportement du watchdog, consultez [Daemon et runtimes](/daemon-runtimes).
 
+### Politique de capacité
+
+La politique est stockée sur le daemon par espace/runtime propriétaire. Les seuils par défaut sont 100 environnements inactifs, 20 GiB logiques de répertoires et 5 GiB libres sur l’hôte. Un dépassement permet de récupérer les caches vérifiés après 1 heure au lieu de 12, sans raccourcir les 24 heures de rétention des archives. Exécutions, revues et dépôts verrouillés restent protégés ; aucune archive n’est supprimée automatiquement pour atteindre un seuil. La politique ne réactive pas un GC désactivé ni ne contourne la conservation debug. Les reçus persistants, le dernier scan et l’espace libre réel sont visibles dans les paramètres des environnements.
+
 ### Rendre persistante la configuration du daemon
+
+Le mode worktree local conserve les checkouts des conversations finalisées pour les tours suivants. Une réutilisation prend un bail exclusif et rejoue les nouvelles modifications de l’utilisateur. Un checkout occupé entraîne une copie indépendante ; les modifications non commitées sont préservées. La propriété de branche inclut projet, équipe, runtime et dépôts. Le répertoire de travail de l’utilisateur ne devient pas le checkout de l’agent.
+
+Les caches existants de dépôts Git nus, de compétences adressées par contenu et de modèles Jev à révision fixe sont partagés. Une compétence vérifiée n’est pas remplacée et les baux actifs protègent les modèles en cours d’exécution. Les identifiants et configurations provider modifiables restent propres à chaque exécution.
+
+Une continuation restaure le code récupéré depuis une archive vérifiée correspondant au même espace, projet, équipe, agent, runtime et configuration de dépôts. Une archive correspondante corrompue bloque la préparation. Chaque exécution garde ses configurations provider et Multica dans son propre répertoire, avec un verrou exclusif sur le code partagé. Récupérer le répertoire d’une exécution ne supprime pas le code partagé.
+
+Les répertoires de tâches/chats ne sont réutilisés qu’avec le même espace, agent, runtime, projet, équipe et configuration de dépôts, sous verrou d’écriture exclusif. Une configuration différente ou une preuve manquante crée un environnement séparé et conserve l’ancien. Une automatisation `run_only` peut réutiliser le code d’une exécution terminée sur le même runtime, avec une nouvelle session provider pour chaque exécution. Une relance explicite conserve sa source exacte.
+
+Le propriétaire physique initial et la dernière tâche sont enregistrés séparément. Inventaire, nettoyage de cache, archivage et restauration vérifient les données de la dernière tâche sur le serveur. Une tâche suivante en cours reste protégée ; l’annulation met aussi à jour les métadonnées de fin.
 
 Les paramètres courants côté daemon peuvent aussi être écrits dans `~/.multica/config.json` au lieu de dépendre des variables d'environnement du shell ; les profils nommés conservent les leurs dans `~/.multica/profiles/<name>/config.json` :
 
@@ -299,6 +313,14 @@ Quelques règles concernant les valeurs :
 - Passer une chaîne vide efface une valeur persistée et revient à la variable d'environnement ou à la valeur par défaut intégrée, par exemple `multica config set poll_interval ""`.
 - `max_concurrent_tasks` exige un entier positif ou nul.
 - Les valeurs relatives de `workspaces_root` sont converties en chemins absolus lors de l'enregistrement.
+
+## Récupération automatique des environnements
+
+Pour les exécutions liées à une tâche, celle-ci doit aussi être terminée ou fermée. La fin de l’exécution d’un agent ne rend pas récupérable l’environnement d’une tâche encore en revue.
+
+`MULTICA_ENVIRONMENT_ARCHIVE_ENABLED=true` (par défaut) archive et vérifie les environnements terminés avant de récupérer leurs répertoires. Le GC doit être actif et `MULTICA_KEEP_ENV_AFTER_TASK=false`. `MULTICA_ENVIRONMENT_ARCHIVE_TTL=24h` conserve l’environnement depuis la plus récente des dates de fin d’exécution, d’archivage du chat, de fin d’automatisation ou de restauration manuelle (durée non négative). `MULTICA_ENVIRONMENT_RECYCLE_INTERVAL=5m` est l’intervalle positif de vérification des changements ultérieurs.
+
+La fin d’une exécution vérifie aussi les conditions. Les chats actifs, exécutions, revues et dépôts verrouillés sont conservés. L’archive garde les modifications de code, résultats, journaux et sessions, en excluant seulement les caches vérifiés et régénérables. Elle occupe encore de l’espace sur le même hôte. Dans « Paramètres → Environnements d’exécution », choisissez le runtime propriétaire pour consulter les opérations automatiques/manuelles et restaurer sans écraser un répertoire existant.
 
 ## Observabilité et analytique
 

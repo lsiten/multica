@@ -1,8 +1,14 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { canCleanWorktree, canDiscardWorktree, parseManagedWorktrees, parseManagedWorktreeCleanup } from "./managed-worktree";
+import { canCleanWorktree, canDiscardWorktree, parseManagedWorktrees, parseManagedWorktreeCleanup, parseWorktreeCacheResults } from "./managed-worktree";
 
 describe("worktree response boundary", () => {
+  it("parses cache receipts and rejects missing or negative byte counts", () => {
+    const receipt = { environment_id: "env", workspace_id: "ws", task_id: "task", revision: "revision", candidates: [{ path: "codex-home/.sandbox-bin", size_bytes: 12 }], size_bytes: 12, removed_bytes: 12, removed_count: 1, reason: "" };
+    expect(parseWorktreeCacheResults([receipt])[0]).toMatchObject({ environmentId: "env", removedBytes: 12, candidates: [{ path: "codex-home/.sandbox-bin", sizeBytes: 12 }] });
+    expect(() => parseWorktreeCacheResults([{ ...receipt, removed_bytes: -1 }])).toThrow();
+    expect(() => parseWorktreeCacheResults({})).toThrow();
+  });
   const row = { workspace_id: "ws", task_short: "run", path: "/managed/run", kind: "issue", size_bytes: 12 };
   it("keeps old daemon entries protected until explicit safety fields arrive", () => {
     expect(parseManagedWorktrees([row])[0]).toMatchObject({ workspaceId: "ws", active: true, protectionReason: "unavailable" });

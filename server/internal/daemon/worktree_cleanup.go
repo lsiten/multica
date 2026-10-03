@@ -63,9 +63,12 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 	} else if active {
 		return "review"
 	}
-	status, err := d.client.GetTaskGCCheck(ctx, owner.TaskID)
+	status, err := d.environmentTaskGCStatus(ctx, path, owner, nil)
 	if err != nil || !isAgentTaskTerminal(status.Status) {
 		return "unavailable"
+	}
+	if !validScopedTaskStatus(ctx, owner, status) {
+		return "scope_changed"
 	}
 	if request.automatic {
 		meta, err := execenv.ReadGCMeta(path)
@@ -259,6 +262,10 @@ func inspectWorktreeRepositories(ctx context.Context, root, workspacesRoot strin
 
 func (d *Daemon) autoCleanupCompletedWorktree(ctx context.Context, root string) {
 	if root == "" || !d.cfg.GCEnabled || d.cfg.KeepEnvAfterTask {
+		return
+	}
+	if d.cfg.EnvironmentArchiveEnabled {
+		d.scheduleAutomaticEnvironmentRecycle(d.recoveryContext(), root)
 		return
 	}
 	if reason := d.cleanupManagedWorktree(ctx, worktreeCleanup{path: root, automatic: true}); reason != "" {

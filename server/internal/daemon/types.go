@@ -314,6 +314,7 @@ type TaskResult struct {
 	// was finalized and its removal was confirmed. Empty keeps WorkDir authoritative.
 	DurableWorkDir string `json:"durable_work_dir,omitempty"`
 	EnvRoot        string `json:"-"` // env root dir for writing GC metadata (not sent to server)
+	CodeRoot       string `json:"-"` // shared code root; its lifetime follows the latest using task
 	FailureReason  string `json:"-"` // classifier forwarded to FailTask on the blocked path; empty falls back to 'agent_error'
 	// SessionRolloutMissing is set when the daemon withheld this task's Codex
 	// session because its rollout was not in the store (MUL-5305). Forwarded to
