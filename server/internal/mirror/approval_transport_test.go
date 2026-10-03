@@ -71,6 +71,19 @@ func TestCLIApprovalRoundTripOverPeerChannel(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
+			// Local OnOpen can precede the host's OnDataChannel callback. The
+			// host metadata proves its control channel is bound and writable.
+			var metadata VideoFrameMetadata
+			for metadata.Type != "mirror:video-meta" {
+				select {
+				case message := <-messages:
+					if err := json.Unmarshal(message.Data, &metadata); err != nil {
+						t.Fatal(err)
+					}
+				case <-ctx.Done():
+					t.Fatal("host control channel readiness not delivered")
+				}
+			}
 			control := protocol.MirrorControlGrant{GrantID: "input", SessionID: viewer.SessionID, WorkspaceID: viewer.WorkspaceID, RuntimeID: viewer.RuntimeID, UserID: viewer.UserID, ViewerID: viewer.ViewerID, NativeEpoch: viewer.NativeEpoch, Source: viewer.Source, SourceGeneration: viewer.SourceGeneration, ExpiresAt: viewer.ExpiresAt}
 			if !m.BindControlGrant(viewer.ViewerID, control, 1) {
 				t.Fatal("control grant rejected")
@@ -104,6 +117,8 @@ func TestCLIApprovalRoundTripOverPeerChannel(t *testing.T) {
 					if err := json.Unmarshal(message.Data, &request); err != nil {
 						t.Fatal(err)
 					}
+				case result := <-completed:
+					t.Fatalf("approval ended before prompt delivery: %v", result.err)
 				case <-ctx.Done():
 					t.Fatal("approval prompt not delivered")
 				}
