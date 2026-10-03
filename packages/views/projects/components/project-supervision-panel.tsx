@@ -49,7 +49,7 @@ export function ProjectSupervisionPanel({project,canManage}:{project:Project;can
   {view.last_result.wait_reason&&<p className="break-words text-muted-foreground">{view.last_result.wait_reason}</p>}
   <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">{view.last_checked_at&&<span>{t($=>$.supervision.last_check)} {new Date(view.last_checked_at).toLocaleString()}</span>}{view.enabled&&view.next_check_at&&<span>{t($=>$.supervision.next_check)} {new Date(view.next_check_at).toLocaleString()}</span>}{view.dirty_version>view.handled_version&&<span>{t($=>$.supervision.pending)}</span>}</div>
   {check.isError&&<p role="alert">{t($=>$.supervision.check_failed)}</p>}
-  {filter&&<div className="max-h-48 space-y-1 overflow-y-auto">{view.snapshot.issues.filter(issue=>issue.category===filter).map(issue=><AppLink key={issue.id} href={paths.issueDetail(issue.identifier||issue.id)} className="block truncate rounded px-2 py-1 hover:bg-accent">{issue.identifier} · {issue.title}</AppLink>)}</div>}
+  {filter&&<div className="max-h-48 space-y-1 overflow-y-auto">{view.snapshot.issues.filter(issue=>issue.category===filter).map(issue=><AppLink key={issue.id} href={paths.issueDetail(issue.identifier||issue.id)} className="block truncate rounded-sm px-2 py-1 hover:bg-accent">{issue.identifier} · {issue.title}</AppLink>)}</div>}
   {canManage&&<details><summary className="cursor-pointer font-medium">{t($=>$.supervision.configure)}</summary><div className="mt-3 space-y-3">
    <label className="flex items-center gap-2"><input type="checkbox" checked={value.enabled} disabled={save.isPending} onChange={event=>update({enabled:event.target.checked})}/>{t($=>$.supervision.enable)}</label>
    {project.lead_type!=="agent"&&<p>{t($=>$.supervision.no_lead)}</p>}
