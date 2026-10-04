@@ -31,6 +31,10 @@ func TestRetainedLocalWorktreeReusesPhysicalCheckoutAndReplaysUserChanges(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	published, err := ReadRetainedLocalWorktree(params.EnvRoot)
+	if err != nil || published.userState != second.userState || published.BaseCommit != second.BaseCommit {
+		t.Fatalf("concurrent readers would inherit a stale replay baseline: %+v %v", published, err)
+	}
 	after, err := os.Stat(second.Path)
 	if err != nil || !os.SameFile(before, after) {
 		t.Fatal("physical checkout was rebuilt")

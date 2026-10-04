@@ -671,6 +671,9 @@ type Daemon struct {
 	pauseClaims    bool // when true, the batch poller skips claiming
 	claimsInFlight int  // pollers that have decided to claim but haven't yet handed the task off to handleTask
 
+	executionEnvClaimsMu sync.Mutex
+	executionEnvClaims   map[string]*executionEnvClaimEntry
+
 	activeEnvRootsMu   sync.Mutex
 	activeEnvRootsCond *sync.Cond      // signalled when an in-flight env-root GC mutation finishes
 	activeEnvRoots     map[string]int  // env root path -> reference count (handles reuse paths marked twice)
@@ -7395,7 +7398,19 @@ func (d *Daemon) startTaskPrepareLeaseExtender(ctx context.Context, task Task, t
 // non-nil only when the run was cancelled while waiting for the prior env root,
 // and it carries the context's cause so the caller can end the task instead of
 // preparing an environment for work that no longer exists.
-func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localAssignment *localDirectoryAssignment, heldRoot string) (*execenv.EnvRootClaim, string, os.FileInfo, bool, error) {
+func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localAssignment *localDirectoryAssignment, heldRoot string) (*executionEnvClaim, string, os.FileInfo, bool, error) {
+	if localAssignment != nil && localAssignment.UsesWorktree() {
+		params := localWorktreeParamsForTask(task, localAssignment, heldRoot)
+		if candidate, err := execenv.FindRetainedLocalWorktree(params, d.logger); err != nil {
+			d.logger.Warn("could not discover the conversation worktree", "task", task.ID, "error", err)
+		} else if candidate != "" {
+			candidateTask := task
+			candidateTask.PriorWorkDir = candidate
+			if _, ok := shouldReusePriorWorkdir(candidateTask, localAssignment, d.cfg.WorkspacesRoot); ok {
+				task = candidateTask
+			}
+		}
+	}
 	if err := d.restoreArchivedPriorWorkdir(ctx, task, localAssignment); err != nil {
 		return nil, "", nil, false, err
 	}
@@ -7452,7 +7467,16 @@ func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localA
 	}
 
 	lockStartedAt := time.Now()
-	claim, lockedInfo, err := d.lockEnvRootForReuseWaitingOutTheBusyWindow(ctx, wsRoot, rel, priorRoot, task)
+	var claim *executionEnvClaim
+	var lockedInfo os.FileInfo
+	if localAssignment != nil && localAssignment.UsesWorktree() {
+		claim, lockedInfo = d.borrowExecutionEnvClaim(priorRoot)
+	}
+	if claim == nil {
+		var exclusive *execenv.EnvRootClaim
+		exclusive, lockedInfo, err = d.lockEnvRootForReuseWaitingOutTheBusyWindow(ctx, wsRoot, rel, priorRoot, task)
+		claim = d.registerExecutionEnvClaim(exclusive, lockedInfo)
+	}
 	switch {
 	case errors.Is(err, errPriorEnvRootWaitAborted):
 		// The run is over. Declining reuse would hand the caller on to a fresh
@@ -8097,7 +8121,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if err != nil {
 		return TaskResult{}, fmt.Errorf("claim execution environment: %w", err)
 	}
-	defer envClaim.Release()
+	defer d.registerExecutionEnvClaim(envClaim, nil).Release()
 
 	// Try to reuse the workdir from a previous task on the same (agent, issue) pair.
 	var env *execenv.Environment
@@ -8496,6 +8520,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		var releaseLocalSnapshot func()
 		if localAssignment.UsesWorktree() {
 			params := localWorktreeParamsForTask(task, localAssignment, managedCodeRoot(d.cfg.WorkspacesRoot, priorWorkDir))
+			params.SharedCheckout = priorClaim != nil && priorClaim.shared
 			if active, err := localreview.HasActiveReview(prepareCtx, params.EnvRoot, time.Now()); err != nil || active {
 				if err != nil {
 					return TaskResult{}, asEnvironmentSetupFailure(err)

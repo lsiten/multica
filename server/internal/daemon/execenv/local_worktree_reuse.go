@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const retainedLocalWorktreeFile = ".local_worktree_reuse.json"
@@ -18,7 +19,7 @@ func writeRetainedLocalWorktree(worktree *LocalWorktree) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(filepath.Dir(worktree.Path), retainedLocalWorktreeFile), data, 0600)
+	return writeFileAtomic(filepath.Join(filepath.Dir(worktree.Path), retainedLocalWorktreeFile), data, 0600)
 }
 
 func ReadRetainedLocalWorktree(root string) (*LocalWorktree, error) {
@@ -54,6 +55,50 @@ func LocalWorktreeReuseMatches(previous *LocalWorktree, params LocalWorktreePara
 	return err == nil && root == previous.GitRoot && previous.owner == params.owner()
 }
 
+// FindRetainedLocalWorktree locates the checkout of this workline's owned branch.
+// The caller must validate managed provenance and hold its execution claim before reuse.
+func FindRetainedLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (string, error) {
+	gitRoot, err := resolveGitRoot(params.LocalPath)
+	if err != nil {
+		return "", err
+	}
+	unlock, err := lockGitRoot(gitRoot, logger)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	head, err := runGitTrimmed(gitRoot, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	plan := resolveTaskBranch(gitRoot, params, head, logger)
+	if !plan.continues {
+		return "", nil
+	}
+	worktrees, err := runGitStdout(gitRoot, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return "", err
+	}
+	for _, record := range strings.Split(worktrees, "\x00\x00") {
+		path, branch := "", ""
+		for _, field := range strings.Split(record, "\x00") {
+			if strings.HasPrefix(field, "worktree ") {
+				path = strings.TrimPrefix(field, "worktree ")
+			} else if strings.HasPrefix(field, "branch ") {
+				branch = strings.TrimPrefix(field, "branch ")
+			}
+		}
+		if path == "" || branch != "refs/heads/"+plan.name {
+			continue
+		}
+		previous, err := ReadRetainedLocalWorktree(filepath.Dir(path))
+		if err == nil && previous.Branch == plan.name && LocalWorktreeReuseMatches(previous, params) {
+			return previous.WorkDir, nil
+		}
+	}
+	return "", nil
+}
+
 // ReuseLocalWorktree runs while the caller owns the old environment lease.
 // It replays user edits using the same merge rules as a fresh checkout.
 func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, logger *slog.Logger) (*LocalWorktree, error) {
@@ -85,6 +130,24 @@ func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, log
 		return nil, err
 	}
 	defer unlock()
+	if params.SharedCheckout {
+		// Replaying a user snapshot into an actively edited checkout would
+		// overwrite the other run's work. Continue its current state instead.
+		branch, err := runGitTrimmed(previous.Path, "symbolic-ref", "--short", "HEAD")
+		if err != nil || branch != previous.Branch {
+			return nil, errors.New("shared worktree branch changed")
+		}
+		if _, owned := branchOwnedBy(gitRoot, branch, params.owner(), logger); !owned {
+			return nil, ErrLocalWorktreeNotReusable
+		}
+		tip, err := runGitTrimmed(previous.Path, "rev-parse", "--verify", "HEAD")
+		if err != nil {
+			return nil, err
+		}
+		next := *previous
+		next.BaseCommit, next.Continued, next.createdBranch = tip, true, false
+		return &next, nil
+	}
 	if dirty, err := worktreeIsDirty(previous.Path); err != nil || dirty {
 		return nil, errors.New("retained local worktree has uncommitted changes")
 	}
@@ -126,6 +189,9 @@ func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, log
 		if err := next.recordState(next.BaseCommit, logger); err != nil {
 			return nil, err
 		}
+	}
+	if err := writeRetainedLocalWorktree(next); err != nil {
+		return nil, fmt.Errorf("record reused local worktree: %w", err)
 	}
 	return next, nil
 }

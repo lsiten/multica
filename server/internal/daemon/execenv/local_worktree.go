@@ -111,6 +111,9 @@ type LocalWorktreeParams struct {
 	RuntimeID       string
 	RepositoryScope string
 	RetainCheckout  bool
+	// SharedCheckout preserves live edits when the daemon lends the existing
+	// execution claim to another run of the same workline.
+	SharedCheckout bool
 }
 
 // owner is the identity a branch created for this task is recorded under.
@@ -518,6 +521,12 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 			"dirty_base_captured", wt.DirtyBaseCaptured,
 			"replay_conflicts", len(wt.ReplayConflicts),
 		)
+	}
+	if wt.RetainCheckout {
+		if err := writeRetainedLocalWorktree(wt); err != nil {
+			rollback()
+			return nil, fmt.Errorf("record reusable local worktree: %w", err)
+		}
 	}
 	return wt, nil
 }
@@ -1171,9 +1180,6 @@ func readBranchRecord(gitRoot, commit string) (branchRecord, error) {
 	return record, nil
 }
 
-// addLocalWorktree creates the worktree, retrying once under a suffixed branch
-// name when the branch already exists (a re-dispatched task keeps its id, so
-// its branch can survive from the previous run).
 // taskBranchPlan is the decision about which branch a task's worktree checks
 // out and which commit it starts from.
 type taskBranchPlan struct {
@@ -1349,23 +1355,42 @@ func addLocalWorktree(gitRoot, worktreePath string, plan taskBranchPlan, taskID 
 	if err == nil {
 		return plan.name, !plan.continues, nil
 	}
-	if !branchUnavailable(out) {
+	if !branchUnavailable(gitRoot, plan) {
 		return "", false, fmt.Errorf("execenv: git worktree add: %s: %w", strings.TrimSpace(out), err)
 	}
-	alt := plan.altName(taskID)
-	if out, err := runGit(gitRoot, "worktree", "add", "-b", alt, worktreePath, plan.base); err != nil {
-		return "", false, fmt.Errorf("execenv: git worktree add: %s: %w", strings.TrimSpace(out), err)
+	altBase := plan.altName(taskID)
+	for attempt := 0; attempt < 3; attempt++ {
+		alt := altBase
+		if attempt > 0 {
+			alt += "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+		}
+		out, err = runGit(gitRoot, "worktree", "add", "-b", alt, worktreePath, plan.base)
+		if err == nil {
+			return alt, true, nil
+		}
+		if !branchUnavailable(gitRoot, taskBranchPlan{name: alt}) {
+			break
+		}
 	}
-	return alt, true, nil
+	return "", false, fmt.Errorf("execenv: git worktree add: %s: %w", strings.TrimSpace(out), err)
 }
 
-// branchUnavailable recognises git refusing a branch that another worktree
-// holds, or that already exists under a name we meant to create.
-func branchUnavailable(out string) bool {
-	lower := strings.ToLower(out)
-	return strings.Contains(lower, "already exists") ||
-		strings.Contains(lower, "already checked out") ||
-		strings.Contains(lower, "already used by worktree")
+// branchUnavailable reads repository state because Git diagnostics are localized.
+func branchUnavailable(gitRoot string, plan taskBranchPlan) bool {
+	if !plan.continues && !plan.reset {
+		_, err := runGitTrimmed(gitRoot, "rev-parse", "--verify", "--quiet", "refs/heads/"+plan.name)
+		return err == nil
+	}
+	worktrees, err := runGitStdout(gitRoot, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return false
+	}
+	for _, field := range strings.Split(worktrees, "\x00") {
+		if field == "branch refs/heads/"+plan.name {
+			return true
+		}
+	}
+	return false
 }
 
 // replayResult is what the replay left in the worktree.
