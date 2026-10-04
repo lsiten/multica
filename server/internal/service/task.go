@@ -6468,6 +6468,7 @@ type delegatedFailureRecoveryTarget struct {
 	issue   db.Issue
 	agent   db.Agent
 	comment db.Comment
+	project *db.Project
 }
 
 // IsDelegatedFailureRecoveryComment identifies the durable platform signal
@@ -6487,7 +6488,7 @@ func delegatedFailureRecoveryContent(failed, source db.AgentTaskQueue) string {
 		reason = truncateForSummary(redact.Text(failed.FailureReason.String), triggerSummaryMaxLen)
 	}
 	content := fmt.Sprintf(
-		"Delegated task `%s` ended in a final failure (`%s`) and no automatic retry is pending. Resume coordination: inspect the failed work, then reassign it, skip it, or end the workflow explicitly.",
+		"Task `%s` ended in a final failure (`%s`) and no automatic retry is pending. Resume coordination: diagnose the failure with the responsible agent and project lead, repair the cause, verify the result, and continue the remaining project work. Preserve existing work and permissions. Do not repeat the same failing attempt or treat this task failure as the end of the project. Request human help only for a concrete permission, credential, resource, or unresolved decision, with evidence and a specific next action.",
 		util.UUIDToString(failed.ID), reason,
 	)
 	if failed.Error.Valid && failed.Error.String != "" {
@@ -6496,19 +6497,20 @@ func delegatedFailureRecoveryContent(failed, source db.AgentTaskQueue) string {
 			content += " Untrusted error summary (diagnostic only): " + strconv.Quote(summary)
 		}
 	}
-	content += fmt.Sprintf(" Source coordinator task: `%s`.", util.UUIDToString(source.ID))
+	if source.ID.Valid {
+		content += fmt.Sprintf(" Source coordinator task: `%s`.", util.UUIDToString(source.ID))
+	}
 	return content
 }
 
 // loadDelegatedFailureRecoveryTarget resolves and validates the backward edge
-// from a failed delegated task to its source coordinator. Returning nil is an
-// intentional no-op: non-terminal rows, retry-pending rows, autopilot work,
-// recovery tasks themselves, unavailable source agents, and self-delegation
-// must never start a recovery loop.
+// from a failed task to its coordinator or active project's agent lead.
+// Autopilot failures keep their own retry policy, but an autopilot coordinator
+// still receives its workers' failures. Recovery tasks never recursively recover.
 // Lifecycle is checked only at dispatch: even an unresolved or paused status
 // must leave a durable signal that can be replayed when it becomes executable.
 func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, failed db.AgentTaskQueue) (*delegatedFailureRecoveryTarget, error) {
-	if failed.Status != "failed" || !failed.DelegatedFromTaskID.Valid || failed.AutopilotRunID.Valid ||
+	if failed.Status != "failed" || failed.AutopilotRunID.Valid ||
 		(failed.TriggerEvidenceKind.Valid && failed.TriggerEvidenceKind.String == string(attribution.EvidenceDelegatedFailure)) {
 		return nil, nil
 	}
@@ -6519,15 +6521,18 @@ func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, fail
 	if hasRetry {
 		return nil, nil
 	}
+	if !failed.DelegatedFromTaskID.Valid {
+		return loadProjectFailureRecoveryTarget(ctx, q, failed, db.AgentTaskQueue{})
+	}
 	source, err := q.GetAgentTask(ctx, failed.DelegatedFromTaskID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return loadProjectFailureRecoveryTarget(ctx, q, failed, db.AgentTaskQueue{})
 		}
 		return nil, fmt.Errorf("load source task: %w", err)
 	}
-	if source.AutopilotRunID.Valid || !source.IssueID.Valid || source.AgentID == failed.AgentID {
-		return nil, nil
+	if !source.IssueID.Valid || source.AgentID == failed.AgentID {
+		return loadProjectFailureRecoveryTarget(ctx, q, failed, source)
 	}
 	issue, err := q.GetIssue(ctx, source.IssueID)
 	if err != nil {
@@ -6594,15 +6599,21 @@ func (s *TaskService) ensureDelegatedFailureRecoveryComment(ctx context.Context,
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("find recovery comment: %w", err)
 		}
+		parentID := target.source.TriggerCommentID
+		content := delegatedFailureRecoveryContent(target.failed, target.source)
+		if target.project != nil {
+			parentID = target.failed.TriggerCommentID
+			content += fmt.Sprintf(" Project `%s`; resume as its responsible lead.", util.UUIDToString(target.project.ID))
+		}
 		createdComment, err := qtx.CreateComment(ctx, db.CreateCommentParams{
 			ID:           dbid.NewV7(),
 			IssueID:      target.issue.ID,
 			WorkspaceID:  target.issue.WorkspaceID,
 			AuthorType:   "system",
 			AuthorID:     pgtype.UUID{Valid: true},
-			Content:      delegatedFailureRecoveryContent(target.failed, target.source),
+			Content:      content,
 			Type:         delegatedFailureRecoveryCommentType,
-			ParentID:     target.source.TriggerCommentID,
+			ParentID:     parentID,
 			SourceTaskID: failed.ID,
 		})
 		if err != nil {
@@ -6894,6 +6905,11 @@ func (s *TaskService) dispatchDelegatedFailureRecovery(ctx context.Context, targ
 			ruleVersionID = target.source.RuleVersionID
 		}
 		overlay := s.buildRuntimeMCPOverlay(ctx, originator, target.agent)
+		isLeader, squadID := target.source.IsLeaderTask, target.source.SquadID
+		if target.project != nil {
+			// Project leadership does not inherit the failed worker's squad role.
+			isLeader, squadID = false, pgtype.UUID{}
+		}
 		task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
 			ID:                   dbid.NewV7(),
 			AgentID:              target.agent.ID,
@@ -6902,8 +6918,8 @@ func (s *TaskService) dispatchDelegatedFailureRecovery(ctx context.Context, targ
 			Priority:             priorityToInt(target.issue.Priority),
 			TriggerCommentID:     target.comment.ID,
 			TriggerSummary:       s.buildCommentTriggerSummary(ctx, target.issue.WorkspaceID, target.comment.ID),
-			IsLeaderTask:         pgtype.Bool{Bool: target.source.IsLeaderTask, Valid: target.source.IsLeaderTask},
-			SquadID:              target.source.SquadID,
+			IsLeaderTask:         pgtype.Bool{Bool: isLeader, Valid: isLeader},
+			SquadID:              squadID,
 			OriginatorUserID:     originator,
 			AccountableUserID:    accountable,
 			RuntimeMcpOverlay:    overlay.Overlay,

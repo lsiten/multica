@@ -1666,7 +1666,10 @@ SET status = 'cancelled',
                 SELECT recovery.id
                 FROM comment recovery
                 JOIN agent_task_queue failed ON failed.id = recovery.source_task_id
-                JOIN agent_task_queue source ON source.id = failed.delegated_from_task_id
+                LEFT JOIN agent_task_queue source ON source.id = failed.delegated_from_task_id
+                LEFT JOIN issue failed_issue ON failed_issue.id = failed.issue_id
+                LEFT JOIN project failure_project ON failure_project.id = failed_issue.project_id
+                  AND failure_project.workspace_id = failed_issue.workspace_id
                 WHERE (
                     recovery.id = task.trigger_comment_id
                     OR recovery.id = ANY(task.coalesced_comment_ids)
@@ -1675,13 +1678,16 @@ SET status = 'cancelled',
                   AND recovery.type = 'progress_update'
                   AND recovery.source_task_id IS NOT NULL
                   AND failed.status = 'failed'
-                  AND failed.delegated_from_task_id IS NOT NULL
                   AND failed.autopilot_run_id IS NULL
                   AND failed.trigger_evidence_kind IS DISTINCT FROM 'delegated_failure'
-                  AND source.autopilot_run_id IS NULL
-                  AND source.issue_id = task.issue_id
-                  AND source.agent_id = task.agent_id
-                  AND recovery.issue_id = source.issue_id
+                  AND recovery.issue_id = task.issue_id
+                  AND (
+                      (source.issue_id IS NOT NULL
+                       AND source.issue_id = task.issue_id AND source.agent_id = task.agent_id)
+                      OR ((source.issue_id IS NULL OR source.agent_id = failed.agent_id)
+                          AND failure_project.status = 'in_progress' AND failure_project.lead_type = 'agent'
+                          AND failed.issue_id = task.issue_id AND failure_project.lead_id = task.agent_id)
+                  )
             )
         )) AS receipt(id)
       )
@@ -2217,9 +2223,16 @@ WHERE id = @comment_id
 SELECT recovery.*
 FROM comment recovery
 JOIN agent_task_queue failed ON failed.id = recovery.source_task_id
-JOIN agent_task_queue source ON source.id = failed.delegated_from_task_id
-JOIN issue source_issue ON source_issue.id = source.issue_id
-JOIN agent source_agent ON source_agent.id = source.agent_id
+LEFT JOIN agent_task_queue source ON source.id = failed.delegated_from_task_id
+LEFT JOIN issue failed_issue ON failed_issue.id = failed.issue_id
+LEFT JOIN project failure_project ON failure_project.id = failed_issue.project_id
+  AND failure_project.workspace_id = failed_issue.workspace_id
+JOIN issue source_issue ON source_issue.id = CASE
+  WHEN source.issue_id IS NOT NULL AND source.agent_id <> failed.agent_id THEN source.issue_id
+  ELSE failed.issue_id END
+JOIN agent source_agent ON source_agent.id = CASE
+  WHEN source.issue_id IS NOT NULL AND source.agent_id <> failed.agent_id THEN source.agent_id
+  ELSE failure_project.lead_id END
 LEFT JOIN issue_status source_status
   ON source_status.workspace_id = source_issue.workspace_id
  AND source_status.key = source_issue.status
@@ -2232,12 +2245,10 @@ WHERE recovery.author_type = 'system'
   AND recovery.issue_id = source_issue.id
   AND recovery.workspace_id = source_issue.workspace_id
   AND failed.status = 'failed'
-  AND failed.delegated_from_task_id IS NOT NULL
   AND failed.autopilot_run_id IS NULL
   AND failed.trigger_evidence_kind IS DISTINCT FROM 'delegated_failure'
-  AND source.autopilot_run_id IS NULL
-  AND source.issue_id IS NOT NULL
-  AND source.agent_id <> failed.agent_id
+  AND ((source.issue_id IS NOT NULL AND source.agent_id <> failed.agent_id)
+       OR (failure_project.status = 'in_progress' AND failure_project.lead_type = 'agent'))
   -- Match canDispatchDelegatedFailureRecovery: lifecycle permits recovery only
   -- for open work; parking belongs exclusively to the fixed Backlog status.
   -- Built-ins resolve without catalog rows; unknown custom states stay pending.
@@ -2266,7 +2277,7 @@ WHERE recovery.author_type = 'system'
       SELECT 1
       FROM agent_task_queue covering
       WHERE covering.issue_id = source_issue.id
-        AND covering.agent_id = source.agent_id
+        AND covering.agent_id = source_agent.id
         AND (
             recovery.id = ANY(covering.delivered_comment_ids)
             OR (
