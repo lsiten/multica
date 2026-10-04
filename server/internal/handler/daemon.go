@@ -5084,7 +5084,8 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 			CostUsdTicks:     authoritativeCostTicks(u.CostUSDTicks),
 		}); err != nil {
 			slog.Warn("upsert task usage failed", "task_id", taskID, "model", u.Model, "error", err)
-			continue
+			writeError(w, http.StatusInternalServerError, "failed to store task usage")
+			return
 		}
 		h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.CostUSDTicks)
 

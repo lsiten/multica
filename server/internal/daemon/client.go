@@ -671,9 +671,11 @@ func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []Tas
 	if len(usage) == 0 {
 		return nil
 	}
-	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/usage", taskID), map[string]any{
+	// Usage upserts replace counters, so retrying a lost response cannot
+	// charge the same run twice in task_usage.
+	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/usage", taskID), map[string]any{
 		"usage": usage,
-	}, nil)
+	}, nil, defaultTerminalRetrySchedule)
 }
 
 func (c *Client) ReportProjectGraphEvent(ctx context.Context, taskID, projectID, eventType, nodeID string, data map[string]any) error {
