@@ -149,8 +149,8 @@ func TestSourceDoesNotReportContextCancellationAsCaptureError(t *testing.T) {
 		frames: make(chan Frame, 1),
 		errors: make(chan ControlMessage, 1),
 	}
-	remove := source.AddViewer("viewer-1", sink)
-	defer remove()
+	// Exercise the cancelled call without a concurrent background capture.
+	source.viewers["viewer-1"] = &sourceViewer{sink: sink}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
