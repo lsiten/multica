@@ -1789,6 +1789,19 @@
     "native_protocol": "SystemOne 프로토콜"
   },
   "environments": {
+    "host_summary": "Multica {{version}} · {{source}}",
+    "api_endpoint": "API: {{address}}",
+    "choose_machine": "호스트 선택",
+    "not_reported": "보고되지 않음",
+    "desktop_source": "데스크톱 앱",
+    "standalone_source": "독립 daemon",
+    "online": "온라인",
+    "offline": "오프라인",
+    "multica_version": "Multica 버전 및 실행 출처",
+    "agent_version": "에이전트 CLI 버전",
+    "api_address": "원격 API 주소",
+    "runtime_identity": "런타임 ID",
+    "selected_scope": "아래 환경과 작업 기록은 선택한 런타임에 속합니다.",
     "policy": {
       "title": "자동 회수 정책",
       "enabled": "자동 회수 활성화",

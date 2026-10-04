@@ -22,8 +22,8 @@ function mount() {
 
 async function selectRuntime() {
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox", { name: "选择运行时" }));
-  await user.click(await screen.findByRole("option", { name: "Other computer" }));
+  await user.click(await screen.findByRole("combobox", { name: "选择主机" }));
+  await user.click(await screen.findByRole("option", { name: /Other computer/ }));
   return user;
 }
 
@@ -61,9 +61,36 @@ it("excludes runtimes owned by other users", async () => {
   mocks.list.mockResolvedValue([runtime, { ...runtime, id: "foreign", name: "Private computer", owner_id: "other-user" }]);
   mount();
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox", { name: "选择运行时" }));
-  expect(within(await screen.findByRole("listbox")).queryByRole("option", { name: "Private computer" })).not.toBeInTheDocument();
+  await user.click(await screen.findByRole("combobox", { name: "选择主机" }));
+  expect(within(await screen.findByRole("listbox")).queryByRole("option", { name: /Private computer/ })).not.toBeInTheDocument();
   expect(mocks.list).toHaveBeenCalledWith("ws", "workspace");
+});
+
+it("groups a host's providers and distinguishes same-name hosts with version, source and API", async () => {
+  mocks.list.mockResolvedValue([
+    { ...runtime, id: "codex-run", daemon_id: "desktop-host", name: "Codex (eric)", custom_name: "eric", metadata: { cli_version: "1.0.24", version: "0.118.0", launched_by: "desktop", server_url: "https://api.example.test/?token=hidden" } },
+    { ...runtime, id: "claude-run", daemon_id: "desktop-host", provider: "claude", custom_name: "eric", metadata: { cli_version: "1.0.24", version: "2.1.0", launched_by: "desktop", server_url: "https://api.example.test" } },
+    { ...runtime, id: "server-run", daemon_id: "server-host", custom_name: "eric", status: "offline", metadata: { cli_version: "1.0.23", launched_by: "", server_url: "https://old.example.test" } },
+  ]);
+  mocks.execute.mockImplementation(async (_workspace: string, _runtime: string, command: EnvironmentCommand) => command.action === "policy" ? policyStatus : []);
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "选择主机" }));
+  const options = await screen.findAllByRole("option");
+  expect(options).toHaveLength(3);
+  expect(options[1]).toHaveTextContent("1.0.24");
+  expect(options[1]).toHaveTextContent("桌面端");
+  expect(options[1]).toHaveTextContent("https://api.example.test");
+  expect(options[1]).not.toHaveTextContent("hidden");
+  expect(options[2]).toHaveTextContent("1.0.23");
+  expect(options[2]).toHaveTextContent("独立 daemon");
+  await user.click(options[1]!);
+  expect(screen.getByRole("combobox", { name: "选择运行时" })).toHaveTextContent("claude");
+  expect(screen.getByText("下方环境和操作记录仅属于当前选中的运行时。")).toBeInTheDocument();
+  await user.click(screen.getByRole("combobox", { name: "选择运行时" }));
+  await user.click(await screen.findByRole("option", { name: /codex/ }));
+  await waitFor(() => expect(mocks.execute).toHaveBeenCalledWith("ws", "codex-run", { action: "inventory" }));
+  expect(screen.getByText("codex · 0.118.0 · 在线")).toBeInTheDocument();
 });
 
 it("executes all previewed environments in sequential bounded batches", async () => {

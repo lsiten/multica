@@ -18,6 +18,7 @@ import { SettingsTab } from "./settings-layout";
 import { RuntimeEnvironmentResources } from "./runtime-environment-resources";
 import { RuntimeEnvironmentPolicy } from "./runtime-environment-policy";
 import { WorktreeInventoryFilters } from "./worktree-inventory-filters";
+import { RuntimeEnvironmentPicker } from "./runtime-environment-picker";
 
 type EnvironmentPreview = { kind: "cache"; rows: WorktreeCacheResult[] } | { kind: "archive"; rows: WorktreeArchiveResult[] } | { kind: "restore"; row: WorktreeArchiveSummary };
 
@@ -114,11 +115,12 @@ export function RuntimeEnvironments({ workspaceId, workspaceSlug, userId }: { wo
     }
   };
   return <div className="space-y-5">
+    <RuntimeEnvironmentPicker runtimes={owned} runtimeId={runtimeId} disabled={busy} onChange={(value) => {
+      setRuntimeId(value); setFilters(emptyWorktreeFilters); setJobId(""); setPreview(null);
+      pendingBatches.current = []; advancedJob.current = "";
+      scan.reset(); start.reset(); cancel.reset();
+    }} />
     <div className="flex flex-wrap items-center gap-3">
-      <Select items={[{ value: "", label: t(($) => $.environments.choose_runtime) }, ...owned.map((runtime) => ({ value: runtime.id, label: runtime.custom_name || runtime.name }))]} value={runtimeId} disabled={busy} onValueChange={(value) => { setRuntimeId(value ?? ""); setFilters(emptyWorktreeFilters); setJobId(""); setPreview(null); scan.reset(); start.reset(); }}>
-        <SelectTrigger aria-label={t(($) => $.environments.choose_runtime)}><SelectValue /></SelectTrigger>
-        <SelectContent><SelectItem value="">{t(($) => $.environments.choose_runtime)}</SelectItem>{owned.map((runtime) => <SelectItem key={runtime.id} value={runtime.id}>{runtime.custom_name || runtime.name}</SelectItem>)}</SelectContent>
-      </Select>
       <Button variant="outline" size="sm" disabled={!ready || busy || inventory.isFetching} onClick={() => { void inventory.refetch(); if (historyOpen) void history.refetch(); }}><RefreshCw className="size-3.5" />{t(($) => $.desktop.worktrees.refresh)}</Button>
     </div>
     {selected && !ready && <p className="text-body text-muted-foreground">{t(($) => $.environments.runtime_offline)}</p>}

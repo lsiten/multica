@@ -1799,6 +1799,19 @@
     "native_protocol": "SystemOne protocol"
   },
   "environments": {
+    "host_summary": "Multica {{version}} · {{source}}",
+    "api_endpoint": "API: {{address}}",
+    "choose_machine": "Choose machine",
+    "not_reported": "Not reported",
+    "desktop_source": "Desktop app",
+    "standalone_source": "Standalone daemon",
+    "online": "Online",
+    "offline": "Offline",
+    "multica_version": "Multica version and source",
+    "agent_version": "Agent CLI version",
+    "api_address": "Remote API address",
+    "runtime_identity": "Runtime ID",
+    "selected_scope": "Environments and operations below belong to the selected runtime.",
     "policy": {
       "title": "Automatic reclamation",
       "enabled": "Enable automatic reclamation",

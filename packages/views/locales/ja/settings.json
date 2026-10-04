@@ -1789,6 +1789,19 @@
     "native_protocol": "SystemOne プロトコル"
   },
   "environments": {
+    "host_summary": "Multica {{version}} · {{source}}",
+    "api_endpoint": "API: {{address}}",
+    "choose_machine": "ホストを選択",
+    "not_reported": "未報告",
+    "desktop_source": "デスクトップアプリ",
+    "standalone_source": "独立 daemon",
+    "online": "オンライン",
+    "offline": "オフライン",
+    "multica_version": "Multica のバージョンと起動元",
+    "agent_version": "エージェント CLI のバージョン",
+    "api_address": "リモート API アドレス",
+    "runtime_identity": "ランタイム ID",
+    "selected_scope": "以下の環境と操作履歴は選択中のランタイムに属します。",
     "policy": {
       "title": "自動回収ポリシー",
       "enabled": "自動回収を有効化",

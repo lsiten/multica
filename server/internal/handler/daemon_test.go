@@ -757,6 +757,9 @@ func TestDaemonRegister_WithDaemonToken(t *testing.T) {
 		"workspace_id": testWorkspaceID,
 		"daemon_id":    "test-daemon-mdt",
 		"device_name":  "test-device",
+		"cli_version":  "1.0.24",
+		"launched_by":  "desktop",
+		"server_url":   "https://user:private@api.example.test/base/?token=secret#fragment",
 		"runtimes": []map[string]any{
 			{"name": "test-runtime", "type": "claude", "version": "1.0.0", "status": "online"},
 		},
@@ -776,6 +779,20 @@ func TestDaemonRegister_WithDaemonToken(t *testing.T) {
 	// Clean up: deregister the runtime.
 	rt := runtimes[0].(map[string]any)
 	runtimeID := rt["id"].(string)
+	var metadata []byte
+	dbfx.QueryRow(t, "SELECT metadata FROM agent_runtime WHERE id = $1", runtimeID).Scan(&metadata)
+	var host struct {
+		Version    string `json:"version"`
+		CLIVersion string `json:"cli_version"`
+		LaunchedBy string `json:"launched_by"`
+		ServerURL  string `json:"server_url"`
+	}
+	if err := json.Unmarshal(metadata, &host); err != nil {
+		t.Fatal(err)
+	}
+	if host.Version != "1.0.0" || host.CLIVersion != "1.0.24" || host.LaunchedBy != "desktop" || host.ServerURL != "https://api.example.test/base" {
+		t.Fatalf("runtime host metadata = %+v", host)
+	}
 	testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, runtimeID)
 }
 
@@ -790,6 +807,7 @@ func TestDaemonRegister_RecordsRuntimeProfileRegistrationFailure(t *testing.T) {
 		"workspace_id": testWorkspaceID,
 		"daemon_id":    "test-daemon-profile-failure",
 		"device_name":  "test-device",
+		"server_url":   "https://user:private@api.example.test/?token=secret",
 		"failed_profiles": []map[string]any{
 			{
 				"profile_id":   profileID,
@@ -819,6 +837,9 @@ func TestDaemonRegister_RecordsRuntimeProfileRegistrationFailure(t *testing.T) {
 	}
 	if meta["runtime_profile_registration_error"] != true {
 		t.Fatalf("registration error metadata missing: %#v", meta)
+	}
+	if meta["server_url"] != "https://api.example.test" {
+		t.Fatalf("failed profile API endpoint = %v", meta["server_url"])
 	}
 	if meta["runtime_profile_failure_reason"] != "command not found on PATH: missing-codex" {
 		t.Fatalf("failure reason metadata = %#v", meta["runtime_profile_failure_reason"])

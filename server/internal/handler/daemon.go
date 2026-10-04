@@ -205,6 +205,7 @@ type DaemonRegisterRequest struct {
 	DeviceName         string   `json:"device_name"`
 	CLIVersion         string   `json:"cli_version"` // multica CLI version
 	LaunchedBy         string   `json:"launched_by"` // "desktop" when spawned by the Electron app
+	ServerURL          string   `json:"server_url"`
 	MaxConcurrentTasks int      `json:"max_concurrent_tasks"`
 	Runtimes           []struct {
 		Name    string `json:"name"`
@@ -494,6 +495,7 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 			"cli_version":     req.CLIVersion,
 			"client_os":       strings.TrimSpace(r.Header.Get("X-Client-OS")),
 			"launched_by":     req.LaunchedBy,
+			"server_url":      util.RuntimeAPIURL(req.ServerURL),
 			"capabilities":    requestClientCapabilities(r),
 			"execution_slots": req.MaxConcurrentTasks,
 		})
@@ -702,6 +704,7 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 					"cli_version":                        req.CLIVersion,
 					"client_os":                          strings.TrimSpace(r.Header.Get("X-Client-OS")),
 					"launched_by":                        req.LaunchedBy,
+					"server_url":                         util.RuntimeAPIURL(req.ServerURL),
 					"capabilities":                       requestClientCapabilities(r),
 					"runtime_profile_registration_error": true,
 					"runtime_profile_failure_reason":     reason,

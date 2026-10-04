@@ -4,10 +4,19 @@ import { parseWithFallback } from "../api/schema";
 const identity = z.string().regex(/^[a-f0-9]{64}$/);
 const environmentRuntimeSchema = z.object({
   id: z.string().min(1), workspace_id: z.string().min(1), name: z.string(),
+  daemon_id: z.string().nullable().optional().catch(null).default(null),
+  provider: z.string().optional().catch("unknown").default("unknown"),
   custom_name: z.string().nullable().optional(), owner_id: z.string().nullable().optional().default(null),
   runtime_mode: z.enum(["local", "cloud", "unknown"]).catch("unknown"),
   status: z.enum(["online", "offline"]).catch("offline"),
+  metadata: z.object({
+    version: z.string().optional().catch(undefined),
+    cli_version: z.string().optional().catch(undefined),
+    launched_by: z.string().optional().catch(undefined),
+    server_url: z.string().optional().catch(undefined),
+  }).catch({}).default({}),
 });
+export type EnvironmentRuntime = z.infer<typeof environmentRuntimeSchema>;
 
 export function parseEnvironmentRuntimes(value: unknown) {
   const rows = parseWithFallback<z.infer<typeof environmentRuntimeSchema>[] | null>(value, z.array(environmentRuntimeSchema), null, { endpoint: "environment runtimes" });

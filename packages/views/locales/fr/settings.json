@@ -1799,6 +1799,19 @@
     "native_protocol": "Protocole SystemOne"
   },
   "environments": {
+    "host_summary": "Multica {{version}} · {{source}}",
+    "api_endpoint": "API: {{address}}",
+    "choose_machine": "Choisir une machine",
+    "not_reported": "Non communiqué",
+    "desktop_source": "Application de bureau",
+    "standalone_source": "Daemon autonome",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "multica_version": "Version et source de Multica",
+    "agent_version": "Version du CLI de l’agent",
+    "api_address": "Adresse API distante",
+    "runtime_identity": "ID du runtime",
+    "selected_scope": "Les environnements et opérations ci-dessous appartiennent au runtime sélectionné.",
     "policy": {
       "title": "Politique de récupération automatique",
       "enabled": "Activer la récupération automatique",

@@ -1789,6 +1789,19 @@
     "native_protocol": "SystemOne 协议"
   },
   "environments": {
+    "host_summary": "Multica {{version}} · {{source}}",
+    "api_endpoint": "API: {{address}}",
+    "choose_machine": "选择主机",
+    "not_reported": "未上报",
+    "desktop_source": "桌面端",
+    "standalone_source": "独立 daemon",
+    "online": "在线",
+    "offline": "离线",
+    "multica_version": "Multica 版本与启动来源",
+    "agent_version": "智能体 CLI 版本",
+    "api_address": "远程 API 地址",
+    "runtime_identity": "运行时 ID",
+    "selected_scope": "下方环境和操作记录仅属于当前选中的运行时。",
     "policy": {
       "title": "自动回收策略",
       "enabled": "启用自动回收",
