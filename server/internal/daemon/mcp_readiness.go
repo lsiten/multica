@@ -46,6 +46,9 @@ type mcpReadinessEntry struct {
 	MCPReadinessSnapshot
 	endpoint string
 	mu       sync.RWMutex
+	owners   int
+	cancel   context.CancelFunc
+	done     chan struct{}
 }
 
 type mcpReadinessRegistry struct {
@@ -97,30 +100,52 @@ func registerTaskManagedMCPReadiness(d *Daemon, workspaceID, name, endpoint, sco
 		}
 	}
 	registry := d.mcpReadinessRegistry()
+	ctx, cancel := context.WithCancel(context.Background())
+	entry.owners, entry.cancel, entry.done = 1, cancel, make(chan struct{})
 	registry.mu.Lock()
+	// Built-in registration and the merged task config can reference the same
+	// route. Share its probe while retaining each caller's cleanup ownership.
+	if endpoint != "" {
+		for _, registered := range registry.entries {
+			if registered.Name == name && registered.WorkspaceID == entry.WorkspaceID && registered.Scope == scope && registered.Enabled == enabled && registered.endpoint == endpoint {
+				registered.owners++
+				registry.mu.Unlock()
+				cancel()
+				return registry.release(registered)
+			}
+		}
+	}
 	registry.nextID++
 	entry.InstanceID = fmt.Sprintf("mcp-%d", registry.nextID)
-	key := entry.InstanceID
-	registry.entries[key] = entry
+	registry.entries[entry.InstanceID] = entry
 	registry.mu.Unlock()
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
 	if endpoint != "" && enabled && isLocalMCPProbeEndpoint(endpoint) {
 		go func() {
-			defer close(done)
+			defer close(entry.done)
 			probeMCPReadiness(ctx, entry)
 		}()
 	} else {
-		close(done)
+		close(entry.done)
 	}
+	return registry.release(entry)
+}
+
+func (registry *mcpReadinessRegistry) release(entry *mcpReadinessEntry) func() {
+	var once sync.Once
 	return func() {
-		cancel()
-		<-done
-		registry.mu.Lock()
-		if current, ok := registry.entries[key]; ok && current == entry {
-			delete(registry.entries, key)
-		}
-		registry.mu.Unlock()
+		once.Do(func() {
+			registry.mu.Lock()
+			entry.owners--
+			lastOwner := entry.owners == 0
+			if lastOwner {
+				delete(registry.entries, entry.InstanceID)
+			}
+			registry.mu.Unlock()
+			if lastOwner {
+				entry.cancel()
+				<-entry.done
+			}
+		})
 	}
 }
 

@@ -8,9 +8,81 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestMCPReadinessSharesDuplicateEndpointUntilLastCleanup(t *testing.T) {
+	var initializeCalls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			return
+		}
+		if request.Method == "notifications/initialized" {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		result := map[string]any{"tools": []any{}}
+		if request.Method == "initialize" {
+			initializeCalls.Add(1)
+			result = map[string]any{"protocolVersion": "2024-11-05", "capabilities": map[string]any{"tools": map[string]any{}}}
+		}
+		writeLLM2JevMCPResult(w, request.ID, result)
+	}))
+	defer server.Close()
+	d := &Daemon{}
+	first := registerTaskManagedMCPReadiness(d, "workspace", llm2jevMCPName, server.URL, "task", true)
+	defer first()
+	config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{llm2jevMCPName: map[string]any{"url": server.URL, "type": "http"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := registerTaskMCPReadinessFromConfig(d, "workspace", config, "task")
+	defer second()
+	connections := func() []MCPReadinessSnapshot {
+		var out []MCPReadinessSnapshot
+		for _, snapshot := range d.mcpReadinessSnapshot() {
+			if snapshot.Name == llm2jevMCPName && snapshot.InstanceID != "" {
+				out = append(out, snapshot)
+			}
+		}
+		return out
+	}
+	if snapshots := connections(); len(snapshots) != 1 {
+		t.Fatalf("duplicate registration created extra entries: %+v", snapshots)
+	}
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for connections()[0].State == MCPReadinessNotConfigured || connections()[0].State == MCPReadinessProbing {
+		select {
+		case <-poll.C:
+		case <-deadline.C:
+			t.Fatal("readiness probe did not finish")
+		}
+	}
+	if snapshots := connections(); snapshots[0].State != MCPReadinessReady || initializeCalls.Load() != 1 {
+		t.Fatalf("duplicate registration created extra entries or probes: %+v / %d", snapshots, initializeCalls.Load())
+	}
+	first()
+	first()
+	if snapshots := connections(); len(snapshots) != 1 || snapshots[0].State != MCPReadinessReady {
+		t.Fatalf("one owner cleanup removed the remaining owner's entry: %+v", snapshots)
+	}
+	second()
+	for _, snapshot := range d.mcpReadinessSnapshot() {
+		if snapshot.InstanceID != "" {
+			t.Fatalf("last owner cleanup left a task instance: %+v", snapshot)
+		}
+	}
+}
 
 func TestMCPReadinessRetainsConcurrentTaskInstances(t *testing.T) {
 	d := &Daemon{}
@@ -38,6 +110,26 @@ func TestMCPReadinessRetainsConcurrentTaskInstances(t *testing.T) {
 	}
 	if sameName != 1 {
 		t.Fatalf("cleanup removed another task: %+v", snapshots)
+	}
+}
+
+func TestMCPReadinessDoesNotMergeDistinctEndpointsOrWorkspaces(t *testing.T) {
+	d := &Daemon{}
+	for _, registration := range []struct{ workspace, endpoint string }{
+		{"workspace-a", "http://127.0.0.1:1234/task-a"},
+		{"workspace-a", "http://127.0.0.1:1234/task-b"},
+		{"workspace-b", "http://127.0.0.1:1234/task-a"},
+	} {
+		defer registerTaskManagedMCPReadiness(d, registration.workspace, "custom", registration.endpoint, "task", false)()
+	}
+	var count int
+	for _, snapshot := range d.mcpReadinessSnapshot() {
+		if snapshot.Name == "custom" {
+			count++
+		}
+	}
+	if count != 3 {
+		t.Fatalf("distinct task or workspace connections merged: %+v", d.mcpReadinessSnapshot())
 	}
 }
 
