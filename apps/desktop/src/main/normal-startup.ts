@@ -3,7 +3,7 @@ import { VSCREEN_DESKTOP_CHANNEL, vscreenDesktopActionSchema } from "../shared/v
 import { ownedMirrorWindowIDs } from "./vscreen-exclusions";
 import { RuntimeMirrorWindowManager } from "./runtime-mirror-window-manager";
 import { RUNTIME_MIRROR_CHANNEL } from "../shared/runtime-mirror-window";
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, screen } from "electron";
 import { homedir } from "os";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -19,8 +19,9 @@ import { installNavigationGestures } from "./navigation-gestures";
 import { installNavigationGuard } from "./navigation-guard";
 import { configureRendererBackend, createRendererWebPreferences } from "./renderer-web-preferences";
 import { getAppVersion } from "./app-version";
-import { loadRuntimeConfig, saveRuntimeConfig } from "./runtime-config-loader";
-import { parseRuntimeConfig, type RuntimeConfigResult } from "../shared/runtime-config";
+import { loadRuntimeConfig } from "./runtime-config-loader";
+import { applyAppIcon, setupRuntimeConfigSettings } from "./runtime-config-settings";
+import { type RuntimeConfigResult } from "../shared/runtime-config";
 import {
   RENDERER_ROUTE_CONTEXT_CHANNEL,
   sanitizeRendererRouteContext,
@@ -686,8 +687,11 @@ if (!gotTheLock) {
       ? runtimeConfigResult.config.iconPath ?? (is.dev ? BUNDLED_ICON_PATH : undefined)
       : undefined;
     if (process.platform === "darwin" && app.dock && dockIconPath) {
-      const icon = nativeImage.createFromPath(dockIconPath);
-      if (!icon.isEmpty()) app.dock.setIcon(icon);
+      try {
+        applyAppIcon(dockIconPath);
+      } catch (error) {
+        console.warn("[runtime-config] could not apply application icon", error);
+      }
     }
 
     app.on("browser-window-created", (_, window) => {
@@ -764,31 +768,14 @@ if (!gotTheLock) {
       event.returnValue = runtimeConfigResult;
     });
 
-    ipcMain.handle("runtime-config:pick-icon", async (event) => {
-      const owner = BrowserWindow.fromWebContents(event.sender);
-      if (!owner) throw new Error("Invalid settings window");
-      const result = await dialog.showOpenDialog(owner, {
-        properties: ["openFile"],
-        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "ico", "icns"] }],
-      });
-      const path = result.filePaths[0];
-      if (result.canceled || !path) return null;
-      if (nativeImage.createFromPath(path).isEmpty()) throw new Error("Invalid application icon");
-      return path;
-    });
-
-    ipcMain.handle("runtime-config:save", async (event, input: unknown) => {
-      if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Invalid settings window");
-      const config = parseRuntimeConfig(JSON.stringify(input));
-      if (config.iconPath && nativeImage.createFromPath(config.iconPath).isEmpty()) throw new Error("Invalid application icon");
-      await saveRuntimeConfig(config);
-      return config;
-    });
-
-    ipcMain.handle("runtime-config:restart", (event) => {
-      if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Invalid settings window");
-      app.relaunch();
-      app.quit();
+    setupRuntimeConfigSettings(runtimeConfigResult, BUNDLED_ICON_PATH, (config) => {
+      if (runtimeConfigResult.ok) {
+        // Endpoint changes wait for restart; new windows use the current icon.
+        runtimeConfigResult = {
+          ok: true,
+          config: { ...runtimeConfigResult.config, appName: config.appName, iconPath: config.iconPath },
+        };
+      }
     });
 
     ipcMain.on(RENDERER_ROUTE_CONTEXT_CHANNEL, (event, context: unknown) => {

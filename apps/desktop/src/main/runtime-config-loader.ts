@@ -45,7 +45,7 @@ export function desktopConfigPath(): string {
   return join(app.getPath("home"), ".multica", "desktop.json");
 }
 
-export async function saveRuntimeConfig(config: RuntimeConfig): Promise<void> {
+export async function saveRuntimeConfig(config: RuntimeConfig): Promise<RuntimeConfig> {
   const path = desktopConfigPath();
   const directory = join(app.getPath("home"), ".multica");
   await mkdir(directory, { recursive: true });
@@ -58,6 +58,7 @@ export async function saveRuntimeConfig(config: RuntimeConfig): Promise<void> {
   const temporary = `${path}.${randomUUID()}.tmp`;
   await writeFile(temporary, JSON.stringify(stored, null, 2) + "\n", { mode: 0o600 });
   await rename(temporary, path);
+  return stored;
 }
 
 function isMissingFileError(err: unknown): boolean {

@@ -28,6 +28,7 @@ import type {
 import type { TabSelectionShortcutKey } from "../shared/main-renderer-messages";
 
 interface DesktopAPI {
+  getSavedRuntimeConfig: () => RuntimeConfigResult;
   saveRuntimeConfig: (config: RuntimeConfig) => Promise<RuntimeConfig>;
   pickAppIcon: () => Promise<string | null>;
   restartApp: () => Promise<void>;

@@ -7,15 +7,18 @@ import { DEFAULT_RUNTIME_CONFIG, parseRuntimeConfig } from "../../../shared/runt
 
 export function AppSettingsTab() {
   const { t } = useT("settings");
-  const initial = window.desktopAPI.runtimeConfig.ok
-    ? window.desktopAPI.runtimeConfig.config
-    : DEFAULT_RUNTIME_CONFIG;
+  const [initial, setInitial] = useState(() => {
+    const result = window.desktopAPI.getSavedRuntimeConfig();
+    return result.ok ? result.config : DEFAULT_RUNTIME_CONFIG;
+  });
   const [apiUrl, setApiUrl] = useState(initial.apiUrl);
   const [appName, setAppName] = useState(initial.appName);
   const [iconPath, setIconPath] = useState(initial.iconPath ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [restartRequired, setRestartRequired] = useState(false);
+  const isMac = window.desktopAPI.appInfo.os === "macos";
 
   async function save() {
     setSaving(true);
@@ -30,7 +33,13 @@ export function AppSettingsTab() {
           ? { wsUrl: initial.wsUrl, appUrl: initial.appUrl } : {}),
         ...(iconPath ? { iconPath } : {}),
       }));
-      await window.desktopAPI.saveRuntimeConfig(config);
+      const stored = await window.desktopAPI.saveRuntimeConfig(config);
+      setInitial(stored);
+      setIconPath(stored.iconPath ?? "");
+      const running = window.desktopAPI.runtimeConfig;
+      setRestartRequired(!running.ok || stored.apiUrl !== running.config.apiUrl
+        || stored.wsUrl !== running.config.wsUrl || stored.appUrl !== running.config.appUrl
+        || (!isMac && stored.appName !== running.config.appName));
       setSaved(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t(($) => $.desktop.application.save_failed));
@@ -56,10 +65,12 @@ export function AppSettingsTab() {
           description={t(($) => $.desktop.application.api_description)}>
           <Input id="desktop-api-url" value={apiUrl} onChange={(event) => { setApiUrl(event.target.value); setSaved(false); }} disabled={saving} />
         </SettingsRow>
-        <SettingsRow label={<label htmlFor="desktop-app-name">{t(($) => $.desktop.application.app_name)}</label>} size="text">
+        <SettingsRow label={<label htmlFor="desktop-app-name">{t(($) => $.desktop.application.app_name)}</label>} size="text"
+          description={isMac ? t(($) => $.desktop.application.mac_name_description) : undefined}>
           <Input id="desktop-app-name" value={appName} maxLength={64} onChange={(event) => { setAppName(event.target.value); setSaved(false); }} disabled={saving} />
         </SettingsRow>
-        <SettingsRow label={t(($) => $.desktop.application.icon)} size="text">
+        <SettingsRow label={t(($) => $.desktop.application.icon)} size="text"
+          description={isMac ? t(($) => $.desktop.application.mac_icon_description) : undefined}>
           <div className="space-y-2">
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => void pickIcon()} disabled={saving}>{t(($) => $.desktop.application.choose_icon)}</Button>
@@ -72,7 +83,7 @@ export function AppSettingsTab() {
       {error && <p role="alert" className="text-body text-destructive">{error}</p>}
       <div className="flex items-center gap-3">
         <Button onClick={() => void save()} disabled={saving} aria-busy={saving}>{t(($) => $.desktop.application.save)}</Button>
-        {saved && <><span role="status" className="text-body text-muted-foreground">{t(($) => $.desktop.application.saved)}</span><Button variant="outline" onClick={() => void window.desktopAPI.restartApp()}>{t(($) => $.desktop.application.restart)}</Button></>}
+        {saved && <><span role="status" className="text-body text-muted-foreground">{t(($) => $.desktop.application.saved)}</span>{restartRequired && <Button variant="outline" onClick={() => void window.desktopAPI.restartApp()}>{t(($) => $.desktop.application.restart)}</Button>}</>}
       </div>
     </SettingsTab>
   );

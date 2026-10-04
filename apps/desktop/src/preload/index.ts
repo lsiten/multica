@@ -63,9 +63,9 @@ function fetchAppInfo(): { version: string; os: "macos" | "windows" | "linux" | 
   return { version: "unknown", os };
 }
 
-function fetchRuntimeConfig(): RuntimeConfigResult {
+function fetchRuntimeConfig(channel = "runtime-config:get"): RuntimeConfigResult {
   try {
-    const result = ipcRenderer.sendSync("runtime-config:get") as RuntimeConfigResult | undefined;
+    const result = ipcRenderer.sendSync(channel) as RuntimeConfigResult | undefined;
     if (result && typeof result === "object" && "ok" in result) return result;
   } catch (err) {
     return {
@@ -112,6 +112,7 @@ function subscribeToMainRendererChannel<T>(
 }
 
 const desktopAPI = {
+  getSavedRuntimeConfig: (): RuntimeConfigResult => fetchRuntimeConfig("runtime-config:settings-get"),
   saveRuntimeConfig: (config: RuntimeConfig): Promise<RuntimeConfig> => ipcRenderer.invoke("runtime-config:save", config),
   pickAppIcon: (): Promise<string | null> => ipcRenderer.invoke("runtime-config:pick-icon"),
   restartApp: (): Promise<void> => ipcRenderer.invoke("runtime-config:restart"),
