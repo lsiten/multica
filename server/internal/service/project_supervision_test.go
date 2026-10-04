@@ -301,6 +301,34 @@ func TestProjectSupervisionMissingReportsStopAfterLimit(t *testing.T) {
 	}
 }
 
+func TestProjectSupervisionCoordinatorStopDoesNotStopIndependentReadyWork(t *testing.T) {
+	f, s, p, _ := supervisionFixture(t)
+	ctx := context.Background()
+	runtime := f.Runtime(t, "independent worker runtime")
+	worker := f.Agent(t, "independent worker", runtime)
+	issue := f.Issue(t, "ready independent work", testutil.Cols{"project_id": util.UUIDToString(p.ID), "status": "todo", "assignee_type": "agent", "assignee_id": worker})
+	f.Cleanup(t, "DELETE FROM agent_task_queue WHERE issue_id=$1", issue)
+	row, err := f.q.GetProjectSupervision(ctx, db.GetProjectSupervisionParams{ProjectID: p.ID, WorkspaceID: p.WorkspaceID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := s.snapshot(ctx, f.q, p, DefaultProjectSupervisionConfig(), row.ConfiguredBy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Exec(t, "UPDATE project_supervision SET no_progress_count=3,last_fingerprint=$2 WHERE project_id=$1", p.ID, snapshot.Fingerprint)
+	if err := s.check(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.Count(t, "SELECT count(*) FROM agent_task_queue WHERE issue_id=$1 AND status='queued'", issue); n != 1 {
+		t.Fatalf("coordinator's no-progress limit stopped independent work: queued=%d", n)
+	}
+	view, err := s.View(ctx, p)
+	if err != nil || view.LastReason != "work_released" {
+		t.Fatalf("independent work was not reported as released: %+v %v", view, err)
+	}
+}
+
 func TestProjectSupervisionStagesRespectPolicyCancellationAndDependencies(t *testing.T) {
 	f, s, p, _ := supervisionFixture(t)
 	ctx := context.Background()

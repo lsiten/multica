@@ -425,10 +425,6 @@ func (s *ProjectSupervisionService) check(ctx context.Context, previous db.Proje
 		}
 		return store()
 	}
-	if row.NoProgressCount >= int32(config.NoProgressLimit) && row.LastFingerprint == snapshot.Fingerprint {
-		reason = "needs_human"
-		return store()
-	}
 	if project.LeadType.String != "agent" || !project.LeadID.Valid {
 		reason = "no_agent_lead"
 		return store()
@@ -451,6 +447,13 @@ func (s *ProjectSupervisionService) check(ctx context.Context, previous db.Proje
 		}
 		s.publishIssueChanges(ctx, snapshot, queued, nil)
 		return nil
+	}
+	if row.NoProgressCount >= int32(config.NoProgressLimit) && row.LastFingerprint == snapshot.Fingerprint {
+		reason = "needs_human"
+		if len(queued) > 0 {
+			reason = "work_released"
+		}
+		return finish()
 	}
 	if snapshot.Counts.Unassigned == 0 && snapshot.Counts.Review == 0 && snapshot.Counts.Stalled == 0 && snapshot.Actionable <= snapshot.Counts.Ready {
 		reason = "capacity_wait"
@@ -511,7 +514,7 @@ func supervisionTaskActive(status string) bool {
 }
 func supervisionPrompt(project db.Project, snapshot ProjectSupervisionSnapshot, config ProjectSupervisionConfig, version int64) string {
 	brief, _ := json.Marshal(snapshot.Counts)
-	return fmt.Sprintf("Project %s (%s). Inspect this project's supervision snapshot. Resolve missing assignments, review and stalls using project supervision actions only. Do not create a patrol issue or modify another project. Make at most %d actions, report action/wait/blocked/needs_human with checked_version %d and current task ID, then end this short coordination run. Never sleep or poll. Pending facts are retained by the server. Snapshot: %s", project.Title, util.UUIDToString(project.ID), config.BatchSize, version, brief)
+	return fmt.Sprintf("Project %s (%s). Inspect this project's supervision snapshot. Resolve missing assignments, review and stalls using project supervision actions only. For failed or blocked work, inspect the latest execution error and issue discussion, diagnose the cause with the responsible agent, and give concrete repair instructions before retrying. Continue independent ready work while the affected task is repaired; a task failure is not project completion. Do not repeat an unchanged failing attempt. Request human help only for a concrete permission, credential, resource, or unresolved decision, with evidence and a specific next action. Do not create a patrol issue or modify another project. Make at most %d actions, report action/wait/blocked/needs_human with checked_version %d and current task ID, then end this short coordination run. Never sleep or poll. Pending facts are retained by the server. Snapshot: %s", project.Title, util.UUIDToString(project.ID), config.BatchSize, version, brief)
 }
 func (s *ProjectSupervisionService) publish(project db.Project) {
 	if s.Tasks.Bus != nil {
