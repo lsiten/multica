@@ -9,6 +9,8 @@ import (
 )
 
 func TestEnvironmentArchiveRoundTripGitStates(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	for _, kind := range []string{"unborn", "detached", "split_index", "conflict", "other_branch"} {
 		t.Run(kind, func(t *testing.T) {
 			workspace := t.TempDir()
@@ -32,6 +34,7 @@ func TestEnvironmentArchiveRoundTripGitStates(t *testing.T) {
 			} else {
 				source := newTestRepo(t)
 				gitRun(t, source, "clone", "--no-hardlinks", source, repo)
+				gitRun(t, repo, "config", "user.useConfigOnly", "true")
 				switch kind {
 				case "detached":
 					gitRun(t, repo, "checkout", "--detach", "HEAD")
@@ -48,7 +51,7 @@ func TestEnvironmentArchiveRoundTripGitStates(t *testing.T) {
 						t.Fatal(err)
 					}
 					gitRun(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-am", "main")
-					if _, err := gitTry(t, repo, "merge", "side"); err == nil {
+					if _, err := gitTry(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.test", "merge", "side"); err == nil {
 						t.Fatal("expected fixture conflict")
 					}
 				case "other_branch":
@@ -62,7 +65,11 @@ func TestEnvironmentArchiveRoundTripGitStates(t *testing.T) {
 			refs := gitRun(t, repo, "for-each-ref", "--format=%(refname) %(objectname)")
 			var mergeHead []byte
 			if kind == "conflict" {
-				mergeHead, _ = os.ReadFile(filepath.Join(repo, ".git", "MERGE_HEAD"))
+				var err error
+				mergeHead, err = os.ReadFile(filepath.Join(repo, ".git", "MERGE_HEAD"))
+				if err != nil || strings.TrimSpace(string(mergeHead)) == "" {
+					t.Fatalf("fixture did not enter merge conflict state: %q %v", mergeHead, err)
+				}
 			}
 			revision, err := EnvironmentArchiveRevision(t.Context(), root)
 			if err != nil {
