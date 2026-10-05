@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -84,7 +85,7 @@ type terminalReportNamespaceStats struct {
 	stats terminalReportStoreStats
 }
 
-// terminalReportStore is a file-backed outbox. One file per task keeps each
+// terminalReportStore is a file-backed outbox. One pending file per task keeps each
 // acknowledgement independent, and hashing task IDs prevents a malformed or
 // tampered task ID from becoming a path traversal primitive.
 type terminalReportStore struct {
@@ -114,6 +115,22 @@ func (s *terminalReportStore) failedDir() string { return filepath.Join(s.dir, "
 func terminalReportFileName(taskID string) string {
 	sum := sha256.Sum256([]byte(taskID))
 	return hex.EncodeToString(sum[:]) + ".json"
+}
+
+func terminalReportsEqual(left, right terminalTaskReport) bool {
+	// Decoding changes pointer identities and omitted empty maps. Compare the
+	// persisted payload without timestamps or rejection bookkeeping.
+	leftPayload, leftErr := terminalReportPayload(left)
+	rightPayload, rightErr := terminalReportPayload(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftPayload, rightPayload)
+}
+
+func terminalReportPayload(report terminalTaskReport) ([]byte, error) {
+	record, err := persistedTerminalReport(report, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(record)
 }
 
 func terminalReportKindName(kind terminalTaskReportKind) (string, error) {
@@ -236,7 +253,7 @@ func (s *terminalReportStore) enqueue(report terminalTaskReport) error {
 		if decodeErr != nil {
 			return fmt.Errorf("existing terminal report %s is invalid: %w", name, decodeErr)
 		}
-		if existingReport != report {
+		if !terminalReportsEqual(existingReport, report) {
 			return fmt.Errorf("terminal report for task %s conflicts with the original pending payload", report.taskID)
 		}
 		return nil
@@ -391,7 +408,7 @@ func (s *terminalReportStore) recoverTempFiles(entries []os.DirEntry) error {
 				continue
 			}
 			existingReport, decodeErr := existing.terminalReport()
-			if decodeErr != nil || existingReport != report {
+			if decodeErr != nil || !terminalReportsEqual(existingReport, report) {
 				errs = append(errs, fmt.Errorf("interrupted terminal report %s conflicts with existing payload", name))
 				continue
 			}
@@ -481,7 +498,7 @@ func (s *terminalReportStore) recordPermanentRejection(item pendingTerminalTaskR
 	if err != nil {
 		return false, fmt.Errorf("validate rejected terminal report: %w", err)
 	}
-	if item.fileName != terminalReportFileName(report.taskID) || report != item.report {
+	if item.fileName != terminalReportFileName(report.taskID) || !terminalReportsEqual(report, item.report) {
 		return false, errors.New("rejected terminal report no longer matches queued payload")
 	}
 
@@ -510,24 +527,39 @@ func (s *terminalReportStore) recordPermanentRejection(item pendingTerminalTaskR
 		return false, fmt.Errorf("create failed terminal report queue: %w", err)
 	}
 	failedPath := filepath.Join(s.failedDir(), item.fileName)
-	if existingBody, readErr := os.ReadFile(failedPath); readErr == nil {
-		existing, decodeErr := decodePersistedTerminalReport(existingBody)
-		if decodeErr != nil {
-			return false, fmt.Errorf("existing failed terminal report is unreadable: %w", decodeErr)
+	// A reclaimed task can produce another terminal payload after an earlier
+	// one was quarantined. Preserve both instead of blocking replay forever.
+	payload, err := terminalReportPayload(report)
+	if err != nil {
+		return false, fmt.Errorf("encode quarantined terminal payload: %w", err)
+	}
+	payloadSum := sha256.Sum256(payload)
+	alternatePath := filepath.Join(s.failedDir(), strings.TrimSuffix(item.fileName, ".json")+"-"+hex.EncodeToString(payloadSum[:])+".json")
+	for {
+		if existingBody, readErr := os.ReadFile(failedPath); readErr == nil {
+			existing, decodeErr := decodePersistedTerminalReport(existingBody)
+			var existingReport terminalTaskReport
+			if decodeErr == nil {
+				existingReport, decodeErr = existing.terminalReport()
+			}
+			if decodeErr != nil || !terminalReportsEqual(existingReport, report) {
+				if failedPath == alternatePath {
+					return false, errors.New("quarantined terminal payload fingerprint conflicts with existing evidence")
+				}
+				failedPath = alternatePath
+				continue
+			}
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, fmt.Errorf("remove duplicate quarantined terminal report: %w", err)
+			}
+		} else if errors.Is(readErr, os.ErrNotExist) {
+			if err := os.Rename(path, failedPath); err != nil {
+				return false, fmt.Errorf("quarantine terminal report: %w", err)
+			}
+		} else {
+			return false, fmt.Errorf("inspect failed terminal report: %w", readErr)
 		}
-		existingReport, decodeErr := existing.terminalReport()
-		if decodeErr != nil || existingReport != report {
-			return false, errors.New("failed terminal report conflicts with queued payload")
-		}
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return false, fmt.Errorf("remove duplicate quarantined terminal report: %w", err)
-		}
-	} else if errors.Is(readErr, os.ErrNotExist) {
-		if err := os.Rename(path, failedPath); err != nil {
-			return false, fmt.Errorf("quarantine terminal report: %w", err)
-		}
-	} else {
-		return false, fmt.Errorf("inspect failed terminal report: %w", readErr)
+		break
 	}
 	// The rename/removal has completed at this point. Report sync failures to
 	// operators, but also return quarantined=true so the caller performs the
