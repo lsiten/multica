@@ -2063,6 +2063,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/", h.UpdateIssue)
 					r.Get("/goal", h.GetIssueGoal)
 					r.Get("/progress", h.GetIssueProgress)
+					r.With(handler.RequireHumanActor).Post("/progress/actions", h.PerformIssueProgressAction)
+					r.Put("/next-step", h.ReportIssueNextStep)
 					r.Put("/goal", h.UpsertIssueGoal)
 					r.Delete("/goal", h.DeleteIssueGoal)
 					r.Post("/goal/complete", h.CompleteIssueGoal)

@@ -1,6 +1,6 @@
 import type { HumanRequest, HumanRequestAnswer, HumanTextReplyResult } from "../types/human-request";
 import type { IssueProgressView, ProgressFilters, ProgressScope } from "../types/issue-progress";
-import { IssueProgressViewSchema } from "./issue-progress";
+import { IssueProgressViewSchema, ProgressActionResultSchema } from "./issue-progress";
 import { todayDateOnly } from "../issues/date";
 import { HumanRequestSchema, HumanRequestListSchema, HumanTextReplyResultSchema } from "../human-requests/schema";
 import type { ZodType } from "zod";
@@ -1763,6 +1763,13 @@ export class ApiClient {
     const view = parseWithFallback<IssueProgressView | null>(raw, IssueProgressViewSchema, null, { endpoint: `GET ${endpoint}` });
     if (!view) throw new Error("Work progress response is malformed");
     return view;
+  }
+
+  async performProgressAction(issueId: string, input: { kind: string; issue_revision: number; run_id: string; key: string; text?: string; verdict?: string }): Promise<{ task_id: string | null; status: string; issue_id: string }> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(issueId)}/progress/actions`, { method: "POST", body: JSON.stringify(input) });
+    const result = parseWithFallback<{ task_id: string | null; status: string; issue_id: string } | null>(raw, ProgressActionResultSchema, null, { endpoint: "POST /api/issues/:id/progress/actions" });
+    if (!result) throw new Error("Could not read the progress action receipt");
+    return result;
   }
 
   async getIssueGoal(id: string): Promise<IssueGoal> {

@@ -321,3 +321,12 @@ Claude Code のプラグインマーケットプレイス、Codex の skill イ�
 - [認証とトークン](/auth-tokens) — PAT の作成、更新、失効。
 - [トラブルシューティング](/troubleshooting) — コマンドのエラーと、いつまでも開始しない実行の診断。
 - [エージェントの作成と設定](/agents-create) — `agent create` 各フィールドの完全な意味。
+
+
+## 実行の引き継ぎ
+
+`multica issue next-step <issue> --body-file <UTF-8 JSON>`
+
+`kind`, `summary`, `actor_type`, `actor_id`, `missing`, `evidence`, `issue_revision`, `request_id` (manual_action / awaiting_decision).
+
+`multica human-request create --body-file <UTF-8 JSON>`: `response_mode: "chat_or_card"` (choice / input).

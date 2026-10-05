@@ -88,7 +88,7 @@ describe("work progress surfaces", () => {
     renderProgress(<WorkProgressPanel scope={{ type: "project", id: "root" }} />, "/ws/projects/root?project_tab=attention&existing=value");
     await screen.findByText(/Deep callback fix/);
     await userEvent.click(screen.getByRole("button", { name: "Blocked" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "Awaiting my decision" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Needs my action" }));
     await waitFor(() => expect(api.getWorkProgress).toHaveBeenLastCalledWith({ type: "project", id: "root" }, expect.objectContaining({ filter: "blocked", mine: true }), undefined, expect.any(AbortSignal)));
     expect(navigationCalls.replace).toHaveBeenLastCalledWith(expect.stringContaining("existing=value"));
     expect(screen.getByRole("button", { name: "Blocked" })).toHaveAttribute("aria-pressed", "true");
@@ -104,7 +104,7 @@ describe("work progress surfaces", () => {
 
   it("updates the decision checkbox immediately while route persistence is pending", async () => {
     renderProgress(<WorkProgressPanel scope={{ type: "project", id: "root" }} />, "/ws/projects/root", true);
-    const checkbox = await screen.findByRole("checkbox", { name: "Awaiting my decision" });
+    const checkbox = await screen.findByRole("checkbox", { name: "Needs my action" });
     await userEvent.click(checkbox);
     expect(checkbox).toBeChecked();
     expect(navigationCalls.replace).toHaveBeenCalledWith(expect.stringContaining("work_mine=true"));

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -236,5 +237,45 @@ func TestIssueProgressSeparatesMissingRuntimeFromOfflineAndSupportsCustomUnstart
 	view = progressTestBuild(t, []db.ListProgressIssuesRow{row}, nil, ProgressScope{Type: "project", ID: "project"})
 	if entry = progressTestEntry(t, view, row.ID); !slices.Contains(entry.Reasons, "ready") {
 		t.Fatalf("custom unstarted work hidden: %v", entry.Reasons)
+	}
+}
+
+func TestIssueProgressMineIncludesExplicitMemberWorkButNotParkedWork(t *testing.T) {
+	member := dbid.NewV7()
+	row, parked := progressTestRow("in_progress"), progressTestRow("backlog")
+	row.AssigneeType = pgtype.Text{String: "member", Valid: true}
+	row.AssigneeID = member
+	parked.AssigneeType, parked.AssigneeID = row.AssigneeType, member
+	graph := newProgressGraph([]db.ListProgressIssuesRow{row, parked}, nil, nil, "MUL", util.UUIDToString(member))
+	view, err := buildIssueProgress(t.Context(), graph, ProgressOptions{Scope: ProgressScope{Type: "project", ID: util.UUIDToString(dbid.NewV7())}}, time.Now(), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := progressTestEntry(t, view, row.ID)
+	if !own.Attention || !own.NeedsMe || len(own.Actions) != 1 || own.Actions[0].Kind != "member_work" {
+		t.Fatalf("owned work not actionable: %+v", own)
+	}
+	if progressTestEntry(t, view, parked.ID).NeedsMe {
+		t.Fatal("parked work demanded member action")
+	}
+}
+
+func TestIssueProgressFailedRunCannotReuseItsOldInformationHandoff(t *testing.T) {
+	member, agent, run := dbid.NewV7(), dbid.NewV7(), dbid.NewV7()
+	row := progressTestRow("in_progress")
+	row.Revision = 7
+	row.AssigneeType = pgtype.Text{String: "agent", Valid: true}
+	row.AssigneeID = agent
+	row.LatestRunID = run
+	row.LatestRunStatus = "failed"
+	raw, err := json.Marshal(map[string]any{"next_step": IssueNextStep{Kind: "needs_information", Summary: "Old information request", ActorType: "member", ActorID: util.UUIDToString(member), Missing: []string{"URL"}, IssueRevision: 7, SourceTaskID: util.UUIDToString(run)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.LatestRunContext = raw
+	graph := newProgressGraph([]db.ListProgressIssuesRow{row}, nil, nil, "MUL", util.UUIDToString(member))
+	entry := graph.entry(util.UUIDToString(row.ID), time.Now(), time.Minute, ProgressScope{Type: "issue", ID: util.UUIDToString(row.ID)})
+	if entry.NextStep != nil || entry.NeedsMe || len(entry.Actions) != 1 || entry.Actions[0].Kind != "rerun" {
+		t.Fatalf("failed run retained an unusable handoff: %+v", entry)
 	}
 }

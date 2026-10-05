@@ -17,7 +17,7 @@ import { useIssueDetailScrollRestore } from "../hooks/use-issue-detail-scroll-re
 import { WorkProgressEntry, WorkProgressSummary } from "./work-progress-entry";
 import { useWorkProgressLabels } from "./work-progress-labels";
 
-const FILTERS: ProgressFilter[] = ["all", "blocked", "review", "follow_up", "ready"];
+const FILTERS: ProgressFilter[] = ["all", "blocked", "review", "follow_up", "ready", "awaiting_agent", "other_member", "prerequisites"];
 
 export function WorkProgressPanel({ scope, currentProjectId, showSummary = true }: { scope: ProgressScope; currentProjectId?: string | null; showSummary?: boolean }) {
   const { t } = useWorkProgressLabels();
@@ -80,7 +80,7 @@ export function WorkProgressPanel({ scope, currentProjectId, showSummary = true 
     for (const entry of entries) { const key = entry.group?.id ?? entry.issue.id; const group = grouped.get(key); if (group) group.push(entry); else grouped.set(key, [entry]); }
     return [...grouped.values()];
   }, [entries]);
-  const filterLabels: Record<ProgressFilter, string> = { all: t($ => $.work_progress.filters.all), blocked: t($ => $.work_progress.filters.blocked), review: t($ => $.work_progress.filters.review), follow_up: t($ => $.work_progress.filters.follow_up), ready: t($ => $.work_progress.filters.ready) };
+  const filterLabels: Record<ProgressFilter, string> = { all: t($ => $.work_progress.filters.all), blocked: t($ => $.work_progress.filters.blocked), review: t($ => $.work_progress.filters.review), follow_up: t($ => $.work_progress.filters.follow_up), ready: t($ => $.work_progress.filters.ready), awaiting_agent: t($ => $.work_progress.filters.awaiting_agent), other_member: t($ => $.work_progress.filters.other_member), prerequisites: t($ => $.work_progress.filters.prerequisites) };
   return <section ref={setScrollContainer} data-tab-scroll-root={scope.type === "project" ? scrollKey : undefined} className={`min-h-0 space-y-4 ${scope.type === "project" ? "flex-1 overflow-y-auto" : ""}`} aria-label={scope.type === "project" ? t($ => $.work_progress.attention) : t($ => $.work_progress.remaining)}>
     <div className="flex flex-wrap items-center gap-2" aria-label={t($ => $.work_progress.filters_label)}>
       {FILTERS.map(value => <Button key={value} size="sm" variant={filter === value ? "secondary" : "ghost"} aria-pressed={filter === value} onClick={() => updateFilter("work_filter", value === "all" ? "" : value)}>{filterLabels[value]}</Button>)}

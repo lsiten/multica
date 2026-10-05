@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiClient } from "./client";
-import { IssueProgressViewSchema } from "./issue-progress";
+import { IssueProgressViewSchema, ProgressActionResultSchema } from "./issue-progress";
 
 function response() {
   return {
@@ -49,4 +49,20 @@ describe("work progress response boundary", () => {
     expect(url.searchParams.get("mine")).toBe("true");
     expect(url.searchParams.get("today")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
+});
+
+
+describe("action projection compatibility", () => {
+ it("keeps counts and existing task links when optional action metadata is malformed", () => {
+  const raw=response();const parsed=IssueProgressViewSchema.parse({...raw,items:[{...raw.items[0],next_step:{kind:42},actions:"invalid"}]});
+  expect(parsed.items[0]!.next_step).toBeNull();expect(parsed.items[0]!.actions).toEqual([]);expect(parsed.summary.open).toBe(1);
+ });
+});
+
+it("rejects malformed action receipts",()=>{
+ expect(ProgressActionResultSchema.safeParse({task_id:"unbound",issue_id:"invalid",status:"queued"}).success).toBe(false);
+});
+
+it("never enables a future action whose meaning this client cannot show",()=>{
+ const raw=response();const parsed=IssueProgressViewSchema.parse({...raw,items:[{...raw.items[0],actions:[{kind:"future",actor_type:"unknown",actor_id:null,enabled:true}]}]});expect(parsed.items[0]!.actions![0]).toMatchObject({kind:"unknown",enabled:false,disabled_reason:"unsupported_action"});
 });

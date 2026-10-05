@@ -33,6 +33,10 @@ SELECT i.id, i.number, i.title, i.status, i.priority, i.revision,
     COALESCE(p.title, '')::text AS project_title,
     EXISTS(SELECT 1 FROM scope WHERE scope.id = i.id)::boolean AS in_scope,
     latest.id AS latest_run_id, COALESCE(latest.status, '')::text AS latest_run_status,
+    latest.context AS latest_run_context, latest.result AS latest_run_result,
+    CASE WHEN latest.context ? 'next_step' THEN md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text || COALESCE((SELECT objective FROM issue_goal g WHERE g.issue_id = i.id),'')) ELSE '' END::text AS next_step_scope,
+    COALESCE(latest.handoff_note, '')::text AS latest_handoff,
+    latest.agent_id AS latest_run_agent_id,
     COALESCE(latest.completed_at, latest.started_at, latest.created_at) AS latest_run_at,
     active.id AS active_run_id, COALESCE(active.status, '')::text AS active_run_status,
     active.created_at AS active_run_at,
@@ -48,7 +52,7 @@ LEFT JOIN project p ON p.id = i.project_id AND p.workspace_id = i.workspace_id
 LEFT JOIN squad sq ON i.assignee_type = 'squad' AND sq.id = i.assignee_id AND sq.workspace_id = i.workspace_id
 LEFT JOIN agent a ON a.id = CASE WHEN i.assignee_type = 'agent' THEN i.assignee_id ELSE sq.leader_id END AND a.workspace_id = i.workspace_id
 LEFT JOIN agent_runtime runtime ON runtime.id = a.runtime_id AND runtime.workspace_id = i.workspace_id
-LEFT JOIN LATERAL (SELECT t.id,t.status,t.created_at,t.started_at,t.completed_at FROM agent_task_queue t
+LEFT JOIN LATERAL (SELECT t.id,t.status,t.created_at,t.started_at,t.completed_at,t.context,t.result,t.handoff_note,t.agent_id FROM agent_task_queue t
     WHERE t.issue_id = i.id ORDER BY t.created_at DESC,t.id DESC LIMIT 1) latest ON true
 LEFT JOIN LATERAL (SELECT t.id,t.status,t.created_at FROM agent_task_queue t WHERE t.issue_id = i.id
     AND t.status IN ('queued','deferred','dispatched','running','waiting_local_directory')
@@ -69,3 +73,24 @@ WHERE hr.workspace_id = @workspace_id AND hr.status = 'pending' AND hr.expires_a
 AND (hr.issue_id = ANY(@issue_ids::uuid[])
     OR (hr.project_id = sqlc.narg('project_id')::uuid AND hr.recipient_id = @member_id))
 ORDER BY hr.id LIMIT 1001;
+
+-- name: ReportIssueNextStep :one
+UPDATE agent_task_queue AS task SET context = COALESCE(context,'{}'::jsonb) || jsonb_build_object('next_step',sqlc.arg('next_step')::jsonb)
+WHERE task.id = @task_id AND task.agent_id = @agent_id AND task.issue_id = @issue_id AND task.status = 'running'
+AND EXISTS(SELECT 1 FROM issue WHERE issue.id = @issue_id AND issue.revision = @issue_revision)
+RETURNING *;
+
+-- name: GetLatestProgressTask :one
+SELECT * FROM agent_task_queue WHERE issue_id= @issue_id ORDER BY created_at DESC,id DESC LIMIT 1;
+
+-- name: FindProgressActionTask :one
+SELECT * FROM agent_task_queue WHERE issue_id= @issue_id AND originator_user_id= @member_id
+AND context->>'progress_action_key'= @action_key::text
+ORDER BY created_at DESC,id DESC LIMIT 1;
+
+-- name: HasPendingProgressHumanRequest :one
+SELECT EXISTS(SELECT 1 FROM human_request WHERE workspace_id = @workspace_id AND issue_id = @issue_id
+AND status = 'pending' AND expires_at > now())::boolean;
+
+-- name: GetIssueNextStepScope :one
+SELECT md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text || COALESCE((SELECT objective FROM issue_goal g WHERE g.issue_id = i.id),''))::text FROM issue i WHERE i.id = @issue_id AND i.workspace_id = @workspace_id;

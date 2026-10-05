@@ -9,7 +9,9 @@ export interface ProgressIssueRef {
   project_id: string | null;
   project_title: string;
 }
-export interface ProgressRun { id: string; status: string; since: string }
+export interface ProgressRun { id: string; status: string; since: string; summary?: string }
+export interface IssueNextStep { kind: string; summary: string; actor_type: string; actor_id?: string; missing?: string[]; request_id?: string; evidence?: string[]; issue_revision: number; source_task_id?: string }
+export interface ProgressAction { kind: string; actor_type: string; actor_id: string | null; needs_me: boolean; enabled: boolean; disabled_reason: string; target_issue_id?: string; request_id?: string }
 export interface ProgressRequest { id: string; recipient_id: string; needs_me: boolean; expires_at: string }
 export interface ProgressEntry {
   issue: ProgressIssueRef;
@@ -32,6 +34,9 @@ export interface ProgressEntry {
   due_date: string | null;
   wait_since: string;
   rank: number;
+  revision?: number;
+  next_step?: IssueNextStep | null;
+  actions?: ProgressAction[];
 }
 export interface ProgressSummary {
   total: number;
@@ -58,7 +63,7 @@ export interface IssueProgressView {
   has_more: boolean;
   filtered_total: number;
 }
-export type ProgressFilter = "all" | "blocked" | "review" | "follow_up" | "ready";
+export type ProgressFilter = "all" | "blocked" | "review" | "follow_up" | "ready" | "awaiting_agent" | "other_member" | "prerequisites";
 export interface ProgressFilters {
   filter?: ProgressFilter;
   assignee_type?: "member" | "agent" | "squad";

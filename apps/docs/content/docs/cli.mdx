@@ -345,3 +345,12 @@ Markdown instructions.
 - [Authentication and tokens](/auth-tokens) — creating, renewing, and revoking PATs.
 - [Troubleshooting](/troubleshooting) — diagnosing command errors and runs that never start.
 - [Create and configure an agent](/agents-create) — the full semantics of every `agent create` field.
+
+
+## Run handoffs
+
+`multica issue next-step <issue> --body-file <UTF-8 JSON>`
+
+`kind`, `summary`, `actor_type`, `actor_id`, `missing`, `evidence`, `issue_revision`, `request_id` (manual_action / awaiting_decision).
+
+`multica human-request create --body-file <UTF-8 JSON>`: `response_mode: "chat_or_card"` (choice / input).

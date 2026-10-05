@@ -46,7 +46,7 @@ test("remaining work finds deep prerequisites and refreshes without completing t
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await progress.screenshot({ path: resolve(evidenceDir, "remaining-narrow.png") });
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const mine = progress.getByRole("checkbox", { name: "Awaiting my decision", exact: true });
+  const mine = progress.getByRole("checkbox", { name: "Needs my action", exact: true });
   await mine.focus();
   await page.keyboard.press("Space");
   await expect(mine).toBeChecked();
@@ -73,7 +73,7 @@ test("attention surfaces the designated member's request and keeps its existing 
   await page.goto(`/${workspace}/projects/${project.id}?project_tab=attention`, { waitUntil: "domcontentloaded" });
   const attention = page.getByRole("region", { name: "Needs attention", exact: true });
   await expect(attention.locator(`[data-progress-issue-id="${issue.id}"]`).getByText("Awaiting my decision", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await attention.getByRole("checkbox", { name: "Awaiting my decision", exact: true }).check();
+  await attention.getByRole("checkbox", { name: "Needs my action", exact: true }).check();
   const row = attention.locator(`[data-progress-issue-id="${issue.id}"]`);
   await row.getByRole("button", { name: "View run", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();

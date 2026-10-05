@@ -22,9 +22,22 @@ type ProgressIssueRef struct {
 
 // ProgressRun links to a run without disclosing private execution output.
 type ProgressRun struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Since  string `json:"since"`
+	ID      string `json:"id"`
+	Status  string `json:"status"`
+	Since   string `json:"since"`
+	Summary string `json:"summary"`
+}
+
+// ProgressAction is a server-checked member operation attached to its observed evidence.
+type ProgressAction struct {
+	Kind           string  `json:"kind"`
+	ActorType      string  `json:"actor_type"`
+	ActorID        *string `json:"actor_id"`
+	NeedsMe        bool    `json:"needs_me"`
+	Enabled        bool    `json:"enabled"`
+	DisabledReason string  `json:"disabled_reason"`
+	TargetIssueID  string  `json:"target_issue_id,omitempty"`
+	RequestID      string  `json:"request_id,omitempty"`
 }
 
 // ProgressRequest references an existing permission-checked human request.
@@ -57,6 +70,9 @@ type ProgressEntry struct {
 	DueDate           *string            `json:"due_date"`
 	WaitSince         string             `json:"wait_since"`
 	Rank              int                `json:"rank"`
+	NextStep          *IssueNextStep     `json:"next_step"`
+	Actions           []ProgressAction   `json:"actions"`
+	Revision          int64              `json:"revision"`
 	sortPriority      int
 	sortOverdue       bool
 	sortWait          time.Time

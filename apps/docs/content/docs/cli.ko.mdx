@@ -321,3 +321,12 @@ Claude Code 플러그인 마켓플레이스, Codex skill 설치 도구, Cursor�
 - [인증과 토큰](/auth-tokens) — PAT 생성, 갱신, 취소를 알아봅니다.
 - [문제 해결](/troubleshooting) — 명령 오류와 실행이 시작되지 않는 문제를 해결합니다.
 - [에이전트 생성 및 설정](/agents-create) — `agent create` 각 필드의 전체 의미를 알아봅니다.
+
+
+## 실행 인계
+
+`multica issue next-step <issue> --body-file <UTF-8 JSON>`
+
+`kind`, `summary`, `actor_type`, `actor_id`, `missing`, `evidence`, `issue_revision`, `request_id` (manual_action / awaiting_decision).
+
+`multica human-request create --body-file <UTF-8 JSON>`: `response_mode: "chat_or_card"` (choice / input).

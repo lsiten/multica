@@ -58,7 +58,7 @@ export class TestApiClient {
   private humanRequestSources: { taskId: string; agentId: string; runtimeId: string }[] = [];
 
   /** Seed a disconnected test runtime, then deliver through the actual task-token API. */
-  async createHumanRequestFixture(issueId: string, payload: Record<string, unknown>) {
+  private async createRunFixture(issueId: string | null, chatSessionId: string | null = null) {
     if (!this.workspaceId || !this.email) throw new Error("Fixture requires a logged-in workspace");
     const source = { taskId: randomUUID(), agentId: randomUUID(), runtimeId: randomUUID() };
     const token = `mat_${randomBytes(20).toString("hex")}`;
@@ -70,8 +70,8 @@ export class TestApiClient {
       if (!userId) throw new Error("Fixture member was not found");
       await client.query("BEGIN");
       await client.query("INSERT INTO agent_runtime(id,workspace_id,daemon_id,name,runtime_mode,provider,status,owner_id,visibility,last_seen_at) VALUES($1,$2,$3,'E2E approval runtime','local','codex','online',$4,'private',now())", [source.runtimeId, this.workspaceId, `fixture-${source.runtimeId}`, userId]);
-      await client.query("INSERT INTO agent(id,workspace_id,name,runtime_mode,runtime_id,owner_id,permission_mode,status) VALUES($1,$2,'E2E request agent','local',$3,$4,'private','idle')", [source.agentId, this.workspaceId, source.runtimeId, userId]);
-      await client.query("INSERT INTO agent_task_queue(id,agent_id,runtime_id,issue_id,status,priority,originator_user_id,accountable_user_id,started_at) VALUES($1,$2,$3,$4,'running',2,$5,$5,now())", [source.taskId, source.agentId, source.runtimeId, issueId, userId]);
+      await client.query("INSERT INTO agent(id,workspace_id,name,runtime_mode,runtime_id,owner_id,permission_mode,status) VALUES($1,$2,'E2E request agent ' || $1::uuid::text,'local',$3,$4,'private','idle')", [source.agentId, this.workspaceId, source.runtimeId, userId]);
+      await client.query("INSERT INTO agent_task_queue(id,agent_id,runtime_id,issue_id,chat_session_id,status,priority,originator_user_id,accountable_user_id,started_at) VALUES($1,$2,$3,$4,$6,'running',2,$5,$5,now())", [source.taskId, source.agentId, source.runtimeId, issueId, userId, chatSessionId]);
       await client.query("INSERT INTO task_token(token_hash,task_id,agent_id,workspace_id,user_id,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '1 hour')", [createHash("sha256").update(token).digest("hex"), source.taskId, source.agentId, this.workspaceId, userId]);
       await client.query("COMMIT");
       this.humanRequestSources.push(source);
@@ -81,10 +81,62 @@ export class TestApiClient {
     } finally {
       await client.end();
     }
+    return { ...source, token, userId: (await this.fixtureUserId()) };
+  }
+
+  async createHumanRequestFixture(issueId: string | null, payload: Record<string, unknown>, chatSessionId: string | null = null) {
+    const { token } = await this.createRunFixture(issueId, chatSessionId);
     const response = await fetch(`${API_BASE}/api/human-requests/`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Workspace-ID": this.workspaceId }, body: JSON.stringify(payload) });
     if (!response.ok) throw new Error(`Request fixture failed: ${response.status} ${await response.text()}`);
     const request = await response.json() as { id: string; revision: number };
     return request;
+  }
+
+  private async fixtureUserId() {
+    const client = new pg.Client(DATABASE_URL); await client.connect();
+    try { const result = await client.query<{id:string}>('SELECT id FROM "user" WHERE email=$1',[this.email]); return result.rows[0]!.id; }
+    finally { await client.end(); }
+  }
+
+  async createProgressFixture(issueId: string, status: "completed" | "failed", step?: { kind: string; summary: string; missing?: string[]; evidence?: string[] }) {
+    const source = await this.createRunFixture(issueId);
+    const client = new pg.Client(DATABASE_URL); await client.connect();
+    try {
+      const current = await client.query<{revision:string}>("UPDATE issue SET assignee_type='agent',assignee_id=$2,revision=revision+1 WHERE id=$1 RETURNING revision",[issueId,source.agentId]);
+      const revision = Number(current.rows[0]!.revision);
+      if (step) {
+        const response = await fetch(`${API_BASE}/api/issues/${issueId}/next-step`, {method:"PUT",headers:{"Content-Type":"application/json",Authorization:`Bearer ${source.token}`,"X-Workspace-ID":this.workspaceId!},body:JSON.stringify({...step,actor_type:"member",actor_id:source.userId,issue_revision:revision})});
+        if (!response.ok) throw new Error(`Handoff fixture failed: ${response.status} ${await response.text()}`);
+      }
+      await client.query("UPDATE agent_task_queue SET status=$2,completed_at=now(),result=$3::jsonb WHERE id=$1",[source.taskId,status,JSON.stringify({summary:"Focused checks passed; delivery available for inspection."})]);
+      return {...source,revision};
+    } finally { await client.end(); }
+  }
+
+  async createChatChoiceFixture(payload: Record<string, unknown>) {
+    const source = await this.createRunFixture(null);
+    const chatId=randomUUID(); const client = new pg.Client(DATABASE_URL); await client.connect();
+    try {
+      await client.query("INSERT INTO chat_session(id,workspace_id,creator_id,agent_id,title,status) VALUES($1,$2,$3,$4,'E2E bound choice','active')",[chatId,this.workspaceId,source.userId,source.agentId]);
+      await client.query("UPDATE agent_task_queue SET chat_session_id=$2 WHERE id=$1",[source.taskId,chatId]);
+    } finally { await client.end(); }
+    const response=await fetch(`${API_BASE}/api/human-requests/`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${source.token}`,"X-Workspace-ID":this.workspaceId!},body:JSON.stringify(payload)});
+    if (!response.ok) throw new Error(`Chat request fixture failed: ${response.status} ${await response.text()}`);
+    return {chatId, request: await response.json() as {id:string; revision:number}};
+  }
+
+  async reviseHumanRequestFixture(id: string, expired = false) {
+    const client = new pg.Client(DATABASE_URL); await client.connect();
+    try {
+      const result = await client.query("UPDATE human_request SET revision=revision+1,expires_at=CASE WHEN $4 THEN now()-interval '1 second' ELSE expires_at END WHERE id=$1 AND workspace_id=$2 AND source_task_id=ANY($3::uuid[])",[id,this.workspaceId,this.humanRequestSources.map(source=>source.taskId),expired]);
+      if (result.rowCount!==1) throw new Error("Request is not owned by this fixture");
+    } finally {await client.end();}
+  }
+
+  async fixtureRuns(issueId: string) {
+    const client=new pg.Client(DATABASE_URL);await client.connect();
+    try { return (await client.query<{id:string;force_fresh_session:boolean;rerun_of_task_id:string|null;context:Record<string,unknown>}>("SELECT id,force_fresh_session,rerun_of_task_id,context FROM agent_task_queue WHERE issue_id=$1 ORDER BY created_at,id",[issueId])).rows; }
+    finally { await client.end(); }
   }
 
   async login(email: string, name: string) {
@@ -490,6 +542,8 @@ export class TestApiClient {
           await client.query("DELETE FROM inbox_item WHERE details->>'human_request_id' IN (SELECT id::text FROM human_request WHERE source_task_id=$1)", [source.taskId]);
           await client.query("DELETE FROM human_request WHERE source_task_id=$1", [source.taskId]);
           await client.query("DELETE FROM task_token WHERE agent_id=$1", [source.agentId]);
+          await client.query("DELETE FROM chat_message WHERE chat_session_id IN (SELECT id FROM chat_session WHERE agent_id=$1)",[source.agentId]);
+          await client.query("DELETE FROM chat_session WHERE agent_id=$1",[source.agentId]);
           await client.query("DELETE FROM agent_task_queue WHERE agent_id=$1", [source.agentId]);
           await client.query("DELETE FROM agent WHERE id=$1", [source.agentId]);
           await client.query("DELETE FROM agent_runtime WHERE id=$1", [source.runtimeId]);

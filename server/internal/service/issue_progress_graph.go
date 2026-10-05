@@ -19,10 +19,12 @@ type progressGraph struct {
 	requests     map[string][]ProgressRequest
 	prefix       string
 	coverage     map[string]bool
+	memberID     string
 }
 
 func newProgressGraph(rows []db.ListProgressIssuesRow, dependencies []db.IssueDependency, requests []db.HumanRequest, prefix, memberID string) progressGraph {
 	g := progressGraph{nodes: map[string]db.ListProgressIssuesRow{}, children: map[string][]string{}, dependencies: map[string][]string{}, dependents: map[string][]string{}, requests: map[string][]ProgressRequest{}, prefix: prefix, coverage: map[string]bool{}}
+	g.memberID = memberID
 	for _, row := range rows {
 		id := util.UUIDToString(row.ID)
 		g.nodes[id] = row
@@ -296,7 +298,7 @@ func progressRank(reasons []string) int {
 			candidate = 1
 		case "dependency", "blocks_others", "explicit_block", "run_failed", "runtime_missing", "runtime_offline", "assignee_unavailable", "stalled", "pending_other":
 			candidate = 2
-		case "review", "parent_wrap_up":
+		case "review", "parent_wrap_up", "run_ended_issue_open", "next_step_recorded", "member_work":
 			candidate = 3
 		case "unassigned", "stage_ready":
 			candidate = 4
@@ -378,7 +380,7 @@ func (g *progressGraph) entry(id string, now time.Time, staleAfter time.Duration
 		if row.Status == "blocked" {
 			entry.Reasons = append(entry.Reasons, "explicit_block")
 		}
-		if row.Status == "in_review" {
+		if row.Status == "in_review" && !row.ActiveRunID.Valid {
 			entry.Reasons = append(entry.Reasons, "review")
 		}
 		stage := g.stageReason(id)
@@ -416,7 +418,9 @@ func (g *progressGraph) entry(id string, now time.Time, staleAfter time.Duration
 					entry.Reasons = append(entry.Reasons, "unassigned")
 				}
 				if row.AssigneeType.String == "agent" || row.AssigneeType.String == "squad" {
-					if progressCategory(row) == "started" && now.Sub(entry.sortWait) >= staleAfter && row.LatestRunStatus != "failed" {
+					if row.LatestRunStatus == "completed" {
+						entry.Reasons = append(entry.Reasons, "run_ended_issue_open")
+					} else if progressCategory(row) == "started" && now.Sub(entry.sortWait) >= staleAfter && row.LatestRunStatus != "failed" {
 						entry.Reasons = append(entry.Reasons, "stalled")
 					}
 				}
@@ -430,6 +434,16 @@ func (g *progressGraph) entry(id string, now time.Time, staleAfter time.Duration
 		entry.Run = &ProgressRun{ID: util.UUIDToString(row.ActiveRunID), Status: row.ActiveRunStatus, Since: row.ActiveRunAt.Time.UTC().Format(time.RFC3339Nano)}
 	} else if row.LatestRunID.Valid {
 		entry.Run = &ProgressRun{ID: util.UUIDToString(row.LatestRunID), Status: row.LatestRunStatus, Since: row.LatestRunAt.Time.UTC().Format(time.RFC3339Nano)}
+	}
+	if entry.Run != nil {
+		entry.Run.Summary = progressDeliverySummary(row.LatestRunResult)
+	}
+	progressActionCandidates(row, &entry, g.memberID)
+	if slices.ContainsFunc(entry.Actions, func(action ProgressAction) bool { return action.Kind == "member_work" }) {
+		entry.Reasons = append(entry.Reasons, "member_work")
+	}
+	if entry.NextStep != nil && !slices.Contains(entry.Reasons, "pending_me") {
+		entry.Reasons = append(entry.Reasons, "next_step_recorded")
 	}
 	entry.WaitSince = entry.sortWait.UTC().Format(time.RFC3339Nano)
 	entry.Rank = progressRank(entry.Reasons)

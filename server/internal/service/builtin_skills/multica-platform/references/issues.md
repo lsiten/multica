@@ -13,6 +13,7 @@ Product contracts the runtime brief does not fully encode.
 - [Sub-issues: todo starts work now, backlog parks it](#sub-issues-todo-starts-work-now-backlog-parks-it)
 - [Charts and files in a comment](#charts-and-files-in-a-comment)
 - [Incorrect to correct](#incorrect-to-correct)
+- [Run handoffs and member replies](#run-handoffs-and-member-replies)
 - [Issue wakeups](issue-wakeups.md)
 
 To attach a local file to an existing issue description, use `multica issue update <id> --attachment <local-path>`. The CLI appends the file's Markdown reference to the end of the description; to replace an image, also use `--description-file` to remove the old reference. Do not put local filesystem paths in the description. `--description-file` and `--attachment` read a path **inside the current working directory** unless `--allow-external-file` is set (MUL-4252), which stops a stale file from another run or environment from being picked up. `--attachment` is repeatable (repeat the flag for multiple files); on `issue create` you can instead bind already-uploaded attachments with `--attachment-id <uuid>` — `issue update` has no such flag. To feed a description from a pipe use `--description-stdin` (a heredoc `--description` can swallow trailing flags, #4182).
@@ -477,3 +478,10 @@ multica issue update <id> --description-file ./description.md
 
 For event, condition and timer rules, recurring checks and check-ins, read
 [Issue wakeups](issue-wakeups.md).
+
+
+## Run handoffs and member replies
+
+After posting the final results and updating the final status of an unfinished issue, read its current revision and report the exact next work with `multica issue next-step <issue> --body-file ./next-step.json`. This is a run-scoped command: it can only write the authenticated running task's issue. Include `kind`, `summary`, `actor_type` (`member`, `agent`, or `unknown`), `actor_id` when known, `issue_revision`, and concrete `missing` fields or `evidence`. An agent actor must be the reporting agent. Never infer a reviewer or blocker from a title. Use `review` only with actual delivery evidence; ending a run does not complete its issue.
+
+For a required decision or manual action, first create this run's formal request with `multica human-request create --body-file ./request.json`, then include its `request_id` in a `manual_action` or `awaiting_decision` handoff with the same designated member. Ordinary `choice` and `input` requests may set `response_mode: "chat_or_card"`. A composer-bound, successfully persisted reply consumes the exact request revision and is as final as the card control. Do not ask for the same confirmation again. Discussion and failed submissions do not consume requests. Authorization, manual completion, and existing card-only requests keep explicit card controls; verify manual work in the resulting follow-up before proceeding.

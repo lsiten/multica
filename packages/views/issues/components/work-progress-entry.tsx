@@ -18,6 +18,7 @@ import { useTimeAgo } from "../../i18n";
 import { useStatusLabel } from "../utils/status-label";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkProgressLabels } from "./work-progress-labels";
+import { WorkProgressActions } from "./work-progress-actions";
 
 export function WorkProgressSummary({ summary, complete }: { summary: ProgressSummary; complete: boolean }) {
   const { t } = useWorkProgressLabels();
@@ -72,6 +73,7 @@ export function WorkProgressEntry({ entry, currentProjectId, requestLinksOnly = 
       <ul className="space-y-1">{entry.direct_blockers.map(blocker => <li key={blocker.id}><IssueReference issue={blocker} /></li>)}</ul>
       {distinctRootBlockers && <><p className="pt-1 font-medium">{t($ => $.work_progress.root_blockers)}</p><ul className="space-y-1">{entry.root_blockers.map(blocker => <li key={blocker.id}><IssueReference issue={blocker} /><span className="ml-2 text-muted-foreground">{blocker.status_name || statusLabel(blocker.status)}</span></li>)}</ul></>}
     </div>}
+    {entry.actions?.length ? <WorkProgressActions entry={entry} /> : null}
     {entry.run && <div className="flex flex-wrap items-center gap-2">
       <span className="text-muted-foreground">{t($ => $.work_progress.run)}: {runStateLabel(entry.run.status, t)}</span>
       <Button size="sm" variant="outline" onClick={() => setRunOpen(true)}>{t($ => $.work_progress.view_run)}</Button>

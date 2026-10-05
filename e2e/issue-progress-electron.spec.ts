@@ -1,8 +1,10 @@
-import { test, expect, _electron } from "@playwright/test";
+import { test, expect as baseExpect, _electron } from "@playwright/test";
 import { createRequire } from "node:module";
 import { basename, resolve } from "node:path";
 import { mkdir, rm } from "node:fs/promises";
 import { createTestApi } from "./helpers";
+
+const expect = baseExpect.configure({timeout:30_000});
 
 test("desktop preserves direct child operations and follows deep work through the real tab router", async () => {
   test.skip(process.env.MULTICA_RUN_DESKTOP_PROGRESS_QA !== "1", "Requires the locally built Electron renderer");
@@ -16,6 +18,9 @@ test("desktop preserves direct child operations and follows deep work through th
   const intermediate = await api.createIssue("Desktop integration prerequisite", { status: "todo", project_id: project.id });
   await api.createIssueDependency(leaf.id, intermediate.id);
   await api.createIssueDependency(intermediate.id, prerequisite.id);
+  const decision = await api.createHumanRequestFixture(branch.id, { key: "native", kind: "choice", title: "接受原生尺寸？", action_label: "提交尺寸", next: "继续交付", response_mode: "chat_or_card", choices: [{ id: "native", label: "接受1086×1448原生尺寸" }, { id: "resize", label: "调整尺寸" }] });
+  const continuation = await api.createIssue("Desktop ended work needing action", {status:"in_progress",project_id:project.id});
+  await api.createProgressFixture(continuation.id,"completed");
   const workspace = (await api.getWorkspaces()).find(workspace => workspace.slug.startsWith("e2e-workspace-"));
   if (!workspace || !api.getToken()) throw new Error("Desktop fixture auth was not prepared");
   const require = createRequire(resolve("apps/desktop/package.json"));
@@ -59,11 +64,31 @@ test("desktop preserves direct child operations and follows deep work through th
     await page.getByRole("button", { name: "Needs attention", exact: true }).click();
     const attention = page.getByRole("region", { name: "Needs attention", exact: true });
     await expect(attention.locator(`[data-progress-issue-id="${branch.id}"]`)).toBeVisible({ timeout: 30_000 });
-    await attention.getByRole("checkbox", { name: "Awaiting my decision", exact: true }).check();
-    await expect(attention.getByRole("checkbox", { name: "Awaiting my decision", exact: true })).toBeChecked();
-    await attention.getByRole("checkbox", { name: "Awaiting my decision", exact: true }).uncheck();
+    await attention.getByRole("checkbox", { name: "Needs my action", exact: true }).check();
+    await expect(attention.getByRole("checkbox", { name: "Needs my action", exact: true })).toBeChecked();
+    await attention.getByRole("checkbox", { name: "Needs my action", exact: true }).uncheck();
     await expect(attention.locator(`[data-progress-issue-id="${branch.id}"]`)).toBeVisible();
     await page.screenshot({ path: resolve(evidenceDir, "electron-attention.png") });
+    const actionRow=attention.locator(`[data-progress-issue-id="${continuation.id}"]`);
+    await actionRow.getByRole("button",{name:"Inspect and continue",exact:true}).click();
+    await actionRow.getByRole("button",{name:"Submit operation",exact:true}).click();
+    await expect.poll(async()=>(await api.fixtureRuns(continuation.id)).length).toBe(2);
+    expect((await api.fixtureRuns(continuation.id))[1]!.force_fresh_session).toBe(false);
+    await attention.locator(`[data-progress-issue-id="${branch.id}"]`).getByRole("link",{name:/Desktop integration branch/}).last().click();
+    await page.getByRole("button",{name:"Leave a comment...",exact:true}).click();
+    const editor=page.locator('[data-issue-comment-composer] [contenteditable="true"]');
+    await editor.fill("1");
+    await expect(page.getByText("Will confirm “接受原生尺寸？”: 接受1086×1448原生尺寸",{exact:true})).toBeVisible();
+    await editor.focus();
+    await page.keyboard.press("Meta+Enter");
+    await expect(page.locator(`[data-human-response="${decision.id}"]`)).toBeVisible();
+    expect(await api.fixtureRuns(branch.id)).toHaveLength(2);
+    await page.getByRole("button",{name:"Search...",exact:true}).click();
+    await page.getByPlaceholder("Type a command or search...").fill("dark");
+    await page.getByText("Switch to Dark Theme",{exact:true}).click();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await page.screenshot({path:resolve(evidenceDir,"electron-bound-answer-dark.png"),animations:"disabled"});
+
   } catch (error) {
     if (renderer && !renderer.isClosed()) {
       await renderer.screenshot({ path: test.info().outputPath("electron-failure.png") });

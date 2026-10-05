@@ -11,6 +11,189 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const findProgressActionTask = `-- name: FindProgressActionTask :one
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot FROM agent_task_queue WHERE issue_id= $1 AND originator_user_id= $2
+AND context->>'progress_action_key'= $3::text
+ORDER BY created_at DESC,id DESC LIMIT 1
+`
+
+type FindProgressActionTaskParams struct {
+	IssueID   pgtype.UUID `json:"issue_id"`
+	MemberID  pgtype.UUID `json:"member_id"`
+	ActionKey string      `json:"action_key"`
+}
+
+func (q *Queries) FindProgressActionTask(ctx context.Context, arg FindProgressActionTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, findProgressActionTask, arg.IssueID, arg.MemberID, arg.ActionKey)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.SquadID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.CommentThreadID,
+		&i.CancelledByType,
+		&i.CancelledByID,
+		&i.CancelledByName,
+		&i.IssueSnapshot,
+	)
+	return i, err
+}
+
+const getIssueNextStepScope = `-- name: GetIssueNextStepScope :one
+SELECT md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text || COALESCE((SELECT objective FROM issue_goal g WHERE g.issue_id = i.id),''))::text FROM issue i WHERE i.id = $1 AND i.workspace_id = $2
+`
+
+type GetIssueNextStepScopeParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetIssueNextStepScope(ctx context.Context, arg GetIssueNextStepScopeParams) (string, error) {
+	row := q.db.QueryRow(ctx, getIssueNextStepScope, arg.IssueID, arg.WorkspaceID)
+	var column_1 string
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const getLatestProgressTask = `-- name: GetLatestProgressTask :one
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot FROM agent_task_queue WHERE issue_id= $1 ORDER BY created_at DESC,id DESC LIMIT 1
+`
+
+func (q *Queries) GetLatestProgressTask(ctx context.Context, issueID pgtype.UUID) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, getLatestProgressTask, issueID)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.SquadID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.CommentThreadID,
+		&i.CancelledByType,
+		&i.CancelledByID,
+		&i.CancelledByName,
+		&i.IssueSnapshot,
+	)
+	return i, err
+}
+
+const hasPendingProgressHumanRequest = `-- name: HasPendingProgressHumanRequest :one
+SELECT EXISTS(SELECT 1 FROM human_request WHERE workspace_id = $1 AND issue_id = $2
+AND status = 'pending' AND expires_at > now())::boolean
+`
+
+type HasPendingProgressHumanRequestParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+}
+
+func (q *Queries) HasPendingProgressHumanRequest(ctx context.Context, arg HasPendingProgressHumanRequestParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasPendingProgressHumanRequest, arg.WorkspaceID, arg.IssueID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listProgressDependencies = `-- name: ListProgressDependencies :many
 SELECT d.id, d.issue_id, d.depends_on_issue_id, d.type
 FROM issue_dependency d
@@ -145,6 +328,10 @@ SELECT i.id, i.number, i.title, i.status, i.priority, i.revision,
     COALESCE(p.title, '')::text AS project_title,
     EXISTS(SELECT 1 FROM scope WHERE scope.id = i.id)::boolean AS in_scope,
     latest.id AS latest_run_id, COALESCE(latest.status, '')::text AS latest_run_status,
+    latest.context AS latest_run_context, latest.result AS latest_run_result,
+    CASE WHEN latest.context ? 'next_step' THEN md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text || COALESCE((SELECT objective FROM issue_goal g WHERE g.issue_id = i.id),'')) ELSE '' END::text AS next_step_scope,
+    COALESCE(latest.handoff_note, '')::text AS latest_handoff,
+    latest.agent_id AS latest_run_agent_id,
     COALESCE(latest.completed_at, latest.started_at, latest.created_at) AS latest_run_at,
     active.id AS active_run_id, COALESCE(active.status, '')::text AS active_run_status,
     active.created_at AS active_run_at,
@@ -160,7 +347,7 @@ LEFT JOIN project p ON p.id = i.project_id AND p.workspace_id = i.workspace_id
 LEFT JOIN squad sq ON i.assignee_type = 'squad' AND sq.id = i.assignee_id AND sq.workspace_id = i.workspace_id
 LEFT JOIN agent a ON a.id = CASE WHEN i.assignee_type = 'agent' THEN i.assignee_id ELSE sq.leader_id END AND a.workspace_id = i.workspace_id
 LEFT JOIN agent_runtime runtime ON runtime.id = a.runtime_id AND runtime.workspace_id = i.workspace_id
-LEFT JOIN LATERAL (SELECT t.id,t.status,t.created_at,t.started_at,t.completed_at FROM agent_task_queue t
+LEFT JOIN LATERAL (SELECT t.id,t.status,t.created_at,t.started_at,t.completed_at,t.context,t.result,t.handoff_note,t.agent_id FROM agent_task_queue t
     WHERE t.issue_id = i.id ORDER BY t.created_at DESC,t.id DESC LIMIT 1) latest ON true
 LEFT JOIN LATERAL (SELECT t.id,t.status,t.created_at FROM agent_task_queue t WHERE t.issue_id = i.id
     AND t.status IN ('queued','deferred','dispatched','running','waiting_local_directory')
@@ -195,6 +382,11 @@ type ListProgressIssuesRow struct {
 	InScope          bool               `json:"in_scope"`
 	LatestRunID      pgtype.UUID        `json:"latest_run_id"`
 	LatestRunStatus  string             `json:"latest_run_status"`
+	LatestRunContext []byte             `json:"latest_run_context"`
+	LatestRunResult  []byte             `json:"latest_run_result"`
+	NextStepScope    string             `json:"next_step_scope"`
+	LatestHandoff    string             `json:"latest_handoff"`
+	LatestRunAgentID pgtype.UUID        `json:"latest_run_agent_id"`
 	LatestRunAt      pgtype.Timestamptz `json:"latest_run_at"`
 	ActiveRunID      pgtype.UUID        `json:"active_run_id"`
 	ActiveRunStatus  string             `json:"active_run_status"`
@@ -236,6 +428,11 @@ func (q *Queries) ListProgressIssues(ctx context.Context, arg ListProgressIssues
 			&i.InScope,
 			&i.LatestRunID,
 			&i.LatestRunStatus,
+			&i.LatestRunContext,
+			&i.LatestRunResult,
+			&i.NextStepScope,
+			&i.LatestHandoff,
+			&i.LatestRunAgentID,
 			&i.LatestRunAt,
 			&i.ActiveRunID,
 			&i.ActiveRunStatus,
@@ -254,4 +451,92 @@ func (q *Queries) ListProgressIssues(ctx context.Context, arg ListProgressIssues
 		return nil, err
 	}
 	return items, nil
+}
+
+const reportIssueNextStep = `-- name: ReportIssueNextStep :one
+UPDATE agent_task_queue AS task SET context = COALESCE(context,'{}'::jsonb) || jsonb_build_object('next_step',$1::jsonb)
+WHERE task.id = $2 AND task.agent_id = $3 AND task.issue_id = $4 AND task.status = 'running'
+AND EXISTS(SELECT 1 FROM issue WHERE issue.id = $4 AND issue.revision = $5)
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot
+`
+
+type ReportIssueNextStepParams struct {
+	NextStep      []byte      `json:"next_step"`
+	TaskID        pgtype.UUID `json:"task_id"`
+	AgentID       pgtype.UUID `json:"agent_id"`
+	IssueID       pgtype.UUID `json:"issue_id"`
+	IssueRevision int64       `json:"issue_revision"`
+}
+
+func (q *Queries) ReportIssueNextStep(ctx context.Context, arg ReportIssueNextStepParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, reportIssueNextStep,
+		arg.NextStep,
+		arg.TaskID,
+		arg.AgentID,
+		arg.IssueID,
+		arg.IssueRevision,
+	)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.SquadID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.CommentThreadID,
+		&i.CancelledByType,
+		&i.CancelledByID,
+		&i.CancelledByName,
+		&i.IssueSnapshot,
+	)
+	return i, err
 }

@@ -330,3 +330,12 @@ Codex, Cursor et tout autre outil qui charge des instructions Markdown.
 - [Authentification et jetons](/auth-tokens) — créer, renouveler et révoquer des PAT.
 - [Dépannage](/troubleshooting) — diagnostiquer les erreurs de commande et les exécutions qui ne démarrent jamais.
 - [Créer et configurer un agent](/agents-create) — la sémantique complète de chaque champ de `agent create`.
+
+
+## Transmission par exécution
+
+`multica issue next-step <issue> --body-file <UTF-8 JSON>`
+
+`kind`, `summary`, `actor_type`, `actor_id`, `missing`, `evidence`, `issue_revision`, `request_id` (manual_action / awaiting_decision).
+
+`multica human-request create --body-file <UTF-8 JSON>`: `response_mode: "chat_or_card"` (choice / input).

@@ -50,7 +50,7 @@ func (h *Handler) writeIssueProgress(w http.ResponseWriter, r *http.Request, wor
 		options.Today = today
 	}
 	switch options.Filter {
-	case "", "all", "blocked", "review", "follow_up", "ready":
+	case "", "all", "blocked", "review", "follow_up", "ready", "awaiting_agent", "other_member", "prerequisites":
 	default:
 		writeError(w, 400, "invalid progress filter")
 		return

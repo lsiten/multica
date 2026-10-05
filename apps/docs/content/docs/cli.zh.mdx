@@ -319,3 +319,12 @@ Claude Code 插件市场、Codex skill 安装器、Cursor 以及其他任何加�
 - [认证与令牌](/auth-tokens) — PAT 的创建、续期和吊销。
 - [故障排查](/troubleshooting) — 命令报错和运行不开始的排查路径。
 - [创建和配置智能体](/agents-create) — `agent create` 各字段的完整语义。
+
+
+## 运行交接
+
+`multica issue next-step <issue> --body-file <UTF-8 JSON>`
+
+`kind`, `summary`, `actor_type`, `actor_id`, `missing`, `evidence`, `issue_revision`, `request_id` (manual_action / awaiting_decision).
+
+`multica human-request create --body-file <UTF-8 JSON>`: `response_mode: "chat_or_card"` (choice / input).
