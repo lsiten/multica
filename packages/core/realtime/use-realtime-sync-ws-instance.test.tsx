@@ -13,6 +13,7 @@ import { runtimeKeys } from "../runtimes/queries";
 import { workspaceWorkingAgentsKeys } from "../agents/queries";
 import { workspaceKeys } from "../workspace/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
+import { issueProgressKeys } from "../issue-progress";
 import {
   markWorkspaceDeletePending,
   unmarkWorkspaceDeletePending,
@@ -129,12 +130,13 @@ describe("useRealtimeSync — ws instance change", () => {
     // (16 workspace-scoped [incl. property definitions] + 6 per-issue
     // prefixes + the workspace working-agents projection + 5 per-chat
     // prefixes + 1 workspaceKeys.list() + 1 cross-workspace inbox unread
-    // summary = 31 calls).
+    // summary + the progress projection = 32 calls).
     //
     // Awaited rather than counted synchronously: the inbox unread summary
     // refresh cancels any in-flight request before invalidating (see
     // onInboxSummaryInvalidate), so that one lands after the synchronous ones.
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(31));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(32));
+    expect(invalidateSpy.mock.calls.filter((call: [InvalidateQueryFilters, ...unknown[]]) => JSON.stringify(call[0].queryKey) === JSON.stringify(issueProgressKeys.all("ws-1")))).toHaveLength(1);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {
@@ -260,6 +262,24 @@ describe("useRealtimeSync — ws instance change", () => {
     expect(calls).toContainEqual(chatKeys.messagesAll());
     expect(calls).toContainEqual(chatKeys.messagesPageAll());
     expect(calls).toContainEqual(chatKeys.pendingTaskAll());
+    expect(calls).toContainEqual(issueProgressKeys.all("ws-1"));
+  });
+
+  it("refreshes progress for committed events without refreshing for streamed messages", async () => {
+    const ws = createMockWs();
+    const { unmount } = renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+    const receive = vi.mocked(ws.onAny).mock.calls[0]?.[0];
+    if (!receive) throw new Error("Missing event listener");
+    const key = issueProgressKeys.view("ws-1", "u1", { type: "project", id: "project" }, {});
+    qc.setQueryData(key, { value: "before" });
+    receive({ type: "task:message", payload: { workspace_id: "ws-1" } } as never);
+    expect(qc.getQueryState(key)?.isInvalidated).toBe(false);
+    receive({ type: "task:running", payload: { workspace_id: "ws-1" } } as never);
+    await waitFor(() => expect(qc.getQueryState(key)?.isInvalidated).toBe(true));
+    qc.setQueryData(key, { value: "after" });
+    receive({ type: "task:failed", payload: { workspace_id: "ws-other" } } as never);
+    expect(qc.getQueryState(key)?.isInvalidated).toBe(false);
+    unmount();
   });
 
   it("invalidates one issue attachment cache after detached channel media binds", () => {

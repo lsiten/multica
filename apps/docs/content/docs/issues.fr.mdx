@@ -120,6 +120,12 @@ Tout membre de l'espace de travail peut supprimer une tâche.
 La suppression est irréversible : la tâche, avec ses commentaires, ses pièces jointes et ses enregistrements liés, est définitivement supprimée, et les exécutions non terminées sont annulées. Si le travail n'est simplement plus poursuivi, passez plutôt le statut à `cancelled` — la discussion et les résultats restent disponibles.
 </Callout>
 
+## Travail restant
+
+Le détail conserve **Sous-tâches directes** par défaut. **Travail restant** affiche les descendantes non closes à tous les niveaux, leur hiérarchie, les prérequis enregistrés et les motifs du suivi. Le bilan compte seulement les descendantes ; le parent conserve son propre statut et son travail.
+
+Les tâches terminées et celles closes sans achèvement sont comptées séparément. Les nombres ne sont pas des estimations d’effort. Un parent clos avec des descendantes non closes est signalé. La clôture des descendantes ne termine pas automatiquement le parent. Les cycles et les relations incomplètes sont indiqués.
+
 ## Étapes suivantes
 
 - [Projets](/projects) — organisez un travail qui nécessite plusieurs tâches.

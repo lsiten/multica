@@ -2,6 +2,7 @@ export type { Issue, IssueStatus, BuiltInIssueStatus, IssuePriority, IssueAssign
   IssueDuplicateOf,
 } from "./issue";
 export type { IssueGoal, UpsertIssueGoalRequest } from "./issue-goal";
+export type { ProgressScope, ProgressIssueRef, ProgressRun, ProgressRequest, ProgressEntry, ProgressSummary, IssueProgressView, ProgressFilter, ProgressFilters } from "./issue-progress";
 export type {
   IssueStatusCategory,
   IssueStatusEntry,

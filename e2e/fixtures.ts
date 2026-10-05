@@ -54,6 +54,7 @@ export class TestApiClient {
   private createdIssueIds: string[] = [];
   private createdProjectIds: string[] = [];
   private seededIssueIds: string[] = [];
+  private dependencyIds: string[] = [];
   private humanRequestSources: { taskId: string; agentId: string; runtimeId: string }[] = [];
 
   /** Seed a disconnected test runtime, then deliver through the actual task-token API. */
@@ -434,8 +435,32 @@ export class TestApiClient {
     return res.json();
   }
 
+  async createIssueDependency(issueId: string, prerequisiteId: string) {
+    if (!this.workspaceId) throw new Error("Dependency fixture requires a workspace");
+    const client = new pg.Client(DATABASE_URL);
+    await client.connect();
+    try {
+      const result = await client.query<{ id: string }>(
+        "INSERT INTO issue_dependency(issue_id,depends_on_issue_id,type) SELECT source.id,target.id,'blocked_by' FROM issue source JOIN issue target ON target.workspace_id=source.workspace_id WHERE source.id=$1 AND target.id=$2 AND source.workspace_id=$3 RETURNING id",
+        [issueId, prerequisiteId, this.workspaceId],
+      );
+      const id = result.rows[0]?.id;
+      if (!id) throw new Error("Dependency fixture targets must be in this workspace");
+      this.dependencyIds.push(id);
+    } finally {
+      await client.end();
+    }
+  }
+
   /** Clean up all issues created during this test. */
   async cleanup() {
+    if (this.dependencyIds.length > 0) {
+      const client = new pg.Client(DATABASE_URL);
+      await client.connect();
+      try { await client.query("DELETE FROM issue_dependency WHERE id=ANY($1::uuid[])", [this.dependencyIds]); }
+      finally { await client.end(); }
+      this.dependencyIds = [];
+    }
     if (this.seededIssueIds.length > 0 && this.workspaceId) {
       const client = new pg.Client(DATABASE_URL);
       await client.connect();

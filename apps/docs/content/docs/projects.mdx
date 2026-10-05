@@ -64,6 +64,14 @@ Any workspace member can create and edit projects; only `owner` and `admin` can 
 Deleting a project does not delete its issues: they detach and stay in the workspace. The project's description, status, and resources are permanently deleted.
 </Callout>
 
+## Needs attention
+
+The **Needs attention** tab is available on web and desktop even when project supervision is disabled. It groups issues by their parent branch and explains recorded blockers, failed runs, pending member decisions, and review or wrap-up work. Filter by reason, assignee, or decisions awaiting you.
+
+Parent ancestry and execution dependencies are separate. Only recorded blocking dependencies contribute to blocked-issue counts; stage hints do not create new scheduling restrictions. Cross-project prerequisites are linked as context and are excluded from this project's totals. Existing progress percentages and scheduling stay unchanged.
+
+Opening these views does not start a run or change status. Run inspection and member responses use existing controls and permissions. If the view is unavailable or incomplete, it does not report the project as completed.
+
 ## Next steps
 
 - [Project resources](/project-resources) — link GitHub repositories or local directories.

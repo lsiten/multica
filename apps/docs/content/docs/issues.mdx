@@ -120,6 +120,12 @@ Any workspace member can delete an issue.
 Deletion cannot be undone: the issue with its comments, attachments, and linked records is permanently removed, and unfinished runs are cancelled. When the work is simply no longer pursued, set the status to `cancelled` instead — the discussion and results stay available.
 </Callout>
 
+## Remaining work
+
+The issue detail keeps **Direct sub-issues** as the default. **Remaining work** shows unfinished descendants at every level, their ancestry, recorded prerequisites, and reasons to follow up. The summary counts descendants only; the parent keeps its own status and work.
+
+Completed and closed-without-completion records are counted separately. These are issue counts, not effort estimates. An ended parent with unfinished descendants is flagged; ended descendants do not automatically finish the parent. Cyclic or incomplete relationships are shown explicitly.
+
 ## Next steps
 
 - [Projects](/projects) — organize work that takes multiple issues to finish.

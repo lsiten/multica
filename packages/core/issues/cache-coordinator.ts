@@ -14,6 +14,7 @@ import {
 import { inboxKeys, type ArchivedInboxCache } from "../inbox/queries";
 import { patchInboxIssueProjection } from "../inbox/ws-updaters";
 import { projectKeys } from "../projects/queries";
+import { issueProgressKeys } from "../issue-progress";
 import {
   decrementBucketTotal,
   findIssueLocation,
@@ -614,6 +615,7 @@ export function invalidateIssueDerivatives(
   wsId: string,
   opts: { statusOrProjectChanged: boolean },
 ) {
+  qc.invalidateQueries({ queryKey: issueProgressKeys.all(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.projectGanttAll(wsId) });

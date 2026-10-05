@@ -1,4 +1,7 @@
 import type { HumanRequest, HumanRequestAnswer } from "../types/human-request";
+import type { IssueProgressView, ProgressFilters, ProgressScope } from "../types/issue-progress";
+import { IssueProgressViewSchema } from "./issue-progress";
+import { todayDateOnly } from "../issues/date";
 import { HumanRequestSchema, HumanRequestListSchema } from "../human-requests/schema";
 import type { ZodType } from "zod";
 import type { JevDecisionLogDetail, JevDecisionLogFilters, JevDecisionLogListResponse } from "../types/jev-decision-logs";
@@ -1737,6 +1740,22 @@ export class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  async getWorkProgress(scope: ProgressScope, filters: ProgressFilters = {}, cursor?: string, signal?: AbortSignal): Promise<IssueProgressView> {
+    const endpoint = scope.type === "issue" ? `/api/issues/${encodeURIComponent(scope.id)}/progress` : `/api/projects/${encodeURIComponent(scope.id)}/attention`;
+    const search = new URLSearchParams();
+    search.set("today", todayDateOnly());
+    if (filters.filter) search.set("filter", filters.filter);
+    if (filters.assignee_type) search.set("assignee_type", filters.assignee_type);
+    if (filters.assignee_id) search.set("assignee_id", filters.assignee_id);
+    if (filters.mine) search.set("mine", "true");
+    if (filters.limit) search.set("limit", String(filters.limit));
+    if (cursor) search.set("cursor", cursor);
+    const raw = await this.fetch<unknown>(`${endpoint}?${search}`, { signal });
+    const view = parseWithFallback<IssueProgressView | null>(raw, IssueProgressViewSchema, null, { endpoint: `GET ${endpoint}` });
+    if (!view) throw new Error("Work progress response is malformed");
+    return view;
   }
 
   async getIssueGoal(id: string): Promise<IssueGoal> {

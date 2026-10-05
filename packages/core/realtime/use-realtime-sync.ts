@@ -13,6 +13,7 @@ import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
+import { issueProgressKeys, isProgressInvalidationEvent } from "../issue-progress";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
@@ -660,6 +661,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
   const wsId = getCurrentWsId();
   if (wsId) {
     qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: issueProgressKeys.all(wsId) });
     // Through the inbox's own entry point, not a plain invalidate: a reconnect
     // can land during the list's first load, and a plain invalidate would be
     // answered by the request already on the wire (see refreshInboxQuery).
@@ -1127,6 +1129,10 @@ export function useRealtimeSync(
 
     const unsubAny = ws.onAny((msg) => {
       if (!belongsToCurrentWorkspace(msg.payload)) return;
+      if (isProgressInvalidationEvent(msg.type)) {
+        const workspaceId = getCurrentWsId();
+        if (workspaceId) debouncedRefresh("issue-progress", () => { void qc.invalidateQueries({ queryKey: issueProgressKeys.all(workspaceId) }); });
+      }
 	  if(["task:completed","task:failed","task:cancelled","task:dispatch"].includes(msg.type)){
 		const wsId=getCurrentWsId();if(wsId)void qc.invalidateQueries({queryKey:["project_supervision",wsId]});
 	  }
