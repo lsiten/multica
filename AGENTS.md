@@ -31,6 +31,8 @@ Multica is a task management platform where people and agents collaborate on iss
 Use `Makefile`, workspace `package.json` files, and `pnpm-workspace.yaml` for current commands and versions. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and worktree operations.
 
 - Use the checkout's managed environment: `make up`, `make status`, `make down`. `make down` preserves data; `make destroy` removes the environment and its data.
+- Local-directory tasks may edit concurrently. Keep run-specific briefs, skills, and task context outside shared code directories; directory occupancy alone must not block execution. Review merges still check active writers.
+- Shared worktree delivery settles after the last live writer exits; earlier runs retain pending receipts. Provider settings that require fixed project files use a private checkout and restore copied user settings before delivery. Shared directory protection must survive daemon crashes and overlap across processes.
 - Worktrees share PostgreSQL but have isolated databases/ports. Use the environment scripts and `.env.worktree`; do not copy the main checkout's `.env` or manually create a database through an assumed PostgreSQL instance.
 - Regenerate sqlc with `make sqlc` after SQL changes.
 - Run the narrowest useful checks while iterating, then broaden when risk warrants it. Report what actually ran and any skipped checks.

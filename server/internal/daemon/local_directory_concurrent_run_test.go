@@ -1,0 +1,146 @@
+package daemon
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestConcurrentRunsShareInPlaceDirectoryWithoutContextCollision(t *testing.T) {
+	d, _, cleanup := newLeaderReuseTestDaemon(t)
+	defer cleanup()
+	d.localPathLocks = NewLocalPathLocker()
+	d.cfg.DaemonID = "concurrent-worktree-daemon"
+	d.cfg.AgentTimeout = 10 * time.Second
+	signals := t.TempDir()
+	quotedSignals := "'" + strings.ReplaceAll(signals, "'", "'\\''") + "'"
+	script := fmt.Sprintf(`#!/bin/sh
+IFS= read -r _
+printf '{"type":"system","session_id":"session-%%s"}\n' "$MULTICA_TASK_ID"
+signals=%s
+pwd > "$signals/$MULTICA_TASK_ID.cwd"
+printf '%%s' "$MULTICA_TASK_CONFIG_ROOT" > "$signals/$MULTICA_TASK_ID.config"
+printf '%%s' "$MULTICA_TASK_ID" > "$MULTICA_TASK_ID.txt"
+if [ "$MULTICA_TASK_ID" = "task-first" ]; then
+  : > "$signals/started"
+  count=0
+  while [ ! -f "$signals/release" ]; do
+    count=$((count + 1))
+    [ "$count" -lt 400 ] || exit 1
+    sleep 0.02
+  done
+fi
+printf '{"type":"result","subtype":"success","is_error":false,"session_id":"session-%%s","result":"done"}\n' "$MULTICA_TASK_ID"
+`, quotedSignals)
+	writeTestExecutable(t, d.cfg.Agents["claude"].Path, []byte(script))
+	repo := createWorktreeTestRepo(t)
+	writeLifecycleFile(t, filepath.Join(repo, "CLAUDE.md"), "user instructions\n")
+	ref, err := json.Marshal(localDirectoryRef{LocalPath: repo, DaemonID: d.cfg.DaemonID, ExecutionMode: "in_place"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := leaderReuseTestTask("task-first")
+	first.IsLeaderTask = false
+	first.ProjectResources = []ProjectResourceData{{ID: "resource", ResourceType: "local_directory", ResourceRef: ref}}
+	type runOutcome struct {
+		result TaskResult
+		err    error
+	}
+	runShared := func(task Task, slot int) (TaskResult, error) {
+		release, abort := d.acquireLocalDirectoryLockIfNeeded(t.Context(), task, d.logger)
+		if abort || release == nil {
+			return TaskResult{}, fmt.Errorf("shared directory validation failed")
+		}
+		defer release()
+		return d.runTask(t.Context(), task, "claude", slot, d.logger)
+	}
+	finished := make(chan runOutcome, 1)
+	go func() {
+		result, err := runShared(first, 0)
+		finished <- runOutcome{result, err}
+	}()
+	release := func() {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(signals, "release"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstFinished := false
+	t.Cleanup(func() {
+		release()
+		if !firstFinished {
+			select {
+			case <-finished:
+			case <-time.After(5 * time.Second):
+				t.Error("first fixture agent did not stop during cleanup")
+			}
+		}
+	})
+	waitFor(t, func() bool {
+		_, err := os.Stat(filepath.Join(signals, "started"))
+		return err == nil
+	}, "first fixture agent started")
+	second := first
+	second.ID, second.IssueID = "task-second", "different-issue"
+	next, err := runShared(second, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case done := <-finished:
+		firstFinished = true
+		t.Fatalf("first run ended before concurrent reuse: %+v", done)
+	default:
+	}
+	firstCwd, err := os.ReadFile(filepath.Join(signals, "task-first.cwd"))
+	if err != nil || !sameDir(t, strings.TrimSpace(string(firstCwd)), next.WorkDir) {
+		t.Fatalf("concurrent runs did not share the checkout: %s %+v %v", firstCwd, next, err)
+	}
+	firstContext := filepath.Join(filepath.Dir(strings.TrimSpace(readSharedRunConfig(t, filepath.Join(signals, "task-first.config")))), "task-context")
+	if _, err := os.Stat(filepath.Join(firstContext, "CLAUDE.md")); err != nil {
+		t.Fatalf("second run cleaned the first run's context: %v", err)
+	}
+	firstConfig, err := os.ReadFile(filepath.Join(signals, "task-first.config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondConfig, err := os.ReadFile(filepath.Join(signals, "task-second.config"))
+	if err != nil || len(firstConfig) == 0 || string(firstConfig) == string(secondConfig) {
+		t.Fatalf("concurrent runs shared task configuration: %s %s %v", firstConfig, secondConfig, err)
+	}
+	release()
+	select {
+	case done := <-finished:
+		firstFinished = true
+		if done.err != nil || done.result.BranchName != next.BranchName {
+			t.Fatalf("concurrent branch delivery diverged: %+v %+v", done, next)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("first fixture agent did not finish")
+	}
+	for _, id := range []string{first.ID, second.ID} {
+		got, err := os.ReadFile(filepath.Join(repo, id+".txt"))
+		if err != nil || string(got) != id {
+			t.Fatalf("shared directory lost %s's edits: %q %v", id, got, err)
+		}
+	}
+	if got, err := os.ReadFile(filepath.Join(repo, "CLAUDE.md")); err != nil || string(got) != "user instructions\n" {
+		t.Fatalf("shared runtime modified user instructions: %q %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".agent_context")); !os.IsNotExist(err) {
+		t.Fatal("task context leaked into shared code")
+	}
+}
+
+func readSharedRunConfig(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}

@@ -143,7 +143,7 @@ func TestRunTaskRestoresAndReattachesColdLocalCheckout(t *testing.T) {
 	}
 }
 
-func TestReusedWorktreeSnapshotWaitRespondsToTaskCancellation(t *testing.T) {
+func TestReusedWorktreeSnapshotDoesNotWaitForDirectoryRelease(t *testing.T) {
 	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
@@ -159,12 +159,13 @@ func TestReusedWorktreeSnapshotWaitRespondsToTaskCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	release, err := d.acquireReusedWorktreeSnapshot(ctx, Task{ID: "waiting"}, &localDirectoryAssignment{AbsPath: path, RealPath: path}, d.logger)
-	if release != nil {
-		release()
-		t.Fatal("cancelled task acquired snapshot lease")
+	if err != nil || release == nil {
+		t.Fatalf("snapshot waited for occupied directory: %v", err)
 	}
-	if err == nil || ctx.Err() != nil {
-		t.Fatalf("wait ended by timeout instead of task cancellation: %v", err)
+	release()
+	cancel()
+	if release, err := d.acquireReusedWorktreeSnapshot(ctx, Task{ID: "cancelled"}, &localDirectoryAssignment{RealPath: path}, d.logger); err == nil || release != nil {
+		t.Fatal("cancelled snapshot was tracked")
 	}
 	if d.resourceWaitTasks.Load() != 0 {
 		t.Fatal("snapshot wait accounting leaked")

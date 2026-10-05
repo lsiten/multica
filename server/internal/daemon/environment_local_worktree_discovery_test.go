@@ -170,14 +170,15 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"sess
 	select {
 	case done := <-finished:
 		firstFinished = true
-		if done.err != nil || done.result.BranchName != next.BranchName {
+		if done.err != nil || done.result.BranchName == "" || done.result.WorktreeCommit == "" || next.BranchName != "" || !next.WorktreeDeliveryPending {
 			t.Fatalf("concurrent branch delivery diverged: %+v %+v", done, next)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("first fixture agent did not finish")
 	}
+	commit := worktreeTestGit(t, next.WorkDir, "rev-parse", "HEAD")
 	for _, id := range []string{first.ID, second.ID} {
-		if got := worktreeTestGit(t, next.WorkDir, "show", next.BranchName+":"+id+".txt"); got != id {
+		if got := worktreeTestGit(t, next.WorkDir, "show", commit+":"+id+".txt"); got != id {
 			t.Fatalf("shared branch lost %s's edits: %q", id, got)
 		}
 	}

@@ -5,41 +5,14 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/util"
 )
 
 func (d *Daemon) acquireReusedWorktreeSnapshot(ctx context.Context, task Task, local *localDirectoryAssignment, logger *slog.Logger) (func(), error) {
-	waitCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	waiting := false
-	interval := d.cancelPollInterval
-	if interval == 0 {
-		interval = 5 * time.Second
-	}
-	release, err := d.localPathLocks.Acquire(waitCtx, local.RealPath, task.ID, func(holder string) {
-		waiting = true
-		d.resourceWaitTasks.Add(1)
-		if err := d.client.MarkTaskWaitingLocalDirectory(waitCtx, task.ID, "waiting for reused worktree snapshot"); err != nil {
-			logger.Warn("mark reused worktree snapshot wait failed", "error", err)
-		}
-		cancelled := d.watchTaskCancellation(waitCtx, task.ID, interval, logger)
-		go func() {
-			select {
-			case <-cancelled:
-				cancel()
-			case <-waitCtx.Done():
-			}
-		}()
-	})
-	if waiting {
-		d.resourceWaitTasks.Add(-1)
-	}
-	return release, err
+	return d.localPathLocks.TrackShared(ctx, local.RealPath, task.ID)
 }
-
 func managedCodeRoot(workspacesRoot, workdir string) string {
 	root, err := util.ResolveSymlinks(workspacesRoot)
 	if err != nil {

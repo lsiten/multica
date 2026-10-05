@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 )
 
 // localDirectoryResourceType is the project_resource discriminator the daemon
@@ -43,7 +46,7 @@ type localDirectoryRef struct {
 // plus the underlying ref for callers that still need the raw label / daemon
 // id (validation log messages, mostly). RealPath is the symlink-resolved
 // absolute path; the path mutex keys on it so two different routes to the
-// same directory are serialised.
+// same directory share execution tracking.
 type localDirectoryAssignment struct {
 	Ref      localDirectoryRef
 	AbsPath  string // user-provided path, cleaned but not symlink-resolved
@@ -109,47 +112,13 @@ func (a *localDirectoryAssignment) ValidateExecutionMode() error {
 // child issues or comments, but should not bind to the user's repo worktree or
 // hold the path mutex while downstream workers are ready to write.
 //
-// This answers WHERE a task runs, and only that. Its result also drives the
-// agent's working directory (daemon.runTask plumbs AbsPath into
-// execenv.PrepareParams.LocalWorkDir) and the GC-meta stamp that exempts a
-// user-owned path from env-root cleanup. Whether the task additionally takes
-// the per-path mutex is a SEPARATE question, answered by
-// localDirectoryLockExempt — collapsing the two is what made a read-only chat
-// turn queue behind a 20-minute build (issue #7344), and answering "no
-// assignment" there to free the lock would have silently moved chat out of the
-// user's directory as well.
+// The assignment determines the working directory and GC exemption. Sharing
+// it does not change either: every run still edits the configured user's path.
 func localDirectoryAssignmentForTask(task Task, daemonID string) (*localDirectoryAssignment, error) {
 	if task.IsLeaderTask {
 		return nil, nil
 	}
 	return findLocalDirectoryAssignment(task.ProjectResources, daemonID)
-}
-
-// localDirectoryLockExempt reports whether a task may run inside an in_place
-// local_directory WITHOUT serialising on the per-path mutex. It is asked only
-// after an assignment has been resolved and validated, so an exempt task still
-// runs in the user's directory — it just doesn't queue for it.
-//
-// What the mutex actually protects: two long coding runs interleaving two sets
-// of edits into one working tree. It was never a general write barrier and
-// cannot become one — the user's own editor, their terminal, and any external
-// script write to that same tree unsynchronised, and always have. So the
-// question a task must answer to earn the lock is not "could it ever write?"
-// (everything could) but "is it a second heavyweight writer?".
-//
-// A chat turn is not. It is a conversation that reads the tree to answer
-// questions and at most saves a file the way the user's own Cmd+S does — the
-// risk class the lock already declines to cover. Serialising it bought nothing
-// and muted the squad leader for the length of every build (issue #7344).
-//
-// Keyed on ChatSessionID because that is the daemon's only chat discriminator
-// (see Task.ChatSessionID). IsLeaderTask cannot serve here even though the
-// comment above it describes chat's semantics exactly: the server never writes
-// that column on the chat-task insert path (service.EnqueueChatTask →
-// db.CreateChatTaskParams has no such field), so it is false on every chat
-// turn ever dispatched.
-func localDirectoryLockExempt(task Task) bool {
-	return task.ChatSessionID != ""
 }
 
 // findLocalDirectoryAssignment scans the task's project resources for one of
@@ -466,8 +435,65 @@ func isGitWorkTree(ctx context.Context, path string) bool {
 // strict-priority queue). Holder bookkeeping (current holder task id) is
 // surfaced via Holder so callers can build a UI-friendly wait_reason.
 type LocalPathLocker struct {
-	mu    sync.Mutex
-	locks map[string]*pathLockEntry
+	mu            sync.Mutex
+	locks         map[string]*pathLockEntry
+	shared        map[string]int
+	sharedHolders map[string]string
+	sharedCleanup map[string]func() error
+}
+
+// TrackShared keeps review/merge guards aware of running writers without
+// serializing those writers or waiting for another task to release its directory.
+func (l *LocalPathLocker) TrackShared(ctx context.Context, realPath, taskID string) (func(), error) {
+	return l.trackShared(ctx, realPath, taskID, false)
+}
+
+func (l *LocalPathLocker) trackShared(ctx context.Context, realPath, taskID string, protect bool) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if realPath == "" || taskID == "" {
+		return nil, errors.New("local_directory: path and task ID required")
+	}
+	l.mu.Lock()
+	if protect && l.sharedCleanup[realPath] == nil {
+		cleanup, err := execenv.ProtectSharedLocalDirectory(ctx, realPath)
+		if err != nil {
+			l.mu.Unlock()
+			return nil, err
+		}
+		if l.sharedCleanup == nil {
+			l.sharedCleanup = make(map[string]func() error)
+		}
+		l.sharedCleanup[realPath] = cleanup
+	}
+	if l.shared == nil {
+		l.shared = make(map[string]int)
+		l.sharedHolders = make(map[string]string)
+	}
+	if l.shared[realPath] == 0 {
+		l.sharedHolders[realPath] = taskID
+	}
+	l.shared[realPath]++
+	l.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			l.shared[realPath]--
+			if l.shared[realPath] == 0 {
+				if cleanup := l.sharedCleanup[realPath]; cleanup != nil {
+					if err := cleanup(); err != nil {
+						slog.Warn("local_directory: clean shared task guard failed", "error", err)
+					}
+					delete(l.sharedCleanup, realPath)
+				}
+				delete(l.shared, realPath)
+				delete(l.sharedHolders, realPath)
+			}
+		})
+	}, nil
 }
 
 type pathLockEntry struct {
@@ -487,6 +513,10 @@ func NewLocalPathLocker() *LocalPathLocker {
 // <path> (held by task <short id>)".
 func (l *LocalPathLocker) Holder(realPath string) string {
 	l.mu.Lock()
+	if holder := l.sharedHolders[realPath]; holder != "" {
+		l.mu.Unlock()
+		return holder
+	}
 	entry, ok := l.locks[realPath]
 	l.mu.Unlock()
 	if !ok {

@@ -641,8 +641,21 @@ func (c *Client) completeTaskWithRetrySchedule(ctx context.Context, taskID, outp
 	return c.completeTaskWithJevRetrySchedule(ctx, taskID, output, branchName, sessionID, workDir, sessionRolloutMissing, retiredSessionID, durableWorkDir, nil, schedule)
 }
 
-func (c *Client) completeTaskWithJevRetrySchedule(ctx context.Context, taskID, output, branchName, sessionID, workDir string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, jevVerification *JevVerification, schedule []time.Duration) error {
+type worktreeDelivery struct {
+	Pending bool
+	Commit  string
+}
+
+func (c *Client) completeTaskWithJevRetrySchedule(ctx context.Context, taskID, output, branchName, sessionID, workDir string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, jevVerification *JevVerification, schedule []time.Duration, delivery ...worktreeDelivery) error {
 	body := map[string]any{"output": output}
+	if len(delivery) > 0 {
+		if delivery[0].Pending {
+			body["worktree_delivery_pending"] = true
+		}
+		if delivery[0].Commit != "" {
+			body["worktree_commit"] = delivery[0].Commit
+		}
+	}
 	if branchName != "" {
 		body["branch_name"] = branchName
 	}

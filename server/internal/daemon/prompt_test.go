@@ -1988,7 +1988,7 @@ func TestSharedLocalDirectoryBlock(t *testing.T) {
 		}
 		// The non-inferable fact is the concurrent writer. Without it the block
 		// is just style advice.
-		if !strings.Contains(out, "another task on this machine may be editing it") {
+		if !strings.Contains(out, "Other tasks may edit it concurrently") {
 			t.Fatalf("notice does not state that a sibling task may be writing:\n%s", out)
 		}
 		// It must stay guidance: turning it into a prohibition would promise an

@@ -1944,27 +1944,30 @@ func (q *Queries) ClearAgentThinkingLevel(ctx context.Context, id pgtype.UUID) (
 
 const completeAgentTask = `-- name: CompleteAgentTask :one
 UPDATE agent_task_queue
-SET status = 'completed', completed_at = now(), result = $2,
-    session_id = CASE WHEN $5 THEN NULL ELSE $3 END,
-    work_dir = $4,
-    durable_work_dir = COALESCE($6, durable_work_dir),
-    branch_name = COALESCE($7, branch_name),
-    session_rollout_missing = $5,
-    retired_session_id = COALESCE($8, retired_session_id),
+SET status = 'completed', completed_at = now(), result = $1::jsonb ||
+    CASE WHEN COALESCE(result->>'worktree_commit','')<>'' OR result->>'worktree_delivery_pending'='false' THEN
+      jsonb_build_object('worktree_commit',result->>'worktree_commit','worktree_delivery_pending',false)
+    ELSE '{}'::jsonb END,
+    session_id = CASE WHEN $2 THEN NULL ELSE $3::text END,
+    work_dir = $4::text,
+    durable_work_dir = COALESCE($5, durable_work_dir),
+    branch_name = COALESCE($6, branch_name),
+    session_rollout_missing = $2,
+    retired_session_id = COALESCE($7, retired_session_id),
     prepare_lease_expires_at = NULL
-WHERE id = $1 AND status = 'running'
+WHERE id = $8 AND status = 'running'
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot
 `
 
 type CompleteAgentTaskParams struct {
-	ID                    pgtype.UUID `json:"id"`
 	Result                []byte      `json:"result"`
+	SessionRolloutMissing bool        `json:"session_rollout_missing"`
 	SessionID             pgtype.Text `json:"session_id"`
 	WorkDir               pgtype.Text `json:"work_dir"`
-	SessionRolloutMissing bool        `json:"session_rollout_missing"`
 	DurableWorkDir        pgtype.Text `json:"durable_work_dir"`
 	BranchName            pgtype.Text `json:"branch_name"`
 	RetiredSessionID      pgtype.Text `json:"retired_session_id"`
+	ID                    pgtype.UUID `json:"id"`
 }
 
 // session_rollout_missing (MUL-5305): when true the daemon withheld this task's
@@ -1980,14 +1983,14 @@ type CompleteAgentTaskParams struct {
 // pointing at the same id resurrects it on the next run.
 func (q *Queries) CompleteAgentTask(ctx context.Context, arg CompleteAgentTaskParams) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, completeAgentTask,
-		arg.ID,
 		arg.Result,
+		arg.SessionRolloutMissing,
 		arg.SessionID,
 		arg.WorkDir,
-		arg.SessionRolloutMissing,
 		arg.DurableWorkDir,
 		arg.BranchName,
 		arg.RetiredSessionID,
+		arg.ID,
 	)
 	var i AgentTaskQueue
 	err := row.Scan(
@@ -5864,7 +5867,7 @@ func (q *Queries) ListChatFinalizeDeferredExpired(ctx context.Context, arg ListC
 }
 
 const listPendingDelegatedFailureRecoveries = `-- name: ListPendingDelegatedFailureRecoveries :many
-SELECT recovery.id, recovery.issue_id, recovery.author_type, recovery.author_id, recovery.content, recovery.type, recovery.created_at, recovery.updated_at, recovery.parent_id, recovery.workspace_id, recovery.resolved_at, recovery.resolved_by_type, recovery.resolved_by_id, recovery.source_task_id, recovery.quick_action_id, recovery.via_plugin_id, recovery.revision, recovery.recovery_settled_at, recovery.deleted_at, recovery.suppressed_agent_ids
+SELECT recovery.id, recovery.issue_id, recovery.author_type, recovery.author_id, recovery.content, recovery.type, recovery.created_at, recovery.updated_at, recovery.parent_id, recovery.workspace_id, recovery.resolved_at, recovery.resolved_by_type, recovery.resolved_by_id, recovery.source_task_id, recovery.quick_action_id, recovery.via_plugin_id, recovery.revision, recovery.recovery_settled_at, recovery.deleted_at, recovery.suppressed_agent_ids, recovery.human_request_id
 FROM comment recovery
 JOIN agent_task_queue failed ON failed.id = recovery.source_task_id
 LEFT JOIN agent_task_queue source ON source.id = failed.delegated_from_task_id
@@ -5988,6 +5991,7 @@ func (q *Queries) ListPendingDelegatedFailureRecoveries(ctx context.Context, max
 			&i.RecoverySettledAt,
 			&i.DeletedAt,
 			&i.SuppressedAgentIds,
+			&i.HumanRequestID,
 		); err != nil {
 			return nil, err
 		}
@@ -8147,6 +8151,105 @@ func (q *Queries) ReclaimStaleDispatchedTasksForRuntimes(ctx context.Context, ar
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordSharedWorktreeDelivery = `-- name: RecordSharedWorktreeDelivery :one
+
+UPDATE agent_task_queue task
+SET branch_name = CASE WHEN $1::boolean THEN task.branch_name ELSE $2::text END,
+    result=COALESCE(task.result,'{}'::jsonb)||jsonb_build_object('worktree_commit',$3::text,'worktree_delivery_pending',false)
+WHERE task.id = $4::uuid AND task.runtime_id = $5::uuid
+  AND (task.work_dir IS NULL OR task.work_dir = $6::text)
+  AND (task.branch_name IS NULL OR task.branch_name = $2::text)
+  AND EXISTS(SELECT 1 FROM agent a WHERE a.id=task.agent_id AND a.workspace_id = $7::uuid)
+RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir, task.channel_context_revision, task.comment_thread_id, task.cancelled_by_type, task.cancelled_by_id, task.cancelled_by_name, task.issue_snapshot
+`
+
+type RecordSharedWorktreeDeliveryParams struct {
+	NoWork      bool        `json:"no_work"`
+	BranchName  string      `json:"branch_name"`
+	Commit      string      `json:"commit"`
+	ID          pgtype.UUID `json:"id"`
+	RuntimeID   pgtype.UUID `json:"runtime_id"`
+	WorkDir     string      `json:"work_dir"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// The runtime may settle shared delivery before the first run's terminal
+// callback arrives. CompleteAgentTask preserves the recorded commit on replay.
+func (q *Queries) RecordSharedWorktreeDelivery(ctx context.Context, arg RecordSharedWorktreeDeliveryParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, recordSharedWorktreeDelivery,
+		arg.NoWork,
+		arg.BranchName,
+		arg.Commit,
+		arg.ID,
+		arg.RuntimeID,
+		arg.WorkDir,
+		arg.WorkspaceID,
+	)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.SquadID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.CommentThreadID,
+		&i.CancelledByType,
+		&i.CancelledByID,
+		&i.CancelledByName,
+		&i.IssueSnapshot,
+	)
+	return i, err
 }
 
 const recoverOrphanedTasksForRuntime = `-- name: RecoverOrphanedTasksForRuntime :many

@@ -432,6 +432,9 @@ const (
 // Dispatches on meta.Kind so chat / autopilot / quick-create tasks each
 // follow the parent record that actually governs their lifecycle.
 func (d *Daemon) shouldCleanTaskDir(ctx context.Context, taskDir string) gcAction {
+	if unsettled, err := execenv.SharedDirectoryUnsettled(ctx, filepath.Join(taskDir, "worktree")); err != nil || unsettled {
+		return gcActionSkip
+	}
 	// A task currently running on this env root must never be reclaimed —
 	// not even on the done/cancelled or orphan-404 paths. A re-dispatched or
 	// still-running task can reuse the prior workdir of an already-done issue

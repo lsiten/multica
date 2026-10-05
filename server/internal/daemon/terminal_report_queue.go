@@ -43,20 +43,22 @@ const (
 // untouched and reported on every replay pass; downgrading must never delete a
 // payload merely because the older binary cannot decode it.
 type persistedTerminalTaskReport struct {
-	Version               int              `json:"version"`
-	CreatedAt             time.Time        `json:"created_at"`
-	Kind                  string           `json:"kind"`
-	TaskID                string           `json:"task_id"`
-	Output                string           `json:"output,omitempty"`
-	BranchName            string           `json:"branch_name,omitempty"`
-	ErrorMessage          string           `json:"error,omitempty"`
-	SessionID             string           `json:"session_id,omitempty"`
-	WorkDir               string           `json:"work_dir,omitempty"`
-	DurableWorkDir        string           `json:"durable_work_dir,omitempty"`
-	FailureReason         string           `json:"failure_reason,omitempty"`
-	SessionRolloutMissing bool             `json:"session_rollout_missing,omitempty"`
-	RetiredSessionID      string           `json:"retired_session_id,omitempty"`
-	JevVerification       *JevVerification `json:"jev_verification,omitempty"`
+	Version                 int              `json:"version"`
+	CreatedAt               time.Time        `json:"created_at"`
+	Kind                    string           `json:"kind"`
+	TaskID                  string           `json:"task_id"`
+	Output                  string           `json:"output,omitempty"`
+	BranchName              string           `json:"branch_name,omitempty"`
+	ErrorMessage            string           `json:"error,omitempty"`
+	SessionID               string           `json:"session_id,omitempty"`
+	WorkDir                 string           `json:"work_dir,omitempty"`
+	DurableWorkDir          string           `json:"durable_work_dir,omitempty"`
+	FailureReason           string           `json:"failure_reason,omitempty"`
+	SessionRolloutMissing   bool             `json:"session_rollout_missing,omitempty"`
+	RetiredSessionID        string           `json:"retired_session_id,omitempty"`
+	JevVerification         *JevVerification `json:"jev_verification,omitempty"`
+	WorktreeDeliveryPending bool             `json:"worktree_delivery_pending,omitempty"`
+	WorktreeCommit          string           `json:"worktree_commit,omitempty"`
 
 	PermanentRejectionCount   int        `json:"permanent_rejection_count,omitempty"`
 	FirstPermanentRejectionAt *time.Time `json:"first_permanent_rejection_at,omitempty"`
@@ -134,20 +136,22 @@ func persistedTerminalReport(report terminalTaskReport, createdAt time.Time) (pe
 		return persistedTerminalTaskReport{}, err
 	}
 	return persistedTerminalTaskReport{
-		Version:               terminalReportRecordVersion,
-		CreatedAt:             createdAt.UTC(),
-		Kind:                  kind,
-		TaskID:                report.taskID,
-		Output:                report.output,
-		BranchName:            report.branchName,
-		ErrorMessage:          report.errorMessage,
-		SessionID:             report.sessionID,
-		WorkDir:               report.workDir,
-		DurableWorkDir:        report.durableWorkDir,
-		FailureReason:         report.failureReason,
-		SessionRolloutMissing: report.sessionRolloutMissing,
-		RetiredSessionID:      report.retiredSessionID,
-		JevVerification:       report.jevVerification,
+		Version:                 terminalReportRecordVersion,
+		CreatedAt:               createdAt.UTC(),
+		Kind:                    kind,
+		TaskID:                  report.taskID,
+		Output:                  report.output,
+		BranchName:              report.branchName,
+		ErrorMessage:            report.errorMessage,
+		SessionID:               report.sessionID,
+		WorkDir:                 report.workDir,
+		DurableWorkDir:          report.durableWorkDir,
+		FailureReason:           report.failureReason,
+		SessionRolloutMissing:   report.sessionRolloutMissing,
+		RetiredSessionID:        report.retiredSessionID,
+		JevVerification:         report.jevVerification,
+		WorktreeDeliveryPending: report.worktreeDeliveryPending,
+		WorktreeCommit:          report.worktreeCommit,
 	}, nil
 }
 
@@ -168,18 +172,20 @@ func (record persistedTerminalTaskReport) terminalReport() (terminalTaskReport, 
 		return terminalTaskReport{}, fmt.Errorf("unsupported terminal report kind %q", record.Kind)
 	}
 	return terminalTaskReport{
-		kind:                  kind,
-		taskID:                record.TaskID,
-		output:                record.Output,
-		branchName:            record.BranchName,
-		errorMessage:          record.ErrorMessage,
-		sessionID:             record.SessionID,
-		workDir:               record.WorkDir,
-		durableWorkDir:        record.DurableWorkDir,
-		failureReason:         record.FailureReason,
-		sessionRolloutMissing: record.SessionRolloutMissing,
-		retiredSessionID:      record.RetiredSessionID,
-		jevVerification:       record.JevVerification,
+		kind:                    kind,
+		taskID:                  record.TaskID,
+		output:                  record.Output,
+		branchName:              record.BranchName,
+		errorMessage:            record.ErrorMessage,
+		sessionID:               record.SessionID,
+		workDir:                 record.WorkDir,
+		durableWorkDir:          record.DurableWorkDir,
+		failureReason:           record.FailureReason,
+		sessionRolloutMissing:   record.SessionRolloutMissing,
+		retiredSessionID:        record.RetiredSessionID,
+		jevVerification:         record.JevVerification,
+		worktreeDeliveryPending: record.WorktreeDeliveryPending,
+		worktreeCommit:          record.WorktreeCommit,
 	}, nil
 }
 
@@ -704,6 +710,11 @@ func (d *Daemon) handleTerminalReportDeliveryError(ctx context.Context, item pen
 // attempt. The one-time fail compensation after quarantine uses the normal
 // bounded terminal schedule because there will be no later replay for it.
 func (d *Daemon) replayPendingTerminalReports(ctx context.Context) (pending, delivered int) {
+	defer func() {
+		waiting, settled := d.replayPendingWorktreeDeliveries(ctx)
+		pending += waiting
+		delivered += settled
+	}()
 	if d.terminalReports == nil {
 		return 0, 0
 	}

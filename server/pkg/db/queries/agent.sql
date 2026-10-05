@@ -1069,16 +1069,32 @@ RETURNING *;
 -- to retire the transcript it retried away from, or an older completed row
 -- pointing at the same id resurrects it on the next run.
 UPDATE agent_task_queue
-SET status = 'completed', completed_at = now(), result = $2,
-    session_id = CASE WHEN sqlc.arg('session_rollout_missing') THEN NULL ELSE $3 END,
-    work_dir = $4,
+SET status = 'completed', completed_at = now(), result = sqlc.arg('result')::jsonb ||
+    CASE WHEN COALESCE(result->>'worktree_commit','')<>'' OR result->>'worktree_delivery_pending'='false' THEN
+      jsonb_build_object('worktree_commit',result->>'worktree_commit','worktree_delivery_pending',false)
+    ELSE '{}'::jsonb END,
+    session_id = CASE WHEN sqlc.arg('session_rollout_missing') THEN NULL ELSE sqlc.narg('session_id')::text END,
+    work_dir = sqlc.narg('work_dir')::text,
     durable_work_dir = COALESCE(sqlc.narg('durable_work_dir'), durable_work_dir),
     branch_name = COALESCE(sqlc.narg('branch_name'), branch_name),
     session_rollout_missing = sqlc.arg('session_rollout_missing'),
     retired_session_id = COALESCE(sqlc.narg('retired_session_id'), retired_session_id),
     prepare_lease_expires_at = NULL
-WHERE id = $1 AND status = 'running'
+WHERE id = sqlc.arg('id') AND status = 'running'
 RETURNING *;
+
+-- The runtime may settle shared delivery before the first run's terminal
+-- callback arrives. CompleteAgentTask preserves the recorded commit on replay.
+
+-- name: RecordSharedWorktreeDelivery :one
+UPDATE agent_task_queue task
+SET branch_name = CASE WHEN @no_work::boolean THEN task.branch_name ELSE @branch_name::text END,
+    result=COALESCE(task.result,'{}'::jsonb)||jsonb_build_object('worktree_commit',@commit::text,'worktree_delivery_pending',false)
+WHERE task.id = @id::uuid AND task.runtime_id = @runtime_id::uuid
+  AND (task.work_dir IS NULL OR task.work_dir = @work_dir::text)
+  AND (task.branch_name IS NULL OR task.branch_name = @branch_name::text)
+  AND EXISTS(SELECT 1 FROM agent a WHERE a.id=task.agent_id AND a.workspace_id = @workspace_id::uuid)
+RETURNING task.*;
 
 -- name: GetLastTaskSession :one
 -- Returns the session_id and work_dir from the most recent task for a given

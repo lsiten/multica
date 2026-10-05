@@ -53,6 +53,8 @@ type PrepareParams struct {
 	// JSON boundary back to the daemon. The claim therefore has to be held by
 	// the parent, whose lifetime is the task run.
 	EnvRootPreclaimed bool
+	// IsolateLocalContext keeps run-owned briefs and skills outside a shared checkout.
+	IsolateLocalContext bool
 	// Profile is the daemon's profile name (empty = default). It namespaces the
 	// per-issue Codex session store so a second profile-daemon sharing the same
 	// ~/.codex cannot see or GC this daemon's stores (MUL-4424).
@@ -267,6 +269,9 @@ type SkillFileContextForEnv struct {
 
 // Environment represents a prepared, isolated execution environment.
 type Environment struct {
+	// ContextDir holds per-run instructions when WorkDir is shared user code.
+	ContextDir              string
+	PrivateProviderCheckout bool
 	// RootDir is the top-level env directory ({workspacesRoot}/{task_id_short}/).
 	RootDir string
 	// CodeRootDir owns a reused working tree when runtime configuration lives
@@ -423,6 +428,20 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	if params.TaskID == "" {
 		return nil, fmt.Errorf("execenv: task ID is required")
 	}
+	privateProvider := params.IsolateLocalContext && NeedsPrivateProviderCheckout(params.Provider, params.McpConfig) && (params.LocalWorkDir != "" || params.LocalWorktree != nil)
+	privateCopySource := ""
+	if privateProvider {
+		if params.LocalWorktree != nil {
+			copy := *params.LocalWorktree
+			copy.PrivateCheckout = true
+			params.LocalWorktree = &copy
+		} else if _, git := detectGitRepo(params.LocalWorkDir); git {
+			params.LocalWorktree = &LocalWorktreeParams{LocalPath: params.LocalWorkDir, PrivateCheckout: true, RetainCheckout: true}
+			params.LocalWorkDir = ""
+		} else {
+			privateCopySource, params.LocalWorkDir = params.LocalWorkDir, ""
+		}
+	}
 
 	envRoot, err := ResolveRootDir(RootDirParams{
 		WorkspacesRoot:  params.WorkspacesRoot,
@@ -566,13 +585,19 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	}
 
 	env := &Environment{
-		RootDir:           envRoot,
-		WorkDir:           workDir,
-		LocalDirectory:    params.LocalWorkDir != "",
-		LocalWorktree:     localWorktree,
-		MulticaConfigRoot: multicaConfigRoot,
-		logger:            logger,
-		lockFile:          lockFile,
+		RootDir:                 envRoot,
+		PrivateProviderCheckout: privateProvider,
+		WorkDir:                 workDir,
+		LocalDirectory:          params.LocalWorkDir != "",
+		LocalWorktree:           localWorktree,
+		MulticaConfigRoot:       multicaConfigRoot,
+		logger:                  logger,
+		lockFile:                lockFile,
+	}
+	if privateCopySource != "" {
+		if err := os.CopyFS(workDir, os.DirFS(privateCopySource)); err != nil {
+			return nil, fmt.Errorf("copy private provider workspace: %w", err)
+		}
 	}
 
 	// Write context files into workdir (skills go to provider-native paths).
@@ -583,6 +608,19 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// and avoids a conditional that would silently disable cleanup if the
 	// local_directory detection logic ever drifts.
 	manifest := &sidecarManifest{}
+	if privateProvider {
+		if err := isolatePrivateProviderFile(workDir, params.Provider, params.McpConfig, manifest); err != nil {
+			return nil, err
+		}
+	}
+	contextDir := workDir
+	if (params.LocalWorkDir != "" || params.LocalWorktree != nil || privateProvider) && params.IsolateLocalContext {
+		contextDir = filepath.Join(envRoot, "task-context")
+		if err := os.MkdirAll(contextDir, 0o700); err != nil {
+			return nil, fmt.Errorf("execenv: create isolated context: %w", err)
+		}
+		env.ContextDir = contextDir
+	}
 
 	// Arm the rollback BEFORE the first write, not after writeContextFiles
 	// returns. writeContextFiles puts the daemon task marker down as its very
@@ -614,7 +652,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		}()
 	}
 
-	if err := writeContextFiles(workDir, params.Provider, params.Task, manifest); err != nil {
+	if err := writeContextFiles(contextDir, params.Provider, params.Task, manifest); err != nil {
 		return nil, fmt.Errorf("execenv: write context files: %w", err)
 	}
 	if err := prepareOmpMcpConfig(workDir, params.Provider, params.McpConfig, manifest); err != nil {
@@ -775,6 +813,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 // the per-provider knobs (CodexVersion, OpenclawBin) so callers can pass
 // the same resolved binary path on both first-run and reuse paths.
 type ReuseParams struct {
+	IsolateLocalContext bool
 	// WorkspacesRoot is the daemon-owned root under which all task envs live.
 	// Passed on reuse so the root-level fail-closed marker is self-healed here
 	// too — a marker removed while the daemon runs is restored before a reused
@@ -889,6 +928,14 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	if codeRoot != rootDir && !params.LocalDirectory {
 		env.CodeRootDir = codeRoot
 	}
+	contextDir := params.WorkDir
+	if params.IsolateLocalContext && reusedWorktree != nil {
+		contextDir = filepath.Join(env.RootDir, "task-context")
+		if err := os.MkdirAll(contextDir, 0700); err != nil {
+			return nil
+		}
+		env.ContextDir = contextDir
+	}
 	if env.RootDir != "" {
 		env.MulticaConfigRoot = filepath.Join(env.RootDir, "multica-config")
 		if err := os.MkdirAll(env.MulticaConfigRoot, 0o700); err != nil {
@@ -929,7 +976,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	//
 	// No-op when RootDir is empty (legacy local_directory reuse, which the
 	// daemon skips anyway) or when no prior manifest exists (older build).
-	if env.RootDir != "" {
+	if env.RootDir != "" && env.ContextDir == "" {
 		if err := removeReusedManagedSkillDirs(codeRoot, skillsDirPath(params.WorkDir, params.Provider)); err != nil {
 			logger.Warn("execenv: reclaim managed skill dirs on reuse failed", "error", err)
 		}
@@ -953,7 +1000,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	// legacy local_directory Reuse fallback — skip the persist in that
 	// case to avoid creating a stray manifest at the filesystem root.
 	manifest := &sidecarManifest{}
-	if err := writeContextFiles(params.WorkDir, params.Provider, params.Task, manifest); err != nil {
+	if err := writeContextFiles(contextDir, params.Provider, params.Task, manifest); err != nil {
 		logger.Warn("execenv: refresh context files failed", "error", err)
 	}
 	if err := prepareOmpMcpConfig(params.WorkDir, params.Provider, params.McpConfig, manifest); err != nil {
@@ -1065,7 +1112,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 			logger.Warn("execenv: refresh sidecar manifest failed", "error", err)
 		}
 	}
-	if env.CodeRootDir != "" {
+	if env.CodeRootDir != "" && env.ContextDir == "" {
 		codeManifest := sidecarsWithinWorkdir(manifest, params.WorkDir)
 		if err := writeSidecarManifest(env.CodeRootDir, codeManifest); err != nil {
 			logger.Warn("execenv: save reused code sidecar manifest failed", "error", err)

@@ -114,6 +114,8 @@ type LocalWorktreeParams struct {
 	// SharedCheckout preserves live edits when the daemon lends the existing
 	// execution claim to another run of the same workline.
 	SharedCheckout bool
+	// PrivateCheckout keeps providers with project-fixed config out of a live checkout.
+	PrivateCheckout bool
 }
 
 // owner is the identity a branch created for this task is recorded under.
@@ -223,7 +225,8 @@ type LocalWorktree struct {
 	// aborted, when set, makes Finalize refuse to commit or remove anything.
 	// Set by the daemon when a pre-commit step failed in a way that would make
 	// the committed branch wrong (see AbortWithReason).
-	aborted error
+	aborted        error
+	executionLease *SharedDirectoryLease
 }
 
 // MarshalJSON / UnmarshalJSON carry this struct's unexported state across the
@@ -286,6 +289,8 @@ func (w *LocalWorktree) UnmarshalJSON(data []byte) error {
 
 // LocalWorktreeOutcome is what a finished worktree task delivered.
 type LocalWorktreeOutcome struct {
+	DeliveryPending bool
+	Commit          string
 	// Branch is the branch holding the task's work, or "" when the task made
 	// no changes at all (a read-only run) — in that case the branch is deleted
 	// so it never shows up in the user's `git branch` as an empty artifact.
@@ -547,7 +552,48 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 // in the daemon log is not an acceptable substitute for the user's changes. The
 // surviving worktree stays registered in the user's repo, so `git worktree list`
 // points straight at it.
+// BeginSharedExecution pins this physical checkout until the parent run exits.
+// Called in the daemon parent because file handles cannot cross preparation helpers.
+func (w *LocalWorktree) BeginSharedExecution(ctx context.Context, receipt ...SharedWorktreeDelivery) error {
+	lease, err := UseSharedDirectory(ctx, w.Path)
+	if err != nil {
+		return err
+	}
+	w.executionLease = lease
+	if len(receipt) > 0 {
+		run := receipt[0]
+		run.WorkDir, run.Branch = w.WorkDir, w.Branch
+		if err := lease.bindWorktreeRun(run); err != nil {
+			_ = lease.Finish(ctx, nil)
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, error) {
+	if w == nil || w.executionLease == nil {
+		return w.finalizeOwned(logger)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	var outcome LocalWorktreeOutcome
+	err := w.executionLease.Finish(ctx, func(last bool) error {
+		if !last {
+			outcome = LocalWorktreeOutcome{DeliveryPending: true, PreservedPath: w.Path}
+			return nil
+		}
+		var err error
+		outcome, err = w.finalizeOwned(logger)
+		if err == nil {
+			err = resolveSharedWorktreeReceipts(w.executionLease.stateDir, outcome.Commit)
+		}
+		return err
+	})
+	return outcome, err
+}
+
+func (w *LocalWorktree) finalizeOwned(logger *slog.Logger) (LocalWorktreeOutcome, error) {
 	if w == nil {
 		return LocalWorktreeOutcome{}, nil
 	}
@@ -642,6 +688,9 @@ func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, err
 	// this turn added nothing to what earlier turns delivered, and deleting it
 	// would take their work with it.
 	tip, err := runGitTrimmed(w.Path, "rev-parse", "--verify", "HEAD")
+	if err == nil {
+		outcome.Commit = tip
+	}
 	producedWork := err != nil || tip != w.BaseCommit
 	dropped := !producedWork && w.createdBranch && !w.RetainCheckout
 
@@ -733,6 +782,7 @@ func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, err
 	if dropped {
 		dropBranch(w.GitRoot, w.Branch, logger)
 		outcome.Branch = ""
+		outcome.Commit = ""
 	}
 
 	if logger != nil {
@@ -1247,7 +1297,7 @@ func resolveTaskBranch(gitRoot string, params LocalWorktreeParams, headSHA strin
 	taskScoped := taskBranchPlan{name: fmt.Sprintf("agent/%s/%s", agentSegment, taskKey(params.TaskID)), base: headSHA}
 
 	owner := params.owner()
-	if params.ConversationKey == "" || !owner.valid() {
+	if params.PrivateCheckout || params.ConversationKey == "" || !owner.valid() {
 		return taskScoped
 	}
 	preferred := fmt.Sprintf("agent/%s/%s", agentSegment, sanitizeName(params.ConversationKey))

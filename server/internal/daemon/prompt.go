@@ -97,12 +97,7 @@ type promptOpts struct {
 // PromptOption tunes per-turn prompt copy with run-scoped context.
 type PromptOption func(*promptOpts)
 
-// WithSharedLocalDirectory marks a turn that runs inside the user's own
-// directory WITHOUT holding its path mutex — today, a chat turn on an in_place
-// local_directory resource (see localDirectoryLockExempt). Such a turn may
-// overlap a coding task writing to the same tree, and unlike every other task
-// it got there by design rather than by winning the lock, so it is the one that
-// has to be told (issue #7344).
+// WithSharedLocalDirectory adds per-turn guidance for concurrent local writers.
 func WithSharedLocalDirectory() PromptOption {
 	return func(o *promptOpts) { o.sharedLocalDirectory = true }
 }
@@ -129,8 +124,7 @@ func buildSharedLocalDirectoryBlock(shared bool) string {
 	}
 	var b strings.Builder
 	b.WriteString("## Shared working directory\n\n")
-	b.WriteString("Your working directory is the user's own checkout, and another task on this machine may be editing it while you run. This turn deliberately neither holds nor waits for the directory lock — that is what keeps a conversation from queueing behind a long build.\n\n")
-	b.WriteString("Read freely. Treat writing the way the user treats saving a file in their own editor: reasonable for a small change they just asked for, wrong for a broad refactor, a dependency install, or a build that rewrites many files. Work that size belongs in an issue task, which is serialised against the other writers. If you do write, say so in your reply — a sibling task may be looking at the same file.\n\n")
+	b.WriteString("Your working directory is shared code. Other tasks may edit it concurrently; directory occupancy does not prevent this run from proceeding. Inspect current files before editing, preserve others' changes, and coordinate overlapping edits with the project lead. Do not reset, clean, or revert unrelated work.\n\n")
 	return b.String()
 }
 

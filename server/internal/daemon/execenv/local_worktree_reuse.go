@@ -145,6 +145,7 @@ func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, log
 			return nil, err
 		}
 		next := *previous
+		next.executionLease = nil
 		next.BaseCommit, next.Continued, next.createdBranch = tip, true, false
 		return &next, nil
 	}

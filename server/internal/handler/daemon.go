@@ -4366,10 +4366,12 @@ func (h *Handler) ReportTaskProgress(w http.ResponseWriter, r *http.Request) {
 
 // CompleteTask marks a running task as completed.
 type TaskCompleteRequest struct {
-	PRURL     string `json:"pr_url"`
-	Output    string `json:"output"`
-	SessionID string `json:"session_id"` // Claude session ID for future resumption
-	WorkDir   string `json:"work_dir"`   // working directory used during execution
+	WorktreeDeliveryPending bool   `json:"worktree_delivery_pending,omitempty"`
+	WorktreeCommit          string `json:"worktree_commit,omitempty"`
+	PRURL                   string `json:"pr_url"`
+	Output                  string `json:"output"`
+	SessionID               string `json:"session_id"` // Claude session ID for future resumption
+	WorkDir                 string `json:"work_dir"`   // working directory used during execution
 	// DurableWorkDir is the configured project directory that replaces a
 	// disposable task worktree after the daemon confirms the worktree is gone.
 	DurableWorkDir string `json:"durable_work_dir,omitempty"`
@@ -4461,6 +4463,10 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	var req TaskCompleteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.WorktreeCommit != "" && (!validWorktreeCommit(req.WorktreeCommit) || req.WorktreeDeliveryPending) {
+		writeError(w, http.StatusBadRequest, "invalid worktree delivery metadata")
 		return
 	}
 	if err := validateTaskJevVerification(req.JevVerification); err != nil {

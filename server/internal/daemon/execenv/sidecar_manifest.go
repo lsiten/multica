@@ -63,8 +63,9 @@ var errPathPreExists = errors.New("execenv: refuse to overwrite pre-existing pat
 // is appended to user-owned content rather than written into a new sidecar
 // directory).
 type sidecarManifest struct {
-	Files []string `json:"files,omitempty"`
-	Dirs  []string `json:"dirs,omitempty"`
+	Files                 []string               `json:"files,omitempty"`
+	Dirs                  []string               `json:"dirs,omitempty"`
+	ReplacedProviderFiles []replacedProviderFile `json:"replaced_provider_files,omitempty"`
 }
 
 // recordMkdirAll behaves like os.MkdirAll(path, perm) but additionally
@@ -227,7 +228,8 @@ func writeSidecarManifest(envRoot string, m *sidecarManifest) error {
 	if err != nil {
 		return fmt.Errorf("marshal sidecar manifest: %w", err)
 	}
-	return os.WriteFile(filepath.Join(envRoot, sidecarManifestFile), data, 0o644)
+	// Private provider overlays may contain authentication headers.
+	return writeFileAtomic(filepath.Join(envRoot, sidecarManifestFile), data, 0o600)
 }
 
 func sidecarsWithinWorkdir(m *sidecarManifest, workdir string) *sidecarManifest {
@@ -244,6 +246,11 @@ func sidecarsWithinWorkdir(m *sidecarManifest, workdir string) *sidecarManifest 
 	for _, path := range m.Dirs {
 		if within(path) {
 			filtered.Dirs = append(filtered.Dirs, path)
+		}
+	}
+	for _, file := range m.ReplacedProviderFiles {
+		if within(file.Path) {
+			filtered.ReplacedProviderFiles = append(filtered.ReplacedProviderFiles, file)
 		}
 	}
 	return filtered
@@ -386,7 +393,12 @@ func rollBackManifest(m sidecarManifest, manifestPath string) error {
 		}
 	}
 
-	if manifestPath != "" {
+	for _, file := range m.ReplacedProviderFiles {
+		if err := writeFileAtomic(file.Path, file.Content, os.FileMode(file.Mode)); err != nil {
+			captureErr(fmt.Errorf("restore private provider config: %w", err))
+		}
+	}
+	if manifestPath != "" && firstErr == nil {
 		if err := os.Remove(manifestPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			captureErr(fmt.Errorf("remove manifest %s: %w", manifestPath, err))
 		}
