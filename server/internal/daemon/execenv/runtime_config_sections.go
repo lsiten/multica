@@ -983,6 +983,8 @@ func writeInlineBlocksPolicy(b *strings.Builder) {
 func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 	b.WriteString("## Output\n\n")
 	switch kind {
+	case kindHumanFollowup:
+		b.WriteString("This is a human-request follow-up. Complete only the original task scope and the server-verified decision in the per-turn message. Your final output is captured as this follow-up run result. There is no assigned issue to comment on.\n\n")
 	case kindProjectSupervision:
 		b.WriteString("This is a short project coordination run. Use the scoped project supervision action and report commands. The project panel records the verified outcome. There is no patrol issue or issue comment to create.\n\n")
 	case kindAutopilotRunOnly:
@@ -1072,6 +1074,7 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	writeAgentIdentity(&b, ctx)
 	writeRequestingUser(&b, ctx)
 	writeWorkspaceContext(&b, ctx)
+	writeHumanActionPolicy(&b)
 
 	switch kind {
 	case kindQuickCreate:
@@ -1101,6 +1104,8 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 		writeWorkflowChat(&b)
 	case kindQuickCreate:
 		writeWorkflowQuickCreate(&b)
+	case kindHumanFollowup:
+		b.WriteString("This is a human-request follow-up. Complete only the original task scope and the server-verified decision in the per-turn message. Your final output is captured as this follow-up run result. There is no assigned issue to comment on.\n\n")
 	case kindProjectSupervision:
 		b.WriteString("Inspect only the bound project's supervision snapshot. Apply a small batch through the supervision API, report action/wait/blocked/needs_human with the supplied checked version, then end. Do not poll or sleep; the server retains pending facts and waits for capacity.\n\n")
 	case kindAutopilotRunOnly:

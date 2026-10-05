@@ -26,6 +26,7 @@ import (
 )
 
 type CommentResponse struct {
+	HumanRequestID *string `json:"human_request_id,omitempty"`
 	ID             string  `json:"id"`
 	IssueID        string  `json:"issue_id"`
 	AuthorType     string  `json:"author_type"`
@@ -113,6 +114,7 @@ func commentToResponse(c db.Comment, reactions []ReactionResponse, attachments [
 		attachments = []AttachmentResponse{}
 	}
 	return CommentResponse{
+		HumanRequestID: uuidToPtr(c.HumanRequestID),
 		ID:             uuidToString(c.ID),
 		IssueID:        uuidToString(c.IssueID),
 		AuthorType:     c.AuthorType,
@@ -3382,6 +3384,10 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	// A deleted comment's tombstone has nothing left to edit.
 	if err != nil || existing.DeletedAt.Valid {
 		writeError(w, http.StatusNotFound, "comment not found")
+		return
+	}
+	if existing.HumanRequestID.Valid {
+		writeError(w, 409, "revise this request through the requesting run instead of editing its delivery comment")
 		return
 	}
 	if bound, err := h.Queries.CommentHasTaskSupplement(r.Context(), db.CommentHasTaskSupplementParams{

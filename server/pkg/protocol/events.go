@@ -42,13 +42,14 @@ const (
 	EventTaskCancelled             = "task:cancelled" // * → cancelled
 
 	// Inbox events
-	EventInboxNew           = "inbox:new"
-	EventInboxRead          = "inbox:read"
-	EventInboxUnread        = "inbox:unread"
-	EventInboxArchived      = "inbox:archived"
-	EventInboxUnarchived    = "inbox:unarchived"
-	EventInboxBatchRead     = "inbox:batch-read"
-	EventInboxBatchArchived = "inbox:batch-archived"
+	EventInboxNew            = "inbox:new"
+	EventHumanRequestChanged = "human-request:changed"
+	EventInboxRead           = "inbox:read"
+	EventInboxUnread         = "inbox:unread"
+	EventInboxArchived       = "inbox:archived"
+	EventInboxUnarchived     = "inbox:unarchived"
+	EventInboxBatchRead      = "inbox:batch-read"
+	EventInboxBatchArchived  = "inbox:batch-archived"
 
 	// Runtime mirror control metadata. The payload never contains input data.
 	EventRuntimeMirrorControl = "runtime_mirror:control"

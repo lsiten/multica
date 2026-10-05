@@ -42,6 +42,8 @@
     "no_progress_limit": "進展なしの回数上限"
   },
   "ready_statuses": "割り当て可能な状態",
+  "check_again": "プロジェクトを再確認",
+  "request_details": "調整の詳細を見る",
   "save_failed": "保存失敗または設定変更がありました。下書きは保持されています。",
   "save": "保存",
   "cancel": "キャンセル"

@@ -545,7 +545,7 @@ WITH locked_issue AS MATERIALIZED (
               comment.content, comment.type, comment.created_at, comment.updated_at,
               comment.parent_id, comment.workspace_id, comment.resolved_at,
               comment.resolved_by_type, comment.resolved_by_id, comment.source_task_id,
-              comment.quick_action_id, comment.via_plugin_id, comment.revision,
+              comment.quick_action_id, comment.human_request_id, comment.via_plugin_id, comment.revision,
               comment.deleted_at, target.did_change
 ), touched_issue AS (
     UPDATE issue
@@ -562,7 +562,7 @@ SELECT updated_comment.id, updated_comment.issue_id, updated_comment.author_type
        updated_comment.created_at, updated_comment.updated_at, updated_comment.parent_id,
        updated_comment.workspace_id, updated_comment.resolved_at,
        updated_comment.resolved_by_type, updated_comment.resolved_by_id,
-       updated_comment.source_task_id, updated_comment.quick_action_id,
+       updated_comment.source_task_id, updated_comment.quick_action_id, updated_comment.human_request_id,
        updated_comment.via_plugin_id, updated_comment.revision,
        updated_comment.deleted_at,
        COALESCE((SELECT revision FROM touched_issue), 0)::bigint AS issue_revision

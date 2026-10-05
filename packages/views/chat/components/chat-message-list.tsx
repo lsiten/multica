@@ -1,5 +1,8 @@
 "use client";
 
+import { HumanRequestCard } from "../../common/human-request-card";
+
+
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
@@ -664,7 +667,9 @@ function AssistantMessage({
           settledContent={canonicalAnswer}
         />
       )}
-      {isNoResponse ? (
+      {message?.human_request_id ? (
+        <HumanRequestCard requestId={message.human_request_id} fallbackContent={message.content} />
+      ) : isNoResponse ? (
         <NoResponseNotice />
       ) : message && timeline.length === 0 ? (
         <RichContent

@@ -633,6 +633,10 @@ func (h *Handler) SetChatSessionArchived(w http.ResponseWriter, r *http.Request)
 	var cancelled []db.AgentTaskQueue
 
 	if req.Archived {
+		if err := qtx.CancelHumanRequestsByChat(r.Context(), db.CancelHumanRequestsByChatParams{WorkspaceID: session.WorkspaceID, ChatSessionID: session.ID}); err != nil {
+			writeError(w, 500, "could not cancel pending requests")
+			return
+		}
 		// Read the binding BEFORE the delete below, which is what erases the
 		// evidence: after it runs there is no way to tell a session that was
 		// on a channel from one that never was.
@@ -806,6 +810,10 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := qtx.CancelHumanRequestsByChat(r.Context(), db.CancelHumanRequestsByChatParams{WorkspaceID: session.WorkspaceID, ChatSessionID: session.ID}); err != nil {
+		writeError(w, 500, "could not cancel pending requests")
+		return
+	}
 	if err := qtx.DeleteChatSession(r.Context(), db.DeleteChatSessionParams{
 		ID:          session.ID,
 		WorkspaceID: session.WorkspaceID,
@@ -2157,11 +2165,12 @@ func buildChatLastMessage(at pgtype.Timestamptz, content, role string, failure p
 }
 
 type ChatMessageResponse struct {
-	ID            string  `json:"id"`
-	ChatSessionID string  `json:"chat_session_id"`
-	Role          string  `json:"role"`
-	Content       string  `json:"content"`
-	TaskID        *string `json:"task_id"`
+	HumanRequestID *string `json:"human_request_id,omitempty"`
+	ID             string  `json:"id"`
+	ChatSessionID  string  `json:"chat_session_id"`
+	Role           string  `json:"role"`
+	Content        string  `json:"content"`
+	TaskID         *string `json:"task_id"`
 	// InputTaskID is the stable direct-chat input owner. Automatic and explicit
 	// retry children keep the original user message under this task id even
 	// though their own task_id is different.
@@ -2264,18 +2273,19 @@ func parseOptionalUUIDField(w http.ResponseWriter, raw json.RawMessage, field st
 
 func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse, inputTaskID *string) ChatMessageResponse {
 	return ChatMessageResponse{
-		ID:            uuidToString(m.ID),
-		ChatSessionID: uuidToString(m.ChatSessionID),
-		Role:          m.Role,
-		Content:       m.Content,
-		TaskID:        uuidToPtr(m.TaskID),
-		InputTaskID:   inputTaskID,
-		CreatedAt:     timestampToString(m.CreatedAt),
-		FailureReason: textToPtr(m.FailureReason),
-		ElapsedMs:     int8ToPtr(m.ElapsedMs),
-		MessageKind:   normalizeMessageKind(m.MessageKind),
-		QuickActions:  decodeChatQuickActions(m.QuickActions),
-		Attachments:   attachments,
+		HumanRequestID: uuidToPtr(m.HumanRequestID),
+		ID:             uuidToString(m.ID),
+		ChatSessionID:  uuidToString(m.ChatSessionID),
+		Role:           m.Role,
+		Content:        m.Content,
+		TaskID:         uuidToPtr(m.TaskID),
+		InputTaskID:    inputTaskID,
+		CreatedAt:      timestampToString(m.CreatedAt),
+		FailureReason:  textToPtr(m.FailureReason),
+		ElapsedMs:      int8ToPtr(m.ElapsedMs),
+		MessageKind:    normalizeMessageKind(m.MessageKind),
+		QuickActions:   decodeChatQuickActions(m.QuickActions),
+		Attachments:    attachments,
 	}
 }
 

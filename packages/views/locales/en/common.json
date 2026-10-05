@@ -128,5 +128,22 @@
   },
   "navigation": {
     "open_in_new_tab": "Open in new tab"
+  },
+  "human_request": {
+    "loading": "Loading request...",
+    "load_failed": "Could not load the request. Retry to read its current state.",
+    "retry": "Retry",
+    "details": "View details",
+    "recommended": "Recommended",
+    "received": "Response received. A follow-up run has been queued.",
+    "declined": "Action declined. The agent has been notified.",
+    "cancelled": "Request cancelled.",
+    "expired": "Request expired. Ask the agent for an updated request.",
+    "unavailable": "This request cannot be answered by this client.",
+    "other_member": "Waiting for the designated member.",
+    "decline": "Decline",
+    "submitting": "Sending response...",
+    "submit_failed": "Could not verify the response. Refresh this request, then retry.",
+    "refresh": "Refresh request"
   }
 }

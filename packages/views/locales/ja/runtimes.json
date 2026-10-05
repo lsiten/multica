@@ -652,6 +652,26 @@
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
-    "switch_app": "Switch app"
+    "switch_app": "Switch app",
+    "authorization_command_title": "このコマンドを実行しますか？",
+    "authorization_files_title": "このファイル変更を許可しますか？",
+    "authorization_permissions_title": "表示された権限を付与しますか？",
+    "authorization_run_command": "コマンドを実行",
+    "authorization_change_files": "変更を許可",
+    "authorization_grant_permissions": "権限を付与",
+    "authorization_next": "今回の操作にのみ適用されます。拒否すると、この操作は実行されません。",
+    "authorization_location": "作業ディレクトリ：",
+    "authorization_details": "操作の詳細を見る",
+    "authorization_permissions_next": "この権限は現在のターンで有効です。拒否すると付与されません。",
+    "authorization_add_file": "作成",
+    "authorization_update_file": "変更",
+    "authorization_delete_file": "削除",
+    "authorization_file_change": "ファイル変更",
+    "authorization_expired": "リクエストは期限切れです。エージェントに再依頼してください。",
+    "authorization_network_allow": "ネットワークアクセスを許可",
+    "authorization_network_deny": "ネットワーク権限を付与しない",
+    "authorization_read_path": "読み取り",
+    "authorization_write_path": "書き込み",
+    "authorization_close": "リクエストを閉じる"
   }
 }

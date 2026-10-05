@@ -9,8 +9,9 @@ import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { renderWithI18n } from "../../test/i18n";
 import { ProjectSupervisionPanel } from "./project-supervision-panel";
 
+vi.mock("@multica/core/realtime",()=>({useWSEvent:vi.fn(),useWSReconnect:vi.fn()}));
 vi.mock("@multica/core/hooks",()=>({useWorkspaceId:()=>"ws"}));
-vi.mock("@multica/core/api",()=>({api:{getProjectSupervision:vi.fn(),saveProjectSupervision:vi.fn(),checkProjectSupervision:vi.fn(),listIssueStatuses:vi.fn()}}));
+vi.mock("@multica/core/api",()=>({api:{getProjectSupervision:vi.fn(),saveProjectSupervision:vi.fn(),checkProjectSupervision:vi.fn(),listIssueStatuses:vi.fn(),listHumanRequests:vi.fn().mockResolvedValue([])}}));
 const project:Project={id:"p",workspace_id:"ws",title:"Project",description:null,icon:null,status:"in_progress",priority:"none",lead_type:"agent",lead_id:"lead",start_date:null,due_date:null,created_at:"",updated_at:"",issue_count:1,done_count:0,resource_count:0};
 const view:ProjectSupervision={project_id:"p",workspace_id:"ws",enabled:true,revision:1,dirty_version:5,handled_version:3,checked_version:3,last_reason:"coordination_active",no_progress_count:0,last_task_id:"run",last_task_status:"running",next_check_at:null,last_checked_at:null,last_result:{},config:{auto_advance:false,max_in_flight:3,batch_size:3,scan_interval_seconds:300,stale_after_seconds:900,no_progress_limit:3,ready_statuses:["todo"]},snapshot:{counts:{ready:1,unassigned:0,executing:0,review:0,blocked:0,paused:0,stalled:0},fingerprint:"f",oldest_ready_seconds:60,actionable:1,issues:[{id:"i",identifier:"PRJ-1",title:"Ready issue",status:"todo",revision:1,assignee_type:"agent",assignee_id:"lead",category:"ready",reason:"",active_runs:0,age_seconds:60}]}};
 function mount(canManage=true){

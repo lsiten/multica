@@ -146,7 +146,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 					}
 					if r.Method != http.MethodGet && r.Method != http.MethodHead {
 						prefix := "/api/projects/" + scope.ProjectID + "/supervision/"
-						if r.Method != http.MethodPost || (r.URL.Path != prefix+"actions" && r.URL.Path != prefix+"report") {
+						if r.Method != http.MethodPost || (r.URL.Path != prefix+"actions" && r.URL.Path != prefix+"report" && r.URL.Path != "/api/human-requests/" && r.URL.Path != "/api/human-requests") {
 							http.Error(w, `{"error":"coordination writes must use bound project actions"}`, http.StatusForbidden)
 							return
 						}

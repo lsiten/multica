@@ -1,3 +1,4 @@
+import { HumanRequestCard } from "@/components/human-requests/human-request-card";
 /**
  * Chat message list — user / assistant bubbles, oldest at top, newest at
  * bottom. Initial render lands at the bottom; new arrivals auto-scroll
@@ -430,7 +431,9 @@ function AssistantRow({
       {timeline.length > 0 ? (
         <ChatTimeline items={timeline} />
       ) : null}
-      {isNoResponse ? (
+      {message.human_request_id ? (
+        <HumanRequestCard requestId={message.human_request_id} fallbackContent={message.content} />
+      ) : isNoResponse ? (
         <Text className="text-sm italic text-muted-foreground">
           {t("no_response")}
         </Text>

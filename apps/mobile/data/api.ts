@@ -1,3 +1,5 @@
+import type { HumanRequest, HumanRequestAnswer } from "@multica/core/types";
+import { HumanRequestSchema } from "@multica/core/human-requests/schema";
 /**
  * Mobile-owned fetch wrapper. Mirrors the surface area of
  * packages/core/api/client.ts that mobile actually uses, but lives in
@@ -197,6 +199,18 @@ export interface ApiClientOptions {
 }
 
 class ApiClient {
+  async getHumanRequest(id: string, opts?: { signal?: AbortSignal }): Promise<HumanRequest> {
+    const request = await this.fetchValidated<HumanRequest | null>(`/api/human-requests/${encodeURIComponent(id)}`, HumanRequestSchema, null, opts);
+    if (!request) throw new Error("Could not read the request");
+    return request;
+  }
+
+  async respondHumanRequest(id: string, answer: HumanRequestAnswer): Promise<HumanRequest> {
+    const request = await this.fetchValidatedWith<HumanRequest | null>(`/api/human-requests/${encodeURIComponent(id)}/respond`, HumanRequestSchema, null, { method: "POST", body: JSON.stringify(answer) });
+    if (!request) throw new Error("Could not verify the response; refresh the request");
+    return request;
+  }
+
   private token: string | null = null;
   private options: ApiClientOptions = {};
 

@@ -7608,7 +7608,8 @@ func (s *TaskService) ResolveTaskWorkspaceID(ctx context.Context, task db.AgentT
 //
 // For issue tasks the workspace comes from the issue, for chat tasks from the
 // chat session, for autopilot tasks from the autopilot via its run, and for
-// quick-create tasks from the context JSONB (they carry no link at all).
+// quick-create, project coordination, and human follow-up tasks from the
+// context JSONB (they carry no issue, chat, or autopilot link).
 //
 // A failed lookup does not stop the walk. If a later link resolves, its
 // workspace is returned and the earlier error is dropped, because that answer
@@ -7658,6 +7659,13 @@ func (s *TaskService) ResolveTaskWorkspaceIDChecked(ctx context.Context, task db
 	// broadcasts, which is why quick-create tasks appeared stuck queued.
 	if qc, ok := s.parseQuickCreateContext(task); ok {
 		return qc.WorkspaceID, nil
+	}
+	if coordination, ok := ProjectCoordination(task); ok && coordination.WorkspaceID != "" {
+		return coordination.WorkspaceID, nil
+	}
+	var followup HumanFollowupContext
+	if json.Unmarshal(task.Context, &followup) == nil && followup.Type == HumanFollowupContextType && followup.WorkspaceID != "" {
+		return followup.WorkspaceID, nil
 	}
 	if lookupErr != nil {
 		return "", fmt.Errorf("resolve task workspace: %w", lookupErr)
@@ -8124,6 +8132,17 @@ func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.Ag
 				"error", err,
 			)
 			s.notifyQuickCreateUnconfirmed(ctx, task, qc)
+			return
+		}
+		handoff, handoffErr := s.Queries.HasHumanRequestHandoffForTask(ctx, db.HasHumanRequestHandoffForTaskParams{TaskID: task.ID, WorkspaceID: workspaceID})
+		if handoffErr != nil {
+			slog.Error("quick-create completion: human request lookup failed", "task_id", util.UUIDToString(task.ID), "error", handoffErr)
+			s.notifyQuickCreateUnconfirmed(ctx, task, qc)
+			return
+		}
+		if handoff {
+			// The request is already the member's next step. A fast response
+			// can queue the continuation before this original run completes.
 			return
 		}
 		// No issue created — the agent ran to completion but the CLI create

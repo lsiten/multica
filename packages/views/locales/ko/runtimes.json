@@ -652,6 +652,26 @@
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
-    "switch_app": "Switch app"
+    "switch_app": "Switch app",
+    "authorization_command_title": "이 명령을 실행할까요?",
+    "authorization_files_title": "이 파일 변경을 허용할까요?",
+    "authorization_permissions_title": "표시된 권한을 부여할까요?",
+    "authorization_run_command": "명령 실행",
+    "authorization_change_files": "파일 변경 허용",
+    "authorization_grant_permissions": "권한 부여",
+    "authorization_next": "이번 작업에만 적용됩니다. 거절하면 해당 작업은 실행되지 않습니다.",
+    "authorization_location": "작업 디렉터리:",
+    "authorization_details": "작업 상세 보기",
+    "authorization_permissions_next": "이 권한은 현재 턴에 적용됩니다. 거절하면 부여되지 않습니다.",
+    "authorization_add_file": "생성",
+    "authorization_update_file": "수정",
+    "authorization_delete_file": "삭제",
+    "authorization_file_change": "파일 변경",
+    "authorization_expired": "요청이 만료되었습니다. 에이전트에게 다시 요청하세요.",
+    "authorization_network_allow": "네트워크 접근 허용",
+    "authorization_network_deny": "네트워크 권한을 부여하지 않음",
+    "authorization_read_path": "읽기",
+    "authorization_write_path": "쓰기",
+    "authorization_close": "요청 닫기"
   }
 }

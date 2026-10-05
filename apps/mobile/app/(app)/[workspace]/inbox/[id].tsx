@@ -1,3 +1,4 @@
+import { HumanRequestCard } from "@/components/human-requests/human-request-card";
 import { ActivityIndicator, Linking, ScrollView, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
@@ -124,7 +125,7 @@ export default function InboxNoticeDetail() {
         </View>
       ) : !item ||
         (item.type !== "autopilot_quota_exceeded" &&
-          item.type !== "autopilot_paused") ? (
+          item.type !== "autopilot_paused" && item.type !== "human_action_requested") ? (
         <View className="px-4 py-8">
           <Text className="text-sm text-muted-foreground text-center">
             {t("detail.unavailable")}
@@ -136,7 +137,7 @@ export default function InboxNoticeDetail() {
           contentContainerClassName="gap-5 px-4 py-5"
           showsVerticalScrollIndicator={false}
         >
-          {body ? (
+          {item.type === "human_action_requested" && item.details?.human_request_id ? <HumanRequestCard requestId={item.details.human_request_id} fallbackContent={item.body ?? undefined} /> : body ? (
             <Text className="text-base leading-6 text-foreground">
               {body}
             </Text>

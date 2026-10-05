@@ -1,3 +1,5 @@
+import type { HumanRequest, HumanRequestAnswer } from "../types/human-request";
+import { HumanRequestSchema, HumanRequestListSchema } from "../human-requests/schema";
 import type { ZodType } from "zod";
 import type { JevDecisionLogDetail, JevDecisionLogFilters, JevDecisionLogListResponse } from "../types/jev-decision-logs";
 import { JevDecisionLogDetailSchema, JevDecisionLogListResponseSchema } from "./jev-decision-logs";
@@ -812,6 +814,26 @@ function isReplayableBody(body: BodyInit | null | undefined): boolean {
 }
 
 export class ApiClient {
+  async getHumanRequest(id: string, signal?: AbortSignal): Promise<HumanRequest> {
+    const raw = await this.fetch<unknown>(`/api/human-requests/${encodeURIComponent(id)}`, { signal });
+    const request = parseWithFallback<HumanRequest | null>(raw, HumanRequestSchema, null, { endpoint: "GET /api/human-requests/:id" });
+    if (!request) throw new Error("Could not read the human request");
+    return request;
+  }
+
+  async listHumanRequests(filters: { issue_id?: string; chat_session_id?: string; project_id?: string } = {}, signal?: AbortSignal): Promise<HumanRequest[]> {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
+    const raw = await this.fetch<unknown>(`/api/human-requests/?${query}`, { signal });
+    return parseWithFallback(raw, HumanRequestListSchema, [] as HumanRequest[], { endpoint: "GET /api/human-requests" });
+  }
+
+  async respondHumanRequest(id: string, answer: HumanRequestAnswer): Promise<HumanRequest> {
+    const raw = await this.fetch<unknown>(`/api/human-requests/${encodeURIComponent(id)}/respond`, { method: "POST", body: JSON.stringify(answer) });
+    const request = parseWithFallback<HumanRequest | null>(raw, HumanRequestSchema, null, { endpoint: "POST /api/human-requests/:id/respond" });
+    if (!request) throw new Error("Could not verify the response; refresh the request");
+    return request;
+  }
   private baseUrl: string;
   private token: string | null = null;
   private credentialRevision = 0;

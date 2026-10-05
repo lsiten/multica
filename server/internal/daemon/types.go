@@ -69,6 +69,8 @@ type IssueStatusData struct {
 // Task represents a claimed task from the server.
 // Agent data (name, skills) is populated by the claim endpoint.
 type Task struct {
+	HumanFollowupPrompt      string `json:"human_followup_prompt,omitempty"`
+	HumanResponsePrompt      string `json:"human_response_prompt,omitempty"`
 	ProjectSupervisionPrompt string `json:"project_supervision_prompt,omitempty"`
 	// StartClaimSupported gates retries when talking to older servers.
 	StartClaimSupported  bool                                 `json:"start_claim_supported,omitempty"`

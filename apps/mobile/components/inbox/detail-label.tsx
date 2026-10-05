@@ -35,6 +35,7 @@ const PRIORITY_LABEL: Record<IssuePriority, string> = {
 
 // Mirrors useTypeLabels in packages/views/inbox/components/inbox-detail-label.tsx
 const TYPE_KEY: Record<InboxItemType, string> = {
+  human_action_requested: "type.human_action_requested",
   issue_assigned: "type.assigned",
   issue_subscribed: "type.subscribed",
   unassigned: "type.unassigned",

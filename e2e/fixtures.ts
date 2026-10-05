@@ -6,6 +6,7 @@
 
 import "./env";
 import pg from "pg";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 // `||` (not `??`) so an empty `NEXT_PUBLIC_API_URL=` in .env still falls
 // back to localhost. dotenv sets unset-vs-empty both as "" — treating them
@@ -53,6 +54,37 @@ export class TestApiClient {
   private createdIssueIds: string[] = [];
   private createdProjectIds: string[] = [];
   private seededIssueIds: string[] = [];
+  private humanRequestSources: { taskId: string; agentId: string; runtimeId: string }[] = [];
+
+  /** Seed a disconnected test runtime, then deliver through the actual task-token API. */
+  async createHumanRequestFixture(issueId: string, payload: Record<string, unknown>) {
+    if (!this.workspaceId || !this.email) throw new Error("Fixture requires a logged-in workspace");
+    const source = { taskId: randomUUID(), agentId: randomUUID(), runtimeId: randomUUID() };
+    const token = `mat_${randomBytes(20).toString("hex")}`;
+    const client = new pg.Client(DATABASE_URL);
+    await client.connect();
+    try {
+      const user = await client.query<{ id: string }>('SELECT id FROM "user" WHERE email=$1', [this.email]);
+      const userId = user.rows[0]?.id;
+      if (!userId) throw new Error("Fixture member was not found");
+      await client.query("BEGIN");
+      await client.query("INSERT INTO agent_runtime(id,workspace_id,daemon_id,name,runtime_mode,provider,status,owner_id,visibility,last_seen_at) VALUES($1,$2,$3,'E2E approval runtime','local','codex','online',$4,'private',now())", [source.runtimeId, this.workspaceId, `fixture-${source.runtimeId}`, userId]);
+      await client.query("INSERT INTO agent(id,workspace_id,name,runtime_mode,runtime_id,owner_id,permission_mode,status) VALUES($1,$2,'E2E request agent','local',$3,$4,'private','idle')", [source.agentId, this.workspaceId, source.runtimeId, userId]);
+      await client.query("INSERT INTO agent_task_queue(id,agent_id,runtime_id,issue_id,status,priority,originator_user_id,accountable_user_id,started_at) VALUES($1,$2,$3,$4,'running',2,$5,$5,now())", [source.taskId, source.agentId, source.runtimeId, issueId, userId]);
+      await client.query("INSERT INTO task_token(token_hash,task_id,agent_id,workspace_id,user_id,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '1 hour')", [createHash("sha256").update(token).digest("hex"), source.taskId, source.agentId, this.workspaceId, userId]);
+      await client.query("COMMIT");
+      this.humanRequestSources.push(source);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      await client.end();
+    }
+    const response = await fetch(`${API_BASE}/api/human-requests/`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Workspace-ID": this.workspaceId }, body: JSON.stringify(payload) });
+    if (!response.ok) throw new Error(`Request fixture failed: ${response.status} ${await response.text()}`);
+    const request = await response.json() as { id: string; revision: number };
+    return request;
+  }
 
   async login(email: string, name: string) {
     const client = new pg.Client(DATABASE_URL);
@@ -425,6 +457,21 @@ export class TestApiClient {
       }
     }
     this.createdIssueIds = [];
+    if (this.humanRequestSources.length) {
+      const client = new pg.Client(DATABASE_URL);
+      await client.connect();
+      try {
+        for (const source of this.humanRequestSources) {
+          await client.query("DELETE FROM inbox_item WHERE details->>'human_request_id' IN (SELECT id::text FROM human_request WHERE source_task_id=$1)", [source.taskId]);
+          await client.query("DELETE FROM human_request WHERE source_task_id=$1", [source.taskId]);
+          await client.query("DELETE FROM task_token WHERE agent_id=$1", [source.agentId]);
+          await client.query("DELETE FROM agent_task_queue WHERE agent_id=$1", [source.agentId]);
+          await client.query("DELETE FROM agent WHERE id=$1", [source.agentId]);
+          await client.query("DELETE FROM agent_runtime WHERE id=$1", [source.runtimeId]);
+        }
+      } finally { await client.end(); }
+      this.humanRequestSources = [];
+    }
     // Projects last: an issue delete leaves no project reference behind, and
     // dropping the project first would strand the issues in the list.
     for (const id of this.createdProjectIds) {

@@ -42,6 +42,8 @@
     "no_progress_limit": "Limite sans progrès"
   },
   "ready_statuses": "Statuts éligibles à la distribution",
+  "check_again": "Revérifier le projet",
+  "request_details": "Voir les détails de coordination",
   "save_failed": "Échec ou configuration modifiée. Votre brouillon est conservé.",
   "save": "Enregistrer",
   "cancel": "Annuler"

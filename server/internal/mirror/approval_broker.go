@@ -17,7 +17,7 @@ type CLIApprovalAudience struct {
 
 // RequestCLIApproval selects one explicitly controlling viewer for the task's
 // human initiator. Ambiguous or read-only audiences cannot approve.
-func (m *RuntimeMirror) RequestCLIApproval(ctx context.Context, audience CLIApprovalAudience, title, message string) (bool, error) {
+func (m *RuntimeMirror) RequestCLIApproval(ctx context.Context, audience CLIApprovalAudience, title, message string, operation ...*protocol.MirrorCLIOperation) (bool, error) {
 	if audience.UserID == "" || audience.WorkspaceID == "" || audience.RuntimeID == "" {
 		return false, errors.New("mirror: approval initiator is required")
 	}
@@ -49,6 +49,9 @@ func (m *RuntimeMirror) RequestCLIApproval(ctx context.Context, audience CLIAppr
 	defer cancel()
 	deadline, _ := ctx.Deadline()
 	request := protocol.MirrorAuthorizationRequest{Type: protocol.MirrorAuthorizationRequestType, RequestID: uuid.NewString(), Kind: "cli", Title: title, Message: message, ExpiresAt: deadline}
+	if len(operation) == 1 {
+		request.Operation = operation[0]
+	}
 	decision := make(chan bool, 1)
 	if !m.publishAuthorizationDecision(viewerID, request, decision, selected) {
 		return false, errors.New("mirror: approval delivery failed")

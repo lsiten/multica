@@ -16,6 +16,7 @@ import { priorityLabel } from "../../issues/utils/priority-label";
 export function useTypeLabels(): Record<InboxItemType, string> {
   const { t } = useT("inbox");
   return {
+    human_action_requested: t(($) => $.types.human_action_requested),
     issue_assigned: t(($) => $.types.issue_assigned),
     issue_subscribed: t(($) => $.types.issue_subscribed),
     unassigned: t(($) => $.types.unassigned),

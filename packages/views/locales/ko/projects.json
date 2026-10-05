@@ -42,6 +42,8 @@
     "no_progress_limit": "진행 없음 횟수 제한"
   },
   "ready_statuses": "배정 가능한 상태",
+  "check_again": "프로젝트 다시 확인",
+  "request_details": "조정 상세 보기",
   "save_failed": "저장 실패 또는 설정 변경. 초안은 유지됩니다.",
   "save": "저장",
   "cancel": "취소"

@@ -652,6 +652,26 @@
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "退格",
-    "switch_app": "切换应用"
+    "switch_app": "切换应用",
+    "authorization_command_title": "允许运行此命令？",
+    "authorization_files_title": "允许本次文件更改？",
+    "authorization_permissions_title": "授予所列权限？",
+    "authorization_run_command": "运行命令",
+    "authorization_change_files": "允许修改",
+    "authorization_grant_permissions": "授予所列权限",
+    "authorization_next": "仅处理本次请求。拒绝后，智能体不会执行此操作。",
+    "authorization_location": "执行目录：",
+    "authorization_details": "查看操作详情",
+    "authorization_permissions_next": "权限在当前轮次内有效。拒绝后不授予这些权限。",
+    "authorization_add_file": "新建",
+    "authorization_update_file": "修改",
+    "authorization_delete_file": "删除",
+    "authorization_file_change": "文件更改",
+    "authorization_expired": "请求已过期。请让智能体重新发起。",
+    "authorization_network_allow": "允许访问网络",
+    "authorization_network_deny": "不授予网络访问权限",
+    "authorization_read_path": "读取",
+    "authorization_write_path": "写入",
+    "authorization_close": "关闭请求"
   }
 }

@@ -49,6 +49,8 @@ Root frontend commands and `make check` do not verify mobile. Docs-only changes 
 
 ## State Rules
 
+- Required agent decisions use the run-scoped `multica human-request create` flow. Name the member's action, actual steps or choices, material impact, and next step. Keep technical background in details. Only an explicit response by the designated member consumes a request; read/archive, silence, and other agents' messages are not consent. Manual completion starts a verification turn before dependent work continues.
+
 - TanStack Query owns API/server data. Zustand owns client state such as filters, drafts, modals, and tab layout; persist only durable preferences/drafts/layout, not server data or ephemeral UI state.
 - Web/desktop shared stores live in `packages/core/`. Desktop platform stores remain in desktop; mobile stores remain in mobile. Do not define stores in `packages/views/`.
 - On web/desktop, workspace identity is route-driven; platform mirrors exist only for request headers, storage namespaces, and reconnects. React Context is for platform plumbing, not a second server-state store.

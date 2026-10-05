@@ -83,7 +83,8 @@
     "runtime_mirror_viewer_started": "屏幕镜像已开始",
     "runtime_mirror_viewer_stopped": "屏幕镜像已结束",
     "runtime_mirror_control_started": "远程屏幕控制已开始",
-    "runtime_mirror_control_stopped": "远程屏幕控制已结束"
+    "runtime_mirror_control_stopped": "远程屏幕控制已结束",
+    "human_action_requested": "需要你处理"
   },
   "labels": {
     "set_status_to": "状态设为",

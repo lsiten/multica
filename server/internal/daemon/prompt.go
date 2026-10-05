@@ -63,6 +63,9 @@ func backendResumeContinuityNotice(task Task) string {
 func perTurnContextBlocks(task Task, opts promptOpts) string {
 	var b strings.Builder
 	b.WriteString(buildSharedLocalDirectoryBlock(opts.sharedLocalDirectory))
+	if task.HumanResponsePrompt != "" {
+		b.WriteString("## Human response\n\n" + task.HumanResponsePrompt + "\n\n")
+	}
 	b.WriteString(buildWorktreeReplayConflictBlock(opts.worktreeReplayConflicts))
 	if task.PriorSessionResumeUnavailable {
 		b.WriteString(sessionContinuityNoticeFor(task))
@@ -210,6 +213,9 @@ func BuildPrompt(task Task, provider string, options ...PromptOption) string {
 }
 
 func buildPromptBody(task Task, provider string) string {
+	if task.HumanFollowupPrompt != "" {
+		return task.HumanFollowupPrompt + "\nThe server provides the exact human decision below. Complete only that continuation and report its result. Do not create an issue or overwrite the original automation run."
+	}
 	if task.ProjectSupervisionPrompt != "" {
 		return task.ProjectSupervisionPrompt + "\nCurrent coordination task_id: " + task.ID + "\nStart with `multica project supervision get " + task.ProjectID + " --output json`. Apply a bounded batch with `multica project supervision apply`, then submit a structured `multica project supervision report` and end the run. This run has no assigned issue."
 	}

@@ -1,5 +1,8 @@
 "use client";
 
+import { HumanRequestCard } from "../../common/human-request-card";
+import { humanRequestsOptions, useHumanRequestRealtime } from "@multica/core/human-requests";
+
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
@@ -29,6 +32,9 @@ export function ProjectSupervisionPanel({project,canManage}:{project:Project;can
  const key=projectSupervisionKey(wsId,project.id);
  const save=useMutation({mutationFn:(input:NonNullable<typeof draft>)=>api.saveProjectSupervision(project.id,input),onSuccess:view=>{qc.setQueryData(key,view);setDraft(null)}});
  const check=useMutation({mutationFn:()=>api.checkProjectSupervision(project.id),onSuccess:view=>qc.setQueryData(key,view)});
+ const requests=useQuery(humanRequestsOptions(wsId,{project_id:project.id}));
+ useHumanRequestRealtime(wsId);
+ const hasPendingRequests=requests.data?.some(request=>request.status==="pending")===true;
  const view=query.data;
  if(!view)return <section className="m-3 rounded-lg border p-3 text-caption" aria-label={t($=>$.supervision.title)}>{query.isPending?<p role="status">{t($=>$.supervision.loading)}</p>:<div role="alert">{t($=>$.supervision.unavailable)} <Button size="sm" variant="outline" onClick={()=>void query.refetch()}>{t($=>$.supervision.retry)}</Button></div>}</section>;
  const value=draft??{enabled:view.enabled,config:view.config,revision:view.revision};
@@ -43,10 +49,10 @@ export function ProjectSupervisionPanel({project,canManage}:{project:Project;can
  const reasonLabels:Record<string,string>={coordination_active:t($=>$.supervision.active),coordination_queued:t($=>$.supervision.queued),no_actionable_work:t($=>$.supervision.healthy),work_released:t($=>$.supervision.released),capacity_wait:t($=>$.supervision.capacity),agent_capacity:t($=>$.supervision.capacity),lead_capacity:t($=>$.supervision.capacity),runtime_offline:t($=>$.supervision.offline),runtime_upgrade_required:t($=>$.supervision.upgrade),no_agent_lead:t($=>$.supervision.no_lead),needs_human:t($=>$.supervision.needs_human),no_verified_progress:t($=>$.supervision.no_progress),missing_report:t($=>$.supervision.no_progress),project_ended:t($=>$.supervision.project_paused),authority_revoked:t($=>$.supervision.permission),permission_denied:t($=>$.supervision.permission)};
  const labels:Record<Category,string>={ready:t($=>$.supervision.ready),unassigned:t($=>$.supervision.unassigned),executing:t($=>$.supervision.executing),review:t($=>$.supervision.review),blocked:t($=>$.supervision.blocked),paused:t($=>$.supervision.paused),stalled:t($=>$.supervision.stalled)};
  return <section className="m-3 max-h-[50vh] shrink-0 space-y-3 overflow-y-auto rounded-lg border p-3 text-caption" aria-label={t($=>$.supervision.title)}>
-  <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-medium">{t($=>$.supervision.title)}</h2><span>{view.enabled?(reasonLabels[reason]??t($=>$.supervision.waiting)):t($=>$.supervision.disabled)}</span>{canManage&&<Button size="sm" variant="outline" disabled={!view.enabled||check.isPending} aria-busy={check.isPending} onClick={()=>check.mutate()}>{t($=>$.supervision.check)}</Button>}</div>
+  <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-medium">{t($=>$.supervision.title)}</h2><span>{view.enabled?(reasonLabels[reason]??t($=>$.supervision.waiting)):t($=>$.supervision.disabled)}</span>{canManage&&<Button size="sm" variant="outline" disabled={!view.enabled||check.isPending} aria-busy={check.isPending} onClick={()=>check.mutate()}>{reason==="needs_human"&&!hasPendingRequests?t($=>$.supervision.check_again):t($=>$.supervision.check)}</Button>}</div>
   <div className="flex flex-wrap gap-2">{categories.map(category=><button key={category} type="button" aria-pressed={filter===category} className={`rounded-md border px-2 py-1 ${filter===category?"bg-accent font-medium":"hover:bg-accent/50"}`} onClick={()=>setFilter(filter===category?null:category)}>{labels[category]} {view.snapshot.counts[category]}</button>)}</div>
-  {view.last_result.summary&&<p className="break-words">{view.last_result.summary}</p>}
-  {view.last_result.wait_reason&&<p className="break-words text-muted-foreground">{view.last_result.wait_reason}</p>}
+  {requests.data?.filter(request=>request.status==="pending").map(request=><HumanRequestCard key={request.id} requestId={request.id} />)}
+  {reason==="needs_human"&&hasPendingRequests ? <details><summary className="cursor-pointer">{t($=>$.supervision.request_details)}</summary><p className="mt-2 whitespace-pre-wrap break-words">{view.last_result.summary}</p>{view.last_result.wait_reason&&<p className="mt-1 break-words text-muted-foreground">{view.last_result.wait_reason}</p>}</details> : <>{view.last_result.summary&&<p className="break-words">{view.last_result.summary}</p>}{view.last_result.wait_reason&&<p className="break-words text-muted-foreground">{view.last_result.wait_reason}</p>}</>}
   <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">{view.last_checked_at&&<span>{t($=>$.supervision.last_check)} {new Date(view.last_checked_at).toLocaleString()}</span>}{view.enabled&&view.next_check_at&&<span>{t($=>$.supervision.next_check)} {new Date(view.next_check_at).toLocaleString()}</span>}{view.dirty_version>view.handled_version&&<span>{t($=>$.supervision.pending)}</span>}</div>
   {check.isError&&<p role="alert">{t($=>$.supervision.check_failed)}</p>}
   {filter&&<div className="max-h-48 space-y-1 overflow-y-auto">{view.snapshot.issues.filter(issue=>issue.category===filter).map(issue=><AppLink key={issue.id} href={paths.issueDetail(issue.identifier||issue.id)} className="block truncate rounded-sm px-2 py-1 hover:bg-accent">{issue.identifier} · {issue.title}</AppLink>)}</div>}

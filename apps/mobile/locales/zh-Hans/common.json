@@ -51,5 +51,22 @@
     "weeks_ago_other": "{{count}} 周前"
   },
   "states.empty": "暂无内容",
-  "states.error": "出现错误"
+  "states.error": "出现错误",
+  "human_request": {
+    "loading": "正在读取请求...",
+    "load_failed": "无法读取请求。请重试，获取当前状态。",
+    "retry": "重试",
+    "details": "查看详情",
+    "recommended": "建议",
+    "received": "已收到回复，后续运行已排队。",
+    "declined": "已拒绝操作，并通知智能体。",
+    "cancelled": "请求已取消。",
+    "expired": "请求已过期。请让智能体重新发起。",
+    "unavailable": "当前客户端无法处理此请求。",
+    "other_member": "等待指定成员处理。",
+    "decline": "暂不执行",
+    "submitting": "正在提交回复...",
+    "submit_failed": "无法确认回复是否提交成功。请刷新此请求后重试。",
+    "refresh": "刷新请求"
+  }
 }

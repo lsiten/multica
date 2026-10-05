@@ -1,0 +1,1 @@
+ALTER TABLE human_request ADD COLUMN IF NOT EXISTS scope_fingerprint TEXT NOT NULL DEFAULT '';

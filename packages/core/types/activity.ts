@@ -8,6 +8,7 @@ export interface AssigneeFrequencyEntry {
 }
 
 export interface TimelineEntry {
+  human_request_id?: string | null;
   type: "activity" | "comment";
   id: string;
   actor_type: string;

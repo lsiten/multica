@@ -171,7 +171,7 @@ func (q *Queries) GetNotificationBot(ctx context.Context, arg GetNotificationBot
 }
 
 const getNotificationBotDeliveryTarget = `-- name: GetNotificationBotDeliveryTarget :one
-SELECT b.id, b.workspace_id, b.user_id, b.name, b.platform, b.credentials, b.is_enabled, b.active_since, b.created_at, b.updated_at, b.last_delivery_at, b.last_error, i.title, i.body, i.type AS inbox_type, i.issue_id,
+SELECT b.id, b.workspace_id, b.user_id, b.name, b.platform, b.credentials, b.is_enabled, b.active_since, b.created_at, b.updated_at, b.last_delivery_at, b.last_error, i.id AS inbox_item_id, i.title, i.body, i.type AS inbox_type, i.issue_id,
        w.slug, COALESCE(p.preferences, '{}'::jsonb)::jsonb AS preferences
 FROM notification_bot b
 JOIN inbox_item i ON i.id = $1 AND i.workspace_id = b.workspace_id AND i.recipient_id = b.user_id AND i.recipient_type = 'member'
@@ -200,6 +200,7 @@ type GetNotificationBotDeliveryTargetRow struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	LastDeliveryAt pgtype.Timestamptz `json:"last_delivery_at"`
 	LastError      string             `json:"last_error"`
+	InboxItemID    pgtype.UUID        `json:"inbox_item_id"`
 	Title          string             `json:"title"`
 	Body           pgtype.Text        `json:"body"`
 	InboxType      string             `json:"inbox_type"`
@@ -224,6 +225,7 @@ func (q *Queries) GetNotificationBotDeliveryTarget(ctx context.Context, arg GetN
 		&i.UpdatedAt,
 		&i.LastDeliveryAt,
 		&i.LastError,
+		&i.InboxItemID,
 		&i.Title,
 		&i.Body,
 		&i.InboxType,

@@ -15,8 +15,9 @@ import (
 // TimelineEntry represents a single entry in the issue timeline, which can be
 // either an activity log record or a comment.
 type TimelineEntry struct {
-	Type string `json:"type"` // "activity" or "comment"
-	ID   string `json:"id"`
+	HumanRequestID *string `json:"human_request_id,omitempty"`
+	Type           string  `json:"type"` // "activity" or "comment"
+	ID             string  `json:"id"`
 
 	ActorType string `json:"actor_type"`
 	ActorID   string `json:"actor_id"`
@@ -299,6 +300,7 @@ func (h *Handler) commentsToEntries(r *http.Request, comments []db.Comment) []Ti
 		updatedAt := timestampToString(c.UpdatedAt)
 		cid := uuidToString(c.ID)
 		out[i] = TimelineEntry{
+			HumanRequestID: uuidToPtr(c.HumanRequestID),
 			Type:           "comment",
 			ID:             cid,
 			ActorType:      c.AuthorType,

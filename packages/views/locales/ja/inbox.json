@@ -83,7 +83,8 @@
     "runtime_mirror_viewer_started": "画面ミラーリングを開始しました",
     "runtime_mirror_viewer_stopped": "画面ミラーリングを終了しました",
     "runtime_mirror_control_started": "リモート画面操作が開始されました",
-    "runtime_mirror_control_stopped": "リモート画面操作が終了しました"
+    "runtime_mirror_control_stopped": "リモート画面操作が終了しました",
+    "human_action_requested": "対応が必要"
   },
   "labels": {
     "set_status_to": "ステータスを変更:",

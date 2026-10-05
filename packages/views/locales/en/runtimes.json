@@ -668,6 +668,26 @@
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
-    "switch_app": "Switch app"
+    "switch_app": "Switch app",
+    "authorization_command_title": "Run this command?",
+    "authorization_files_title": "Allow these file changes?",
+    "authorization_permissions_title": "Grant these permissions?",
+    "authorization_run_command": "Run command",
+    "authorization_change_files": "Allow file changes",
+    "authorization_grant_permissions": "Grant listed permissions",
+    "authorization_next": "Your choice applies only to this operation. Declining stops the requested operation.",
+    "authorization_location": "Working directory:",
+    "authorization_details": "View operation details",
+    "authorization_permissions_next": "These permissions apply during the current turn. Declining grants none of them.",
+    "authorization_add_file": "Create",
+    "authorization_update_file": "Modify",
+    "authorization_delete_file": "Delete",
+    "authorization_file_change": "File change",
+    "authorization_expired": "Request expired. Ask the agent for a new request.",
+    "authorization_network_allow": "Allow network access",
+    "authorization_network_deny": "Do not grant network access",
+    "authorization_read_path": "Read",
+    "authorization_write_path": "Write",
+    "authorization_close": "Close request"
   }
 }

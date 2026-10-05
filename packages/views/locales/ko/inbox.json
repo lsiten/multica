@@ -83,7 +83,8 @@
     "runtime_mirror_viewer_started": "화면 미러링이 시작됨",
     "runtime_mirror_viewer_stopped": "화면 미러링이 종료됨",
     "runtime_mirror_control_started": "원격 화면 제어가 시작됨",
-    "runtime_mirror_control_stopped": "원격 화면 제어가 종료됨"
+    "runtime_mirror_control_stopped": "원격 화면 제어가 종료됨",
+    "human_action_requested": "처리 필요"
   },
   "labels": {
     "set_status_to": "상태 변경:",

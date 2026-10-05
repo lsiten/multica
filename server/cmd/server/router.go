@@ -2017,6 +2017,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- Workspace-scoped routes (all require workspace membership) ---
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireWorkspaceMember(queries))
+			r.Route("/api/human-requests", func(r chi.Router) {
+				r.Get("/", h.ListHumanRequests)
+				r.Post("/", h.CreateHumanRequest)
+				r.Get("/{requestId}", h.GetHumanRequest)
+				r.With(handler.RequireHumanActor).Post("/{requestId}/respond", h.RespondHumanRequest)
+			})
 
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)

@@ -693,6 +693,15 @@ func (s *ProjectSupervisionService) Report(ctx context.Context, project db.Proje
 	if err != nil {
 		return err
 	}
+	if report.Decision == "needs_human" {
+		delivered, err := q.HasPendingHumanRequestForTask(ctx, db.HasPendingHumanRequestForTaskParams{TaskID: task.ID, WorkspaceID: project.WorkspaceID, ProjectID: project.ID, RecipientID: row.ConfiguredBy})
+		if err != nil {
+			return err
+		}
+		if !delivered {
+			return errors.New("deliver the member's exact next action with multica human-request create before reporting needs_human")
+		}
+	}
 	var prior ProjectSupervisionReport
 	if err = json.Unmarshal(row.LastResult, &prior); err != nil {
 		return err

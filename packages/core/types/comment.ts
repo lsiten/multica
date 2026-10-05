@@ -16,6 +16,7 @@ export interface Reaction {
 }
 
 export interface Comment {
+  human_request_id?: string | null;
   id: string;
   issue_id: string;
   author_type: CommentAuthorType;

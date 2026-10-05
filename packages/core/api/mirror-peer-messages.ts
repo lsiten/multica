@@ -18,6 +18,15 @@ const authorizationWireSchema = z.object({
   title: z.string().min(1).max(160),
   message: z.string().min(1).max(2048),
   expires_at: z.string().datetime({ offset: true }),
+  operation: z.object({
+    kind: z.enum(["command", "files", "permissions", "unknown"]).catch("unknown"),
+    target: z.string().min(1).max(2048),
+    location: z.string().max(2048).optional(),
+    reason: z.string().max(2048).optional(),
+    details: z.string().max(2048),
+    files: z.array(z.object({ path: z.string().min(1), kind: z.enum(["add", "update", "delete", "unknown"]).catch("unknown"), move_path: z.string().optional() })).optional(),
+    permissions: z.object({ network_enabled: z.boolean().optional(), read_paths: z.array(z.string()).optional(), write_paths: z.array(z.string()).optional() }).optional(),
+  }).optional(),
 });
 
 const voiceTranscriptWireSchema = z.object({

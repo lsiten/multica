@@ -533,6 +533,7 @@ type ChatMessage struct {
 	ChannelOutboundInstallationID pgtype.UUID        `json:"channel_outbound_installation_id"`
 	ChannelOutboundChatID         pgtype.Text        `json:"channel_outbound_chat_id"`
 	ChannelOutboundMessageIds     []string           `json:"channel_outbound_message_ids"`
+	HumanRequestID                pgtype.UUID        `json:"human_request_id"`
 }
 
 type ChatPinnedAgent struct {
@@ -606,6 +607,7 @@ type Comment struct {
 	RecoverySettledAt  pgtype.Timestamptz `json:"recovery_settled_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 	SuppressedAgentIds []pgtype.UUID      `json:"suppressed_agent_ids"`
+	HumanRequestID     pgtype.UUID        `json:"human_request_id"`
 }
 
 type CommentReaction struct {
@@ -785,6 +787,28 @@ type GithubPullRequestCheckSuite struct {
 	Conclusion pgtype.Text        `json:"conclusion"`
 	Status     string             `json:"status"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type HumanRequest struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	SourceTaskID     pgtype.UUID        `json:"source_task_id"`
+	AgentID          pgtype.UUID        `json:"agent_id"`
+	RecipientID      pgtype.UUID        `json:"recipient_id"`
+	IssueID          pgtype.UUID        `json:"issue_id"`
+	ChatSessionID    pgtype.UUID        `json:"chat_session_id"`
+	ProjectID        pgtype.UUID        `json:"project_id"`
+	RequestKey       string             `json:"request_key"`
+	Payload          []byte             `json:"payload"`
+	Revision         int64              `json:"revision"`
+	Status           string             `json:"status"`
+	Response         []byte             `json:"response"`
+	ResponseTaskID   pgtype.UUID        `json:"response_task_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	RespondedAt      pgtype.Timestamptz `json:"responded_at"`
+	ScopeFingerprint string             `json:"scope_fingerprint"`
 }
 
 type InboxItem struct {

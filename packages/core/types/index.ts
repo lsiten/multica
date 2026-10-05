@@ -388,3 +388,5 @@ export type { WorkspaceWakeup, WorkspaceWakeupPage, WorkspaceWakeupFilters, Wake
 export * from "./vscreen";
 
 export type { RuntimeMirrorController, RuntimeMirrorControlState } from "./vscreen";
+
+export type { HumanRequest, HumanRequestPayload, HumanRequestAnswer, HumanRequestChoice } from "./human-request";

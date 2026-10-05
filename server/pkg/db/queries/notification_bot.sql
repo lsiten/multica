@@ -45,7 +45,7 @@ UPDATE notification_bot_delivery SET attempts = attempts + 1, next_attempt_at = 
 WHERE id IN (SELECT id FROM candidate) RETURNING *;
 
 -- name: GetNotificationBotDeliveryTarget :one
-SELECT b.*, i.title, i.body, i.type AS inbox_type, i.issue_id,
+SELECT b.*, i.id AS inbox_item_id, i.title, i.body, i.type AS inbox_type, i.issue_id,
        w.slug, COALESCE(p.preferences, '{}'::jsonb)::jsonb AS preferences
 FROM notification_bot b
 JOIN inbox_item i ON i.id = sqlc.arg('inbox_id') AND i.workspace_id = b.workspace_id AND i.recipient_id = b.user_id AND i.recipient_type = 'member'

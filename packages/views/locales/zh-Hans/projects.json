@@ -42,6 +42,8 @@
     "no_progress_limit": "无进展次数上限"
   },
   "ready_statuses": "允许派发的任务状态",
+  "check_again": "重新检查项目",
+  "request_details": "查看协调详情",
   "save_failed": "保存失败或配置已变化，草稿已保留。",
   "save": "保存",
   "cancel": "取消"

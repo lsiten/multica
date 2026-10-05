@@ -79,7 +79,8 @@
     "runtime_mirror_viewer_started": "屏幕镜像已开始",
     "runtime_mirror_viewer_stopped": "屏幕镜像已结束",
     "runtime_mirror_control_started": "远程屏幕控制已开始",
-    "runtime_mirror_control_stopped": "远程屏幕控制已结束"
+    "runtime_mirror_control_stopped": "远程屏幕控制已结束",
+    "human_action_requested": "需要你处理"
   },
   "body": {
     "autopilot_title_limit": "自动化 \"{{title}}\" 未启动，因为该工作区已达到当前周期 {{limit}} 次运行的上限。额度将在 {{resetAt}} 重置。",

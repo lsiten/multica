@@ -85,7 +85,8 @@
     "runtime_mirror_viewer_started": "Screen mirroring started",
     "runtime_mirror_viewer_stopped": "Screen mirroring ended",
     "runtime_mirror_control_started": "Remote screen control started",
-    "runtime_mirror_control_stopped": "Remote screen control ended"
+    "runtime_mirror_control_stopped": "Remote screen control ended",
+    "human_action_requested": "Action needed"
   },
   "labels": {
     "set_status_to": "Set status to",

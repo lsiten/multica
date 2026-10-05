@@ -1,3 +1,4 @@
+import { HumanRequestCard } from "@/components/human-requests/human-request-card";
 /**
  * Comment timeline row. Rounded gray bubble containing the parent comment
  * plus, when applicable, every descendant reply stacked inline. The bubble
@@ -546,7 +547,9 @@ function CommentBody({
           {edited ? " · (edited)" : ""}
         </Text>
       </View>
-      {entry.content ? (
+      {entry.human_request_id ? (
+        <HumanRequestCard requestId={entry.human_request_id} fallbackContent={entry.content} />
+      ) : entry.content ? (
         <Markdown
           content={entry.content}
           attachments={attachments}

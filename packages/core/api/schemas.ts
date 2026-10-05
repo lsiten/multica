@@ -1035,6 +1035,7 @@ const ChatQuickActionSchema = z.object({
 }).loose();
 
 export const ChatMessageSchema = z.object({
+  human_request_id: z.string().nullable().optional().catch(undefined),
   id: z.string(),
   chat_session_id: z.string(),
   role: z.enum(["user", "assistant"]).catch("assistant"),
@@ -1136,6 +1137,7 @@ const CommentSupplementReceiptsSchema = z.array(z.unknown()).optional().catch(un
   }));
 
 const TimelineEntrySchema = z.object({
+  human_request_id: z.string().nullable().optional().catch(undefined),
   type: z.string(),
   id: z.string(),
   actor_type: z.string(),
@@ -1290,6 +1292,7 @@ export const EMPTY_CREATE_FEEDBACK_RESPONSE: CreateFeedbackResponse = {
 };
 
 export const CommentSchema = z.object({
+  human_request_id: z.string().nullable().optional().catch(undefined),
   id: z.string(),
   issue_id: z.string(),
   author_type: z.string(),

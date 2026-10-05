@@ -235,8 +235,8 @@ func TestCodexHandleServerRequestFileChangeApproval(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	result := resp["result"].(map[string]any)
-	if result["decision"] != "decline" {
-		t.Fatalf("expected decision=decline, got %v", result["decision"])
+	if result["decision"] != "denied" {
+		t.Fatalf("expected legacy decision=denied, got %v", result["decision"])
 	}
 }
 
@@ -259,15 +259,12 @@ func TestCodexHandleServerRequestMCPElicitation(t *testing.T) {
 	if resp["id"] != float64(12) {
 		t.Fatalf("expected id=12, got %v", resp["id"])
 	}
-	result := resp["result"].(map[string]any)
-	if result["action"] != "accept" {
-		t.Fatalf("expected action=accept, got %v", result["action"])
+	if resp["result"] != nil {
+		t.Fatal("native elicitation was silently accepted")
 	}
-	if _, ok := result["content"]; !ok {
-		t.Fatal("expected content key in response")
-	}
-	if _, ok := result["_meta"]; !ok {
-		t.Fatal("expected _meta key in response")
+	protocolError, ok := resp["error"].(map[string]any)
+	if !ok || !strings.Contains(fmt.Sprint(protocolError["message"]), "multica human-request create") {
+		t.Fatal("native question did not explain the durable delivery route")
 	}
 }
 

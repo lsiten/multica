@@ -2416,6 +2416,7 @@ func describeCodexSemanticActivity(msg Message) string {
 type codexClient struct {
 	approvalContext        context.Context
 	approvalPending        bool
+	approvalFiles          map[string][]ApprovalFileChange
 	cfg                    Config
 	stdin                  interface{ Write([]byte) (int, error) }
 	mu                     sync.Mutex
@@ -2971,8 +2972,11 @@ func (c *codexClient) handleServerRequest(raw map[string]json.RawMessage) {
 	switch method {
 	case "item/commandExecution/requestApproval", "execCommandApproval", "item/fileChange/requestApproval", "applyPatchApproval", "item/permissions/requestApproval":
 		c.requestHumanApproval(id, method, raw["params"])
-	case "mcpServer/elicitation/request":
-		c.respond(id, map[string]any{"action": "accept", "content": nil, "_meta": nil})
+	case "mcpServer/elicitation/request", "item/tool/requestUserInput":
+		// Native question RPCs have no member-facing UI. An actionable tool
+		// error lets the agent use the durable platform flow without pretending
+		// that an empty answer is the member's acceptance or rejection.
+		c.respondError(id, -32601, "Deliver this question with multica human-request create --body-file <request.json>; native question RPCs do not collect member consent in Multica. Do not infer an answer or treat this routing error as the member's decision.")
 	default:
 		msg := fmt.Sprintf("unsupported codex app-server request: %s", method)
 		c.cfg.Logger.Warn("codex: unhandled server request", "method", method, "id", id)
@@ -3448,8 +3452,12 @@ func (c *codexClient) handleEvent(msg map[string]any) {
 				Output: output,
 			})
 		}
+	case "apply_patch_approval_request":
+		callID, _ := msg["call_id"].(string)
+		c.recordApprovalFiles(callID, codexNormalizeLegacyChanges(msg["changes"]))
 	case "patch_apply_begin":
 		callID, _ := msg["call_id"].(string)
+		c.recordApprovalFiles(callID, codexNormalizeLegacyChanges(msg["changes"]))
 		if c.onMessage != nil {
 			c.onMessage(Message{
 				Type:   MessageToolUse,
@@ -3460,6 +3468,7 @@ func (c *codexClient) handleEvent(msg map[string]any) {
 		}
 	case "patch_apply_end":
 		callID, _ := msg["call_id"].(string)
+		c.forgetApprovalFiles(callID)
 		stdout, _ := msg["stdout"].(string)
 		stderr, _ := msg["stderr"].(string)
 		status, _ := msg["status"].(string)
@@ -3776,6 +3785,7 @@ func (c *codexClient) handleItemNotification(method string, params map[string]an
 		}
 
 	case method == "item/started" && itemType == "fileChange":
+		c.recordApprovalFiles(itemID, codexNormalizeRawChanges(item["changes"]))
 		if c.onMessage != nil {
 			c.onMessage(Message{
 				Type:   MessageToolUse,
@@ -3786,6 +3796,7 @@ func (c *codexClient) handleItemNotification(method string, params map[string]an
 		}
 
 	case method == "item/completed" && itemType == "fileChange":
+		c.forgetApprovalFiles(itemID)
 		status, _ := item["status"].(string)
 		changes := codexNormalizeRawChanges(item["changes"])
 		if c.onMessage != nil {

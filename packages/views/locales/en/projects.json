@@ -42,6 +42,8 @@
     "no_progress_limit": "No-progress limit"
   },
   "ready_statuses": "Statuses eligible for dispatch",
+  "check_again": "Recheck project",
+  "request_details": "View coordination details",
   "save_failed": "Save failed or settings changed. Your draft is retained.",
   "save": "Save",
   "cancel": "Cancel"

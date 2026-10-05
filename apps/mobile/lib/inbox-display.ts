@@ -106,7 +106,8 @@ export function getInboxNavigationTarget(
   }
   if (
     item.type === "autopilot_quota_exceeded" ||
-    item.type === "autopilot_paused"
+    item.type === "autopilot_paused" ||
+    item.type === "human_action_requested"
   ) {
     return {
       pathname: "/[workspace]/inbox/[id]" as const,

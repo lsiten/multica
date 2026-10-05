@@ -128,5 +128,22 @@
   },
   "navigation": {
     "open_in_new_tab": "Ouvrir dans un nouvel onglet"
+  },
+  "human_request": {
+    "loading": "Chargement de la demande...",
+    "load_failed": "Impossible de charger la demande. Réessayez pour consulter son état.",
+    "retry": "Réessayer",
+    "details": "Voir les détails",
+    "recommended": "Recommandé",
+    "received": "Réponse reçue. Une nouvelle exécution est en attente.",
+    "declined": "Action refusée. L’agent a été informé.",
+    "cancelled": "Demande annulée.",
+    "expired": "Demande expirée. Demandez à l’agent de la renouveler.",
+    "unavailable": "Ce client ne peut pas répondre à cette demande.",
+    "other_member": "En attente du membre désigné.",
+    "decline": "Refuser",
+    "submitting": "Envoi de la réponse...",
+    "submit_failed": "Impossible de confirmer la réponse. Actualisez la demande et réessayez.",
+    "refresh": "Actualiser la demande"
   }
 }

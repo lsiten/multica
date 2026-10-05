@@ -1,5 +1,7 @@
 "use client";
 
+import { HumanRequestCard } from "../../common/human-request-card";
+
 import {
   useState,
   useEffect,
@@ -694,7 +696,7 @@ export function InboxPage() {
         issueId={detailItem.issue_id}
         defaultSidebarOpen={false}
         layoutId="multica_inbox_issue_detail_layout"
-        highlightCommentId={detailItem.details?.comment_id ?? undefined}
+        highlightCommentId={searchParams.get("request") ?? detailItem.details?.comment_id ?? undefined}
         highlightRequestToken={highlightRequestToken}
         // The split layout already has a nav trigger in the list header.
         // Explicit false suppresses the detail header's fallback trigger.
@@ -722,7 +724,9 @@ export function InboxPage() {
       <p className="mt-1 text-body text-muted-foreground">
         {typeLabels[detailItem.type]} · {timeAgo(detailItem.created_at)}
       </p>
-      {isAutopilotQuotaNotice(detailItem.type) ? (
+      {detailItem.type === "human_action_requested" && detailItem.details?.human_request_id ? (
+        <HumanRequestCard requestId={detailItem.details.human_request_id} fallbackContent={detailItem.body ?? undefined} />
+      ) : isAutopilotQuotaNotice(detailItem.type) ? (
         <AutopilotQuotaNotice
           item={detailItem}
           onOpenRecovery={showAutopilotQuotaRecoveryPrompt}

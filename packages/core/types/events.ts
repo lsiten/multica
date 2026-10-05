@@ -32,6 +32,7 @@ export type WSEventType =
   | "task:failed"
   | "task:message"
   | "task:cancelled"
+  | "human-request:changed"
   | "inbox:new"
   | "inbox:read"
   | "inbox:unread"
@@ -595,6 +596,7 @@ export interface ChatSessionCreatedPayload {
  * forgets the payload shape — that's the whole point.
  */
 export interface WSEventPayloadMap {
+  "human-request:changed": { request_id: string; issue_id?: string; chat_session_id?: string; project_id?: string };
   "issue:created": IssueCreatedPayload;
   "issue:updated": IssueUpdatedPayload;
   "issue:deleted": IssueDeletedPayload;

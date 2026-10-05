@@ -134,7 +134,7 @@ UPDATE project_supervision SET next_check_at=now() WHERE workspace_id=$1 AND ena
 AND last_reason IN ('lead_capacity','agent_capacity','runtime_capacity','capacity_wait');
 
 -- name: MergeQueuedProjectCoordination :one
-UPDATE agent_task_queue SET context=$2 WHERE id=$1 AND status='queued' AND dispatched_at IS NULL RETURNING *;
+UPDATE agent_task_queue SET context=sqlc.arg(context)::jsonb || CASE WHEN context ? 'human_response' THEN jsonb_build_object('human_response', context->'human_response') ELSE '{}'::jsonb END WHERE id=$1 AND status='queued' AND dispatched_at IS NULL RETURNING *;
 
 -- name: CancelObsoleteProjectCoordination :many
 UPDATE agent_task_queue t SET status='cancelled',completed_at=now(),error='project lead changed'

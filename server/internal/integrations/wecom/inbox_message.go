@@ -188,7 +188,15 @@ func inboxItemLink(item map[string]any, workspaceID, slug string) string {
 	b.WriteString(url.PathEscape(seg))
 	b.WriteString("/inbox")
 	// Optional ?issue=... — chat-only inbox items have no issue.
-	if issueID := inboxItemIssueID(item); issueID != "" {
+	if item["type"] == "human_action_requested" {
+		if id, ok := item["id"].(string); ok {
+			key := id
+			if issue := inboxItemIssueID(item); issue != "" {
+				key = issue
+			}
+			b.WriteString("?issue=" + url.QueryEscape(key) + "&request=" + url.QueryEscape(id))
+		}
+	} else if issueID := inboxItemIssueID(item); issueID != "" {
 		b.WriteString("?issue=")
 		b.WriteString(url.QueryEscape(issueID))
 	}

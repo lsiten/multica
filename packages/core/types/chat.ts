@@ -135,6 +135,7 @@ export interface HasPendingChatTasksResponse {
 }
 
 export interface ChatMessage {
+  human_request_id?: string | null;
   id: string;
   chat_session_id: string;
   role: "user" | "assistant";

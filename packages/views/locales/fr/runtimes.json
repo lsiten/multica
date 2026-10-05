@@ -668,6 +668,26 @@
     "copy_shortcut": "Ctrl+C",
     "paste_shortcut": "Ctrl+V",
     "backspace": "Backspace",
-    "switch_app": "Switch app"
+    "switch_app": "Switch app",
+    "authorization_command_title": "Exécuter cette commande ?",
+    "authorization_files_title": "Autoriser ces modifications ?",
+    "authorization_permissions_title": "Accorder les permissions indiquées ?",
+    "authorization_run_command": "Exécuter la commande",
+    "authorization_change_files": "Autoriser les modifications",
+    "authorization_grant_permissions": "Accorder les permissions",
+    "authorization_next": "Ce choix concerne uniquement cette opération. Un refus empêche son exécution.",
+    "authorization_location": "Répertoire de travail :",
+    "authorization_details": "Voir les détails de l’opération",
+    "authorization_permissions_next": "Ces permissions s’appliquent au tour actuel. Un refus n’en accorde aucune.",
+    "authorization_add_file": "Créer",
+    "authorization_update_file": "Modifier",
+    "authorization_delete_file": "Supprimer",
+    "authorization_file_change": "Modification de fichier",
+    "authorization_expired": "Demande expirée. Demandez à l’agent de la renouveler.",
+    "authorization_network_allow": "Autoriser l’accès réseau",
+    "authorization_network_deny": "Ne pas accorder l’accès réseau",
+    "authorization_read_path": "Lire",
+    "authorization_write_path": "Écrire",
+    "authorization_close": "Fermer la demande"
   }
 }

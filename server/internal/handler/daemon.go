@@ -3469,6 +3469,27 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// there so the isolation check below has something to compare.
 	hasQuickCreate := false
 	if task.Context != nil && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutopilotRunID.Valid {
+		var followup service.HumanFollowupContext
+		if json.Unmarshal(task.Context, &followup) == nil && followup.Type == service.HumanFollowupContextType {
+			if followup.WorkspaceID != runtimeWorkspaceID {
+				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, service.ErrHumanRequestForbidden, "human follow-up", uuidToString(task.ID))
+			}
+			resp.WorkspaceID = followup.WorkspaceID
+			resp.HumanFollowupPrompt = followup.Prompt
+			var projectID pgtype.UUID
+			if followup.ProjectID != "" {
+				var err error
+				projectID, err = util.ParseUUID(followup.ProjectID)
+				if err != nil {
+					return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, service.ErrHumanRequestConflict, "human follow-up project", followup.ProjectID)
+				}
+			}
+			projectCtx, err := h.resolveClaimProjectContext(r.Context(), projectID, parseUUID(followup.WorkspaceID))
+			if err != nil {
+				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "human follow-up project", followup.ProjectID)
+			}
+			projectCtx.applyTo(&resp)
+		}
 		var qc service.QuickCreateContext
 		if json.Unmarshal(task.Context, &qc) == nil && qc.Type == service.QuickCreateContextType {
 			hasQuickCreate = true
@@ -3760,6 +3781,12 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 
 	if err := h.applyInterventionClaim(r.Context(), *task, &resp); err != nil {
 		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "intervention source", uuidToString(task.RerunOfTaskID))
+	}
+	if err := h.applyHumanResponseClaim(r.Context(), *task, &resp); err != nil {
+		if errors.Is(err, service.ErrHumanRequestConflict) || errors.Is(err, service.ErrHumanRequestForbidden) {
+			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(r.Context(), task, "The request changed after your response. Ask the agent to send an updated request before continuing.", taskfailure.ReasonInvalidTaskIdentity, "human_request_changed", http.StatusConflict, "human request changed")
+		}
+		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "human request", uuidToString(task.ID))
 	}
 
 	// Wakeup rules that waited for this run hand it their inputs now, after
@@ -4328,16 +4355,9 @@ func (h *Handler) ReportTaskProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ownership and resolve workspace ID.
-	task, ok := h.requireDaemonTaskAccess(w, r, taskID)
+	_, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
 	if !ok {
 		return
-	}
-
-	workspaceID := ""
-	if task.IssueID.Valid {
-		if issue, err := h.Queries.GetIssue(r.Context(), task.IssueID); err == nil {
-			workspaceID = uuidToString(issue.WorkspaceID)
-		}
 	}
 
 	h.TaskService.ReportProgress(r.Context(), taskID, workspaceID, req.Summary, req.Step, req.Total)

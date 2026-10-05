@@ -104,7 +104,13 @@ func (w *Worker) deliver(ctx context.Context, delivery db.NotificationBotDeliver
 			link := ""
 			if w.AppURL != "" {
 				link = w.AppURL + "/" + url.PathEscape(target.Slug) + "/inbox\n"
-				if target.IssueID.Valid {
+				if target.InboxType == "human_action_requested" {
+					key := util.UUIDToString(target.InboxItemID)
+					if target.IssueID.Valid {
+						key = util.UUIDToString(target.IssueID)
+					}
+					link = strings.TrimSuffix(link, "\n") + "?issue=" + key + "&request=" + util.UUIDToString(target.InboxItemID) + "\n"
+				} else if target.IssueID.Valid {
 					link = strings.TrimSuffix(link, "\n") + "?issue=" + util.UUIDToString(target.IssueID) + "\n"
 				}
 			}
@@ -153,7 +159,7 @@ func muted(preferences map[string]string, kind string) bool {
 		group = "mentions"
 	case "priority_changed", "start_date_changed", "due_date_changed":
 		group = "updates"
-	case "task_completed", "task_failed", "agent_blocked", "agent_completed":
+	case "task_completed", "task_failed", "agent_blocked", "agent_completed", "human_action_requested":
 		group = "agent_activity"
 	default:
 		return false

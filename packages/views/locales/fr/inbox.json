@@ -85,7 +85,8 @@
     "runtime_mirror_viewer_started": "Diffusion de l’écran démarrée",
     "runtime_mirror_viewer_stopped": "Diffusion de l’écran terminée",
     "runtime_mirror_control_started": "Contrôle d’écran à distance démarré",
-    "runtime_mirror_control_stopped": "Contrôle d’écran à distance terminé"
+    "runtime_mirror_control_stopped": "Contrôle d’écran à distance terminé",
+    "human_action_requested": "Action requise"
   },
   "labels": {
     "set_status_to": "Statut défini sur",

@@ -33,6 +33,7 @@ const (
 	// kindChat: interactive chat session, no issue.
 	kindChat
 	kindProjectSupervision
+	kindHumanFollowup
 )
 
 // classifyTask maps a TaskContextForEnv to the single taskKind the slim
@@ -45,6 +46,8 @@ const (
 // change and the prompt cache is lost from messages[0] onward (MUL-5377).
 func classifyTask(ctx TaskContextForEnv) taskKind {
 	switch {
+	case ctx.HumanFollowupPrompt != "":
+		return kindHumanFollowup
 	case ctx.ProjectSupervisionPrompt != "":
 		return kindProjectSupervision
 	case ctx.ChatSessionID != "":

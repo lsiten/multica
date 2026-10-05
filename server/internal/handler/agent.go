@@ -358,6 +358,8 @@ type TaskCancellationActor struct {
 }
 
 type AgentTaskResponse struct {
+	HumanFollowupPrompt      string                       `json:"human_followup_prompt,omitempty"`
+	HumanResponsePrompt      string                       `json:"human_response_prompt,omitempty"`
 	ProjectSupervisionPrompt string                       `json:"project_supervision_prompt,omitempty"`
 	JevConfig                *protocol.WorkspaceJevConfig `json:"jev_config,omitempty"`
 	StartClaimSupported      bool                         `json:"start_claim_supported,omitempty"`
