@@ -17,6 +17,7 @@ export interface Reaction {
 
 export interface Comment {
   human_request_id?: string | null;
+  human_response?: import("./human-request").HumanResponseReceipt | null;
   id: string;
   issue_id: string;
   author_type: CommentAuthorType;

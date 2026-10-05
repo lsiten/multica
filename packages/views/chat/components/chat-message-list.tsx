@@ -1,5 +1,6 @@
 "use client";
 
+import { HumanResponseReceipt } from "../../common/human-response-receipt";
 import { HumanRequestCard } from "../../common/human-request-card";
 
 
@@ -526,6 +527,7 @@ const MessageBubble = memo(function MessageBubble({
             density="compact"
             phase="settled"
           />
+          <HumanResponseReceipt receipt={message.human_response} />
           <AttachmentList
             attachments={message.attachments}
             content={message.content}

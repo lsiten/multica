@@ -144,6 +144,15 @@
     "decline": "Refuser",
     "submitting": "Envoi de la réponse...",
     "submit_failed": "Impossible de confirmer la réponse. Actualisez la demande et réessayez.",
-    "refresh": "Actualiser la demande"
+    "refresh": "Actualiser la demande",
+    "reply_confirmed": "Confirmé : {{answer}}",
+    "reply_target": "Répondre à la demande",
+    "reply_auto": "Associer un choix exact",
+    "reply_preview": "Confirmer « {{title}} » : {{answer}}",
+    "reply_plain": "Envoyer comme message ordinaire",
+    "reply_submit": "Envoyer la réponse",
+    "reply_choose_target": "Sélectionnez la demande à laquelle cette réponse appartient.",
+    "reply_stale": "La demande a changé ou est close. Vérifiez sa dernière version.",
+    "reply_unsupported": "Le serveur ne prend pas en charge les réponses textuelles. Utilisez la carte ; votre brouillon est conservé."
   }
 }

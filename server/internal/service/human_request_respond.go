@@ -18,6 +18,32 @@ import (
 // RespondHumanRequest consumes the exact decision and enqueues its continuation
 // in one transaction. Reading or archiving an inbox item never calls this path.
 func (s *TaskService) RespondHumanRequest(ctx context.Context, before db.HumanRequest, memberID pgtype.UUID, answer HumanRequestAnswer) (db.HumanRequest, error) {
+	return s.respondHumanRequest(ctx, before, memberID, answer, nil)
+}
+
+// RespondHumanRequestText uses the same decision transaction as the card control.
+func (s *TaskService) RespondHumanRequestText(ctx context.Context, before db.HumanRequest, memberID pgtype.UUID, reply HumanTextReply) (db.HumanRequest, error) {
+	var input HumanRequestInput
+	if err := json.Unmarshal(before.Payload, &input); err != nil {
+		return db.HumanRequest{}, err
+	}
+	if reply.Revision != before.Revision {
+		return db.HumanRequest{}, ErrHumanRequestConflict
+	}
+	if reply.Channel == "chat" && util.UUIDToString(before.ChatSessionID) != reply.ScopeID || reply.Channel == "comment" && util.UUIDToString(before.IssueID) != reply.ScopeID || reply.Channel == "project" && util.UUIDToString(before.ProjectID) != reply.ScopeID {
+		return db.HumanRequest{}, ErrHumanRequestForbidden
+	}
+	if reply.Channel != "chat" && reply.Channel != "comment" && reply.Channel != "project" {
+		return db.HumanRequest{}, ErrHumanRequestInput
+	}
+	answer, err := MatchHumanTextAnswer(input, reply.Revision, reply.Text)
+	if err != nil {
+		return db.HumanRequest{}, err
+	}
+	return s.respondHumanRequest(ctx, before, memberID, answer, &HumanReplyOrigin{Channel: reply.Channel, Text: reply.Text})
+}
+
+func (s *TaskService) respondHumanRequest(ctx context.Context, before db.HumanRequest, memberID pgtype.UUID, answer HumanRequestAnswer, origin *HumanReplyOrigin) (db.HumanRequest, error) {
 	var result db.HumanRequest
 	if before.RecipientID != memberID {
 		return result, ErrHumanRequestForbidden
@@ -87,11 +113,20 @@ func (s *TaskService) RespondHumanRequest(ctx context.Context, before db.HumanRe
 		if err := json.Unmarshal(row.Payload, &input); err != nil {
 			return err
 		}
+		if answer.Revision != row.Revision {
+			return ErrHumanRequestConflict
+		}
 		if err := answer.Validate(input); err != nil {
 			return err
 		}
-		if answer.Revision != row.Revision {
-			return ErrHumanRequestConflict
+		if origin != nil {
+			matched, matchErr := MatchHumanTextAnswer(input, row.Revision, origin.Text)
+			if matchErr != nil {
+				return matchErr
+			}
+			if matched != answer {
+				return ErrHumanRequestConflict
+			}
 		}
 		if row.Status != "pending" {
 			var stored HumanRequestAnswer
@@ -105,6 +140,10 @@ func (s *TaskService) RespondHumanRequest(ctx context.Context, before db.HumanRe
 			return ErrHumanRequestConflict
 		}
 		text := humanAnswerText(input, answer)
+		displayText := text
+		if origin != nil {
+			displayText = origin.Text
+		}
 		if source.IssueID.Valid {
 			issue, err := q.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: source.IssueID, WorkspaceID: row.WorkspaceID})
 			if err != nil {
@@ -120,7 +159,7 @@ func (s *TaskService) RespondHumanRequest(ctx context.Context, before db.HumanRe
 			if requestComment.DeletedAt.Valid || requestComment.HumanRequestID != row.ID {
 				return ErrHumanRequestConflict
 			}
-			created, err := q.CreateComment(ctx, db.CreateCommentParams{ID: dbid.NewV7(), WorkspaceID: row.WorkspaceID, IssueID: row.IssueID, AuthorType: "member", AuthorID: memberID, ParentID: row.ID, Content: text, Type: "comment"})
+			created, err := q.CreateComment(ctx, db.CreateCommentParams{ID: dbid.NewV7(), WorkspaceID: row.WorkspaceID, IssueID: row.IssueID, AuthorType: "member", AuthorID: memberID, ParentID: row.ID, Content: displayText, Type: "comment"})
 			if err != nil {
 				return err
 			}
@@ -143,7 +182,7 @@ func (s *TaskService) RespondHumanRequest(ctx context.Context, before db.HumanRe
 			if err != nil {
 				return err
 			}
-			message, err = q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: dbid.NewV7(), ChatSessionID: chat.ID, Role: "user", Content: text, TaskID: task.ID, MessageKind: pgtype.Text{String: protocol.ChatMessageKindMessage, Valid: true}})
+			message, err = q.CreateChatMessage(ctx, db.CreateChatMessageParams{ID: dbid.NewV7(), ChatSessionID: chat.ID, Role: "user", Content: displayText, TaskID: task.ID, MessageKind: pgtype.Text{String: protocol.ChatMessageKindMessage, Valid: true}})
 			if err != nil {
 				return err
 			}
@@ -157,7 +196,20 @@ func (s *TaskService) RespondHumanRequest(ctx context.Context, before db.HumanRe
 		if err != nil {
 			return err
 		}
-		raw, err := json.Marshal(answer)
+		if origin != nil {
+			if comment.ID.Valid {
+				origin.ReplyID = util.UUIDToString(comment.ID)
+				origin.CreatedAt = comment.CreatedAt.Time.UTC().Format(time.RFC3339Nano)
+			}
+			if message.ID.Valid {
+				origin.ReplyID = util.UUIDToString(message.ID)
+				origin.CreatedAt = message.CreatedAt.Time.UTC().Format(time.RFC3339Nano)
+			}
+		}
+		raw, err := json.Marshal(struct {
+			HumanRequestAnswer
+			Origin *HumanReplyOrigin `json:"origin,omitempty"`
+		}{answer, origin})
 		if err != nil {
 			return err
 		}

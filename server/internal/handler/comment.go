@@ -26,22 +26,23 @@ import (
 )
 
 type CommentResponse struct {
-	HumanRequestID *string `json:"human_request_id,omitempty"`
-	ID             string  `json:"id"`
-	IssueID        string  `json:"issue_id"`
-	AuthorType     string  `json:"author_type"`
-	AuthorID       string  `json:"author_id"`
-	Content        string  `json:"content"`
-	Type           string  `json:"type"`
-	ParentID       *string `json:"parent_id"`
-	CreatedAt      string  `json:"created_at"`
-	UpdatedAt      string  `json:"updated_at"`
-	Revision       int64   `json:"revision"`
-	IssueRevision  int64   `json:"issue_revision,omitempty"`
-	ResolvedAt     *string `json:"resolved_at"`
-	ResolvedByType *string `json:"resolved_by_type"`
-	ResolvedByID   *string `json:"resolved_by_id"`
-	SourceTaskID   *string `json:"source_task_id,omitempty"`
+	HumanResponse  *service.HumanResponseReceipt `json:"human_response,omitempty"`
+	HumanRequestID *string                       `json:"human_request_id,omitempty"`
+	ID             string                        `json:"id"`
+	IssueID        string                        `json:"issue_id"`
+	AuthorType     string                        `json:"author_type"`
+	AuthorID       string                        `json:"author_id"`
+	Content        string                        `json:"content"`
+	Type           string                        `json:"type"`
+	ParentID       *string                       `json:"parent_id"`
+	CreatedAt      string                        `json:"created_at"`
+	UpdatedAt      string                        `json:"updated_at"`
+	Revision       int64                         `json:"revision"`
+	IssueRevision  int64                         `json:"issue_revision,omitempty"`
+	ResolvedAt     *string                       `json:"resolved_at"`
+	ResolvedByType *string                       `json:"resolved_by_type"`
+	ResolvedByID   *string                       `json:"resolved_by_id"`
+	SourceTaskID   *string                       `json:"source_task_id,omitempty"`
 	// DeletedAt marks a tombstone: a comment deleted while it still had
 	// replies (#8296). Its content is empty and it carries no attachments or
 	// reactions; it stays only so the replies keep their direct parent.
@@ -658,10 +659,12 @@ func (h *Handler) ListComments(w http.ResponseWriter, r *http.Request) {
 	grouped := h.groupReactions(r, commentIDs)
 	groupedAtt := h.groupAttachments(r, commentIDs)
 
+	receipts := h.humanResponseReceipts(r.Context(), issue.WorkspaceID, commentIDs)
 	resp := make([]CommentResponse, len(result.Comments))
 	for i, c := range result.Comments {
 		cid := uuidToString(c.ID)
 		resp[i] = commentToResponse(c, grouped[cid], groupedAtt[cid])
+		resp[i].HumanResponse = receipts[cid]
 		// Attach roots_only orientation stats when present (nil map elsewhere).
 		if st, ok := result.RootStats[cid]; ok {
 			rc := st.ReplyCount

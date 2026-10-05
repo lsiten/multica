@@ -357,6 +357,56 @@ func (q *Queries) ListHumanRequests(ctx context.Context, arg ListHumanRequestsPa
 	return items, nil
 }
 
+const listHumanResponseReceipts = `-- name: ListHumanResponseReceipts :many
+SELECT id, workspace_id, source_task_id, agent_id, recipient_id, issue_id, chat_session_id, project_id, request_key, payload, revision, status, response, response_task_id, created_at, updated_at, expires_at, responded_at, scope_fingerprint FROM human_request WHERE workspace_id = $1 AND status = 'answered'
+AND response->'origin'->>'reply_id' = ANY($2::text[])
+`
+
+type ListHumanResponseReceiptsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ReplyIds    []string    `json:"reply_ids"`
+}
+
+func (q *Queries) ListHumanResponseReceipts(ctx context.Context, arg ListHumanResponseReceiptsParams) ([]HumanRequest, error) {
+	rows, err := q.db.Query(ctx, listHumanResponseReceipts, arg.WorkspaceID, arg.ReplyIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []HumanRequest{}
+	for rows.Next() {
+		var i HumanRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.SourceTaskID,
+			&i.AgentID,
+			&i.RecipientID,
+			&i.IssueID,
+			&i.ChatSessionID,
+			&i.ProjectID,
+			&i.RequestKey,
+			&i.Payload,
+			&i.Revision,
+			&i.Status,
+			&i.Response,
+			&i.ResponseTaskID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ExpiresAt,
+			&i.RespondedAt,
+			&i.ScopeFingerprint,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockHumanRequest = `-- name: LockHumanRequest :one
 SELECT id, workspace_id, source_task_id, agent_id, recipient_id, issue_id, chat_session_id, project_id, request_key, payload, revision, status, response, response_task_id, created_at, updated_at, expires_at, responded_at, scope_fingerprint FROM human_request WHERE id = $1 AND workspace_id = $2 FOR UPDATE
 `

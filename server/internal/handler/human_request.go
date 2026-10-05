@@ -178,6 +178,45 @@ func (h *Handler) RespondHumanRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, humanRequestToResponse(result, actor))
 }
 
+// ReplyHumanRequest accepts ordinary text only through an explicit versioned request binding.
+func (h *Handler) ReplyHumanRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Actor-Source") == "task_token" {
+		writeError(w, 403, "a member must answer this request")
+		return
+	}
+	row, actor, ok := h.loadHumanRequest(w, r)
+	if !ok {
+		return
+	}
+	if actor == "" || uuidToString(row.RecipientID) != actor {
+		writeError(w, 403, "only the designated member may answer")
+		return
+	}
+	var input service.HumanTextReply
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 12*1024))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, 400, "invalid text reply")
+		return
+	}
+	if _, ok := parseUUIDOrBadRequest(w, input.ScopeID, "scope_id"); !ok {
+		return
+	}
+	result, err := h.TaskService.RespondHumanRequestText(r.Context(), row, parseUUID(actor), input)
+	if err != nil {
+		humanRequestError(w, err)
+		return
+	}
+	var response struct {
+		Origin *service.HumanReplyOrigin `json:"origin"`
+	}
+	if err := json.Unmarshal(result.Response, &response); err != nil {
+		writeError(w, 500, "failed to read reply receipt")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"request": humanRequestToResponse(result, actor), "reply": response.Origin, "task_id": uuidToPtr(result.ResponseTaskID)})
+}
+
 func humanRequestError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrHumanRequestInput):

@@ -277,12 +277,18 @@ func (s *TaskService) publishHumanRequest(request db.HumanRequest) {
 
 func (s *TaskService) publishHumanChatMessage(request db.HumanRequest, message db.ChatMessage) {
 	if s.Bus != nil {
-		s.Bus.Publish(events.Event{Type: protocol.EventChatMessage, WorkspaceID: util.UUIDToString(request.WorkspaceID), ActorType: "agent", ActorID: util.UUIDToString(request.AgentID), ChatSessionID: util.UUIDToString(request.ChatSessionID), Payload: map[string]any{"chat_session_id": util.UUIDToString(request.ChatSessionID), "message": message, "creator_id": util.UUIDToString(request.RecipientID)}})
+		s.Bus.Publish(events.Event{Type: protocol.EventChatMessage, WorkspaceID: util.UUIDToString(request.WorkspaceID), ActorType: "agent", ActorID: util.UUIDToString(request.AgentID), ChatSessionID: util.UUIDToString(request.ChatSessionID), Payload: map[string]any{"chat_session_id": util.UUIDToString(request.ChatSessionID), "message": struct {
+			db.ChatMessage
+			HumanResponse *HumanResponseReceipt `json:"human_response,omitempty"`
+		}{message, ResponseReceipt(request)}, "creator_id": util.UUIDToString(request.RecipientID)}})
 	}
 }
 
 func (s *TaskService) publishHumanResponseComment(request db.HumanRequest, comment db.Comment) {
-	s.Bus.Publish(events.Event{Type: protocol.EventCommentCreated, WorkspaceID: util.UUIDToString(request.WorkspaceID), ActorType: "member", ActorID: util.UUIDToString(request.RecipientID), Payload: map[string]any{"comment": comment}})
+	s.Bus.Publish(events.Event{Type: protocol.EventCommentCreated, WorkspaceID: util.UUIDToString(request.WorkspaceID), ActorType: "member", ActorID: util.UUIDToString(request.RecipientID), Payload: map[string]any{"comment": struct {
+		db.Comment
+		HumanResponse *HumanResponseReceipt `json:"human_response,omitempty"`
+	}{comment, ResponseReceipt(request)}}})
 }
 
 // ListHumanRequests returns recipient/author-owned requests and retires stale waits.

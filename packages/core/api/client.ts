@@ -1,8 +1,8 @@
-import type { HumanRequest, HumanRequestAnswer } from "../types/human-request";
+import type { HumanRequest, HumanRequestAnswer, HumanTextReplyResult } from "../types/human-request";
 import type { IssueProgressView, ProgressFilters, ProgressScope } from "../types/issue-progress";
 import { IssueProgressViewSchema } from "./issue-progress";
 import { todayDateOnly } from "../issues/date";
-import { HumanRequestSchema, HumanRequestListSchema } from "../human-requests/schema";
+import { HumanRequestSchema, HumanRequestListSchema, HumanTextReplyResultSchema } from "../human-requests/schema";
 import type { ZodType } from "zod";
 import type { JevDecisionLogDetail, JevDecisionLogFilters, JevDecisionLogListResponse } from "../types/jev-decision-logs";
 import { JevDecisionLogDetailSchema, JevDecisionLogListResponseSchema } from "./jev-decision-logs";
@@ -836,6 +836,13 @@ export class ApiClient {
     const request = parseWithFallback<HumanRequest | null>(raw, HumanRequestSchema, null, { endpoint: "POST /api/human-requests/:id/respond" });
     if (!request) throw new Error("Could not verify the response; refresh the request");
     return request;
+  }
+
+  async replyHumanRequest(id: string, input: { revision: number; text: string; channel: "chat" | "comment" | "project"; scope_id: string }): Promise<HumanTextReplyResult> {
+    const raw = await this.fetch<unknown>(`/api/human-requests/${encodeURIComponent(id)}/reply`, { method: "POST", body: JSON.stringify(input) });
+    const result = parseWithFallback<HumanTextReplyResult | null>(raw, HumanTextReplyResultSchema, null, { endpoint: "POST /api/human-requests/:id/reply" });
+    if (!result || result.request.id !== id || result.request.revision !== input.revision || result.request.status !== "answered" || !result.request.response || result.request.response.revision !== input.revision || !result.task_id || result.task_id !== result.request.response_task_id) throw new Error("Could not read the text response receipt");
+    return result;
   }
   private baseUrl: string;
   private token: string | null = null;

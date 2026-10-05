@@ -144,6 +144,15 @@
     "decline": "暂不执行",
     "submitting": "正在提交回复...",
     "submit_failed": "无法确认回复是否提交成功。请刷新此请求后重试。",
-    "refresh": "刷新请求"
+    "refresh": "刷新请求",
+    "reply_confirmed": "已确认：{{answer}}",
+    "reply_target": "答复请求",
+    "reply_auto": "匹配唯一明确选项",
+    "reply_preview": "将确认“{{title}}”：{{answer}}",
+    "reply_plain": "作为普通消息发送",
+    "reply_submit": "提交答复",
+    "reply_choose_target": "请先选择这条答复对应的请求。",
+    "reply_stale": "请求已变化或结束，请核对最新版本。",
+    "reply_unsupported": "当前服务端不支持文字提交，请使用原确认卡，草稿已保留。"
   }
 }

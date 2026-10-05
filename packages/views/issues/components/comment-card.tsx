@@ -1,5 +1,6 @@
 "use client";
 
+import { HumanResponseReceipt } from "../../common/human-response-receipt";
 import { HumanRequestCard } from "../../common/human-request-card";
 
 
@@ -911,6 +912,7 @@ function CommentRow({
             aria-label={t(($) => $.reply.annotations.source_label, { name: entry.actor_name || getActorName(entry.actor_type, entry.actor_id) })}
             data-comment-content={entry.id} className="pl-12 pr-4 max-md:pl-3 max-md:pr-3 text-body leading-relaxed text-foreground">
             {entry.human_request_id ? <HumanRequestCard requestId={entry.human_request_id} fallbackContent={entry.content} /> : <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />}
+ <HumanResponseReceipt receipt={entry.human_response} />
           </div>
           <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-12 pr-4 max-md:pl-3 max-md:pr-3" />
           <div className="pl-12 pr-4 max-md:pl-3 max-md:pr-3">
@@ -1448,6 +1450,7 @@ function CommentCardImpl({
             aria-label={t(($) => $.reply.annotations.source_label, { name: entry.actor_name || getActorName(entry.actor_type, entry.actor_id) })}
             data-comment-content={entry.id} className="pl-8 max-md:pl-0 text-body leading-relaxed text-foreground">
                   {entry.human_request_id ? <HumanRequestCard requestId={entry.human_request_id} fallbackContent={entry.content} /> : <ReadonlyContent content={entry.content ?? ""} attachments={entry.attachments} />}
+ <HumanResponseReceipt receipt={entry.human_response} />
                 </div>
                 <AttachmentList attachments={entry.attachments} content={entry.content} className="mt-1.5 pl-8 max-md:pl-0" />
                 <div className="pl-8 max-md:pl-0">

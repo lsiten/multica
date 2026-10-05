@@ -144,6 +144,15 @@
     "decline": "Decline",
     "submitting": "Sending response...",
     "submit_failed": "Could not verify the response. Refresh this request, then retry.",
-    "refresh": "Refresh request"
+    "refresh": "Refresh request",
+    "reply_confirmed": "Confirmed: {{answer}}",
+    "reply_target": "Reply to request",
+    "reply_auto": "Match one exact choice",
+    "reply_preview": "Will confirm “{{title}}”: {{answer}}",
+    "reply_plain": "Send as ordinary message",
+    "reply_submit": "Submit answer",
+    "reply_choose_target": "Select the request this answer belongs to before submitting.",
+    "reply_stale": "This request changed or ended. Review its latest version.",
+    "reply_unsupported": "Text replies are not supported by this server. Use the original card; your draft is retained."
   }
 }

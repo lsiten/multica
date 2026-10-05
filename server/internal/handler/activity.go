@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -15,9 +16,10 @@ import (
 // TimelineEntry represents a single entry in the issue timeline, which can be
 // either an activity log record or a comment.
 type TimelineEntry struct {
-	HumanRequestID *string `json:"human_request_id,omitempty"`
-	Type           string  `json:"type"` // "activity" or "comment"
-	ID             string  `json:"id"`
+	HumanResponse  *service.HumanResponseReceipt `json:"human_response,omitempty"`
+	HumanRequestID *string                       `json:"human_request_id,omitempty"`
+	Type           string                        `json:"type"` // "activity" or "comment"
+	ID             string                        `json:"id"`
 
 	ActorType string `json:"actor_type"`
 	ActorID   string `json:"actor_id"`
@@ -293,6 +295,7 @@ func (h *Handler) commentsToEntries(r *http.Request, comments []db.Comment) []Ti
 	attachments := h.groupAttachments(r, ids)
 	supplements := h.listCommentSupplements(r.Context(), comments[0].WorkspaceID, ids)
 
+	receipts := h.humanResponseReceipts(r.Context(), comments[0].WorkspaceID, ids)
 	out := make([]TimelineEntry, len(comments))
 	for i, c := range comments {
 		content := c.Content
@@ -301,6 +304,7 @@ func (h *Handler) commentsToEntries(r *http.Request, comments []db.Comment) []Ti
 		cid := uuidToString(c.ID)
 		out[i] = TimelineEntry{
 			HumanRequestID: uuidToPtr(c.HumanRequestID),
+			HumanResponse:  receipts[cid],
 			Type:           "comment",
 			ID:             cid,
 			ActorType:      c.AuthorType,

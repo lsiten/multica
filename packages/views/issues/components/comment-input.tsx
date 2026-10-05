@@ -20,6 +20,7 @@ import { useStopRunsBeforeSend } from "./use-stop-runs-before-send";
 import { useCommentUploads } from "./use-comment-uploads";
 import { useQuickActionMenu } from "../hooks/use-quick-action-menu";
 import { useStickyComposer } from "../hooks/use-sticky-composer";
+import { useHumanReplyBinding } from "../../common/human-reply-binding";
 
 interface CommentInputProps {
   issueId: string;
@@ -154,6 +155,8 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
   // leave a mid-flight draft in place: dropping the caret then would yank it
   // out of the sentence the user is still typing.
   const editorScrubbedRef = useRef(false);
+  const humanReply = useHumanReplyBinding("comment", issueId, content, pendingAttachments.length === 0 && annotations.length === 0);
+  const { t: tHuman } = useT("common");
   const acceptedCommentIdRef = useRef<string | null>(null);
 
   const { submitting, submit } = useComposerSubmit({
@@ -169,6 +172,12 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
     afterAccepted: () => (editorScrubbedRef.current ? "blur" : "none"),
     onSubmit: async (content) => {
       editorScrubbedRef.current = false;
+      const pendingText = editorRef.current?.flushPendingUpdate?.();
+      if (pendingText != null) setDraft(draftKey, pendingText);
+      submittedEntryRef.current = useCommentDraftStore.getState().drafts[draftKey];
+      const formal = await humanReply.submit(content);
+      if (formal === "blocked") return false;
+      if (formal === "accepted") { acceptedCommentIdRef.current = humanReply.acceptedReplyId?.current ?? null; return true; }
       const { suppressAgentIds, steerTaskIds } = routing;
       // A preview still catching up with an edited @mention can name a
       // recipient this comment no longer addresses: never stop a run on it.
@@ -221,11 +230,13 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
   return (
     <div
       {...dropZoneProps}
+      data-issue-comment-composer={issueId}
       className="relative flex flex-col rounded-lg bg-card pb-8 ring-1 ring-border"
     >
       {attachmentsBlockSteer && <div className="px-3 pt-2">
         <SteerAttachmentNotice />
       </div>}
+      {humanReply.preview}
       {annotations.length > 0 && <div className="px-3 pt-2">
         <ReplyAnnotations draftKey={draftKey} annotations={annotations} disabled={submitting}
           onEditAnnotation={onEditAnnotation} />
@@ -329,14 +340,14 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
           disabled={!canSend}
           loading={submitting}
           busy={gate.uploading}
-          tooltip={gate.uploading
+          tooltip={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
             ? tEditor(($) => $.upload.in_progress)
             : !canSend && annotations.length > 0
               ? t(($) => $.reply.annotations.intent_hint)
               : sendShortcut
               ? `${t(($) => $.comment.send_tooltip)} · ${formatShortcut(sendShortcut)}`
               : t(($) => $.comment.send_tooltip)}
-          ariaLabel={gate.uploading
+          ariaLabel={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
             ? tEditor(($) => $.upload.in_progress)
             : t(($) => $.comment.send_tooltip)}
         />}

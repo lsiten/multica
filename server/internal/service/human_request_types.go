@@ -47,11 +47,18 @@ type HumanRequestInput struct {
 	Verification     string               `json:"verification,omitempty"`
 	Details          string               `json:"details,omitempty"`
 	ExpiresInSeconds int64                `json:"expires_in_seconds,omitempty"`
+	ResponseMode     string               `json:"response_mode,omitempty"`
 }
 
 // Validate rejects requests whose primary action would have to be inferred.
 func (r HumanRequestInput) Validate() error {
 	fail := func(field string) error { return fmt.Errorf("%w: %s", ErrHumanRequestInput, field) }
+	if r.ResponseMode != "" && r.ResponseMode != "card_only" && r.ResponseMode != "chat_or_card" {
+		return fail("invalid response mode")
+	}
+	if r.ResponseMode == "chat_or_card" && r.Kind != "choice" && r.Kind != "input" {
+		return fail("only ordinary choices and information may accept text replies")
+	}
 	for _, field := range []struct {
 		name, value string
 		max         int
@@ -159,8 +166,8 @@ func humanRequestText(r HumanRequestInput) string {
 	for i, step := range r.Steps {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, step)
 	}
-	for _, choice := range r.Choices {
-		b.WriteString(choice.Label + "\n")
+	for index, choice := range r.Choices {
+		fmt.Fprintf(&b, "%c / %d. %s\n", 'A'+index, index+1, choice.Label)
 	}
 	if r.InputLabel != "" {
 		b.WriteString(r.InputLabel + "\n")

@@ -16,6 +16,7 @@ export interface HumanRequestPayload {
   input_label?: string;
   verification?: string;
   details?: string;
+  response_mode?: "card_only" | "chat_or_card";
 }
 
 export interface HumanRequestAnswer {
@@ -41,3 +42,11 @@ export interface HumanRequest {
   can_respond: boolean;
   expires_at: string;
 }
+
+export interface HumanTextReplyResult {
+  request: HumanRequest;
+  reply: { channel: string; text: string; reply_id?: string; created_at?: string } | null;
+  task_id: string | null;
+}
+
+export interface HumanResponseReceipt { request_id: string; revision: number; label: string }

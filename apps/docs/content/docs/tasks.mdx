@@ -173,3 +173,8 @@ All other failure reasons (auth, quota, configuration, model, and so on) never r
 - [Daemon and runtimes](/daemon-runtimes) — which computer a run executes on.
 - [Assigning issues to agents](/assigning-issues) — trigger a run from an issue.
 - [Mentioning agents](/mentioning-agents) — add requirements in comments or bring in other agents.
+
+
+## Replying to requests
+
+Ordinary choice/input requests can opt into `chat_or_card`. The composer previews the exact request and answer before submission. Reply with a unique choice label, `A`, `1`, or `选第1项`; select the target explicitly for input requests or multiple matching cards. A persisted confirmation receipt means the request was consumed. Errors retain the draft; you can explicitly send an ordinary message instead. Authorization, manual completion and older requests use card controls.

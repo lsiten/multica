@@ -1034,8 +1034,11 @@ const ChatQuickActionSchema = z.object({
   primary: z.boolean().optional(),
 }).loose();
 
+const HumanResponseReceiptSchema = z.object({ request_id: z.string().uuid(), revision: z.number().int().positive(), label: z.string().min(1) }).nullish().catch(undefined);
+
 export const ChatMessageSchema = z.object({
   human_request_id: z.string().nullable().optional().catch(undefined),
+  human_response: HumanResponseReceiptSchema,
   id: z.string(),
   chat_session_id: z.string(),
   role: z.enum(["user", "assistant"]).catch("assistant"),
@@ -1138,6 +1141,7 @@ const CommentSupplementReceiptsSchema = z.array(z.unknown()).optional().catch(un
 
 const TimelineEntrySchema = z.object({
   human_request_id: z.string().nullable().optional().catch(undefined),
+  human_response: HumanResponseReceiptSchema,
   type: z.string(),
   id: z.string(),
   actor_type: z.string(),
@@ -1293,6 +1297,7 @@ export const EMPTY_CREATE_FEEDBACK_RESPONSE: CreateFeedbackResponse = {
 
 export const CommentSchema = z.object({
   human_request_id: z.string().nullable().optional().catch(undefined),
+  human_response: HumanResponseReceiptSchema,
   id: z.string(),
   issue_id: z.string(),
   author_type: z.string(),
@@ -2457,6 +2462,7 @@ export const ChatDraftRestoresResponseSchema = z.object({
 }).loose();
 
 const ChatQueuedTaskSchema = z.object({
+  human_response: HumanResponseReceiptSchema,
   task_id: z.string(),
   status: z.string().default("queued"),
   created_at: z.string().default(""),

@@ -16,6 +16,8 @@ import enEditor from "../../locales/en/editor.json";
 // mocking that call; it resolves a server Attachment row (makeUpload's extra
 // link/markdownLink fields are ignored by the engine, which re-derives them).
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
+const formalReply = vi.hoisted(() => vi.fn(async () => "ordinary" as "ordinary" | "accepted" | "blocked"));
+vi.mock("../../common/human-reply-binding", () => ({ useHumanReplyBinding: () => ({ submit: formalReply, preview: null, bound: false, stale: false }) }));
 // Observability for the write-back insert path: a settle whose mount died
 // delivers into the live editor through this method.
 const insertMarkdownSpy = vi.hoisted(() => vi.fn());
@@ -273,6 +275,7 @@ type ChatInputOnSend = React.ComponentProps<typeof ChatInput>["onSend"];
 type ChatInputCommit = Parameters<ChatInputOnSend>[2];
 
 beforeEach(() => {
+  formalReply.mockReset().mockResolvedValue("ordinary");
   voiceFixture.hold = false;
   voiceFixture.draft = null;
   dropHandlers.onDrop = null;
@@ -1287,6 +1290,7 @@ describe("ChatInput async send", () => {
 
     fireEvent.click(sendButton!);
 
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
     expect(onSend).toHaveBeenCalledWith(
       "slow network",
       undefined,
@@ -1652,4 +1656,24 @@ describe("ChatInput revoked-access placeholder", () => {
 
     expect(editorProps.last?.placeholder).toBe("Message Multica…");
   });
+});
+
+describe("formal request submit wiring", () => {
+ it("clears an accepted formal answer without invoking ordinary message send", async () => {
+  formalReply.mockResolvedValue("accepted");
+  const {onSend}=renderInput();
+  fireEvent.change(screen.getByRole("textbox"),{target:{value:"A"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send"}));
+  await waitFor(()=>expect(formalReply).toHaveBeenCalledWith("A"));
+  expect(onSend).not.toHaveBeenCalled();
+  await waitFor(()=>expect(editorState.cleared).toBe(1));
+ });
+ it("keeps the draft and does not send an ordinary message when formal submission fails", async () => {
+  formalReply.mockResolvedValue("blocked");
+  const {onSend}=renderInput();
+  fireEvent.change(screen.getByRole("textbox"),{target:{value:"1"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send"}));
+  await waitFor(()=>expect(formalReply).toHaveBeenCalledWith("1"));
+  expect(onSend).not.toHaveBeenCalled();expect(screen.getByRole("textbox")).toHaveValue("1");
+ });
 });

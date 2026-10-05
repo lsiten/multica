@@ -20,6 +20,7 @@ import {
 } from "@multica/ui/components/ui/dropdown-menu";
 import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../../i18n";
+import { HumanResponseReceipt } from "../../common/human-response-receipt";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 
 interface ChatQueueProps {
@@ -119,9 +120,10 @@ export function ChatQueue({
                     className="size-3.5 shrink-0 text-faint-foreground"
                     aria-hidden="true"
                   />
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                    {task.content?.trim() || t(($) => $.queue.fallback)}
-                  </span>
+                  <div className="min-w-0 flex-1 text-muted-foreground">
+                    <p className="truncate">{task.content?.trim() || t(($) => $.queue.fallback)}</p>
+                    <HumanResponseReceipt receipt={task.human_response} />
+                  </div>
                   <div className="flex shrink-0 items-center gap-0.5">
                     <span
                       className="shrink-0"

@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { describe, expect, it, vi } from "vitest";
+import enCommon from "../../locales/en/common.json";
 import enChat from "../../locales/en/chat.json";
 import { ChatQueue } from "./chat-queue";
 
-const TEST_RESOURCES = { en: { chat: enChat } };
+const TEST_RESOURCES = { en: { chat: enChat, common: enCommon } };
 
 function renderQueue(headStatus = "running", sendNowDisabled = false) {
   const callbacks = {
@@ -149,4 +150,9 @@ describe("ChatQueue send-now gating", () => {
 
     expect(screen.getAllByRole("button", { name: "Steer" })[0]!).not.toBeDisabled();
   });
+});
+
+it("shows the recorded formal answer while the continuation is still queued", () => {
+ render(<I18nProvider locale="en" resources={TEST_RESOURCES}><ChatQueue headStatus="running" tasks={[{task_id:"next",status:"queued",created_at:"",content:"A",human_response:{request_id:"request",revision:3,label:"Native dimensions"}}]} onSendNow={vi.fn()} onEdit={vi.fn()} onRemove={vi.fn()} onClear={vi.fn()}/></I18nProvider>);
+ expect(screen.getByRole("status")).toHaveTextContent("Confirmed: Native dimensions");
 });

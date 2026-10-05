@@ -20,6 +20,7 @@ import { useRecipientActions } from "../hooks/use-recipient-actions";
 import { SteerAttachmentNotice } from "./steer-attachment-notice";
 import { useStopRunsBeforeSend } from "./use-stop-runs-before-send";
 import { useCommentUploads } from "./use-comment-uploads";
+import { useHumanReplyBinding } from "../../common/human-reply-binding";
 import { useQuickActionMenu } from "../hooks/use-quick-action-menu";
 
 // ---------------------------------------------------------------------------
@@ -162,6 +163,9 @@ function ReplyInput({
   const editorScrubbedRef = useRef(false);
   const acceptedCommentIdRef = useRef<string | null>(null);
 
+  const { t: tHuman } = useT("common");
+  const humanReply = useHumanReplyBinding("comment", issueId, content, pendingAttachments.length === 0 && annotations.length === 0 && !targetMissing, parentId);
+
   const { submitting, submit } = useComposerSubmit({
     editorRef,
     uploadGate: gate,
@@ -178,6 +182,14 @@ function ReplyInput({
     afterAccepted: () => (editorScrubbedRef.current ? "refocus" : "none"),
     onSubmit: async (content) => {
       editorScrubbedRef.current = false;
+      if (draftKey) {
+        const pending = editorRef.current?.flushPendingUpdate?.();
+        if (pending != null) setDraft(draftKey, pending);
+        submittedEntryRef.current = useCommentDraftStore.getState().drafts[draftKey];
+      }
+      const formal = await humanReply.submit(content);
+      if (formal === "blocked") return false;
+      if (formal === "accepted") { acceptedCommentIdRef.current = humanReply.acceptedReplyId?.current ?? null; return true; }
       const { suppressAgentIds, steerTaskIds } = routing;
       // A preview still catching up with an edited @mention can name a
       // recipient this comment no longer addresses: never stop a run on it.
@@ -241,11 +253,13 @@ function ReplyInput({
       <div
         {...dropZoneProps}
         ref={composerRef}
+        data-issue-reply-composer={parentId}
         className={cn(
           "relative min-w-0 flex-1 flex flex-col",
           (!isEmpty || annotations.length > 0) && "pb-9",
         )}
       >
+        {humanReply.preview}
         {attachmentsBlockSteer && <SteerAttachmentNotice />}
         {draftKey && annotations.length > 0 && <>
           {targetMissing && <p role="alert" className="mb-2 text-caption text-destructive">{t(($) => $.reply.annotations.target_deleted)}</p>}
@@ -338,14 +352,14 @@ function ReplyInput({
             disabled={!canSend}
             loading={submitting}
             busy={gate.uploading}
-            tooltip={gate.uploading
+            tooltip={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
               ? tEditor(($) => $.upload.in_progress)
               : !canSend && annotations.length > 0 && !targetMissing
                 ? t(($) => $.reply.annotations.intent_hint)
               : sendShortcut
                 ? `${t(($) => $.comment.send_tooltip)} · ${formatShortcut(sendShortcut)}`
                 : t(($) => $.comment.send_tooltip)}
-            ariaLabel={gate.uploading
+            ariaLabel={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
               ? tEditor(($) => $.upload.in_progress)
               : t(($) => $.comment.send_tooltip)}
           />}

@@ -3,6 +3,7 @@ import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query
 import { api } from "../api";
 import { useWSEvent, useWSReconnect } from "../realtime";
 import type { HumanRequest, HumanRequestAnswer } from "../types/human-request";
+export { matchHumanTextAnswer, humanTextAnswerLabel } from "./text-answer";
 
 export const humanRequestKeys = {
   all: (workspaceId: string) => ["human-requests", workspaceId] as const,

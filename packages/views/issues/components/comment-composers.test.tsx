@@ -21,6 +21,7 @@ type QuickActionMenuProp = {
 // `api.uploadFile(file, ctx, signal)` (MUL-5181). Tests drive uploads by
 // mocking that call directly rather than the old `uploadWithToast` hook.
 const apiUploadFile = vi.hoisted(() => vi.fn());
+vi.mock("../../common/human-reply-binding", () => ({ useHumanReplyBinding: () => ({ submit: async () => "ordinary", preview: null, bound: false, stale: false }) }));
 const apiListWorkspaces = vi.hoisted(() => vi.fn());
 const apiListQuickActions = vi.hoisted(() => vi.fn());
 const apiRenderQuickAction = vi.hoisted(() => vi.fn());

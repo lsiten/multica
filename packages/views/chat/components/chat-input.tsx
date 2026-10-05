@@ -32,6 +32,7 @@ import { useChatInputHistory } from "./use-chat-input-history";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ClearablePillButton } from "../../common/pill-button";
 import { useT } from "../../i18n";
+import { useHumanReplyBinding } from "../../common/human-reply-binding";
 
 const logger = createLogger("chat.ui");
 const EMPTY_UPLOADS: DraftUpload[] = [];
@@ -252,6 +253,8 @@ export function ChatInput({
   const storeUploads = useChatStore(
     (s) => s.inputDraftAttachments[draftKey] ?? EMPTY_UPLOADS,
   );
+  const humanReply = useHumanReplyBinding("chat", draftKeyOverride || editorKeyOverride ? null : activeSessionId, inputDraft, storeUploads.length === 0);
+  const { t: tHuman } = useT("common");
   const setInputDraft = useChatStore((s) => s.setInputDraft);
   const setInputDraftAttachments = useChatStore((s) => s.setInputDraftAttachments);
   const clearInputDraft = useChatStore((s) => s.clearInputDraft);
@@ -533,7 +536,7 @@ export function ChatInput({
       // These states disable the SubmitButton, but Mod+Enter bypasses it — so a
       // read-only or busy composer must still refuse the keyboard path.
       if (voiceRef.current?.isActive()) return false;
-      if (disabled || noAgent || (isRunning && !allowSubmitWhileRunning)) {
+      if (disabled || noAgent || (isRunning && !allowSubmitWhileRunning && !humanReply.bound)) {
         logger.debug("input.send skipped", {
           disabled,
           noAgent,
@@ -619,6 +622,11 @@ export function ChatInput({
         attachmentCount: uniqueActiveIds.length,
       });
       const sentAttachments = draftAttachments.filter((attachment) => uniqueActiveIds.includes(attachment.id));
+      if (uniqueActiveIds.length === 0) {
+        const formal = await humanReply.submit(content);
+        if (formal === "blocked") return false;
+        if (formal === "accepted") { commitInput(); return true; }
+      }
       // Forward the fifth slot even when it is null: null explicitly resets
       // autonomy for this message, while undefined means inherit the daemon
       // default for embedded callers that do not expose the mode menu.
@@ -640,7 +648,7 @@ export function ChatInput({
 
   const submitInput = async () => {
     if (voiceSubmitPending.current || disabled || noAgent || gate.isBlocked() ||
-      (isRunning && !allowSubmitWhileRunning)) return;
+      (isRunning && !allowSubmitWhileRunning && !humanReply.bound)) return;
     const voice = voiceRef.current;
     if (!voice?.isActive()) { void submit(); return; }
     voiceSubmitPending.current = true;
@@ -706,6 +714,7 @@ export function ChatInput({
         noAgent && "cursor-not-allowed",
       )}
     >
+      {humanReply.preview}
       <div
         data-slot="chat-input-surface"
         {...(uploadEnabled ? dropZoneProps : {})}
@@ -837,7 +846,7 @@ export function ChatInput({
           disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
           onActiveChange={setVoiceActive}
           onSubmit={() => { void submitInput(); }}
-          canSubmit={!disabled && !noAgent && !submitting && !gate.uploading && (!isRunning || !!allowSubmitWhileRunning)}
+          canSubmit={!disabled && !noAgent && !submitting && !gate.uploading && (!isRunning || !!allowSubmitWhileRunning || humanReply.bound)}
           hasContent={!hasNothingToSend}
           onBegin={() => {
             if (editorDraftKeyRef.current !== draftKey) return null;
@@ -899,18 +908,18 @@ export function ChatInput({
             // removing chat's only cancellation path; the attachment node
             // remains the visible upload-progress surface in the editor.
             running={
-              !!isRunning &&
+              !!isRunning && !humanReply.bound &&
               (!allowSubmitWhileRunning || hasNothingToSend || gate.uploading)
             }
             onStop={onStop}
-            tooltip={gate.uploading
+            tooltip={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
               ? tEditor(($) => $.upload.in_progress)
               : isRunning
                 ? t(($) => $.input.queue_send_tooltip)
                 : sendShortcut
                   ? `${t(($) => $.input.send_tooltip)} · ${formatShortcut(sendShortcut)}`
                   : t(($) => $.input.send_tooltip)}
-            ariaLabel={gate.uploading
+            ariaLabel={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
               ? tEditor(($) => $.upload.in_progress)
               : isRunning
                 ? t(($) => $.input.queue_send_tooltip)

@@ -111,6 +111,7 @@ export function HumanRequestContent({ request, workspaceId }: {
         </details>
       )}
       {!pending && <p role="status" className="text-caption text-muted-foreground">{status}</p>}
+      {request.status === "answered" && request.response?.answer && <p className="break-words text-caption">{t($ => $.human_request.reply_confirmed, { answer: payload.choices.find(choice => choice.id === request.response?.answer)?.label ?? request.response.answer })}</p>}
       {pending && !actionable && (
         <p className="text-caption text-muted-foreground">
           {payload.kind === "unknown" ? t($ => $.human_request.unavailable) : t($ => $.human_request.other_member)}
@@ -131,7 +132,7 @@ export function HumanRequestContent({ request, workspaceId }: {
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            {payload.kind === "choice" ? payload.choices.map(choice => (
+            {payload.kind === "choice" ? payload.choices.map((choice, index) => (
               <Button
                 key={choice.id}
                 variant={choice.recommended ? "default" : "outline"}
@@ -140,7 +141,7 @@ export function HumanRequestContent({ request, workspaceId }: {
                 onClick={() => send("choice", choice.id)}
                 className="h-auto min-h-[var(--button-height-default)] whitespace-normal text-left"
               >
-                {choice.label}
+                <span aria-hidden="true">{String.fromCharCode(65 + index)} / {index + 1}. </span>{choice.label}
                 {choice.recommended && (
                   <span className="text-caption"> · {t($ => $.human_request.recommended)}</span>
                 )}

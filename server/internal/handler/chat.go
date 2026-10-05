@@ -1359,9 +1359,11 @@ func (h *Handler) ListChatMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	receipts := h.humanResponseReceipts(r.Context(), session.WorkspaceID, messageIDs)
 	resp := make([]ChatMessageResponse, len(messages))
 	for i, m := range messages {
 		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)], chatInputTaskIDForMessage(m, inputTaskOwners))
+		resp[i].HumanResponse = receipts[uuidToString(m.ID)]
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1429,9 +1431,11 @@ func (h *Handler) ListChatMessagesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	receipts := h.humanResponseReceipts(r.Context(), session.WorkspaceID, messageIDs)
 	resp := make([]ChatMessageResponse, len(messages))
 	for i, m := range messages {
 		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)], chatInputTaskIDForMessage(m, inputTaskOwners))
+		resp[i].HumanResponse = receipts[uuidToString(m.ID)]
 	}
 	writeJSON(w, http.StatusOK, ChatMessagesPageResponse{
 		Messages:   resp,
@@ -1474,11 +1478,12 @@ func waitReasonForStatus(status string, reason pgtype.Text) string {
 }
 
 type QueuedChatTaskResponse struct {
-	TaskID    string `json:"task_id"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
-	MessageID string `json:"message_id,omitempty"`
-	Content   string `json:"content,omitempty"`
+	HumanResponse *service.HumanResponseReceipt `json:"human_response,omitempty"`
+	TaskID        string                        `json:"task_id"`
+	Status        string                        `json:"status"`
+	CreatedAt     string                        `json:"created_at"`
+	MessageID     string                        `json:"message_id,omitempty"`
+	Content       string                        `json:"content,omitempty"`
 }
 
 type PrioritizeQueuedChatTaskResponse struct {
@@ -1797,6 +1802,13 @@ func (h *Handler) GetPendingChatTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	messageIDs := make([]pgtype.UUID, 0, len(tasks))
+	for _, task := range tasks {
+		if task.MessageID.Valid {
+			messageIDs = append(messageIDs, task.MessageID)
+		}
+	}
+	receipts := h.humanResponseReceipts(r.Context(), session.WorkspaceID, messageIDs)
 	head := tasks[0]
 	queued := make([]QueuedChatTaskResponse, 0, len(tasks)-1)
 	for _, task := range tasks[1:] {
@@ -1804,11 +1816,12 @@ func (h *Handler) GetPendingChatTask(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		queued = append(queued, QueuedChatTaskResponse{
-			TaskID:    uuidToString(task.ID),
-			Status:    task.Status,
-			CreatedAt: timestampToString(task.CreatedAt),
-			MessageID: uuidToString(task.MessageID),
-			Content:   task.Content,
+			HumanResponse: receipts[uuidToString(task.MessageID)],
+			TaskID:        uuidToString(task.ID),
+			Status:        task.Status,
+			CreatedAt:     timestampToString(task.CreatedAt),
+			MessageID:     uuidToString(task.MessageID),
+			Content:       task.Content,
 		})
 	}
 
@@ -2165,12 +2178,13 @@ func buildChatLastMessage(at pgtype.Timestamptz, content, role string, failure p
 }
 
 type ChatMessageResponse struct {
-	HumanRequestID *string `json:"human_request_id,omitempty"`
-	ID             string  `json:"id"`
-	ChatSessionID  string  `json:"chat_session_id"`
-	Role           string  `json:"role"`
-	Content        string  `json:"content"`
-	TaskID         *string `json:"task_id"`
+	HumanResponse  *service.HumanResponseReceipt `json:"human_response,omitempty"`
+	HumanRequestID *string                       `json:"human_request_id,omitempty"`
+	ID             string                        `json:"id"`
+	ChatSessionID  string                        `json:"chat_session_id"`
+	Role           string                        `json:"role"`
+	Content        string                        `json:"content"`
+	TaskID         *string                       `json:"task_id"`
 	// InputTaskID is the stable direct-chat input owner. Automatic and explicit
 	// retry children keep the original user message under this task id even
 	// though their own task_id is different.

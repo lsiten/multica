@@ -9,6 +9,7 @@ import enEditor from "../../locales/en/editor.json";
 // Uploads flow through the module-level coordinator, which calls
 // `api.uploadFile(file, ctx, signal)` (MUL-5181 L2).
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
+vi.mock("../../common/human-reply-binding", () => ({ useHumanReplyBinding: () => ({ submit: async () => "ordinary", preview: null, bound: false, stale: false }) }));
 
 vi.mock("@multica/core/api", () => ({
   api: { uploadFile: mockApiUploadFile },

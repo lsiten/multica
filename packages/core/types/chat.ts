@@ -136,6 +136,7 @@ export interface HasPendingChatTasksResponse {
 
 export interface ChatMessage {
   human_request_id?: string | null;
+  human_response?: import("./human-request").HumanResponseReceipt | null;
   id: string;
   chat_session_id: string;
   role: "user" | "assistant";
@@ -288,6 +289,7 @@ export interface ChatDraftRestoresResponse {
  * so the timer survives refresh / reopen without "resetting to 0s".
  */
 export interface ChatQueuedTask {
+  human_response?: import("./human-request").HumanResponseReceipt | null;
   task_id: string;
   status: string;
   created_at: string;

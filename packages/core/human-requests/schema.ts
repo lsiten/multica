@@ -29,6 +29,7 @@ export const HumanRequestSchema = z.object({
     input_label: z.string().optional(),
     verification: z.string().optional(),
     details: z.string().optional(),
+    response_mode: z.enum(["card_only", "chat_or_card"]).catch("card_only").optional().default("card_only"),
   }),
   response: HumanRequestAnswerSchema.nullable().optional().default(null),
   response_task_id: z.string().nullable().default(null),
@@ -42,3 +43,9 @@ export const HumanRequestSchema = z.object({
 });
 
 export const HumanRequestListSchema = z.array(HumanRequestSchema);
+
+export const HumanTextReplyResultSchema = z.object({
+  request: HumanRequestSchema,
+  reply: z.object({ channel: z.string(), text: z.string(), reply_id: z.string().optional(), created_at: z.string().optional() }).nullable(),
+  task_id: z.string().nullable(),
+});

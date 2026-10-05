@@ -2023,6 +2023,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/", h.CreateHumanRequest)
 				r.Get("/{requestId}", h.GetHumanRequest)
 				r.With(handler.RequireHumanActor).Post("/{requestId}/respond", h.RespondHumanRequest)
+				r.With(handler.RequireHumanActor).Post("/{requestId}/reply", h.ReplyHumanRequest)
 			})
 
 			// Assignee frequency

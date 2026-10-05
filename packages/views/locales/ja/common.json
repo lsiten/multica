@@ -144,6 +144,15 @@
     "decline": "拒否する",
     "submitting": "回答を送信中...",
     "submit_failed": "回答の送信を確認できません。リクエストを更新して再試行してください。",
-    "refresh": "リクエストを更新"
+    "refresh": "リクエストを更新",
+    "reply_confirmed": "確認済み：{{answer}}",
+    "reply_target": "回答する依頼",
+    "reply_auto": "一致する選択肢を照合",
+    "reply_preview": "「{{title}}」に回答：{{answer}}",
+    "reply_plain": "通常のメッセージとして送信",
+    "reply_submit": "回答を送信",
+    "reply_choose_target": "回答先の依頼を選択してください。",
+    "reply_stale": "依頼が変更または終了しました。最新の内容を確認してください。",
+    "reply_unsupported": "このサーバーはテキスト回答に未対応です。元のカードを使ってください。下書きは保持されます。"
   }
 }

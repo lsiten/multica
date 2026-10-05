@@ -113,3 +113,7 @@ UPDATE human_request SET status = 'cancelled', updated_at = now()
 WHERE id = @id AND workspace_id = @workspace_id AND revision = @revision
   AND scope_fingerprint = @scope_fingerprint AND status = 'pending'
 RETURNING *;
+
+-- name: ListHumanResponseReceipts :many
+SELECT * FROM human_request WHERE workspace_id = @workspace_id AND status = 'answered'
+AND response->'origin'->>'reply_id' = ANY(@reply_ids::text[]);
