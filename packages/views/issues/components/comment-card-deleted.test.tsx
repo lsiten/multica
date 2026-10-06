@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TimelineEntry } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
+vi.mock("../../common/human-reply-binding", () => ({
+  useHumanReplyBinding: () => ({ submit: async () => "ordinary", preview: null, bound: false, stale: false }),
+}));
+
 // #8296: deleting a comment keeps its replies. A comment deleted while it had
 // replies arrives as a tombstone (`deleted_at` set, empty body). A tombstoned
 // REPLY renders nothing — the replies it held already render in its place; a

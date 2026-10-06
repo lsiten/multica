@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TimelineEntry } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
+vi.mock("../../common/human-reply-binding", () => ({
+  useHumanReplyBinding: () => ({ submit: async () => "ordinary", preview: null, bound: false, stale: false }),
+}));
+
 // Comment "more actions" menu layout, in three groups: act on the comment
 // (Edit, then Resolve), take it elsewhere (Copy, Copy link, Create sub-issue),
 // and Delete alone at the bottom. Edit only shows on comments the viewer may

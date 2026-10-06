@@ -7,6 +7,10 @@ import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import { useCommentDraftStore } from "@multica/core/issues/stores";
 import { renderWithI18n } from "../../test/i18n";
 
+vi.mock("../../common/human-reply-binding", () => ({
+  useHumanReplyBinding: () => ({ submit: async () => "ordinary", preview: null, bound: false, stale: false }),
+}));
+
 const apiUploadFile = vi.hoisted(() => vi.fn());
 const uploadWithToast = vi.hoisted(() => vi.fn());
 const editorDefaultValues = vi.hoisted(() => ({
