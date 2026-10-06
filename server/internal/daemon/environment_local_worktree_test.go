@@ -94,7 +94,7 @@ func TestRunTaskRetainsAndReusesLocalWorktreeWithSeparateRunRoots(t *testing.T) 
 	}
 }
 
-func TestRunTaskRestoresAndReattachesColdLocalCheckout(t *testing.T) {
+func TestRunTaskRecreatesDeletedLocalCheckoutFromOwnedBranchWithoutRestoringArchive(t *testing.T) {
 	d, _, cleanup := newLeaderReuseTestDaemon(t)
 	defer cleanup()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,8 +133,8 @@ func TestRunTaskRestoresAndReattachesColdLocalCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sameDir(t, next.WorkDir, result.WorkDir) || next.CodeRoot == "" {
-		t.Fatalf("cold code directory not reused: %+v", next)
+	if sameDir(t, next.WorkDir, result.WorkDir) || next.CodeRoot != "" {
+		t.Fatalf("deleted checkout was restored instead of recreated: %+v", next)
 	}
 	common := worktreeTestGit(t, next.WorkDir, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	origin := worktreeTestGit(t, repo, "rev-parse", "--path-format=absolute", "--git-common-dir")

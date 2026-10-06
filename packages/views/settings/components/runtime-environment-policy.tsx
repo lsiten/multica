@@ -15,7 +15,7 @@ export function RuntimeEnvironmentPolicy({ workspaceId, runtimeId, userId, disab
   const query = useQuery({ queryKey: key, queryFn: () => api.executeRuntimeEnvironment(workspaceId, runtimeId, { action: "policy" }), retry: false, refetchInterval: open ? 10000 : false });
   const save = useMutation({
     mutationFn: (data: FormData) => api.executeRuntimeEnvironment(workspaceId, runtimeId, { action: "policy_update", policy: environmentPolicySchema.parse({
-      enabled: data.get("enabled") === "on", archive_after_hours: Number(data.get("archive")), cache_after_hours: Number(data.get("cache")),
+      enabled: data.get("enabled") === "on", archive_after_hours: query.data?.task_retention_supported ? 0 : Number(data.get("archive")), cache_after_hours: Number(data.get("cache")),
       pressure_cache_after_hours: Number(data.get("pressure_cache")), max_idle_environments: Number(data.get("count")),
       max_directory_bytes: Math.round(Number(data.get("size")) * 1024 ** 3), minimum_free_bytes: Math.round(Number(data.get("free")) * 1024 ** 3),
     }) }),
@@ -34,7 +34,7 @@ export function RuntimeEnvironmentPolicy({ workspaceId, runtimeId, userId, disab
 function PolicyForm({ status, disabled, onSubmit }: { status: EnvironmentPolicyStatus; disabled: boolean; onSubmit: (data: FormData) => void }) {
   const { t } = useT("settings");
   const fields = [
-    { name: "archive", label: t(($) => $.environments.policy.archive_hours), value: status.policy.archive_after_hours, max: 87600, step: 1 },
+    ...(status.task_retention_supported ? [] : [{ name: "archive", label: t(($) => $.environments.policy.archive_hours), value: status.policy.archive_after_hours, max: 87600, step: 1 }]),
     { name: "cache", label: t(($) => $.environments.policy.cache_hours), value: status.policy.cache_after_hours, max: 87600, step: 1 },
     { name: "pressure_cache", label: t(($) => $.environments.policy.pressure_cache_hours), value: status.policy.pressure_cache_after_hours, max: 87600, step: 1 },
     { name: "count", label: t(($) => $.environments.policy.max_count), value: status.policy.max_idle_environments, max: 100000, step: 1 },
@@ -44,7 +44,7 @@ function PolicyForm({ status, disabled, onSubmit }: { status: EnvironmentPolicyS
   return <form className="mt-3 space-y-4" onSubmit={(event) => { event.preventDefault(); onSubmit(new FormData(event.currentTarget)); }}>
     <Label className="flex items-center gap-2"><input type="checkbox" name="enabled" defaultChecked={status.policy.enabled} disabled={disabled} />{t(($) => $.environments.policy.enabled)}</Label>
     {!status.effective_enabled && <p className="text-caption text-muted-foreground">{t(($) => $.environments.policy.inactive)}</p>}
-    <p className="text-caption text-muted-foreground">{t(($) => $.environments.policy.retention_help)}</p>
+    <p className="text-caption text-muted-foreground">{status.task_retention_supported ? t(($) => $.environments.policy.task_retention_help) : t(($) => $.environments.policy.retention_help)}</p>
     <div className="grid gap-3 sm:grid-cols-2">{fields.map((field) => <Label key={field.name} className="grid gap-1.5">{field.label}<Input name={field.name} type="number" required min={0} max={field.max} step={field.step} defaultValue={field.value} disabled={disabled} /></Label>)}</div>
     <p className="text-caption">{t(($) => $.environments.policy.pressure_status, { status: status.under_pressure ? t(($) => $.environments.policy.pressure) : t(($) => $.environments.policy.normal), free: status.free_bytes === null ? "—" : `${(status.free_bytes / 1024 ** 3).toFixed(1)} GiB` })}</p>
     <p className="text-caption text-muted-foreground">{t(($) => $.environments.policy.last_scan, { time: status.last_scan_at ? new Date(status.last_scan_at).toLocaleString() : "—", count: status.idle_environments })}</p>

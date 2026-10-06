@@ -60,7 +60,7 @@ func TestRemotePolicyUpdateUsesOwningRuntimeAndPreservesOtherRuntimeDefaults(t *
 
 func TestCapacityPressureReclaimsVerifiedCacheWithReceiptAndRetainsOutputs(t *testing.T) {
 	d := scopedEnvironmentTestDaemon(t)
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled = true, true
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled = true, true
 	scope := environmentOperationScope{WorkspaceID: "ws1", RuntimeID: "runtime"}
 	policy := d.defaultEnvironmentPolicy()
 	policy.CacheAfterHours, policy.PressureCacheAfterHours, policy.MaxDirectoryBytes = 12, 1, 1
@@ -92,7 +92,7 @@ func TestCapacityPressureReclaimsVerifiedCacheWithReceiptAndRetainsOutputs(t *te
 
 func TestAutomaticCacheRechecksDisabledPolicyAfterPreview(t *testing.T) {
 	d := scopedEnvironmentTestDaemon(t)
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled = true, true
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled = true, true
 	scope := environmentOperationScope{WorkspaceID: "ws1", RuntimeID: "runtime", Automatic: true}
 	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", &execenv.GCMeta{Kind: execenv.GCKindIssue, WorkspaceID: "ws1", TaskID: "task", CompletedAt: time.Now().Add(-48 * time.Hour)})
 	cache := filepath.Join(root, execenv.ManagedReclaimableArtifactSubpaths()[0], "binary")
@@ -114,7 +114,7 @@ func TestAutomaticCacheRechecksDisabledPolicyAfterPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if eligible, reason := d.automaticArchiveEligible(t.Context(), root, meta); eligible || reason != "disabled" {
+	if eligible, reason := d.automaticCleanupEligible(t.Context(), root, meta); eligible || reason != "disabled" {
 		t.Fatalf("disabled policy still permits automatic archive: %v %s", eligible, reason)
 	}
 }

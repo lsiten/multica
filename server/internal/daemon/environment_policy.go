@@ -17,7 +17,7 @@ type environmentPolicyRecord struct {
 }
 
 func (d *Daemon) automaticCacheEligible(ctx context.Context, path string, owner *execenv.EnvRootOwner, status *protocol.TaskGCStatus) (bool, string) {
-	if !d.cfg.GCEnabled || !d.cfg.EnvironmentArchiveEnabled || d.cfg.KeepEnvAfterTask {
+	if !d.cfg.GCEnabled || !d.cfg.EnvironmentRecycleEnabled || d.cfg.KeepEnvAfterTask {
 		return false, "disabled"
 	}
 	scope := environmentOperationScope{WorkspaceID: owner.WorkspaceID, RuntimeID: status.RuntimeID}
@@ -148,10 +148,11 @@ func (d *Daemon) environmentPolicyStatus(scope environmentOperationScope) (proto
 	status := d.environmentPolicyScans[d.environmentOperationKey(scope, "policy")]
 	d.environmentPolicyMu.Unlock()
 	status.WorkspaceID, status.RuntimeID, status.Policy = scope.WorkspaceID, scope.RuntimeID, policy
-	status.EffectiveEnabled = policy.Enabled && d.cfg.GCEnabled && d.cfg.EnvironmentArchiveEnabled && !d.cfg.KeepEnvAfterTask
+	status.TaskRetentionSupported = true
+	status.EffectiveEnabled = policy.Enabled && d.cfg.GCEnabled && d.cfg.EnvironmentRecycleEnabled && !d.cfg.KeepEnvAfterTask
 	interval := d.cfg.EnvironmentRecycleInterval
 	if interval <= 0 {
-		interval = 5 * time.Minute
+		interval = 30 * time.Second
 	}
 	status.ScanIntervalSeconds = int64(interval / time.Second)
 	status.FreeBytes, err = environmentFreeBytes(d.cfg.WorkspacesRoot)

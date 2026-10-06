@@ -19,13 +19,14 @@ type environmentCapacityGroup struct {
 }
 
 func (d *Daemon) scanEnvironmentCapacity(ctx context.Context) {
-	if !d.cfg.GCEnabled || !d.cfg.EnvironmentArchiveEnabled || d.cfg.KeepEnvAfterTask {
+	if !d.cfg.GCEnabled || !d.cfg.EnvironmentRecycleEnabled || d.cfg.KeepEnvAfterTask {
 		return
 	}
 	roots, err := d.environmentRootPaths(ctx)
 	if err != nil {
 		return
 	}
+	ctx = d.prefetchEnvironmentLifecycles(ctx, roots)
 	groups := map[string]*environmentCapacityGroup{}
 	for _, path := range roots {
 		if ctx.Err() != nil {

@@ -12,8 +12,23 @@ import (
 )
 
 func (d *Daemon) describeManagedWorktree(ctx context.Context, row *ManagedWorktree) {
-	row.WorktreeLifecycle = protocol.WorktreeLifecycle{NextAction: protocol.WorktreeUnknown, RepositoriesDetails: []protocol.WorktreeRepositoryLifecycle{}}
+	row.WorktreeLifecycle = protocol.WorktreeLifecycle{IssueID: row.IssueID, NextAction: protocol.WorktreeUnknown, RepositoriesDetails: []protocol.WorktreeRepositoryLifecycle{}}
+	consumers := make([]string, 0, len(row.ConsumerTaskIDs))
+	for _, id := range row.ConsumerTaskIDs {
+		if d.client == nil {
+			continue
+		}
+		status, err := d.environmentTaskStatus(ctx, id)
+		if err == nil && status.WorkspaceID == row.WorkspaceID && !status.Missing && !isAgentTaskTerminal(status.Status) {
+			consumers = append(consumers, id)
+		}
+	}
+	row.ConsumerTaskIDs = consumers
 	if row.Active {
+		row.RetentionReason, row.RetainedTaskID = "active", row.TaskID
+		if len(consumers) > 0 {
+			row.RetainedTaskID = consumers[0]
+		}
 		row.NextAction = protocol.WorktreeActive
 		return
 	}
@@ -31,8 +46,27 @@ func (d *Daemon) describeManagedWorktree(ctx context.Context, row *ManagedWorktr
 	row.RunStatus = status.Status
 	row.IssueID, row.IssueStatus, row.IssueStatusCategory = status.IssueID, status.IssueStatus, status.IssueStatusCategory
 	row.LastActivityAt = status.LastActivityAt
+	row.RetentionReason = d.environmentRetentionReason(ctx, row.Path, status)
+	if row.RetentionReason != "" && row.RetentionReason != "unavailable" {
+		row.RetainedTaskID = status.CurrentTaskID
+		if row.RetainedTaskID == "" {
+			row.RetainedTaskID = status.TaskID
+		}
+		if row.RetentionReason == "active" && len(consumers) > 0 {
+			row.RetainedTaskID = consumers[0]
+		}
+		if references, ok := ctx.Value(environmentReviewReferencesKey{}).(map[string]environmentReviewReference); ok {
+			if reference, pinned := references[executionEnvClaimKey(row.Path)]; pinned && row.RetentionReason == "task_review" {
+				row.RetainedTaskID = reference.taskID
+			}
+		}
+	}
 	if !status.CompletedAt.IsZero() {
 		row.CompletedAt = &status.CompletedAt
+	}
+	if status.Missing && status.RetentionSupported && row.RetentionReason == "" {
+		row.NextAction, row.ProtectionReason = protocol.WorktreeCleanup, ""
+		return
 	}
 	switch status.Status {
 	case "queued", "dispatched", "running", "waiting_local_directory", "deferred":
@@ -41,6 +75,20 @@ func (d *Daemon) describeManagedWorktree(ctx context.Context, row *ManagedWorktr
 	case "completed", "failed", "cancelled":
 	default:
 		return
+	}
+	if status.RetentionSupported {
+		switch row.RetentionReason {
+		case "":
+			row.NextAction, row.ProtectionReason = protocol.WorktreeCleanup, ""
+			return
+		case "active":
+			row.Active, row.NextAction, row.ProtectionReason = true, protocol.WorktreeActive, "active"
+			return
+		case "task_review":
+			row.NextAction, row.ProtectionReason = protocol.WorktreeReview, row.RetentionReason
+		case "task_in_progress", "task_blocked", "waiting_human":
+			row.NextAction, row.ProtectionReason = protocol.WorktreeRetained, row.RetentionReason
+		}
 	}
 	if !status.LifecycleSupported || (status.IssueID != "" && !issuestatus.IsCategory(status.IssueStatusCategory)) {
 		return

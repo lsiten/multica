@@ -91,17 +91,13 @@ func (d *Daemon) lockArchiveEnvironment(ctx context.Context, path string) (*exec
 		done()
 		return nil, nil, "scope_changed"
 	}
-	if !isAgentTaskTerminal(status.Status) {
+	if !isAgentTaskTerminal(status.Status) && !status.Missing {
 		done()
 		return nil, nil, "active"
 	}
 	if scope, ok := ctx.Value(environmentScopeContextKey{}).(environmentOperationScope); ok && scope.Automatic {
-		meta, err := execenv.ReadGCMeta(path)
-		if err != nil {
-			done()
-			return nil, nil, "unavailable"
-		}
-		if eligible, reason := d.automaticArchiveEligible(ctx, path, meta); !eligible {
+		meta, _ := execenv.ReadGCMeta(path)
+		if eligible, reason := d.automaticCleanupEligible(ctx, path, meta); !eligible {
 			done()
 			return nil, nil, reason
 		}
@@ -122,6 +118,9 @@ func archiveOperationID(profile, workspaceID, environmentID, revision, operation
 }
 
 func (d *Daemon) archiveEnvironmentOperation(ctx context.Context, path, revision, operationID string) worktreeArchiveResult {
+	if revision != "" {
+		ctx = freshEnvironmentLifecycle(ctx)
+	}
 	result := worktreeArchiveResult{}
 	owner, release, reason := d.lockArchiveEnvironment(ctx, path)
 	if reason != "" {
@@ -181,7 +180,7 @@ func (d *Daemon) archiveEnvironmentOperation(ctx context.Context, path, revision
 		return result
 	}
 	status, err := d.environmentTaskGCStatus(ctx, path, owner, nil)
-	if err != nil || !isAgentTaskTerminal(status.Status) {
+	if err != nil || !isAgentTaskTerminal(status.Status) && !status.Missing {
 		result.Reason = "active"
 		return result
 	}
@@ -190,12 +189,8 @@ func (d *Daemon) archiveEnvironmentOperation(ctx context.Context, path, revision
 		return result
 	}
 	if scope, ok := ctx.Value(environmentScopeContextKey{}).(environmentOperationScope); ok && scope.Automatic {
-		meta, err := execenv.ReadGCMeta(path)
-		if err != nil {
-			result.Reason = "unavailable"
-			return result
-		}
-		if eligible, reason := d.automaticArchiveEligible(ctx, path, meta); !eligible {
+		meta, _ := execenv.ReadGCMeta(path)
+		if eligible, reason := d.automaticCleanupEligible(ctx, path, meta); !eligible {
 			result.Reason = reason
 			return result
 		}

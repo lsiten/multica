@@ -1031,6 +1031,30 @@
   },
   "desktop": {
     "worktrees": {
+      "scan_cleanup": "사용하지 않는 디렉터리 삭제",
+      "cleanup_preview": "삭제 미리보기",
+      "cleanup_direct_warning": "실행·검토·차단 중인 태스크가 없는 디렉터리의 파일과 로그를 영구 삭제합니다. 백업은 보관하지 않습니다.",
+      "cleanup_deleted": "삭제됨 · {{size}}",
+      "cleanup_none_eligible": "삭제할 수 있는 디렉터리가 없습니다.",
+      "summary": {
+        "physicalWorktrees": "실제 체크아웃",
+        "codeEnvironments": "코드 환경",
+        "tasks": "보관 중인 태스크",
+        "runRecords": "실행 기록",
+        "pendingCleanup": "정리 대기",
+        "unresolved": "확인 필요"
+      },
+      "retention_reasons": {
+        "active": "실행 중",
+        "task_in_progress": "태스크 진행 중",
+        "task_review": "태스크 검토 대기",
+        "task_blocked": "태스크 차단됨",
+        "waiting_human": "응답 대기",
+        "unavailable": "태스크 소유권을 확인할 수 없습니다",
+        "": "현재 태스크 없음 · 삭제 대기"
+      },
+      "retained_issue": "태스크 {{id}}",
+      "retained_run": "실행 {{id}}",
       "discard_worktree": "작업 사본 버리기",
       "discard_changes": "이 작업 사본의 커밋하지 않은 변경 사항, 다른 곳에 보존되지 않은 커밋, 로컬 결과물 파일을 영구 삭제합니다.",
       "title": "Worktree 관리",
@@ -1803,6 +1827,7 @@
     "runtime_identity": "런타임 ID",
     "selected_scope": "아래 환경과 작업 기록은 선택한 런타임에 속합니다.",
     "policy": {
+      "task_retention_help": "작업 디렉터리는 실행·검토·차단 중인 태스크에만 유지합니다. 나머지는 백업 없이 삭제합니다. 용량 기준은 재생성 가능한 캐시를 제어합니다.",
       "title": "자동 회수 정책",
       "enabled": "자동 회수 활성화",
       "archive_hours": "아카이브 보존 시간",

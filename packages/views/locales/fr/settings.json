@@ -1404,6 +1404,30 @@
       "icon_failed": "Impossible de charger l’icône."
     },
     "worktrees": {
+      "scan_cleanup": "Supprimer les répertoires inutilisés",
+      "cleanup_preview": "Aperçu de la suppression",
+      "cleanup_direct_warning": "Les répertoires sans tâche en cours, en revue ou bloquée seront supprimés définitivement, fichiers et journaux compris. Aucune sauvegarde n’est conservée.",
+      "cleanup_deleted": "Supprimé · {{size}}",
+      "cleanup_none_eligible": "Aucun répertoire à supprimer.",
+      "summary": {
+        "physicalWorktrees": "Extractions physiques",
+        "codeEnvironments": "Environnements de code",
+        "tasks": "Tâches conservées",
+        "runRecords": "Historique d’exécution",
+        "pendingCleanup": "À nettoyer",
+        "unresolved": "À vérifier"
+      },
+      "retention_reasons": {
+        "active": "En cours d’exécution",
+        "task_in_progress": "Tâche en cours",
+        "task_review": "Tâche en attente de revue",
+        "task_blocked": "Tâche bloquée",
+        "waiting_human": "En attente de réponse",
+        "unavailable": "Impossible de vérifier le propriétaire de la tâche",
+        "": "Aucune tâche actuelle ; suppression en attente"
+      },
+      "retained_issue": "Tâche {{id}}",
+      "retained_run": "Exécution {{id}}",
       "discard_worktree": "Abandonner la copie",
       "discard_changes": "Abandonner définitivement les modifications non commitées, les commits non préservés ailleurs et les fichiers produits localement dans cette copie de travail.",
       "title": "Worktrees",
@@ -1813,6 +1837,7 @@
     "runtime_identity": "ID du runtime",
     "selected_scope": "Les environnements et opérations ci-dessous appartiennent au runtime sélectionné.",
     "policy": {
+      "task_retention_help": "Les répertoires sont conservés pour les tâches en cours, en revue ou bloquées. Les autres sont supprimés sans sauvegarde. Les seuils contrôlent les caches régénérables.",
       "title": "Politique de récupération automatique",
       "enabled": "Activer la récupération automatique",
       "archive_hours": "Rétention des archives (heures)",

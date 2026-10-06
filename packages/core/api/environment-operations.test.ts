@@ -47,8 +47,8 @@ it("validates scoped policy read and update responses", async () => {
   const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify(response), { status: 200 }));
   vi.stubGlobal("fetch", fetch);
   const client = new ApiClient("https://example.test");
-  expect(await client.executeRuntimeEnvironment("ws", "runtime", { action: "policy" })).toEqual(response);
-  expect(await client.executeRuntimeEnvironment("ws", "runtime", { action: "policy_update", policy })).toEqual(response);
+  expect(await client.executeRuntimeEnvironment("ws", "runtime", { action: "policy" })).toEqual({ ...response, task_retention_supported: false });
+  expect(await client.executeRuntimeEnvironment("ws", "runtime", { action: "policy_update", policy })).toEqual({ ...response, task_retention_supported: false });
   expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ action: "policy_update", policy });
   fetch.mockResolvedValue(new Response("{}", { status: 200 }));
   await expect(client.executeRuntimeEnvironment("ws", "runtime", { action: "policy" })).rejects.toThrow("Invalid environment policy response");

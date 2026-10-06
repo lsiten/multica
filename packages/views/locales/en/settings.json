@@ -1296,6 +1296,30 @@
   },
   "desktop": {
     "worktrees": {
+      "scan_cleanup": "Delete unused directories",
+      "cleanup_preview": "Preview deletion",
+      "cleanup_direct_warning": "Directories without a running, review or blocked task will be permanently deleted, including their files and logs. No backup is kept.",
+      "cleanup_deleted": "Deleted · {{size}}",
+      "cleanup_none_eligible": "No eligible directories to delete.",
+      "summary": {
+        "physicalWorktrees": "Physical checkouts",
+        "codeEnvironments": "Code environments",
+        "tasks": "Retained tasks",
+        "runRecords": "Run records",
+        "pendingCleanup": "Awaiting cleanup",
+        "unresolved": "Needs verification"
+      },
+      "retention_reasons": {
+        "active": "Running",
+        "task_in_progress": "Task in progress",
+        "task_review": "Awaiting task review",
+        "task_blocked": "Task blocked",
+        "waiting_human": "Waiting for a response",
+        "unavailable": "Unable to verify task ownership",
+        "": "No current task; awaiting deletion"
+      },
+      "retained_issue": "Task {{id}}",
+      "retained_run": "Run {{id}}",
       "discard_worktree": "Discard worktree",
       "discard_changes": "Permanently discard this worktree's uncommitted changes, commits not preserved elsewhere, and local output files.",
       "title": "Worktrees",
@@ -1813,6 +1837,7 @@
     "runtime_identity": "Runtime ID",
     "selected_scope": "Environments and operations below belong to the selected runtime.",
     "policy": {
+      "task_retention_help": "Work directories are kept only for running, review or blocked tasks. Unused directories are deleted without a backup. Capacity thresholds control regenerable caches.",
       "title": "Automatic reclamation",
       "enabled": "Enable automatic reclamation",
       "archive_hours": "Archive retention (hours)",

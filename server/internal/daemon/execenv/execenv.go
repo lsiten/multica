@@ -1253,11 +1253,17 @@ func WriteGCMeta(envRoot string, meta GCMeta, logger *slog.Logger) error {
 		return nil
 	}
 	meta.CompletedAt = time.Now().UTC()
+	return SaveGCMeta(envRoot, meta)
+}
+
+// SaveGCMeta atomically saves reconciled metadata without changing the server's
+// completion timestamp. The caller holds the environment's exclusion claim.
+func SaveGCMeta(envRoot string, meta GCMeta) error {
 	data, err := json.Marshal(meta)
 	if err != nil {
 		return fmt.Errorf("marshal gc meta: %w", err)
 	}
-	return os.WriteFile(filepath.Join(envRoot, gcMetaFile), data, 0o644)
+	return writeFileAtomic(filepath.Join(envRoot, gcMetaFile), data, 0600)
 }
 
 // ReadGCMeta reads GC metadata from a task directory root. Pre-v2 meta files

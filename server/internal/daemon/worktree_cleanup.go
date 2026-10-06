@@ -264,7 +264,7 @@ func (d *Daemon) autoCleanupCompletedWorktree(ctx context.Context, root string) 
 	if root == "" || !d.cfg.GCEnabled || d.cfg.KeepEnvAfterTask {
 		return
 	}
-	if d.cfg.EnvironmentArchiveEnabled {
+	if d.cfg.EnvironmentRecycleEnabled {
 		d.scheduleAutomaticEnvironmentRecycle(d.recoveryContext(), root)
 		return
 	}

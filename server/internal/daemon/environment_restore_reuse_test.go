@@ -12,7 +12,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func TestArchivedWorklineRestoresCodeBeforeExclusiveReuse(t *testing.T) {
+func TestLegacyArchiveIsNeverAutomaticallyRestoredForNewRun(t *testing.T) {
 	for _, mode := range []string{"restore", "different_project", "corrupt", "scope_tampered"} {
 		t.Run(mode, func(t *testing.T) {
 			d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -55,29 +55,15 @@ func TestArchivedWorklineRestoresCodeBeforeExclusiveReuse(t *testing.T) {
 			}
 			claim, reused, _, ok, err := d.lockReusablePriorEnvRoot(t.Context(), task, nil, "")
 			if claim != nil {
-				defer claim.Release()
+				claim.Release()
 			}
-			if mode == "different_project" {
-				if err != nil || ok {
-					t.Fatalf("archive crossed project: %v %v", ok, err)
-				}
-				if _, err := os.Stat(root); !os.IsNotExist(err) {
-					t.Fatal("foreign-scope archive was materialized")
-				}
-				return
+			if err != nil || ok || reused != "" || claim != nil {
+				t.Fatalf("legacy backup unexpectedly influenced fresh execution: %s %v %v", reused, ok, err)
 			}
-			if mode == "corrupt" || mode == "scope_tampered" {
-				if err == nil || ok {
-					t.Fatal("corrupt matching archive silently started clean")
-				}
-				return
+			if _, err := os.Stat(root); !os.IsNotExist(err) {
+				t.Fatalf("backup was materialized: %v", err)
 			}
-			if err != nil || !ok || claim == nil {
-				t.Fatalf("archive was not restored and locked: %v %v", ok, err)
-			}
-			if data, err := os.ReadFile(filepath.Join(reused, "code.txt")); err != nil || string(data) != "restore changed code" {
-				t.Fatalf("archived code lost: %q %v", data, err)
-			}
+
 		})
 	}
 }

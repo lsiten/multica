@@ -44,7 +44,7 @@ it("recovers an automatic operation on another runtime and allows cancellation",
   const user = await selectRuntime();
   expect(await screen.findByRole("status")).toHaveTextContent("处理中");
   expect(screen.getByRole("combobox", { name: "回收记录" })).toHaveTextContent("自动回收");
-  expect(screen.getByRole("button", { name: "归档闲置工作副本" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "清理无任务目录" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "取消操作" }));
   await waitFor(() => expect(mocks.execute).toHaveBeenCalledWith("ws", "runtime", { action: "operation_cancel", operation_id: "a".repeat(64) }));
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("已取消"));
@@ -122,4 +122,30 @@ it("executes all previewed environments in sequential bounded batches", async ()
   const started = mocks.execute.mock.calls.map((call) => call[2]).filter((command: EnvironmentCommand) => command.action === "operation_start");
   expect(started.map((command) => command.operation.selections.length)).toEqual([1000, 1]);
   expect(started.flatMap((command) => command.operation.selections.map((selection: { environment_id: string }) => selection.environment_id))).toEqual(selections);
+});
+
+it("confirms permanent deletion and submits only verified unused selections", async () => {
+  const id = "b".repeat(64);
+  const revision = "c".repeat(64);
+  const rows = parseManagedWorktrees([{ environment_id: id, workspace_id: "ws", task_short: "old run", path: "/runtime/old", kind: "issue", size_bytes: 12, active: false, retention_reason: "" }]);
+  mocks.execute.mockImplementation(async (_workspace: string, _runtime: string, command: EnvironmentCommand) => {
+    switch (command.action) {
+      case "policy": return policyStatus;
+      case "inventory": return rows;
+      case "operations": return [];
+      case "cleanup_preview": return [{ environmentId: id, revision, workspaceId: "ws", taskId: "old", reason: "", originalBytes: 12, removedBytes: 0, reclaimed: false }];
+      case "operation_start": return { ...receipt("completed"), id: command.operation.id, action: "cleanup" };
+      case "operation_status": return receipt("completed");
+      default: return [];
+    }
+  });
+  mount();
+  const user = await selectRuntime();
+  await user.click(await screen.findByRole("button", { name: "清理无任务目录" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("不保留备份");
+  expect(mocks.execute.mock.calls.some((call) => call[2].action === "operation_start")).toBe(false);
+  await user.click(within(dialog).getByRole("button", { name: "清理" }));
+  await waitFor(() => expect(mocks.execute).toHaveBeenCalledWith("ws", "runtime", expect.objectContaining({ action: "operation_start", operation: expect.objectContaining({ action: "cleanup", selections: [{ environment_id: id, revision }] }) })));
+  expect(screen.queryByRole("button", { name: /归档|恢复/ })).not.toBeInTheDocument();
 });

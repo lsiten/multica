@@ -18,18 +18,17 @@ func TestReusedEnvironmentRecyclingFollowsLatestTaskAndPreservesOriginalOwner(t 
 	var directory, latestState atomic.Value
 	directory.Store("")
 	latestState.Store("running")
-	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		status := protocol.TaskGCStatus{WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", Status: "completed", LifecycleSupported: true, IssueID: "issue", IssueStatusCategory: "done"}
-		if strings.Contains(r.URL.Path, "/second/") {
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(id string) protocol.TaskGCStatus {
+		status := protocol.TaskGCStatus{WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", Status: "completed", LifecycleSupported: true, RetentionSupported: true, CompletedAt: time.Now().Add(-time.Hour), IssueID: "issue", IssueStatusCategory: "done"}
+		if id == "second" {
 			status.Status = latestState.Load().(string)
 			status.WorkDir = directory.Load().(string)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(status)
+		return status
 	}))
 	d.rootCtx = t.Context()
 	t.Cleanup(d.stopEnvironmentOperations)
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled = true, true
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled = true, true
 	d.runtimeIndex = map[string]Runtime{"runtime": {ID: "runtime"}}
 	d.workspaces = map[string]*workspaceState{"ws1": {runtimeIDs: []string{"runtime"}}}
 	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "first", &execenv.GCMeta{WorkspaceID: "ws1", TaskID: "first", Kind: execenv.GCKindIssue})
@@ -54,25 +53,18 @@ func TestReusedEnvironmentRecyclingFollowsLatestTaskAndPreservesOriginalOwner(t 
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatalf("reused root remains: %v", err)
 	}
-	archives, err := d.listEnvironmentArchives(t.Context(), "ws1")
-	if err != nil || len(archives) != 1 {
-		t.Fatalf("reused root backup unavailable: %+v %v", archives, err)
+	if _, err := os.Stat(filepath.Join(d.cfg.WorkspacesRoot, ".environment-archive")); !os.IsNotExist(err) {
+		t.Fatalf("unused shared root left an archive: %v", err)
 	}
-	result, err := d.runScopedEnvironmentRestore(t.Context(), environmentOperationScope{WorkspaceID: "ws1", RuntimeID: "runtime"}, archives[0].ArchiveID)
-	if err != nil || !result.Restored {
-		t.Fatalf("latest-task archive could not restore: %+v %v", result, err)
-	}
-	if data, err := os.ReadFile(filepath.Join(workdir, "code.txt")); err != nil || string(data) != "retain changed code" {
-		t.Fatalf("reused code lost: %q %v", data, err)
-	}
+
 }
 
 func TestLatestEnvironmentTaskRequiresMatchingRuntimeAgentAndDirectory(t *testing.T) {
-	for _, mismatch := range []string{"workspace", "runtime", "agent", "directory", "legacy_metadata"} {
+	for _, mismatch := range []string{"workspace", "runtime", "agent", "directory", "legacy_original_mismatch"} {
 		t.Run(mismatch, func(t *testing.T) {
 			var directory atomic.Value
 			directory.Store("")
-			d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				status := protocol.TaskGCStatus{WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", WorkDir: directory.Load().(string), Status: "completed", LifecycleSupported: true}
 				switch mismatch {
 				case "workspace":
@@ -81,6 +73,10 @@ func TestLatestEnvironmentTaskRequiresMatchingRuntimeAgentAndDirectory(t *testin
 					status.RuntimeID = "other"
 				case "agent":
 					status.AgentID = "other"
+				case "legacy_original_mismatch":
+					if strings.Contains(r.URL.Path, "/first/") {
+						status.RuntimeID = "other"
+					}
 				case "directory":
 					status.WorkDir = filepath.Join(t.TempDir(), "workdir")
 				}
@@ -93,7 +89,7 @@ func TestLatestEnvironmentTaskRequiresMatchingRuntimeAgentAndDirectory(t *testin
 				t.Fatal(err)
 			}
 			meta := &execenv.GCMeta{WorkspaceID: "ws1", TaskID: "first", LatestTaskID: "second", RuntimeID: "runtime", AgentID: "agent", CompletedAt: time.Now()}
-			if mismatch == "legacy_metadata" {
+			if mismatch == "legacy_original_mismatch" {
 				meta.RuntimeID = ""
 			}
 			if _, err := d.environmentTaskGCStatus(t.Context(), root, owner, meta); err == nil {

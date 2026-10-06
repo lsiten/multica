@@ -135,7 +135,7 @@ type Config struct {
 	LLM2JevMaxConcurrency          int                   // per-task semantic MCP call concurrency
 	LLM2JevTimeout                 time.Duration         // per-call semantic MCP timeout
 	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
-	EnvironmentArchiveEnabled      bool                  // preserve and archive idle environments before reclamation
+	EnvironmentRecycleEnabled      bool                  // delete environments with no current task consumer
 	EnvironmentArchiveTTL          time.Duration         // minimum idle terminal-run retention before automatic archival
 	EnvironmentRecycleInterval     time.Duration         // parent-lifecycle scan interval
 	GCInterval                     time.Duration         // how often the GC loop runs (default: 2h)
@@ -624,7 +624,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if environmentArchiveTTL < 0 {
 		return Config{}, fmt.Errorf("MULTICA_ENVIRONMENT_ARCHIVE_TTL must not be negative")
 	}
-	environmentRecycleInterval, err := durationFromEnv("MULTICA_ENVIRONMENT_RECYCLE_INTERVAL", 5*time.Minute)
+	environmentRecycleInterval, err := durationFromEnv("MULTICA_ENVIRONMENT_RECYCLE_INTERVAL", 30*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
@@ -709,7 +709,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		GCTTL:                           gcTTL,
 		WorktreeStaleTTL:                worktreeStaleTTL,
 		GCCompletedTaskTTL:              gcCompletedTaskTTL,
-		EnvironmentArchiveEnabled:       boolFromEnv("MULTICA_ENVIRONMENT_ARCHIVE_ENABLED", true),
+		EnvironmentRecycleEnabled:       boolFromEnv("MULTICA_ENVIRONMENT_RECYCLE_ENABLED", true),
 		EnvironmentArchiveTTL:           environmentArchiveTTL,
 		EnvironmentRecycleInterval:      environmentRecycleInterval,
 		GCOrphanTTL:                     gcOrphanTTL,

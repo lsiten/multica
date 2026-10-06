@@ -52,16 +52,17 @@ func (p EnvironmentPolicy) Validate() error {
 }
 
 type EnvironmentPolicyStatus struct {
-	WorkspaceID         string            `json:"workspace_id"`
-	RuntimeID           string            `json:"runtime_id"`
-	Policy              EnvironmentPolicy `json:"policy"`
-	EffectiveEnabled    bool              `json:"effective_enabled"`
-	ScanIntervalSeconds int64             `json:"scan_interval_seconds"`
-	FreeBytes           *uint64           `json:"free_bytes"`
-	LastScanAt          *time.Time        `json:"last_scan_at"`
-	IdleEnvironments    int               `json:"idle_environments"`
-	DirectoryBytes      int64             `json:"directory_bytes"`
-	UnderPressure       bool              `json:"under_pressure"`
+	TaskRetentionSupported bool              `json:"task_retention_supported,omitempty"`
+	WorkspaceID            string            `json:"workspace_id"`
+	RuntimeID              string            `json:"runtime_id"`
+	Policy                 EnvironmentPolicy `json:"policy"`
+	EffectiveEnabled       bool              `json:"effective_enabled"`
+	ScanIntervalSeconds    int64             `json:"scan_interval_seconds"`
+	FreeBytes              *uint64           `json:"free_bytes"`
+	LastScanAt             *time.Time        `json:"last_scan_at"`
+	IdleEnvironments       int               `json:"idle_environments"`
+	DirectoryBytes         int64             `json:"directory_bytes"`
+	UnderPressure          bool              `json:"under_pressure"`
 }
 
 // EnvironmentOperationStatus remains available on the owning daemon after a
@@ -93,7 +94,7 @@ func (command EnvironmentCommand) Validate() error {
 		return errors.New("policy input only allowed for policy update")
 	}
 	switch command.Action {
-	case "inventory", "cache_preview", "archive_preview", "archives", "operations", "policy":
+	case "inventory", "cache_preview", "cleanup_preview", "archive_preview", "archives", "operations", "policy":
 		if command.Operation != nil || command.OperationID != "" {
 			return errors.New("read operation cannot carry mutation input")
 		}

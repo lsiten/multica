@@ -218,7 +218,7 @@ func (d *Daemon) gcWorkspace(ctx context.Context, wsDir string, stats *gcStats) 
 		}
 		meta, metaErr := execenv.ReadGCMeta(taskDir)
 		d.maintainIdleReviewCache(ctx, taskDir)
-		if d.cfg.EnvironmentArchiveEnabled {
+		if d.cfg.EnvironmentRecycleEnabled {
 			d.automaticRecycleWorkspace(ctx, taskDir, meta, stats)
 			continue
 		}

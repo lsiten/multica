@@ -74,6 +74,21 @@ func TestHandlePendingWorkHint_SendsImmediateHeartbeat(t *testing.T) {
 	}
 }
 
+func TestEnvironmentHintWakesReconciliationWithoutProviderOrHeartbeat(t *testing.T) {
+	d, calls := pendingWorkHintDaemon(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	d.environmentChanges = newReconcileBroadcaster()
+	changed := d.environmentChanges.notify()
+	d.handlePendingWorkHint("rt-1", protocol.PendingWorkKindEnvironment)
+	select {
+	case <-changed:
+	default:
+		t.Fatal("environment lifecycle hint was ignored")
+	}
+	if got := atomic.LoadInt32(calls); got != 0 {
+		t.Fatalf("environment hint executed heartbeat work: %d", got)
+	}
+}
+
 // TestHandlePendingWorkHint_IgnoresUnknownRuntime keeps a stale or
 // cross-machine relay fanout from making this daemon heartbeat for a runtime it
 // does not own.

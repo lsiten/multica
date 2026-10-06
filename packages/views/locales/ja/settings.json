@@ -1291,6 +1291,30 @@
   },
   "desktop": {
     "worktrees": {
+      "scan_cleanup": "不要なディレクトリを削除",
+      "cleanup_preview": "削除のプレビュー",
+      "cleanup_direct_warning": "実行中・レビュー中・ブロック中のタスクがないディレクトリを、ファイルとログを含め完全に削除します。バックアップは残しません。",
+      "cleanup_deleted": "削除済み · {{size}}",
+      "cleanup_none_eligible": "削除できるディレクトリはありません。",
+      "summary": {
+        "physicalWorktrees": "実際のチェックアウト",
+        "codeEnvironments": "コード環境",
+        "tasks": "保持中のタスク",
+        "runRecords": "実行記録",
+        "pendingCleanup": "回収待ち",
+        "unresolved": "確認が必要"
+      },
+      "retention_reasons": {
+        "active": "実行中",
+        "task_in_progress": "タスク進行中",
+        "task_review": "タスクのレビュー待ち",
+        "task_blocked": "タスクがブロック中",
+        "waiting_human": "返信待ち",
+        "unavailable": "タスクの所有権を確認できません",
+        "": "現在のタスクがなく、削除待ち"
+      },
+      "retained_issue": "タスク {{id}}",
+      "retained_run": "実行 {{id}}",
       "discard_worktree": "作業コピーを破棄",
       "discard_changes": "この作業コピーの未コミット変更、別の場所に保存されていないコミット、ローカル出力ファイルを完全に破棄する。",
       "title": "Worktree 管理",
@@ -1803,6 +1827,7 @@
     "runtime_identity": "ランタイム ID",
     "selected_scope": "以下の環境と操作履歴は選択中のランタイムに属します。",
     "policy": {
+      "task_retention_help": "作業ディレクトリは実行中・レビュー中・ブロック中のタスクにのみ保持されます。不要なディレクトリはバックアップせず削除します。容量しきい値は再生成可能なキャッシュを制御します。",
       "title": "自動回収ポリシー",
       "enabled": "自動回収を有効化",
       "archive_hours": "アーカイブ保持時間",

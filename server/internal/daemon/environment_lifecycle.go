@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -43,7 +42,7 @@ func (d *Daemon) recordEnvironmentCompletion(task Task, result TaskResult, logge
 			logger.Warn("shared code completion metadata could not be saved", "error", err)
 		}
 	}
-	if meta.AutoCleanup {
+	if meta.AutoCleanup || d.cfg.EnvironmentRecycleEnabled {
 		return result.EnvRoot
 	}
 	return ""
@@ -87,14 +86,39 @@ func (d *Daemon) environmentTaskGCStatus(ctx context.Context, path string, owner
 			latest = meta.TaskID
 		}
 	}
-	status, err := d.client.GetTaskGCCheck(ctx, url.PathEscape(latest))
+	status, err := d.environmentTaskStatus(ctx, latest)
+	if isAccessNotFound(err) {
+		statuses, batchErr := d.client.GetTaskGCChecks(ctx, owner.WorkspaceID, "", []string{latest})
+		if batchErr != nil {
+			return nil, batchErr
+		}
+		status = statuses[latest]
+		if status == nil {
+			return nil, errEnvironmentTaskScopeChanged
+		}
+		err = nil
+	}
 	if err != nil {
 		return nil, err
 	}
+	if status.Missing {
+		return status, nil
+	}
 	if latest != owner.TaskID {
 		if meta.WorkspaceID != owner.WorkspaceID || status.WorkspaceID != owner.WorkspaceID ||
-			meta.AgentID == "" || status.AgentID != meta.AgentID || meta.RuntimeID == "" || status.RuntimeID != meta.RuntimeID ||
+			meta.AgentID == "" || status.AgentID != meta.AgentID ||
 			!environmentContainsWorkdir(path, status.WorkDir) {
+			return nil, errEnvironmentTaskScopeChanged
+		}
+		if meta.RuntimeID == "" {
+			if binding, bindingErr := execenv.ReadReviewRuntime(path); bindingErr == nil && binding.WorkspaceID == owner.WorkspaceID && binding.TaskID == owner.TaskID && binding.RuntimeID == status.RuntimeID && binding.AgentID == status.AgentID {
+				return status, nil
+			}
+			original, originalErr := d.environmentTaskStatus(ctx, owner.TaskID)
+			if originalErr != nil || original.WorkspaceID != owner.WorkspaceID || original.RuntimeID == "" || original.RuntimeID != status.RuntimeID || original.AgentID != status.AgentID || original.IssueID != status.IssueID || original.ChatSessionID != status.ChatSessionID {
+				return nil, errEnvironmentTaskScopeChanged
+			}
+		} else if status.RuntimeID != meta.RuntimeID {
 			return nil, errEnvironmentTaskScopeChanged
 		}
 	}

@@ -8,7 +8,7 @@ import { RuntimeEnvironmentPolicy } from "./runtime-environment-policy";
 
 const execute = vi.hoisted(() => vi.fn());
 vi.mock("@multica/core/api", () => ({ api: { executeRuntimeEnvironment: execute } }));
-const status: EnvironmentPolicyStatus = { workspace_id: "ws", runtime_id: "runtime", policy: { enabled: true, archive_after_hours: 24, cache_after_hours: 12, pressure_cache_after_hours: 1, max_idle_environments: 100, max_directory_bytes: 20 * 1024 ** 3, minimum_free_bytes: 5 * 1024 ** 3 }, effective_enabled: true, scan_interval_seconds: 300, free_bytes: 4 * 1024 ** 3, last_scan_at: "2026-10-04T00:00:00Z", idle_environments: 105, directory_bytes: 21 * 1024 ** 3, under_pressure: true };
+const status: EnvironmentPolicyStatus = { task_retention_supported: false, workspace_id: "ws", runtime_id: "runtime", policy: { enabled: true, archive_after_hours: 24, cache_after_hours: 12, pressure_cache_after_hours: 1, max_idle_environments: 100, max_directory_bytes: 20 * 1024 ** 3, minimum_free_bytes: 5 * 1024 ** 3 }, effective_enabled: true, scan_interval_seconds: 300, free_bytes: 4 * 1024 ** 3, last_scan_at: "2026-10-04T00:00:00Z", idle_environments: 105, directory_bytes: 21 * 1024 ** 3, under_pressure: true };
 beforeEach(() => {
   execute.mockReset();
   execute.mockImplementation(async (_workspace: string, _runtime: string, command: EnvironmentCommand) => command.action === "policy_update" ? { ...status, policy: command.policy } : status);
@@ -32,4 +32,16 @@ it("disables configuration during a conflicting operation", async () => {
   mount(true);
   expect(await screen.findByRole("spinbutton", { name: "归档保留期限（小时）" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "保存策略" })).toBeDisabled();
+});
+
+it("uses task support instead of an archive age when the runtime supports it", async () => {
+  execute.mockImplementation(async (_workspace: string, _runtime: string, command: EnvironmentCommand) => ({ ...status, task_retention_supported: true, ...(command.action === "policy_update" ? { policy: command.policy } : {}) }));
+  const user = userEvent.setup();
+  mount();
+  await screen.findByRole("spinbutton", { name: "缓存保留期限（小时）" });
+  expect(screen.queryByRole("spinbutton", { name: "归档保留期限（小时）" })).not.toBeInTheDocument();
+  expect(screen.getByText(/仅为运行、审核或阻塞任务保留工作目录/)).toBeInTheDocument();
+  await user.click(screen.getByText("自动回收策略"));
+  await user.click(screen.getByRole("button", { name: "保存策略" }));
+  await waitFor(() => expect(execute).toHaveBeenCalledWith("ws", "runtime", { action: "policy_update", policy: expect.objectContaining({ archive_after_hours: 0 }) }));
 });

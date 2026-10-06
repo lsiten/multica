@@ -625,6 +625,8 @@ type Daemon struct {
 	environmentOperationWorkers  sync.WaitGroup
 	environmentOperationsStopped bool
 	environmentPolicyMu          sync.Mutex
+	environmentBindingsMu        sync.Mutex
+	environmentChanges           *reconcileBroadcaster
 	environmentPolicyScans       map[string]protocol.EnvironmentPolicyStatus
 	// restartMu guards restartBinary. Two goroutines can reach triggerRestart —
 	// the server-triggered handleUpdate and the autoUpdateLoop — and
@@ -792,6 +794,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		taskPrepareTimeout:          defaultTaskPrepareTimeout,
 		prepareLeaseRefresh:         taskPrepareLeaseRefresh,
 		reconcile:                   newReconcileBroadcaster(),
+		environmentChanges:          newReconcileBroadcaster(),
 		workspaceChanges:            newWorkspaceChangeSignal(),
 		wsRPC:                       newWSRPCClient(wsRPCResponseGrace),
 		runtimeMirrors:              make(map[string]*mirror.RuntimeMirror),
@@ -4771,6 +4774,12 @@ func (d *Daemon) handlePendingWorkHint(runtimeID, kind string) {
 		// Not one of ours (stale relay fanout, or the runtime was just pruned).
 		return
 	}
+	if kind == protocol.PendingWorkKindEnvironment {
+		if d.environmentChanges != nil {
+			d.environmentChanges.broadcast()
+		}
+		return
+	}
 
 	d.pendingWorkMu.Lock()
 	if d.pendingWorkInflight == nil {
@@ -5947,7 +5956,13 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// correctly nested within these.
 	resolvedEnvRoot, resolveRootErr := execenv.ResolveRootDir(taskRootDirParams(d.cfg.WorkspacesRoot, task))
 	var completedEnvRoot string
-	defer func() { d.autoCleanupCompletedWorktree(ctx, completedEnvRoot) }()
+	var completedCodeRoot string
+	defer func() {
+		d.autoCleanupCompletedWorktree(ctx, completedEnvRoot)
+		if completedCodeRoot != "" && completedCodeRoot != completedEnvRoot {
+			d.autoCleanupCompletedWorktree(ctx, completedCodeRoot)
+		}
+	}()
 	if resolveRootErr != nil {
 		taskLog.Error("resolve stable task env root", "error", resolveRootErr)
 	}
@@ -5996,6 +6011,18 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		taskLog.Info("discarding rejected start claim", "error", err)
 		return
 	}
+	defer func() {
+		if result.EnvRoot == "" && resolvedEnvRoot != "" {
+			if owner, ownerErr := d.gcTaskDirOwner(resolvedEnvRoot); ownerErr == nil && owner.TaskID == task.ID {
+				result.EnvRoot = resolvedEnvRoot
+			}
+		}
+		if err != nil {
+			result.Status = "failed"
+		}
+		completedEnvRoot = d.recordEnvironmentCompletion(task, result, taskLog)
+		completedCodeRoot = result.CodeRoot
+	}()
 
 	// Report usage before any early return — the agent accumulates tokens
 	// whether the task completes, errors, or is cancelled mid-run by the poll
@@ -6081,13 +6108,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		if ackErr := d.client.AckTaskCancelled(ctx, task.ID, TaskCancelAck{BranchName: result.BranchName, DurableWorkDir: result.DurableWorkDir}); ackErr != nil {
 			taskLog.Warn("cancel ack failed; server sweeper will finalize", "error", ackErr)
 		}
-		completedEnvRoot = d.recordEnvironmentCompletion(task, result, taskLog)
 		return
 	}
 
 	d.reportTaskResult(ctx, task.ID, result, taskLog)
 
-	completedEnvRoot = d.recordEnvironmentCompletion(task, result, taskLog)
 }
 
 // worktreePreservedError marks a task error that must survive the cancel path:
@@ -7275,6 +7300,13 @@ func (d *Daemon) startTaskPrepareLeaseExtender(ctx context.Context, task Task, t
 // and it carries the context's cause so the caller can end the task instead of
 // preparing an environment for work that no longer exists.
 func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localAssignment *localDirectoryAssignment, heldRoot string) (*executionEnvClaim, string, os.FileInfo, bool, error) {
+	if localAssignment == nil {
+		if _, usable := shouldReusePriorWorkdir(task, nil, d.cfg.WorkspacesRoot); !usable {
+			if candidate := d.discoverManagedWorkdir(ctx, task); candidate != "" {
+				task.PriorWorkDir = candidate
+			}
+		}
+	}
 	if localAssignment != nil && localAssignment.UsesWorktree() {
 		params := localWorktreeParamsForTask(task, localAssignment, heldRoot)
 		if candidate, err := execenv.FindRetainedLocalWorktree(params, d.logger); err != nil {
@@ -7286,9 +7318,6 @@ func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localA
 				task = candidateTask
 			}
 		}
-	}
-	if err := d.restoreArchivedPriorWorkdir(ctx, task, localAssignment); err != nil {
-		return nil, "", nil, false, err
 	}
 	// Pin the workspaces root BEFORE validating anything. Opening it after,
 	// from a name validation just approved, would re-resolve that name: rename
@@ -7999,6 +8028,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		return TaskResult{}, fmt.Errorf("claim execution environment: %w", err)
 	}
 	defer d.registerExecutionEnvClaim(envClaim, nil).Release()
+	if meta, known := gcMetaForTask(task); known {
+		if err := execenv.SaveGCMeta(envClaim.RootDir(), meta); err != nil {
+			return TaskResult{EnvRoot: envClaim.RootDir()}, asEnvironmentSetupFailure(fmt.Errorf("record preparing environment identity: %w", err))
+		}
+	}
 
 	// Try to reuse the workdir from a previous task on the same (agent, issue) pair.
 	var env *execenv.Environment
@@ -8376,6 +8410,23 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 	}
 	envReused := false
+	var releaseWorkline func()
+	if (localAssignment == nil || localAssignment.UsesWorktree()) && task.AgentID != "" && task.RuntimeID != "" && (task.IssueID != "" || task.ChatSessionID != "" || task.AutopilotID != "") && !(localAssignment != nil && execenv.NeedsPrivateProviderCheckout(provider, effectiveMcpConfig)) {
+		scope, err := managedScopeForTask(task)
+		if err != nil {
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
+		release, err := execenv.LockWorklinePreparation(prepareCtx, d.cfg.WorkspacesRoot, scope)
+		if err != nil {
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
+		releaseWorkline = release
+		defer func() {
+			if releaseWorkline != nil {
+				releaseWorkline()
+			}
+		}()
+	}
 	var priorClaim *executionEnvClaim
 	var priorWorkDir string
 	var lockedPriorInfo os.FileInfo
@@ -8550,7 +8601,32 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 	}
 	phaseRecorder.Mark(taskPhaseEnvironmentReady)
+	codeRoot := env.CodeRootDir
+	if codeRoot == "" {
+		codeRoot = env.RootDir
+	}
+	if task.AgentID != "" && task.RuntimeID != "" {
+		consumer := execenv.WorktreeConsumer{TaskID: task.ID, AgentID: task.AgentID, RuntimeID: task.RuntimeID, DispatchedAt: task.DispatchedAt}
+		d.environmentBindingsMu.Lock()
+		bindingErr := execenv.UpdateWorktreeConsumer(codeRoot, consumer, false)
+		d.environmentBindingsMu.Unlock()
+		if bindingErr != nil {
+			return TaskResult{EnvRoot: env.RootDir, CodeRoot: env.CodeRootDir}, asEnvironmentSetupFailure(bindingErr)
+		}
+		defer func() {
+			d.environmentBindingsMu.Lock()
+			releaseErr := execenv.UpdateWorktreeConsumer(codeRoot, consumer, true)
+			d.environmentBindingsMu.Unlock()
+			if releaseErr != nil {
+				taskLog.Warn("worktree consumer release failed", "error", releaseErr)
+			}
+		}()
+	}
 	defer func() { taskResult.CodeRoot = env.CodeRootDir }()
+	if releaseWorkline != nil {
+		releaseWorkline()
+		releaseWorkline = nil
+	}
 	// Belt-and-suspenders: also mark whatever root we ended up with, in case
 	// future changes diverge from ResolveRootDir.
 	if env.RootDir != resolvedRoot && env.RootDir != "" {

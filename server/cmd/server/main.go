@@ -432,6 +432,7 @@ func main() {
 	var daemonWakeup interface {
 		service.TaskWakeupNotifier
 		handler.RuntimeGoneNotifier
+		handler.DaemonPendingWorkNotifier
 	} = daemonHub
 	// Nil unless a Redis relay is running: without one there is only one
 	// replica, and it both publishes the completion and holds the socket.
@@ -615,6 +616,7 @@ func main() {
 	registerSubscriberListeners(bus, pool)
 	registerActivityListeners(bus, queries)
 	registerNotificationListeners(bus, queries)
+	registerEnvironmentListeners(bus, queries, daemonWakeup)
 
 	metricsConfig := obsmetrics.ConfigFromEnv()
 	var metricsServer *http.Server

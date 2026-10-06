@@ -1291,6 +1291,30 @@
   },
   "desktop": {
     "worktrees": {
+      "scan_cleanup": "清理无任务目录",
+      "cleanup_preview": "预览删除",
+      "cleanup_direct_warning": "没有运行、审核或阻塞任务支撑的目录将被直接删除，包括其中的文件和日志，不保留备份。",
+      "cleanup_deleted": "已删除 · {{size}}",
+      "cleanup_none_eligible": "没有符合条件的目录。",
+      "summary": {
+        "physicalWorktrees": "物理检出",
+        "codeEnvironments": "代码环境",
+        "tasks": "保留任务",
+        "runRecords": "运行记录",
+        "pendingCleanup": "待回收",
+        "unresolved": "待核验"
+      },
+      "retention_reasons": {
+        "active": "正在运行",
+        "task_in_progress": "任务进行中",
+        "task_review": "任务待审核",
+        "task_blocked": "任务阻塞",
+        "waiting_human": "等待人工回复",
+        "unavailable": "暂时无法核验任务归属",
+        "": "没有当前任务支撑，等待删除"
+      },
+      "retained_issue": "对应任务：{{id}}",
+      "retained_run": "对应运行：{{id}}",
       "discard_worktree": "放弃工作副本",
       "discard_changes": "永久放弃此工作副本中的未提交修改、未另行保存的提交和本地产出文件。",
       "title": "Worktree 管理",
@@ -1803,6 +1827,7 @@
     "runtime_identity": "运行时 ID",
     "selected_scope": "下方环境和操作记录仅属于当前选中的运行时。",
     "policy": {
+      "task_retention_help": "仅为运行、审核或阻塞任务保留工作目录，无任务目录直接删除且不保留备份。容量水位用于控制可重新生成的缓存。",
       "title": "自动回收策略",
       "enabled": "启用自动回收",
       "archive_hours": "归档保留期限（小时）",

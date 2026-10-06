@@ -49,6 +49,7 @@ export const environmentPolicySchema = z.object({
   minimum_free_bytes: z.number().int().min(0).max(2 ** 50),
 }).refine((policy) => policy.cache_after_hours === 0 || policy.pressure_cache_after_hours <= policy.cache_after_hours, { message: "Pressure cache retention must not exceed normal cache retention" });
 const environmentPolicyStatusSchema = z.object({
+	task_retention_supported: z.boolean().optional().default(false),
   workspace_id: z.string(), runtime_id: z.string(), policy: environmentPolicySchema,
   effective_enabled: z.boolean(), scan_interval_seconds: z.number().int().positive(),
   free_bytes: z.number().int().nonnegative().nullable(), last_scan_at: z.iso.datetime().nullable(),
@@ -63,7 +64,7 @@ export function parseEnvironmentPolicyStatus(value: unknown): EnvironmentPolicyS
 }
 
 export const environmentCommandSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.enum(["inventory", "cache_preview", "archive_preview", "archives", "operations", "policy"]) }),
+  z.object({ action: z.enum(["inventory", "cache_preview", "cleanup_preview", "archive_preview", "archives", "operations", "policy"]) }),
   z.object({ action: z.literal("policy_update"), policy: environmentPolicySchema }),
   z.object({ action: z.literal("operation_start"), operation: environmentOperationRequestSchema }),
   z.object({ action: z.enum(["operation_status", "operation_cancel"]), operation_id: identity }),
@@ -100,7 +101,7 @@ export function environmentOperationID(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function environmentOperationBatches(action: "archive" | "clean_cache", selections: EnvironmentOperationRequest["selections"]): EnvironmentOperationRequest[] {
+export function environmentOperationBatches(action: "archive" | "cleanup" | "clean_cache", selections: EnvironmentOperationRequest["selections"]): EnvironmentOperationRequest[] {
   if (new Set(selections.map((item) => item.environment_id)).size !== selections.length) throw new Error("Unique environment selections required");
   const requests: EnvironmentOperationRequest[] = [];
   for (let offset = 0; offset < selections.length; offset += 1000) {

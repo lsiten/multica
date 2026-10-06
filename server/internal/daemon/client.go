@@ -1077,6 +1077,40 @@ func (c *Client) GetTaskGCCheck(ctx context.Context, taskID string) (*TaskGCStat
 	return &resp, nil
 }
 
+// GetTaskGCChecks reads current workline facts in bounded workspace/runtime batches.
+func (c *Client) GetTaskGCChecks(ctx context.Context, workspaceID, runtimeID string, taskIDs []string) (map[string]*TaskGCStatus, error) {
+	results := make(map[string]*TaskGCStatus, len(taskIDs))
+	for start := 0; start < len(taskIDs); start += 500 {
+		chunk := taskIDs[start:min(start+500, len(taskIDs))]
+		var response protocol.TaskGCBatch
+		request := struct {
+			TaskIDs []string `json:"task_ids"`
+		}{chunk}
+		path := fmt.Sprintf("/api/daemon/workspaces/%s/runtimes/%s/tasks/gc-check", url.PathEscape(workspaceID), url.PathEscape(runtimeID))
+		if runtimeID == "" {
+			path = fmt.Sprintf("/api/daemon/workspaces/%s/tasks/gc-check", url.PathEscape(workspaceID))
+		}
+		if err := c.postJSON(ctx, path, request, &response); err != nil {
+			return nil, err
+		}
+		requested := make(map[string]bool, len(chunk))
+		for _, id := range chunk {
+			requested[id] = true
+		}
+		for index := range response.Tasks {
+			status := &response.Tasks[index]
+			if !requested[status.TaskID] || status.WorkspaceID != workspaceID || runtimeID != "" && status.RuntimeID != runtimeID {
+				return nil, errors.New("invalid task lifecycle batch scope")
+			}
+			if _, duplicate := results[status.TaskID]; duplicate {
+				return nil, errors.New("duplicate task lifecycle result")
+			}
+			results[status.TaskID] = status
+		}
+	}
+	return results, nil
+}
+
 // RuntimeOfflineCodeNotExecutable marks a runtime taken offline because the OS
 // refuses to execute its agent CLI. It is the one deregistration cause that no
 // amount of waiting fixes, which is what the server needs to know: work for an

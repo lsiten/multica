@@ -44,11 +44,10 @@ func TestRunTaskSquadLeaderReusesWorkdirBeforeGCMetaWritten(t *testing.T) {
 	if firstResult.SessionID == "" || firstResult.WorkDir == "" {
 		t.Fatalf("first result missing resume state: %+v", firstResult)
 	}
-	// Simulate the race window: the successor is claimed before the prior
-	// task's handler writes .gc_meta.json. The Prepare-time provenance is the
-	// only reuse signal available.
-	if _, err := os.Stat(filepath.Join(firstResult.EnvRoot, ".gc_meta.json")); !os.IsNotExist(err) {
-		t.Fatalf("expected no .gc_meta.json before the completion handler runs; stat err = %v", err)
+	// Preparation records identity, but never fabricates terminal completion.
+	prepared, err := execenv.ReadGCMeta(firstResult.EnvRoot)
+	if err != nil || !prepared.CompletedAt.IsZero() {
+		t.Fatalf("preparation recorded completion: %+v %v", prepared, err)
 	}
 
 	second := leaderReuseTestTask("task-second")

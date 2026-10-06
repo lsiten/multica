@@ -32,6 +32,16 @@ func (s *BlobStore) BeginRead(ctx context.Context, now time.Time) (func(), error
 
 // HasActiveReview returns false for task roots that have never created a review cache.
 func HasActiveReview(ctx context.Context, taskRoot string, now time.Time) (bool, error) {
+	return hasReviewReaders(ctx, taskRoot, now, false)
+}
+
+// HasActiveCapture protects the live source only while a reader is producing a
+// snapshot. Viewing an already captured version does not pin the checkout.
+func HasActiveCapture(ctx context.Context, taskRoot string, now time.Time) (bool, error) {
+	return hasReviewReaders(ctx, taskRoot, now, true)
+}
+
+func hasReviewReaders(ctx context.Context, taskRoot string, now time.Time, capturesOnly bool) (bool, error) {
 	root, err := os.OpenRoot(taskRoot)
 	if err != nil {
 		return false, err
@@ -65,6 +75,9 @@ func HasActiveReview(ctx context.Context, taskRoot string, now time.Time) (bool,
 		return false, err
 	}
 	for _, entry := range entries {
+		if capturesOnly && !strings.HasPrefix(entry.name, ".reader-") {
+			continue
+		}
 		if !validBlobID(entry.name) && !strings.HasPrefix(entry.name, ".reader-") {
 			continue
 		}

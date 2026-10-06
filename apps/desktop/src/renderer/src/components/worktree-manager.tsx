@@ -17,8 +17,8 @@ import { compareWorktreeLifecycle, type WorktreeAction } from "@multica/core/typ
 import { invalidateWorktreeInventory } from "@multica/views/platform";
 import { WorktreeCacheManager } from "./worktree-cache-manager";
 import { WorktreeInventoryFilters } from "@multica/views/settings/worktree-inventory-filters";
-import { WorktreeArchiveManager } from "./worktree-archive-manager";
 import { emptyWorktreeFilters, filterWorktreeInventory } from "@multica/core/types/worktree-filters";
+import { WorktreeInventorySummary } from "@multica/views/settings/worktree-inventory-summary";
 
 export function WorktreeManager({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
@@ -37,7 +37,6 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
   const [grouped, setGrouped] = useState(true);
   const [filters, setFilters] = useState(emptyWorktreeFilters);
   const [cachePending, setCachePending] = useState(false);
-  const [archivePending, setArchivePending] = useState(false);
   const [pending, setPending] = useState<readonly ManagedWorktree[] | null>(null);
   const [discardChanges, setDiscardChanges] = useState(false);
   const [retained, setRetained] = useState<Record<string, string>>({});
@@ -102,18 +101,22 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
       case "dirty": return t(($) => $.desktop.worktrees.dirty);
       case "unpushed": return t(($) => $.desktop.worktrees.unpushed);
       case "review": return t(($) => $.desktop.worktrees.review_active);
+      case "task_review": return t(($) => $.desktop.worktrees.retention_reasons.task_review);
+      case "task_blocked": return t(($) => $.desktop.worktrees.retention_reasons.task_blocked);
+      case "task_in_progress": return t(($) => $.desktop.worktrees.retention_reasons.task_in_progress);
+      case "waiting_human": return t(($) => $.desktop.worktrees.retention_reasons.waiting_human);
       case "unowned": return t(($) => $.desktop.worktrees.unowned);
       case "output": return t(($) => $.desktop.worktrees.output);
       case "": return t(($) => $.desktop.worktrees.inactive);
       default: return t(($) => $.desktop.worktrees.unavailable);
     }
   };
-  const blocked = !enabled || inventory.isError || cleanup.isPending || inventory.isFetching || cachePending || archivePending;
+  const blocked = !enabled || inventory.isError || cleanup.isPending || inventory.isFetching || cachePending;
   return (
     <SettingsSection title={t(($) => $.desktop.worktrees.title)} description={t(($) => $.desktop.worktrees.description)}>
+      <WorktreeInventorySummary rows={rows} />
       <SettingsCard>
-        <SettingsRow label={t(($) => $.desktop.worktrees.count, { count: rows.length })} description={t(($) => $.desktop.worktrees.scope)}>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-end gap-2 px-4 py-3">
             <Button variant="outline" size="sm" onClick={() => void inventory.refetch()} disabled={!enabled || inventory.isFetching || cleanup.isPending}>
               <RefreshCw className={inventory.isFetching ? "size-3.5 animate-spin" : "size-3.5"} />{t(($) => $.desktop.worktrees.refresh)}
             </Button>
@@ -121,13 +124,11 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
               <FolderX className="size-3.5" />{t(($) => $.desktop.worktrees.clean_all)}
             </Button>
           </div>
-        </SettingsRow>
         <SettingsRow label={t(($) => $.desktop.worktrees.group_by_agent)}>
           <Switch checked={grouped} onCheckedChange={setGrouped} aria-label={t(($) => $.desktop.worktrees.group_by_agent)} />
         </SettingsRow>
-        <WorktreeInventoryFilters rows={inventory.data ?? []} filters={filters} onChange={setFilters} disabled={cleanup.isPending || cachePending || archivePending} />
+        <WorktreeInventoryFilters rows={inventory.data ?? []} filters={filters} onChange={setFilters} disabled={cleanup.isPending || cachePending} />
         <WorktreeCacheManager key={`cache:${userId}:${status.profile}:${status.daemonId}:${JSON.stringify(filters)}`} rows={rows} disabled={blocked} workspaceId={filters.workspace || undefined} onPendingChange={setCachePending} />
-        <WorktreeArchiveManager key={`archive:${userId}:${status.profile}:${status.daemonId}:${JSON.stringify(filters)}`} rows={rows} enabled={enabled} disabled={blocked} filters={filters} onPendingChange={setArchivePending} queryKey={["desktop-environment-archives", userId, status.profile, status.daemonId, filters.workspace]} />
         {!enabled && <p className="px-4 py-3 text-body text-muted-foreground">{t(($) => $.desktop.worktrees.offline)}</p>}
         {inventory.isError && <p role="alert" className="px-4 py-3 text-body text-destructive">{t(($) => $.desktop.worktrees.load_failed)} {inventory.error.message}</p>}
         {Object.keys(retained).length > 0 && <div role="status" className="space-y-2 px-4 py-3"><p className="text-body">{t(($) => $.desktop.worktrees.retained, { count: Object.keys(retained).length })}</p>{Object.entries(retained).map(([path, reason]) => <div key={path}><p className="break-all font-mono text-caption">{path}</p><WorktreeReason reason={reason} /></div>)}</div>}
@@ -145,6 +146,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
                     <p className="truncate font-medium text-foreground" title={row.taskName}>{row.taskName}</p>
                     <p className="break-all font-mono" title={row.path}>{row.path}</p>
                     <p>{(row.sizeBytes / 1024 ** 2).toFixed(1)} MB · {reasonLabel(row.active ? "active" : row.protectionReason)}</p>
+                    {Array.from(new Set([...row.consumerTaskIds, ...(row.retainedTaskId ? [row.retainedTaskId] : [])])).map((id) => <p key={id} className="break-all">{t(($) => $.desktop.worktrees.retained_run, { id })}</p>)}
                     {row.storage && <p>{t(($) => $.desktop.worktrees.storage_breakdown, { code: (row.storage.codeBytes / 1024 ** 2).toFixed(1), output: (row.storage.outputBytes / 1024 ** 2).toFixed(1), logs: (row.storage.logBytes / 1024 ** 2).toFixed(1), runtime: (row.storage.runtimeBytes / 1024 ** 2).toFixed(1) })}</p>}
                     {row.storage?.allocatedBytes != null && <p>{t(($) => $.desktop.worktrees.allocated_size, { size: (row.storage.allocatedBytes / 1024 ** 2).toFixed(1) })}</p>}
                     <WorktreeLifecycle row={row} />

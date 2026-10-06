@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"encoding/json"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,19 +13,15 @@ import (
 )
 
 func scopedEnvironmentTestDaemon(t *testing.T) *Daemon {
-	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		runtime := "runtime"
-		workspace := "ws1"
-		if strings.Contains(r.URL.Path, "other") {
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(id string) protocol.TaskGCStatus {
+		runtime, workspace := "runtime", "ws1"
+		if strings.Contains(id, "other") {
 			runtime = "other-runtime"
 		}
-		if strings.Contains(r.URL.Path, "foreign") {
+		if strings.Contains(id, "foreign") {
 			workspace = "ws2"
 		}
-		if err := json.NewEncoder(w).Encode(protocol.TaskGCStatus{Status: "completed", WorkspaceID: workspace, RuntimeID: runtime, LifecycleSupported: true}); err != nil {
-			t.Error(err)
-		}
+		return protocol.TaskGCStatus{Status: "completed", WorkspaceID: workspace, RuntimeID: runtime, AgentID: "agent", LifecycleSupported: true, RetentionSupported: true, CompletedAt: time.Now().Add(-time.Hour)}
 	}))
 	d.rootCtx = t.Context()
 	d.runtimeIndex = map[string]Runtime{"runtime": {ID: "runtime"}, "other-runtime": {ID: "other-runtime"}}

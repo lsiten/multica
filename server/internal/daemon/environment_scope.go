@@ -48,6 +48,12 @@ func (d *Daemon) environmentRuntimeOwnedHere(scope environmentOperationScope) bo
 	if workspace == nil {
 		return false
 	}
+	// Automatic recovery is authorized by fresh, workspace-scoped task facts
+	// even after the runtime has been retired. Interactive commands still need
+	// a currently registered runtime owned by this daemon.
+	if scope.Automatic {
+		return true
+	}
 	if _, exists := d.runtimeIndex[scope.RuntimeID]; !exists {
 		return false
 	}
@@ -67,6 +73,7 @@ func (d *Daemon) scopedEnvironmentPaths(ctx context.Context, scope environmentOp
 	if err != nil {
 		return nil, err
 	}
+	ctx = d.prefetchEnvironmentLifecycles(ctx, roots)
 	return d.authorizedEnvironmentPaths(ctx, scope, roots)
 }
 
@@ -155,6 +162,11 @@ func (d *Daemon) runScopedEnvironmentMutation(ctx context.Context, scope environ
 		result.EnvironmentID = selection.EnvironmentID
 		return result, nil
 	case "cleanup", "discard":
+		if scope.Automatic || request.Action == "cleanup" && protocol.ValidEnvironmentIdentity(selection.Revision) {
+			result := d.cleanupUnreferencedEnvironment(ctx, path, selection.Revision)
+			result.EnvironmentID = selection.EnvironmentID
+			return result, nil
+		}
 		reason := d.cleanupManagedWorktree(ctx, worktreeCleanup{path: path, discardChanges: request.Action == "discard"})
 		return map[string]any{"environment_id": selection.EnvironmentID, "reason": reason, "reclaimed": reason == ""}, nil
 	default:

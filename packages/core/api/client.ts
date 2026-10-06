@@ -22,6 +22,7 @@ import { localReviewBranchesSchema, localReviewCapabilitySchema, localReviewRela
 import { environmentCommandSchema, parseEnvironmentPolicyStatus, parseEnvironmentRuntimes, parseEnvironmentOperationList, parseEnvironmentOperationStatus, type EnvironmentCommand } from "../types/environment-operations";
 import { parseManagedWorktrees, parseWorktreeCacheResults } from "../types/managed-worktree";
 import { parseWorktreeArchiveResults, parseWorktreeArchiveSummaries } from "../types/worktree-archives";
+import { parseWorktreeCleanupPreviews } from "../types/worktree-cleanup";
 import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
   Issue,
@@ -1120,11 +1121,12 @@ export class ApiClient {
 
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "inventory" }, signal?: AbortSignal): Promise<import("../types/managed-worktree").ManagedWorktree[]>;
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "cache_preview" }, signal?: AbortSignal): Promise<import("../types/managed-worktree").WorktreeCacheResult[]>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "cleanup_preview" }, signal?: AbortSignal): Promise<import("../types/worktree-cleanup").WorktreeCleanupPreview[]>;
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "archive_preview" }, signal?: AbortSignal): Promise<import("../types/worktree-archives").WorktreeArchiveResult[]>;
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "archives" }, signal?: AbortSignal): Promise<import("../types/worktree-archives").WorktreeArchiveSummary[]>;
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "operations" }, signal?: AbortSignal): Promise<import("../types/environment-operations").EnvironmentOperationStatus[]>;
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "policy" } | Extract<EnvironmentCommand, { action: "policy_update" }>, signal?: AbortSignal): Promise<import("../types/environment-operations").EnvironmentPolicyStatus>;
-  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: Exclude<EnvironmentCommand, { action: "inventory" | "cache_preview" | "archive_preview" | "archives" | "operations" | "policy" | "policy_update" }>, signal?: AbortSignal): Promise<import("../types/environment-operations").EnvironmentOperationStatus>;
+  async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: Exclude<EnvironmentCommand, { action: "inventory" | "cache_preview" | "cleanup_preview" | "archive_preview" | "archives" | "operations" | "policy" | "policy_update" }>, signal?: AbortSignal): Promise<import("../types/environment-operations").EnvironmentOperationStatus>;
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: EnvironmentCommand, signal?: AbortSignal) {
     const command = environmentCommandSchema.parse(input);
     const timeout = AbortSignal.timeout(55000);
@@ -1136,6 +1138,7 @@ export class ApiClient {
       case "inventory": return parseManagedWorktrees(raw);
       case "cache_preview": return parseWorktreeCacheResults(raw);
       case "archive_preview": return parseWorktreeArchiveResults(raw);
+      case "cleanup_preview": return parseWorktreeCleanupPreviews(raw);
       case "archives": return parseWorktreeArchiveSummaries(raw);
       case "operations": return parseEnvironmentOperationList(raw);
       case "policy": case "policy_update": return parseEnvironmentPolicyStatus(raw);

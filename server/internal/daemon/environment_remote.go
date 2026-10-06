@@ -55,7 +55,13 @@ func (d *Daemon) executeEnvironmentCommand(ctx context.Context, scope environmen
 		}
 		return filtered, nil
 	}
-	paths, err := d.scopedEnvironmentPaths(ctx, scope)
+	roots, err := d.environmentRootPaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx = d.prefetchEnvironmentLifecycles(ctx, roots)
+	ctx = d.withEnvironmentReviewReferences(ctx, roots)
+	paths, err := d.authorizedEnvironmentPaths(ctx, scope, roots)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +89,17 @@ func (d *Daemon) executeEnvironmentCommand(ctx context.Context, scope environmen
 				return nil, err
 			}
 			result := d.worktreeCacheOperation(ctx, path, "")
+			result.EnvironmentID = id
+			results = append(results, result)
+		}
+		return results, nil
+	case "cleanup_preview":
+		results := []environmentCleanupResult{}
+		for id, path := range paths {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			result := d.cleanupUnreferencedEnvironment(ctx, path, "")
 			result.EnvironmentID = id
 			results = append(results, result)
 		}

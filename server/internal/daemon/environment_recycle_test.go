@@ -46,7 +46,7 @@ func TestAutomaticEnvironmentRecyclingFollowsCompletedRunAndParentEvents(t *test
 					if kind == "foreign_workspace" {
 						workspace = "ws2"
 					}
-					status := protocol.TaskGCStatus{Status: state, LifecycleSupported: true, WorkspaceID: workspace, CompletedAt: time.Now().Add(-48 * time.Hour)}
+					status := protocol.TaskGCStatus{Status: state, LifecycleSupported: true, RetentionSupported: true, RuntimeID: "runtime", AgentID: "agent", WorkspaceID: workspace, CompletedAt: time.Now().Add(-48 * time.Hour)}
 					if kind == "archived_chat" || kind == "active_chat" {
 						status.ChatSessionID = "chat"
 					}
@@ -69,7 +69,7 @@ func TestAutomaticEnvironmentRecyclingFollowsCompletedRunAndParentEvents(t *test
 					json.NewEncoder(w).Encode(status)
 				}
 			}))
-			d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled, d.cfg.EnvironmentArchiveTTL = true, true, 24*time.Hour
+			d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled, d.cfg.EnvironmentArchiveTTL = true, true, 24*time.Hour
 			meta := &execenv.GCMeta{Kind: execenv.GCKindIssue, WorkspaceID: "ws1", TaskID: "task", CompletedAt: time.Now().Add(-48 * time.Hour), LocalDirectory: true}
 			switch kind {
 			case "archived_chat", "active_chat":
@@ -82,14 +82,14 @@ func TestAutomaticEnvironmentRecyclingFollowsCompletedRunAndParentEvents(t *test
 				meta.Kind = "future"
 			}
 			root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", meta)
-			eligible, _ := d.automaticArchiveEligible(t.Context(), root, meta)
-			want := kind == "issue" || kind == "done_issue" || kind == "archived_chat" || kind == "completed_automation"
+			eligible, _ := d.automaticCleanupEligible(t.Context(), root, meta)
+			want := kind != "running_task" && kind != "foreign_workspace"
 			if eligible != want {
 				t.Fatalf("%s: eligible %v, want %v", kind, eligible, want)
 			}
 			if want {
 				d.markActiveEnvRoot(root)
-				if eligible, _ := d.automaticArchiveEligible(t.Context(), root, meta); eligible {
+				if eligible, _ := d.automaticCleanupEligible(t.Context(), root, meta); eligible {
 					t.Fatal("active execution became recyclable")
 				}
 			}
@@ -97,37 +97,32 @@ func TestAutomaticEnvironmentRecyclingFollowsCompletedRunAndParentEvents(t *test
 	}
 }
 
-func TestAutomaticArchiveRetainsChatReactivatedDuringCapture(t *testing.T) {
+func TestAutomaticArchiveRetainsTaskResumedDuringCapture(t *testing.T) {
 	var checks atomic.Int32
-	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if strings.Contains(r.URL.Path, "chat-sessions") {
-			state := "archived"
-			if checks.Add(1) > 1 {
-				state = "active"
-			}
-			json.NewEncoder(w).Encode(map[string]any{"status": state, "updated_at": time.Now().Add(-48 * time.Hour)})
-			return
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(string) protocol.TaskGCStatus {
+		state := "completed"
+		if checks.Add(1) > 2 {
+			state = "running"
 		}
-		json.NewEncoder(w).Encode(protocol.TaskGCStatus{Status: "completed", LifecycleSupported: true, ChatSessionID: "chat", WorkspaceID: "ws1", CompletedAt: time.Now().Add(-48 * time.Hour)})
+		return protocol.TaskGCStatus{Status: state, WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", LifecycleSupported: true, RetentionSupported: true, CompletedAt: time.Now().Add(-time.Hour)}
 	}))
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled = true, true
-	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: "chat", WorkspaceID: "ws1", TaskID: "task", CompletedAt: time.Now().Add(-48 * time.Hour)})
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled = true, true
+	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", &execenv.GCMeta{Kind: execenv.GCKindIssue, WorkspaceID: "ws1", TaskID: "task", CompletedAt: time.Now().Add(-time.Hour)})
 	writeLifecycleFile(t, filepath.Join(root, "output", "deliverable"), "retain output")
 	preview := d.archiveEnvironmentOperation(t.Context(), root, "", "")
 	ctx := withEnvironmentScope(t.Context(), environmentOperationScope{WorkspaceID: "ws1", Automatic: true})
 	result := d.archiveEnvironmentOperation(ctx, root, preview.Revision, strings.Repeat("a", 64))
-	if result.Reclaimed || result.Reason != "active_chat" {
-		t.Fatalf("reactivated chat was reclaimed: %+v", result)
+	if result.Reclaimed || result.Reason != "active" {
+		t.Fatalf("resumed task was reclaimed: %+v", result)
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "output", "deliverable")); err != nil || string(data) != "retain output" {
-		t.Fatalf("live chat output lost: %q %v", data, err)
+		t.Fatalf("live output lost: %q %v", data, err)
 	}
 }
 
 func TestAutomaticRecyclingReceiptUsesAuthoritativeRuntime(t *testing.T) {
 	d := scopedEnvironmentTestDaemon(t)
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled = true, true
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled = true, true
 	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", &execenv.GCMeta{Kind: execenv.GCKindIssue, WorkspaceID: "ws1", RuntimeID: "stale-runtime", TaskID: "task", CompletedAt: time.Now().Add(-time.Hour)})
 	if !d.scheduleAutomaticEnvironmentRecycle(t.Context(), root) {
 		t.Fatal("automatic archive was not scheduled")
@@ -144,35 +139,25 @@ func TestAutomaticRecyclingReceiptUsesAuthoritativeRuntime(t *testing.T) {
 }
 
 func TestAutomaticRecycleScanHandlesParentEventsAfterWorkerExited(t *testing.T) {
-	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case strings.Contains(r.URL.Path, "chat-sessions"):
-			state := "archived"
-			if strings.Contains(r.URL.Path, "live") {
-				state = "active"
-			}
-			json.NewEncoder(w).Encode(map[string]any{"status": state, "updated_at": time.Now().Add(-48 * time.Hour)})
-		case strings.Contains(r.URL.Path, "autopilot-runs"):
-			json.NewEncoder(w).Encode(AutopilotRunGCStatus{Status: "completed", CompletedAt: time.Now().Add(-48 * time.Hour)})
-		default:
-			status := protocol.TaskGCStatus{Status: "completed", LifecycleSupported: true, WorkspaceID: "ws1"}
-			if strings.Contains(r.URL.Path, "/chat/") {
-				status.ChatSessionID = "chat"
-			}
-			if strings.Contains(r.URL.Path, "/live/") {
-				status.ChatSessionID = "live"
-			}
-			if strings.Contains(r.URL.Path, "/automation/") {
-				status.AutopilotRunID = "run"
-			}
-			json.NewEncoder(w).Encode(status)
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(id string) protocol.TaskGCStatus {
+		status := protocol.TaskGCStatus{Status: "completed", WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", LifecycleSupported: true, RetentionSupported: true, CompletedAt: time.Now().Add(-time.Hour)}
+		if id == "live" {
+			status.Status = "running"
 		}
+		if id == "chat" || id == "live" {
+			status.ChatSessionID = id
+		}
+		if id == "automation" {
+			status.AutopilotRunID = "run"
+		}
+		return status
 	}))
 	d.rootCtx = t.Context()
 	t.Cleanup(d.stopEnvironmentOperations)
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled = true, true
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled = true, true
 	d.cfg.EnvironmentArchiveTTL = 24 * time.Hour
+	d.runtimeIndex = map[string]Runtime{"runtime": {ID: "runtime"}}
+	d.workspaces = map[string]*workspaceState{"ws1": {runtimeIDs: []string{"runtime"}}}
 	chat := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "chat", &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: "chat", TaskID: "chat", WorkspaceID: "ws1", CompletedAt: time.Now().Add(-48 * time.Hour)})
 	live := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "live", &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: "live", TaskID: "live", WorkspaceID: "ws1", CompletedAt: time.Now().Add(-48 * time.Hour)})
 	automation := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "automation", &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: "run", TaskID: "automation", WorkspaceID: "ws1", CompletedAt: time.Now().Add(-48 * time.Hour)})
@@ -186,22 +171,22 @@ func TestAutomaticRecycleScanHandlesParentEventsAfterWorkerExited(t *testing.T) 
 	if _, err := os.Stat(live); err != nil {
 		t.Fatalf("active chat environment lost: %v", err)
 	}
-	rows, err := d.listEnvironmentArchives(t.Context(), "ws1")
-	if err != nil || len(rows) != 2 {
-		t.Fatalf("parent event recovery archives missing: %+v %v", rows, err)
+	if _, err := os.Stat(filepath.Join(d.cfg.WorkspacesRoot, ".environment-archive")); !os.IsNotExist(err) {
+		t.Fatalf("cleanup scan left recovery archives: %v", err)
 	}
+
 }
 
 func TestAutomaticRecycleRetainsLegacyServerAndMismatchedMetadata(t *testing.T) {
 	d := worktreeTestDaemon(t)
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled = true, true
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled = true, true
 	meta := &execenv.GCMeta{Kind: execenv.GCKindChat, ChatSessionID: "chat", TaskID: "task", WorkspaceID: "ws1", CompletedAt: time.Now().Add(-48 * time.Hour)}
 	path := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", meta)
-	if eligible, reason := d.automaticArchiveEligible(t.Context(), path, meta); eligible || reason != "unavailable" {
+	if eligible, reason := d.automaticCleanupEligible(t.Context(), path, meta); eligible || (reason != "unavailable" && reason != "scope_changed") {
 		t.Fatalf("server without lifecycle contract allowed automatic reclamation: %v %s", eligible, reason)
 	}
 	meta.TaskID = "other"
-	if eligible, reason := d.automaticArchiveEligible(t.Context(), path, meta); eligible || reason != "scope_changed" {
+	if eligible, reason := d.automaticCleanupEligible(t.Context(), path, meta); eligible || reason != "scope_changed" {
 		t.Fatalf("mismatched metadata allowed automatic reclamation: %v %s", eligible, reason)
 	}
 }
@@ -229,15 +214,21 @@ func TestAutomaticRecyclingReservesCapacityForInteractiveOperations(t *testing.T
 	d.environmentOperationWorkers.Wait()
 }
 
-func TestAutomaticArchiveReclaimsLocalDirectoryOutputsOnlyAfterVerifiedBackup(t *testing.T) {
-	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(protocol.TaskGCStatus{Status: "completed", LifecycleSupported: true, WorkspaceID: "ws1"})
+func TestAutomaticCleanupDeletesDaemonOutputsAndPreservesUserDirectory(t *testing.T) {
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(string) protocol.TaskGCStatus {
+		return protocol.TaskGCStatus{Status: "completed", LifecycleSupported: true, RetentionSupported: true, RuntimeID: "runtime", AgentID: "agent", WorkspaceID: "ws1", CompletedAt: time.Now().Add(-time.Hour)}
 	}))
+	d.runtimeIndex = map[string]Runtime{"runtime": {ID: "runtime"}}
+	d.workspaces = map[string]*workspaceState{"ws1": {runtimeIDs: []string{"runtime"}}}
 	d.rootCtx = t.Context()
 	t.Cleanup(d.stopEnvironmentOperations)
-	d.cfg.GCEnabled, d.cfg.EnvironmentArchiveEnabled, d.cfg.EnvironmentArchiveTTL = true, true, 0
+	d.cfg.GCEnabled, d.cfg.EnvironmentRecycleEnabled, d.cfg.EnvironmentArchiveTTL = true, true, 0
 	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", &execenv.GCMeta{Kind: execenv.GCKindIssue, WorkspaceID: "ws1", TaskID: "task", CompletedAt: time.Now().Add(-time.Hour), LocalDirectory: true})
+	userDirectory := t.TempDir()
+	writeLifecycleFile(t, filepath.Join(userDirectory, "user-file"), "keep user directory")
+	if err := execenv.WriteReviewDirectory(root, execenv.ReviewDirectory{WorkspaceID: "ws1", TaskID: "task", Path: userDirectory}); err != nil {
+		t.Fatal(err)
+	}
 	writeLifecycleFile(t, filepath.Join(root, "output", "deliverable"), "retain output")
 	if !d.scheduleAutomaticEnvironmentRecycle(t.Context(), root) {
 		t.Fatal("automatic archival not scheduled")
@@ -246,22 +237,11 @@ func TestAutomaticArchiveReclaimsLocalDirectoryOutputsOnlyAfterVerifiedBackup(t 
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatalf("idle environment remains: %v", err)
 	}
-	rows, err := d.listEnvironmentArchives(t.Context(), "ws1")
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("backup missing: %+v %v", rows, err)
+	if _, err := os.Stat(filepath.Join(d.cfg.WorkspacesRoot, ".environment-archive")); !os.IsNotExist(err) {
+		t.Fatalf("cleanup left backup data: %v", err)
 	}
-	if result := d.restoreEnvironmentOperation(t.Context(), rows[0].ArchiveID, "ws1"); !result.Restored {
-		t.Fatalf("automatic backup cannot restore: %+v", result)
+	if data, err := os.ReadFile(filepath.Join(userDirectory, "user-file")); err != nil || string(data) != "keep user directory" {
+		t.Fatalf("user directory changed: %q %v", data, err)
 	}
-	if data, err := os.ReadFile(filepath.Join(root, "output", "deliverable")); err != nil || string(data) != "retain output" {
-		t.Fatalf("output lost: %q %v", data, err)
-	}
-	d.cfg.EnvironmentArchiveTTL = 24 * time.Hour
-	meta, err := execenv.ReadGCMeta(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if eligible, reason := d.automaticArchiveEligible(t.Context(), root, meta); eligible || reason != "retention" {
-		t.Fatalf("restored environment immediately recycled: %v %s", eligible, reason)
-	}
+
 }

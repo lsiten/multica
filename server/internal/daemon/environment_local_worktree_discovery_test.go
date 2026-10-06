@@ -77,6 +77,44 @@ func TestRunTaskFindsSharedLocalBranchWithoutUsablePriorWorkdir(t *testing.T) {
 	}
 }
 
+func TestManagedWorklineDoesNotMultiplyCodeDirectoriesAcrossOneHundredRuns(t *testing.T) {
+	d, _, cleanup := newLeaderReuseTestDaemon(t)
+	defer cleanup()
+	first := leaderReuseTestTask("task-first")
+	result, err := d.runTask(t.Context(), first, "claude", 0, d.logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeLifecycleFile(t, filepath.Join(result.WorkDir, "carry.txt"), "preserve current task code")
+	for index := 1; index < 100; index++ {
+		next := first
+		next.ID = fmt.Sprintf("task-run-%03d", index)
+		next.PriorWorkDir = ""
+		continued, err := d.runTask(t.Context(), next, "claude", 0, d.logger)
+		if err != nil || !sameDir(t, result.WorkDir, continued.WorkDir) {
+			t.Fatalf("run %d created another code directory: %+v %v", index, continued, err)
+		}
+		if data, err := os.ReadFile(filepath.Join(continued.WorkDir, "carry.txt")); err != nil || string(data) != "preserve current task code" {
+			t.Fatalf("run %d lost code: %q %v", index, data, err)
+		}
+	}
+	roots, err := d.environmentRootPaths(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	codeRoots := 0
+	for _, root := range roots {
+		if code, err := environmentHasCode(root); err != nil {
+			t.Fatal(err)
+		} else if code {
+			codeRoots++
+		}
+	}
+	if codeRoots != 1 {
+		t.Fatalf("100 runs retained %d code directories", codeRoots)
+	}
+}
+
 func TestConcurrentRunsShareLocalWorktreeAndBranch(t *testing.T) {
 	d, _, cleanup := newLeaderReuseTestDaemon(t)
 	defer cleanup()

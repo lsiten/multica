@@ -25,6 +25,7 @@ const row = (agentId: string, path: string): ManagedWorktree => ({
   ...toWorktreeLifecycle(worktreeLifecycleSchema.parse({ run_status: "completed", next_action: "cleanup" })),
   agentId, agentName: "Same name", path, workspaceId: "ws", taskName: path,
   taskId: "task-id", repositories: [],
+  consumerTaskIds: [], codeEnvironmentId: "", physicalWorktreeIds: [], retentionReason: "unavailable", retainedTaskId: "",
   kind: "issue", sizeBytes: 123, active: false, protectionReason: "",
 });
 

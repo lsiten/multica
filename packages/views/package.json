@@ -51,6 +51,7 @@
     "./chat/floating-chat": "./chat/floating-chat.tsx",
     "./settings": "./settings/index.ts",
     "./settings/worktree-inventory-filters": "./settings/components/worktree-inventory-filters.tsx",
+    "./settings/worktree-inventory-summary": "./settings/components/worktree-inventory-summary.tsx",
     "./settings/lark-tab": "./settings/components/lark-tab.tsx",
     "./lark": "./lark/index.ts",
     "./slack": "./slack/index.ts",

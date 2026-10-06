@@ -20,18 +20,23 @@ import (
 type ManagedWorktree struct {
 	TaskDiskUsage
 	protocol.WorktreeLifecycle
-	Active           bool                  `json:"active"`
-	ProtectionReason string                `json:"protection_reason"`
-	TaskID           string                `json:"task_id"`
-	RuntimeID        string                `json:"runtime_id,omitempty"`
-	EnvironmentID    string                `json:"environment_id"`
-	Repositories     []string              `json:"repositories"`
-	EnvironmentKind  string                `json:"environment_kind"`
-	Storage          *worktreeStorageUsage `json:"storage,omitempty"`
-	ProjectID        string                `json:"project_id,omitempty"`
-	ProjectName      string                `json:"project_name,omitempty"`
-	SquadID          string                `json:"squad_id,omitempty"`
-	SquadName        string                `json:"squad_name,omitempty"`
+	Active              bool                  `json:"active"`
+	ProtectionReason    string                `json:"protection_reason"`
+	TaskID              string                `json:"task_id"`
+	RuntimeID           string                `json:"runtime_id,omitempty"`
+	EnvironmentID       string                `json:"environment_id"`
+	Repositories        []string              `json:"repositories"`
+	EnvironmentKind     string                `json:"environment_kind"`
+	Storage             *worktreeStorageUsage `json:"storage,omitempty"`
+	ProjectID           string                `json:"project_id,omitempty"`
+	ProjectName         string                `json:"project_name,omitempty"`
+	SquadID             string                `json:"squad_id,omitempty"`
+	SquadName           string                `json:"squad_name,omitempty"`
+	CodeEnvironmentID   string                `json:"code_environment_id,omitempty"`
+	PhysicalWorktreeIDs []string              `json:"physical_worktree_ids"`
+	RetentionReason     string                `json:"retention_reason"`
+	RetainedTaskID      string                `json:"retained_task_id,omitempty"`
+	ConsumerTaskIDs     []string              `json:"consumer_task_ids"`
 }
 
 type managedWorktreeCleanupRequest struct {
@@ -128,6 +133,7 @@ func (d *Daemon) managedWorktreesForPaths(ctx context.Context, allowed map[strin
 			}
 		}
 		repositories, _ := inspectWorktreeRepositories(ctx, task.Path, d.cfg.WorkspacesRoot)
+		physicalRepositories := append([]string{}, repositories...)
 		if len(repositories) == 0 && taskID != "" {
 			binding, err := execenv.ReadReviewDirectory(task.Path)
 			if err == nil && binding.SourcePath == "" && binding.Commit == "" && binding.TaskID == taskID && binding.WorkspaceID == task.WorkspaceID && filepath.IsAbs(binding.Path) {
@@ -148,19 +154,47 @@ func (d *Daemon) managedWorktreesForPaths(ctx context.Context, allowed map[strin
 			RuntimeID:        runtimeID,
 			Repositories:     repositories,
 			EnvironmentID:    d.managedEnvironmentID(task.Path, task.WorkspaceID, taskID),
+			RetentionReason:  "unavailable",
 		}
-		row.EnvironmentKind = "directory"
-		if len(repositories) > 0 {
+		row.EnvironmentKind = "run_directory"
+		row.ConsumerTaskIDs = []string{}
+		if binding, err := execenv.ReadWorktreeBinding(task.Path); err == nil {
+			for _, consumer := range binding.Consumers {
+				row.ConsumerTaskIDs = append(row.ConsumerTaskIDs, consumer.TaskID)
+			}
+		}
+		row.PhysicalWorktreeIDs = []string{}
+		if code, err := environmentHasCode(task.Path); err == nil && code {
+			row.EnvironmentKind = "directory"
+			row.CodeEnvironmentID = row.EnvironmentID
+		}
+		if len(physicalRepositories) > 0 {
 			row.EnvironmentKind = "git_worktree"
+			for _, repository := range physicalRepositories {
+				if identity, err := worktreeGit(ctx, repository, "rev-parse", "--absolute-git-dir"); err == nil {
+					row.PhysicalWorktreeIDs = append(row.PhysicalWorktreeIDs, identity)
+				}
+			}
+		} else if len(repositories) > 0 {
+			codeRoot := managedCodeRoot(d.cfg.WorkspacesRoot, repositories[0])
+			if owner, err := d.gcTaskDirOwner(codeRoot); err == nil && owner.WorkspaceID == task.WorkspaceID {
+				row.CodeEnvironmentID = d.managedEnvironmentID(codeRoot, owner.WorkspaceID, owner.TaskID)
+			}
 		}
 		if usage, err := scanWorktreeStorage(ctx, task.Path, allocatedFiles); err == nil {
 			row.Storage = &usage
 		}
 		if meta, err := execenv.ReadGCMeta(task.Path); err == nil && meta.WorkspaceID == task.WorkspaceID && meta.TaskID == taskID {
+			row.IssueID = meta.IssueID
 			row.ProjectID, row.ProjectName = meta.ProjectID, meta.ProjectName
 			row.SquadID, row.SquadName = meta.SquadID, meta.SquadName
 			if row.RuntimeID == "" {
 				row.RuntimeID = meta.RuntimeID
+			}
+		}
+		if row.IssueID == "" {
+			if scope, err := execenv.ReadManagedEnvProvenance(task.Path); err == nil && scope.WorkspaceID == task.WorkspaceID {
+				row.IssueID = scope.IssueID
 			}
 		}
 		worktrees = append(worktrees, row)
@@ -174,6 +208,19 @@ func (d *Daemon) managedWorktreesForPaths(ctx context.Context, allowed map[strin
 func (d *Daemon) describeManagedWorktreeInventory(ctx context.Context, rows []ManagedWorktree) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+	paths := []string{}
+	batched := map[string]bool{}
+	for index := range rows {
+		if rows[index].TaskID != "" && rows[index].RuntimeID != "" {
+			paths = append(paths, rows[index].Path)
+			batched[rows[index].Path] = true
+		}
+	}
+	legacyContext := ctx
+	if len(paths) > 0 {
+		ctx = d.prefetchEnvironmentLifecycles(ctx, paths)
+		ctx = d.withEnvironmentReviewReferences(ctx, paths)
+	}
 	queue := make(chan int, len(rows))
 	for index := range rows {
 		queue <- index
@@ -183,7 +230,11 @@ func (d *Daemon) describeManagedWorktreeInventory(ctx context.Context, rows []Ma
 	for range min(8, len(rows)) {
 		workers.Go(func() {
 			for index := range queue {
-				d.describeManagedWorktree(ctx, &rows[index])
+				lookupContext := ctx
+				if !batched[rows[index].Path] {
+					lookupContext = legacyContext
+				}
+				d.describeManagedWorktree(lookupContext, &rows[index])
 			}
 		})
 	}

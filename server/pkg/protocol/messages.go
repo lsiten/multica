@@ -164,13 +164,14 @@ type RuntimeProfilesChangedPayload struct {
 type WorkspacesChangedPayload struct{}
 
 // PendingWorkKind values carried by PendingWorkPayload.Kind. The kind is
-// advisory only — the daemon reacts identically to every kind (one immediate
-// heartbeat, which claims whatever is queued) — so an unknown value from a
-// newer server stays safe on an older daemon.
+// advisory only. Environment hints wake task-directory reconciliation; other
+// hints request an immediate heartbeat. Older daemons safely treat new kinds
+// as heartbeat hints and keep their periodic reconciliation.
 const (
 	PendingWorkKindModelList        = "model_list"
 	PendingWorkKindLocalSkills      = "local_skills"
 	PendingWorkKindLocalSkillImport = "local_skill_import"
+	PendingWorkKindEnvironment      = "environment"
 )
 
 // PendingWorkPayload is sent from server to daemon as a wakeup hint when a
@@ -220,16 +221,16 @@ type ChatQuickActionsPayload struct {
 // TaskMessagePayload represents a single agent execution message (tool call, text, etc.)
 type TaskMessagePayload struct {
 	// CallID is an opaque tool-call identity scoped to one backend execution.
-	CallID  string         `json:"call_id,omitempty"`
-	TaskID  string         `json:"task_id"`
-	ChatSessionID string   `json:"chat_session_id,omitempty"`
-	IssueID string         `json:"issue_id,omitempty"`
-	Seq     int            `json:"seq"`
-	Type    string         `json:"type"`              // "text", "tool_use", "tool_result", "error"
-	Tool    string         `json:"tool,omitempty"`    // tool name for tool_use/tool_result
-	Content string         `json:"content,omitempty"` // text content
-	Input   map[string]any `json:"input,omitempty"`   // tool input (tool_use only)
-	Output  string         `json:"output,omitempty"`  // tool output (tool_result only)
+	CallID        string         `json:"call_id,omitempty"`
+	TaskID        string         `json:"task_id"`
+	ChatSessionID string         `json:"chat_session_id,omitempty"`
+	IssueID       string         `json:"issue_id,omitempty"`
+	Seq           int            `json:"seq"`
+	Type          string         `json:"type"`              // "text", "tool_use", "tool_result", "error"
+	Tool          string         `json:"tool,omitempty"`    // tool name for tool_use/tool_result
+	Content       string         `json:"content,omitempty"` // text content
+	Input         map[string]any `json:"input,omitempty"`   // tool input (tool_use only)
+	Output        string         `json:"output,omitempty"`  // tool output (tool_result only)
 	// OutputTruncated reports whether Output is the whole tool output that ran
 	// (tool_result only). Tri-state: omitted means no daemon ever measured this
 	// record — historical rows and older installed daemons — which clients must
