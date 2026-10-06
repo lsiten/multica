@@ -5,6 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TimelineEntry } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
+vi.mock("../../common/human-reply-binding", () => ({
+  useHumanReplyBinding: () => ({ submit: async () => "ordinary", preview: null, bound: false, stale: false }),
+}));
+
 // Per-comment copy link: the menu must offer a link to the single comment
 // (`#comment-<id>`), not just the comment body text. The URL is built by
 // `useIssueActions.copyCommentLink`; this suite pins that the card routes each
