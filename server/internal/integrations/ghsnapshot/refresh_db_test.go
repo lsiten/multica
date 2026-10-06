@@ -122,7 +122,9 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 	oldest := seedPRAt(t, pool, q, 111, "oldest", 2, "O")
 	running := seedPRAt(t, pool, q, 222, "running", 3, "R")
 	newer := seedPRAt(t, pool, q, 222, "newer", 4, "N")
-	prs := []db.GithubPullRequest{settled, oldest, running, newer}
+	// Other packages insert stale PRs concurrently into this shared database.
+	unrelated := seedPRAt(t, pool, q, 1, "unrelated", 999320, "U")
+	prs := []db.GithubPullRequest{settled, oldest, running, newer, unrelated}
 	t.Cleanup(func() {
 		for _, pr := range prs {
 			_, _ = pool.Exec(context.Background(), `DELETE FROM github_pull_request_check_run WHERE pr_id=$1`, pr.ID)
@@ -152,6 +154,26 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 		running.ID); err != nil {
 		t.Fatal(err)
 	}
+
+	// The production sweep is global. Run its ordering assertions against a
+	// transaction-local snapshot so unrelated fixtures cannot displace LIMIT rows.
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback(ctx) })
+	ids := []pgtype.UUID{settled.ID, oldest.ID, running.ID, newer.ID}
+	for _, statement := range []string{
+		`CREATE TEMP TABLE github_pull_request ON COMMIT DROP AS
+		 SELECT * FROM public.github_pull_request WHERE id = ANY($1::uuid[])`,
+		`CREATE TEMP TABLE github_pull_request_check_run ON COMMIT DROP AS
+		 SELECT * FROM public.github_pull_request_check_run WHERE pr_id = ANY($1::uuid[])`,
+	} {
+		if _, err := tx.Exec(ctx, statement, ids); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q = db.New(tx)
 
 	rows, err := q.ListStaleUndecidedGitHubPRs(ctx, db.ListStaleUndecidedGitHubPRsParams{
 		OlderThan:           tsFromTime(now.Add(-10 * time.Minute)),
