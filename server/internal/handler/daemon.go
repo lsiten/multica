@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/daemonws"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
@@ -898,6 +899,16 @@ func (h *Handler) mergeLegacyRuntime(ctx context.Context, newRuntimeID, oldRunti
 	}); err != nil {
 		return fmt.Errorf("record legacy daemon_id: %w", err)
 	}
+	oldRuntime, err := qtx.GetAgentRuntime(ctx, oldRuntimeID)
+	if err != nil {
+		return fmt.Errorf("load legacy application runtime: %w", err)
+	}
+	if err := application.CheckDeletion(ctx, qtx, db.ListApplicationDeletionBlockersParams{WorkspaceID: oldRuntime.WorkspaceID, RuntimeID: oldRuntimeID}); err != nil {
+		return err
+	}
+	if err := application.CleanupRuntime(ctx, qtx, oldRuntime.WorkspaceID, oldRuntimeID); err != nil {
+		return err
+	}
 	if err := qtx.DeleteAgentRuntime(ctx, oldRuntimeID); err != nil {
 		return fmt.Errorf("delete old runtime: %w", err)
 	}
@@ -1388,7 +1399,7 @@ func (h *Handler) processHeartbeat(ctx context.Context, runtimeID string, suppor
 	ack := &protocol.DaemonHeartbeatAckPayload{
 		RuntimeID:          runtimeID,
 		Status:             "ok",
-		ServerCapabilities: []string{protocol.DaemonCapabilityRPCV1},
+		ServerCapabilities: []string{protocol.DaemonCapabilityRPCV1, protocol.DaemonCapabilityApplicationsV1},
 	}
 
 	probeUpdateCtx, cancelProbeUpdate := context.WithTimeout(ctx, heartbeatHasPendingTimeout)

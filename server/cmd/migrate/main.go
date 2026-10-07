@@ -140,6 +140,32 @@ var pgBigmOperatorClass = extensionOperatorClass{
 // they are still pending: a fresh self-hosted install, which is exactly where an
 // interrupted build would otherwise leave a permanently unusable index.
 var concurrentIndexCleanups = map[string]string{
+	"900504_application_id":                       "application_id",
+	"900505_application_revision_id":              "application_revision_id",
+	"900506_application_relation_id":              "application_relation_id",
+	"900507_application_instance_id":              "application_instance_id",
+	"900508_application_endpoint_id":              "application_endpoint_id",
+	"900509_application_operation_id":             "application_operation_id",
+	"900510_application_operation_step_id":        "application_operation_step_id",
+	"900511_application_instance_consumer_id":     "application_instance_consumer_id",
+	"900512_application_revision_key":             "application_revision_key",
+	"900513_application_relation_key":             "application_relation_key",
+	"900514_application_instance_key":             "application_instance_key",
+	"900515_application_endpoint_key":             "application_endpoint_key",
+	"900516_application_operation_key":            "application_operation_key",
+	"900517_application_operation_step_key":       "application_operation_step_key",
+	"900518_application_instance_consumer_key":    "application_instance_consumer_key",
+	"900519_application_project":                  "application_project",
+	"900520_application_relation_project":         "application_relation_project",
+	"900521_application_instance_runtime":         "application_instance_runtime",
+	"900522_application_operation_step_pending":   "application_operation_step_pending",
+	"900523_application_operation_recent":         "application_operation_recent",
+	"900524_application_instance_consumer_root":   "application_instance_consumer_root",
+	"900528_application_access_ticket_key":        "application_access_ticket_key",
+	"900529_application_access_ticket_expiry":     "application_access_ticket_expiry",
+	"900532_application_step_generation_index":    "application_step_generation_key",
+	"900535_application_operation_deadline_index": "application_operation_deadline_index",
+
 	"900498_human_request_key_index":                            "human_request_source_key",
 	"900499_human_request_recipient_index":                      "human_request_recipient_pending",
 	"900500_human_request_id_index":                             "human_request_id_index",
@@ -378,6 +404,7 @@ var concurrentIndexCleanups = map[string]string{
 // the retry, while a bare CREATE would stay wedged on "already exists"; both
 // cases need direction-specific cleanup before the rollback can retry safely.
 var concurrentDownIndexCleanups = map[string]string{
+	"900531_application_step_generation_key":                "application_operation_step_key",
 	"144_drop_agent_task_queue_chat_pending_v1":             "idx_agent_task_queue_chat_pending",
 	"171_drop_legacy_label_namespace_index":                 "issue_label_workspace_name_lower_idx",
 	"256_drop_agent_task_queue_chat_pending_v2":             "idx_agent_task_queue_chat_pending_v2",

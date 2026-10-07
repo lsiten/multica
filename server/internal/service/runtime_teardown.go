@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/application"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -76,6 +77,12 @@ func TeardownRuntime(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID
 	runtime, err := qtx.LockAgentRuntime(ctx, runtimeID)
 	if err != nil {
 		return out, fmt.Errorf("load runtime: %w", err)
+	}
+	if err := application.CheckDeletion(ctx, qtx, db.ListApplicationDeletionBlockersParams{WorkspaceID: runtime.WorkspaceID, RuntimeID: runtimeID}); err != nil {
+		return out, err
+	}
+	if err := application.CleanupRuntime(ctx, qtx, runtime.WorkspaceID, runtimeID); err != nil {
+		return out, err
 	}
 	if err := qtx.CancelVscreenInterventionsByRuntime(ctx, runtimeID); err != nil {
 		return out, err

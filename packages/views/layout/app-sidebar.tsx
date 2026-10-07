@@ -116,6 +116,7 @@ const PINNED_PREVIEW_LIMIT = 5;
 // against the current workspace slug at render time (see AppSidebar body).
 // Only parameterless paths are valid nav destinations.
 type NavKey =
+  | "applications"
   | "inbox"
   | "chat"
   | "myIssues"
@@ -132,6 +133,7 @@ type NavKey =
 // Static schema (key only) — labels resolved at render via useT("layout"),
 // icons derived from the destination path via routeIconForPath.
 type NavLabelKey =
+  | "applications"
   | "inbox"
   | "chat"
   | "my_issues"
@@ -150,6 +152,7 @@ type NavLabelKey =
 // always agree. See route-icon-components.tsx.
 const personalNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "inbox", labelKey: "inbox" },
+  { key: "applications", labelKey: "applications" },
   { key: "myIssues", labelKey: "my_issues" },
   { key: "chat", labelKey: "chat" },
 ];

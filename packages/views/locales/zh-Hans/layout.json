@@ -11,7 +11,8 @@
     "usage": "统计",
     "runtimes": "运行时",
     "skills": "Skills",
-    "settings": "设置"
+    "settings": "设置",
+    "applications": "应用"
   },
   "tab": {
     "issue": "任务",
@@ -25,7 +26,8 @@
     "runtime": "运行时",
     "attachment": "附件",
     "create_agent": "创建智能体",
-    "unknown": "未知页面"
+    "unknown": "未知页面",
+    "application": "应用"
   },
   "help": {
     "trigger": "帮助",

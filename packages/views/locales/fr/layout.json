@@ -11,7 +11,8 @@
     "usage": "Statistiques",
     "runtimes": "Runtimes",
     "skills": "Skills",
-    "settings": "Paramètres"
+    "settings": "Paramètres",
+    "applications": "Applications"
   },
   "tab": {
     "issue": "Tâche",
@@ -25,7 +26,8 @@
     "runtime": "Runtime",
     "attachment": "Pièce jointe",
     "create_agent": "Créer un agent",
-    "unknown": "Page inconnue"
+    "unknown": "Page inconnue",
+    "application": "Application"
   },
   "help": {
     "trigger": "Aide",

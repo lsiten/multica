@@ -13,6 +13,9 @@ import (
 
 const gracefulStopTimeout = time.Second
 
+// ErrCleanup means the owner cannot confirm that every descendant exited.
+var ErrCleanup = errors.New("process tree cleanup was not confirmed")
+
 // CombinedOutput runs an unstarted command and returns its combined output.
 // Cancellation terminates the entire process tree, waits for it to disappear,
 // and returns the context cause rather than a platform-specific exit status.
@@ -41,7 +44,16 @@ func Run(ctx context.Context, cmd *exec.Cmd, waitDelay time.Duration) error {
 	return run(ctx, cmd, waitDelay)
 }
 
+// RunWithStart announces a process only after its tree controller owns it.
+func RunWithStart(ctx context.Context, cmd *exec.Cmd, waitDelay time.Duration, started func() error) error {
+	return runStarted(ctx, cmd, waitDelay, started)
+}
+
 func run(ctx context.Context, cmd *exec.Cmd, waitDelay time.Duration) error {
+	return runStarted(ctx, cmd, waitDelay, nil)
+}
+
+func runStarted(ctx context.Context, cmd *exec.Cmd, waitDelay time.Duration, started func() error) error {
 	if err := ctx.Err(); err != nil {
 		return context.Cause(ctx)
 	}
@@ -60,6 +72,14 @@ func run(ctx context.Context, cmd *exec.Cmd, waitDelay time.Duration) error {
 		_ = cmd.Wait()
 		_ = controller.finish(cmd)
 		return fmt.Errorf("attach process tree: %w", err)
+	}
+	if started != nil {
+		if err := started(); err != nil {
+			stopErr := controller.stop(cmd)
+			waitErr := cmd.Wait()
+			finishErr := controller.finish(cmd)
+			return fmt.Errorf("announce process start: %w", errors.Join(err, stopErr, waitErr, finishErr))
+		}
 	}
 
 	waitDone := make(chan error, 1)
@@ -83,7 +103,7 @@ func run(ctx context.Context, cmd *exec.Cmd, waitDelay time.Duration) error {
 	}
 	finishErr := controller.finish(cmd)
 	if lifecycleErr := errors.Join(stopErr, finishErr); lifecycleErr != nil {
-		return fmt.Errorf("stop process tree: %w", lifecycleErr)
+		return fmt.Errorf("stop process tree: %w", errors.Join(ErrCleanup, lifecycleErr))
 	}
 	if cancelled {
 		return context.Cause(ctx)

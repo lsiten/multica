@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY application_operation_step_pending ON application_operation_step(workspace_id,runtime_id,state,wave);

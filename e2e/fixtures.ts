@@ -53,6 +53,7 @@ export class TestApiClient {
   private email: string | null = null;
   private createdIssueIds: string[] = [];
   private createdProjectIds: string[] = [];
+  private createdApplicationIds: string[] = [];
   private seededIssueIds: string[] = [];
   private dependencyIds: string[] = [];
   private humanRequestSources: { taskId: string; agentId: string; runtimeId: string }[] = [];
@@ -268,6 +269,29 @@ export class TestApiClient {
     } finally {
       await client.end();
     }
+  }
+
+  async createApplicationProjectResource(projectId: string) {
+    const response = await this.authedFetch(`/api/projects/${projectId}/resources`, { method: "POST", body: JSON.stringify({ resource_type: "github_repo", resource_ref: { url: "https://github.com/example/application" }, label: "Application source" }) });
+    if (!response.ok) throw new Error(`create application resource failed: ${response.status}`);
+    return await response.json() as { id: string };
+  }
+
+  /** Create an application and register its relationships for cleanup. */
+  async createApplication(projectId: string, name: string, kind: "service" | "composition", config: Record<string, unknown>) {
+    const response = await this.authedFetch("/api/applications/", { method: "POST", body: JSON.stringify({ project_id: projectId, name, kind, config }) });
+    if (!response.ok) throw new Error(`create application failed: ${response.status} ${await response.text()}`);
+    const application = await response.json() as { id: string; revision: number };
+    this.createdApplicationIds.push(application.id);
+    return application;
+  }
+
+  trackApplication(id: string) { this.createdApplicationIds.push(id); }
+
+  async applicationRequest(path: string, init?: RequestInit) {
+    const response = await this.authedFetch(`/api/applications${path}`, init);
+    if (!response.ok) throw new Error(`application request failed: ${response.status} ${await response.text()}`);
+    return response;
   }
 
   /** Create a project and register it for cleanup. */
@@ -506,6 +530,21 @@ export class TestApiClient {
 
   /** Clean up all issues created during this test. */
   async cleanup() {
+    for (const id of this.createdApplicationIds) {
+      const response = await this.authedFetch(`/api/applications/${id}`);
+      if (!response.ok) continue;
+      const application = await response.json() as { revision: number };
+      const cleared = await this.authedFetch(`/api/applications/${id}`, { method: "PATCH", body: JSON.stringify({ revision: application.revision, relations: [] }) });
+      if (!cleared.ok) throw new Error(`clear application relationships failed: ${cleared.status}`);
+    }
+    for (const id of this.createdApplicationIds) {
+      const response = await this.authedFetch(`/api/applications/${id}`);
+      if (!response.ok) continue;
+      const application = await response.json() as { revision: number };
+      const deleted = await this.authedFetch(`/api/applications/${id}?revision=${application.revision}`, { method: "DELETE" });
+      if (!deleted.ok) throw new Error(`delete application fixture failed: ${deleted.status}`);
+    }
+    this.createdApplicationIds = [];
     if (this.dependencyIds.length > 0) {
       const client = new pg.Client(DATABASE_URL);
       await client.connect();

@@ -1,0 +1,71 @@
+---
+title: Applications
+description: Run project services, compose dependencies, and access them remotely.
+---
+
+Open **Applications** beside Inbox to see project applications, runtime placement, and the status board. Project and runtime details also link to their applications. Services execute on the selected runtime's computer; Multica coordinates their lifecycle and remote access.
+
+## Definitions and instances
+
+A **service** runs a process. Managed services use a project resource, working directory, preparation commands, an executable with arguments, environment variables, and optional port and health check. External services connect to an existing local port without taking ownership of its process.
+
+A **composition** contains services or other compositions and does not run its own process. One project can have several independent services and compositions. Each application has configuration revisions; saving changes does not restart a running instance. Restart explicitly to apply the current revision.
+
+An **instance** identifies one application on one runtime. Select the runtime before controlling an application with several instances. Application execution does not depend on keeping a browser page or the agent run that created it open.
+
+## Relationships and placement
+
+Relationships stay within a project:
+
+- `contains`: include a service or nested composition.
+- `depends_on`: wait until a prerequisite is started or healthy. Required dependency failures block dependents. Starting dependencies outside the composition requires explicit permission in the relationship.
+- `related`: provide a reference without changing execution order.
+
+Cycles are rejected. Independent branches start in parallel; dependents wait for their prerequisites. Already successful branches remain running if another branch fails. Stops release the composition's usage and protect services still used by another composition or independent start. A forced stop can affect those consumers.
+
+Choose a default runtime and override individual placements when needed. Only the owner can use a private runtime; workspace administrators do not gain permission to execute on another member's private computer.
+
+For HTTP dependencies, add a connection binding such as `API_URL` and a corresponding dependency relationship. The selected dependency must expose a port. Same-computer bindings use a local address. Cross-runtime bindings require a published endpoint and inject a private local proxy URL; lifecycle credentials stay inside the application host. Stopping or replacing either instance, unpublishing the dependency, or revoking runtime access invalidates the remote connection.
+
+## Start, publish, and open
+
+Start launches the service and checks readiness. Publish creates an authenticated access endpoint for a running instance; enabling automatic publication publishes after readiness. Unpublish revokes access while leaving the process running.
+
+Self-hosted deployments need `MULTICA_APPLICATION_ORIGIN` on a dedicated wildcard application domain, with matching DNS and TLS. It must differ from the Multica management origin. See [Environment variables](/environment-variables) for configuration and multi-server gateway routing.
+
+Open an endpoint from Multica to exchange a single-use launch ticket for an application-only session. Platform login credentials are not forwarded to services. HTTP, WebSocket, SSE, uploads, and downloads use the runtime's outgoing tunnel. Public anonymous sharing is not supported.
+
+## Status, logs, and recovery
+
+Process, health, publication, and runtime connectivity are separate facts. An offline runtime does not prove its service stopped. Check operation steps for partial failures and blocked dependencies; accepting an operation does not confirm completion.
+
+Logs support resumable cursors, pause, search, and downloading the loaded tail. Output is bounded and rotated; a gap means older output is no longer available. Stopped-service logs remain available while retained locally and the runtime can be reached. Do not store secrets as ordinary configuration variables: use local environment references. Known credentials are redacted from application output.
+
+When daemon GC is enabled, confirmed stopped logs and private repository checkouts are retained for seven days. Cleanup requires a fresh complete runtime registry and local host ownership proof; running services, shared borrowers, pending deliveries, and original project directories are protected. A small stopped receipt remains to reject stale execution generations. Losing workspace membership stops this computer's services for that workspace after successful workspace synchronization, without affecting other workspaces.
+
+Automatic process retries are bounded and opt-in. Machine-restart restoration is separately opt-in and disabled by default. Cancelling unfinished work enters `cancelling` until shutdown or resume is confirmed; it does not tear down independently completed branches or shared services.
+
+Operation deadlines include three hours of queue grace plus source preparation, configured preparation commands, readiness checks, and retry budgets. Cancellation reconciliation has a 15-minute deadline. Expiration ends the operation and fences old execution leases while retaining successful branches. Unconfirmed stops continue reconciling when the runtime reconnects; a timeout does not prove process exit. Leaving a workspace permanently revokes old application sessions, connection grants, and launch tickets; rejoining requires fresh authorization.
+
+Stop active instances and remove incoming relationships before deleting an application. Project and runtime deletion report active services or pending operations that must be settled first.
+
+## CLI and agent tools
+
+The CLI uses the same project and runtime checks as the interface:
+
+```bash
+multica application list --project "My project"
+multica application get <application-id>
+multica application plan <application-id>
+multica application start <application-id> --body-file start.json --wait
+multica application status
+multica application operations <application-id>
+multica application logs <application-id> --instance <instance-id>
+multica application cancel <application-id> <operation-id> --wait
+```
+
+`start.json` contains the current `revision`, selected `runtime_id`, and a unique `idempotency_key`; optional `placements` maps application IDs to runtime IDs. Reusing a key retries the same operation. The CLI wait timeout stops waiting; it does not cancel the operation.
+
+Use `create` and `update` with `--body-file` for configurations and relationships. `stop`, `restart`, `publish`, and `unpublish` also require revision, placement, and an idempotency key. `launch` and `service-access` require `--endpoint`; treat their returned URLs and credentials as sensitive.
+
+Supported agent runs receive the `multica-applications` MCP server with catalog, control, status, operations, logs, and service-access tools. Tools remain scoped to the run's project and runtime permissions. Never include access tokens in task reports.

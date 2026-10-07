@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY application_instance_runtime ON application_instance(workspace_id,runtime_id);

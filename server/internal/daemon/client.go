@@ -225,6 +225,7 @@ func daemonCommonCapabilities() []string {
 		protocol.DaemonCapabilityJoinedWakeupsV1,
 		protocol.DaemonCapabilityJevV1,
 		protocol.DaemonCapabilityProjectSupervisionV1,
+		protocol.DaemonCapabilityApplicationsV1,
 	}
 	if mirror.NativeCaptureSupported() {
 		capabilities = append(capabilities, protocol.DaemonCapabilityScreenMirrorV1)

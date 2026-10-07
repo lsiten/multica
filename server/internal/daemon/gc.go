@@ -95,6 +95,7 @@ func (d *Daemon) runGC(ctx context.Context) {
 	}
 
 	stats := &gcStats{byPattern: map[string]int{}}
+	d.gcApplicationStorage(ctx, time.Now())
 	for _, wsEntry := range entries {
 		// Skip every daemon-internal dot directory, not just .repos. A
 		// workspace directory is always a UUID, so a dot-prefixed entry is one

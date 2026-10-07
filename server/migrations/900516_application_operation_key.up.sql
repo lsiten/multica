@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY application_operation_key ON application_operation(workspace_id,user_id,idempotency_key);

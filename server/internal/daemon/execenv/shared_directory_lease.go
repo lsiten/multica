@@ -226,6 +226,14 @@ func UseSharedDirectory(ctx context.Context, path string) (*SharedDirectoryLease
 	if err != nil {
 		return nil, err
 	}
+	admit, err := lockSharedDirectoryState(ctx, filepath.Join(filepath.Dir(dir), ".admission"))
+	if err != nil {
+		return nil, err
+	}
+	defer admit()
+	if info, err := os.Stat(canonical); err != nil || !info.IsDir() {
+		return nil, errors.New("shared directory disappeared before lease admission")
+	}
 	unlock, err := lockSharedDirectoryState(ctx, dir)
 	if err != nil {
 		return nil, err

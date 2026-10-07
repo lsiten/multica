@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/logger"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -628,6 +629,10 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
 
+	if _, err := qtx.LockApplicationWorkspace(r.Context(), project.WorkspaceID); err != nil {
+		h.applicationError(w, err)
+		return
+	}
 	locked, err := qtx.TryProjectSupervisionLock(r.Context(), uuidToString(project.ID))
 	if err != nil || !locked {
 		writeError(w, http.StatusConflict, "project coordination is updating; retry")
@@ -642,6 +647,19 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "failed to lock project")
+		return
+	}
+	if err := application.CheckDeletion(r.Context(), qtx, db.ListApplicationDeletionBlockersParams{WorkspaceID: project.WorkspaceID, ProjectID: project.ID}); err != nil {
+		h.applicationError(w, err)
+		return
+	}
+	endpointIDs, err := qtx.ListScopedApplicationEndpointIDs(r.Context(), db.ListScopedApplicationEndpointIDsParams{WorkspaceID: project.WorkspaceID, ProjectID: project.ID})
+	if err != nil {
+		h.applicationError(w, err)
+		return
+	}
+	if err := application.CleanupCatalog(r.Context(), qtx, project.WorkspaceID, project.ID); err != nil {
+		h.applicationError(w, err)
 		return
 	}
 	if err := qtx.ClearChatSessionProjectByProject(r.Context(), db.ClearChatSessionProjectByProjectParams{
@@ -686,6 +704,9 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.publish(protocol.EventProjectDeleted, workspaceID, "member", userID, map[string]any{"project_id": uuidToString(project.ID)})
+	for _, id := range endpointIDs {
+		h.ApplicationGateway.Revoke(uuidToString(id))
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

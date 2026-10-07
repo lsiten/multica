@@ -206,6 +206,150 @@ type AgentToLabel struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type Application struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Kind        string             `json:"kind"`
+	Revision    int64              `json:"revision"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ApplicationAccessTicket struct {
+	TokenHash        string             `json:"token_hash"`
+	EndpointID       pgtype.UUID        `json:"endpoint_id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	EndpointRevision int64              `json:"endpoint_revision"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	MemberID         pgtype.UUID        `json:"member_id"`
+}
+
+type ApplicationEndpoint struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	ApplicationID pgtype.UUID        `json:"application_id"`
+	InstanceID    pgtype.UUID        `json:"instance_id"`
+	Port          int32              `json:"port"`
+	EntryPath     string             `json:"entry_path"`
+	Visibility    string             `json:"visibility"`
+	State         string             `json:"state"`
+	TokenHash     string             `json:"token_hash"`
+	PublishedBy   pgtype.UUID        `json:"published_by"`
+	Revision      int64              `json:"revision"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ApplicationInstance struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	ApplicationID      pgtype.UUID        `json:"application_id"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	DaemonID           pgtype.UUID        `json:"daemon_id"`
+	Revision           int64              `json:"revision"`
+	ObservedRevision   int64              `json:"observed_revision"`
+	Generation         int64              `json:"generation"`
+	DesiredState       string             `json:"desired_state"`
+	ProcessState       string             `json:"process_state"`
+	HealthState        string             `json:"health_state"`
+	Error              string             `json:"error"`
+	CodeVersion        string             `json:"code_version"`
+	Dirty              bool               `json:"dirty"`
+	StartedAt          pgtype.Timestamptz `json:"started_at"`
+	ObservedAt         pgtype.Timestamptz `json:"observed_at"`
+	Metrics            []byte             `json:"metrics"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ObservedGeneration int64              `json:"observed_generation"`
+}
+
+type ApplicationInstanceConsumer struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	InstanceID         pgtype.UUID        `json:"instance_id"`
+	RootApplicationID  pgtype.UUID        `json:"root_application_id"`
+	RootRuntimeID      pgtype.UUID        `json:"root_runtime_id"`
+	ActorID            pgtype.UUID        `json:"actor_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	Wave               int32              `json:"wave"`
+	OwnsLifecycle      bool               `json:"owns_lifecycle"`
+	CreatedOperationID pgtype.UUID        `json:"created_operation_id"`
+}
+
+type ApplicationOperation struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	ApplicationID     pgtype.UUID        `json:"application_id"`
+	Action            string             `json:"action"`
+	ActorType         string             `json:"actor_type"`
+	ActorID           pgtype.UUID        `json:"actor_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	TaskID            pgtype.UUID        `json:"task_id"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	RequestHash       string             `json:"request_hash"`
+	Plan              []byte             `json:"plan"`
+	State             string             `json:"state"`
+	Error             string             `json:"error"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	CancelRequestedAt pgtype.Timestamptz `json:"cancel_requested_at"`
+	CancelActorType   pgtype.Text        `json:"cancel_actor_type"`
+	CancelActorID     pgtype.UUID        `json:"cancel_actor_id"`
+	CancelUserID      pgtype.UUID        `json:"cancel_user_id"`
+	CancelTaskID      pgtype.UUID        `json:"cancel_task_id"`
+	DeadlineAt        pgtype.Timestamptz `json:"deadline_at"`
+}
+
+type ApplicationOperationStep struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	OperationID   pgtype.UUID        `json:"operation_id"`
+	InstanceID    pgtype.UUID        `json:"instance_id"`
+	ApplicationID pgtype.UUID        `json:"application_id"`
+	RuntimeID     pgtype.UUID        `json:"runtime_id"`
+	Generation    int64              `json:"generation"`
+	Wave          int32              `json:"wave"`
+	Required      bool               `json:"required"`
+	Action        string             `json:"action"`
+	Command       []byte             `json:"command"`
+	State         string             `json:"state"`
+	Error         string             `json:"error"`
+	ClaimToken    pgtype.UUID        `json:"claim_token"`
+	ClaimedAt     pgtype.Timestamptz `json:"claimed_at"`
+	LeaseUntil    pgtype.Timestamptz `json:"lease_until"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+}
+
+type ApplicationRelation struct {
+	ID            pgtype.UUID `json:"id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	ProjectID     pgtype.UUID `json:"project_id"`
+	SourceID      pgtype.UUID `json:"source_id"`
+	TargetID      pgtype.UUID `json:"target_id"`
+	Type          string      `json:"type"`
+	Required      bool        `json:"required"`
+	Condition     string      `json:"condition"`
+	StartExternal bool        `json:"start_external"`
+}
+
+type ApplicationRevision struct {
+	ID            pgtype.UUID        `json:"id"`
+	ApplicationID pgtype.UUID        `json:"application_id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	Revision      int64              `json:"revision"`
+	Config        []byte             `json:"config"`
+	Relations     []byte             `json:"relations"`
+	ActorType     string             `json:"actor_type"`
+	ActorID       pgtype.UUID        `json:"actor_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
 type Attachment struct {
 	ID              pgtype.UUID        `json:"id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`

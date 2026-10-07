@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY application_access_ticket_key ON application_access_ticket(token_hash);

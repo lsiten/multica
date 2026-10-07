@@ -1,0 +1,40 @@
+---
+title: Applications
+description: Exécuter et composer des services de projet, puis y accéder à distance.
+---
+
+Ouvrez **Applications** à côté de la boîte de réception. Le panneau regroupe les applications par projet, affiche leur environnement d’exécution et propose un tableau des états. Les services s’exécutent sur l’ordinateur sélectionné, tandis que Multica coordonne leur gestion et leur accès distant.
+
+## Services, compositions et instances
+
+Un service géré utilise une ressource de projet, un répertoire, des commandes de préparation et de démarrage, des variables d’environnement et éventuellement un port et un contrôle de santé. Un service externe connecte un port existant sans gérer son processus. Une composition regroupe des services ou d’autres compositions sans lancer de processus.
+
+Une instance désigne une application sur un environnement d’exécution. Enregistrer une nouvelle révision ne modifie pas une instance active ; redémarrez-la explicitement. Fermer la page ou terminer l’exécution de l’agent créateur n’arrête pas le service.
+
+## Relations et connexions
+
+Dans un même projet, `contains` inclut un enfant, `depends_on` attend son démarrage ou sa santé, et `related` crée une référence sans modifier l’ordre. Les cycles sont refusés. Les branches indépendantes démarrent en parallèle ; une dépendance obligatoire en échec bloque ses consommateurs. Le démarrage d’une dépendance extérieure à la composition nécessite une autorisation explicite dans la relation.
+
+Arrêter une composition libère son utilisation et protège les services encore utilisés ailleurs. Un arrêt forcé peut affecter ces consommateurs. Choisissez un environnement par défaut et, si nécessaire, des emplacements individuels. Un environnement privé reste réservé à son propriétaire, même face à un administrateur de l’espace de travail.
+
+Une liaison HTTP comme `API_URL` nécessite une relation de dépendance et un port cible. Sur le même ordinateur, elle utilise une adresse locale. Entre environnements, la cible doit être publiée ; un proxy local privé transmet la connexion sans exposer ses identifiants au processus. Un arrêt, un changement de génération, une dépublication ou une révocation d’accès invalide la connexion.
+
+## Publication et suivi
+
+Démarrer exécute le service ; publier crée un accès authentifié. La publication automatique intervient après la disponibilité. Dépublier révoque l’accès sans arrêter le processus. Pour l’auto-hébergement, configurez `MULTICA_APPLICATION_ORIGIN` avec un domaine générique dédié, DNS et TLS, distinct du domaine de gestion. Voir les [variables d’environnement](/environment-variables).
+
+Ouvrir depuis Multica échange un ticket à usage unique contre une session propre à l’application. Les identifiants de connexion de la plateforme ne sont pas transmis. HTTP, WebSocket, SSE, transferts et téléchargements utilisent le tunnel sortant. Le partage public anonyme n’est pas disponible.
+
+Processus, santé, publication et connectivité sont distincts. Un environnement hors ligne ne prouve pas l’arrêt du service. Consultez les étapes des opérations pour les échecs partiels. L’annulation reste `cancelling` jusqu’à confirmation et préserve les branches terminées ainsi que les services partagés.
+
+Les journaux ont des curseurs, une recherche, une pause et un téléchargement du contenu chargé. Leur rétention est limitée ; un écart indique une perte de contenu ancien. Les journaux arrêtés restent consultables tant qu’ils sont conservés et que l’environnement est accessible. Utilisez des références d’environnement locales pour les secrets ; les identifiants connus sont masqués. Les tentatives automatiques sont limitées et optionnelles ; la restauration après redémarrage de l’ordinateur est désactivée par défaut. Arrêtez les instances et retirez les références avant suppression.
+
+Les opérations disposent de trois heures d’attente, plus les budgets de préparation du code, des commandes, des contrôles de santé et des tentatives. La confirmation après annulation est limitée à 15 minutes. L’expiration termine l’opération et révoque les anciens baux sans arrêter les branches réussies. Les arrêts non confirmés sont vérifiés à la reconnexion ; un délai dépassé ne prouve pas la fin du processus. Quitter un espace de travail révoque définitivement les anciennes sessions, autorisations de connexion et tickets ; rejoindre à nouveau nécessite une nouvelle autorisation.
+
+## CLI et agents
+
+Avec le GC du daemon activé, les journaux arrêtés et les copies privées du dépôt sont conservés sept jours. Le nettoyage vérifie un registre récent complet et la propriété locale du processus. Il protège les services actifs, les emprunteurs partagés, les livraisons en attente et les répertoires originaux du projet. Un reçu d’arrêt reste pour refuser les anciennes générations. Après une synchronisation réussie constatant la perte d’adhésion, seuls les services locaux de cet espace de travail s’arrêtent.
+
+Utilisez `multica application list`, `get`, `plan`, `status`, `operations` et `logs`. Les commandes `start`, `stop`, `restart`, `publish` et `unpublish` acceptent `--body-file` avec `revision`, `runtime_id`, `idempotency_key` et éventuellement `placements`. Réutiliser une clé relance la même demande. `--wait` attend le résultat ; son expiration n’annule pas l’opération. `cancel <application-id> <operation-id> --wait` annule explicitement. `logs` requiert `--instance` ; `launch` et `service-access` requièrent `--endpoint`.
+
+Les exécutions compatibles reçoivent le serveur MCP `multica-applications` pour le catalogue, le contrôle, les états, les opérations, les journaux et l’accès aux services. Les permissions du projet et de l’environnement restent appliquées. Ne publiez jamais les identifiants d’accès dans les rapports de tâches.

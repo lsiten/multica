@@ -1,4 +1,6 @@
 import type { HumanRequest, HumanRequestAnswer, HumanTextReplyResult } from "../types/human-request";
+import { applicationSchema, applicationListSchema, applicationPlanSchema, applicationBoardSchema, applicationOperationSchema, applicationLaunchSchema, applicationLogSchema } from "../applications/schema";
+import type { Application, ApplicationList, ApplicationPlan, ApplicationBoard, ApplicationOperation, ApplicationOperationRequest, ApplicationLog, CreateApplicationRequest, UpdateApplicationRequest } from "../applications/schema";
 import type { IssueProgressView, ProgressFilters, ProgressScope } from "../types/issue-progress";
 import { IssueProgressViewSchema, ProgressActionResultSchema } from "./issue-progress";
 import { todayDateOnly } from "../issues/date";
@@ -818,6 +820,105 @@ function isReplayableBody(body: BodyInit | null | undefined): boolean {
 }
 
 export class ApiClient {
+  async cancelApplicationOperation(workspaceId: string, id: string, operationId: string): Promise<ApplicationOperation> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/operations/${encodeURIComponent(operationId)}/cancel`, { method: "POST", headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
+    const result = parseWithFallback<ApplicationOperation | null>(raw, applicationOperationSchema, null, { endpoint: "POST /api/applications/:id/operations/:operationId/cancel" });
+    if (!result || result.id !== operationId || result.workspace_id !== workspaceId || result.application_id !== id || !["cancelling", "cancelled", "failed"].includes(result.state) || !result.cancel_requested_at) throw new Error("Invalid application cancellation receipt");
+    return result;
+  }
+  async launchApplication(workspaceId: string, id: string, endpointId: string): Promise<string> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/endpoints/${encodeURIComponent(endpointId)}/launch`, { method: "POST", headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
+    const receipt = parseWithFallback<{ url: string } | null>(raw, applicationLaunchSchema, null, { endpoint: "POST /api/applications/:id/endpoints/:endpointId/launch", redactPayload: true });
+    if (!receipt) throw new Error("Invalid application launch receipt");
+    const address = new URL(receipt.url);
+    if (!address.hostname.startsWith(`${endpointId}.`) || address.username || address.password || address.hash || address.pathname !== "/.__multica/launch" || [...address.searchParams.keys()].length !== 1 || !/^[a-f0-9]{64}$/.test(address.searchParams.get("ticket") ?? "") || address.protocol !== "https:" && !(address.protocol === "http:" && address.hostname.endsWith(".localhost"))) throw new Error("Invalid application launch URL");
+    return receipt.url;
+  }
+
+  async getApplicationLogs(workspaceId: string, id: string, instanceId: string, cursor = "", signal?: AbortSignal): Promise<ApplicationLog> {
+    const query = new URLSearchParams({ cursor, limit: "65536" });
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/instances/${encodeURIComponent(instanceId)}/logs?${query}`, { signal, headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
+    const page = parseWithFallback<ApplicationLog | null>(raw, applicationLogSchema, null, { endpoint: "GET /api/applications/:id/instances/:instanceId/logs" });
+    if (!page) throw new Error("Invalid application log response");
+    return page;
+  }
+
+  async getApplicationBoard(workspaceId: string, signal?: AbortSignal): Promise<ApplicationBoard> {
+    const raw = await this.fetch<unknown>("/api/applications/board", { signal, headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
+    const result = parseWithFallback<ApplicationBoard | null>(raw, applicationBoardSchema, null, { endpoint: "GET /api/applications/board" });
+    if (!result || result.applications.some((app) => app.workspace_id !== workspaceId) || result.instances.some((instance) => instance.workspace_id !== workspaceId) || result.operations.some((operation) => operation.workspace_id !== workspaceId)) throw new Error("Invalid application board response");
+    return result;
+  }
+
+  async enqueueApplicationOperation(workspaceId: string, id: string, input: ApplicationOperationRequest): Promise<ApplicationOperation> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/operations`, {
+      method: "POST", body: JSON.stringify(input), headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+    });
+    const result = parseWithFallback<ApplicationOperation | null>(raw, applicationOperationSchema, null, { endpoint: "POST /api/applications/:id/operations" });
+    if (!result || result.workspace_id !== workspaceId || result.application_id !== id || result.action !== input.action) throw new Error("Invalid application operation receipt");
+    return result;
+  }
+
+  async getApplicationOperation(workspaceId: string, id: string, operationId: string, signal?: AbortSignal): Promise<ApplicationOperation> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/operations/${encodeURIComponent(operationId)}`, { signal, headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
+    const result = parseWithFallback<ApplicationOperation | null>(raw, applicationOperationSchema, null, { endpoint: "GET /api/applications/:id/operations/:operationId" });
+    if (!result || result.workspace_id !== workspaceId || result.application_id !== id || result.id !== operationId) throw new Error("Invalid application operation response");
+    return result;
+  }
+
+  async listApplications(workspaceId: string, projectId?: string, signal?: AbortSignal): Promise<ApplicationList> {
+    const query = new URLSearchParams();
+    if (projectId) query.set("project_id", projectId);
+    const raw = await this.fetch<unknown>(`/api/applications/?${query}`, {
+      signal, headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+    });
+    const result = parseWithFallback<ApplicationList | null>(raw, applicationListSchema, null, { endpoint: "GET /api/applications" });
+    if (!result || result.applications.some((application) => application.workspace_id !== workspaceId || projectId && application.project_id !== projectId)) throw new Error("Invalid application list response");
+    return result;
+  }
+
+  async getApplication(workspaceId: string, id: string, signal?: AbortSignal): Promise<Application> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}`, {
+      signal, headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+    });
+    const result = parseWithFallback<Application | null>(raw, applicationSchema, null, { endpoint: "GET /api/applications/:id" });
+    if (!result || result.workspace_id !== workspaceId || result.id !== id) throw new Error("Invalid application response");
+    return result;
+  }
+
+  async createApplication(workspaceId: string, input: CreateApplicationRequest): Promise<Application> {
+    const raw = await this.fetch<unknown>("/api/applications/", {
+      method: "POST", body: JSON.stringify(input), headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+    });
+    const result = parseWithFallback<Application | null>(raw, applicationSchema, null, { endpoint: "POST /api/applications" });
+    if (!result || result.workspace_id !== workspaceId || result.project_id !== input.project_id) throw new Error("Invalid application create receipt");
+    return result;
+  }
+
+  async updateApplication(workspaceId: string, id: string, input: UpdateApplicationRequest): Promise<Application> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}`, {
+      method: "PATCH", body: JSON.stringify(input), headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+    });
+    const result = parseWithFallback<Application | null>(raw, applicationSchema, null, { endpoint: "PATCH /api/applications/:id" });
+    if (!result || result.workspace_id !== workspaceId || result.id !== id || result.revision !== input.revision + 1) throw new Error("Invalid application update receipt");
+    return result;
+  }
+
+  async deleteApplication(workspaceId: string, id: string, revision: number): Promise<void> {
+    await this.fetch(`/api/applications/${encodeURIComponent(id)}?revision=${revision}`, {
+      method: "DELETE", headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+    });
+  }
+
+  async previewApplicationPlan(workspaceId: string, id: string, signal?: AbortSignal): Promise<ApplicationPlan> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/plan`, {
+      signal, headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
+    });
+    const result = parseWithFallback<ApplicationPlan | null>(raw, applicationPlanSchema, null, { endpoint: "GET /api/applications/:id/plan" });
+    if (!result || result.root_id !== id) throw new Error("Invalid application plan response");
+    return result;
+  }
+
   async getHumanRequest(id: string, signal?: AbortSignal): Promise<HumanRequest> {
     const raw = await this.fetch<unknown>(`/api/human-requests/${encodeURIComponent(id)}`, { signal });
     const request = parseWithFallback<HumanRequest | null>(raw, HumanRequestSchema, null, { endpoint: "GET /api/human-requests/:id" });

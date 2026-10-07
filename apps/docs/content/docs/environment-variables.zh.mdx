@@ -189,6 +189,8 @@ MULTICA_PUBLIC_URL=https://api.multica.example.com
 | 自托管 Git | `MULTICA_VCS_SECRET_KEY` | base64 编码的 32 字节加密密钥（`openssl rand -base64 32`）；未配置时该功能整体不可用 |
 | 插件 | `MULTICA_PLUGIN_SECRET_KEY` | base64 编码的 32 字节密钥，用于加密已存 secret 和 surface 启动 URL |
 | 插件 | `MULTICA_PLUGIN_SURFACE_ORIGIN` | 路由到后端的独立无 Cookie 浏览器 origin；必须不同于 app/API origin，并保留 `Host` |
+| 应用 | `MULTICA_APPLICATION_ORIGIN` | 应用入口的独立基础 origin，与 app/API/插件 origin 分离。配置通配 DNS/TLS 指向后端，保留 `Host` 和 WebSocket 升级。本地 localhost 以外必须使用 HTTPS；留空时禁用远程访问。 |
+| 应用 | `MULTICA_APPLICATION_PEER_ORIGIN` | 当前后端副本的独立内部 HTTP(S) origin，其他副本须可直接访问并支持 WebSocket 升级。需要 `REDIS_URL` 和相同的 `JWT_SECRET`；使用节点地址，不使用公共负载均衡地址。 |
 | 插件 | `MULTICA_PLUGIN_API_URL` | 带版本的插件 Public API 完整 Base URL，例如 `https://plugin-api.example.com/v1`；未设置时使用 `MULTICA_PUBLIC_URL` + `/v1` |
 | 插件 | `MULTICA_PLUGIN_DIR` | 开发时用于发布本地插件包的可选绝对目录 |
 

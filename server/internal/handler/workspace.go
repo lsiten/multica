@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
@@ -1136,6 +1137,10 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		failWorkspaceDelete(w, r, workspaceID, "lock workspace", err)
 		return
 	}
+	if err := application.CheckDeletion(r.Context(), qtx, db.ListApplicationDeletionBlockersParams{WorkspaceID: requester.WorkspaceID}); err != nil {
+		h.applicationError(w, err)
+		return
+	}
 	// Take a best-effort snapshot for post-commit daemon invalidation. Runtime
 	// registration does not participate in the workspace delete lock protocol,
 	// so PR1 retains the heartbeat lookup as the correctness fallback for a
@@ -1167,6 +1172,7 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		name string
 		run  func() error
 	}{
+		{name: "delete stopped applications", run: func() error { return application.CleanupCatalog(ctx, qtx, requester.WorkspaceID, pgtype.UUID{}) }},
 		{
 			name: "set teardown mode",
 			run:  func() error { return qtx.SetWorkspaceTeardownMode(ctx) },

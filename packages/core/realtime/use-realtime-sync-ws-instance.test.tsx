@@ -10,6 +10,7 @@ import { defaultStorage } from "../platform/storage";
 import { issueKeys } from "../issues/queries";
 import { chatKeys } from "../chat/queries";
 import { runtimeKeys } from "../runtimes/queries";
+import { applicationKeys } from "../applications/queries";
 import { workspaceWorkingAgentsKeys } from "../agents/queries";
 import { workspaceKeys } from "../workspace/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
@@ -130,12 +131,13 @@ describe("useRealtimeSync — ws instance change", () => {
     // (16 workspace-scoped [incl. property definitions] + 6 per-issue
     // prefixes + the workspace working-agents projection + 5 per-chat
     // prefixes + 1 workspaceKeys.list() + 1 cross-workspace inbox unread
-    // summary + the progress projection = 32 calls).
+    // summary + the progress and application projections = 33 calls).
     //
     // Awaited rather than counted synchronously: the inbox unread summary
     // refresh cancels any in-flight request before invalidating (see
     // onInboxSummaryInvalidate), so that one lands after the synchronous ones.
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(32));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(33));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: applicationKeys.all("ws-1") });
     expect(invalidateSpy.mock.calls.filter((call: [InvalidateQueryFilters, ...unknown[]]) => JSON.stringify(call[0].queryKey) === JSON.stringify(issueProgressKeys.all("ws-1")))).toHaveLength(1);
   });
 
@@ -279,6 +281,20 @@ describe("useRealtimeSync — ws instance change", () => {
     qc.setQueryData(key, { value: "after" });
     receive({ type: "task:failed", payload: { workspace_id: "ws-other" } } as never);
     expect(qc.getQueryState(key)?.isInvalidated).toBe(false);
+    unmount();
+  });
+
+  it("refreshes inactive application caches only for events in the current workspace", async () => {
+    const ws = createMockWs();
+    const { unmount } = renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+    const receive = vi.mocked(ws.onAny).mock.calls[0]?.[0];
+    if (!receive) throw new Error("Missing event listener");
+    const key = applicationKeys.list("ws-1");
+    qc.setQueryData(key, { applications: [], total: 0 });
+    receive({ type: "application:changed", payload: { application_id: "app", workspace_id: "other" } });
+    expect(qc.getQueryState(key)?.isInvalidated).toBe(false);
+    receive({ type: "application:changed", payload: { application_id: "app", workspace_id: "ws-1" } });
+    await waitFor(() => expect(qc.getQueryState(key)?.isInvalidated).toBe(true));
     unmount();
   });
 

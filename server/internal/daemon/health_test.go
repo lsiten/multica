@@ -788,6 +788,13 @@ func (c *blockingLookupRepoCache) Sync(string, []repocache.RepoInfo) error {
 	return nil
 }
 
+func (c *blockingLookupRepoCache) SyncContext(context.Context, string, []repocache.RepoInfo) error {
+	return nil
+}
+func (c *blockingLookupRepoCache) CreateWorktreeContext(context.Context, repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
+	return nil, nil
+}
+
 func (c *blockingLookupRepoCache) WithRepoLock(_ string, fn func() error) error {
 	return fn()
 }
@@ -812,6 +819,13 @@ func (c *recordingRepoCache) BarePath(_, _ string) string {
 
 func (c *recordingRepoCache) Sync(string, []repocache.RepoInfo) error {
 	return nil
+}
+
+func (c *recordingRepoCache) SyncContext(context.Context, string, []repocache.RepoInfo) error {
+	return nil
+}
+func (c *recordingRepoCache) CreateWorktreeContext(_ context.Context, params repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
+	return c.CreateWorktree(params)
 }
 
 func (c *recordingRepoCache) WithRepoLock(_ string, fn func() error) error {

@@ -189,6 +189,8 @@ Les limites de débit d'authentification nécessitent `REDIS_URL` ; sans cette v
 | Git auto-hébergé | `MULTICA_VCS_SECRET_KEY` | Clé de chiffrement de 32 octets, encodée en Base64 (`openssl rand -base64 32`) ; sans elle, la fonctionnalité est entièrement indisponible |
 | Plugins | `MULTICA_PLUGIN_SECRET_KEY` | Clé de 32 octets, encodée en Base64, pour les secrets stockés et les URL de lancement de surface chiffrées |
 | Plugins | `MULTICA_PLUGIN_SURFACE_ORIGIN` | Origine navigateur dédiée, sans cookies, routée vers ce backend ; doit différer des origines de l'application et de l'API, et préserver `Host` |
+| Applications | `MULTICA_APPLICATION_ORIGIN` | Origin de base dédié aux applications, distinct des origins app/API/plugins. Configurer DNS/TLS génériques vers le backend en conservant `Host` et les mises à niveau WebSocket. HTTPS obligatoire hors localhost ; vide désactive l’accès distant. |
+| Applications | `MULTICA_APPLICATION_PEER_ORIGIN` | Origin HTTP(S) interne unique de cette réplique, directement accessible aux autres répliques avec WebSocket. Requiert `REDIS_URL` et un `JWT_SECRET` partagé ; utiliser une adresse de nœud, pas l’équilibreur public. |
 | Plugins | `MULTICA_PLUGIN_API_URL` | URL de base complète et versionnée de la Plugin Public API, comme `https://plugin-api.example.com/v1` ; se rabat sur `MULTICA_PUBLIC_URL` + `/v1` |
 | Plugins | `MULTICA_PLUGIN_DIR` | Répertoire absolu facultatif utilisé pour publier des bundles de plugins locaux pendant le développement |
 

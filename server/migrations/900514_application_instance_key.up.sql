@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY application_instance_key ON application_instance(application_id,runtime_id);

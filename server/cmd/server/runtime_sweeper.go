@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
@@ -170,6 +171,7 @@ func runRuntimeSweeper(ctx context.Context, queries *db.Queries, liveness handle
 		sweepStaleTasks(ctx, queries, taskSvc, bus, reconnectGrace)
 		sweepExpiredQueuedTasks(ctx, queries, taskSvc, reconnectGrace)
 		sweepDeferredChatFinalizations(ctx, queries, taskSvc)
+		sweepExpiredApplicationTickets(ctx, queries)
 	})
 }
 
@@ -555,6 +557,11 @@ func gcRuntime(ctx context.Context, txStarter runtimeGCTxStarter, queries *db.Qu
 
 	teardown, err := service.TeardownRuntime(ctx, qtx, runtimeID, service.RuntimeTeardownOptions{CancelNonTerminalTasks: false})
 	if err != nil {
+		var conflict *application.DeletionConflict
+		if errors.As(err, &conflict) {
+			result.skipReason = obsmetrics.RuntimeGCSkipApplication
+			return result, nil
+		}
 		if errors.Is(err, service.ErrRuntimeNotDrained) {
 			result.skipReason = obsmetrics.RuntimeGCSkipNonTerminalTask
 			return result, nil

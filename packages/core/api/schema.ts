@@ -14,6 +14,8 @@ export interface ParseOptions {
   /** Endpoint identifier used in the warning log so we can grep for which
    *  contract drifted in production telemetry. */
   endpoint: string;
+  /** Suppress response payloads and issue details for credential-bearing responses. */
+  redactPayload?: boolean;
 }
 
 /**
@@ -47,8 +49,8 @@ export function parseWithFallback<T>(
     `API response failed schema validation: ${opts.endpoint}`,
     {
       endpoint: opts.endpoint,
-      issues: result.error.issues,
-      received: data,
+      issues: opts.redactPayload ? result.error.issues.map(({ code, path }) => ({ code, path })) : result.error.issues,
+      received: opts.redactPayload ? "[redacted]" : data,
     },
   );
   return fallback;

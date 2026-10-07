@@ -2133,6 +2133,13 @@ func (c *blockingRepoCache) Sync(workspaceID string, repos []repocache.RepoInfo)
 	return c.inner.Sync(workspaceID, repos)
 }
 
+func (c *blockingRepoCache) SyncContext(ctx context.Context, workspaceID string, repos []repocache.RepoInfo) error {
+	return c.inner.SyncContext(ctx, workspaceID, repos)
+}
+func (c *blockingRepoCache) CreateWorktreeContext(ctx context.Context, params repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
+	return c.inner.CreateWorktreeContext(ctx, params)
+}
+
 func (c *blockingRepoCache) WithRepoLock(barePath string, fn func() error) error {
 	return c.inner.WithRepoLock(barePath, func() error {
 		close(c.entered)

@@ -19,6 +19,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/applicationgateway"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/cloudruntime"
 	"github.com/multica-ai/multica/server/internal/daemonws"
@@ -439,6 +440,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AttachmentDownloadURLTTL: envDuration("ATTACHMENT_DOWNLOAD_URL_TTL", 30*time.Minute),
 		AttachmentFrameAncestors: origins,
 		PluginSurfaceOrigin:      strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_PLUGIN_SURFACE_ORIGIN")), "/"),
+		ApplicationOrigin:        strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_APPLICATION_ORIGIN")), "/"),
 		LLMAPIKey:                strings.TrimSpace(os.Getenv("MULTICA_LLM_API_KEY")),
 		LLMBaseURL:               strings.TrimSpace(os.Getenv("MULTICA_LLM_BASE_URL")),
 		LLMDefaultModel:          strings.TrimSpace(os.Getenv("MULTICA_LLM_DEFAULT_MODEL")),
@@ -451,6 +453,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		MirrorNetworkSecretBox:   loadMirrorNetworkSecretBox(),
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)
+	if peerOrigin := strings.TrimSpace(os.Getenv("MULTICA_APPLICATION_PEER_ORIGIN")); peerOrigin != "" {
+		gateway, err := applicationgateway.NewClusterHub(rdb, peerOrigin, auth.JWTSecret())
+		if err != nil {
+			panic(fmt.Errorf("configure application gateway cluster: %w", err))
+		}
+		h.ApplicationGateway = gateway
+	}
 	invitationRateLimits := handler.DefaultInvitationRateLimits()
 	invitationRateLimits.Actor.Limit = envNonNegativeInt("RATE_LIMIT_INVITATION_ACTOR_10M", invitationRateLimits.Actor.Limit)
 	invitationRateLimits.Workspace.Limit = envNonNegativeInt("RATE_LIMIT_INVITATION_WORKSPACE_24H", invitationRateLimits.Workspace.Limit)
@@ -1425,6 +1434,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	}
 	r.Use(chimw.Recoverer)
 	r.Use(h.PluginSurfaceHostBoundary)
+	r.Use(h.ApplicationHostBoundary)
 	r.Use(middleware.ContentSecurityPolicy)
 
 	// Share allowed origins with WebSocket origin checker.
@@ -1443,6 +1453,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+	r.Get(applicationgateway.PeerPath, h.ApplicationGateway.ServePeer)
+	r.Post("/api/application-connections/resolve", h.ResolveApplicationConnection)
 
 	// Health / readiness checks
 	r.Get("/health", health.liveHandler)
@@ -1588,6 +1600,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/tasks/{id}/plugin-mcp/{contributionId}/credential", h.ResolvePluginMCPCredential)
 
 		r.Post("/runtimes/{runtimeId}/tasks/claim", h.ClaimTaskByRuntime)
+		r.Post("/runtimes/{runtimeId}/applications/claim", h.ClaimRuntimeApplications)
+		r.Get("/runtimes/{runtimeId}/applications/tunnel/control", h.ConnectApplicationControl)
+		r.Get("/runtimes/{runtimeId}/applications/tunnel/data", h.ConnectApplicationStream)
+		r.Post("/runtimes/{runtimeId}/applications/sync", h.SyncRuntimeApplications)
+		r.Post("/runtimes/{runtimeId}/applications/observe", h.ReportRuntimeApplication)
+		r.Post("/runtimes/{runtimeId}/applications/steps/{stepId}/result", h.CompleteRuntimeApplication)
+		r.Post("/runtimes/{runtimeId}/applications/steps/{stepId}/lease", h.RenewRuntimeApplicationLease)
 		r.Post("/runtimes/{runtimeId}/vscreen/interventions", h.ReportVscreenIntervention)
 		// Canonical machine-level batch claim (MUL-4257). `/claim` is a
 		// transitional alias; the daemon coordinator targets the canonical
@@ -2020,6 +2039,22 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- Workspace-scoped routes (all require workspace membership) ---
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireWorkspaceMember(queries))
+			r.Route("/api/applications", func(r chi.Router) {
+				r.Get("/", h.ListApplications)
+				r.Get("/board", h.GetApplicationBoard)
+				r.Post("/", h.CreateApplication)
+				r.Get("/{id}", h.GetApplication)
+				r.Patch("/{id}", h.UpdateApplication)
+				r.Delete("/{id}", h.DeleteApplication)
+				r.Get("/{id}/plan", h.PreviewApplicationPlan)
+				r.Post("/{id}/operations", h.EnqueueApplicationOperation)
+				r.Get("/{id}/operations", h.ListApplicationOperations)
+				r.Get("/{id}/operations/{operationId}", h.GetApplicationOperation)
+				r.Post("/{id}/operations/{operationId}/cancel", h.CancelApplicationOperation)
+				r.Post("/{id}/endpoints/{endpointId}/launch", h.LaunchApplication)
+				r.Post("/{id}/endpoints/{endpointId}/service-access", h.CreateApplicationServiceAccess)
+				r.Get("/{id}/instances/{instanceId}/logs", h.GetApplicationLogs)
+			})
 			r.Route("/api/human-requests", func(r chi.Router) {
 				r.Get("/", h.ListHumanRequests)
 				r.Post("/", h.CreateHumanRequest)

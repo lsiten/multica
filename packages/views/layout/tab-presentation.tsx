@@ -15,6 +15,7 @@ import {
 } from "@multica/core/paths";
 import { issueDetailOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
+import { applicationDetailOptions } from "@multica/core/applications";
 import { autopilotDetailOptions } from "@multica/core/autopilots/queries";
 import {
   skillDetailOptions,
@@ -64,6 +65,7 @@ const NONE = "__tab_presentation_none__";
 // Resource kinds where a persisted title is a good first-frame fallback while
 // the live data loads. Flow/unknown/attachment always use their type label.
 const PENDING_RESOURCE_KEYS: ReadonlySet<TabLabelKey> = new Set<TabLabelKey>([
+  "application",
   "issue",
   "project",
   "autopilot",
@@ -136,6 +138,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     ...projectDetailOptions(wsId, subject.kind === "project" ? subject.id : NONE),
     enabled: false,
   }).data;
+  const application = useQuery({ ...applicationDetailOptions(wsId, subject.kind === "application" ? subject.id : NONE), enabled: false }).data;
   const autopilot = useQuery({
     ...autopilotDetailOptions(
       wsId,
@@ -167,6 +170,9 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
       break;
     case "project":
       if (project) data.project = { icon: project.icon, title: project.title };
+      break;
+    case "application":
+      if (application) data.application = { name: application.name };
       break;
     case "autopilot":
       if (autopilot) data.autopilot = { title: autopilot.autopilot.title };

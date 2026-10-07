@@ -13,6 +13,7 @@ import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
+import { applicationKeys } from "../applications/queries";
 import { issueProgressKeys, isProgressInvalidationEvent } from "../issue-progress";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
@@ -672,6 +673,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
     qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: applicationKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });
@@ -850,6 +852,10 @@ export function useRealtimeSync(
       });
 
     const refreshMap: Record<string, () => void> = {
+      application: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) void qc.invalidateQueries({ queryKey: applicationKeys.all(wsId) });
+      },
       inbox: () => {
         const wsId = getCurrentWsId();
         if (wsId) void onInboxInvalidate(qc, wsId);
@@ -961,6 +967,7 @@ export function useRealtimeSync(
         const wsId = getCurrentWsId();
         if (wsId) {
           qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
+          qc.invalidateQueries({ queryKey: applicationKeys.all(wsId) });
           // Shared agents may carry a redacted runtime liveness projection;
           // refetch it when a daemon changes state even if its private runtime
           // is absent from this member's runtime list.

@@ -189,6 +189,8 @@ reverse proxy 뒤에 배포한다면 실제 proxy 네트워크를 입력해야 �
 | 자체 호스팅 Git | `MULTICA_VCS_SECRET_KEY` | base64로 인코딩한 32바이트 암호화 키(`openssl rand -base64 32`). 없으면 전체 기능을 사용할 수 없음 |
 | Plugins | `MULTICA_PLUGIN_SECRET_KEY` | 저장된 secret과 surface 실행 URL을 암호화하는 base64 인코딩 32바이트 키 |
 | Plugins | `MULTICA_PLUGIN_SURFACE_ORIGIN` | 백엔드로 라우팅되는 쿠키 없는 전용 origin. app/API origin과 달라야 하며 `Host`를 보존해야 함 |
+| 애플리케이션 | `MULTICA_APPLICATION_ORIGIN` | app/API/plugin origin과 분리된 앱 진입점의 기본 origin. 와일드카드 DNS/TLS를 백엔드로 연결하고 `Host` 및 WebSocket 업그레이드를 유지합니다. localhost 외에는 HTTPS가 필수이며, 비워 두면 원격 접근을 비활성화합니다. |
+| 애플리케이션 | `MULTICA_APPLICATION_PEER_ORIGIN` | 현재 백엔드 복제본의 고유한 내부 HTTP(S) origin. 다른 복제본에서 직접 접근하고 WebSocket 업그레이드를 지원해야 합니다. `REDIS_URL`과 동일한 `JWT_SECRET`이 필요하며 공용 로드 밸런서 대신 노드 주소를 사용합니다. |
 | Plugins | `MULTICA_PLUGIN_API_URL` | 버전을 포함한 Plugin Public API의 전체 Base URL(예: `https://plugin-api.example.com/v1`). 설정하지 않으면 `MULTICA_PUBLIC_URL` + `/v1` 사용 |
 | Plugins | `MULTICA_PLUGIN_DIR` | 개발 중 로컬 plugin bundle을 게시하는 선택적 절대 디렉터리 |
 

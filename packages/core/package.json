@@ -22,6 +22,8 @@
     "./api/schemas": "./api/schemas.ts",
     "./api/issue-progress": "./api/issue-progress.ts",
     "./api/ws-client": "./api/ws-client.ts",
+    "./applications": "./applications/index.ts",
+    "./applications/*": "./applications/*.ts",
     "./config": "./config/index.ts",
     "./auth": "./auth/index.ts",
     "./workspace": "./workspace/index.ts",

@@ -189,6 +189,8 @@ The auth rate limits require `REDIS_URL`; without it, the startup log notes that
 | Self-hosted Git | `MULTICA_VCS_SECRET_KEY` | Base64-encoded 32-byte encryption key (`openssl rand -base64 32`); the feature is entirely unavailable without it |
 | Plugins | `MULTICA_PLUGIN_SECRET_KEY` | Base64-encoded 32-byte key for stored secrets and encrypted surface launch URLs |
 | Plugins | `MULTICA_PLUGIN_SURFACE_ORIGIN` | Dedicated cookie-free browser origin routed to this backend; must differ from app/API origins and preserve `Host` |
+| Applications | `MULTICA_APPLICATION_ORIGIN` | Dedicated base origin for application endpoints, separate from app/API/plugin origins. Route wildcard DNS/TLS to the backend, preserving `Host` and WebSocket upgrades. HTTPS is required outside localhost; empty disables remote access. |
+| Applications | `MULTICA_APPLICATION_PEER_ORIGIN` | Unique internal HTTP(S) origin of this backend replica, reachable directly by other replicas with WebSocket upgrades. Requires `REDIS_URL` and a shared `JWT_SECRET`; use a per-node address rather than the public load balancer. |
 | Plugins | `MULTICA_PLUGIN_API_URL` | Complete versioned Plugin Public API base URL, such as `https://plugin-api.example.com/v1`; falls back to `MULTICA_PUBLIC_URL` + `/v1` |
 | Plugins | `MULTICA_PLUGIN_DIR` | Optional absolute directory used to publish local plugin bundles during development |
 

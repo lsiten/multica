@@ -1085,6 +1085,9 @@ func (h *Handler) DeleteAgentRuntime(w http.ResponseWriter, r *http.Request) {
 	// their history can still be bound to this runtime.
 	teardown, err := service.TeardownRuntime(r.Context(), qtx, rt.ID, service.RuntimeTeardownOptions{CancelNonTerminalTasks: true})
 	if err != nil {
+		if h.applicationDeletionError(w, err) {
+			return
+		}
 		if errors.Is(err, service.ErrRuntimeNotDrained) {
 			slog.Error("runtime delete aborted: tasks not drained",
 				"runtime_id", uuidToString(rt.ID), "error", err)
@@ -1311,6 +1314,9 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 	// user configured is destroyed — the agents just need a new runtime.
 	teardown, err := service.TeardownRuntime(r.Context(), qtx, rt.ID, service.RuntimeTeardownOptions{CancelNonTerminalTasks: true})
 	if err != nil {
+		if h.applicationDeletionError(w, err) {
+			return
+		}
 		if errors.Is(err, service.ErrRuntimeNotDrained) {
 			slog.Error("runtime delete aborted: tasks not drained",
 				"runtime_id", uuidToString(rt.ID), "error", err)

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY application_step_generation_key ON application_operation_step(operation_id,instance_id,generation);

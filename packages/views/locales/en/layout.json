@@ -11,7 +11,8 @@
     "usage": "Analytics",
     "runtimes": "Runtimes",
     "skills": "Skills",
-    "settings": "Settings"
+    "settings": "Settings",
+    "applications": "Applications"
   },
   "tab": {
     "issue": "Issue",
@@ -25,7 +26,8 @@
     "runtime": "Runtime",
     "attachment": "Attachment",
     "create_agent": "Create Agent",
-    "unknown": "Unknown page"
+    "unknown": "Unknown page",
+    "application": "Application"
   },
   "help": {
     "trigger": "Help",

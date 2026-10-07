@@ -16,6 +16,8 @@ import {
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@multica/views/issues/components";
 import { ProjectsPage } from "@multica/views/projects/components";
+import { ApplicationsPage } from "@multica/views/applications";
+import { ApplicationDetailPage } from "./pages/application-detail-page";
 import { DashboardPage } from "@multica/views/dashboard";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
@@ -150,6 +152,8 @@ export const appRoutes: RouteObject[] = [
             element: <ProjectsPage />,
             handle: { title: "Projects" },
           },
+          { path: "applications", element: <ApplicationsPage />, handle: { title: "Applications" } },
+          { path: "applications/:id", element: <ApplicationDetailPage />, handle: { title: "Application" } },
           {
             path: "projects/:id",
             element: <ProjectDetailPage />,

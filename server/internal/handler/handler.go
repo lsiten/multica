@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/applicationgateway"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/cloudruntime"
 	"github.com/multica-ai/multica/server/internal/daemonws"
@@ -131,6 +132,7 @@ type Config struct {
 	// routes /plugin-surfaces/* back to this server. It must not be the app/API
 	// origin: the route serves stored third-party JavaScript as HTML.
 	PluginSurfaceOrigin string
+	ApplicationOrigin   string
 	// LLM* configure the basic LLM API layer (MUL-4238). They back the
 	// server-internal LLM helpers in pkg/llm (e.g. chat title generation).
 	// The generic OpenAI-compatible passthrough endpoints were removed in
@@ -218,6 +220,7 @@ type RuntimeRecoveryNotifier interface {
 }
 
 type Handler struct {
+	ApplicationGateway *applicationgateway.Hub
 	// Query snapshots shallow-copy Handler, so relay state and its mutex must stay shared.
 	localReviewRelay          *localReviewRelay
 	NotificationBots          *notificationbot.Worker
@@ -508,6 +511,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// a disabled client, which turns the feature off rather than failing.
 	taskSvc.QuickActions = llmClient
 	h := &Handler{
+		ApplicationGateway:           applicationgateway.NewHub(),
 		localReviewRelay:             &localReviewRelay{},
 		Queries:                      queries,
 		ReadSelector:                 dbreader.NewPrimaryOnly(queries),
@@ -810,10 +814,15 @@ func (h *Handler) notifyDaemonWorkspacesChanged(userIDs ...string) {
 // NotifyRuntimeGone emits the post-commit runtime invalidation signal. It is
 // exported so the runtime GC can use the same publisher as request handlers.
 func (h *Handler) NotifyRuntimeGone(runtimeID string) {
-	if h == nil || h.DaemonRuntimeGone == nil || runtimeID == "" {
+	if h == nil || runtimeID == "" {
 		return
 	}
-	h.DaemonRuntimeGone.NotifyRuntimeGone(runtimeID)
+	if h.ApplicationGateway != nil {
+		h.ApplicationGateway.DisconnectRuntime(runtimeID)
+	}
+	if h.DaemonRuntimeGone != nil {
+		h.DaemonRuntimeGone.NotifyRuntimeGone(runtimeID)
+	}
 }
 
 // NotifyRuntimeRecovered republishes the workspace-scoped daemon:register

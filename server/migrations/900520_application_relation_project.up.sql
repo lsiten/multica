@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY application_relation_project ON application_relation(workspace_id,project_id);

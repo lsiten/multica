@@ -31,6 +31,7 @@ import { MachineCliSection } from "./machine-cli-section";
 import { MachineMirrorAction } from "./runtime-mirror-action";
 import { HealthIcon, useHealthLabel } from "./shared";
 import { useT, useTimeAgo } from "../../i18n";
+import { ApplicationsPage } from "../../applications";
 
 export interface RuntimeDetailPageProps {
   /** A machine id, or a legacy runtime id that locates its machine. */
@@ -89,6 +90,7 @@ export function RuntimeDetailPage({
   bootstrapping,
 }: RuntimeDetailPageProps) {
   const { t } = useT("runtimes");
+  const { t: applicationsT } = useT("applications");
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const qc = useQueryClient();
@@ -349,6 +351,7 @@ export function RuntimeDetailPage({
         </div>
       </div>
 
+      <details className={cn(PAGE_RAIL,PAGE_GUTTER,"shrink-0 pb-4")}><summary className="cursor-pointer py-3 text-body font-medium">{applicationsT(($) => $.title)}</summary><ApplicationsPage runtimeIds={machineRuntimes.map((runtime) => runtime.id)} embedded /></details>
       {renameTarget && (
         <RenameMachineDialog
           open={renameOpen}

@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY application_access_ticket_expiry ON application_access_ticket(expires_at);

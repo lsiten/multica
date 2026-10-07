@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/daemonws"
 	"github.com/multica-ai/multica/server/internal/database"
@@ -761,6 +762,7 @@ func main() {
 	// its bounded transactions run independently once per hour, so a slow GC
 	// round cannot delay offline detection or task recovery.
 	go runRuntimeGCSweeper(sweepCtx, pool, queries, taskSvc.Metrics, h)
+	go runApplicationOperationSweeper(sweepCtx, &application.Service{Queries: queries, Transactions: pool}, bus)
 	// Source-context cleanup is object-store work, so it gets its own goroutine
 	// instead of a slot in the runtime sweep tick.
 	go runSourceContextSweeper(sweepCtx, taskSvc)
@@ -788,6 +790,10 @@ func main() {
 	// GitHub PR-card API snapshot pipeline (MUL-5265): worker pool + TTL sweeper.
 	// No-op when unconfigured (no App private key).
 	h.PRRefresh.Start(sweepCtx)
+	if err := h.ApplicationGateway.Start(sweepCtx); err != nil {
+		slog.Error("application gateway revocation observer could not start", "error", err)
+		os.Exit(1)
+	}
 
 	// Channel inbound supervisor (MUL-3620): holds the §4.4 WS lease per
 	// installation and drives each channel.Channel. It is channel-agnostic,
@@ -932,6 +938,12 @@ func main() {
 		CancelWorkers:     sweepCancel,
 		StopHeartbeats:    heartbeatScheduler.Stop,
 		JoinWebhookWorker: func() {
+			h.ApplicationGateway.Close()
+			gatewayCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := h.ApplicationGateway.Wait(gatewayCtx); err != nil {
+				slog.Warn("application gateway observer did not exit", "error", err)
+			}
 			if h.NotificationBots != nil && !h.NotificationBots.Wait(5*time.Second) {
 				slog.Warn("notification bot worker did not exit within shutdown timeout")
 			}

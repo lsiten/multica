@@ -154,6 +154,13 @@ func (c *coAuthoredByStateCache) BarePath(string, string) string { return "" }
 func (c *coAuthoredByStateCache) Sync(string, []repocache.RepoInfo) error {
 	return nil
 }
+
+func (c *coAuthoredByStateCache) SyncContext(context.Context, string, []repocache.RepoInfo) error {
+	return nil
+}
+func (c *coAuthoredByStateCache) CreateWorktreeContext(context.Context, repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
+	return nil, nil
+}
 func (c *coAuthoredByStateCache) WithRepoLock(_ string, fn func() error) error { return fn() }
 func (c *coAuthoredByStateCache) CreateWorktree(repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
 	return nil, nil

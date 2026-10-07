@@ -2,6 +2,7 @@ package protocol
 
 // Event types for WebSocket communication between server, web clients, and daemon.
 const (
+	EventApplicationChanged = "application:changed"
 	// Issue events
 	EventIssueCreated            = "issue:created"
 	EventIssueUpdated            = "issue:updated"

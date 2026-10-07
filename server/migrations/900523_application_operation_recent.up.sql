@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY application_operation_recent ON application_operation(workspace_id,application_id,created_at DESC);

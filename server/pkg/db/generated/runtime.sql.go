@@ -601,6 +601,13 @@ SELECT EXISTS (
         AND agent.kind = 'user'
         AND agent.archived_at IS NULL
     )
+    AND NOT EXISTS (
+      SELECT 1 FROM application_instance i WHERE i.workspace_id=agent_runtime.workspace_id
+        AND (i.runtime_id=agent_runtime.id OR EXISTS(SELECT 1 FROM application_instance_consumer c WHERE c.workspace_id=i.workspace_id AND c.instance_id=i.id AND c.root_runtime_id=agent_runtime.id))
+        AND (i.desired_state='running' OR i.process_state NOT IN ('stopped','failed') OR i.generation<>i.observed_generation)
+    )
+    AND NOT EXISTS (SELECT 1 FROM application_operation_step s WHERE s.workspace_id=agent_runtime.workspace_id AND s.runtime_id=agent_runtime.id AND s.state IN ('queued','running'))
+    AND NOT EXISTS (SELECT 1 FROM application_operation o WHERE o.workspace_id=agent_runtime.workspace_id AND o.plan->>'root_runtime_id'=agent_runtime.id::text AND o.state IN ('queued','running','cancelling'))
 ) AS eligible
 `
 
@@ -796,6 +803,13 @@ WHERE status = 'offline'
     WHERE agent_task_queue.runtime_id = agent_runtime.id
       AND agent_task_queue.completed_at IS NULL
   )
+  AND NOT EXISTS (
+    SELECT 1 FROM application_instance i WHERE i.workspace_id=agent_runtime.workspace_id
+      AND (i.runtime_id=agent_runtime.id OR EXISTS(SELECT 1 FROM application_instance_consumer c WHERE c.workspace_id=i.workspace_id AND c.instance_id=i.id AND c.root_runtime_id=agent_runtime.id))
+      AND (i.desired_state='running' OR i.process_state NOT IN ('stopped','failed') OR i.generation<>i.observed_generation)
+  )
+  AND NOT EXISTS (SELECT 1 FROM application_operation_step s WHERE s.workspace_id=agent_runtime.workspace_id AND s.runtime_id=agent_runtime.id AND s.state IN ('queued','running'))
+  AND NOT EXISTS (SELECT 1 FROM application_operation o WHERE o.workspace_id=agent_runtime.workspace_id AND o.plan->>'root_runtime_id'=agent_runtime.id::text AND o.state IN ('queued','running','cancelling'))
 ORDER BY last_seen_at ASC, id ASC
 LIMIT $2::int
 `

@@ -31,6 +31,11 @@ func environmentHasCode(path string) (bool, error) {
 }
 
 func (d *Daemon) environmentRetentionReason(ctx context.Context, path string, status *protocol.TaskGCStatus) string {
+	if referenced, err := d.applicationReferencesDirectory(path); err != nil {
+		return "unavailable"
+	} else if referenced {
+		return "application"
+	}
 	if d.isActiveEnvRoot(path) {
 		return "active"
 	}

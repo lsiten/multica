@@ -871,7 +871,22 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	resource, err := h.Queries.GetProjectResourceInWorkspace(r.Context(), db.GetProjectResourceInWorkspaceParams{
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to begin resource deletion")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	qtx := h.Queries.WithTx(tx)
+	if _, err := qtx.LockApplicationWorkspace(r.Context(), project.WorkspaceID); err != nil {
+		h.applicationError(w, err)
+		return
+	}
+	if _, err := qtx.LockApplicationProject(r.Context(), db.LockApplicationProjectParams{ID: project.ID, WorkspaceID: project.WorkspaceID}); err != nil {
+		h.applicationError(w, err)
+		return
+	}
+	resource, err := qtx.GetProjectResourceInWorkspace(r.Context(), db.GetProjectResourceInWorkspaceParams{
 		ID: resourceUUID, WorkspaceID: project.WorkspaceID,
 	})
 	if err != nil {
@@ -882,8 +897,21 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "project resource not found")
 		return
 	}
-	if err := h.Queries.DeleteProjectResource(r.Context(), resource.ID); err != nil {
+	inUse, err := qtx.ApplicationResourceInUse(r.Context(), db.ApplicationResourceInUseParams{WorkspaceID: project.WorkspaceID, ProjectID: project.ID, ResourceID: uuidToString(resource.ID)})
+	if err != nil {
+		h.applicationError(w, err)
+		return
+	}
+	if inUse {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "detach this resource from application configurations and stop its running instances before deleting", "code": "application_resource_in_use", "project_id": uuidToString(project.ID), "resource_id": uuidToString(resource.ID)})
+		return
+	}
+	if err := qtx.DeleteProjectResource(r.Context(), resource.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete project resource")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit resource deletion")
 		return
 	}
 	h.publish(
