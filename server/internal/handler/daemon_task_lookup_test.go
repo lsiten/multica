@@ -60,7 +60,7 @@ func TestGetTaskStatus_DoesNotResolveSourceWorkspace(t *testing.T) {
 				"runtime_id": runtimeID, "status": "running", "started_at": testutil.Raw("now()"), tc.column: tc.id,
 			})
 			fault := &lookupFaultPool{DBTX: testPool, query: tc.query}
-			h := &Handler{Queries: db.New(fault), TaskService: &service.TaskService{Queries: db.New(fault)}}
+			h := &Handler{Queries: db.New(fault), TxStarter: testPool, TaskService: &service.TaskService{Queries: db.New(fault)}}
 			req := newDaemonTokenRequest(http.MethodGet, "/api/daemon/tasks/"+taskID+"/status", nil, testWorkspaceID, "test-daemon")
 			req = withURLParam(req, "taskId", taskID)
 

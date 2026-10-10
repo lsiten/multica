@@ -752,3 +752,47 @@ deleted_share_links AS (
 )
 DELETE FROM workspace_invitation
 WHERE workspace_invitation.workspace_id = $1;
+
+-- name: DeleteWorkspaceExecutionGraph :exec
+-- Clears the capability-gated multiprocess-daemon runtime/execution/application
+-- state. None of these tables carry a foreign key, so nothing sweeps them
+-- automatically; this statement removes them while their workspace-scoped
+-- parents are still present. The task-keyed leaves read task_execution before it
+-- is dropped, and the runtime-keyed leaves read agent_runtime, which the later
+-- DeleteWorkspaceRuntimesAndProjects step removes. It therefore runs before that
+-- step in the handler's deletion graph.
+WITH
+deleted_execution_message_receipts AS (
+    DELETE FROM execution_message_receipt
+    WHERE execution_id IN (
+        SELECT execution_id FROM task_execution WHERE task_execution.workspace_id = $1
+    )
+),
+deleted_execution_grants AS (
+    DELETE FROM execution_grant
+    WHERE task_id IN (
+        SELECT task_id FROM task_execution WHERE task_execution.workspace_id = $1
+    )
+),
+deleted_task_executions AS (
+    DELETE FROM task_execution WHERE task_execution.workspace_id = $1
+),
+deleted_execution_snapshots AS (
+    DELETE FROM execution_snapshot
+    WHERE runtime_id IN (
+        SELECT id FROM agent_runtime WHERE agent_runtime.workspace_id = $1
+    )
+),
+deleted_application_service_grants AS (
+    DELETE FROM application_service_grant
+    WHERE runtime_id IN (
+        SELECT id FROM agent_runtime WHERE agent_runtime.workspace_id = $1
+    )
+),
+deleted_application_service_authorities AS (
+    DELETE FROM application_service_authority WHERE application_service_authority.workspace_id = $1
+),
+deleted_runtime_supervisors AS (
+    DELETE FROM runtime_supervisor WHERE runtime_supervisor.workspace_id = $1
+)
+DELETE FROM task_actor_claim WHERE task_actor_claim.workspace_id = $1;

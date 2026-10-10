@@ -1343,6 +1343,15 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceSquadCollaborationHistory(ctx, requester.WorkspaceID) },
 		},
 		{
+			// These capability-gated multiprocess-daemon tables have no
+			// foreign keys, so they must be swept explicitly. They read
+			// agent_runtime (still present until the next step) and
+			// task_execution, so they run before "delete runtimes and
+			// projects".
+			name: "delete execution graph",
+			run:  func() error { return qtx.DeleteWorkspaceExecutionGraph(ctx, requester.WorkspaceID) },
+		},
+		{
 			name: "delete runtimes and projects",
 			run:  func() error { return qtx.DeleteWorkspaceRuntimesAndProjects(ctx, requester.WorkspaceID) },
 		},

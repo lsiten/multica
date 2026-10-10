@@ -138,6 +138,7 @@ func TestProgressActionsRecheckRuntimeAndPendingDecision(t *testing.T) {
 	request.Header.Set("X-Actor-Source", "task_token")
 	request.Header.Set("X-Task-ID", run)
 	request.Header.Set("X-Agent-ID", agent)
+	request = legacyTaskActorRequest(t, request)
 	testutil.Call(t, testHandler.CreateHumanRequest, request).Want(201)
 	dbfx.Exec(t, "UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1", run)
 	current, err := testHandler.Queries.GetIssueInWorkspace(t.Context(), db.GetIssueInWorkspaceParams{ID: parseUUID(issue), WorkspaceID: parseUUID(testWorkspaceID)})

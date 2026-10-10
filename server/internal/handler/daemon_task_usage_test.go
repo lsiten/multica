@@ -8,25 +8,42 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/testutil"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-type taskUsageWriteFaultDB struct {
-	db.DBTX
-	writes int
-	failAt int
+// taskUsageFaultTxStarter stands in for any failure while storing reported usage:
+// ReportTaskUsage now writes through beginExecutionCallback's transaction, so the
+// fault has to intercept the transaction's Exec, not the handler's Queries.
+type taskUsageFaultTxStarter struct {
+	delegate *pgxpool.Pool
+	writes   int
+	failAt   int
 }
 
-func (f *taskUsageWriteFaultDB) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+type taskUsageFaultTx struct {
+	pgx.Tx
+	starter *taskUsageFaultTxStarter
+}
+
+func (s *taskUsageFaultTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
+	tx, err := s.delegate.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return taskUsageFaultTx{Tx: tx, starter: s}, nil
+}
+
+func (t taskUsageFaultTx) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	if strings.Contains(query, "-- name: UpsertTaskUsage :exec") {
-		f.writes++
-		if f.writes == f.failAt {
+		t.starter.writes++
+		if t.starter.writes == t.starter.failAt {
 			return pgconn.CommandTag{}, errors.New("injected task usage write failure")
 		}
 	}
-	return f.DBTX.Exec(ctx, query, args...)
+	return t.Tx.Exec(ctx, query, args...)
 }
 
 func TestReportTaskUsage_WriteFailureAndReplay(t *testing.T) {
@@ -37,9 +54,9 @@ func TestReportTaskUsage_WriteFailureAndReplay(t *testing.T) {
 			issueID := dbfx.Issue(t, "Usage report issue")
 			taskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID, "status": "completed"})
 			t.Cleanup(func() { dbfx.Exec(t, "DELETE FROM task_usage WHERE task_id = $1", taskID) })
-			fault := &taskUsageWriteFaultDB{DBTX: testPool, failAt: failAt}
+			fault := &taskUsageFaultTxStarter{delegate: testPool, failAt: failAt}
 			h := *testHandler
-			h.Queries = db.New(fault)
+			h.TxStarter = fault
 			usage := []TaskUsagePayload{
 				{Provider: "codex", Model: "model-a", InputTokens: 100, OutputTokens: 20, CacheReadTokens: 50},
 				{Provider: "codex", Model: "model-b", InputTokens: 30, OutputTokens: 5, CacheWriteTokens: 10, CostUSDTicks: 900},

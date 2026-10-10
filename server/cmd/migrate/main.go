@@ -166,6 +166,17 @@ var concurrentIndexCleanups = map[string]string{
 	"900532_application_step_generation_index":    "application_step_generation_key",
 	"900535_application_operation_deadline_index": "application_operation_deadline_index",
 
+	// Daemon-multiprocess identity and grant indexes, built concurrently on up.
+	"900537_runtime_supervisor_identity":            "runtime_supervisor_identity_idx",
+	"900538_task_execution_identity":                "task_execution_identity_idx",
+	"900539_execution_grant_identity":               "execution_grant_identity_idx",
+	"900540_execution_snapshot_identity":            "execution_snapshot_identity_idx",
+	"900542_execution_message_receipt_identity":     "execution_message_receipt_identity_idx",
+	"900544_application_service_authority_identity": "application_service_authority_identity_idx",
+	"900545_application_service_grant_hash":         "application_service_grant_hash_idx",
+	"900547_task_actor_claim_hash":                  "task_actor_claim_hash",
+	"900548_task_actor_claim_task":                  "task_actor_claim_task",
+
 	"900498_human_request_key_index":                            "human_request_source_key",
 	"900499_human_request_recipient_index":                      "human_request_recipient_pending",
 	"900500_human_request_id_index":                             "human_request_id_index",
