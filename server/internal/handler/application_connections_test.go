@@ -28,7 +28,7 @@ func TestApplicationConnectionRevokesSessionsWhenEitherRuntimeAccessChanges(t *t
 			sourceInstanceID := dbfx.Insert(t, "application_instance", testutil.Cols{"workspace_id": testWorkspaceID, "application_id": sourceApp.ID, "runtime_id": sourceRuntime, "daemon_id": uuid.NewString(), "revision": 1, "generation": 1, "desired_state": "running"})
 			h := *testHandler
 			h.cfg.ApplicationOrigin = "http://apps.localhost"
-			origin, err := h.applicationOrigin()
+			origin, _, err := h.applicationOrigin()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -80,7 +80,7 @@ func TestApplicationDependencySessionRemainsRevokedAfterInstanceGenerationReplac
 	endpoint, _ := applicationAccessFixture(t)
 	h := *testHandler
 	h.cfg.ApplicationOrigin = "http://apps.localhost"
-	origin, err := h.applicationOrigin()
+	origin, _, err := h.applicationOrigin()
 	if err != nil {
 		t.Fatal(err)
 	}

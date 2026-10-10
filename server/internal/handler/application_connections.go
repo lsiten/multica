@@ -93,9 +93,9 @@ func (h *Handler) ResolveApplicationConnection(w http.ResponseWriter, r *http.Re
 		if endpoint.InstanceID != target.ID || endpoint.State != "published" || endpoint.Visibility == "private" && endpoint.PublishedBy != userID {
 			continue
 		}
-		origin, err := h.applicationOrigin()
+		origin, dedicated, err := h.applicationOrigin()
 		if err != nil {
-			writeError(w, http.StatusConflict, "configure application origin before connecting remote services")
+			writeError(w, http.StatusConflict, "configure MULTICA_PUBLIC_URL or MULTICA_APPLICATION_ORIGIN before connecting remote services")
 			return
 		}
 		token, err := applicationgateway.SignConnectionAccess(auth.JWTSecret(), uuidToString(endpoint.ID), endpoint.Revision, grant)
@@ -103,8 +103,9 @@ func (h *Handler) ResolveApplicationConnection(w http.ResponseWriter, r *http.Re
 			h.applicationError(w, err)
 			return
 		}
-		address := applicationgateway.EndpointOrigin(origin, uuidToString(endpoint.ID))
-		address.Path = endpoint.EntryPath
+		address := applicationEndpointURL(origin, dedicated, uuidToString(endpoint.ID))
+		address.Path = strings.TrimRight(address.Path, "/") + endpoint.EntryPath
+		address.RawPath = ""
 		writeJSON(w, http.StatusOK, map[string]any{"url": address.String(), "token": token, "cookie_name": h.applicationSessionCookie(origin), "expires_in_seconds": 28800})
 		return
 	}

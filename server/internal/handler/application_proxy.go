@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/daemon/applicationhost"
@@ -24,25 +25,47 @@ import (
 // ApplicationHostBoundary gives endpoint hosts application-only routing, before platform auth.
 func (h *Handler) ApplicationHostBoundary(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin, err := h.applicationOrigin()
+		origin, dedicated, err := h.applicationOrigin()
 		if err != nil {
 			next.ServeHTTP(w, r)
 			return
 		}
-		host := strings.ToLower(r.Host)
 		base := strings.ToLower(origin.Host)
-		if host == base {
-			http.NotFound(w, r)
-			return
-		}
-		if !strings.HasSuffix(host, "."+base) {
-			next.ServeHTTP(w, r)
-			return
-		}
-		id := strings.TrimSuffix(host, "."+base)
-		endpointID, ok := parseUUIDOrBadRequest(w, id, "endpoint_id")
-		if !ok {
-			return
+		var (
+			endpointID pgtype.UUID
+			restPath   string
+		)
+		if dedicated {
+			host := strings.ToLower(r.Host)
+			if host == base {
+				http.NotFound(w, r)
+				return
+			}
+			if !strings.HasSuffix(host, "."+base) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			parsed, ok := parseUUIDOrBadRequest(w, strings.TrimSuffix(host, "."+base), "endpoint_id")
+			if !ok {
+				return
+			}
+			endpointID = parsed
+			restPath = r.URL.Path
+		} else {
+			host := strings.ToLower(r.Host)
+			if host != base || !strings.HasPrefix(r.URL.Path, "/app/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			segments := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/app/"), "/", 2)
+			parsed, ok := parseUUIDOrBadRequest(w, segments[0], "endpoint_id")
+			if !ok {
+				return
+			}
+			endpointID = parsed
+			if len(segments) == 2 {
+				restPath = "/" + segments[1]
+			}
 		}
 		endpoint, err := h.Queries.GetPublishedApplicationEndpoint(r.Context(), endpointID)
 		if err != nil {
@@ -50,11 +73,11 @@ func (h *Handler) ApplicationHostBoundary(next http.Handler) http.Handler {
 			return
 		}
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		if r.URL.Path == "/.__multica/launch" {
-			h.consumeApplicationLaunch(w, r, origin, endpoint)
+		if restPath == "/.__multica/launch" {
+			h.consumeApplicationLaunch(w, r, origin, dedicated, endpoint)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/.__multica/") {
+		if strings.HasPrefix(restPath, "/.__multica/") {
 			http.NotFound(w, r)
 			return
 		}
@@ -107,6 +130,8 @@ func (h *Handler) ApplicationHostBoundary(next http.Handler) http.Handler {
 		proxy := httputil.ReverseProxy{Transport: transport, FlushInterval: -1, Rewrite: func(proxy *httputil.ProxyRequest) {
 			proxy.Out.URL.Scheme = "http"
 			proxy.Out.URL.Host = "127.0.0.1:" + strconv.Itoa(int(endpoint.Port))
+			proxy.Out.URL.Path = restPath
+			proxy.Out.URL.RawPath = ""
 			proxy.Out.Host = proxy.Out.URL.Host
 			proxy.Out.Header.Set("X-Forwarded-Host", r.Host)
 			proxy.Out.Header.Set("X-Forwarded-Proto", origin.Scheme)

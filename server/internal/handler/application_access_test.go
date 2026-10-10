@@ -86,7 +86,7 @@ func TestApplicationAccessSessionRejectsWrongEndpointAndRevokedRevision(t *testi
 	endpoint, _ := applicationAccessFixture(t)
 	h := *testHandler
 	h.cfg.ApplicationOrigin = "http://apps.localhost:18608"
-	origin, err := h.applicationOrigin()
+	origin, _, err := h.applicationOrigin()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,5 +138,51 @@ func TestApplicationServiceAccessEnforcesAgentProjectScope(t *testing.T) {
 	claims, err := applicationgateway.ParseAccess(auth.JWTSecret(), strings.TrimPrefix(receipt.Token, "mas_"))
 	if err != nil || claims.EndpointID != uuidToString(endpoint.ID) || claims.Subject != testUserID {
 		t.Fatalf("service access scope=%+v err=%v", claims, err)
+	}
+}
+
+// TestApplicationLaunchServedByPathOnPublicOrigin proves that when only
+// MULTICA_PUBLIC_URL is configured (no MULTICA_APPLICATION_ORIGIN), a published
+// application is reachable at /app/{endpoint_id} on the platform public origin,
+// the launch ticket sets an /app-scoped session, and non /app requests on that
+// origin pass through to the platform router.
+func TestApplicationLaunchServedByPathOnPublicOrigin(t *testing.T) {
+	if testPool == nil {
+		t.Skip("database unavailable")
+	}
+	endpoint, _ := applicationAccessFixture(t)
+	h := *testHandler
+	h.cfg.ApplicationOrigin = ""
+	h.cfg.PublicURL = "http://apps.localhost:18609"
+	ticket := strings.Repeat("a", 64)
+	if err := h.Queries.CreateApplicationAccessTicket(context.Background(), db.CreateApplicationAccessTicketParams{TokenHash: auth.HashToken(ticket), EndpointID: endpoint.ID, WorkspaceID: endpoint.WorkspaceID, UserID: parseUUID(testUserID), MemberID: parseUUID(applicationTestMemberID(t, testUserID)), EndpointRevision: endpoint.Revision}); err != nil {
+		t.Fatal(err)
+	}
+	platformReached := false
+	boundary := h.ApplicationHostBoundary(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		platformReached = true
+	}))
+	launch := httptest.NewRequest(http.MethodGet, "http://apps.localhost:18609/app/"+uuidToString(endpoint.ID)+"/.__multica/launch?ticket="+ticket, nil)
+	response := httptest.NewRecorder()
+	boundary.ServeHTTP(response, launch)
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/app/"+uuidToString(endpoint.ID)+"/" {
+		t.Fatalf("path launch status=%d location=%s", response.Code, response.Header().Get("Location"))
+	}
+	if platformReached {
+		t.Fatal("path launch reached the platform router")
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "multica_app_session" || !cookies[0].HttpOnly || cookies[0].Path != "/app" {
+		t.Fatalf("path launch cookie was not app-path scoped: %+v", cookies)
+	}
+	platformPath := httptest.NewRequest(http.MethodGet, "http://apps.localhost:18609/api/me", nil)
+	boundary.ServeHTTP(httptest.NewRecorder(), platformPath)
+	if !platformReached {
+		t.Fatal("public-origin platform request did not reach the platform router")
+	}
+	second := httptest.NewRecorder()
+	boundary.ServeHTTP(second, launch.Clone(context.Background()))
+	if second.Code != http.StatusUnauthorized {
+		t.Fatalf("consumed path ticket reused: %d", second.Code)
 	}
 }

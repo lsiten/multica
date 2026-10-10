@@ -30,7 +30,7 @@ func TestApplicationCredentialsDoNotReviveAfterMemberRejoins(t *testing.T) {
 	}
 	h := *testHandler
 	h.cfg.ApplicationOrigin = "http://apps.localhost"
-	origin, err := h.applicationOrigin()
+	origin, _, err := h.applicationOrigin()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestApplicationCredentialsDoNotReviveAfterMemberRejoins(t *testing.T) {
 	}
 	launch := httptest.NewRequest(http.MethodGet, "http://"+uuidToString(endpoint.ID)+".apps.localhost/.__multica/launch?ticket="+ticket, nil)
 	response := httptest.NewRecorder()
-	h.consumeApplicationLaunch(response, launch, origin, endpoint)
+	h.consumeApplicationLaunch(response, launch, origin, true, endpoint)
 	if response.Code == http.StatusSeeOther {
 		t.Error("old launch ticket revived after the member rejoined")
 	}

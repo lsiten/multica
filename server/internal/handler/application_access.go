@@ -16,18 +16,57 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-func (h *Handler) applicationOrigin() (*url.URL, error) {
-	origin, err := applicationgateway.Origin(h.cfg.ApplicationOrigin)
-	if err != nil {
-		return nil, err
-	}
-	for _, raw := range []string{h.cfg.PublicURL, h.cfg.AppURL, h.cfg.PluginSurfaceOrigin} {
-		other, parseErr := url.Parse(raw)
-		if parseErr == nil && other.Host != "" && strings.EqualFold(other.Host, origin.Host) {
-			return nil, errors.New("applications require a dedicated browser origin")
+// applicationOrigin resolves the browser origin for published applications.
+// When MULTICA_APPLICATION_ORIGIN is set it is a dedicated per-endpoint
+// subdomain origin (dedicated=true). Otherwise applications are served by
+// path on the platform public origin (dedicated=false) at /app/{endpoint_id},
+// so no MULTICA_APPLICATION_ORIGIN is required to open applications.
+func (h *Handler) applicationOrigin() (*url.URL, bool, error) {
+	if raw := strings.TrimSpace(h.cfg.ApplicationOrigin); raw != "" {
+		origin, err := applicationgateway.Origin(raw)
+		if err != nil {
+			return nil, false, err
 		}
+		for _, otherRaw := range []string{h.cfg.PublicURL, h.cfg.AppURL, h.cfg.PluginSurfaceOrigin} {
+			other, parseErr := url.Parse(strings.TrimSpace(otherRaw))
+			if parseErr == nil && other.Host != "" && strings.EqualFold(other.Host, origin.Host) {
+				return nil, false, errors.New("application origin must differ from the platform and plugin origins")
+			}
+		}
+		return origin, true, nil
 	}
-	return origin, nil
+	if strings.TrimSpace(h.cfg.PublicURL) == "" {
+		return nil, false, errors.New("configure MULTICA_PUBLIC_URL or MULTICA_APPLICATION_ORIGIN before opening applications")
+	}
+	origin, err := url.Parse(strings.TrimSpace(h.cfg.PublicURL))
+	if err != nil || origin.Host == "" || (origin.Scheme != "http" && origin.Scheme != "https") {
+		return nil, false, errors.New("MULTICA_PUBLIC_URL must be an absolute http/https origin")
+	}
+	origin.Path = ""
+	origin.RawPath = ""
+	return origin, false, nil
+}
+
+// applicationEndpointURL is the browser URL for one published endpoint. Dedicated
+// origins use a per-endpoint subdomain; the public origin serves each endpoint
+// under /app/{id} so no MULTICA_APPLICATION_ORIGIN is required.
+func applicationEndpointURL(origin *url.URL, dedicated bool, endpointID string) *url.URL {
+	address := *origin
+	if dedicated {
+		address.Host = endpointID + "." + origin.Host
+	} else {
+		address.Path = "/app/" + endpointID
+	}
+	return &address
+}
+
+// applicationAppBasePath is the URL path prefix for an endpoint on its origin:
+// the root for dedicated subdomains, /app/{id} on the public origin.
+func applicationAppBasePath(dedicated bool, endpointID string) string {
+	if dedicated {
+		return ""
+	}
+	return "/app/" + endpointID
 }
 
 func (h *Handler) applicationEndpointForUser(w http.ResponseWriter, r *http.Request) (db.ApplicationEndpoint, db.ApplicationInstance, db.Member, bool) {
@@ -61,9 +100,9 @@ func (h *Handler) LaunchApplication(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	origin, err := h.applicationOrigin()
+	origin, dedicated, err := h.applicationOrigin()
 	if err != nil {
-		writeError(w, http.StatusConflict, "configure MULTICA_APPLICATION_ORIGIN before opening applications")
+		writeError(w, http.StatusConflict, "configure MULTICA_APPLICATION_ORIGIN or MULTICA_PUBLIC_URL before opening applications")
 		return
 	}
 	available, err := h.ApplicationGateway.Available(r.Context(), uuidToString(instance.RuntimeID))
@@ -85,8 +124,9 @@ func (h *Handler) LaunchApplication(w http.ResponseWriter, r *http.Request) {
 		h.applicationError(w, err)
 		return
 	}
-	address := applicationgateway.EndpointOrigin(origin, uuidToString(endpoint.ID))
-	address.Path = "/.__multica/launch"
+	address := applicationEndpointURL(origin, dedicated, uuidToString(endpoint.ID))
+	address.Path = strings.TrimRight(address.Path, "/") + "/.__multica/launch"
+	address.RawPath = ""
 	address.RawQuery = url.Values{"ticket": {ticket}}.Encode()
 	writeJSON(w, http.StatusOK, map[string]string{"url": address.String()})
 }
@@ -102,7 +142,7 @@ func (h *Handler) CreateApplicationServiceAccess(w http.ResponseWriter, r *http.
 		h.applicationError(w, application.ErrForbidden)
 		return
 	}
-	origin, err := h.applicationOrigin()
+	origin, dedicated, err := h.applicationOrigin()
 	if err != nil {
 		h.applicationError(w, application.ErrConflict)
 		return
@@ -112,19 +152,26 @@ func (h *Handler) CreateApplicationServiceAccess(w http.ResponseWriter, r *http.
 		h.applicationError(w, err)
 		return
 	}
-	address := applicationgateway.EndpointOrigin(origin, uuidToString(endpoint.ID))
-	address.Path = endpoint.EntryPath
+	address := applicationEndpointURL(origin, dedicated, uuidToString(endpoint.ID))
+	address.Path = strings.TrimRight(address.Path, "/") + endpoint.EntryPath
+	address.RawPath = ""
 	writeJSON(w, http.StatusOK, map[string]any{"url": address.String(), "token": "mas_" + token, "expires_in_seconds": 28800})
 }
 
 func (h *Handler) applicationSessionCookie(origin *url.URL) string {
-	if origin.Scheme == "https" {
+	if origin.Scheme == "https" && h.applicationDedicated() {
 		return "__Host-multica-app"
 	}
 	return "multica_app_session"
 }
 
-func (h *Handler) consumeApplicationLaunch(w http.ResponseWriter, r *http.Request, origin *url.URL, endpoint db.ApplicationEndpoint) {
+// applicationDedicated reports whether applications use a dedicated subdomain
+// origin rather than being served by path on the platform public origin.
+func (h *Handler) applicationDedicated() bool {
+	return strings.TrimSpace(h.cfg.ApplicationOrigin) != ""
+}
+
+func (h *Handler) consumeApplicationLaunch(w http.ResponseWriter, r *http.Request, origin *url.URL, dedicated bool, endpoint db.ApplicationEndpoint) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -149,10 +196,14 @@ func (h *Handler) consumeApplicationLaunch(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "application launch failed", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: h.applicationSessionCookie(origin), Value: token, Path: "/", HttpOnly: true, Secure: origin.Scheme == "https", SameSite: http.SameSiteLaxMode, MaxAge: 28800})
+	cookiePath := "/"
+	if !dedicated {
+		cookiePath = "/app"
+	}
+	http.SetCookie(w, &http.Cookie{Name: h.applicationSessionCookie(origin), Value: token, Path: cookiePath, HttpOnly: true, Secure: origin.Scheme == "https", SameSite: http.SameSiteLaxMode, MaxAge: 28800})
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, endpoint.EntryPath, http.StatusSeeOther)
+	http.Redirect(w, r, strings.TrimRight(applicationAppBasePath(dedicated, uuidToString(endpoint.ID)), "/")+endpoint.EntryPath, http.StatusSeeOther)
 }
 
 func (h *Handler) applicationAccessAllowed(r *http.Request, origin *url.URL, endpoint db.ApplicationEndpoint) (applicationgateway.AccessClaims, bool) {
