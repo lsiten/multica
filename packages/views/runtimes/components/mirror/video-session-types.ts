@@ -7,7 +7,7 @@ import type {
   VscreenVideoQuality,
 } from "@multica/core/types";
 export interface MirrorAuthorizationRequest {
- readonly operation?: { readonly kind: "command" | "files" | "permissions" | "unknown"; readonly target: string; readonly location?: string; readonly reason?: string; readonly details: string; readonly permissions?: { readonly network_enabled?: boolean; readonly read_paths?: readonly string[]; readonly write_paths?: readonly string[] }; readonly files?: readonly { readonly path: string; readonly kind: "add" | "update" | "delete" | "unknown"; readonly move_path?: string }[] };
+ readonly operation?: { readonly kind: "command" | "files" | "permissions" | "mcp" | "unknown"; readonly target: string; readonly location?: string; readonly reason?: string; readonly details: string; readonly permissions?: { readonly network_enabled?: boolean; readonly read_paths?: readonly string[]; readonly write_paths?: readonly string[] }; readonly files?: readonly { readonly path: string; readonly kind: "add" | "update" | "delete" | "unknown"; readonly move_path?: string }[] };
   readonly type: "mirror-authorization:request";
   readonly request_id: string;
   readonly kind: "system" | "cli";

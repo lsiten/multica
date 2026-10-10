@@ -19,7 +19,7 @@ const authorizationWireSchema = z.object({
   message: z.string().min(1).max(2048),
   expires_at: z.string().datetime({ offset: true }),
   operation: z.object({
-    kind: z.enum(["command", "files", "permissions", "unknown"]).catch("unknown"),
+    kind: z.enum(["command", "files", "permissions", "mcp", "unknown"]).catch("unknown"),
     target: z.string().min(1).max(2048),
     location: z.string().max(2048).optional(),
     reason: z.string().max(2048).optional(),

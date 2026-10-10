@@ -7,6 +7,17 @@ import type { MirrorAuthorizationRequest } from "./video-session-types";
 const base: MirrorAuthorizationRequest = { type: "mirror-authorization:request", request_id: "approval", kind: "cli", title: "Codex operation approval", message: "protocol params", expires_at: "2030-01-01T00:00:00Z" };
 
 describe("local operation consent", () => {
+  it("shows an MCP call and its arguments before allowing an explicit decision", () => {
+    const decide = vi.fn();
+    const target = 'multica-llm2jev\nAllow multica_llm2jev_verify_completion?\n{"evidence":["real evidence"]}';
+    renderWithI18n(<MirrorAuthorizationPrompt request={{ ...base, operation: { kind: "mcp", target, details: "local MCP approval params" } }} onDecision={decide} pending={false} failed={false} onDismiss={vi.fn()} />, { locale: "zh-Hans" });
+    expect(screen.getByText(/multica_llm2jev_verify_completion/)).toHaveTextContent("real evidence");
+    expect(decide).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "允许" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "允许" }));
+    expect(decide).toHaveBeenCalledWith(true);
+  });
+
   it("names deletions and new files before consent without making the reader interpret protocol IDs", () => {
     const decide = vi.fn();
     renderWithI18n(<MirrorAuthorizationPrompt request={{ ...base, operation: { kind: "files", target: "file changes", details: '{"itemId":"file-op"}', files: [{ path: "old.ts", kind: "delete" }, { path: "new.ts", kind: "add" }] } }} onDecision={decide} pending={false} failed={false} onDismiss={vi.fn()} />, { locale: "zh-Hans" });
