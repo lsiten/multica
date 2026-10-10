@@ -44,6 +44,9 @@ type workerProcessClient struct {
 	uncertain error
 	closeOnce sync.Once
 	closeErr  error
+	// reclaim, when set, runs once after the worker is closed so the daemon can
+	// drop this worker from its live registry. It is set by registerWorkerProcess.
+	reclaim func()
 }
 
 // workerRuntimeTransport is the private runtime channel the control parent uses
@@ -262,6 +265,9 @@ func (c *workerProcessClient) ready() bool {
 // uncertainty, never a claim that domain descendants stopped.
 func (c *workerProcessClient) close() {
 	c.closeOnce.Do(func() {
+		if c.reclaim != nil {
+			defer c.reclaim()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		if c.wait == nil {
@@ -444,6 +450,7 @@ func (d *Daemon) runTaskInWorker(ctx context.Context, execID string, task Task, 
 	if err != nil {
 		return nil, false, err
 	}
+	d.registerWorkerProcess(worker, execID, task.ID, provider)
 	defer worker.close()
 	in, err := d.assembleWorkerBindInput(ctx, worker, task, provider, agentEnv, env, supervisorEpoch)
 	if err != nil {

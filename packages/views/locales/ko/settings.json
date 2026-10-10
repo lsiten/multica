@@ -1224,6 +1224,25 @@
       "try_again_moment": "잠시 후 다시 시도하세요.",
       "try_again": "다시 시도하세요."
     },
+    "worker_processes": {
+      "title": "워커 프로세스",
+      "description": "이 데몬의 실행 단위 태스크 워커를 실시간으로 표시합니다. 로컬만 표시되며 서버로 전송되지 않습니다.",
+      "refresh": "새로고침",
+      "empty": "활성 워커 프로세스가 없습니다.",
+      "offline": "데몬이 실행되지 않았습니다.",
+      "load_failed": "워커 프로세스를 불러오지 못했습니다.",
+      "state": "상태",
+      "provider": "제공자",
+      "task": "태스크",
+      "started": "시작",
+      "capabilities": "기능",
+      "exec_id": "실행 ID",
+      "stop": "정지",
+      "stopped": "워커 프로세스를 정지했습니다",
+      "stop_failed": "워커 프로세스를 정지하지 못했습니다",
+      "stop_confirm_title": "워커 프로세스를 정지하시겠습니까?",
+      "stop_confirm_description": "실행 중인 태스크가 중단되고 워커가 즉시 해제됩니다."
+    },
     "application": {
       "title": "앱 설정",
       "api_url": "백엔드 API 주소",

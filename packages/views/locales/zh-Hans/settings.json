@@ -1484,6 +1484,25 @@
       "try_again_moment": "请稍后重试。",
       "try_again": "请重试。"
     },
+    "worker_processes": {
+      "title": "工作进程",
+      "description": "本守护进程上的实时按执行任务 worker。仅在本地显示，不会发送到服务端。",
+      "refresh": "刷新",
+      "empty": "没有活动的工作进程。",
+      "offline": "守护进程未运行。",
+      "load_failed": "加载工作进程失败。",
+      "state": "状态",
+      "provider": "提供者",
+      "task": "任务",
+      "started": "启动时间",
+      "capabilities": "能力",
+      "exec_id": "执行 ID",
+      "stop": "停止",
+      "stopped": "工作进程已停止",
+      "stop_failed": "停止工作进程失败",
+      "stop_confirm_title": "停止该工作进程？",
+      "stop_confirm_description": "这会中断正在运行的任务并立即回收该 worker。"
+    },
     "application": {
       "title": "应用设置",
       "api_url": "后端 API 地址",

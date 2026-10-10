@@ -24,6 +24,7 @@ import type {
   WorktreeCacheResult,
   WorktreeCacheSelection,
   DaemonMcpReadiness,
+  DaemonWorkerProcess,
 } from "../shared/daemon-types";
 import type { TabSelectionShortcutKey } from "../shared/main-renderer-messages";
 
@@ -187,6 +188,10 @@ interface DaemonAPI {
   stopLogStream: () => void;
   onLogLine: (callback: (line: string) => void) => () => void;
   openLogFile: () => Promise<{ success: boolean; error?: string }>;
+  /** List live per-execution task workers on the daemon. Local only. */
+  getWorkerProcesses: () => Promise<DaemonWorkerProcess[]>;
+  /** Stop one live worker process by its execution id. Local only. */
+  stopWorkerProcess: (execId: string) => Promise<unknown>;
 }
 
 interface UpdaterAPI {

@@ -33,6 +33,7 @@ import type {
   WorktreeCacheResult,
   WorktreeCacheSelection,
   DaemonMcpReadiness,
+  DaemonWorkerProcess,
 } from "../shared/daemon-types";
 import type { WorktreeArchiveRequest, WorktreeArchiveResult, WorktreeArchiveSummary } from "@multica/core/types/worktree-archives";
 import {
@@ -292,6 +293,8 @@ const daemonAPI = {
   listWorktrees: (): Promise<ManagedWorktree[]> =>
     ipcRenderer.invoke("daemon:list-worktrees"),
   getJevModels: (): Promise<unknown> => ipcRenderer.invoke("daemon:jev-models"),
+  getWorkerProcesses: (): Promise<DaemonWorkerProcess[]> => ipcRenderer.invoke("daemon:worker-processes"),
+  stopWorkerProcess: (execId: string): Promise<unknown> => ipcRenderer.invoke("daemon:worker-process-stop", execId),
   getBuiltinMcpServices: (): Promise<unknown> => ipcRenderer.invoke("daemon:mcp-services"),
   registerJevModel: (modelId: string, revision: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-register", modelId, revision),
   installJevModel: (modelId: string, revision?: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-install", modelId, revision),

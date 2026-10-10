@@ -29,6 +29,7 @@ import type {
   DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
+import type { DaemonWorkerProcess } from "../shared/daemon-types";
 import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, type LocalReviewTransport } from "./local-review-request";
 import { LocalReviewCancellation } from "./local-review-cancellation";
 import { isPagedReviewDecision, pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
@@ -1528,6 +1529,32 @@ export function setupDaemonManager(
   );
   ipcMain.handle("daemon:mcp-services", () => fetchWorktreeManager("/mcp/services"));
   ipcMain.handle("daemon:jev-models", () => fetchWorktreeManager("/jev/models"));
+  ipcMain.handle("daemon:worker-processes", async (): Promise<DaemonWorkerProcess[]> => {
+    const response = await fetchWorktreeManager("/runtimes/processes");
+    if (!response || typeof response !== "object") return [];
+    const value = (response as { processes?: unknown }).processes;
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry): entry is DaemonWorkerProcess => {
+      if (!entry || typeof entry !== "object") return false;
+      const item = entry as Partial<DaemonWorkerProcess>;
+      return (
+        typeof item.exec_id === "string" &&
+        typeof item.instance_id === "string" &&
+        typeof item.task_id === "string" &&
+        typeof item.provider === "string" &&
+        typeof item.state === "string" &&
+        typeof item.ready === "boolean"
+      );
+    });
+  });
+  ipcMain.handle("daemon:worker-process-stop", (_event, execId: unknown) => {
+    if (typeof execId !== "string" || !execId.trim()) throw new Error("exec id is required");
+    return fetchWorktreeManager("/runtimes/processes/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exec_id: execId }),
+    });
+  });
   ipcMain.handle("daemon:jev-model-register", (_event, modelId: unknown, revision: unknown) => {
     if (typeof modelId !== "string" || !modelId.trim() || typeof revision !== "string") throw new Error("model ID and revision are required");
     return fetchWorktreeManager("/jev/models/register", {

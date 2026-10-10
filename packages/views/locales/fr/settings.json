@@ -1388,6 +1388,25 @@
       "try_again_moment": "Veuillez réessayer dans un instant.",
       "try_again": "Veuillez réessayer."
     },
+    "worker_processes": {
+      "title": "Processus de travail",
+      "description": "Travailleurs de tâche par exécution en direct sur ce démon. Affiché localement uniquement — jamais envoyé au serveur.",
+      "refresh": "Actualiser",
+      "empty": "Aucun processus de travail actif.",
+      "offline": "Le démon n'est pas en cours d'exécution.",
+      "load_failed": "Échec de chargement des processus de travail.",
+      "state": "État",
+      "provider": "Fournisseur",
+      "task": "Tâche",
+      "started": "Démarré",
+      "capabilities": "Capacités",
+      "exec_id": "ID d'exécution",
+      "stop": "Arrêter",
+      "stopped": "Processus de travail arrêté",
+      "stop_failed": "Échec de l'arrêt du processus de travail",
+      "stop_confirm_title": "Arrêter le processus de travail ?",
+      "stop_confirm_description": "Cela interrompt la tâche en cours et libère immédiatement le travailleur."
+    },
     "application": {
       "title": "Application",
       "api_url": "URL API du serveur",

@@ -787,6 +787,10 @@ type Daemon struct {
 	// without launching a real child. Production leaves it nil and the
 	// orchestration falls back to ensureWorkerProcess.
 	workerProcessLaunch func(ctx context.Context, execID string) (*workerProcessClient, error)
+	// workerProcessRegistry is the live set of per-execution task workers for the
+	// local process status panel. nil on process-service roles that never run the
+	// hot path; the register/reclaim/handler paths are nil-safe.
+	workerProcessRegistry *workerProcessRegistry
 
 	// bindExecution, when set, replaces the server-side task-execution bind
 	// (d.client.BindTaskExecution) so a focused test can drive the F3
@@ -903,6 +907,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		wsRPC:                       newWSRPCClient(wsRPCResponseGrace),
 		runtimeMirrors:              make(map[string]*mirror.RuntimeMirror),
 		inputArbiter:                mirror.NewArbiter(),
+		workerProcessRegistry:       newWorkerProcessRegistry(),
 	}
 	if d.mirrorProcessMode() {
 		d.inputArbiter = nil

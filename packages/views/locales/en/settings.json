@@ -1493,6 +1493,25 @@
       "try_again_moment": "Please try again in a moment.",
       "try_again": "Please try again."
     },
+    "worker_processes": {
+      "title": "Worker processes",
+      "description": "Live per-execution task workers on this daemon. Shown locally only — never sent to the server.",
+      "refresh": "Refresh",
+      "empty": "No active worker processes.",
+      "offline": "The daemon isn't running.",
+      "load_failed": "Failed to load worker processes.",
+      "state": "State",
+      "provider": "Provider",
+      "task": "Task",
+      "started": "Started",
+      "capabilities": "Capabilities",
+      "exec_id": "Exec ID",
+      "stop": "Stop",
+      "stopped": "Worker process stopped",
+      "stop_failed": "Failed to stop worker process",
+      "stop_confirm_title": "Stop worker process?",
+      "stop_confirm_description": "This interrupts the running task and reclaims the worker immediately."
+    },
     "application": {
       "title": "Application",
       "api_url": "Backend API URL",

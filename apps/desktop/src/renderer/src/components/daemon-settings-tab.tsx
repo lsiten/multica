@@ -19,6 +19,7 @@ import {
 } from "../../../shared/daemon-types";
 import { daemonStateLabel } from "./daemon-i18n";
 import { WorktreeManager } from "./worktree-manager";
+import { WorkerProcessManager } from "./worker-processes";
 
 // One row inside the diagnostics block. Values that are likely to be
 // long IDs / URLs render as monospaced + truncated with a tooltip.
@@ -187,6 +188,8 @@ export function DaemonSettingsTab() {
       </SettingsCard>
 
       <WorktreeManager key={status.profile} status={status} />
+
+      <WorkerProcessManager key={status.profile} status={status} />
 
       {/* Diagnostics — moved out of the logs panel so the panel can focus
           on logs. These fields matter for support tickets and bug reports,

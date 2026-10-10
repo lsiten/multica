@@ -1484,6 +1484,25 @@
       "try_again_moment": "しばらくしてからもう一度お試しください。",
       "try_again": "もう一度お試しください。"
     },
+    "worker_processes": {
+      "title": "ワーカープロセス",
+      "description": "このデーモン上の実行単位のタスクワーカーをリアルタイム表示します。ローカルのみで、サーバーには送信されません。",
+      "refresh": "更新",
+      "empty": "アクティブなワーカープロセスがありません。",
+      "offline": "デーモンが実行されていません。",
+      "load_failed": "ワーカープロセスの読み込みが失敗しました。",
+      "state": "状態",
+      "provider": "プロバイダー",
+      "task": "タスク",
+      "started": "開始",
+      "capabilities": "機能",
+      "exec_id": "実行 ID",
+      "stop": "停止",
+      "stopped": "ワーカープロセスを停止しました",
+      "stop_failed": "ワーカープロセスの停止に失敗しました",
+      "stop_confirm_title": "ワーカープロセスを停止しますか？",
+      "stop_confirm_description": "これにより実行中のタスクが中断され、ワーカーが即座に解放されます。"
+    },
     "application": {
       "title": "アプリ設定",
       "api_url": "バックエンド API URL",
