@@ -16,6 +16,9 @@ import (
 // It is delivered over the authenticated control WebSocket and pinned to the
 // current control generation. The grant never carries input payloads.
 func (d *Daemon) handleMirrorControlGrant(msg mirrorOfferMessage) {
+	if d.forwardMirrorControl(context.Background(), protocol.EventMirrorControlGrant, msg) {
+		return
+	}
 	var p protocol.MirrorControlGrantPayload
 	if json.Unmarshal(msg.raw, &p) != nil || p.Grant.Validate(time.Now()) != nil {
 		d.logger.Debug("mirror control grant rejected")
@@ -52,6 +55,9 @@ func (d *Daemon) handleMirrorControlGrant(msg mirrorOfferMessage) {
 }
 
 func (d *Daemon) handleMirrorControlRevoke(msg mirrorOfferMessage) {
+	if d.forwardMirrorControl(context.Background(), protocol.EventMirrorControlRevoke, msg) {
+		return
+	}
 	var p protocol.MirrorControlRevokePayload
 	if json.Unmarshal(msg.raw, &p) != nil || p.RuntimeID == "" || p.ViewerID == "" || p.GrantID == "" {
 		return

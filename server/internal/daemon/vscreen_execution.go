@@ -39,6 +39,8 @@ type vscreenTicket struct {
 	err   error
 }
 type vscreenExecution struct {
+	closeOnce      sync.Once
+	remote         *mirrorRemoteExecution
 	nativeGranted  atomic.Bool
 	mu             sync.Mutex
 	task           Task
@@ -190,11 +192,17 @@ func (e *vscreenExecution) run(ctx context.Context) {
 	}
 }
 func (e *vscreenExecution) Close() {
-	e.cancel()
-	<-e.done
-	if e.onClose != nil {
-		e.onClose()
+	if e.remote != nil {
+		e.remote.close()
+		return
 	}
+	e.closeOnce.Do(func() {
+		e.cancel()
+		<-e.done
+		if e.onClose != nil {
+			e.onClose()
+		}
+	})
 }
 func (e *vscreenExecution) freeze(cause error) {
 	e.nativeGranted.Store(false)
@@ -230,6 +238,9 @@ func vscreenText(v any) []map[string]any {
 	return []map[string]any{{"type": "text", "text": string(raw)}}
 }
 func (e *vscreenExecution) invoke(ctx context.Context, name string, raw json.RawMessage) ([]map[string]any, error) {
+	if e.remote != nil {
+		return e.remote.invoke(ctx, name, raw)
+	}
 	var args vscreenToolArgs
 	if strictVscreenJSON(raw, &args) != nil {
 		return nil, errVscreenToolArguments

@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 )
@@ -29,5 +31,18 @@ func (d *Daemon) lockGCTaskDirectory(path string) (func(), error) {
 		root.Close()
 		return nil, errors.New("task directory identity changed")
 	}
-	return func() { claim.Release(); root.Close() }, nil
+	if reserved, err := execenv.PhysicalRootReserved(path); err != nil || reserved {
+		claim.Release()
+		root.Close()
+		return nil, errors.New("physical root handoff remains pending")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	releaseUsers, available, err := execenv.ReservePhysicalRootMutation(ctx, path)
+	cancel()
+	if err != nil || !available {
+		claim.Release()
+		root.Close()
+		return nil, errors.New("physical environment has live or undelivered consumers")
+	}
+	return func() { releaseUsers(); claim.Release(); root.Close() }, nil
 }

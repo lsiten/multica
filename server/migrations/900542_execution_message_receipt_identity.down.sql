@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS execution_message_receipt_identity_idx;

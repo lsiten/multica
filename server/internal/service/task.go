@@ -3925,6 +3925,9 @@ func (s *TaskService) FinalizeTaskClaim(
 	issueSnapshot []byte,
 	daemonTokens ...db.CreateDaemonTokenParams,
 ) ([]pgtype.UUID, error) {
+	if s.TxStarter == nil {
+		return nil, errors.New("claim finalization requires a transaction")
+	}
 	if len(daemonTokens) > 1 {
 		return nil, fmt.Errorf("finalize task claim: expected at most one daemon token, got %d", len(daemonTokens))
 	}
@@ -3935,8 +3938,28 @@ func (s *TaskService) FinalizeTaskClaim(
 				return fmt.Errorf("authorize claim delivery: %w", err)
 			}
 		}
-		if _, err := qtx.CreateTaskToken(ctx, token); err != nil {
+		current, err := qtx.LockTaskForExecution(ctx, task.ID)
+		if err != nil {
+			return fmt.Errorf("lock claim for actor token: %w", err)
+		}
+		if current.Status != "dispatched" || current.StartedAt.Valid || !task.DispatchedAt.Valid || !current.DispatchedAt.Valid || current.RuntimeID != task.RuntimeID || current.AgentID != task.AgentID || !current.DispatchedAt.Time.Equal(task.DispatchedAt.Time) || token.TaskID != task.ID || token.AgentID != task.AgentID {
+			return ErrTaskActorClaim
+		}
+		if _, err = qtx.LockTaskActorPrincipals(ctx, db.LockTaskActorPrincipalsParams{RuntimeID: current.RuntimeID, AgentID: current.AgentID, WorkspaceID: token.WorkspaceID, UserID: token.UserID}); err != nil {
+			return taskActorLookupError(err)
+		}
+		if err = qtx.RetirePriorTaskActorTokens(ctx, db.RetirePriorTaskActorTokensParams{TaskID: current.ID, RuntimeID: current.RuntimeID, DispatchedAt: current.DispatchedAt, AgentID: current.AgentID, WorkspaceID: token.WorkspaceID, UserID: token.UserID}); err != nil {
+			return err
+		}
+		created, err := qtx.CreateTaskToken(ctx, token)
+		if err != nil {
 			return fmt.Errorf("create task token: %w", err)
+		}
+		if _, err = qtx.CreateTaskActorClaim(ctx, db.CreateTaskActorClaimParams{TokenHash: created.TokenHash, TokenID: created.ID, TaskID: current.ID, RuntimeID: current.RuntimeID, DispatchedAt: current.DispatchedAt, AgentID: created.AgentID, WorkspaceID: created.WorkspaceID, UserID: created.UserID}); err != nil {
+			return fmt.Errorf("bind task actor claim: %w", err)
+		}
+		if _, err = qtx.DeleteOrphanedTaskActorClaims(ctx); err != nil {
+			return fmt.Errorf("retire orphaned actor bindings: %w", err)
 		}
 		if len(daemonTokens) == 1 {
 			// Opportunistic bounded cleanup keeps short-lived per-task daemon
@@ -4308,10 +4331,14 @@ func (s *TaskService) maybeLogClaimSlow(agentID pgtype.UUID, outcome string, sta
 // StartTask transitions a dispatched task to running.
 // Issue status is NOT changed here — the agent manages it via the CLI.
 func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID, supplementSupport ...bool) (*db.AgentTaskQueue, error) {
-	enableTaskSupplement := len(supplementSupport) > 0 && supplementSupport[0]
-	task, err := s.Queries.StartAgentTaskWithSupplement(ctx, db.StartAgentTaskWithSupplementParams{
-		TaskID:               taskID,
-		EnableTaskSupplement: enableTaskSupplement,
+	var task db.AgentTaskQueue
+	err := s.runInTx(ctx, func(qtx *db.Queries) error {
+		if err := LockExecutionCallback(ctx, qtx, taskID); err != nil {
+			return err
+		}
+		var err error
+		task, err = qtx.StartAgentTaskWithSupplement(ctx, db.StartAgentTaskWithSupplementParams{TaskID: taskID, EnableTaskSupplement: len(supplementSupport) > 0 && supplementSupport[0]})
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start task: %w", err)
@@ -4336,6 +4363,9 @@ func (s *TaskService) StartTaskForClaim(ctx context.Context, claim db.LockAgentT
 	task, err := qtx.LockAgentTaskStartClaim(ctx, claim)
 	if err != nil {
 		return nil, fmt.Errorf("lock task start claim: %w", err)
+	}
+	if err := LockExecutionCallback(ctx, qtx, claim.ID); err != nil {
+		return nil, err
 	}
 	replay := task.Status == "running"
 	if !replay {
@@ -4378,10 +4408,18 @@ func (s *TaskService) taskStarted(ctx context.Context, task db.AgentTaskQueue) {
 // ExtendTaskPrepareLease keeps a claimed-but-not-started task protected while
 // the daemon resolves cached inputs and prepares the execution environment.
 func (s *TaskService) ExtendTaskPrepareLease(ctx context.Context, taskID, runtimeID pgtype.UUID) (*db.AgentTaskQueue, error) {
-	task, err := s.Queries.ExtendAgentTaskPrepareLease(ctx, db.ExtendAgentTaskPrepareLeaseParams{
-		ID:        taskID,
-		RuntimeID: runtimeID,
-		LeaseSecs: prepareLeaseDuration.Seconds(),
+	var task db.AgentTaskQueue
+	err := s.runInTx(ctx, func(qtx *db.Queries) error {
+		if err := LockExecutionCallback(ctx, qtx, taskID); err != nil {
+			return err
+		}
+		var err error
+		task, err = qtx.ExtendAgentTaskPrepareLease(ctx, db.ExtendAgentTaskPrepareLeaseParams{
+			ID:        taskID,
+			RuntimeID: runtimeID,
+			LeaseSecs: prepareLeaseDuration.Seconds(),
+		})
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("extend task prepare lease: %w", err)
@@ -4406,10 +4444,18 @@ func (s *TaskService) ExtendTaskPrepareLease(ctx context.Context, taskID, runtim
 // transition and so the broadcast carries the up-to-date snapshot.
 func (s *TaskService) MarkTaskWaitingLocalDirectory(ctx context.Context, taskID pgtype.UUID, reason string) (*db.AgentTaskQueue, error) {
 	reason = sanitizeWaitReason(reason)
-	task, err := s.Queries.MarkAgentTaskWaitingLocalDirectory(ctx, db.MarkAgentTaskWaitingLocalDirectoryParams{
-		ID:               taskID,
-		WaitReason:       pgtype.Text{String: reason, Valid: reason != ""},
-		PrepareLeaseSecs: prepareLeaseDuration.Seconds(),
+	var task db.AgentTaskQueue
+	err := s.runInTx(ctx, func(qtx *db.Queries) error {
+		if err := LockExecutionCallback(ctx, qtx, taskID); err != nil {
+			return err
+		}
+		var err error
+		task, err = qtx.MarkAgentTaskWaitingLocalDirectory(ctx, db.MarkAgentTaskWaitingLocalDirectoryParams{
+			ID:               taskID,
+			WaitReason:       pgtype.Text{String: reason, Valid: reason != ""},
+			PrepareLeaseSecs: prepareLeaseDuration.Seconds(),
+		})
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mark task waiting_local_directory: %w", err)
@@ -4520,6 +4566,9 @@ func (s *TaskService) CompleteTaskWithTransition(ctx context.Context, taskID pgt
 	var chatAssistantMsg *db.ChatMessage
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
+			return err
+		}
+		if err := LockExecutionCallback(ctx, qtx, taskID); err != nil {
 			return err
 		}
 		t, err := qtx.CompleteAgentTask(ctx, db.CompleteAgentTaskParams{
@@ -5011,6 +5060,9 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 	var retried *db.AgentTaskQueue
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
+			return err
+		}
+		if err := LockExecutionCallback(ctx, qtx, taskID); err != nil {
 			return err
 		}
 		t, err := qtx.FailAgentTask(ctx, db.FailAgentTaskParams{

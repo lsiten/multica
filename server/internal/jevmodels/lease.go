@@ -7,12 +7,13 @@ import (
 )
 
 type Lease struct {
-	Endpoint string
-	Token    string
-	Device   string
-	manager  *Manager
-	process  *modelProcess
-	once     sync.Once
+	Endpoint          string
+	Token             string
+	Device            string
+	ExecutionIdentity string
+	manager           *Manager
+	process           *modelProcess
+	once              sync.Once
 }
 
 // Acquire never installs anything. Concurrent tasks share one ready host process.
@@ -69,7 +70,7 @@ func (m *Manager) Acquire(ctx context.Context, s Selection) (*Lease, error) {
 					m.idle = nil
 				}
 				m.status.ActiveLeases++
-				lease := &Lease{Endpoint: m.proc.endpoint, Token: m.proc.token, Device: m.proc.device, manager: m, process: m.proc}
+				lease := &Lease{Endpoint: m.proc.endpoint, Token: m.proc.token, Device: m.proc.device, ExecutionIdentity: s.ExecutionIdentity, manager: m, process: m.proc}
 				m.mu.Unlock()
 				return lease, nil
 			}

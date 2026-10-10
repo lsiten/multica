@@ -1600,6 +1600,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/tasks/{id}/plugin-mcp/{contributionId}/credential", h.ResolvePluginMCPCredential)
 
 		r.Post("/runtimes/{runtimeId}/tasks/claim", h.ClaimTaskByRuntime)
+		r.Get("/runtimes/{runtimeId}/application-service-grants", h.GetApplicationServiceGrantState)
+		r.Post("/runtimes/{runtimeId}/application-service-grants", h.IssueApplicationServiceGrant)
+		r.Post("/runtimes/{runtimeId}/application-service-grants/revoke", h.RevokeApplicationServiceGrant)
 		r.Post("/runtimes/{runtimeId}/applications/claim", h.ClaimRuntimeApplications)
 		r.Get("/runtimes/{runtimeId}/applications/tunnel/control", h.ConnectApplicationControl)
 		r.Get("/runtimes/{runtimeId}/applications/tunnel/data", h.ConnectApplicationStream)
@@ -1629,6 +1632,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
 		r.Post("/tasks/{taskId}/worktree-delivery", h.RecordWorktreeDelivery)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
+		r.Post("/tasks/{taskId}/prepare-lease", h.ExtendExecutionPrepareLease)
 		r.Post("/tasks/{taskId}/supplements/claim", h.ClaimTaskSupplement)
 		r.Post("/tasks/{taskId}/supplements/{commentId}/ack", h.AckTaskSupplement)
 		r.Post("/tasks/{taskId}/wait-local-directory", h.MarkTaskWaitingLocalDirectory)
@@ -1652,6 +1656,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/workspaces/{workspaceId}/tasks/gc-check", h.BatchTaskGCCheck)
 
 		r.Post("/runtimes/{runtimeId}/recover-orphans", h.RecoverOrphanedTasks)
+		r.Post("/runtimes/{runtimeId}/execution-supervisor", h.AcquireExecutionSupervisor)
+		r.Post("/runtimes/{runtimeId}/executions/reconcile", h.ReconcileExecutions)
+		r.Get("/runtimes/{runtimeId}/executions", h.ListRuntimeExecutions)
+		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/execution", h.BindTaskExecution)
+		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/execution-grants", h.IssueExecutionGrant)
 		r.Post("/tasks/{taskId}/session", h.PinTaskSession)
 	})
 

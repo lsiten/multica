@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -17,6 +18,16 @@ var errEnvironmentTaskScopeChanged = errors.New("latest task does not belong to 
 func (d *Daemon) recordEnvironmentCompletion(task Task, result TaskResult, logger *slog.Logger) string {
 	if result.EnvRoot == "" {
 		return ""
+	}
+	// In environment mode the physical root may have been re-claimed by a later
+	// task. Verify this result's reservation is still the root's current
+	// generation before writing GC metadata, so a late or old completion cannot
+	// mutate a root a later owner now holds. Unknown retains, never overwrites.
+	if result.PhysicalPreparationID != "" {
+		if err := d.verifyPhysicalCompletionGeneration(result.PhysicalPreparationID); err != nil {
+			logger.Warn("completion environment generation changed or unavailable; retained for inspection", "error", err)
+			return ""
+		}
 	}
 	meta, ok, err := d.gcMetaForTaskRoot(task, result.EnvRoot)
 	if err != nil {
@@ -46,6 +57,18 @@ func (d *Daemon) recordEnvironmentCompletion(task Task, result TaskResult, logge
 		return result.EnvRoot
 	}
 	return ""
+}
+
+func (d *Daemon) verifyPhysicalCompletionGeneration(id string) error {
+	child, err := d.ensureEnvironmentProcess(context.Background())
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return child.mutation(ctx, "physical.verify_completion", struct {
+		PreparationID string `json:"preparation_id"`
+	}{id}, nil)
 }
 
 // The physical root keeps its original owner; a later task can use its code

@@ -147,7 +147,11 @@ func (m *Manager) installBody(ctx context.Context, generation uint64) (err error
 		return context.Canceled
 	}
 	m.status.State = "verifying"
+	persistErr := m.persistInstallLocked("")
 	m.mu.Unlock()
+	if persistErr != nil {
+		return persistErr
+	}
 	if err = verifyFiles(ctx, stage, m.files); err != nil {
 		return err
 	}

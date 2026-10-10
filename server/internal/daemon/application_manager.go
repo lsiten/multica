@@ -78,14 +78,26 @@ func applicationHostEnvironment(config protocol.ApplicationConfig) ([]string, er
 	return environment, nil
 }
 
-func (d *Daemon) launchApplicationHost(ctx context.Context, command protocol.ApplicationControlCommand) (*applicationhost.Client, error) {
+func (d *Daemon) launchApplicationHost(ctx context.Context, command protocol.ApplicationControlCommand, expectedHostID string) (*applicationhost.Client, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	directory, err := d.applicationDirectory(command)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(directory, "host.json")
+	if err = d.withApplicationLaunchOwnership(ctx, path, expectedHostID, command, func() error { return nil }); err != nil {
 		return nil, err
 	}
 	for index := range command.Connections {
 		binding := &command.Connections[index]
 		if binding.ResolverURL != "" {
-			base, err := url.Parse(d.client.baseURL)
+			baseURL := d.cfg.ServerBaseURL
+			if baseURL == "" && d.client != nil {
+				baseURL = d.client.baseURL
+			}
+			base, err := url.Parse(baseURL)
 			if err != nil {
 				return nil, err
 			}
@@ -96,40 +108,35 @@ func (d *Daemon) launchApplicationHost(ctx context.Context, command protocol.App
 			binding.ResolverURL = base.ResolveReference(path).String()
 		}
 	}
-	sourceRoot, workDir, version, dirty, err := d.applicationSource(ctx, command)
+	prepared, err := d.prepareApplicationSource(ctx, command)
 	if err != nil {
-		d.recordUnstartedApplication(command, err)
+		d.recordUnstartedApplication(command, err, expectedHostID)
 		return nil, err
 	}
-	record, err := applicationhost.NewRecord(command, workDir)
-	if err != nil {
-		return nil, err
-	}
-	record.SourceRoot = sourceRoot
-	record.Observation.CodeVersion = version
-	record.Observation.Dirty = dirty
-	directory, err := d.applicationDirectory(command)
+	record, err := applicationhost.NewRecord(command, prepared.WorkDir)
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(directory, "host.json")
-	if err = applicationhost.WriteRecord(path, record); err != nil {
+	record.SourceRoot = prepared.Root
+	record.Observation.CodeVersion = prepared.Version
+	record.Observation.Dirty = prepared.Dirty
+	if err = d.withApplicationLaunchOwnership(ctx, path, expectedHostID, command, func() error { return applicationhost.WriteRecord(path, record) }); err != nil {
 		return nil, err
 	}
 	cmd, err := d.applicationHostProcess(path)
 	if err != nil {
-		d.recordUnstartedApplication(command, err)
+		d.recordUnstartedApplication(command, err, record.HostID)
 		return nil, err
 	}
-	cmd.Env, err = applicationHostEnvironment(command.Config)
+	cmd.Env, err = preparedApplicationEnvironment(command.Config, prepared)
 	if err != nil {
-		d.recordUnstartedApplication(command, err)
+		d.recordUnstartedApplication(command, err, record.HostID)
 		return nil, err
 	}
 	cmd.Dir = directory
 	diagnostics, err := os.OpenFile(filepath.Join(directory, "host-start.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
-		d.recordUnstartedApplication(command, err)
+		d.recordUnstartedApplication(command, err, record.HostID)
 		return nil, err
 	}
 	cmd.Stdout = diagnostics
@@ -139,7 +146,7 @@ func (d *Daemon) launchApplicationHost(ctx context.Context, command protocol.App
 	}
 	if err != nil {
 		diagnostics.Close()
-		d.recordUnstartedApplication(command, err)
+		d.recordUnstartedApplication(command, err, record.HostID)
 		return nil, err
 	}
 	exited := make(chan error, 1)
@@ -260,30 +267,79 @@ func (d *Daemon) stopApplication(ctx context.Context, command protocol.Applicati
 	return applicationObservation(command, "unknown", "unknown", "service shutdown could not be confirmed"), err
 }
 
-func (d *Daemon) recordUnstartedApplication(command protocol.ApplicationControlCommand, cause error) {
+// recordUnstartedApplication is called only before cmd.Start or after it fails.
+// Readiness failures after a successful Start must retain unknown ownership.
+func (d *Daemon) recordUnstartedApplication(command protocol.ApplicationControlCommand, cause error, expectedHostID string) {
 	directory, err := d.applicationDirectory(command)
 	if err != nil {
 		return
 	}
 	path := filepath.Join(directory, "host.json")
-	record, readErr := applicationhost.ReadRecord(path)
-	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+	watermark := d.applicationVersionWatermark(command.InstanceID)
+	watermark.mu.Lock()
+	defer watermark.mu.Unlock()
+	if watermark.generation > command.Generation || watermark.revision > command.Revision {
 		return
 	}
-	if readErr == nil && (!matchingApplicationRecord(record, command) || record.Address != "" && record.Observation.ProcessState != "stopped") {
-		return
-	}
-	record, err = applicationhost.NewRecord(command, directory)
+	err = applicationhost.WithRecordOwnership(path, expectedHostID, func(previous applicationhost.Record) error {
+		if previous.HostID != "" {
+			if !matchingApplicationRecord(previous, command) || previous.Command.Generation > command.Generation || previous.Command.Revision > command.Revision {
+				return errors.New("application pre-start ownership changed")
+			}
+			previousBoot, err := applicationhost.PreviousBoot(previous)
+			if err != nil {
+				return err
+			}
+			if !previousBoot && previous.Address != "" && previous.Observation.ProcessState != "stopped" {
+				return errors.New("application host may already be running")
+			}
+		}
+		record, err := applicationhost.NewRecord(command, directory)
+		if err != nil {
+			return err
+		}
+		record.Observation = applicationObservation(command, "stopped", "unknown", applicationHostError(cause, command))
+		return applicationhost.WriteRecord(path, record)
+	})
 	if err != nil {
-		return
-	}
-	record.Observation = applicationObservation(command, "stopped", "unknown", applicationHostError(cause, command))
-	if err = applicationhost.WriteRecord(path, record); err != nil {
 		d.logger.Debug("application pre-start failure receipt could not be saved", "instance_id", command.InstanceID, "error", err)
 	}
 }
 
+func (d *Daemon) withApplicationLaunchOwnership(ctx context.Context, path, expectedHostID string, command protocol.ApplicationControlCommand, publish func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	watermark := d.applicationVersionWatermark(command.InstanceID)
+	watermark.mu.Lock()
+	defer watermark.mu.Unlock()
+	if watermark.generation > command.Generation || watermark.revision > command.Revision {
+		return errors.New("application command was superseded before publication")
+	}
+	return applicationhost.WithRecordOwnership(path, expectedHostID, func(previous applicationhost.Record) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if previous.HostID != "" {
+			if !matchingApplicationRecord(previous, command) || previous.Command.Generation > command.Generation || previous.Command.Revision > command.Revision {
+				return errors.New("application replacement scope or generation changed")
+			}
+			previousBoot, err := applicationhost.PreviousBoot(previous)
+			if err != nil {
+				return err
+			}
+			if !previousBoot && previous.Observation.ProcessState != "stopped" {
+				return errors.New("application host ownership is not confirmed stopped")
+			}
+		}
+		return publish()
+	})
+}
+
 func (d *Daemon) executeApplication(ctx context.Context, command protocol.ApplicationControlCommand) (protocol.ApplicationObservation, error) {
+	if d.applicationProcessMode() {
+		return protocol.ApplicationObservation{}, errors.New("application authority belongs to child")
+	}
 	lock := d.applicationInstanceLock(command.InstanceID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -339,12 +395,14 @@ func (d *Daemon) executeApplication(ctx context.Context, command protocol.Applic
 		status, err := client.Resume(ctx, command.Generation, command.Revision)
 		return status.Observation, err
 	}
-	_, record, err := d.applicationRecord(command)
+	recordPath, record, err := d.applicationRecord(command)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return applicationObservation(command, "unknown", "unknown", err.Error()), err
 	}
 	var client *applicationhost.Client
+	expectedHostID := ""
 	if err == nil {
+		expectedHostID = record.HostID
 		if record.Command.Generation > command.Generation {
 			return applicationObservation(command, "unknown", "unknown", "stale application command"), errors.New("stale application command")
 		}
@@ -375,31 +433,42 @@ func (d *Daemon) executeApplication(ctx context.Context, command protocol.Applic
 		} else if record.Observation.ProcessState != "stopped" {
 			return applicationObservation(command, "unknown", "unknown", "application host ownership is unavailable"), err
 		}
+		if !previousBoot {
+			if err = applicationhost.WaitStopped(ctx, recordPath, record.HostID); err != nil {
+				return applicationObservation(command, "unknown", "unknown", "application host shutdown is incomplete"), err
+			}
+		}
 	}
 	if command.Action == "publish" {
 		return applicationObservation(command, "unknown", "unknown", "start the application before publishing"), errors.New("application host is not running")
 	}
-	client, err = d.launchApplicationHost(ctx, command)
+	client, err = d.launchApplicationHost(ctx, command, expectedHostID)
 	if err != nil {
 		return applicationObservation(command, "failed", "unknown", err.Error()), err
 	}
 	return waitApplicationReady(ctx, client, command)
 }
 
+type applicationCommandWatermark struct {
+	mu         sync.Mutex
+	generation int64
+	revision   int64
+}
+
+func (d *Daemon) applicationVersionWatermark(instanceID string) *applicationCommandWatermark {
+	watermark, _ := d.applicationGenerations.LoadOrStore(instanceID, &applicationCommandWatermark{})
+	return watermark.(*applicationCommandWatermark)
+}
+
 func (d *Daemon) rememberApplicationGeneration(command protocol.ApplicationControlCommand) int64 {
-	for {
-		stored, loaded := d.applicationGenerations.LoadOrStore(command.InstanceID, command.Generation)
-		if !loaded {
-			return command.Generation
-		}
-		generation := stored.(int64)
-		if generation >= command.Generation {
-			return generation
-		}
-		if d.applicationGenerations.CompareAndSwap(command.InstanceID, generation, command.Generation) {
-			return command.Generation
-		}
-	}
+	watermark := d.applicationVersionWatermark(command.InstanceID)
+	watermark.mu.Lock()
+	defer watermark.mu.Unlock()
+	watermark.generation = max(watermark.generation, command.Generation)
+	// Catalog revision may advance without a desired-state generation change.
+	// Publish and failure receipts share this lock with the monotonic watermark.
+	watermark.revision = max(watermark.revision, command.Revision)
+	return watermark.generation
 }
 
 func (d *Daemon) inspectApplication(ctx context.Context, command protocol.ApplicationControlCommand) (protocol.ApplicationObservation, error) {

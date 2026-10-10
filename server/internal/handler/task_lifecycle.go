@@ -119,6 +119,12 @@ func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "pin session failed")
 		return
 	}
+	if err := service.LockExecutionCallback(r.Context(), qtx, params.ID); err != nil {
+		if !writeExecutionConflict(w, err) {
+			writeError(w, 500, "check execution callback")
+		}
+		return
+	}
 	if err := qtx.UpdateAgentTaskSession(r.Context(), params); err != nil {
 		slog.Warn("pin-session failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusInternalServerError, "pin session failed")

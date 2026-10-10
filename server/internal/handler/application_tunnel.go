@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/multica-ai/multica/server/internal/auth"
 )
 
 var applicationTunnelUpgrader = websocket.Upgrader{ReadBufferSize: 32 << 10, WriteBufferSize: 32 << 10, CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}
@@ -15,11 +16,16 @@ func (h *Handler) ConnectApplicationControl(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	if !h.authorizeApplicationServiceSocket(w, r, runtime) {
+		return
+	}
 	connection, err := applicationTunnelUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
-	if err = h.ApplicationGateway.Control(r.Context(), uuidToString(runtime.ID), connection); err != nil {
+	ctx, stop := h.applicationServiceSocket(r, connection)
+	defer stop()
+	if err = h.ApplicationGateway.Control(ctx, uuidToString(runtime.ID), connection); err != nil {
 		return
 	}
 }
@@ -30,10 +36,15 @@ func (h *Handler) ConnectApplicationStream(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	if !h.authorizeApplicationServiceSocket(w, r, runtime) {
+		return
+	}
 	connection, err := applicationTunnelUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
+	ctx, stop := h.applicationServiceSocket(r, connection)
+	defer stop()
 	connection.SetReadLimit(1024)
 	connection.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var input struct {
@@ -45,7 +56,12 @@ func (h *Handler) ConnectApplicationStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	connection.SetReadDeadline(time.Time{})
-	if err = h.ApplicationGateway.AttachStream(r.Context(), uuidToString(runtime.ID), uuidToString(runtime.WorkspaceID), input.StreamID, input.Token, connection); err != nil {
+	if auth.ApplicationServiceIdentityFromContext(r.Context()).TokenHash != "" {
+		err = h.ApplicationGateway.AttachStreamScoped(ctx, uuidToString(runtime.ID), uuidToString(runtime.WorkspaceID), input.StreamID, input.Token, connection)
+	} else {
+		err = h.ApplicationGateway.AttachStream(ctx, uuidToString(runtime.ID), uuidToString(runtime.WorkspaceID), input.StreamID, input.Token, connection)
+	}
+	if err != nil {
 		connection.Close()
 	}
 }

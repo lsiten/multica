@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -86,7 +87,7 @@ func TestProjectSupervisionCoalescesEventsAndReplaysNewFacts(t *testing.T) {
 	if n := f.Count(t, "SELECT count(*) FROM agent_task_queue WHERE context->>'project_id'=$1", util.UUIDToString(p.ID)); n != 1 {
 		t.Fatalf("%d coordinator runs", n)
 	}
-	err = s.Report(ctx, p, ProjectSupervisionReport{TaskID: *v.LastTaskID, CheckedVersion: capture.CheckedVersion, Decision: "wait", Summary: "Waiting for assignment"})
+	err = s.Report(auth.WithTrustedInternalTaskActor(ctx), p, ProjectSupervisionReport{TaskID: *v.LastTaskID, CheckedVersion: capture.CheckedVersion, Decision: "wait", Summary: "Waiting for assignment"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +185,7 @@ func TestProjectSupervisionScopeActionsReportAndLeadChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Apply(ctx, p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "assign", IssueID: foreignIssue, Revision: foreignRow.Revision, AssigneeType: "agent", AssigneeID: worker}}); !errors.Is(err, ErrProjectSupervisionConflict) {
+	if _, err = s.Apply(auth.WithTrustedInternalTaskActor(ctx), p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "assign", IssueID: foreignIssue, Revision: foreignRow.Revision, AssigneeType: "agent", AssigneeID: worker}}); !errors.Is(err, ErrProjectSupervisionConflict) {
 		t.Fatalf("foreign action: %v", err)
 	}
 	row, err := f.q.GetIssue(ctx, parseTestUUID(t, issue))
@@ -194,7 +195,7 @@ func TestProjectSupervisionScopeActionsReportAndLeadChange(t *testing.T) {
 	updates := 0
 	s.Tasks.Bus.Subscribe("issue:updated", func(event events.Event) { updates++ })
 	f.Cleanup(t, "DELETE FROM agent_task_queue WHERE issue_id=$1", issue)
-	n, err := s.Apply(ctx, p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "assign", IssueID: issue, Revision: row.Revision, AssigneeType: "agent", AssigneeID: worker}})
+	n, err := s.Apply(auth.WithTrustedInternalTaskActor(ctx), p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "assign", IssueID: issue, Revision: row.Revision, AssigneeType: "agent", AssigneeID: worker}})
 	if err != nil || n < 1 {
 		t.Fatalf("assign: n=%d err=%v", n, err)
 	}
@@ -205,10 +206,10 @@ func TestProjectSupervisionScopeActionsReportAndLeadChange(t *testing.T) {
 		t.Fatalf("missing coordinator delegation lineage: %d", n)
 	}
 	report := ProjectSupervisionReport{TaskID: *v.LastTaskID, CheckedVersion: coord.CheckedVersion, Decision: "action", Summary: "Assigned worker"}
-	if err = s.Report(ctx, p, report); err != nil {
+	if err = s.Report(auth.WithTrustedInternalTaskActor(ctx), p, report); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Report(ctx, p, report); err != nil {
+	if err = s.Report(auth.WithTrustedInternalTaskActor(ctx), p, report); err != nil {
 		t.Fatal(err)
 	}
 	view, err := s.View(ctx, p)
@@ -219,12 +220,12 @@ func TestProjectSupervisionScopeActionsReportAndLeadChange(t *testing.T) {
 		t.Fatal("verified progress not recorded")
 	}
 	f.Exec(t, "UPDATE project SET status='paused' WHERE id=$1", p.ID)
-	if _, err = s.Apply(ctx, p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "review", IssueID: issue, Revision: 1}}); !errors.Is(err, ErrProjectSupervisionForbidden) {
+	if _, err = s.Apply(auth.WithTrustedInternalTaskActor(ctx), p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "review", IssueID: issue, Revision: 1}}); !errors.Is(err, ErrProjectSupervisionForbidden) {
 		t.Fatalf("paused project accepted actions: %v", err)
 	}
 	f.Exec(t, "UPDATE project SET status='in_progress' WHERE id=$1", p.ID)
 	f.Exec(t, "UPDATE project SET lead_id=$2 WHERE id=$1", p.ID, worker)
-	if _, err = s.Apply(ctx, p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "review", IssueID: issue, Revision: 1}}); !errors.Is(err, ErrProjectSupervisionForbidden) {
+	if _, err = s.Apply(auth.WithTrustedInternalTaskActor(ctx), p, id, coord.CheckedVersion, []ProjectSupervisionAction{{Kind: "review", IssueID: issue, Revision: 1}}); !errors.Is(err, ErrProjectSupervisionForbidden) {
 		t.Fatalf("stale lead authority: %v", err)
 	}
 }
@@ -238,7 +239,7 @@ func TestProjectSupervisionRejectsFalseProgressAndInvalidPolicy(t *testing.T) {
 	task, _ := f.q.GetAgentTask(ctx, id)
 	coord, _ := ProjectCoordination(task)
 	f.Exec(t, "UPDATE agent_task_queue SET status='running',started_at=now() WHERE id=$1", id)
-	if err := s.Report(ctx, p, ProjectSupervisionReport{TaskID: *v.LastTaskID, CheckedVersion: coord.CheckedVersion, Decision: "action", Summary: "I inspected it"}); err != nil {
+	if err := s.Report(auth.WithTrustedInternalTaskActor(ctx), p, ProjectSupervisionReport{TaskID: *v.LastTaskID, CheckedVersion: coord.CheckedVersion, Decision: "action", Summary: "I inspected it"}); err != nil {
 		t.Fatal(err)
 	}
 	view, err := s.View(ctx, p)
@@ -493,7 +494,7 @@ func TestProjectSupervisionBoundsRetryAndRepeatedReview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = s.Apply(ctx, p, task.ID, contextData.CheckedVersion, []ProjectSupervisionAction{{Kind: kind, IssueID: issue, Revision: current.Revision, AssigneeType: "agent", AssigneeID: worker, Reason: "Check recovery"}})
+			_, err = s.Apply(auth.WithTrustedInternalTaskActor(ctx), p, task.ID, contextData.CheckedVersion, []ProjectSupervisionAction{{Kind: kind, IssueID: issue, Revision: current.Revision, AssigneeType: "agent", AssigneeID: worker, Reason: "Check recovery"}})
 			if err == nil || !strings.Contains(err.Error(), "human decision") {
 				t.Fatalf("unbounded %s accepted: %v", kind, err)
 			}

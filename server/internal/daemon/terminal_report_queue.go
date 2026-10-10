@@ -60,6 +60,8 @@ type persistedTerminalTaskReport struct {
 	JevVerification         *JevVerification `json:"jev_verification,omitempty"`
 	WorktreeDeliveryPending bool             `json:"worktree_delivery_pending,omitempty"`
 	WorktreeCommit          string           `json:"worktree_commit,omitempty"`
+	AccountID               string           `json:"account_id,omitempty"`
+	ExecutionID             string           `json:"execution_id,omitempty"`
 
 	PermanentRejectionCount   int        `json:"permanent_rejection_count,omitempty"`
 	FirstPermanentRejectionAt *time.Time `json:"first_permanent_rejection_at,omitempty"`
@@ -93,6 +95,15 @@ type terminalReportStore struct {
 	namespace string
 	dir       string
 	mu        sync.Mutex
+
+	// accountAware, when set by bindAccount, puts the store in the F2
+	// account-scoped mode: only records whose account matches the current
+	// account are adopted for upload. A record with a different or empty
+	// account (a legacy v1 record, or another account's record) is preserved
+	// but never adopted, so a login change cannot silently replay the other
+	// account's pending terminal report.
+	accountAware bool
+	account      string
 }
 
 func newTerminalReportStore(cfg Config) *terminalReportStore {
@@ -111,6 +122,24 @@ func newTerminalReportStore(cfg Config) *terminalReportStore {
 }
 
 func (s *terminalReportStore) failedDir() string { return filepath.Join(s.dir, "failed") }
+
+// bindAccount moves the store into account-aware mode. It is called once
+// after the daemon has resolved its authenticated account, before the
+// replay loop starts. An empty account leaves the store in its legacy
+// behaviour so pre-account daemons and the existing single-process tests
+// keep uploading every record as before.
+func (s *terminalReportStore) bindAccount(account string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(account) == "" {
+		return
+	}
+	s.account = account
+	s.accountAware = true
+}
 
 func terminalReportFileName(taskID string) string {
 	sum := sha256.Sum256([]byte(taskID))
@@ -169,6 +198,8 @@ func persistedTerminalReport(report terminalTaskReport, createdAt time.Time) (pe
 		JevVerification:         report.jevVerification,
 		WorktreeDeliveryPending: report.worktreeDeliveryPending,
 		WorktreeCommit:          report.worktreeCommit,
+		AccountID:               report.accountID,
+		ExecutionID:             report.executionID,
 	}, nil
 }
 
@@ -203,6 +234,8 @@ func (record persistedTerminalTaskReport) terminalReport() (terminalTaskReport, 
 		jevVerification:         record.JevVerification,
 		worktreeDeliveryPending: record.WorktreeDeliveryPending,
 		worktreeCommit:          record.WorktreeCommit,
+		accountID:               record.AccountID,
+		executionID:             record.ExecutionID,
 	}, nil
 }
 
@@ -358,6 +391,14 @@ func (s *terminalReportStore) list() ([]pendingTerminalTaskReport, error) {
 		}
 		if want := terminalReportFileName(report.taskID); entry.Name() != want {
 			errs = append(errs, fmt.Errorf("terminal report %s does not match task id", entry.Name()))
+			continue
+		}
+		// In account-aware mode a record whose account does not match the
+		// current account (a different account's record, or a legacy v1 record
+		// written before an account was resolved) is preserved on disk but not
+		// adopted for upload, so a login change cannot silently replay the
+		// other account's pending terminal report.
+		if s.accountAware && report.accountID != s.account {
 			continue
 		}
 		items = append(items, pendingTerminalTaskReport{fileName: entry.Name(), report: report})
@@ -828,6 +869,13 @@ func (d *Daemon) replayPendingTerminalReports(ctx context.Context) (pending, del
 }
 
 func (d *Daemon) terminalReportReplayLoop(ctx context.Context) {
+	// Another process owns this namespace, so control must not upload or it
+	// would double-deliver the same terminal report. The owner (a gateway in
+	// the split daemon) is the sole uploader; this process defers instead.
+	if d.reportOutboxBlocked {
+		d.logger.Info("report outbox is owned by another process; deferring terminal report uploads")
+		return
+	}
 	if namespaces, err := d.terminalReports.otherNamespaceStats(); err != nil {
 		d.logger.Warn("scan terminal report namespaces", "error", err)
 	} else {

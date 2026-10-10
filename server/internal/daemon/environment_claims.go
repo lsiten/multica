@@ -10,6 +10,7 @@ import (
 )
 
 type executionEnvClaim struct {
+	rootDir string
 	claim   *execenv.EnvRootClaim
 	shared  bool
 	release func()
@@ -25,6 +26,9 @@ func (c *executionEnvClaim) Release() {
 func (c *executionEnvClaim) RootDir() string {
 	if c == nil {
 		return ""
+	}
+	if c.rootDir != "" {
+		return c.rootDir
 	}
 	return c.claim.RootDir()
 }

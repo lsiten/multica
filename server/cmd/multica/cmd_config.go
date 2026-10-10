@@ -35,6 +35,7 @@ var configSetSupportedKeys = []string{
 	"device_name",
 	"runtime_name",
 	"workspaces_root",
+	"process_services",
 	"max_concurrent_tasks",
 	"poll_interval",
 	"ws_claim_poll_interval",
@@ -52,10 +53,12 @@ var configSetCmd = &cobra.Command{
 	Short: "Set a CLI configuration value",
 	Long: "Supported keys: " +
 		"server_url, app_url, workspace_id, " +
-		"device_name, runtime_name, workspaces_root, max_concurrent_tasks, poll_interval, ws_claim_poll_interval, " +
+		"device_name, runtime_name, workspaces_root, process_services, max_concurrent_tasks, poll_interval, ws_claim_poll_interval, " +
 		"heartbeat_interval, agent_timeout, " +
 		"codex_semantic_inactivity_timeout, codex_handshake_timeout, " +
 		"disable_auto_update, auto_update_check_interval, disable_auto_reload.\n\n" +
+		"process_services is a comma-separated profile setting (currently ai, mirror, and application); an empty value keeps in-process ownership. " +
+		"It has no flag or environment override.\n\n" +
 		"The daemon keys (device_name, runtime_name, workspaces_root, max_concurrent_tasks, " +
 		"poll_interval, ws_claim_poll_interval, heartbeat_interval, agent_timeout, " +
 		"codex_semantic_inactivity_timeout, codex_handshake_timeout, " +
@@ -102,6 +105,7 @@ func runConfigShow(cmd *cobra.Command, _ []string) error {
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "runtime_name:", valueOrDefault(cfg.RuntimeName, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "workspaces_root:", valueOrDefault(cfg.WorkspacesRoot, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "max_concurrent_tasks:", intOrDefault(cfg.MaxConcurrentTasks, "(not set)"))
+	fmt.Fprintf(os.Stdout, "%-34s %s\n", "process_services:", strings.Join(cfg.ProcessServices, ","))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "poll_interval:", valueOrDefault(cfg.PollInterval, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "ws_claim_poll_interval:", valueOrDefault(cfg.WSClaimPollInterval, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "heartbeat_interval:", valueOrDefault(cfg.HeartbeatInterval, "(not set)"))
@@ -164,6 +168,18 @@ func applyConfigSet(cfg *cli.CLIConfig, key, value string) error {
 		cfg.DeviceName = value
 	case "runtime_name":
 		cfg.RuntimeName = value
+	case "process_services":
+		roles := []string{}
+		if strings.TrimSpace(value) != "" {
+			roles = strings.Split(value, ",")
+			for i := range roles {
+				roles[i] = strings.TrimSpace(roles[i])
+			}
+		}
+		if err := cli.ValidateProcessServices(roles); err != nil {
+			return err
+		}
+		cfg.ProcessServices = roles
 	case "workspaces_root":
 		value = strings.TrimSpace(value)
 		if value == "" {

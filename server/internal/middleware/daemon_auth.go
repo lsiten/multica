@@ -111,6 +111,16 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 				return
 			}
 
+			if strings.HasPrefix(tokenString, "mps_") {
+				authenticateApplicationServiceGrant(w, r, queries, tokenString, next)
+				return
+			}
+
+			if strings.HasPrefix(tokenString, "mwt_") {
+				authenticateExecutionGrant(w, r, queries, tokenString, next)
+				return
+			}
+
 			// Daemon token: "mdt_" prefix.
 			if strings.HasPrefix(tokenString, "mdt_") {
 				hash := auth.HashToken(tokenString)

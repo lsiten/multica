@@ -47,7 +47,7 @@ func TestTaskSupplementLoopWaitsForTurnReadyBeforeClaim(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		d.runTaskSupplementLoop(ctx, session, "task-ready", wakeup, d.logger)
+		runTaskSupplementLoop(ctx, session, "task-ready", wakeup, d.logger, d.client.ClaimTaskSupplement, d.client.AckTaskSupplement, d.effectiveTaskSupplementReadyInterval(), d.effectiveTaskSupplementPollInterval())
 	}()
 	time.Sleep(30 * time.Millisecond)
 	if got := claims.Load(); got != 0 {
@@ -116,7 +116,7 @@ func TestTaskSupplementLoopAcknowledgesBeforeTurnEnds(t *testing.T) {
 			}
 			wakeup, unsubscribe := d.taskSupplementSignals.subscribe("task-ack")
 			defer unsubscribe()
-			d.runTaskSupplementLoop(t.Context(), session, "task-ack", wakeup, d.logger)
+			runTaskSupplementLoop(t.Context(), session, "task-ack", wakeup, d.logger, d.client.ClaimTaskSupplement, d.client.AckTaskSupplement, d.effectiveTaskSupplementReadyInterval(), d.effectiveTaskSupplementPollInterval())
 			if injections != 1 {
 				t.Fatalf("injections = %d, want 1", injections)
 			}
@@ -171,5 +171,60 @@ func TestExecuteAndDrainSupplementNegotiation(t *testing.T) {
 				t.Fatalf("unnegotiated run made HTTP requests=%d supplement calls=%d", requests.Load(), backend.supplementCalls.Load())
 			}
 		})
+	}
+}
+
+// TestRunTaskSupplementLoopSharedSeam proves the supplement loop is callable with
+// a worker-supplied transport (not a *Daemon client): with the provider turn
+// already ready it claims an addition, injects it into the session, and
+// acknowledges it. This is the shared-seam contract the legacy runner and the
+// per-execution task worker both rely on.
+func TestRunTaskSupplementLoopSharedSeam(t *testing.T) {
+	ready := true
+	injected := make(chan string, 1)
+	acked := make(chan struct{}, 1)
+	session := &agent.Session{
+		SupplementReady: func() bool { return ready },
+		Supplement: func(_ context.Context, instruction string) error {
+			select {
+			case injected <- instruction:
+			default:
+			}
+			return nil
+		},
+	}
+	claimed := false
+	claimSupplement := func(context.Context, string) (*TaskSupplement, error) {
+		if claimed {
+			return nil, nil
+		}
+		claimed = true
+		return &TaskSupplement{CommentID: "comment-1", AuthorName: "Ada", Content: "Create evidence.txt"}, nil
+	}
+	ackSupplement := func(_ context.Context, _, commentID string, delivered bool, _ string) error {
+		if commentID == "comment-1" && delivered {
+			select {
+			case acked <- struct{}{}:
+			default:
+			}
+		}
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	go runTaskSupplementLoop(ctx, session, "task-seam", nil, log, claimSupplement, ackSupplement, 5*time.Millisecond, 50*time.Millisecond)
+	select {
+	case <-acked:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("supplement was not claimed, injected and acknowledged through the seam")
+	}
+	select {
+	case instr := <-injected:
+		if !strings.Contains(instr, "Create evidence.txt") {
+			t.Fatalf("injected instruction lost content: %q", instr)
+		}
+	default:
+		t.Fatal("supplement was not injected through the seam")
 	}
 }

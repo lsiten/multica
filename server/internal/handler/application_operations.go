@@ -127,7 +127,8 @@ func (h *Handler) applicationDaemonRuntime(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return db.AgentRuntime{}, false
 	}
-	if _, ok = parseUUIDOrBadRequest(w, daemonID, "daemon_id"); !ok {
+	if !protocol.ValidApplicationDaemonID(daemonID) {
+		writeError(w, http.StatusBadRequest, "invalid daemon_id")
 		return db.AgentRuntime{}, false
 	}
 	if !runtime.DaemonID.Valid || runtime.DaemonID.String != daemonID {
@@ -158,7 +159,12 @@ func (h *Handler) ClaimRuntimeApplications(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	claims, err := h.applicationService().Claim(r.Context(), runtime.WorkspaceID, runtime.ID)
+	session, ok := h.beginApplicationServiceTransaction(w, r, runtime)
+	if !ok {
+		return
+	}
+	defer session.rollback(r)
+	claims, err := session.service.Claim(r.Context(), runtime.WorkspaceID, runtime.ID)
 	if err != nil {
 		h.applicationError(w, err)
 		return
@@ -170,6 +176,9 @@ func (h *Handler) ClaimRuntimeApplications(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		claims[index].Command = commands[0]
+	}
+	if !session.commit(w, r) {
+		return
 	}
 	writeJSON(w, http.StatusOK, claims)
 }
@@ -186,7 +195,12 @@ func (h *Handler) SyncRuntimeApplications(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	instances, err := h.applicationService().RuntimeInstances(r.Context(), runtime.WorkspaceID, runtime.ID)
+	session, ok := h.beginApplicationServiceTransaction(w, r, runtime)
+	if !ok {
+		return
+	}
+	defer session.rollback(r)
+	instances, err := session.service.RuntimeInstances(r.Context(), runtime.WorkspaceID, runtime.ID)
 	if err != nil {
 		h.applicationError(w, err)
 		return
@@ -198,6 +212,9 @@ func (h *Handler) SyncRuntimeApplications(w http.ResponseWriter, r *http.Request
 			return
 		}
 		instances[index].Command = commands[0]
+	}
+	if !session.commit(w, r) {
+		return
 	}
 	writeJSON(w, http.StatusOK, instances)
 }
@@ -215,8 +232,16 @@ func (h *Handler) ReportRuntimeApplication(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if err := h.applicationService().Observe(r.Context(), runtime.WorkspaceID, runtime.ID, input.Observation); err != nil {
+	session, ok := h.beginApplicationServiceTransaction(w, r, runtime)
+	if !ok {
+		return
+	}
+	defer session.rollback(r)
+	if err := session.service.Observe(r.Context(), runtime.WorkspaceID, runtime.ID, input.Observation); err != nil {
 		h.applicationError(w, err)
+		return
+	}
+	if !session.commit(w, r) {
 		return
 	}
 	h.applicationInstanceChanged(runtime.WorkspaceID, input.Observation.InstanceID, "")
@@ -240,9 +265,17 @@ func (h *Handler) CompleteRuntimeApplication(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	operationID, err := h.applicationService().Complete(r.Context(), runtime.WorkspaceID, runtime.ID, stepID, input.Result)
+	session, ok := h.beginApplicationServiceTransaction(w, r, runtime)
+	if !ok {
+		return
+	}
+	defer session.rollback(r)
+	operationID, err := session.service.Complete(r.Context(), runtime.WorkspaceID, runtime.ID, stepID, input.Result)
 	if err != nil {
 		h.applicationError(w, err)
+		return
+	}
+	if !session.commit(w, r) {
 		return
 	}
 	h.applicationInstanceChanged(runtime.WorkspaceID, input.Result.Observation.InstanceID, uuidToString(operationID))
@@ -270,8 +303,16 @@ func (h *Handler) RenewRuntimeApplicationLease(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if err := h.applicationService().RenewLease(r.Context(), runtime.WorkspaceID, runtime.ID, stepID, claimToken); err != nil {
+	session, ok := h.beginApplicationServiceTransaction(w, r, runtime)
+	if !ok {
+		return
+	}
+	defer session.rollback(r)
+	if err := session.service.RenewLease(r.Context(), runtime.WorkspaceID, runtime.ID, stepID, claimToken); err != nil {
 		h.applicationError(w, err)
+		return
+	}
+	if !session.commit(w, r) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

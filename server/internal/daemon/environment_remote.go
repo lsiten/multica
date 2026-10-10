@@ -55,6 +55,19 @@ func (d *Daemon) executeEnvironmentCommand(ctx context.Context, scope environmen
 		}
 		return filtered, nil
 	}
+	// Physical preview/maintenance actions touch Git and the workspace
+	// filesystem. When the environment capability is split into a child
+	// service, delegate them there so the control parent holds no Git or
+	// worktree writer. Control-side actions (policy, operations, archives)
+	// remain above and never route. The gate is false inside the child
+	// (environmentServiceOwner is true) and when not in environment mode,
+	// which prevents a parent->child->parent recursion.
+	if !d.environmentServiceOwner && d.environmentProcessMode() {
+		switch command.Action {
+		case "inventory", "cache_preview", "cleanup_preview", "archive_preview":
+			return d.routeEnvironmentCommandToChild(ctx, scope, command)
+		}
+	}
 	roots, err := d.environmentRootPaths(ctx)
 	if err != nil {
 		return nil, err
@@ -118,6 +131,29 @@ func (d *Daemon) executeEnvironmentCommand(ctx context.Context, scope environmen
 	default:
 		return nil, errors.New("unknown environment command")
 	}
+}
+
+// routeEnvironmentCommandToChild forwards a physical environment action to
+// the owned environment service. The child runs the same handler; its
+// result is returned as raw JSON and re-encoded by the callers, preserving
+// the exact wire shape. A transport failure is uncertain and is not
+// retried as a local Git operation, so a child that cannot complete an
+// action is never silently replayed against the control parent.
+func (d *Daemon) routeEnvironmentCommandToChild(ctx context.Context, scope environmentOperationScope, command protocol.EnvironmentCommand) (any, error) {
+	client, err := d.ensureEnvironmentProcess(ctx)
+	if err != nil {
+		return nil, err
+	}
+	input := struct {
+		WorkspaceID string                      `json:"workspace_id"`
+		RuntimeID   string                      `json:"runtime_id"`
+		Command     protocol.EnvironmentCommand `json:"command"`
+	}{WorkspaceID: scope.WorkspaceID, RuntimeID: scope.RuntimeID, Command: command}
+	var result json.RawMessage
+	if err := client.mutation(ctx, "environment.command", input, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (d *Daemon) runRemoteEnvironment(ctx context.Context, command protocol.LocalReviewCommand) protocol.LocalReviewResult {

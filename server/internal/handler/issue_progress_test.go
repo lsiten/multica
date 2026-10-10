@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/testutil"
 )
@@ -25,7 +26,7 @@ func TestIssueProgressHumanRequestsKeepOwnershipAndDoNotSettleStaleRequests(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := testHandler.TaskService.CreateHumanRequest(context.Background(), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "accept", Kind: "confirmation", Title: "Confirm scoped delivery", ActionLabel: "Accept", Next: "Continue after the designated member decides", Details: "PRIVATE TECHNICAL BACKGROUND"})
+	request, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(context.Background()), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "accept", Kind: "confirmation", Title: "Confirm scoped delivery", ActionLabel: "Accept", Next: "Continue after the designated member decides", Details: "PRIVATE TECHNICAL BACKGROUND"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,6 +29,9 @@ func (d *Daemon) rememberApplicationRegistry(runtimeID string, instances []proto
 }
 
 func (d *Daemon) gcApplicationStorage(ctx context.Context, now time.Time) {
+	if d.applicationProcessMode() {
+		return
+	}
 	gcCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	ctx = gcCtx

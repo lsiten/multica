@@ -2490,9 +2490,11 @@ func newCodexStoreGuardDaemon() *Daemon {
 func TestCodexStoreGuard_MarkBeforeReserveBlocksDeletion(t *testing.T) {
 	t.Parallel()
 	d := newCodexStoreGuardDaemon()
-	const store = "/stores/agent/issue"
+	store := filepath.Join(t.TempDir(), "agent", "issue")
 
-	d.markActiveStore(store)
+	if err := d.markActiveStore(context.Background(), store); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := d.reserveStoreForDeletion(store); ok {
 		t.Fatal("reserve must refuse a store a live task already holds")
 	}
@@ -2511,7 +2513,7 @@ func TestCodexStoreGuard_MarkBeforeReserveBlocksDeletion(t *testing.T) {
 func TestCodexStoreGuard_ReserveBlocksMarkUntilCommit(t *testing.T) {
 	t.Parallel()
 	d := newCodexStoreGuardDaemon()
-	const store = "/stores/agent/issue"
+	store := filepath.Join(t.TempDir(), "agent", "issue")
 
 	commit, ok := d.reserveStoreForDeletion(store)
 	if !ok {
@@ -2520,7 +2522,9 @@ func TestCodexStoreGuard_ReserveBlocksMarkUntilCommit(t *testing.T) {
 
 	marked := make(chan struct{})
 	go func() {
-		d.markActiveStore(store)
+		if err := d.markActiveStore(context.Background(), store); err != nil {
+			t.Error(err)
+		}
 		close(marked)
 	}()
 
@@ -2537,6 +2541,7 @@ func TestCodexStoreGuard_ReserveBlocksMarkUntilCommit(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("markActiveStore must proceed after the reservation is committed")
 	}
+	defer d.unmarkActiveStore(store)
 	// The store is now active, so a fresh reserve must be refused.
 	if _, ok := d.reserveStoreForDeletion(store); ok {
 		t.Fatal("store must be active after the blocked mark proceeds")
@@ -2548,7 +2553,7 @@ func TestCodexStoreGuard_ReserveBlocksMarkUntilCommit(t *testing.T) {
 func TestCodexStoreGuard_SecondReserveRefusedWhileDeleting(t *testing.T) {
 	t.Parallel()
 	d := newCodexStoreGuardDaemon()
-	const store = "/stores/agent/issue"
+	store := filepath.Join(t.TempDir(), "agent", "issue")
 
 	commit, ok := d.reserveStoreForDeletion(store)
 	if !ok {

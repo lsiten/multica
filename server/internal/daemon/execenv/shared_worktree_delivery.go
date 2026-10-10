@@ -20,7 +20,10 @@ type SharedWorktreeDelivery struct {
 	Branch    string `json:"branch"`
 	Commit    string `json:"commit,omitempty"`
 	NoWork    bool   `json:"no_work,omitempty"`
-	file      string
+	// FilePath is the on-disk receipt location. It is carried over the
+	// environment service boundary (omitempty, so bind-time marshaling is
+	// unchanged) and is always re-derived from the real path by readSharedDelivery.
+	FilePath string `json:"file_path,omitempty"`
 }
 
 func sharedDeliveryPrefix(namespace string) string {
@@ -69,7 +72,7 @@ func readSharedDelivery(path string) (SharedWorktreeDelivery, error) {
 	if err == nil && sharedDeliveryFile(filepath.Dir(path), receipt.TaskID, receipt.Namespace) != path {
 		return receipt, errors.New("shared delivery receipt identity mismatch")
 	}
-	receipt.file = path
+	receipt.FilePath = path
 	return receipt, err
 }
 
@@ -168,12 +171,21 @@ func PendingSharedWorktreeDeliveries(ctx context.Context, namespace string) ([]S
 
 // AcknowledgeSharedWorktreeDelivery retires the exact accepted generation.
 func AcknowledgeSharedWorktreeDelivery(ctx context.Context, receipt SharedWorktreeDelivery) error {
-	unlock, err := lockSharedDirectoryState(ctx, filepath.Dir(receipt.file))
+	return AcknowledgeSharedWorktreeDeliveryAt(ctx, receipt.FilePath, receipt)
+}
+
+// AcknowledgeSharedWorktreeDeliveryAt retires the receipt stored at path, after
+// confirming the on-disk generation still matches the accepted receipt. It is
+// the path-explicit form used by the environment service so a cross-process
+// caller can retire a receipt without serializing the unexported file handle;
+// the exact-generation comparison is identical to the single-process form.
+func AcknowledgeSharedWorktreeDeliveryAt(ctx context.Context, path string, receipt SharedWorktreeDelivery) error {
+	unlock, err := lockSharedDirectoryState(ctx, filepath.Dir(path))
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	current, err := readSharedDelivery(receipt.file)
+	current, err := readSharedDelivery(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -183,5 +195,5 @@ func AcknowledgeSharedWorktreeDelivery(ctx context.Context, receipt SharedWorktr
 	if current.Commit != receipt.Commit || current.NoWork != receipt.NoWork || current.Namespace != receipt.Namespace || current.TaskID != receipt.TaskID {
 		return errors.New("shared delivery receipt changed")
 	}
-	return os.Remove(receipt.file)
+	return os.Remove(path)
 }

@@ -108,6 +108,13 @@ func (d *Daemon) loadVscreenInterventions(s *vscreenRuntime) {
 	s.interventions.records = records
 }
 func (d *Daemon) markVscreenInterventionStopped(ctx context.Context, taskID string) error {
+	if d.mirrorProcessMode() {
+		claim, ok := ctx.Value(mirrorReportedClaimKey{}).(mirrorTaskClaim)
+		if !ok || claim.TaskID != taskID {
+			return errors.New("exact provider-stop claim missing")
+		}
+		return d.processProviderStopped(ctx, claim)
+	}
 	s := d.vscreenRuntime()
 	s.interventions.mu.Lock()
 	var report *protocol.VscreenIntervention
@@ -183,7 +190,7 @@ func (d *Daemon) validateVscreenContinuation(ctx context.Context, s *vscreenRunt
 		return err
 	}
 	d.vscreenMu.Lock()
-	reporter := d.vscreenReporter
+	reporter := d.mirrorReportsLocked()
 	d.vscreenMu.Unlock()
 	if reporter != nil {
 		if err := reporter.Consume(task.WorkspaceID, task.RuntimeID, *continuation); err != nil {

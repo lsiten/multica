@@ -153,6 +153,23 @@ func (d *Daemon) vscreenDesktopHandler(c desktopVscreenCredential, verify func(c
 		}
 		operation, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
+		if d.mirrorProcessMode() {
+			var result mirrorLocalResult
+			err := d.mirrorCall(operation, mirrorProcessRequest{Operation: "local", Local: &mirrorLocalAction{Action: body.Action, WorkspaceID: body.WorkspaceID, RuntimeID: body.RuntimeID, InterventionID: body.InterventionID, Destination: body.Destination, Summary: body.Summary, WindowHandle: body.WindowHandle, Excluded: body.Excluded}}, &result)
+			interventionID = result.InterventionID
+			selectionRequired = result.SelectionRequired
+			candidates = result.Candidates
+			if err != nil {
+				reason := "mirror_service_unavailable"
+				if strings.Contains(err.Error(), "report_pending") {
+					reason = "report_pending"
+				}
+				reply(409, reason)
+				return
+			}
+			reply(200, "")
+			return
+		}
 		if body.Action == "exclusions" {
 			if len(body.Excluded) > 32 {
 				reply(400, "invalid_request")
@@ -185,7 +202,7 @@ func (d *Daemon) vscreenDesktopHandler(c desktopVscreenCredential, verify func(c
 			}
 			s.interventions.mu.Unlock()
 			d.vscreenMu.Lock()
-			reporter := d.vscreenReporter
+			reporter := d.mirrorReportsLocked()
 			d.vscreenMu.Unlock()
 			if id != "" && (state == protocol.VscreenInterventionAwaitingTakeover || state == protocol.VscreenInterventionHuman || state == protocol.VscreenInterventionReadyToContinue) && (reporter == nil || !reporter.Acknowledged(id, state)) {
 				reply(409, "report_pending")
@@ -217,6 +234,9 @@ func (d *Daemon) vscreenDesktopHandler(c desktopVscreenCredential, verify func(c
 	})
 }
 func (d *Daemon) updateVscreenExclusions(ctx context.Context, ids []uint32) error {
+	if d.mirrorProcessMode() {
+		return d.mirrorCall(ctx, mirrorProcessRequest{Operation: "local", Local: &mirrorLocalAction{Action: "exclusions", Excluded: ids}}, nil)
+	}
 	if len(ids) > 32 {
 		return errors.New("invalid exclusions")
 	}

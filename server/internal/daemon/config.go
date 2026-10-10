@@ -17,6 +17,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/cli"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/pkg/agent"
 )
 
@@ -115,45 +116,56 @@ var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
 type Config struct {
-	NativeHostExecutable           string // Trusted same-binary absolute path; empty disables managed native work.
-	NativeHostBuild                string // Version/commit identity; never read from renderer or PATH.
-	NativeVscreenPreferencesPath   string // Profile-private enabled preference file.
-	ServerBaseURL                  string
-	DaemonID                       string
-	LegacyDaemonIDs                []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
-	DeviceName                     string
-	RuntimeName                    string
-	CLIVersion                     string                // multica CLI version (e.g. "0.1.13")
-	LaunchedBy                     string                // "desktop" when spawned by the Electron app, empty for standalone
-	Profile                        string                // profile name (empty = default)
-	Agents                         map[string]AgentEntry // keyed by provider: claude, codebuddy, codex, copilot, opencode, codearts, deveco, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro, antigravity, qoder, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, dim, zeroclaw (plus built-in runtime identities from agent.BuiltinRuntimes, e.g. omp)
-	WorkspacesRoot                 string                // base path for execution envs (default: ~/multica_workspaces)
-	KeepEnvAfterTask               bool                  // preserve env after task for debugging
-	HealthPort                     int                   // local HTTP port for health checks (default: 19514)
-	MaxConcurrentTasks             int                   // max tasks running in parallel (default: 20)
-	LLM2JevEnabled                 bool                  // inject semantic decision MCP when supported (default: true)
-	LLM2JevMaxConcurrency          int                   // per-task semantic MCP call concurrency
-	LLM2JevTimeout                 time.Duration         // per-call semantic MCP timeout
-	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
-	EnvironmentRecycleEnabled      bool                  // delete environments with no current task consumer
-	EnvironmentArchiveTTL          time.Duration         // minimum idle terminal-run retention before automatic archival
-	EnvironmentRecycleInterval     time.Duration         // parent-lifecycle scan interval
-	GCInterval                     time.Duration         // how often the GC loop runs (default: 2h)
-	GCTTL                          time.Duration         // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
-	WorktreeStaleTTL               time.Duration         // reminder age from authoritative business activity; never deletion authorization
-	GCCompletedTaskTTL             time.Duration         // fully clean inactive issue-task envs completed at least this long ago, regardless of parent issue status (default: 14d on Multica Cloud, 0/disabled elsewhere; local_directory envs are never fully removed)
-	GCOrphanTTL                    time.Duration         // clean orphan dirs with no meta, or dirs whose issue gc-check returns 404, once they exceed this age (default: 72h). The 404 path uses the same TTL — a scoped-down token can't instantly wipe live workspaces.
-	GCArtifactTTL                  time.Duration         // once a task has been completed for at least this long, drop regenerable artifacts: pattern-matched build outputs when the parent record keeps the directory (an open issue), and the exact daemon-managed Codex cache for every task kind (default: 12h, set 0 to disable both)
-	GCArtifactPatterns             []string              // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
-	GCRepoTTL                      time.Duration         // evict a cached bare repo under .repos once no task has created a worktree from it for this long, it has no worktrees left, and it is no longer attached to any watched workspace (default: 30d, set 0 to disable)
-	GCRepoMaintenanceEnabled       bool                  // run reflog expiry and git gc after stale agent refs are removed (default: true; disable independently as an operational kill switch)
-	GCCodexSessionTTL              time.Duration         // reclaim a per-issue Codex session store (~/.codex/multica-sessions/<agent>/<issue>) untouched for at least this long, so a done/abandoned issue's conversation history does not accumulate forever (default: 14d, set 0 to disable)
-	GCHermesMemoryTTL              time.Duration         // reclaim a per-agent Hermes memory store (<profile dir>/hermes-state/<agent>/<profile>) untouched for at least this long, so a deleted agent's memory does not sit on disk forever (default: 90d, set 0 to disable)
-	GCHermesSessionTTL             time.Duration         // reclaim a per-conversation Hermes session store (<profile dir>/hermes-sessions/<agent>/<profile>/<conversation>) untouched for at least this long, so a done or abandoned conversation's transcript does not accumulate forever (default: 14d, set 0 to disable)
-	GCTaskTempLegacyTTL            time.Duration         // reclaim a per-task temp dir (<temp base>/multica-task-*) that carries no execution lock — i.e. left by a daemon predating the lock — once nothing inside it has been touched for this long. Dirs that DO carry the lock are reclaimed on liveness, never on age, so this knob does not apply to them. Neither does it reclaim a dir holding no task content — an old empty leftover, or a shell left by a daemon that died between creating the dir and publishing its lock — because holding no content is exactly what a dir currently being published looks like (default: 0, disabled — see DefaultGCTaskTempLegacyTTL)
-	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Multica Cloud, false on self-host)
-	AutoUpdateCheckInterval        time.Duration         // how often the auto-update loop polls for a new release (default: 6h)
-	AutoReloadEnabled              bool                  // restart when the multica binary on disk no longer matches the running version (default: true for CLI-launched daemons)
+	ProcessServices              []string // Profile opt-in: one process owner per supported role.
+	NativeHostExecutable         string   // Trusted same-binary absolute path; empty disables managed native work.
+	NativeHostBuild              string   // Version/commit identity; never read from renderer or PATH.
+	NativeVscreenPreferencesPath string   // Profile-private enabled preference file.
+	ServerBaseURL                string
+	DaemonID                     string
+	LegacyDaemonIDs              []string // historical daemon_ids this machine may have registered under; reported at register time so the server can merge old runtime rows
+	DeviceName                   string
+	RuntimeName                  string
+	CLIVersion                   string                // multica CLI version (e.g. "0.1.13")
+	LaunchedBy                   string                // "desktop" when spawned by the Electron app, empty for standalone
+	Profile                      string                // profile name (empty = default)
+	Agents                       map[string]AgentEntry // keyed by provider: claude, codebuddy, codex, copilot, opencode, codearts, deveco, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro, antigravity, qoder, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, dim, zeroclaw (plus built-in runtime identities from agent.BuiltinRuntimes, e.g. omp)
+	WorkspacesRoot               string                // base path for execution envs (default: ~/multica_workspaces)
+	KeepEnvAfterTask             bool                  // preserve env after task for debugging
+	HealthPort                   int                   // local HTTP port for health checks (default: 19514)
+	MaxConcurrentTasks           int                   // max tasks running in parallel (default: 20)
+	LLM2JevEnabled               bool                  // inject semantic decision MCP when supported (default: true)
+	LLM2JevMaxConcurrency        int                   // per-task semantic MCP call concurrency
+	LLM2JevTimeout               time.Duration         // per-call semantic MCP timeout
+	// WorkerProcessEnabled opts a profile into the per-execution task worker
+	// (F3): when true a server-claimed execution is run by a launched worker
+	// child instead of the legacy in-process runner. Default OFF: the legacy
+	// in-process runner is the default and the hot path is unaffected.
+	WorkerProcessEnabled bool
+	// ControlRuntimeRoot opts a profile into owning a runtimeproc control record so a
+	// capability-replacing control restart can confirm the prior control instance stopped
+	// (F3/G). Default empty: the daemon keeps drain-before-restart and writes no control
+	// record, so instanceConfirmedStopped stays false and the default path is byte-identical.
+	ControlRuntimeRoot             string
+	GCEnabled                      bool          // enable periodic workspace garbage collection (default: true)
+	EnvironmentRecycleEnabled      bool          // delete environments with no current task consumer
+	EnvironmentArchiveTTL          time.Duration // minimum idle terminal-run retention before automatic archival
+	EnvironmentRecycleInterval     time.Duration // parent-lifecycle scan interval
+	GCInterval                     time.Duration // how often the GC loop runs (default: 2h)
+	GCTTL                          time.Duration // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
+	WorktreeStaleTTL               time.Duration // reminder age from authoritative business activity; never deletion authorization
+	GCCompletedTaskTTL             time.Duration // fully clean inactive issue-task envs completed at least this long ago, regardless of parent issue status (default: 14d on Multica Cloud, 0/disabled elsewhere; local_directory envs are never fully removed)
+	GCOrphanTTL                    time.Duration // clean orphan dirs with no meta, or dirs whose issue gc-check returns 404, once they exceed this age (default: 72h). The 404 path uses the same TTL — a scoped-down token can't instantly wipe live workspaces.
+	GCArtifactTTL                  time.Duration // once a task has been completed for at least this long, drop regenerable artifacts: pattern-matched build outputs when the parent record keeps the directory (an open issue), and the exact daemon-managed Codex cache for every task kind (default: 12h, set 0 to disable both)
+	GCArtifactPatterns             []string      // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
+	GCRepoTTL                      time.Duration // evict a cached bare repo under .repos once no task has created a worktree from it for this long, it has no worktrees left, and it is no longer attached to any watched workspace (default: 30d, set 0 to disable)
+	GCRepoMaintenanceEnabled       bool          // run reflog expiry and git gc after stale agent refs are removed (default: true; disable independently as an operational kill switch)
+	GCCodexSessionTTL              time.Duration // reclaim a per-issue Codex session store (~/.codex/multica-sessions/<agent>/<issue>) untouched for at least this long, so a done/abandoned issue's conversation history does not accumulate forever (default: 14d, set 0 to disable)
+	GCHermesMemoryTTL              time.Duration // reclaim a per-agent Hermes memory store (<profile dir>/hermes-state/<agent>/<profile>) untouched for at least this long, so a deleted agent's memory does not sit on disk forever (default: 90d, set 0 to disable)
+	GCHermesSessionTTL             time.Duration // reclaim a per-conversation Hermes session store (<profile dir>/hermes-sessions/<agent>/<profile>/<conversation>) untouched for at least this long, so a done or abandoned conversation's transcript does not accumulate forever (default: 14d, set 0 to disable)
+	GCTaskTempLegacyTTL            time.Duration // reclaim a per-task temp dir (<temp base>/multica-task-*) that carries no execution lock — i.e. left by a daemon predating the lock — once nothing inside it has been touched for this long. Dirs that DO carry the lock are reclaimed on liveness, never on age, so this knob does not apply to them. Neither does it reclaim a dir holding no task content — an old empty leftover, or a shell left by a daemon that died between creating the dir and publishing its lock — because holding no content is exactly what a dir currently being published looks like (default: 0, disabled — see DefaultGCTaskTempLegacyTTL)
+	AutoUpdateEnabled              bool          // periodically check for a newer CLI release and self-update when idle (default: true on Multica Cloud, false on self-host)
+	AutoUpdateCheckInterval        time.Duration // how often the auto-update loop polls for a new release (default: 6h)
+	AutoReloadEnabled              bool          // restart when the multica binary on disk no longer matches the running version (default: true for CLI-launched daemons)
 	PollInterval                   time.Duration
 	WSClaimPollInterval            time.Duration // upper bound for healthy WS batch-claim safety polls; actual sleeps use downward-only jitter
 	HeartbeatInterval              time.Duration
@@ -264,10 +276,15 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// purely from env-var configuration. We log a warning and proceed with
 	// no overrides.
 	var profileCommandOverrides map[string]string
+	var processServices []string
 	if cliCfg, err := cli.LoadCLIConfigForProfile(overrides.Profile); err != nil {
 		slog.Warn("could not load CLI config for backend overrides; proceeding without",
 			"profile", overrides.Profile, "err", err)
 	} else {
+		if err := cli.ValidateProcessServices(cliCfg.ProcessServices); err != nil {
+			return Config{}, err
+		}
+		processServices = append([]string(nil), cliCfg.ProcessServices...)
 		if oc := openclawOverrideFrom(cliCfg); oc != nil {
 			applyOpenclawOverride(oc)
 		}
@@ -532,6 +549,21 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if llm2jevTimeout <= 0 {
 		llm2jevTimeout = 45 * time.Second
 	}
+	// WorkerProcessEnabled is the default-when-supported decision: on a platform the
+	// native host is supported (native.Supported) the per-execution task worker is
+	// the default, so the hot path runs the provider in a separate process; the
+	// legacy in-process runner (executeAndDrain) is the fallback whenever the worker
+	// cannot be launched, is refused, or fails (attemptWorkerRun), so a
+	// capability-gated default never loses or double-runs a task. An explicit env
+	// value still overrides the capability-gated default.
+	workerProcessEnabled := native.Supported()
+	if raw, ok := os.LookupEnv("MULTICA_WORKER_PROCESS_ENABLED"); ok {
+		workerProcessEnabled = strings.ToLower(strings.TrimSpace(raw)) != "false" && strings.TrimSpace(raw) != "0"
+	}
+
+	// ControlRuntimeRoot defaults empty: the control writes no runtimeproc record,
+	// so a capability-replacing restart is never admitted and the daemon drains before restart.
+	controlRuntimeRoot := strings.TrimSpace(os.Getenv("MULTICA_CONTROL_RUNTIME_ROOT"))
 
 	// Profile
 	profile := overrides.Profile
@@ -695,6 +727,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}
 
 	return Config{
+		ProcessServices:                 processServices,
 		ServerBaseURL:                   serverBaseURL,
 		DaemonID:                        daemonID,
 		LegacyDaemonIDs:                 legacyDaemonIDs,
@@ -729,6 +762,8 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		LLM2JevEnabled:                  llm2jevEnabled,
 		LLM2JevMaxConcurrency:           llm2jevMaxConcurrency,
 		LLM2JevTimeout:                  llm2jevTimeout,
+		WorkerProcessEnabled:            workerProcessEnabled,
+		ControlRuntimeRoot:              controlRuntimeRoot,
 		PollInterval:                    pollInterval,
 		WSClaimPollInterval:             wsClaimPollInterval,
 		HeartbeatInterval:               heartbeatInterval,

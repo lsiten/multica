@@ -31,7 +31,7 @@ func (d *Daemon) jevModelRegisterHandler() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		model, err := manager.Register(r.Context(), req.ModelID, req.Revision, nil)
+		model, err := manager.Register(r.Context(), req.ModelID, req.Revision)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

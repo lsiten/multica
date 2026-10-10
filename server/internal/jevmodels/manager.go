@@ -3,6 +3,7 @@ package jevmodels
 import (
 	"context"
 	"errors"
+	"github.com/multica-ai/multica/server/internal/daemon/processtree"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,13 +11,14 @@ import (
 )
 
 type Config struct {
-	RootDir      string
-	PythonPath   string
-	ReadyTimeout time.Duration
-	IdleTimeout  time.Duration
-	modelSpec    *modelSpec
-	engineRoot   string
-	engineMu     *sync.Mutex
+	PersistInstall bool
+	RootDir        string
+	PythonPath     string
+	ReadyTimeout   time.Duration
+	IdleTimeout    time.Duration
+	modelSpec      *modelSpec
+	engineRoot     string
+	engineMu       *sync.Mutex
 }
 
 type Status struct {
@@ -34,6 +36,7 @@ type Status struct {
 
 type Manager struct {
 	mu                sync.Mutex
+	closeMu           sync.Mutex
 	catalogMu         sync.Mutex
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -50,6 +53,7 @@ type Manager struct {
 	starting          chan struct{}
 	idle              *time.Timer
 	closed            bool
+	cleanupErr        error
 	installed         bool
 	lock              *os.File
 	model             Model
@@ -109,6 +113,11 @@ func New(ctx context.Context, cfg Config) (*Manager, error) {
 			m.status.Error = err.Error()
 		}
 	}
+	if err := m.loadInstallState(); err != nil {
+		cancel()
+		lock.Close()
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -147,7 +156,7 @@ func (m *Manager) CancelInstall(id string, revisions ...string) error {
 		m.status.State = "not_installed"
 		m.status.Phase = ""
 		m.status.Error = "download cancelled before start"
-		return nil
+		return m.persistInstallLocked("cancelled")
 	}
 	if m.installCancel != nil {
 		// Invalidate the active generation before cancelling so its finalizer
@@ -159,6 +168,7 @@ func (m *Manager) CancelInstall(id string, revisions ...string) error {
 		m.status.State = "not_installed"
 		m.status.Phase = ""
 		m.status.Error = "download cancelled"
+		return m.persistInstallLocked("cancelled")
 	}
 	return nil
 }
@@ -189,6 +199,9 @@ func (m *Manager) stopLocked() error {
 	}
 	m.status.State = "stopping"
 	err := m.proc.stop()
+	if errors.Is(err, processtree.ErrCleanup) {
+		m.cleanupErr = errors.Join(m.cleanupErr, err)
+	}
 	m.proc = nil
 	m.status.State = "stopped"
 	m.status.Device = ""
@@ -217,10 +230,16 @@ func (m *Manager) Remove(id string, revisions ...string) error {
 	m.installed = false
 	m.status.State = "not_installed"
 	m.status.DownloadedBytes = 0
-	return nil
+	return m.persistInstallLocked("")
 }
 
-func (m *Manager) Close() error {
+func (m *Manager) Close() error { return m.CloseWithReceipt(nil) }
+
+// CloseWithReceipt confirms descendant cleanup while retaining the cache ownership
+// lock until the caller has durably recorded its domain shutdown receipt.
+func (m *Manager) CloseWithReceipt(receipt func() error) error {
+	m.closeMu.Lock()
+	defer m.closeMu.Unlock()
 	m.mu.Lock()
 	m.closed = true
 	m.cancel()
@@ -245,8 +264,13 @@ func (m *Manager) Close() error {
 		childErr = errors.Join(childErr, child.Close())
 	}
 	m.mu.Lock()
+	err := errors.Join(childErr, m.stopLocked(), m.cleanupErr)
+	m.mu.Unlock()
+	if err == nil && receipt != nil {
+		err = receipt()
+	}
+	m.mu.Lock()
 	defer m.mu.Unlock()
-	err := errors.Join(childErr, m.stopLocked())
 	if m.lock != nil {
 		err = errors.Join(err, m.lock.Close())
 		m.lock = nil
@@ -288,6 +312,13 @@ func (m *Manager) StartInstall(ctx context.Context, id string, revisions ...stri
 	m.status.State = "queued"
 	m.status.Phase = "queued"
 	m.status.Error = ""
+	if err := m.persistInstallLocked(""); err != nil {
+		m.installQueued = false
+		m.status.State = "failed"
+		m.status.Error = err.Error()
+		m.mu.Unlock()
+		return nil, err
+	}
 	result := make(chan error, 1)
 	m.installWG.Add(1)
 	m.installWorkers++
@@ -317,8 +348,14 @@ func (m *Manager) runInstall(ctx context.Context, id string, generation uint64) 
 	m.status.Phase = "dependencies"
 	m.status.Error = ""
 	m.status.DownloadedBytes = 0
+	persistErr := m.persistInstallLocked("")
 	m.mu.Unlock()
-	err := m.installBody(installCtx, generation)
+	var err error
+	if persistErr != nil {
+		err = persistErr
+	} else {
+		err = m.installBody(installCtx, generation)
+	}
 	if installCtx.Err() != nil {
 		err = installCtx.Err()
 	}
@@ -340,6 +377,7 @@ func (m *Manager) runInstall(ctx context.Context, id string, generation uint64) 
 			m.status.State = "installed"
 			m.status.Phase = ""
 		}
+		err = errors.Join(err, m.persistInstallLocked(""))
 	}
 	return err
 }

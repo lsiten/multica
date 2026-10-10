@@ -61,3 +61,49 @@ func TestBuiltinMCPBrokerReadinessExposesBothBuiltIns(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinMCPBrokerRegistrationGenerationIsExact(t *testing.T) {
+	broker, err := startBuiltinMCPBroker(context.Background())
+	if err != nil {
+		t.Fatalf("startBuiltinMCPBroker: %v", err)
+	}
+	defer broker.close()
+
+	// Two registrations on the same path: the second supersedes the first.
+	unregisterV1 := func() {}
+	{
+		_, u := broker.register("/dup", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("v1"))
+		}))
+		unregisterV1 = u
+	}
+	url := ""
+	unregisterV2 := func() {}
+	{
+		u, unregister := broker.register("/dup", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("v2"))
+		}))
+		url, unregisterV2 = u, unregister
+	}
+	if url == "" {
+		t.Fatal("re-registered route returned no url")
+	}
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+
+	// A stale revoke (from the superseded registration) must not delete the
+	// route the newer registration owns.
+	unregisterV1()
+	recorder := httptest.NewRecorder()
+	broker.ServeHTTP(recorder, req)
+	if body := recorder.Body.String(); body != "v2" {
+		t.Fatalf("stale revoke removed the current route: got %q, want v2", body)
+	}
+
+	// The current revoke removes the route.
+	unregisterV2()
+	recorder = httptest.NewRecorder()
+	broker.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("current revoke did not remove the route: status = %d", recorder.Code)
+	}
+}

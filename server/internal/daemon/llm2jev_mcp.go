@@ -102,6 +102,7 @@ type llm2jevMCPServer struct {
 	systemOne          bool
 	decisionLogAttrs   []any
 	decisionLogSecrets []string
+	decisionLogPolicy  redactionPolicy
 	decisionLogRecord  protocol.JevDecisionLog
 	decisionReporter   jevDecisionReportFunc
 }
@@ -122,7 +123,7 @@ func startTaskLLM2JevMCPAtWithLimits(lifetimeCtx context.Context, taskID, provid
 	return startTaskLLM2JevMCPAtWithLimitsAndBroker(lifetimeCtx, taskID, provider, task, logger, listenHost, advertisedHost, maxConcurrent, callTimeout, maxCalls, nil)
 }
 
-func startTaskLLM2JevMCPAtWithLimitsAndBroker(lifetimeCtx context.Context, taskID, provider string, task Task, logger *slog.Logger, listenHost, advertisedHost string, maxConcurrent int, callTimeout time.Duration, maxCalls int64, broker *builtinMCPBroker) (json.RawMessage, *llm2jevMCPSet, error) {
+func startTaskLLM2JevMCPAtWithLimitsAndBroker(lifetimeCtx context.Context, taskID, provider string, task Task, logger *slog.Logger, listenHost, advertisedHost string, maxConcurrent int, callTimeout time.Duration, maxCalls int64, broker mcpBroker) (json.RawMessage, *llm2jevMCPSet, error) {
 	if task.Agent == nil || len(task.Agent.CustomEnv) == 0 || task.Agent.Model == "" || !providerSupportsLLM2JevMCP(provider) {
 		return nil, nil, nil
 	}

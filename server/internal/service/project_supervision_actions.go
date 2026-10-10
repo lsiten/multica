@@ -624,6 +624,9 @@ func (s *ProjectSupervisionService) Apply(ctx context.Context, project db.Projec
 	if _, err = q.SetTaskProjectContext(ctx, db.SetTaskProjectContextParams{ID: task.ID, ContextPatch: raw}); err != nil {
 		return 0, err
 	}
+	if err = lockTaskActorClaim(ctx, q, task, project.WorkspaceID); err != nil {
+		return 0, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return 0, err
 	}
@@ -649,8 +652,11 @@ func (s *ProjectSupervisionService) authorizeRun(ctx context.Context, q *db.Quer
 	if err != nil {
 		return row, db.AgentTaskQueue{}, ProjectSupervisionConfig{}, err
 	}
-	task, err := q.GetAgentTask(ctx, taskID)
+	task, err := q.LockVscreenSourceTask(ctx, taskID)
 	if err != nil {
+		return row, task, ProjectSupervisionConfig{}, err
+	}
+	if err = lockTaskActorClaim(ctx, q, task, project.WorkspaceID); err != nil {
 		return row, task, ProjectSupervisionConfig{}, err
 	}
 	contextData, ok := ProjectCoordination(task)
@@ -710,6 +716,9 @@ func (s *ProjectSupervisionService) Report(ctx context.Context, project db.Proje
 		if prior.Decision != report.Decision || prior.Summary != report.Summary || prior.WaitReason != report.WaitReason {
 			return ErrProjectSupervisionConflict
 		}
+		if err = lockTaskActorClaim(ctx, q, task, project.WorkspaceID); err != nil {
+			return err
+		}
 		return tx.Commit(ctx)
 	}
 	var contextData struct {
@@ -747,6 +756,9 @@ func (s *ProjectSupervisionService) Report(ctx context.Context, project db.Proje
 		return err
 	}
 	if _, err = q.StoreProjectSupervisionResult(ctx, db.StoreProjectSupervisionResultParams{ProjectID: project.ID, WorkspaceID: project.WorkspaceID, HandledVersion: report.CheckedVersion, LastResult: raw, NoProgressCount: count, LastReason: reason}); err != nil {
+		return err
+	}
+	if err = lockTaskActorClaim(ctx, q, task, project.WorkspaceID); err != nil {
 		return err
 	}
 	if err = tx.Commit(ctx); err != nil {

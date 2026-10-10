@@ -60,6 +60,18 @@ func (s *taskSupplementSignals) notify(taskID string) {
 	}
 }
 
+// workerSupplementSubscribe is the *Daemon-free supplement subscription the
+// per-execution task worker uses in place of the in-process taskSupplementSignals
+// WebSocket hint. It returns an unsignalled wakeup channel and a no-op unsubscribe:
+// runTaskSupplementLoop re-checks the poll cadence on every pass, so a worker with
+// no in-process hint still claims and acknowledges durable additions on schedule.
+// The returned subscription matches the runProviderExecution subscribeSupplement seam.
+func workerSupplementSubscribe() func(string) (<-chan struct{}, func()) {
+	return func(taskID string) (<-chan struct{}, func()) {
+		return make(chan struct{}), func() {}
+	}
+}
+
 func (d *Daemon) effectiveTaskSupplementPollInterval() time.Duration {
 	if d.taskSupplementPollInterval > 0 {
 		return d.taskSupplementPollInterval
@@ -125,11 +137,17 @@ func taskSupplementFailureReason(ctx context.Context, err error) string {
 	return protocol.TaskSupplementFailureProviderRejected
 }
 
-// runTaskSupplementLoop serially claims and acknowledges durable additions for
-// one negotiated run. It performs no HTTP request until the provider confirms a live
-// turn, wakes immediately on a content-free WebSocket hint, and otherwise uses
-// the same five-second cadence as task cancellation polling.
-func (d *Daemon) runTaskSupplementLoop(ctx context.Context, session *agent.Session, taskID string, wakeup <-chan struct{}, taskLog *slog.Logger) {
+// runTaskSupplementLoop serially claims and acknowledges durable additions for one
+// negotiated run. It performs no HTTP request until the provider confirms a live turn,
+// wakes immediately on a content-free WebSocket hint, and otherwise uses the same
+// five-second cadence as task cancellation polling.
+//
+// It is the shared supplement seam of the F3 provider-run migration: the legacy
+// in-process runner (executeAndDrain) and the per-execution task worker call it with
+// their own claim/acknowledge transport and poll intervals, so a worker that owns the
+// provider run handles task supplements without a *Daemon reference. Its side effects are
+// confined to the passed transport, the session, and the log.
+func runTaskSupplementLoop(ctx context.Context, session *agent.Session, taskID string, wakeup <-chan struct{}, taskLog *slog.Logger, claimSupplement func(context.Context, string) (*TaskSupplement, error), ackSupplement func(context.Context, string, string, bool, string) error, readyInterval, pollInterval time.Duration) {
 	if session == nil || session.Supplement == nil || session.SupplementReady == nil {
 		return
 	}
@@ -138,14 +156,14 @@ func (d *Daemon) runTaskSupplementLoop(ctx context.Context, session *agent.Sessi
 			return
 		}
 		if !session.SupplementReady() {
-			if !waitTaskSupplement(ctx, wakeup, d.effectiveTaskSupplementReadyInterval()) {
+			if !waitTaskSupplement(ctx, wakeup, readyInterval) {
 				return
 			}
 			continue
 		}
 
 		claimCtx, cancelClaim := context.WithTimeout(ctx, 3*time.Second)
-		supplement, claimErr := d.client.ClaimTaskSupplement(claimCtx, taskID)
+		supplement, claimErr := claimSupplement(claimCtx, taskID)
 		cancelClaim()
 		if claimErr != nil || supplement == nil {
 			if taskSupplementEndpointUnsupported(claimErr) {
@@ -154,7 +172,7 @@ func (d *Daemon) runTaskSupplementLoop(ctx context.Context, session *agent.Sessi
 			if claimErr != nil {
 				taskLog.Debug("additional message claim failed", "error", claimErr)
 			}
-			if !waitTaskSupplement(ctx, wakeup, d.effectiveTaskSupplementPollInterval()) {
+			if !waitTaskSupplement(ctx, wakeup, pollInterval) {
 				return
 			}
 			continue
@@ -172,7 +190,7 @@ func (d *Daemon) runTaskSupplementLoop(ctx context.Context, session *agent.Sessi
 		}
 
 		ackCtx, cancelAck := context.WithTimeout(context.WithoutCancel(ctx), taskSupplementAckTimeout)
-		ackErr := d.client.AckTaskSupplement(ackCtx, taskID, supplement.CommentID, injectErr == nil, reason)
+		ackErr := ackSupplement(ackCtx, taskID, supplement.CommentID, injectErr == nil, reason)
 		cancelAck()
 		if ackErr != nil {
 			taskLog.Warn("additional message acknowledgement failed", "comment_id", supplement.CommentID, "error", ackErr)

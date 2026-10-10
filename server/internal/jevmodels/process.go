@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/daemon/processtree"
 	"io"
 	"net"
 	"net/http"
@@ -27,7 +28,14 @@ type modelProcess struct {
 	err             error
 }
 
-func (p *modelProcess) stop() error { p.cancel(); <-p.done; return nil }
+func (p *modelProcess) stop() error {
+	p.cancel()
+	<-p.done
+	if errors.Is(p.err, processtree.ErrCleanup) {
+		return p.err
+	}
+	return nil
+}
 
 func (m *Manager) start(ctx context.Context, s Selection) (*modelProcess, error) {
 	if err := verifyFiles(ctx, m.modelDir(), m.files); err != nil {
@@ -56,7 +64,7 @@ func (m *Manager) start(ctx context.Context, s Selection) (*modelProcess, error)
 		cancel()
 		return nil, err
 	}
-	cmd := exec.CommandContext(processCtx, m.python(), "-I", worker)
+	cmd := exec.Command(m.python(), "-I", worker)
 	cmd.Env = append(cleanEnvironment(), "DECIDER_MODEL="+m.modelDir(), "DECIDER_DEVICE="+s.Device, "DECIDER_WARMUP=0", "DECIDER_COMPILE=0", "DECIDER_FP8=0", "HF_HUB_OFFLINE=1", "TRANSFORMERS_OFFLINE=1", "MULTICA_JEV_TOKEN="+p.token, "MULTICA_JEV_PORT="+strconv.Itoa(port))
 	cmd.Stdout = log
 	cmd.Stderr = log
@@ -66,18 +74,23 @@ func (m *Manager) start(ctx context.Context, s Selection) (*modelProcess, error)
 		log.Close()
 		return nil, err
 	}
-	if err = cmd.Start(); err != nil {
+	started := make(chan struct{})
+	go func() {
+		p.err = errors.Join(processtree.RunWithStart(processCtx, cmd, time.Second, func() error { close(started); return nil }), stdin.Close(), log.Close())
+		close(p.done)
+	}()
+	select {
+	case <-started:
+	case <-p.done:
 		cancel()
-		stdin.Close()
-		log.Close()
-		return nil, err
+		return nil, p.err
+	case <-ctx.Done():
+		return nil, errors.Join(ctx.Err(), p.stop())
 	}
-	go func() { p.err = errors.Join(cmd.Wait(), stdin.Close(), log.Close()); close(p.done) }()
 	readyCtx, readyCancel := context.WithTimeout(ctx, m.cfg.ReadyTimeout)
 	defer readyCancel()
 	if err = p.waitReady(readyCtx); err != nil {
-		p.stop()
-		return nil, err
+		return nil, errors.Join(err, p.stop())
 	}
 	return p, nil
 }

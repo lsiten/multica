@@ -52,7 +52,7 @@ func (d *Daemon) initVscreenReporter(ctx context.Context) (*vscreenReporter, err
 }
 func (d *Daemon) enqueueVscreenIntervention(ctx context.Context, report protocol.VscreenIntervention) error {
 	d.vscreenMu.Lock()
-	reporter := d.vscreenReporter
+	reporter := d.mirrorReportsLocked()
 	d.vscreenMu.Unlock()
 	if reporter == nil {
 		var err error

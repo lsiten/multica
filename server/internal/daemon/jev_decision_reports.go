@@ -18,6 +18,12 @@ import (
 type pendingJevDecision struct {
 	TaskID string                  `json:"task_id"`
 	Record protocol.JevDecisionLog `json:"record"`
+	// AccountID is the owner account the record was enqueued under. In
+	// account-aware mode a record whose account does not match the current
+	// account (a different account, or an empty/legacy v1 record) is preserved
+	// but not adopted, so a login change cannot replay another account's Jev
+	// decision. Empty until an account was resolved.
+	AccountID string `json:"account_id,omitempty"`
 }
 
 func (d *Daemon) jevDecisionReportDir() string {
@@ -44,7 +50,13 @@ func (d *Daemon) enqueueJevDecision(taskID string, record protocol.JevDecisionLo
 	if !info.IsDir() || info.Mode().Perm() != 0700 {
 		return errors.New("Jev decision report directory is not private")
 	}
-	raw, err := json.Marshal(pendingJevDecision{TaskID: taskID, Record: record})
+	report := pendingJevDecision{TaskID: taskID, Record: record}
+	// Stamp the current account onto a fresh record so the account-aware flush
+	// pass adopts it. Empty in legacy mode, where every record is uploaded.
+	if d.accountID != "" {
+		report.AccountID = d.accountID
+	}
+	raw, err := json.Marshal(report)
 	if err != nil {
 		return err
 	}
@@ -96,7 +108,17 @@ func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
 			return err
 		}
 		var report pendingJevDecision
-		if err := strictVscreenJSON(raw, &report); err != nil || report.TaskID == "" || report.Record.Validate() != nil {
+		if err := strictVscreenJSON(raw, &report); err != nil {
+			return errors.New("invalid queued Jev decision report")
+		}
+		// In account-aware mode a record whose account does not match the current
+		// account (a different account's record, or a legacy v1 record with no
+		// account) is preserved on disk but not adopted, so a login change cannot
+		// silently replay another account's Jev decision.
+		if d.accountID != "" && report.AccountID != d.accountID {
+			continue
+		}
+		if report.TaskID == "" || report.Record.Validate() != nil {
 			return errors.New("invalid queued Jev decision report")
 		}
 		requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -125,6 +147,13 @@ func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
 }
 
 func (d *Daemon) jevDecisionReportLoop(ctx context.Context) {
+	// Another process owns this namespace, so control must not upload or it
+	// would double-deliver the same Jev decision. The owner is the sole
+	// uploader; this process defers instead of being a second uploader.
+	if d.reportOutboxBlocked {
+		d.logger.Info("report outbox is owned by another process; deferring Jev decision uploads")
+		return
+	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {

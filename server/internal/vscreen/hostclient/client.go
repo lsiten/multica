@@ -243,3 +243,6 @@ func (c *Client) UpdateExclusions(ctx context.Context, ids []uint32) error {
 	_, err := c.Call(context.WithoutCancel(ctx), native.Request{Operation: "update_exclusions", ExcludedWindowIDs: append([]uint32(nil), ids...)})
 	return err
 }
+
+// Done closes when the private native channel is lost; Close still confirms process cleanup.
+func (c *Client) Done() <-chan struct{} { return c.closed }

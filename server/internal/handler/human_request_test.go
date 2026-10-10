@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -20,6 +21,7 @@ func TestHumanRequestVersionedResponseAndOwnership(t *testing.T) {
 		req := newRequest("POST", "/api/human-requests/", body)
 		req.Header.Set("X-Task-ID", sourceID)
 		req.Header.Set("X-Agent-ID", agent)
+		req = legacyTaskActorRequest(t, req)
 		req.Header.Set("X-Actor-Source", "task_token")
 		var out humanRequestResponse
 		testutil.Call(t, testHandler.CreateHumanRequest, req).Want(http.StatusCreated).JSON(&out)
@@ -89,7 +91,7 @@ func TestHumanRequestReadAndArchiveAreNotConsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := testHandler.TaskService.CreateHumanRequest(context.Background(), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "login", Kind: "manual", Title: "Sign in to the test site", Steps: []string{"Open the test site's sign-in page in the runtime browser and sign in"}, ActionLabel: "Check sign-in", Verification: "Check the authenticated session in the same browser", Next: "I will verify the session before continuing"})
+	row, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(context.Background()), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "login", Kind: "manual", Title: "Sign in to the test site", Steps: []string{"Open the test site's sign-in page in the runtime browser and sign in"}, ActionLabel: "Check sign-in", Verification: "Check the authenticated session in the same browser", Next: "I will verify the session before continuing"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +117,7 @@ func TestHumanRequestMaterialChangeRetiresTheOldCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := testHandler.TaskService.CreateHumanRequest(context.Background(), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "release", Kind: "confirmation", Title: "Publish original objective", ActionLabel: "Publish original objective", Next: "Only this objective will be published"})
+	row, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(context.Background()), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "release", Kind: "confirmation", Title: "Publish original objective", ActionLabel: "Publish original objective", Next: "Only this objective will be published"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +141,7 @@ func TestHumanRequestChatContinuationOwnsItsInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := testHandler.TaskService.CreateHumanRequest(context.Background(), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "site", Kind: "input", Title: "Provide the test site", InputLabel: "Test site address", ActionLabel: "Submit address", Next: "The agent will check this test site"})
+	row, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(context.Background()), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "site", Kind: "input", Title: "Provide the test site", InputLabel: "Test site address", ActionLabel: "Submit address", Next: "The agent will check this test site"})
 	if err != nil {
 		t.Fatal(err)
 	}

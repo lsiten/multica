@@ -162,6 +162,41 @@ func (h *Hub) AttachStream(ctx context.Context, runtimeID, workspaceID, streamID
 	return Bridge(NewStream(connection, nil), peer)
 }
 
+// AttachStreamScoped retains ownership of the socket until its actual stream
+// closes. The legacy AttachStream contract remains non-blocking for local data.
+func (h *Hub) AttachStreamScoped(ctx context.Context, runtimeID, workspaceID, streamID, token string, connection *websocket.Conn) error {
+	h.mu.Lock()
+	local := h.streams[streamID] != nil
+	h.mu.Unlock()
+	if local || h.cluster == nil {
+		stream, err := h.Attach(runtimeID, workspaceID, streamID, token, connection)
+		if err != nil {
+			return err
+		}
+		defer stream.Close()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-stream.Done():
+			return nil
+		}
+	}
+	// The remote bridge already owns its socket until both directions finish.
+	// Cancellation must also interrupt an idle established bridge.
+	finished := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			connection.Close()
+		case <-finished:
+		}
+	}()
+	defer func() { close(finished); <-stopped }()
+	return h.AttachStream(ctx, runtimeID, workspaceID, streamID, token, connection)
+}
+
 func (h *Hub) remoteOpen(ctx context.Context, request protocol.ApplicationTunnelRequest) (net.Conn, error) {
 	current, err := h.cluster.runtimeOwner(ctx, request.RuntimeID)
 	if err != nil {

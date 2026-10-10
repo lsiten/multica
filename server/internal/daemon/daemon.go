@@ -32,9 +32,10 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/localreview"
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
-	"github.com/multica-ai/multica/server/internal/jevmodels"
 	"github.com/multica-ai/multica/server/internal/mirror"
+	"github.com/multica-ai/multica/server/internal/modelservice"
 	"github.com/multica-ai/multica/server/internal/projectgraph"
+	"github.com/multica-ai/multica/server/internal/runtimeproc"
 	"github.com/multica-ai/multica/server/internal/selfexec"
 	"github.com/multica-ai/multica/server/internal/util"
 	"github.com/multica-ai/multica/server/pkg/agent"
@@ -253,6 +254,12 @@ type terminalTaskReport struct {
 	jevVerification         *JevVerification
 	worktreeDeliveryPending bool
 	worktreeCommit          string
+	// accountID and executionID are the owner namespace the durable record
+	// carries so a later pass can quarantine a record that does not belong
+	// to the current account. Empty for a legacy record written before the
+	// account was resolved; such a record is preserved, never adopted.
+	accountID   string
+	executionID string
 }
 
 type terminalReportSendFunc func(context.Context, terminalTaskReport, []time.Duration) error
@@ -394,15 +401,26 @@ type repoCacheBackend interface {
 
 // Daemon is the local agent runtime that polls for and executes tasks.
 type Daemon struct {
-	jevModelsOnce sync.Once
-	jevModels     *jevmodels.Manager
-	jevModelsErr  error
-	cfg           Config
-	client        *Client
-	repoCache     repoCacheBackend
-	skillCache    *SkillBundleCache
-	logger        *slog.Logger
-	builtinMCP    *builtinMCPBroker
+	environmentProcessMu    sync.Mutex
+	environmentProcess      *environmentProcessClient
+	environmentServiceOwner bool // physical service excludes application lifecycle/retention authority
+	mirrorProcessMu         sync.Mutex
+	mirrorProcess           *mirrorProcessClient
+	mirrorProcessClosed     bool
+	mirrorPendingRemoval    map[string]bool
+	mirrorReportBridge      mirrorReportPort
+	mirrorChild             *mirrorProcessService
+	jevModelsMu             sync.Mutex
+	jevModelsClosing        bool
+	jevModelsOnce           sync.Once
+	jevModels               modelservice.Backend
+	jevModelsErr            error
+	cfg                     Config
+	client                  *Client
+	repoCache               repoCacheBackend
+	skillCache              *SkillBundleCache
+	logger                  *slog.Logger
+	builtinMCP              mcpBroker
 
 	// terminalReports is the durable outbox for complete/fail callbacks. The
 	// sender hook is production-wired through Client and overridable in focused
@@ -413,6 +431,26 @@ type Daemon struct {
 	terminalReportNow    func() time.Time
 	terminalReportMu     sync.Mutex
 	terminalReportFlight map[string]struct{}
+
+	// reportOutboxOwner is the kernel-protected single-owner handle for this
+	// daemon's outbox namespace. It is set by acquireReportOutboxOwner once
+	// this process is the sole uploader; nil means the loops may upload
+	// because no second owner was discovered (the common single-process
+	// case), not because ownership was lost. reportOutboxBlocked is set only
+	// when another live process already owns the namespace, the deferral
+	// signal the terminal and JEV report loops use to stop being a second
+	// uploader instead of double-delivering.
+	reportOutboxOwner   *reportOutboxOwner
+	reportOutboxBlocked bool
+
+	// accountID is the authenticated account this daemon acts for, resolved
+	// once at startup from /api/me. The single-owner outbox lock is namespaced
+	// by it, so control and a gateway on the same account/profile/daemon land
+	// on one shared owner lock (making the sole-uploader guard real) while a
+	// different account gets a disjoint lock and never adopts another's queue.
+	// Empty when discovery fails; the lock then falls back to a per-daemon
+	// namespace, which stays safe but does not cross a gateway boundary.
+	accountID string
 
 	mu           sync.Mutex
 	workspaces   map[string]*workspaceState
@@ -630,16 +668,37 @@ type Daemon struct {
 	applicationExecutions         sync.Map
 	applicationRegistries         sync.Map
 	applicationServerCapabilities sync.Map
-	applicationWake               chan struct{}
-	applicationHostLauncher       func(string) (*exec.Cmd, error)
-	environmentOperationsMu       sync.Mutex
-	environmentOperations         map[string]*environmentOperationLive
-	environmentOperationWorkers   sync.WaitGroup
-	environmentOperationsStopped  bool
-	environmentPolicyMu           sync.Mutex
-	environmentBindingsMu         sync.Mutex
-	environmentChanges            *reconcileBroadcaster
-	environmentPolicyScans        map[string]protocol.EnvironmentPolicyStatus
+	executionReconcileSupported   atomic.Bool // set when a heartbeat ack advertises the server's execution-reconciliation capability
+	// priorControlConfirmedStopped is set at startup from a genuine runtimeproc read of the
+	// prior control's record (see startControlRuntime); it backs instanceConfirmedStopped. It
+	// is opt-in (ControlRuntimeRoot); default false keeps drain-before-restart.
+	priorControlConfirmedStopped atomic.Bool
+	// retainedRestartAdmitted persists the retained-restart decision so the daemon can
+	// re-adopt a surviving child instead of closing it (the G "retain and re-adopt" cut).
+	// It is set when a capability-replacing control restart is admitted (all three held
+	// facts real, see logRetainedRestartDecision) and default false keeps the drain-
+	// before-restart path byte-identical: the child is closed on shutdown as before.
+	retainedRestartAdmitted atomic.Bool
+	// controlService is the opt-in control record owner (see startControlRuntime); nil when
+	// ControlRuntimeRoot is unset or acquisition failed. It is served off the daemon ctx so a
+	// clean daemon exit publishes a "stopped" record a successor control can confirm.
+	controlService               *runtimeproc.Service
+	applicationWake              chan struct{}
+	applicationHostLauncher      func(string) (*exec.Cmd, error)
+	applicationProcessMu         sync.Mutex
+	applicationProcess           *applicationProcessClient
+	applicationTransport         func(string) applicationTransport
+	gatewayProcessMu             sync.Mutex
+	gatewayProcess               *gatewayProcessClient
+	applicationSourceProvider    func(context.Context, applicationSourceRequest) (applicationPreparedSource, error)
+	environmentOperationsMu      sync.Mutex
+	environmentOperations        map[string]*environmentOperationLive
+	environmentOperationWorkers  sync.WaitGroup
+	environmentOperationsStopped bool
+	environmentPolicyMu          sync.Mutex
+	environmentBindingsMu        sync.Mutex
+	environmentChanges           *reconcileBroadcaster
+	environmentPolicyScans       map[string]protocol.EnvironmentPolicyStatus
 	// restartMu guards restartBinary. Two goroutines can reach triggerRestart —
 	// the server-triggered handleUpdate and the autoUpdateLoop — and
 	// trySelfReload reads RestartBinary() from the latter to avoid racing the
@@ -695,10 +754,11 @@ type Daemon struct {
 	activeEnvRoots     map[string]int  // env root path -> reference count (handles reuse paths marked twice)
 	deletingEnvRoots   map[string]bool // env roots reserved by GC; new tasks wait until the mutation finishes
 
-	activeStoresMu   sync.Mutex
-	activeStoresCond *sync.Cond      // signalled when an in-flight store deletion finishes, so a blocked markActive can proceed
-	activeStores     map[string]int  // persistent store path (per-conversation Codex sessions, per-agent Hermes memories) -> live-task refcount; guards the store from GC mid-task (MUL-4424)
-	deletingStores   map[string]bool // store paths a GC delete has reserved; markActive waits these out so a task never mounts a store mid-removal
+	activeStoresMu    sync.Mutex
+	activeStoresCond  *sync.Cond // signalled when an in-flight store deletion finishes, so a blocked markActive can proceed
+	activeStoreLeases map[string]*execenv.SharedDirectoryLease
+	activeStores      map[string]int  // persistent store path (per-conversation Codex sessions, per-agent Hermes memories) -> live-task refcount; guards the store from GC mid-task (MUL-4424)
+	deletingStores    map[string]bool // store paths a GC delete has reserved; markActive waits these out so a task never mounts a store mid-removal
 
 	// repoCheckoutTasks binds the localhost /repo/checkout endpoint to the
 	// task-scoped bearer token of a currently running agent. The request body is
@@ -721,8 +781,36 @@ type Daemon struct {
 	// deleted bare clone and an unrelated `not empty` cleanup failure.
 	bgSyncs sync.WaitGroup
 
-	runner             taskRunner    // executes agent tasks; set to d.runTask by New(), overridable in tests
-	cancelPollInterval time.Duration // how often handleTask polls for server-side cancellation; overridable in tests
+	runner taskRunner // executes agent tasks; set to d.runTask by New(), overridable in tests
+	// workerProcessLaunch, when set, replaces ensureWorkerProcess so a focused
+	// test can drive the opt-in F3 orchestration through a fake transport
+	// without launching a real child. Production leaves it nil and the
+	// orchestration falls back to ensureWorkerProcess.
+	workerProcessLaunch func(ctx context.Context, execID string) (*workerProcessClient, error)
+
+	// bindExecution, when set, replaces the server-side task-execution bind
+	// (d.client.BindTaskExecution) so a focused test can drive the F3
+	// bind-input assembly without a real server. Production leaves it nil
+	// and the assembly falls back to d.client.BindTaskExecution.
+	bindExecution func(ctx context.Context, runtimeID, taskID string, req protocol.BindExecutionRequest) (*protocol.ExecutionIdentity, error)
+	// issueGrant, when set, replaces the server-side execution grant issue
+	// (d.client.IssueExecutionGrant) so a focused test can drive the F3
+	// bind-input assembly without a real server. Production leaves it nil
+	// and the assembly falls back to d.client.IssueExecutionGrant.
+	issueGrant func(ctx context.Context, runtimeID, taskID string, req protocol.ExecutionGrantRequest) (*protocol.ExecutionGrantResponse, error)
+
+	// acquireSupervisor, when set, replaces the server-side control-supervisor
+	// acquisition (d.client.AcquireExecutionSupervisor) so a focused test can
+	// drive the opt-in F3 hot path without a real server. Production leaves it
+	// nil and the hot path falls back to d.client.AcquireExecutionSupervisor.
+	acquireSupervisor func(ctx context.Context, runtimeID string, req protocol.SupervisorRequest) (*protocol.SupervisorResponse, error)
+	// supervisorMu guards the control-supervisor state below. The opt-in F3
+	// hot path (attemptWorkerRun) is the only writer: one daemon holds one
+	// control incarnation across all of its per-execution worker binds.
+	supervisorMu         sync.Mutex
+	supervisorInstanceID string
+	supervisorEpoch      int64
+	cancelPollInterval   time.Duration // how often handleTask polls for server-side cancellation; overridable in tests
 	// taskSlotWait is the brief semaphore wait before the capacity backoff.
 	// New sets the production default; tests shorten it to reach that branch.
 	taskSlotWait time.Duration
@@ -763,6 +851,10 @@ type profileLaunchSpec struct {
 // New creates a new Daemon instance.
 func New(cfg Config, logger *slog.Logger) *Daemon {
 	cacheRoot := filepath.Join(cfg.WorkspacesRoot, ".repos")
+	var repositoryCache repoCacheBackend
+	if !slices.Contains(cfg.ProcessServices, "environment") {
+		repositoryCache = repocache.New(cacheRoot, logger)
+	}
 	skillCacheRoot := filepath.Join(cfg.WorkspacesRoot, ".skill-cache", "v1")
 	client := NewClient(cfg.ServerBaseURL)
 	client.managedVscreen = cfg.NativeHostExecutable != ""
@@ -772,7 +864,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	d := &Daemon{
 		cfg:                         cfg,
 		client:                      client,
-		repoCache:                   repocache.New(cacheRoot, logger),
+		repoCache:                   repositoryCache,
 		skillCache:                  NewSkillBundleCache(skillCacheRoot),
 		logger:                      logger,
 		terminalReports:             newTerminalReportStore(cfg),
@@ -812,7 +904,13 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		runtimeMirrors:              make(map[string]*mirror.RuntimeMirror),
 		inputArbiter:                mirror.NewArbiter(),
 	}
+	if d.mirrorProcessMode() {
+		d.inputArbiter = nil
+	}
 	d.activeEnvRootsCond = sync.NewCond(&d.activeEnvRootsMu)
+	if d.environmentProcessMode() {
+		d.repoCache = &environmentRepoCache{daemon: d}
+	}
 	d.activeStoresCond = sync.NewCond(&d.activeStoresMu)
 	// Seed the copy-on-write availability set from the startup probe. Callers
 	// must go through d.agents() from here on; cfg.Agents is the initial value
@@ -2169,16 +2267,22 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	builtinMCP, err := startBuiltinMCPBroker(ctx)
-	if err != nil {
-		_ = healthLn.Close()
-		return err
+	// The built-in MCP listener is either owned in-process (legacy default) or by
+	// a gateway process. A gateway owner needs authenticated identity, so it is
+	// launched after resolveAuth below; this keeps the legacy default on the
+	// earliest-start, auth-free path.
+	if !d.gatewayProcessMode() {
+		builtinMCP, err := startBuiltinMCPBroker(ctx)
+		if err != nil {
+			_ = healthLn.Close()
+			return err
+		}
+		d.builtinMCP = builtinMCP
+		defer func() {
+			builtinMCP.close()
+			d.builtinMCP = nil
+		}()
 	}
-	d.builtinMCP = builtinMCP
-	defer func() {
-		builtinMCP.close()
-		d.builtinMCP = nil
-	}()
 
 	agentNames := make([]string, 0, len(d.agents()))
 	for name := range d.agents() {
@@ -2219,8 +2323,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// subprocess that escaped to the workdir's parent would fall back to the
 	// user's config PAT. The root marker makes the CLI fail closed anywhere
 	// under the tree. Non-fatal: Prepare re-ensures it per task.
-	if err := execenv.EnsureWorkspacesRootMarker(d.cfg.WorkspacesRoot); err != nil {
-		d.logger.Warn("workspaces root marker not written; CLI fail-closed guard limited to task workdirs", "error", err)
+	if !d.environmentProcessMode() {
+		if err := execenv.EnsureWorkspacesRootMarker(d.cfg.WorkspacesRoot); err != nil {
+			d.logger.Warn("workspaces root marker not written; CLI fail-closed guard limited to task workdirs", "error", err)
+		}
 	}
 
 	// Load auth token from CLI config.
@@ -2248,6 +2354,38 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 
+	// Resolve the authenticated account first so the single-owner lock can be
+	// namespaced by account: control and a gateway on the same account land
+	// on one shared owner lock, so only one uploads. Acquisition is then
+	// best-effort; a blocked owner defers the loops instead of double-delivering.
+	d.resolveReportOutboxAccount(ctx)
+	// Bind the terminal report store to the resolved account so it adopts only
+	// records of this account and quarantines the rest. An empty account
+	// leaves the store in its legacy upload-all behaviour.
+	d.terminalReports.bindAccount(d.accountID)
+
+	// Opt-in control record (F3/G): when a control runtime root is configured the
+	// daemon captures the prior control's confirmed-stopped fact from a real
+	// runtimeproc read and owns its own control record. Best-effort and never
+	// blocks startup; with no root it does nothing and the daemon keeps
+	// drain-before-restart, so the default path is byte-identical.
+	d.startControlRuntime(ctx)
+
+	// Acquire the single-owner outbox lock before starting the report loops
+	// so control is never a second uploader once a gateway (or any other
+	// process) owns the same namespace. A blocked owner keeps the loops
+	// deferring instead of double-delivering; the lock is released on
+	// shutdown so a successor can take over the namespace.
+	if err := d.acquireReportOutboxOwner(); err != nil {
+		if errors.Is(err, ErrReportOutboxOwned) {
+			d.reportOutboxBlocked = true
+			d.logger.Warn("report outbox is owned by another process; deferring uploads",
+				"namespace", d.reportOutboxNamespaceRoot())
+		} else {
+			d.logger.Warn("acquire report outbox owner", "error", err)
+		}
+	}
+	defer d.reportOutboxOwner.release()
 	// Deregister runtimes on shutdown (uses a fresh context since ctx will be cancelled).
 	defer d.deregisterRuntimes()
 	defer d.closeVscreenReporter()
@@ -2269,17 +2407,63 @@ func (d *Daemon) Run(ctx context.Context) error {
 	taskWakeups := make(chan taskWakeup, 256)
 	go d.taskWakeupLoop(ctx, taskWakeups)
 	go d.heartbeatLoop(ctx)
-	go d.gcLoop(ctx)
-	go d.environmentRecycleLoop(ctx)
+	if d.environmentProcessMode() {
+		environmentCtx, stop := context.WithTimeout(ctx, 30*time.Second)
+		environment, err := d.ensureEnvironmentProcess(environmentCtx)
+		stop()
+		if err != nil {
+			return fmt.Errorf("start environment service: %w", err)
+		}
+		defer func() {
+			if err := environment.close(); err != nil {
+				d.logger.Warn("environment service shutdown unconfirmed", "error", err)
+			}
+		}()
+	} else {
+		go d.gcLoop(ctx)
+		go d.environmentRecycleLoop(ctx)
+	}
 	go d.autoUpdateLoop(ctx)
 	go d.tokenRenewalLoop(ctx)
 	go d.localReviewLoop(ctx)
-	applicationsDone := make(chan struct{})
-	go func() { defer close(applicationsDone); d.applicationLoop(ctx) }()
-	applicationTunnelDone := make(chan struct{})
-	go func() { defer close(applicationTunnelDone); d.applicationTunnelLoop(ctx) }()
-	defer func() { cancel(); <-applicationTunnelDone }()
-	defer func() { cancel(); <-applicationsDone; d.stopOwnedApplications() }()
+	if d.applicationProcessMode() {
+		appCtx, appCancel := context.WithTimeout(ctx, 30*time.Second)
+		application, appErr := d.ensureApplicationProcess(appCtx)
+		appCancel()
+		if appErr != nil {
+			return fmt.Errorf("start application service: %w", appErr)
+		}
+		applicationsDone := make(chan struct{})
+		go func() { defer close(applicationsDone); d.applicationProcessLoop(ctx, application) }()
+		defer func() {
+			cancel()
+			<-applicationsDone
+			if err := application.close(); err != nil {
+				d.logger.Warn("application service shutdown unconfirmed", "error", err)
+			}
+		}()
+	} else {
+		applicationsDone := make(chan struct{})
+		go func() { defer close(applicationsDone); d.applicationLoop(ctx) }()
+		applicationTunnelDone := make(chan struct{})
+		go func() { defer close(applicationTunnelDone); d.applicationTunnelLoop(ctx) }()
+		defer func() { cancel(); <-applicationTunnelDone }()
+		defer func() { cancel(); <-applicationsDone; d.stopOwnedApplications() }()
+	}
+
+	if d.gatewayProcessMode() {
+		gatewayCtx, gatewayCancel := context.WithTimeout(ctx, 30*time.Second)
+		gateway, err := d.ensureGatewayProcess(gatewayCtx)
+		gatewayCancel()
+		if err != nil {
+			return fmt.Errorf("start gateway service: %w", err)
+		}
+		d.builtinMCP = gateway
+		defer func() {
+			d.retainGatewayOnRetainedRestart(gateway)
+			d.builtinMCP = nil
+		}()
+	}
 
 	// Preflight succeeded and the background loops are up: the daemon has
 	// registered its runtimes and can now claim and run tasks. Flip /health
@@ -2295,6 +2479,29 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 // RestartBinary returns the path to the new binary if the daemon needs to restart
 // after a successful update, or empty string if no restart is needed.
+// retainGatewayOnRetainedRestart closes the gateway child on shutdown, or re-adopts
+// it when a capability-replacing control restart was admitted (the G "retain and
+// re-adopt" cut). It is opt-in: unless retainedRestartAdmitted is set (only when all
+// three held facts are real) the child is closed exactly as before, so the default
+// (non-retained) path is byte-identical. When the restart is admitted the child is
+// re-adopted by reopening its runtime record (runtimeproc.Open, which accepts a live
+// child, not the stopped-only owner lock); a re-adoption failure falls back to
+// closing the child so a half-dead child is never orphaned without an owner.
+func (d *Daemon) retainGatewayOnRetainedRestart(gateway *gatewayProcessClient) {
+	if !d.retainedRestartAdmitted.Load() {
+		gateway.close()
+		return
+	}
+	if _, err := gateway.reAdopt(context.Background()); err != nil {
+		// The child could not be re-CONNECTed; fall back to a clean close so it is
+		// never orphaned without an owner.
+		d.logger.Warn("control-restart: re-adopt failed; closing gateway child", "error", err)
+		gateway.close()
+		return
+	}
+	d.logger.Info("control-restart: retained gateway child re-adopted; not closing")
+}
+
 func (d *Daemon) RestartBinary() string {
 	d.restartMu.Lock()
 	defer d.restartMu.Unlock()
@@ -2353,6 +2560,10 @@ func (d *Daemon) allRuntimeIDs() []string {
 }
 
 func (d *Daemon) closeRuntimeMirrors() {
+	if d.mirrorProcessMode() {
+		d.closeMirrorProcess()
+		return
+	}
 	d.mu.Lock()
 	mirrors := make([]*mirror.RuntimeMirror, 0, len(d.runtimeMirrors))
 	for runtimeID, runtimeMirror := range d.runtimeMirrors {
@@ -2369,6 +2580,15 @@ func (d *Daemon) closeRuntimeMirrors() {
 // that are leaving the tracked set. Callers must hold d.mu and close the
 // returned mirrors after releasing it.
 func (d *Daemon) detachRuntimeMirrorsLocked(runtimeIDs []string) []*mirror.RuntimeMirror {
+	if d.mirrorProcessMode() {
+		if d.mirrorPendingRemoval == nil {
+			d.mirrorPendingRemoval = map[string]bool{}
+		}
+		for _, id := range runtimeIDs {
+			d.mirrorPendingRemoval[id] = true
+		}
+		return nil
+	}
 	if len(runtimeIDs) == 0 || len(d.runtimeMirrors) == 0 {
 		return nil
 	}
@@ -3712,6 +3932,33 @@ func (d *Daemon) publishCoAuthoredByState(workspaceID string, verdict func(strin
 	if d.repoCache == nil || workspaceID == "" {
 		return
 	}
+	if d.environmentProcessMode() {
+		d.mu.Lock()
+		workspace := d.workspaces[workspaceID]
+		d.mu.Unlock()
+		if workspace == nil {
+			return
+		}
+		workspace.coAuthorPublishMu.Lock()
+		defer workspace.coAuthorPublishMu.Unlock()
+		enabled := verdict(workspaceID)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		child, err := d.ensureEnvironmentProcess(ctx)
+		if err == nil {
+			err = child.sync(ctx)
+		}
+		if err == nil {
+			err = child.mutation(ctx, "cache.coauthor", struct {
+				WorkspaceID string `json:"workspace_id"`
+				Enabled     bool   `json:"enabled"`
+			}{workspaceID, enabled}, nil)
+		}
+		if err != nil {
+			d.logger.Warn("environment coauthor publication unconfirmed", "error", err)
+		}
+		return
+	}
 	cache, ok := d.repoCache.(coAuthoredByPublisher)
 	if !ok {
 		return
@@ -4742,6 +4989,15 @@ func (d *Daemon) handleHeartbeatActions(ctx context.Context, runtimeID string, r
 		d.applicationServerCapabilities.Store(runtimeID, true)
 		d.wakeApplications()
 	}
+	if slices.Contains(resp.ServerCapabilities, protocol.ExecutionCapabilityV1) {
+		// The server advertised execution reconciliation: the daemon may, on a
+		// confirmed-stopped old instance with a retained execution, consider a
+		// capability-replacing (retained) restart. This is the only fact the
+		// retained-restart decision gate reads from a live source; the other
+		// two facts still fail closed until their boundaries are wired, so a
+		// capability-replacing restart is never admitted without all three.
+		d.executionReconcileSupported.Store(true)
+	}
 	if resp.PendingUpdate != nil || resp.PendingModelList != nil || resp.PendingLocalSkills != nil || resp.PendingLocalSkillImport != nil {
 		d.logger.Debug("heartbeat: pending actions",
 			"runtime_id", runtimeID,
@@ -5212,6 +5468,12 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 		})
 		return
 	case serverUpdateRuntimeBusy:
+		// A capability-replacing control restart may be admitted only when it
+		// can retain the execution; while a task or claim is in flight the
+		// decision gate gathers the held facts and refuses, keeping drain-
+		// before-restart. The decision is logged so the boundary is observable;
+		// it never changes this busy->drain outcome.
+		d.logRetainedRestartDecision("")
 		d.logger.Info("update deferred: task or claim in progress", "runtime_id", runtimeID, "update_id", update.ID)
 		d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
 			"status": "failed",
@@ -6145,7 +6407,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		return
 	}
 
-	d.reportTaskResult(ctx, task.ID, result, taskLog)
+	reportContext := ctx
+	if d.mirrorProcessMode() {
+		reportContext = context.WithValue(ctx, mirrorReportedClaimKey{}, mirrorTaskClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, DispatchedAt: task.DispatchedAt, PriorSessionID: task.PriorSessionID, Source: task.MirrorSource, Continuation: task.VscreenContinuation})
+	}
+	d.reportTaskResult(reportContext, task.ID, result, taskLog)
 
 }
 
@@ -6386,6 +6652,13 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 // 30-second drain, but terminal callbacks must still use that remaining window.
 // The explicit timeout keeps this detached work bounded during normal runs.
 func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTaskReport) error {
+	// Stamp the current account onto the durable record so the account-aware
+	// replay pass can adopt it (and quarantine records of another account or a
+	// legacy v1 record that carries no account). Empty in legacy mode, where
+	// every record is still uploaded as before.
+	if report.accountID == "" {
+		report.accountID = d.accountID
+	}
 	if _, err := persistedTerminalReport(report, time.Now()); err != nil {
 		return err
 	}
@@ -7409,12 +7682,56 @@ func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localA
 	var claim *executionEnvClaim
 	var lockedInfo os.FileInfo
 	if localAssignment != nil && localAssignment.UsesWorktree() {
-		claim, lockedInfo = d.borrowExecutionEnvClaim(priorRoot)
+		if d.environmentServiceOwner {
+			retained, leaseErr := execenv.ReadRetainedLocalWorktree(priorRoot)
+			if leaseErr != nil {
+				return nil, "", nil, false, leaseErr
+			}
+			lease, leaseErr := execenv.ReserveSharedDirectoryPreparation(ctx, retained.Path)
+			if leaseErr != nil {
+				return nil, "", nil, false, leaseErr
+			}
+			shared, leaseErr := lease.HasOtherUsers(ctx)
+			if leaseErr != nil {
+				lease.Finish(ctx, nil)
+				return nil, "", nil, false, leaseErr
+			}
+			lockedInfo, err = os.Stat(priorRoot)
+			if err != nil {
+				lease.Finish(ctx, nil)
+				return nil, "", nil, false, err
+			}
+			claim = &executionEnvClaim{rootDir: priorRoot, shared: shared, release: func() {
+				releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := lease.Finish(releaseCtx, nil); err != nil {
+					d.logger.Warn("physical reuse reservation release deferred", "error", err)
+				}
+			}}
+		} else {
+			claim, lockedInfo = d.borrowExecutionEnvClaim(priorRoot)
+		}
 	}
 	if claim == nil {
+		// Non-local managed checkout. The exclusive env-root FD and a live
+		// shared-directory participant are two distinct locks on the code root,
+		// so waiting the exclusive FD out alone would skip a live borrowed code
+		// consumer. Gate on the participant too: a live participant is a held
+		// condition, so it is waited out rather than declining to a fresh
+		// Prepare, and a cancellation returns the cause (the caller ends the
+		// task) instead of preparing an environment for work nobody waits for.
 		var exclusive *execenv.EnvRootClaim
-		exclusive, lockedInfo, err = d.lockEnvRootForReuseWaitingOutTheBusyWindow(ctx, wsRoot, rel, priorRoot, task)
-		claim = d.registerExecutionEnvClaim(exclusive, lockedInfo)
+		var lease *execenv.SharedDirectoryLease
+		exclusive, lease, lockedInfo, err = d.lockManagedEnvRootForReuse(ctx, wsRoot, rel, priorRoot, task)
+		if err == nil && exclusive != nil {
+			if lease != nil {
+				claim = &executionEnvClaim{rootDir: priorRoot, shared: false, release: func() {
+					d.releaseManagedReuse(exclusive, lease)
+				}}
+			} else {
+				claim = d.registerExecutionEnvClaim(exclusive, lockedInfo)
+			}
+		}
 	}
 	switch {
 	case errors.Is(err, errPriorEnvRootWaitAborted):
@@ -7535,6 +7852,80 @@ func (d *Daemon) lockEnvRootForReuseWaitingOutTheBusyWindow(
 			// would file one cancellation under both "cancelled" and "budget
 			// exhausted" in the very logs the budget is meant to be judged by.
 			return nil, nil, fmt.Errorf("%w: %w", errPriorEnvRootWaitAborted, context.Cause(ctx))
+		case <-time.After(envRootBusyRetryInterval):
+		}
+	}
+}
+
+// releaseManagedReuse settles the participant lease and drops the exclusive
+// env-root claim held by a non-local managed reuse. Both are kernel locks, so
+// the code root stays protected until the caller is finished with it.
+func (d *Daemon) releaseManagedReuse(exclusive *execenv.EnvRootClaim, lease *execenv.SharedDirectoryLease) {
+	if lease != nil {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := lease.Finish(releaseCtx, nil); err != nil {
+			d.logger.Warn("physical reuse reservation release deferred", "error", err)
+		}
+	}
+	exclusive.Release()
+}
+
+// lockManagedEnvRootForReuse takes the exclusive env-root claim for a non-local
+// managed reuse and then gates it on a live shared-directory participant on the
+// code root. The exclusive FD and the participant are two distinct locks, so a
+// free exclusive FD does not prove the code is free: a live borrowed code
+// consumer is waited out like a held lock, not skipped.
+//
+// A cancellation returns the cause so the caller ends the task instead of
+// declining to a fresh Prepare; an unknown participant state keeps the exclusive
+// admission rather than fresh-Preparing over a root that may still be borrowed.
+// Only a participant the budget cannot clear within the busy window is declined
+// to a fresh environment, the safe fallback for a genuinely wedged root.
+func (d *Daemon) lockManagedEnvRootForReuse(
+	ctx context.Context,
+	wsRoot *os.Root,
+	rel, priorRoot string,
+	task Task,
+) (*execenv.EnvRootClaim, *execenv.SharedDirectoryLease, os.FileInfo, error) {
+	exclusive, info, err := d.lockEnvRootForReuseWaitingOutTheBusyWindow(ctx, wsRoot, rel, priorRoot, task)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	lease, err := execenv.ReserveSharedDirectoryPreparation(ctx, priorRoot)
+	if err != nil {
+		// The participant cannot be established; the exclusive claim alone is
+		// the admission, so keep it rather than declining a healthy root.
+		d.logger.Warn("could not join the reused code root's shared participant", "task", task.ID, "error", err)
+		return exclusive, nil, info, nil
+	}
+	deadline := time.Now().Add(d.envRootBusyWait)
+	for {
+		shared, leaseErr := lease.HasOtherUsers(ctx)
+		if leaseErr != nil {
+			if ctx.Err() != nil {
+				d.releaseManagedReuse(exclusive, lease)
+				return nil, nil, nil, fmt.Errorf("%w: %w", errPriorEnvRootWaitAborted, context.Cause(ctx))
+			}
+			// An unknown participant state keeps the admission rather than
+			// fresh-Preparing over a root that may still be borrowed.
+			return exclusive, lease, info, nil
+		}
+		if !shared {
+			return exclusive, lease, info, nil
+		}
+		if !time.Now().Before(deadline) {
+			// A live participant the budget cannot clear: decline to a fresh
+			// environment, the safe fallback for a genuinely wedged root.
+			d.releaseManagedReuse(exclusive, lease)
+			return nil, nil, nil, nil
+		}
+		d.logger.Info("reused code root is held by a live shared-directory participant; waiting for it",
+			"task", task.ID, "prior_root", filepath.Base(priorRoot))
+		select {
+		case <-ctx.Done():
+			d.releaseManagedReuse(exclusive, lease)
+			return nil, nil, nil, fmt.Errorf("%w: %w", errPriorEnvRootWaitAborted, context.Cause(ctx))
 		case <-time.After(envRootBusyRetryInterval):
 		}
 	}
@@ -8031,9 +8422,19 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// can't reclaim artifacts inside them mid-execution. We mark both the
 	// stable root for a fresh Prepare and the prior root for Reuse — they
 	// usually differ (Reuse keeps the original task's directory).
-	resolvedRoot, err := execenv.ResolveRootDir(taskRootDirParams(d.cfg.WorkspacesRoot, task))
+	var physicalTask *environmentTaskHandle
+	var reservedClaim *execenv.EnvRootClaim
+	resolvedRoot, err := "", error(nil)
+	if d.environmentProcessMode() {
+		physicalTask, reservedClaim, err = d.beginEnvironmentTask(prepareCtx, task, agentName)
+		if reservedClaim != nil {
+			resolvedRoot = reservedClaim.RootDir()
+		}
+	} else {
+		resolvedRoot, err = execenv.ResolveRootDir(taskRootDirParams(d.cfg.WorkspacesRoot, task))
+	}
 	if err != nil {
-		return TaskResult{}, fmt.Errorf("resolve stable task env root: %w", err)
+		return TaskResult{}, asEnvironmentSetupFailure(err)
 	}
 	d.markActiveEnvRoot(resolvedRoot)
 	defer d.unmarkActiveEnvRoot(resolvedRoot)
@@ -8057,12 +8458,33 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// *os.File cannot cross its JSON response back to us. Claiming there would
 	// leave the agent running with no protection at all — which is exactly the
 	// re-dispatch window this guards.
-	envClaim, err := execenv.ClaimEnvRoot(taskRootDirParams(d.cfg.WorkspacesRoot, task))
-	if err != nil {
-		return TaskResult{}, fmt.Errorf("claim execution environment: %w", err)
+	envClaim := reservedClaim
+	if envClaim == nil {
+		envClaim, err = execenv.ClaimEnvRoot(taskRootDirParams(d.cfg.WorkspacesRoot, task))
+		if err != nil {
+			return TaskResult{}, fmt.Errorf("claim execution environment: %w", err)
+		}
 	}
 	defer d.registerExecutionEnvClaim(envClaim, nil).Release()
-	if meta, known := gcMetaForTask(task); known {
+	if physicalTask != nil {
+		defer func() {
+			if !physicalTask.attached {
+				abortCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				if err := physicalTask.abort(abortCtx, physicalTask.privateClean); err != nil {
+					taskLog.Warn("physical preparation abort remains unconfirmed", "error", err)
+				}
+			}
+		}()
+		// Bind the final result to the physical reservation so the completion
+		// path can fence a late/old generation against the current root. The
+		// reservation id is stable across selection, so setting it on the named
+		// return covers every return path including early failures.
+		preparationID := physicalTask.result.Reservation.ID
+		defer func() { taskResult.PhysicalPreparationID = preparationID }()
+	}
+
+	if meta, known := gcMetaForTask(task); known && physicalTask == nil {
 		if err := execenv.SaveGCMeta(envClaim.RootDir(), meta); err != nil {
 			return TaskResult{EnvRoot: envClaim.RootDir()}, asEnvironmentSetupFailure(fmt.Errorf("record preparing environment identity: %w", err))
 		}
@@ -8427,7 +8849,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// model. Guarded from the GC for the whole task, as the Codex store below.
 		if store := execenv.HermesMemoryStorePath(d.cfg.Profile, task.AgentID, res.SourceHome); store != "" {
 			hermesMemoryStore = store
-			d.markActiveStore(store)
+			if err := d.markActiveStore(prepareCtx, store); err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(err)
+			}
 			defer d.unmarkActiveStore(store)
 		}
 		// The overlay links state.db here so the conversation transcript
@@ -8438,7 +8862,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// for the whole task, as the stores above and below.
 		if store := execenv.HermesSessionStorePath(d.cfg.Profile, task.AgentID, res.SourceHome, taskCtx); store != "" {
 			hermesSessionStore = store
-			d.markActiveStore(store)
+			if err := d.markActiveStore(prepareCtx, store); err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(err)
+			}
 			defer d.unmarkActiveStore(store)
 		}
 	}
@@ -8458,99 +8884,220 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// of a long-idle issue (MUL-4424). No-op for non-Codex tasks / no stable key.
 	if provider == "codex" {
 		if store := execenv.CodexSessionStorePath(d.cfg.Profile, taskCtx); store != "" {
-			d.markActiveStore(store)
+			if err := d.markActiveStore(prepareCtx, store); err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(err)
+			}
 			defer d.unmarkActiveStore(store)
 		}
 	}
 	envReused := false
-	var releaseWorkline func()
-	if (localAssignment == nil || localAssignment.UsesWorktree()) && task.AgentID != "" && task.RuntimeID != "" && (task.IssueID != "" || task.ChatSessionID != "" || task.AutopilotID != "") && !(localAssignment != nil && execenv.NeedsPrivateProviderCheckout(provider, effectiveMcpConfig)) {
-		scope, err := managedScopeForTask(task)
-		if err != nil {
-			return TaskResult{}, asEnvironmentSetupFailure(err)
-		}
-		release, err := execenv.LockWorklinePreparation(prepareCtx, d.cfg.WorkspacesRoot, scope)
-		if err != nil {
-			return TaskResult{}, asEnvironmentSetupFailure(err)
-		}
-		releaseWorkline = release
-		defer func() {
-			if releaseWorkline != nil {
-				releaseWorkline()
-			}
-		}()
-	}
-	var priorClaim *executionEnvClaim
-	var priorWorkDir string
-	var lockedPriorInfo os.FileInfo
-	var reusable bool
-	var reuseErr error
-	if !execenv.NeedsPrivateProviderCheckout(provider, effectiveMcpConfig) || localAssignment == nil {
-		priorClaim, priorWorkDir, lockedPriorInfo, reusable, reuseErr = d.lockReusablePriorEnvRoot(ctx, task, localAssignment, envClaim.RootDir())
-	}
-	if reuseErr != nil {
-		// Cancelled while waiting for the previous run to let go of its
-		// directory. Ending here IS the behaviour: falling through would
-		// prepare a whole environment — repo checkout included — for a task
-		// nobody is waiting for any more.
-		return TaskResult{}, reuseErr
-	}
-	if reusable {
-		defer priorClaim.Release()
-		// Deterministic seam for the last-window regression: tests swap the
-		// directory here, after the claim is settled and before Reuse resolves
-		// the path by name.
-		if reuseBeforeUseTestHook != nil {
-			reuseBeforeUseTestHook()
-		}
-		var err error
-		var localReuse *execenv.LocalWorktree
-		var releaseLocalSnapshot func()
+	if physicalTask != nil {
+		params := execenv.PrepareParams{WorkspacesRoot: d.cfg.WorkspacesRoot, Profile: d.cfg.Profile, WorkspaceID: task.WorkspaceID, WorkspaceSlug: task.WorkspaceSlug, TaskID: task.ID, RuntimeID: task.RuntimeID, IssueIdentifier: task.IssueIdentifier, AgentName: agentName, IsolateLocalContext: true, Provider: provider, CodexVersion: codexVersion, OpenclawBin: openclawBin, McpConfig: effectiveMcpConfig, CursorMcpAuthSource: cursorMcpAuthSource, OpenclawGateway: openclawGateway, HermesSourceHome: hermesSourceHome, HermesSourceMustExist: hermesSourceMustExist, HermesEnv: hermesEnv, HermesMemoryStore: hermesMemoryStore, HermesSessionStore: hermesSessionStore, ReasonixEnv: reasonixEnv, CodexCustomArgs: codexSandboxArgs, Task: taskCtx, PrivateEnvironment: execenv.TaskPrivatePreparationEnvironment(provider, os.Environ(), agentEnvOverrides)}
 		if localAssignment.UsesWorktree() {
-			params := localWorktreeParamsForTask(task, localAssignment, managedCodeRoot(d.cfg.WorkspacesRoot, priorWorkDir))
-			params.SharedCheckout = priorClaim != nil && priorClaim.shared
-			if active, err := localreview.HasActiveReview(prepareCtx, params.EnvRoot, time.Now()); err != nil || active {
-				if err != nil {
-					return TaskResult{}, asEnvironmentSetupFailure(err)
-				}
-				return TaskResult{}, asEnvironmentSetupFailure(errors.New("local worktree is under active review"))
+			params.LocalWorktree = &execenv.LocalWorktreeParams{LocalPath: localAssignment.AbsPath, RetainCheckout: true}
+		} else if localAssignment != nil {
+			params.LocalWorkDir = localAssignment.AbsPath
+		}
+		physicalInput, err := execenv.PhysicalPreparationInput(params)
+		if err != nil {
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
+		physical, err := physicalTask.selectEnvironment(prepareCtx, physicalInput, task.PriorWorkDir)
+		if err != nil {
+			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
+		envReused = physicalTask.result.Reused
+		if envReused {
+			env, err = d.reusePrivateEnvironment(prepareCtx, execenv.ReuseParams{WorkspacesRoot: d.cfg.WorkspacesRoot, RunRoot: physical.RootDir, WorkDir: physical.WorkDir, ReusedLocalWorktree: physical.LocalWorktree, IsolateLocalContext: true, Profile: d.cfg.Profile, Provider: provider, CodexVersion: codexVersion, ResumeSessionID: task.PriorSessionID, OpenclawBin: openclawBin, McpConfig: effectiveMcpConfig, CursorMcpAuthSource: cursorMcpAuthSource, OpenclawGateway: openclawGateway, HermesSourceHome: hermesSourceHome, HermesSourceMustExist: hermesSourceMustExist, HermesEnv: hermesEnv, HermesMemoryStore: hermesMemoryStore, HermesSessionStore: hermesSessionStore, ReasonixEnv: reasonixEnv, CodexCustomArgs: codexSandboxArgs, Task: taskCtx, PrivateEnvironment: params.PrivateEnvironment}, physical)
+		} else {
+			env, err = d.preparePrivateEnvironment(prepareCtx, params, physical)
+		}
+		if err != nil || env == nil {
+			physicalTask.privateClean = execenv.CleanupSidecars(physical.RootDir) == nil
+			if err == nil {
+				err = errors.New("private preparation declined the selected physical environment")
 			}
-			releaseLocalSnapshot, err = d.acquireReusedWorktreeSnapshot(prepareCtx, task, localAssignment, taskLog)
+			return TaskResult{EnvRoot: physical.RootDir, CodeRoot: physical.CodeRootDir}, asEnvironmentSetupFailure(err)
+		}
+		physicalTask.privateClean = true
+		if env.LocalWorktree != nil {
+			env.LocalWorktree.SetPhysicalControl(physicalTask)
+		} else {
+			lease, err := execenv.UseSharedDirectoryForTask(prepareCtx, env.WorkDir, execenv.SharedWorktreeDelivery{TaskID: task.ID, WorkDir: env.WorkDir})
 			if err != nil {
-				return TaskResult{}, err
-			}
-			previous, loadErr := execenv.ReadRetainedLocalWorktree(params.EnvRoot)
-			if loadErr != nil {
-				releaseLocalSnapshot()
-				return TaskResult{}, loadErr
-			}
-			if err := execenv.ReattachRestoredLocalWorktree(prepareCtx, previous, params, taskLog); err != nil {
-				releaseLocalSnapshot()
 				return TaskResult{}, asEnvironmentSetupFailure(err)
 			}
-			localReuse, err = execenv.ReuseLocalWorktree(previous, params, taskLog)
-			if err != nil {
-				releaseLocalSnapshot()
-				if !errors.Is(err, execenv.ErrLocalWorktreeNotReusable) {
-					return TaskResult{}, asEnvironmentSetupFailure(err)
-				}
-				reusable = false
+			participant, err := lease.PhysicalParticipant()
+			if err == nil {
+				err = physicalTask.Attach(prepareCtx, participant)
 			}
+			if err != nil {
+				lease.ReleaseUnsettled()
+				return TaskResult{}, asEnvironmentSetupFailure(err)
+			}
+			defer func() {
+				if err := execenv.FinishPhysicalUse(lease, physicalTask); err != nil {
+					returnErr = errors.Join(returnErr, fmt.Errorf("physical use settlement: %w", err))
+				}
+			}()
+		}
+		phaseRecorder.Mark(taskPhaseEnvironmentReady)
+		defer func() { taskResult.CodeRoot = env.CodeRootDir }()
+	} else {
+		var releaseWorkline func()
+		if (localAssignment == nil || localAssignment.UsesWorktree()) && task.AgentID != "" && task.RuntimeID != "" && (task.IssueID != "" || task.ChatSessionID != "" || task.AutopilotID != "") && !(localAssignment != nil && execenv.NeedsPrivateProviderCheckout(provider, effectiveMcpConfig)) {
+			scope, err := managedScopeForTask(task)
+			if err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(err)
+			}
+			release, err := execenv.LockWorklinePreparation(prepareCtx, d.cfg.WorkspacesRoot, scope)
+			if err != nil {
+				return TaskResult{}, asEnvironmentSetupFailure(err)
+			}
+			releaseWorkline = release
+			defer func() {
+				if releaseWorkline != nil {
+					releaseWorkline()
+				}
+			}()
+		}
+		var priorClaim *executionEnvClaim
+		var priorWorkDir string
+		var lockedPriorInfo os.FileInfo
+		var reusable bool
+		var reuseErr error
+		if !execenv.NeedsPrivateProviderCheckout(provider, effectiveMcpConfig) || localAssignment == nil {
+			priorClaim, priorWorkDir, lockedPriorInfo, reusable, reuseErr = d.lockReusablePriorEnvRoot(ctx, task, localAssignment, envClaim.RootDir())
+		}
+		if reuseErr != nil {
+			// Cancelled while waiting for the previous run to let go of its
+			// directory. Ending here IS the behaviour: falling through would
+			// prepare a whole environment — repo checkout included — for a task
+			// nobody is waiting for any more.
+			return TaskResult{}, reuseErr
 		}
 		if reusable {
-			env, err = d.reuseExecutionEnvironment(prepareCtx, execenv.ReuseParams{
-				WorkspacesRoot:      d.cfg.WorkspacesRoot,
-				RunRoot:             envClaim.RootDir(),
-				ReusedLocalWorktree: localReuse,
-				IsolateLocalContext: true,
-				Profile:             d.cfg.Profile,
-				// The canonical path the lock was taken on. Handing Reuse the raw
-				// PriorWorkDir instead would re-resolve it, so the directory we
-				// locked and the directory we use could differ.
-				WorkDir:               priorWorkDir,
+			defer priorClaim.Release()
+			// Deterministic seam for the last-window regression: tests swap the
+			// directory here, after the claim is settled and before Reuse resolves
+			// the path by name.
+			if reuseBeforeUseTestHook != nil {
+				reuseBeforeUseTestHook()
+			}
+			var err error
+			var localReuse *execenv.LocalWorktree
+			var releaseLocalSnapshot func()
+			if localAssignment.UsesWorktree() {
+				params := localWorktreeParamsForTask(task, localAssignment, managedCodeRoot(d.cfg.WorkspacesRoot, priorWorkDir))
+				params.SharedCheckout = priorClaim != nil && priorClaim.shared
+				if active, err := localreview.HasActiveReview(prepareCtx, params.EnvRoot, time.Now()); err != nil || active {
+					if err != nil {
+						return TaskResult{}, asEnvironmentSetupFailure(err)
+					}
+					return TaskResult{}, asEnvironmentSetupFailure(errors.New("local worktree is under active review"))
+				}
+				releaseLocalSnapshot, err = d.acquireReusedWorktreeSnapshot(prepareCtx, task, localAssignment, taskLog)
+				if err != nil {
+					return TaskResult{}, err
+				}
+				previous, loadErr := execenv.ReadRetainedLocalWorktree(params.EnvRoot)
+				if loadErr != nil {
+					releaseLocalSnapshot()
+					return TaskResult{}, loadErr
+				}
+				if err := execenv.ReattachRestoredLocalWorktree(prepareCtx, previous, params, taskLog); err != nil {
+					releaseLocalSnapshot()
+					return TaskResult{}, asEnvironmentSetupFailure(err)
+				}
+				localReuse, err = execenv.ReuseLocalWorktree(previous, params, taskLog)
+				if err != nil {
+					releaseLocalSnapshot()
+					if !errors.Is(err, execenv.ErrLocalWorktreeNotReusable) {
+						return TaskResult{}, asEnvironmentSetupFailure(err)
+					}
+					reusable = false
+				}
+			}
+			if reusable {
+				env, err = d.reuseExecutionEnvironment(prepareCtx, execenv.ReuseParams{
+					WorkspacesRoot:      d.cfg.WorkspacesRoot,
+					RunRoot:             envClaim.RootDir(),
+					ReusedLocalWorktree: localReuse,
+					IsolateLocalContext: true,
+					Profile:             d.cfg.Profile,
+					// The canonical path the lock was taken on. Handing Reuse the raw
+					// PriorWorkDir instead would re-resolve it, so the directory we
+					// locked and the directory we use could differ.
+					WorkDir:               priorWorkDir,
+					Provider:              provider,
+					CodexVersion:          codexVersion,
+					ResumeSessionID:       task.PriorSessionID,
+					OpenclawBin:           openclawBin,
+					McpConfig:             effectiveMcpConfig,
+					CursorMcpAuthSource:   cursorMcpAuthSource,
+					OpenclawGateway:       openclawGateway,
+					HermesSourceHome:      hermesSourceHome,
+					HermesSourceMustExist: hermesSourceMustExist,
+					HermesEnv:             hermesEnv,
+					HermesMemoryStore:     hermesMemoryStore,
+					HermesSessionStore:    hermesSessionStore,
+					ReasonixEnv:           reasonixEnv,
+					CodexCustomArgs:       codexSandboxArgs,
+					Task:                  taskCtx,
+				})
+				if releaseLocalSnapshot != nil {
+					releaseLocalSnapshot()
+				}
+				if err != nil {
+					return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("reuse execution environment: %w", err))
+				}
+			}
+			// Reuse resolves priorWorkDir by name, so confirm what it actually
+			// opened is still the directory we hold the lock on. An fd cannot cross
+			// into the preparation helper process, so the name is the only thing
+			// that can be handed over; this turns "silently ran somewhere else"
+			// into "declined and started clean". See lockReusablePriorEnvRoot for
+			// what remains uncovered.
+			if env != nil && lockedPriorInfo != nil {
+				usedInfo, statErr := os.Stat(managedCodeRoot(d.cfg.WorkspacesRoot, env.WorkDir))
+				if statErr != nil || !os.SameFile(lockedPriorInfo, usedInfo) {
+					// No "task" field here: taskLog already carries the full id.
+					taskLog.Info("reused workdir is not the directory that was claimed; starting a fresh environment")
+					env = nil
+				}
+			}
+			// Reuse can decline (nil) and fall through to a fresh Prepare below.
+			// Whether it did decides whether an env-root-scoped session store — the
+			// Hermes overlay's task-local state.db — carried over from the prior task.
+			envReused = env != nil
+			if envReused {
+				// Keep the prior task owner intact; this task's own environment holds
+				// its review binding to the verified reused repository.
+				if err := execenv.WriteReviewDirectory(envClaim.RootDir(), execenv.ReviewDirectory{WorkspaceID: task.WorkspaceID, TaskID: task.ID, Path: env.WorkDir}); err != nil {
+					return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("record reused review directory: %w", err))
+				}
+				if err := execenv.WriteReviewRuntime(envClaim.RootDir(), execenv.ReviewRuntime{WorkspaceID: task.WorkspaceID, TaskID: task.ID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, AgentName: agentName}); err != nil {
+					return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("record reused review runtime: %w", err))
+				}
+			}
+		}
+		if env == nil {
+			var err error
+			prepParams := execenv.PrepareParams{
+				WorkspacesRoot:  d.cfg.WorkspacesRoot,
+				Profile:         d.cfg.Profile,
+				WorkspaceID:     task.WorkspaceID,
+				WorkspaceSlug:   task.WorkspaceSlug,
+				TaskID:          task.ID,
+				RuntimeID:       task.RuntimeID,
+				IssueIdentifier: task.IssueIdentifier,
+				AgentName:       agentName,
+				// This run already holds the claim (envClaim above) and the reset
+				// it implies; preparation must not try to take it again.
+				EnvRootPreclaimed:     true,
+				IsolateLocalContext:   true,
 				Provider:              provider,
 				CodexVersion:          codexVersion,
-				ResumeSessionID:       task.PriorSessionID,
 				OpenclawBin:           openclawBin,
 				McpConfig:             effectiveMcpConfig,
 				CursorMcpAuthSource:   cursorMcpAuthSource,
@@ -8563,122 +9110,57 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				ReasonixEnv:           reasonixEnv,
 				CodexCustomArgs:       codexSandboxArgs,
 				Task:                  taskCtx,
-			})
-			if releaseLocalSnapshot != nil {
-				releaseLocalSnapshot()
 			}
-			if err != nil {
-				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("reuse execution environment: %w", err))
-			}
-		}
-		// Reuse resolves priorWorkDir by name, so confirm what it actually
-		// opened is still the directory we hold the lock on. An fd cannot cross
-		// into the preparation helper process, so the name is the only thing
-		// that can be handed over; this turns "silently ran somewhere else"
-		// into "declined and started clean". See lockReusablePriorEnvRoot for
-		// what remains uncovered.
-		if env != nil && lockedPriorInfo != nil {
-			usedInfo, statErr := os.Stat(managedCodeRoot(d.cfg.WorkspacesRoot, env.WorkDir))
-			if statErr != nil || !os.SameFile(lockedPriorInfo, usedInfo) {
-				// No "task" field here: taskLog already carries the full id.
-				taskLog.Info("reused workdir is not the directory that was claimed; starting a fresh environment")
-				env = nil
-			}
-		}
-		// Reuse can decline (nil) and fall through to a fresh Prepare below.
-		// Whether it did decides whether an env-root-scoped session store — the
-		// Hermes overlay's task-local state.db — carried over from the prior task.
-		envReused = env != nil
-		if envReused {
-			// Keep the prior task owner intact; this task's own environment holds
-			// its review binding to the verified reused repository.
-			if err := execenv.WriteReviewDirectory(envClaim.RootDir(), execenv.ReviewDirectory{WorkspaceID: task.WorkspaceID, TaskID: task.ID, Path: env.WorkDir}); err != nil {
-				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("record reused review directory: %w", err))
-			}
-			if err := execenv.WriteReviewRuntime(envClaim.RootDir(), execenv.ReviewRuntime{WorkspaceID: task.WorkspaceID, TaskID: task.ID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, AgentName: agentName}); err != nil {
-				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("record reused review runtime: %w", err))
+			if localAssignment.UsesWorktree() {
+				prepParams.LocalWorktree = &execenv.LocalWorktreeParams{LocalPath: localAssignment.AbsPath, RetainCheckout: true}
+				// Track the source snapshot for review guards without parking it
+				// behind active writers in the configured local directory.
+				release, lockErr := d.localPathLocks.TrackShared(prepareCtx, localAssignment.RealPath, task.ID)
+				if lockErr != nil {
+					return TaskResult{}, lockErr
+				}
+				env, err = d.prepareExecutionEnvironment(prepareCtx, prepParams)
+				release()
+				if err != nil {
+					return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("prepare execution environment: %w", err))
+				}
+			} else {
+				if localAssignment != nil {
+					prepParams.LocalWorkDir = localAssignment.AbsPath
+				}
+				env, err = d.prepareExecutionEnvironment(prepareCtx, prepParams)
+				if err != nil {
+					return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("prepare execution environment: %w", err))
+				}
 			}
 		}
-	}
-	if env == nil {
-		var err error
-		prepParams := execenv.PrepareParams{
-			WorkspacesRoot:  d.cfg.WorkspacesRoot,
-			Profile:         d.cfg.Profile,
-			WorkspaceID:     task.WorkspaceID,
-			WorkspaceSlug:   task.WorkspaceSlug,
-			TaskID:          task.ID,
-			RuntimeID:       task.RuntimeID,
-			IssueIdentifier: task.IssueIdentifier,
-			AgentName:       agentName,
-			// This run already holds the claim (envClaim above) and the reset
-			// it implies; preparation must not try to take it again.
-			EnvRootPreclaimed:     true,
-			IsolateLocalContext:   true,
-			Provider:              provider,
-			CodexVersion:          codexVersion,
-			OpenclawBin:           openclawBin,
-			McpConfig:             effectiveMcpConfig,
-			CursorMcpAuthSource:   cursorMcpAuthSource,
-			OpenclawGateway:       openclawGateway,
-			HermesSourceHome:      hermesSourceHome,
-			HermesSourceMustExist: hermesSourceMustExist,
-			HermesEnv:             hermesEnv,
-			HermesMemoryStore:     hermesMemoryStore,
-			HermesSessionStore:    hermesSessionStore,
-			ReasonixEnv:           reasonixEnv,
-			CodexCustomArgs:       codexSandboxArgs,
-			Task:                  taskCtx,
+		phaseRecorder.Mark(taskPhaseEnvironmentReady)
+		codeRoot := env.CodeRootDir
+		if codeRoot == "" {
+			codeRoot = env.RootDir
 		}
-		if localAssignment.UsesWorktree() {
-			prepParams.LocalWorktree = &execenv.LocalWorktreeParams{LocalPath: localAssignment.AbsPath, RetainCheckout: true}
-			// Track the source snapshot for review guards without parking it
-			// behind active writers in the configured local directory.
-			release, lockErr := d.localPathLocks.TrackShared(prepareCtx, localAssignment.RealPath, task.ID)
-			if lockErr != nil {
-				return TaskResult{}, lockErr
-			}
-			env, err = d.prepareExecutionEnvironment(prepareCtx, prepParams)
-			release()
-			if err != nil {
-				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("prepare execution environment: %w", err))
-			}
-		} else {
-			if localAssignment != nil {
-				prepParams.LocalWorkDir = localAssignment.AbsPath
-			}
-			env, err = d.prepareExecutionEnvironment(prepareCtx, prepParams)
-			if err != nil {
-				return TaskResult{}, asEnvironmentSetupFailure(fmt.Errorf("prepare execution environment: %w", err))
-			}
-		}
-	}
-	phaseRecorder.Mark(taskPhaseEnvironmentReady)
-	codeRoot := env.CodeRootDir
-	if codeRoot == "" {
-		codeRoot = env.RootDir
-	}
-	if task.AgentID != "" && task.RuntimeID != "" {
-		consumer := execenv.WorktreeConsumer{TaskID: task.ID, AgentID: task.AgentID, RuntimeID: task.RuntimeID, DispatchedAt: task.DispatchedAt}
-		d.environmentBindingsMu.Lock()
-		bindingErr := execenv.UpdateWorktreeConsumer(codeRoot, consumer, false)
-		d.environmentBindingsMu.Unlock()
-		if bindingErr != nil {
-			return TaskResult{EnvRoot: env.RootDir, CodeRoot: env.CodeRootDir}, asEnvironmentSetupFailure(bindingErr)
-		}
-		defer func() {
+		if task.AgentID != "" && task.RuntimeID != "" {
+			consumer := execenv.WorktreeConsumer{TaskID: task.ID, AgentID: task.AgentID, RuntimeID: task.RuntimeID, DispatchedAt: task.DispatchedAt}
 			d.environmentBindingsMu.Lock()
-			releaseErr := execenv.UpdateWorktreeConsumer(codeRoot, consumer, true)
+			bindingErr := execenv.UpdateWorktreeConsumer(codeRoot, consumer, false)
 			d.environmentBindingsMu.Unlock()
-			if releaseErr != nil {
-				taskLog.Warn("worktree consumer release failed", "error", releaseErr)
+			if bindingErr != nil {
+				return TaskResult{EnvRoot: env.RootDir, CodeRoot: env.CodeRootDir}, asEnvironmentSetupFailure(bindingErr)
 			}
-		}()
-	}
-	defer func() { taskResult.CodeRoot = env.CodeRootDir }()
-	if releaseWorkline != nil {
-		releaseWorkline()
-		releaseWorkline = nil
+			defer func() {
+				d.environmentBindingsMu.Lock()
+				releaseErr := execenv.UpdateWorktreeConsumer(codeRoot, consumer, true)
+				d.environmentBindingsMu.Unlock()
+				if releaseErr != nil {
+					taskLog.Warn("worktree consumer release failed", "error", releaseErr)
+				}
+			}()
+		}
+		defer func() { taskResult.CodeRoot = env.CodeRootDir }()
+		if releaseWorkline != nil {
+			releaseWorkline()
+			releaseWorkline = nil
+		}
 	}
 	// Belt-and-suspenders: also mark whatever root we ended up with, in case
 	// future changes diverge from ResolveRootDir.
@@ -9055,15 +9537,19 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// families go through New. This is the single production boundary — the
 	// daemon never calls agent.New or agent.NewRuntime directly, so the two
 	// factories stay meaning exactly one thing each.
-	backend, err := agent.ResolveBackend(provider, agent.Config{
+	// The backend is resolved through the shared launch seam so the legacy
+	// runner and the per-execution task worker (F3) resolve the provider
+	// identically; the approval callback and logger are supplied by the
+	// caller, so the seam has no *Daemon reference.
+	backend, err := resolveProviderBackend(providerBackendInput{
+		Provider:        provider,
+		Task:            task,
+		Logger:          d.logger,
 		RequestApproval: d.requestTaskApproval(task),
 		ExecutablePath:  entry.Path,
 		LaunchPrefix:    profileFixedArgs,
 		CLIVersion:      resolvedVersion,
 		Env:             agentEnv,
-		Logger:          d.logger,
-		TaskID:          task.ID,
-		RuntimeID:       task.RuntimeID,
 		DaemonVersion:   d.cfg.CLIVersion,
 		CodexVersion:    codexVersion,
 		BuiltinRuntime:  !usesCustomProfileCommand,
@@ -9141,68 +9627,32 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if provider == "opencode" || provider == "codearts" {
 		idleWatchdogTimeout = d.cfg.OpenCodeIdleWatchdog
 	}
-	execOpts := agent.ExecOptions{
-		CostLimitUSDTicks:          costLimitUSDTicks,
-		TokenLimit:                 autonomyPolicyTokenLimit(autonomyPolicy),
-		EnableTaskSupplement:       taskSupplementNegotiated,
-		Cwd:                        env.WorkDir,
-		Model:                      model,
-		ThreadName:                 deriveTaskThreadName(task),
-		Timeout:                    d.cfg.AgentTimeout,
-		SemanticInactivityTimeout:  d.cfg.CodexSemanticInactivityTimeout,
-		FirstTurnNoProgressTimeout: d.cfg.CodexFirstTurnNoProgressTimeout,
-		IdleWatchdogTimeout:        idleWatchdogTimeout,
-		HandshakeTimeout:           d.cfg.CodexHandshakeTimeout,
-		TurnInterruptTimeout:       d.cfg.CodexTurnInterruptTimeout,
-		ThreadHandshakeTimeout:     d.cfg.CodexThreadHandshakeTimeout,
-		ResumeSessionID:            task.PriorSessionID,
-		// Post-gate intent: PriorSessionID here already reflects the pre-flight
-		// resume gates (a dropped resume is surfaced via the prompt instead). If it
-		// survived to here, the backend must disclose the loss when the live
-		// resume still fails — even across the fresh-session retry below, which
-		// clears ResumeSessionID but not this (MUL-4424).
-		//
-		// What that disclosure SAYS, and whether it addresses the user at all,
-		// depends on whether this surface's conversation is still readable, which
-		// only the daemon knows — hence handing the backend finished text rather
-		// than a flag. Empty when the prompt already carries the notice, so a turn
-		// can never pay for it twice (MUL-5722).
-		ResumeExpected:         task.PriorSessionID != "",
-		ResumeContinuityNotice: backendResumeContinuityNotice(task),
-		ExtraArgs:              extraArgs,
-		CustomArgs:             customArgs,
-		McpConfig:              mcpConfig,
-		ThinkingLevel:          thinkingLevel,
-		ServiceTier:            serviceTier,
-		OpenclawMode:           openclawMode,
-		ClaudeSettingsPath:     env.ClaudeSettingsPath,
-		QwenpawWorkspace:       env.QwenpawWorkspace,
-	}
-	// Some providers do not reliably load the per-task runtime config files we
-	// write into the task workdir:
-	//   - openclaw is pinned to the task workdir via the per-task config we
-	//     synthesize (see prepareOpenclawConfig), so AGENTS.md / .agent_context/
-	//     in the workdir ARE picked up by the CLI. Inline injection is retained
-	//     as a belt-and-suspenders for older openclaw releases until that load
-	//     path stabilises in production; remove this once a release tracks the
-	//     workdir bootstrap reliably end-to-end.
-	//   - kimi is wrapped through its own CLI whose cwd handling is opaque
-	//     enough that we can't trust the file-based path either.
-	// Pass the full runtime brief inline (CLI catalog + workflow steps + agent
-	// identity/persona + skills + project context) so the backend prepends the
-	// same payload that file-based runtimes pick up from disk. Without this,
-	// these providers silently miss the workflow section and never call
-	// `multica issue status` / `multica issue comment add`, leaving issues
-	// stuck in `todo`.
-	//
-	// Hermes and Kiro are intentionally excluded: their ACP sessions start in
-	// the task cwd and load AGENTS.md themselves. Kiro documents root AGENTS.md
-	// as always included, and a real kiro-cli 2.13.0 ACP smoke confirms it.
-	// Prepending the full runtime brief into the ACP user prompt duplicates that
-	// context and bloats every turn.
-	if providerNeedsInlineSystemPrompt(provider) && env.ContextDir == "" {
-		execOpts.SystemPrompt = runtimeBrief
-	}
+	execOpts := buildProviderExecOptions(providerExecOptionsInput{
+		Provider:                        provider,
+		Task:                            task,
+		AutonomyPolicy:                  autonomyPolicy,
+		CostLimitUSDTicks:               costLimitUSDTicks,
+		TaskSupplementNegotiated:        taskSupplementNegotiated,
+		WorkDir:                         env.WorkDir,
+		ClaudeSettingsPath:              env.ClaudeSettingsPath,
+		QwenpawWorkspace:                env.QwenpawWorkspace,
+		ContextDir:                      env.ContextDir,
+		Model:                           model,
+		IdleWatchdogTimeout:             idleWatchdogTimeout,
+		ExtraArgs:                       extraArgs,
+		CustomArgs:                      customArgs,
+		McpConfig:                       mcpConfig,
+		ThinkingLevel:                   thinkingLevel,
+		ServiceTier:                     serviceTier,
+		OpenclawMode:                    openclawMode,
+		RuntimeBrief:                    runtimeBrief,
+		AgentTimeout:                    d.cfg.AgentTimeout,
+		CodexSemanticInactivityTimeout:  d.cfg.CodexSemanticInactivityTimeout,
+		CodexFirstTurnNoProgressTimeout: d.cfg.CodexFirstTurnNoProgressTimeout,
+		CodexHandshakeTimeout:           d.cfg.CodexHandshakeTimeout,
+		CodexTurnInterruptTimeout:       d.cfg.CodexTurnInterruptTimeout,
+		CodexThreadHandshakeTimeout:     d.cfg.CodexThreadHandshakeTimeout,
+	})
 
 	// A quick-actions refresh task from a server that predates server-side
 	// generation (MUL-5573). This daemon no longer has a suggestion pass to run
@@ -9245,6 +9695,48 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		"timeout", execOpts.Timeout,
 		"idle_watchdog", execOpts.IdleWatchdogTimeout,
 	)
+
+	// F3 opt-in: when a profile opts into the per-execution task worker,
+	// the worker runs the provider in a separate process and settles the
+	// execution via its OWN callback (client.Callback). When it ran
+	// (ran=true) the execution is already settled server-side, so the
+	// control parent must NOT run the provider in-process (executeAndDrain)
+	// — that would double-run — and the in-process settlement is skipped by
+	// the pre-completion check (shouldInterruptAgent on completed/failed/
+	// cancelled), so it must not double-settle either. A refused bind
+	// (ran=false, no error) or an uncertain outcome falls back to the
+	// in-process runner below. The default (gate OFF) path is untouched.
+	// The opt-in per-execution task worker is a SEPARATE execution path, not a
+	// drop-in swap of executeAndDrain. attemptWorkerRun reports whether the worker
+	// drove a genuine provider run and settled the execution via its OWN callback;
+	// when it did (UseWorkerResult) the control parent returns the projected worker
+	// result WITHOUT running the provider in-process (executeAndDrain) so the
+	// provider is not double-run, and handleTask's final pre-completion check
+	// (shouldInterruptAgent) discards the redundant in-process settle, so it is not
+	// double-settled either. A refused bind or an uncertain outcome falls back to
+	// the in-process runner below. The default (gate OFF) path never reaches here.
+	wdec, werr := d.attemptWorkerRun(ctx, task, provider, agentEnv, env)
+	if werr == nil && wdec.UseWorkerResult {
+		taskLog.Info("task executed in per-execution worker; settled by worker callback", "worker_status", wdec.Result.Status)
+		return projectWorkerResult(wdec.Result, env), nil
+	}
+	if werr != nil {
+		// An uncertain worker outcome (a genuine transport failure) may already have
+		// settled the execution via the worker's OWN callback. The plan requires
+		// 未确认负责人退出，不启动替代执行 / 超时不等于未执行, so the control parent
+		// must NOT blindly re-run the provider: it first checks whether the task is
+		// already terminal server-side. If it is, the worker settled the execution
+		// and re-running would only waste the provider run -- a terminal task stays
+		// terminal, so handleTask's final pre-completion check (shouldInterruptAgent)
+		// discards the redundant settle. If it is NOT terminal, the worker's callback
+		// was lost, so the in-process run below is the recovery.
+		if status, statusErr := d.client.GetTaskStatus(ctx, task.ID); shouldInterruptAgent(status, statusErr) {
+			taskLog.Warn("per-execution worker outcome uncertain but task already terminal; not re-running the provider",
+				"status", status, "error", werr)
+			return TaskResult{}, nil
+		}
+		taskLog.Warn("per-execution worker outcome uncertain; falling back to in-process runner", "error", werr)
+	}
 
 	// Shared across the resume-retry below so the retry's transcript rows
 	// keep ascending seq values for the same task.
@@ -9950,6 +10442,73 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	defer d.runningTasks.Add(-1)
 	phaseRecorder.Mark(taskPhaseRuntimeStarted)
 	taskLog.Debug("backend started, draining messages")
+
+	// reportTaskMessages and pinTaskSession are the transport seams the provider
+	// run uses to post transcript rows and pin the session. They are defined here
+	// so the drain loop and the startup-diagnosis callback post through a single
+	// injectable transport instead of reaching for d.client directly: the legacy
+	// runner wires them to d.client, and the per-execution task worker (F3) will
+	// wire the same closures to its own transport, so a worker that owns the
+	// provider run reports transcript rows and pins sessions without a *Daemon
+	// reference.
+	reportTaskMessages := func(reportCtx context.Context, taskID string, messages []TaskMessageData) error {
+		return d.client.ReportTaskMessages(reportCtx, taskID, messages)
+	}
+	pinTaskSession := func(pinCtx context.Context, taskID, sessionID, workDir string) error {
+		return d.client.PinTaskSession(pinCtx, taskID, sessionID, workDir)
+	}
+	claimSupplement := d.client.ClaimTaskSupplement
+	ackSupplement := d.client.AckTaskSupplement
+	subscribeSupplement := d.taskSupplementSignals.subscribe
+	readyInterval := d.effectiveTaskSupplementReadyInterval()
+	pollInterval := d.effectiveTaskSupplementPollInterval()
+	// The shared provider run is *Daemon-free, so the legacy runner reads the watchdog
+	// windows here and passes them into runProviderExecution; the F3 task worker supplies
+	// the same values from its own configuration.
+	idleWindow := d.cfg.AgentIdleWatchdog
+	toolWindow := d.cfg.AgentToolWatchdog
+	startupThreshold := d.cfg.AgentStartupTimeout
+
+	return runProviderExecution(
+		ctx, agentCtx, agentCancel, session, opts, budget, source, taskLog, taskID, codexHome, msgSeq, phaseRecorder,
+		reportTaskMessages, pinTaskSession, subscribeSupplement, claimSupplement, ackSupplement, readyInterval, pollInterval,
+		idleWindow, toolWindow, startupThreshold,
+	)
+}
+
+// runProviderExecution drives the shared provider run for one execution: it owns the budget
+// watcher, task-supplement loop, transcript drain, idle/startup watchdogs and the terminal
+// result classification. It is deliberately *Daemon-free: the transcript report and
+// session-pin transports, the supplement claim/ack callbacks, the supplement signal
+// subscription and the watchdog windows are supplied by the caller, so the legacy in-process
+// runner wires them to *Daemon and the F3 per-execution task worker wires the same seams to
+// its own transport. Budget snapshot, usage reconciliation and the runningTasks health
+// counter stay in the caller because they touch the caller's named returns and *Daemon-owned
+// health state.
+func runProviderExecution(
+	ctx context.Context,
+	agentCtx context.Context,
+	agentCancel context.CancelFunc,
+	session *agent.Session,
+	opts agent.ExecOptions,
+	budget *taskUsageBudget,
+	source string,
+	taskLog *slog.Logger,
+	taskID string,
+	codexHome string,
+	msgSeq *atomic.Int32,
+	phaseRecorder *taskPhaseRecorder,
+	reportTaskMessages func(context.Context, string, []TaskMessageData) error,
+	pinTaskSession func(context.Context, string, string, string) error,
+	subscribeSupplement func(string) (<-chan struct{}, func()),
+	claimSupplement func(context.Context, string) (*TaskSupplement, error),
+	ackSupplement func(context.Context, string, string, bool, string) error,
+	readyInterval time.Duration,
+	pollInterval time.Duration,
+	idleWindow time.Duration,
+	toolWindow time.Duration,
+	startupThreshold time.Duration,
+) (agent.Result, int32, error) {
 	var budgetExceeded atomic.Bool
 	var tokenBudgetExceeded atomic.Bool
 	budgetCtx, stopBudgetWatcher := context.WithCancel(agentCtx)
@@ -9958,78 +10517,10 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 		stopBudgetWatcher()
 		<-budgetWatcherDone
 	}()
-	budgetResult := func(result agent.Result) agent.Result {
-		reached := budgetExceeded.Load()
-		var snapshot agent.TokenUsage
-		var snapshotKnown bool
-		if session.UsageSnapshot != nil {
-			snapshot, snapshotKnown = session.UsageSnapshot()
-			if snapshotKnown && opts.CostLimitUSDTicks > 0 && snapshot.CostUSDTicks >= opts.CostLimitUSDTicks {
-				reached = true
-				budgetExceeded.Store(true)
-			}
-			if snapshotKnown && opts.TokenLimit > 0 && reportedUsageTokenLimitReached(snapshot, opts.TokenLimit) {
-				reached = true
-				tokenBudgetExceeded.Store(true)
-			}
-		}
-
-		if snapshotKnown {
-			result.Usage = reconcileUsageSnapshot(result.Usage, opts.Model, snapshot)
-			if budget != nil {
-				budget.RecordSnapshot(source, budget.primaryProvider, result.Usage)
-			}
-		}
-		if budget != nil {
-			if errors.Is(budget.Check(), errTaskTokenLimit) {
-				tokenBudgetExceeded.Store(true)
-				reached = true
-			}
-			if errors.Is(budget.Check(), errTaskCostLimit) {
-				reached = true
-			}
-		}
-		if !reached {
-			return result
-		}
-		result.BudgetExceeded = true
-		result.TokenBudgetExceeded = tokenBudgetExceeded.Load()
-		if snapshotKnown {
-			result.Usage = reconcileUsageSnapshot(result.Usage, opts.Model, snapshot)
-		}
-		return result
-	}
 	if (budget != nil || opts.CostLimitUSDTicks > 0 || opts.TokenLimit > 0) && session.UsageSnapshot != nil {
 		go func() {
 			defer close(budgetWatcherDone)
-			ticker := time.NewTicker(100 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					usage, ok := session.UsageSnapshot()
-					if ok && budget != nil {
-						model := opts.Model
-						if model == "" {
-							model = "unknown"
-						}
-						budget.RecordSnapshot(source, budget.primaryProvider, map[string]agent.TokenUsage{model: usage})
-					}
-					costReached := opts.CostLimitUSDTicks > 0 && usage.CostUSDTicks >= opts.CostLimitUSDTicks
-					tokensReached := opts.TokenLimit > 0 && reportedUsageTokenLimitReached(usage, opts.TokenLimit)
-					if ok && (costReached || tokensReached) {
-						budgetExceeded.Store(true)
-						if tokensReached {
-							tokenBudgetExceeded.Store(true)
-						}
-						taskLog.Warn("provider-reported autonomy limit reached; stopping execution", "cost_usd_ticks", usage.CostUSDTicks, "max_cost_usd_ticks", opts.CostLimitUSDTicks, "max_token_count", opts.TokenLimit)
-						agentCancel()
-						return
-					}
-				case <-budgetCtx.Done():
-					return
-				}
-			}
+			runBudgetWatcher(budgetCtx, session, opts, budget, source, &budgetExceeded, &tokenBudgetExceeded, agentCancel, taskLog)
 		}()
 	} else {
 		close(budgetWatcherDone)
@@ -10040,11 +10531,11 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	if opts.EnableTaskSupplement && session.Supplement != nil && session.SupplementReady != nil {
 		supplementCtx, cancelSupplements := context.WithCancel(agentCtx)
 		supplementsDone := make(chan struct{})
-		wakeup, unsubscribe := d.taskSupplementSignals.subscribe(taskID)
+		wakeup, unsubscribe := subscribeSupplement(taskID)
 		go func() {
 			defer unsubscribe()
 			defer close(supplementsDone)
-			d.runTaskSupplementLoop(supplementCtx, session, taskID, wakeup, taskLog)
+			runTaskSupplementLoop(supplementCtx, session, taskID, wakeup, taskLog, claimSupplement, ackSupplement, readyInterval, pollInterval)
 		}()
 		defer func() {
 			cancelSupplements()
@@ -10096,7 +10587,6 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// idleWatchdogThreshold records (as nanos) which silence budget actually
 	// tripped the watchdog — the idle window or the larger in-flight-tool
 	// window — so the failure message reports the real duration.
-	idleWindow := d.cfg.AgentIdleWatchdog
 	// A provider may opt into a shorter per-run no-message budget. The global
 	// zero remains authoritative so MULTICA_AGENT_IDLE_WATCHDOG=0 still disables
 	// the entire watchdog suite. Tool calls continue to use AgentToolWatchdog.
@@ -10134,7 +10624,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	watchdogCtx, stopWatchdog := context.WithCancel(agentCtx)
 	defer stopWatchdog()
 	if idleWindow > 0 {
-		go d.runIdleWatchdog(watchdogCtx, idleWindow, d.cfg.AgentToolWatchdog, &lastActivityAt, watchdogToolCount, &idleWatchdogFired, &idleWatchdogThreshold, agentCancel, session.Messages, session.InterruptBackgroundTools, terminalObserved, taskLog)
+		go runIdleWatchdog(watchdogCtx, idleWindow, toolWindow, &lastActivityAt, watchdogToolCount, &idleWatchdogFired, &idleWatchdogThreshold, agentCancel, session.Messages, session.InterruptBackgroundTools, terminalObserved, taskLog)
 	}
 
 	// Startup watchdog: zero output since launch. Unlike the idle watchdog
@@ -10143,13 +10633,12 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// windows. On fire it posts a diagnostic "error" transcript row inline
 	// (users otherwise see only a spinner for two hours), then cancels on
 	// the same agentCtx the idle watchdog uses.
-	startupThreshold := d.cfg.AgentStartupTimeout
 	if startupThreshold > 0 {
-		go d.runStartupWatchdog(watchdogCtx, startupThreshold, &outputReceived, &startupWatchdogFired, agentCancel, session.Messages, func(diagnosis string) {
+		go runStartupWatchdog(watchdogCtx, startupThreshold, &outputReceived, &startupWatchdogFired, agentCancel, session.Messages, func(diagnosis string) {
 			seq := msgSeq.Add(1)
 			postCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := d.client.ReportTaskMessages(postCtx, taskID, []TaskMessageData{{
+			if err := reportTaskMessages(postCtx, taskID, []TaskMessageData{{
 				Seq:     int(seq),
 				Type:    "error",
 				Content: diagnosis,
@@ -10167,289 +10656,10 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	var forceDrainOnce sync.Once
 	forceDrainStop := func() { forceDrainOnce.Do(func() { close(forcedDrainStop) }) }
 	defer forceDrainStop()
-	go func() {
-		defer close(drainFinished)
-		var mu sync.Mutex
-		var pendingContent strings.Builder
-		var pendingType string
-		var pendingAt time.Time
-		var batch []TaskMessageData
-		callIDToTool := map[string]string{}
-		// Provider IDs can restart on a same-task retry (for example item_0).
-		// Allocate opaque transcript IDs per execution, including orphan results,
-		// so neither a retry nor a missing call can steal another call's result.
-		transcriptCallIDs := map[string]string{}
-		transcriptCallID := func(providerID string) string {
-			if providerID == "" {
-				return ""
-			}
-			if id, ok := transcriptCallIDs[providerID]; ok {
-				return id
-			}
-			id := uuid.NewString()
-			transcriptCallIDs[providerID] = id
-			return id
-		}
-
-		// sealPendingLocked turns the current contiguous text/thinking frame
-		// into a sequenced row. Callers hold mu so a ticker flush cannot assign
-		// a later seq between sealing the frame and appending the event that
-		// followed it.
-		sealPendingLocked := func() {
-			if pendingContent.Len() == 0 {
-				return
-			}
-			s := msgSeq.Add(1)
-			batch = append(batch, TaskMessageData{
-				Seq:       int(s),
-				Type:      pendingType,
-				Content:   pendingContent.String(),
-				CreatedAt: pendingAt,
-			})
-			pendingContent.Reset()
-			pendingType = ""
-			pendingAt = time.Time{}
-		}
-
-		appendPending := func(messageType, content string, observedAt time.Time) {
-			if content == "" {
-				return
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if pendingType != "" && pendingType != messageType {
-				sealPendingLocked()
-			}
-			if pendingContent.Len() == 0 {
-				pendingType = messageType
-				pendingAt = observedAt
-			}
-			pendingContent.WriteString(content)
-		}
-
-		flush := func() {
-			mu.Lock()
-			sealPendingLocked()
-			toSend := batch
-			batch = nil
-			mu.Unlock()
-
-			if len(toSend) > 0 {
-				sendCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if err := d.client.ReportTaskMessages(sendCtx, taskID, toSend); err != nil {
-					taskLog.Debug("failed to report task messages", "error", err)
-				} else {
-					taskLog.Debug("reported task messages", "count", len(toSend), "last_seq", toSend[len(toSend)-1].Seq)
-				}
-				cancel()
-			}
-		}
-
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-
-		done := make(chan struct{})
-		tickerDone := make(chan struct{})
-		firstVisible := make(chan struct{}, 1)
-		go func() {
-			defer close(tickerDone)
-			for {
-				select {
-				case <-ticker.C:
-					flush()
-				case <-firstVisible:
-					flush()
-				case <-done:
-					return
-				}
-			}
-		}()
-		// The periodic flush bounds request rate for the rest of the transcript,
-		// but making the first visible event wait for its next 500 ms edge adds
-		// pure presentation latency. Signal at most once per execution; a buffered
-		// channel keeps the drain loop non-blocking while the reporter is busy.
-		var firstVisibleOnce sync.Once
-		flushFirstVisible := func() {
-			firstVisibleOnce.Do(func() {
-				firstVisible <- struct{}{}
-			})
-		}
-
-		var sessionPinned atomic.Bool
-		drainInterrupted := drainCtx.Done()
-		for {
-			select {
-			case msg, ok := <-session.Messages:
-				if !ok {
-					goto drainDone
-				}
-				if isTaskOutputReceived(msg) {
-					outputReceived.Store(true)
-					phaseRecorder.Mark(taskPhaseFirstOutputReceived)
-				}
-				if isTaskToolUse(msg) {
-					phaseRecorder.Mark(taskPhaseFirstToolUse)
-				}
-				// Stamp activity as soon as a message lands. The idle
-				// watchdog reads this to decide whether the backend has
-				// gone silent — stamping before processing makes sure a
-				// slow downstream call (mu.Lock contention, batch resize)
-				// can't be misattributed to backend silence.
-				observedAt := time.Now().UTC()
-				lastActivityAt.Store(observedAt.UnixNano())
-				switch msg.Type {
-				case agent.MessageStatus:
-					// Persist the session/work_dir as soon as the backend
-					// reveals them. Without this, a daemon crash mid-run
-					// loses the resume pointer and the auto-retry fires
-					// without context.
-					// MUL-5305: pin the resume pointer only once the session's
-					// rollout is actually in the store, so a crash-recovery pointer
-					// the daemon cannot resume never poisons the next follow-up
-					// (FailAgentTask keeps the pinned session_id via COALESCE, so a
-					// bad mid-flight pin survives a later terminal failure). Codex
-					// reveals the session id on a single task_started status, so a
-					// background waiter polls for the rollout for the life of the
-					// run and pins the moment it lands — a rollout that flushes
-					// after this status is still pinned in-flight (crash recovery
-					// preserved), while a session whose rollout never lands is never
-					// pinned. The terminal report is the authoritative writer.
-					// Non-Codex providers (codexHome == "") pin immediately.
-					if msg.SessionID != "" && !sessionPinned.Swap(true) {
-						sid := msg.SessionID
-						wd := opts.Cwd
-						go func() {
-							if !waitCodexRolloutPresent(drainCtx, codexHome, sid) {
-								taskLog.Debug("skip pinning codex session: rollout not present before run ended",
-									"session_id", sid, "codex_home", codexHome)
-								return
-							}
-							pinCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-							defer cancel()
-							if err := d.client.PinTaskSession(pinCtx, taskID, sid, wd); err != nil {
-								taskLog.Debug("pin session failed", "error", err)
-							}
-						}()
-					}
-				case agent.MessageToolUse:
-					n := toolCount.Add(1)
-					inFlightTools.Add(1)
-					taskLog.Info(fmt.Sprintf("tool #%d: %s", n, msg.Tool))
-					mu.Lock()
-					sealPendingLocked()
-					if msg.CallID != "" {
-						callIDToTool[msg.CallID] = msg.Tool
-					}
-					s := msgSeq.Add(1)
-					batch = append(batch, TaskMessageData{
-						Seq:       int(s),
-						Type:      "tool_use",
-						CallID:    transcriptCallID(msg.CallID),
-						Tool:      msg.Tool,
-						CreatedAt: observedAt,
-						// Redact before the payload leaves this process, not
-						// only on arrival. The server redacts again in its
-						// ingest handler, but that is the *remote* side: a
-						// daemon that self-updated ahead of the server — or one
-						// talking to a server mid-rollout — would otherwise ship
-						// whole-file edit contents (a deleted .env, a patched
-						// credential) to a peer that does not scrub nested
-						// values yet. Deployment order is not a control we
-						// have, so this side has to be safe on its own.
-						Input: redact.InputMap(vscreenTranscriptInput(msg.Tool, msg.Input)),
-					})
-					mu.Unlock()
-					flushFirstVisible()
-				case agent.MessageToolResult:
-					// Decrement only when the count would stay >= 0. A stray
-					// tool_result with no matching tool_use (backend bug or
-					// reconnect mid-stream) shouldn't push the counter
-					// negative — that would re-arm the watchdog one tool_use
-					// too early on the next call.
-					for {
-						cur := inFlightTools.Load()
-						if cur <= 0 {
-							break
-						}
-						if inFlightTools.CompareAndSwap(cur, cur-1) {
-							break
-						}
-					}
-					output, outputTruncated := toolOutputPreview(msg.Output)
-					mu.Lock()
-					sealPendingLocked()
-					toolName := msg.Tool
-					if toolName == "" && msg.CallID != "" {
-						toolName = callIDToTool[msg.CallID]
-					}
-					s := msgSeq.Add(1)
-					if isVscreenToolName(toolName) {
-						output = "Managed virtual screen tool returned; native observation and input omitted."
-						outputTruncated = false
-					}
-					taskLog.Info("tool_result observed", "seq", s, "tool", toolName, "call_id", msg.CallID)
-					batch = append(batch, TaskMessageData{
-						Seq:       int(s),
-						Type:      "tool_result",
-						CallID:    transcriptCallID(msg.CallID),
-						Tool:      toolName,
-						Output:    output,
-						CreatedAt: observedAt,
-						// Always sent, including false: the reader has to be
-						// able to tell "this record is complete" from "this
-						// record predates the flag", and only a daemon that
-						// measured the output can say the former.
-						OutputTruncated: &outputTruncated,
-					})
-					mu.Unlock()
-					flushFirstVisible()
-				case agent.MessageThinking:
-					appendPending("thinking", msg.Content, observedAt)
-					if msg.Content != "" {
-						flushFirstVisible()
-					}
-				case agent.MessageText:
-					if msg.Content != "" {
-						taskLog.Debug("agent", "text", truncateLog(msg.Content, 200))
-					}
-					appendPending("text", msg.Content, observedAt)
-					if msg.Content != "" {
-						flushFirstVisible()
-					}
-				case agent.MessageError:
-					taskLog.Error("agent error", "content", msg.Content)
-					mu.Lock()
-					sealPendingLocked()
-					s := msgSeq.Add(1)
-					batch = append(batch, TaskMessageData{
-						Seq:       int(s),
-						Type:      "error",
-						Content:   msg.Content,
-						CreatedAt: observedAt,
-					})
-					mu.Unlock()
-					flushFirstVisible()
-				}
-			case <-drainInterrupted:
-				if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-					// GUI stop cancels the provider first; keep consuming its owned cleanup
-					// messages until the backend closes the stream or the drain budget expires.
-					drainInterrupted = nil
-					continue
-				}
-				goto drainDone
-			case <-forcedDrainStop:
-				goto drainDone
-			}
-		}
-	drainDone:
-		close(done)
-		// Let any tick-driven flush finish before the final one: a flush still
-		// in flight would otherwise keep posting batches after this goroutine
-		// signalled that the transcript tail was persisted.
-		<-tickerDone
-		flush()
-	}()
+	go runTaskMessageDrain(
+		ctx, session, opts, taskLog, taskID, codexHome, msgSeq, phaseRecorder,
+		&outputReceived, &toolCount, &inFlightTools, &lastActivityAt,
+		drainFinished, forcedDrainStop, drainCtx, reportTaskMessages, pinTaskSession)
 
 	// waitForDrain blocks until the drain goroutine has flushed the transcript
 	// tail, so every terminal return below hands control back only after the
@@ -10461,196 +10671,11 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// wide enough for its worst-case exit — an in-flight tick flush plus the
 	// final one, each capped by the 5s ReportTaskMessages timeout and neither
 	// interruptible by the cancel (they post on context.Background()).
-	waitForDrain := func() {
-		select {
-		case <-drainFinished:
-		case <-time.After(10 * time.Second):
-			forceDrainStop()
-			drainCancel()
-			select {
-			case <-drainFinished:
-			case <-time.After(12 * time.Second):
-				taskLog.Warn("transcript drain did not stop after cancel; completing anyway")
-			}
-		}
-	}
-	// awaitTerminalResult gives a backend that advertises an authoritative
-	// terminal boundary one bounded chance to hand over its result after a
-	// cancellation won the outer select. Result delivery is the linearization
-	// point: TerminalObserved must be published before that send, so checking it
-	// afterwards preserves a provider outcome without racing a flag read. A
-	// delivered non-authoritative result is still returned to the idle-watchdog
-	// caller for re-tagging; ordinary upstream cancellation deliberately ignores
-	// it and keeps the existing generic cancelled disposition.
-	awaitTerminalResult := func(trigger string) (result agent.Result, delivered, authoritative bool) {
-		if !handsOverTerminal {
-			return agent.Result{}, false, false
-		}
-		if trigger == "idle_watchdog" {
-			// Keep this event stable: besides operator diagnostics, the terminal
-			// race regression uses it as the hand-off linearization probe.
-			taskLog.Info("idle watchdog fired; waiting for the backend to hand over its result",
-				"budget", terminalResultHandoffBudget.String())
-		} else {
-			taskLog.Info("waiting for the backend to hand over its result after cancellation",
-				"trigger", trigger,
-				"budget", terminalResultHandoffBudget.String())
-		}
-		timer := time.NewTimer(terminalResultHandoffBudget)
-		defer timer.Stop()
-		select {
-		case result, ok := <-session.Result:
-			if !ok {
-				return agent.Result{}, false, false
-			}
-			return result, true, terminalObserved()
-		case <-timer.C:
-			if trigger == "idle_watchdog" {
-				taskLog.Warn("backend did not hand over a result within the budget; classifying by liveness",
-					"budget", terminalResultHandoffBudget.String())
-			} else {
-				taskLog.Warn("backend did not hand over a result within the budget; classifying by cancellation trigger",
-					"trigger", trigger,
-					"budget", terminalResultHandoffBudget.String())
-			}
-			return agent.Result{}, false, false
-		}
-	}
-
-	select {
-	case result := <-session.Result:
-		result = budgetResult(result)
-		stopWatchdog()
-		waitForDrain()
-		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-			select {
-			case <-drainFinished:
-			default:
-				return result, toolCount.Load(), errVscreenStopUnconfirmed
-			}
-		}
-		// terminalObserved outranks a watchdog that fired anyway: if the backend
-		// had already read its authoritative result, this is the real outcome and
-		// re-tagging it would report a completed run as a hang.
-		if startupWatchdogFired.Load() && !terminalObserved() {
-			result.Status = "startup_timeout"
-			if result.Error == "" {
-				result.Error = buildStartupDiagnosis(codexHome, d.cfg.AgentStartupTimeout)
-			}
-		} else if idleWatchdogFired.Load() && !terminalObserved() {
-			// The backend's wait goroutine (e.g. claude.go) translates the
-			// SIGKILL we delivered via agentCancel into Status="aborted".
-			// Re-tag it as "idle_watchdog" so runTask routes the
-			// disposition through a dedicated failure_reason, not the
-			// generic "agent_error" bucket the aborted path falls into.
-			result.Status = "idle_watchdog"
-			if result.Error == "" {
-				result.Error = idleWatchdogReason(time.Duration(idleWatchdogThreshold.Load()))
-			}
-		}
-		return result, toolCount.Load(), nil
-	case <-drainCtx.Done():
-		if budgetExceeded.Load() || (budget != nil && budget.Check() != nil) {
-			waitForDrain()
-			timer := time.NewTimer(terminalResultHandoffBudget)
-			defer timer.Stop()
-			select {
-			case result, ok := <-session.Result:
-				if ok {
-					return budgetResult(result), toolCount.Load(), nil
-				}
-			case <-timer.C:
-			}
-			return budgetResult(agent.Result{Status: "aborted", Error: "provider-reported cost limit reached"}), toolCount.Load(), nil
-		}
-		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-			// A cancelled context is not proof that the owned provider and tools have stopped.
-			select {
-			case result, ok := <-session.Result:
-				if !ok {
-					return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
-				}
-				waitForDrain()
-				select {
-				case <-drainFinished:
-				default:
-					return result, toolCount.Load(), errVscreenStopUnconfirmed
-				}
-				return result, toolCount.Load(), nil
-			case <-time.After(terminalResultHandoffBudget):
-				return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
-			}
-		}
-		// The drain loop is exiting on this same Done signal; wait for its
-		// final flush so the timeout/watchdog/cancel terminals below cannot
-		// hand back (and let runTask fail-and-broadcast) a still-flushing
-		// transcript either.
-		waitForDrain()
-		// Idle watchdog cancels via agentCancel(), which propagates here as
-		// context.Canceled. Check this BEFORE the generic cancelled/timeout
-		// classifiers so a watchdog-induced stop isn't misreported as
-		// "task cancelled by server".
-		if startupWatchdogFired.Load() {
-			return agent.Result{
-				Status: "startup_timeout",
-				Error:  buildStartupDiagnosis(codexHome, d.cfg.AgentStartupTimeout),
-			}, toolCount.Load(), nil
-		}
-		if idleWatchdogFired.Load() {
-			// For a backend that publishes a terminal boundary, enter the
-			// hand-off without asking terminalObserved first. Reading a flag and
-			// then acting on it is exactly the window this branch kept losing:
-			// the backend can publish between the read and the classifier below.
-			// Waiting for the result instead makes its delivery the
-			// linearization point, and the backend contract — publish the
-			// observation before sending Result — is what makes the check after
-			// delivery reliable rather than lucky.
-			//
-			// Such a backend always closes Result, so a wedged one still ends
-			// this wait promptly through the closed channel rather than the
-			// budget.
-			if result, delivered, authoritative := awaitTerminalResult("idle_watchdog"); authoritative {
-				// The backend had already read its authoritative result, so
-				// this is the real outcome, not a hang.
-				return result, toolCount.Load(), nil
-			} else if delivered {
-				// The backend's wait goroutine (e.g. claude.go) translates the
-				// SIGKILL we delivered via agentCancel into Status="aborted".
-				// Re-tag it so runTask routes the disposition through the
-				// dedicated liveness failure_reason.
-				result.Status = "idle_watchdog"
-				if result.Error == "" {
-					result.Error = idleWatchdogReason(time.Duration(idleWatchdogThreshold.Load()))
-				}
-				return result, toolCount.Load(), nil
-			}
-			return agent.Result{
-				Status: "idle_watchdog",
-				Error:  idleWatchdogReason(time.Duration(idleWatchdogThreshold.Load())),
-			}, toolCount.Load(), nil
-		}
-		// Distinguish external cancellation (e.g. server-initiated cancel
-		// because the issue was reassigned, or the user invoked CancelTask)
-		// from genuine drain-deadline timeouts. context.Canceled means the
-		// upstream runCtx fired runCancel(); context.DeadlineExceeded is the
-		// drain deadline expiring on its own.
-		if errors.Is(drainCtx.Err(), context.Canceled) {
-			if result, _, authoritative := awaitTerminalResult("upstream_context"); authoritative {
-				return result, toolCount.Load(), nil
-			}
-			return agent.Result{
-				Status: "cancelled",
-				Error:  "task cancelled by upstream context (server cancel or daemon shutdown)",
-			}, toolCount.Load(), nil
-		}
-		if result, delivered, _ := awaitTerminalResult("task_deadline"); delivered {
-			return budgetResult(result), toolCount.Load(), nil
-		}
-		return agent.Result{
-			Status: "timeout",
-			Error:  "agent did not produce result within drain timeout",
-		}, toolCount.Load(), nil
-	}
+	return classifyTerminalResult(
+		ctx, session, opts, budget, source, &budgetExceeded, &tokenBudgetExceeded,
+		&toolCount, &startupWatchdogFired, &idleWatchdogFired, &idleWatchdogThreshold,
+		handsOverTerminal, terminalObserved, codexHome, startupThreshold, taskLog,
+		drainCtx, drainFinished, drainCancel, forceDrainStop, stopWatchdog)
 }
 
 // terminalResultHandoffBudget is how long executeAndDrain waits, after force-
@@ -10724,7 +10749,7 @@ func idleWatchdogTickInterval(window time.Duration) time.Duration {
 //
 // Polling rate comes from idleWatchdogTickInterval, so a run is force-stopped
 // somewhere between its budget and budget + tick, never earlier.
-func (d *Daemon) runIdleWatchdog(agentCtx context.Context, window, toolWindow time.Duration, lastActivityAt *atomic.Int64, inFlightTools func() int32, fired *atomic.Bool, firedThreshold *atomic.Int64, cancel context.CancelFunc, messages <-chan agent.Message, interruptBackground func() bool, terminalObserved func() bool, taskLog *slog.Logger) {
+func runIdleWatchdog(agentCtx context.Context, window, toolWindow time.Duration, lastActivityAt *atomic.Int64, inFlightTools func() int32, fired *atomic.Bool, firedThreshold *atomic.Int64, cancel context.CancelFunc, messages <-chan agent.Message, interruptBackground func() bool, terminalObserved func() bool, taskLog *slog.Logger) {
 	tickWindow := window
 	if toolWindow > 0 && toolWindow < tickWindow {
 		tickWindow = toolWindow
@@ -11034,16 +11059,35 @@ func (d *Daemon) reserveEnvRootForGC(envRoot string) (release func(), ok bool) {
 // delete has already reserved this store, we wait for that removal to finish
 // before claiming it, so a task never mounts a store mid-removal; the store is
 // then recreated fresh by Prepare. Reference-counted like the env-root guard.
-func (d *Daemon) markActiveStore(store string) {
+func (d *Daemon) markActiveStore(ctx context.Context, store string) error {
 	if store == "" {
-		return
+		return nil
 	}
 	d.activeStoresMu.Lock()
 	defer d.activeStoresMu.Unlock()
+	stopWake := context.AfterFunc(ctx, func() { d.activeStoresMu.Lock(); d.activeStoresCond.Broadcast(); d.activeStoresMu.Unlock() })
+	defer stopWake()
 	for d.deletingStores[store] {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		d.activeStoresCond.Wait()
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if d.activeStores[store] == 0 {
+		lease, err := execenv.UsePersistentStore(ctx, store)
+		if err != nil {
+			return err
+		}
+		if d.activeStoreLeases == nil {
+			d.activeStoreLeases = make(map[string]*execenv.SharedDirectoryLease)
+		}
+		d.activeStoreLeases[store] = lease
+	}
 	d.activeStores[store]++
+	return nil
 }
 
 func (d *Daemon) unmarkActiveStore(store string) {
@@ -11053,6 +11097,15 @@ func (d *Daemon) unmarkActiveStore(store string) {
 	d.activeStoresMu.Lock()
 	defer d.activeStoresMu.Unlock()
 	if d.activeStores[store] <= 1 {
+		if lease := d.activeStoreLeases[store]; lease != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := lease.Finish(ctx, nil)
+			cancel()
+			if err != nil && d.logger != nil {
+				d.logger.Warn("persistent store lease release deferred to recovery", "error", err)
+			}
+			delete(d.activeStoreLeases, store)
+		}
 		delete(d.activeStores, store)
 		return
 	}
@@ -11073,8 +11126,15 @@ func (d *Daemon) reserveStoreForDeletion(store string) (commit func(), ok bool) 
 	if d.activeStores[store] > 0 || d.deletingStores[store] {
 		return nil, false
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	release, available, err := execenv.ReservePersistentStoreDeletion(ctx, store)
+	cancel()
+	if err != nil || !available {
+		return nil, false
+	}
 	d.deletingStores[store] = true
 	return func() {
+		release()
 		d.activeStoresMu.Lock()
 		delete(d.deletingStores, store)
 		d.activeStoresCond.Broadcast()
@@ -11539,4 +11599,533 @@ func defaultArgsForProvider(cfg Config, provider string) []string {
 		return nil
 	}
 	return append([]string(nil), args...)
+}
+
+// runTaskMessageDrain is the transcript drain loop extracted verbatim from
+// executeAndDrain's inline goroutine. It is *Daemon-free: the legacy runner
+// wires reportTaskMessages/pinTaskSession to d.client, and the per-execution
+// task worker (F3) will wire the same closures to its own transport. It owns
+// the drainFinished signal (closed when the transcript tail is flushed) and
+// reacts to forcedDrainStop (the caller's defer-triggered force stop).
+func runTaskMessageDrain(
+	ctx context.Context,
+	session *agent.Session,
+	opts agent.ExecOptions,
+	taskLog *slog.Logger,
+	taskID string,
+	codexHome string,
+	msgSeq *atomic.Int32,
+	phaseRecorder *taskPhaseRecorder,
+	outputReceived *atomic.Bool,
+	toolCount *atomic.Int32,
+	inFlightTools *atomic.Int32,
+	lastActivityAt *atomic.Int64,
+	drainFinished chan struct{},
+	forcedDrainStop chan struct{},
+	drainCtx context.Context,
+	reportTaskMessages func(context.Context, string, []TaskMessageData) error,
+	pinTaskSession func(context.Context, string, string, string) error,
+) {
+	defer close(drainFinished)
+	var mu sync.Mutex
+	var pendingContent strings.Builder
+	var pendingType string
+	var pendingAt time.Time
+	var batch []TaskMessageData
+	callIDToTool := map[string]string{}
+	// Provider IDs can restart on a same-task retry (for example item_0).
+	// Allocate opaque transcript IDs per execution, including orphan results,
+	// so neither a retry nor a missing call can steal another call's result.
+	transcriptCallIDs := map[string]string{}
+	transcriptCallID := func(providerID string) string {
+		if providerID == "" {
+			return ""
+		}
+		if id, ok := transcriptCallIDs[providerID]; ok {
+			return id
+		}
+		id := uuid.NewString()
+		transcriptCallIDs[providerID] = id
+		return id
+	}
+
+	// sealPendingLocked turns the current contiguous text/thinking frame
+	// into a sequenced row. Callers hold mu so a ticker flush cannot assign
+	// a later seq between sealing the frame and appending the event that
+	// followed it.
+	sealPendingLocked := func() {
+		if pendingContent.Len() == 0 {
+			return
+		}
+		s := msgSeq.Add(1)
+		batch = append(batch, TaskMessageData{
+			Seq:       int(s),
+			Type:      pendingType,
+			Content:   pendingContent.String(),
+			CreatedAt: pendingAt,
+		})
+		pendingContent.Reset()
+		pendingType = ""
+		pendingAt = time.Time{}
+	}
+
+	appendPending := func(messageType, content string, observedAt time.Time) {
+		if content == "" {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if pendingType != "" && pendingType != messageType {
+			sealPendingLocked()
+		}
+		if pendingContent.Len() == 0 {
+			pendingType = messageType
+			pendingAt = observedAt
+		}
+		pendingContent.WriteString(content)
+	}
+
+	flush := func() {
+		mu.Lock()
+		sealPendingLocked()
+		toSend := batch
+		batch = nil
+		mu.Unlock()
+
+		if len(toSend) > 0 {
+			sendCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := reportTaskMessages(sendCtx, taskID, toSend); err != nil {
+				taskLog.Debug("failed to report task messages", "error", err)
+			} else {
+				taskLog.Debug("reported task messages", "count", len(toSend), "last_seq", toSend[len(toSend)-1].Seq)
+			}
+			cancel()
+		}
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	done := make(chan struct{})
+	tickerDone := make(chan struct{})
+	firstVisible := make(chan struct{}, 1)
+	go func() {
+		defer close(tickerDone)
+		for {
+			select {
+			case <-ticker.C:
+				flush()
+			case <-firstVisible:
+				flush()
+			case <-done:
+				return
+			}
+		}
+	}()
+	// The periodic flush bounds request rate for the rest of the transcript,
+	// but making the first visible event wait for its next 500 ms edge adds
+	// pure presentation latency. Signal at most once per execution; a buffered
+	// channel keeps the drain loop non-blocking while the reporter is busy.
+	var firstVisibleOnce sync.Once
+	flushFirstVisible := func() {
+		firstVisibleOnce.Do(func() {
+			firstVisible <- struct{}{}
+		})
+	}
+
+	var sessionPinned atomic.Bool
+	drainInterrupted := drainCtx.Done()
+	for {
+		select {
+		case msg, ok := <-session.Messages:
+			if !ok {
+				goto drainDone
+			}
+			if isTaskOutputReceived(msg) {
+				outputReceived.Store(true)
+				phaseRecorder.Mark(taskPhaseFirstOutputReceived)
+			}
+			if isTaskToolUse(msg) {
+				phaseRecorder.Mark(taskPhaseFirstToolUse)
+			}
+			// Stamp activity as soon as a message lands. The idle
+			// watchdog reads this to decide whether the backend has
+			// gone silent — stamping before processing makes sure a
+			// slow downstream call (mu.Lock contention, batch resize)
+			// can't be misattributed to backend silence.
+			observedAt := time.Now().UTC()
+			lastActivityAt.Store(observedAt.UnixNano())
+			switch msg.Type {
+			case agent.MessageStatus:
+				// Persist the session/work_dir as soon as the backend
+				// reveals them. Without this, a daemon crash mid-run
+				// loses the resume pointer and the auto-retry fires
+				// without context.
+				// MUL-5305: pin the resume pointer only once the session's
+				// rollout is actually in the store, so a crash-recovery pointer
+				// the daemon cannot resume never poisons the next follow-up
+				// (FailAgentTask keeps the pinned session_id via COALESCE, so a
+				// bad mid-flight pin survives a later terminal failure). Codex
+				// reveals the session id on a single task_started status, so a
+				// background waiter polls for the rollout for the life of the
+				// run and pins the moment it lands — a rollout that flushes
+				// after this status is still pinned in-flight (crash recovery
+				// preserved), while a session whose rollout never lands is never
+				// pinned. The terminal report is the authoritative writer.
+				// Non-Codex providers (codexHome == "") pin immediately.
+				if msg.SessionID != "" && !sessionPinned.Swap(true) {
+					sid := msg.SessionID
+					wd := opts.Cwd
+					go func() {
+						if !waitCodexRolloutPresent(drainCtx, codexHome, sid) {
+							taskLog.Debug("skip pinning codex session: rollout not present before run ended",
+								"session_id", sid, "codex_home", codexHome)
+							return
+						}
+						pinCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						defer cancel()
+						if err := pinTaskSession(pinCtx, taskID, sid, wd); err != nil {
+							taskLog.Debug("pin session failed", "error", err)
+						}
+					}()
+				}
+			case agent.MessageToolUse:
+				n := toolCount.Add(1)
+				inFlightTools.Add(1)
+				taskLog.Info(fmt.Sprintf("tool #%d: %s", n, msg.Tool))
+				mu.Lock()
+				sealPendingLocked()
+				if msg.CallID != "" {
+					callIDToTool[msg.CallID] = msg.Tool
+				}
+				s := msgSeq.Add(1)
+				batch = append(batch, TaskMessageData{
+					Seq:       int(s),
+					Type:      "tool_use",
+					CallID:    transcriptCallID(msg.CallID),
+					Tool:      msg.Tool,
+					CreatedAt: observedAt,
+					// Redact before the payload leaves this process, not
+					// only on arrival. The server redacts again in its
+					// ingest handler, but that is the *remote* side: a
+					// daemon that self-updated ahead of the server — or one
+					// talking to a server mid-rollout — would otherwise ship
+					// whole-file edit contents (a deleted .env, a patched
+					// credential) to a peer that does not scrub nested
+					// values yet. Deployment order is not a control we
+					// have, so this side has to be safe on its own.
+					Input: redact.InputMap(vscreenTranscriptInput(msg.Tool, msg.Input)),
+				})
+				mu.Unlock()
+				flushFirstVisible()
+			case agent.MessageToolResult:
+				// Decrement only when the count would stay >= 0. A stray
+				// tool_result with no matching tool_use (backend bug or
+				// reconnect mid-stream) shouldn't push the counter
+				// negative — that would re-arm the watchdog one tool_use
+				// too early on the next call.
+				for {
+					cur := inFlightTools.Load()
+					if cur <= 0 {
+						break
+					}
+					if inFlightTools.CompareAndSwap(cur, cur-1) {
+						break
+					}
+				}
+				output, outputTruncated := toolOutputPreview(msg.Output)
+				mu.Lock()
+				sealPendingLocked()
+				toolName := msg.Tool
+				if toolName == "" && msg.CallID != "" {
+					toolName = callIDToTool[msg.CallID]
+				}
+				s := msgSeq.Add(1)
+				if isVscreenToolName(toolName) {
+					output = "Managed virtual screen tool returned; native observation and input omitted."
+					outputTruncated = false
+				}
+				taskLog.Info("tool_result observed", "seq", s, "tool", toolName, "call_id", msg.CallID)
+				batch = append(batch, TaskMessageData{
+					Seq:       int(s),
+					Type:      "tool_result",
+					CallID:    transcriptCallID(msg.CallID),
+					Tool:      toolName,
+					Output:    output,
+					CreatedAt: observedAt,
+					// Always sent, including false: the reader has to be
+					// able to tell "this record is complete" from "this
+					// record predates the flag", and only a daemon that
+					// measured the output can say the former.
+					OutputTruncated: &outputTruncated,
+				})
+				mu.Unlock()
+				flushFirstVisible()
+			case agent.MessageThinking:
+				appendPending("thinking", msg.Content, observedAt)
+				if msg.Content != "" {
+					flushFirstVisible()
+				}
+			case agent.MessageText:
+				if msg.Content != "" {
+					taskLog.Debug("agent", "text", truncateLog(msg.Content, 200))
+				}
+				appendPending("text", msg.Content, observedAt)
+				if msg.Content != "" {
+					flushFirstVisible()
+				}
+			case agent.MessageError:
+				taskLog.Error("agent error", "content", msg.Content)
+				mu.Lock()
+				sealPendingLocked()
+				s := msgSeq.Add(1)
+				batch = append(batch, TaskMessageData{
+					Seq:       int(s),
+					Type:      "error",
+					Content:   msg.Content,
+					CreatedAt: observedAt,
+				})
+				mu.Unlock()
+				flushFirstVisible()
+			}
+		case <-drainInterrupted:
+			if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+				// GUI stop cancels the provider first; keep consuming its owned cleanup
+				// messages until the backend closes the stream or the drain budget expires.
+				drainInterrupted = nil
+				continue
+			}
+			goto drainDone
+		case <-forcedDrainStop:
+			goto drainDone
+		}
+	}
+drainDone:
+	close(done)
+	// Let any tick-driven flush finish before the final one: a flush still
+	// in flight would otherwise keep posting batches after this goroutine
+	// signalled that the transcript tail was persisted.
+	<-tickerDone
+	flush()
+}
+
+// classifyTerminalResult is the terminal result/disposition hand-off extracted from
+// executeAndDrain. It is *Daemon-free: the legacy runner and the per-execution task
+// worker (F3) both call it to decide the final result after the drain loop, applying
+// budget tagging and startup/idle/cancel/timeout reclassification. budgetExceeded and
+// tokenBudgetExceeded are pointers so budgetResultFor can observe-and-set them, exactly
+// as the inlined version did.
+func classifyTerminalResult(
+	ctx context.Context,
+	session *agent.Session,
+	opts agent.ExecOptions,
+	budget *taskUsageBudget,
+	source string,
+	budgetExceeded *atomic.Bool,
+	tokenBudgetExceeded *atomic.Bool,
+	toolCount *atomic.Int32,
+	startupWatchdogFired *atomic.Bool,
+	idleWatchdogFired *atomic.Bool,
+	idleWatchdogThreshold *atomic.Int64,
+	handsOverTerminal bool,
+	terminalObserved func() bool,
+	codexHome string,
+	startupThreshold time.Duration,
+	taskLog *slog.Logger,
+	drainCtx context.Context,
+	drainFinished chan struct{},
+	drainCancel context.CancelFunc,
+	forceDrainStop func(),
+	stopWatchdog context.CancelFunc,
+) (agent.Result, int32, error) {
+	waitForDrain := func() {
+		select {
+		case <-drainFinished:
+		case <-time.After(10 * time.Second):
+			forceDrainStop()
+			drainCancel()
+			select {
+			case <-drainFinished:
+			case <-time.After(12 * time.Second):
+				taskLog.Warn("transcript drain did not stop after cancel; completing anyway")
+			}
+		}
+	}
+	// awaitTerminalResult gives a backend that advertises an authoritative
+	// terminal boundary one bounded chance to hand over its result after a
+	// cancellation won the outer select. Result delivery is the linearization
+	// point: TerminalObserved must be published before that send, so checking it
+	// afterwards preserves a provider outcome without racing a flag read. A
+	// delivered non-authoritative result is still returned to the idle-watchdog
+	// caller for re-tagging; ordinary upstream cancellation deliberately ignores
+	// it and keeps the existing generic cancelled disposition.
+	awaitTerminalResult := func(trigger string) (result agent.Result, delivered, authoritative bool) {
+		if !handsOverTerminal {
+			return agent.Result{}, false, false
+		}
+		if trigger == "idle_watchdog" {
+			// Keep this event stable: besides operator diagnostics, the terminal
+			// race regression uses it as the hand-off linearization probe.
+			taskLog.Info("idle watchdog fired; waiting for the backend to hand over its result",
+				"budget", terminalResultHandoffBudget.String())
+		} else {
+			taskLog.Info("waiting for the backend to hand over its result after cancellation",
+				"trigger", trigger,
+				"budget", terminalResultHandoffBudget.String())
+		}
+		timer := time.NewTimer(terminalResultHandoffBudget)
+		defer timer.Stop()
+		select {
+		case result, ok := <-session.Result:
+			if !ok {
+				return agent.Result{}, false, false
+			}
+			return result, true, terminalObserved()
+		case <-timer.C:
+			if trigger == "idle_watchdog" {
+				taskLog.Warn("backend did not hand over a result within the budget; classifying by liveness",
+					"budget", terminalResultHandoffBudget.String())
+			} else {
+				taskLog.Warn("backend did not hand over a result within the budget; classifying by cancellation trigger",
+					"trigger", trigger,
+					"budget", terminalResultHandoffBudget.String())
+			}
+			return agent.Result{}, false, false
+		}
+	}
+
+	select {
+	case result := <-session.Result:
+		result = budgetResultFor(result, session, opts, budget, source, budgetExceeded, tokenBudgetExceeded)
+		stopWatchdog()
+		waitForDrain()
+		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+			select {
+			case <-drainFinished:
+			default:
+				return result, toolCount.Load(), errVscreenStopUnconfirmed
+			}
+		}
+		// terminalObserved outranks a watchdog that fired anyway: if the backend
+		// had already read its authoritative result, this is the real outcome and
+		// re-tagging it would report a completed run as a hang.
+		if startupWatchdogFired.Load() && !terminalObserved() {
+			result.Status = "startup_timeout"
+			if result.Error == "" {
+				result.Error = buildStartupDiagnosis(codexHome, startupThreshold)
+			}
+		} else if idleWatchdogFired.Load() && !terminalObserved() {
+			// The backend's wait goroutine (e.g. claude.go) translates the
+			// SIGKILL we delivered via agentCancel into Status="aborted".
+			// Re-tag it as "idle_watchdog" so runTask routes the
+			// disposition through a dedicated failure_reason, not the
+			// generic "agent_error" bucket the aborted path falls into.
+			result.Status = "idle_watchdog"
+			if result.Error == "" {
+				result.Error = idleWatchdogReason(time.Duration(idleWatchdogThreshold.Load()))
+			}
+		}
+		return result, toolCount.Load(), nil
+	case <-drainCtx.Done():
+		if budgetExceeded.Load() || (budget != nil && budget.Check() != nil) {
+			waitForDrain()
+			timer := time.NewTimer(terminalResultHandoffBudget)
+			defer timer.Stop()
+			select {
+			case result, ok := <-session.Result:
+				if ok {
+					return budgetResultFor(result, session, opts, budget, source, budgetExceeded, tokenBudgetExceeded), toolCount.Load(), nil
+				}
+			case <-timer.C:
+			}
+			return budgetResultFor(agent.Result{Status: "aborted", Error: "provider-reported cost limit reached"}, session, opts, budget, source, budgetExceeded, tokenBudgetExceeded), toolCount.Load(), nil
+		}
+		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
+			// A cancelled context is not proof that the owned provider and tools have stopped.
+			select {
+			case result, ok := <-session.Result:
+				if !ok {
+					return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
+				}
+				waitForDrain()
+				select {
+				case <-drainFinished:
+				default:
+					return result, toolCount.Load(), errVscreenStopUnconfirmed
+				}
+				return result, toolCount.Load(), nil
+			case <-time.After(terminalResultHandoffBudget):
+				return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
+			}
+		}
+		// The drain loop is exiting on this same Done signal; wait for its
+		// final flush so the timeout/watchdog/cancel terminals below cannot
+		// hand back (and let runTask fail-and-broadcast) a still-flushing
+		// transcript either.
+		waitForDrain()
+		// Idle watchdog cancels via agentCancel(), which propagates here as
+		// context.Canceled. Check this BEFORE the generic cancelled/timeout
+		// classifiers so a watchdog-induced stop isn't misreported as
+		// "task cancelled by server".
+		if startupWatchdogFired.Load() {
+			return agent.Result{
+				Status: "startup_timeout",
+				Error:  buildStartupDiagnosis(codexHome, startupThreshold),
+			}, toolCount.Load(), nil
+		}
+		if idleWatchdogFired.Load() {
+			// For a backend that publishes a terminal boundary, enter the
+			// hand-off without asking terminalObserved first. Reading a flag and
+			// then acting on it is exactly the window this branch kept losing:
+			// the backend can publish between the read and the classifier below.
+			// Waiting for the result instead makes its delivery the
+			// linearization point, and the backend contract — publish the
+			// observation before sending Result — is what makes the check after
+			// delivery reliable rather than lucky.
+			//
+			// Such a backend always closes Result, so a wedged one still ends
+			// this wait promptly through the closed channel rather than the
+			// budget.
+			if result, delivered, authoritative := awaitTerminalResult("idle_watchdog"); authoritative {
+				// The backend had already read its authoritative result, so
+				// this is the real outcome, not a hang.
+				return result, toolCount.Load(), nil
+			} else if delivered {
+				// The backend's wait goroutine (e.g. claude.go) translates the
+				// SIGKILL we delivered via agentCancel into Status="aborted".
+				// Re-tag it so runTask routes the disposition through the
+				// dedicated liveness failure_reason.
+				result.Status = "idle_watchdog"
+				if result.Error == "" {
+					result.Error = idleWatchdogReason(time.Duration(idleWatchdogThreshold.Load()))
+				}
+				return result, toolCount.Load(), nil
+			}
+			return agent.Result{
+				Status: "idle_watchdog",
+				Error:  idleWatchdogReason(time.Duration(idleWatchdogThreshold.Load())),
+			}, toolCount.Load(), nil
+		}
+		// Distinguish external cancellation (e.g. server-initiated cancel
+		// because the issue was reassigned, or the user invoked CancelTask)
+		// from genuine drain-deadline timeouts. context.Canceled means the
+		// upstream runCtx fired runCancel(); context.DeadlineExceeded is the
+		// drain deadline expiring on its own.
+		if errors.Is(drainCtx.Err(), context.Canceled) {
+			if result, _, authoritative := awaitTerminalResult("upstream_context"); authoritative {
+				return result, toolCount.Load(), nil
+			}
+			return agent.Result{
+				Status: "cancelled",
+				Error:  "task cancelled by upstream context (server cancel or daemon shutdown)",
+			}, toolCount.Load(), nil
+		}
+		if result, delivered, _ := awaitTerminalResult("task_deadline"); delivered {
+			return budgetResultFor(result, session, opts, budget, source, budgetExceeded, tokenBudgetExceeded), toolCount.Load(), nil
+		}
+		return agent.Result{
+			Status: "timeout",
+			Error:  "agent did not produce result within drain timeout",
+		}, toolCount.Load(), nil
+	}
 }

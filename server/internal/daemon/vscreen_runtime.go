@@ -55,6 +55,9 @@ type vscreenRuntime struct {
 
 // SetVscreenInputHandler installs a local trusted input implementation before GUI work.
 func (d *Daemon) SetVscreenInputHandler(handler VscreenInputHandler) {
+	if d.mirrorProcessMode() {
+		return
+	}
 	d.vscreenMu.Lock()
 	defer d.vscreenMu.Unlock()
 	d.vscreenInput = handler
@@ -65,6 +68,9 @@ func (d *Daemon) SetVscreenInputHandler(handler VscreenInputHandler) {
 
 // SetVscreenTakeoverHandler installs the intervention coordinator; absence fails closed.
 func (d *Daemon) SetVscreenTakeoverHandler(handler VscreenTakeoverHandler) {
+	if d.mirrorProcessMode() {
+		return
+	}
 	d.vscreenMu.Lock()
 	defer d.vscreenMu.Unlock()
 	d.vscreenTakeover = handler
@@ -107,6 +113,9 @@ func (d *Daemon) vscreenResource(workspaceID, runtimeID string) (protocol.Resour
 }
 
 func (d *Daemon) vscreenRuntime() *vscreenRuntime {
+	if d.mirrorProcessMode() {
+		return nil
+	}
 	d.vscreenMu.Lock()
 	defer d.vscreenMu.Unlock()
 	if d.vscreen == nil {
@@ -149,6 +158,10 @@ func (d *Daemon) startVscreenHost(ctx context.Context, s *vscreenRuntime) error 
 		client.Close()
 		return err
 	}
+	if d.mirrorChild != nil && !d.mirrorChild.watchNative(client) {
+		client.Close()
+		return hostclient.ErrClosed
+	}
 	s.client = client
 	s.driver.setClient(client)
 	if d.vscreenInput == nil {
@@ -169,6 +182,9 @@ func (d *Daemon) startVscreenHost(ctx context.Context, s *vscreenRuntime) error 
 
 // VscreenActor returns the runtime-owned actor; obtaining it does not create a display.
 func (d *Daemon) VscreenActor(workspaceID, runtimeID string) (*vscreen.Actor, error) {
+	if d.mirrorProcessMode() {
+		return nil, errors.New("GUI actors belong to the mirror process")
+	}
 	key, err := d.vscreenResource(workspaceID, runtimeID)
 	if err != nil {
 		return nil, err
@@ -177,6 +193,14 @@ func (d *Daemon) VscreenActor(workspaceID, runtimeID string) (*vscreen.Actor, er
 }
 
 func (d *Daemon) closeVscreenRuntime(runtimeID string) {
+	if d.mirrorProcessMode() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := d.mirrorCall(ctx, mirrorProcessRequest{Operation: "remove", RuntimeID: runtimeID}, nil); err != nil && d.logger != nil {
+			d.logger.Warn("mirror runtime removal unconfirmed", "runtime_id", runtimeID, "error", err)
+		}
+		return
+	}
 	d.vscreenMu.Lock()
 	s := d.vscreen
 	d.vscreenMu.Unlock()
@@ -191,11 +215,20 @@ func (d *Daemon) closeVscreenRuntime(runtimeID string) {
 }
 
 func (d *Daemon) closeVscreens() {
+	if d.mirrorProcessMode() {
+		d.closeMirrorProcess()
+		return
+	}
+	if err := d.closeVscreensResult(); err != nil {
+		d.logger.Warn("virtual screen shutdown incomplete")
+	}
+}
+func (d *Daemon) closeVscreensResult() error {
 	d.vscreenMu.Lock()
 	s := d.vscreen
 	d.vscreenMu.Unlock()
 	if s == nil {
-		return
+		return nil
 	}
 	s.grantMu.Lock()
 	s.grantClosed = true
@@ -220,9 +253,7 @@ func (d *Daemon) closeVscreens() {
 	if s.client != nil {
 		err = errors.Join(err, s.client.Close())
 	}
-	if err != nil {
-		d.logger.Warn("virtual screen shutdown incomplete")
-	}
+	return err
 }
 
 func managedVscreenCapabilities() []string {
@@ -233,6 +264,12 @@ func managedVscreenCapabilities() []string {
 }
 
 func (d *Daemon) suspendVscreens(g mirrorControlGeneration) {
+	if d.mirrorProcessMode() {
+		if client, err := d.currentMirrorProcess(); err == nil {
+			client.unbind(uint64(g))
+		}
+		return
+	}
 	if !d.mirrorControlGenerationIsCurrent(g) {
 		return
 	}
@@ -260,6 +297,10 @@ func (d *Daemon) suspendVscreens(g mirrorControlGeneration) {
 }
 
 func (d *Daemon) pruneVscreens() {
+	if d.mirrorProcessMode() {
+		d.refreshMirrorRoster()
+		return
+	}
 	d.vscreenMu.Lock()
 	s := d.vscreen
 	d.vscreenMu.Unlock()

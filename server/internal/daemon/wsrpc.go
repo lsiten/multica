@@ -49,10 +49,11 @@ var errWSRPCWriteBufferFull = errors.New("ws rpc: write buffer full")
 // double-claiming (MUL-4257, Sol-Boy review). sent/cancel race under mu so the
 // decision is atomic: whoever wins determines whether the frame is delivered.
 type wsOutbound struct {
-	data     []byte
-	mu       sync.Mutex
-	sent     bool
-	canceled bool
+	cancelRemote func() bool
+	data         []byte
+	mu           sync.Mutex
+	sent         bool
+	canceled     bool
 }
 
 // beginWrite is called by the writer immediately before WriteMessage. It
@@ -72,6 +73,9 @@ func (o *wsOutbound) beginWrite() bool {
 // still pending (now cancelled — the writer will skip it, so it is guaranteed
 // NOT delivered); false if the writer already began sending it.
 func (o *wsOutbound) cancel() bool {
+	if o.cancelRemote != nil {
+		return o.cancelRemote()
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.sent {

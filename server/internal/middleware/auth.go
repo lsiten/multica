@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -120,6 +121,17 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 					return
 				}
+				actor := auth.TaskActor{TokenID: uuidToString(tt.ID), TokenHash: hash, TaskID: uuidToString(tt.TaskID), AgentID: uuidToString(tt.AgentID), WorkspaceID: uuidToString(tt.WorkspaceID), UserID: uuidToString(tt.UserID)}
+				binding, bindingErr := queries.GetTaskActorClaim(r.Context(), hash)
+				if bindingErr == nil {
+					actor.Bound = true
+					actor.RuntimeID = uuidToString(binding.RuntimeID)
+					actor.DispatchedAt = binding.DispatchedAt.Time
+				} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
+					http.Error(w, `{"error":"actor claim unavailable"}`, http.StatusUnauthorized)
+					return
+				}
+				r = r.WithContext(auth.WithTaskActor(r.Context(), actor))
 				userID := uuidToString(tt.UserID)
 				task, taskErr := queries.GetAgentTask(r.Context(), tt.TaskID)
 				if taskErr != nil {

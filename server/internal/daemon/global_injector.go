@@ -14,6 +14,9 @@ var (
 )
 
 func (d *Daemon) globalInjector() globalinput.Injector {
+	if d.mirrorProcessMode() {
+		return nil
+	}
 	globalInjectorOnce.Do(func() {
 		globalInjectorInst = globalinput.New()
 	})

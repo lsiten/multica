@@ -17,6 +17,7 @@ import (
 )
 
 type sharedDirectoryGuard struct {
+	Pending  bool   `json:"pending,omitempty"`
 	Path     string `json:"path"`
 	Previous []byte `json:"previous,omitempty"`
 	Existed  bool   `json:"existed"`
@@ -68,6 +69,9 @@ func SharedDirectoryUnsettled(ctx context.Context, path string) (bool, error) {
 		return true, err
 	}
 	defer unlock()
+	if pending, err := pendingPhysicalFinish(dir); err != nil || pending {
+		return true, err
+	}
 	live, err := liveSharedDirectoryUsers(dir, "")
 	if err != nil || live > 0 {
 		return true, err
@@ -129,6 +133,11 @@ func liveSharedDirectoryUsers(dir, exclude string) (int, error) {
 		if !entry.Type().IsRegular() {
 			return 0, errors.New("invalid shared directory participant")
 		}
+		if _, err := os.Lstat(physicalFinishFile(dir, entry.Name())); err == nil {
+			return 0, ErrPhysicalFinishPending
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return 0, err
+		}
 		path := filepath.Join(dir, entry.Name())
 		file, err := openLockFile(path)
 		if err != nil {
@@ -179,6 +188,9 @@ func restoreSharedDirectoryGuard(dir string) error {
 	if err := json.Unmarshal(data, &guard); err != nil {
 		return err
 	}
+	if guard.Pending {
+		return os.Remove(file)
+	}
 	marker := filepath.Join(guard.Path, TaskContextMarkerRelPath)
 	if info, err := os.Lstat(filepath.Dir(marker)); err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
 		return errors.New("shared task marker directory changed")
@@ -213,6 +225,17 @@ func restoreSharedDirectoryGuard(dir string) error {
 // UseSharedDirectory installs a task-neutral CLI guard and joins its shared
 // lifecycle. Setup and final settlement are serialized; file edits are not.
 func UseSharedDirectory(ctx context.Context, path string) (*SharedDirectoryLease, error) {
+	return useSharedDirectory(ctx, path, true)
+}
+
+// ReserveSharedDirectoryPreparation pins a source without changing its Git
+// worktree while the service validates and snapshots it. Joining the published
+// result with UseSharedDirectory activates the task-neutral marker afterwards.
+func ReserveSharedDirectoryPreparation(ctx context.Context, path string) (*SharedDirectoryLease, error) {
+	return useSharedDirectory(ctx, path, false)
+}
+
+func useSharedDirectory(ctx context.Context, path string, installGuard bool) (*SharedDirectoryLease, error) {
 	canonical, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return nil, err
@@ -239,20 +262,41 @@ func UseSharedDirectory(ctx context.Context, path string) (*SharedDirectoryLease
 		return nil, err
 	}
 	defer unlock()
+	if pending, err := pendingPhysicalFinish(dir); err != nil {
+		return nil, err
+	} else if pending {
+		return nil, ErrPhysicalFinishPending
+	}
 	live, err := liveSharedDirectoryUsers(dir, "")
 	if err != nil {
 		return nil, err
 	}
+	pendingGuard := false
 	if live == 0 {
 		if err := restoreSharedDirectoryGuard(dir); err != nil {
 			return nil, err
 		}
+	} else {
+		data, err := os.ReadFile(filepath.Join(dir, "guard.json"))
+		if err != nil {
+			return nil, err
+		}
+		var guard sharedDirectoryGuard
+		if err = json.Unmarshal(data, &guard); err != nil {
+			return nil, err
+		}
+		if guard.Path != canonical {
+			return nil, errors.New("shared directory guard scope changed")
+		}
+		pendingGuard = guard.Pending
+	}
+	if live == 0 || installGuard && pendingGuard {
 		marker := filepath.Join(canonical, TaskContextMarkerRelPath)
 		previous, err := os.ReadFile(marker)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
-		guard := sharedDirectoryGuard{Path: canonical, Previous: previous, Existed: err == nil, Mode: 0644}
+		guard := sharedDirectoryGuard{Path: canonical, Previous: previous, Existed: err == nil, Mode: 0644, Pending: !installGuard}
 		if guard.Existed {
 			info, err := os.Lstat(marker)
 			if err != nil || !info.Mode().IsRegular() {
@@ -275,11 +319,13 @@ func UseSharedDirectory(ctx context.Context, path string) (*SharedDirectoryLease
 		if err := writeFileAtomic(filepath.Join(dir, "guard.json"), data, 0600); err != nil {
 			return nil, err
 		}
-		if err := os.MkdirAll(filepath.Dir(marker), 0755); err != nil {
-			return nil, err
-		}
-		if err := writeFileAtomic(marker, guard.Written, 0644); err != nil {
-			return nil, err
+		if installGuard {
+			if err := os.MkdirAll(filepath.Dir(marker), 0755); err != nil {
+				return nil, err
+			}
+			if err := writeFileAtomic(marker, guard.Written, 0644); err != nil {
+				return nil, err
+			}
 		}
 	}
 	name := "participant-" + rand.Text()

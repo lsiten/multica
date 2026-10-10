@@ -8,17 +8,88 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/daemon/applicationhost"
+	"github.com/multica-ai/multica/server/internal/runtimeproc"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/internal/vscreen/native/capture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) == 3 && os.Args[1] == applicationhost.Entrypoint && os.Getenv("APPLICATION_DAEMON_FIXTURE") == "1" {
+		if path := os.Getenv("APPLICATION_HOST_PID_FILE"); path != "" {
+			if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+				os.Exit(96)
+			}
+		}
+		if err := applicationhost.Run(context.Background(), os.Args[2]); err != nil {
+			os.Stderr.WriteString(err.Error())
+			os.Exit(95)
+		}
+		os.Exit(0)
+	}
+
+	if len(os.Args) == 2 && os.Args[1] == runtimeproc.Entrypoint {
+		globalInjectorOnce.Do(func() {
+			globalInjectorInst = &physicalInjectorFixture{available: os.Getenv("MIRROR_FIXTURE_INPUT") == "enabled"}
+		})
+		bootstrap, err := runtimeproc.ReadBootstrap(os.Stdin, "fixture/commit")
+		if err != nil {
+			os.Exit(92)
+		}
+		if os.Getenv("MULTICA_TOKEN") != "" {
+			os.Exit(93)
+		}
+		if bootstrap.Identity.Scope.Service == "environment" {
+			err = RunEnvironmentService(context.Background(), bootstrap)
+		} else if bootstrap.Identity.Scope.Service == "application" {
+			err = RunApplicationService(context.Background(), bootstrap)
+		} else if bootstrap.Identity.Scope.Service == "gateway" {
+			err = RunGatewayService(context.Background(), bootstrap)
+		} else if bootstrap.Identity.Scope.Service == "worker" {
+			err = RunWorkerService(context.Background(), bootstrap)
+		} else if bootstrap.Identity.Scope.Service == "control" {
+			err = RunControlService(context.Background(), bootstrap)
+		} else if os.Getenv("MIRROR_CANCEL_ADAPTER_FIXTURE") == "1" {
+			err = runMirrorCancelAdapterFixture(context.Background(), bootstrap)
+		} else {
+			err = RunMirrorService(context.Background(), bootstrap)
+		}
+		if err != nil {
+			os.Stderr.WriteString(err.Error())
+			os.Exit(94)
+		}
+		os.Exit(0)
+	}
+	if len(os.Args) == 5 && os.Args[1] == "readopt-parent" {
+		// A plain parent (not a runtimeproc owner) that starts one real child via
+		// runtimeproc.Start(context.Background()), records the child PID and its
+		// bootstrap, and then exits WITHOUT closing the child. The child is
+		// orphaned and reparented to init; the test verifies it survives and is
+		// re-adopted via runtimeproc.Open. See control_readopt_runtime_test.go.
+		if err := runReAdoptParent(os.Args[2], os.Args[3], os.Args[4]); err != nil {
+			os.Stderr.WriteString(err.Error())
+			os.Exit(98)
+		}
+		os.Exit(0)
+	}
+	if len(os.Args) == 4 && os.Args[1] == "survival-parent" {
+		// A plain parent (not a runtimeproc owner) that starts one real child via
+		// runtimeproc.Start(context.Background()), records the child's PID, and then
+		// exits WITHOUT closing the child. The child is orphaned and reparented to
+		// init; the test verifies it survives. See control_survival_runtime_test.go.
+		if err := runSurvivalParent(os.Args[2], os.Args[3]); err != nil {
+			os.Stderr.WriteString(err.Error())
+			os.Exit(97)
+		}
+		os.Exit(0)
+	}
 	if len(os.Args) >= 3 && os.Args[1] == VscreenSmokeProviderCommand {
 		if err := RunVscreenSmokeProvider(context.Background(), os.Args[2], os.Args[3:], os.Stdin, os.Stdout); err != nil {
 			os.Stderr.WriteString(err.Error())
@@ -38,6 +109,11 @@ func TestMain(m *testing.M) {
 // vscreenTestHost is a test-owned inherited-socket process, never a user CLI.
 // It models display readback and denies recording by default without any TCC call.
 func vscreenTestHost() int {
+	if name := os.Getenv("MIRROR_FIXTURE_NATIVE_PID"); name != "" {
+		if err := os.WriteFile(name, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+			return 12
+		}
+	}
 	bootstrap := os.NewFile(4, "bootstrap")
 	token := make([]byte, 32)
 	if _, err := io.ReadFull(bootstrap, token); err != nil {
@@ -142,7 +218,7 @@ func vscreenTestHost() int {
 			delete(enabled, request.Resource)
 			response.Quiescent = true
 		case "sources":
-			if barrier := os.Getenv("VSCREEN_FIXTURE_SOURCES_BARRIER"); barrier != "" {
+			if barrier := os.Getenv("VSCREEN_FIXTURE_SOURCES_BARRIER"); barrier != "" && mirrorFixtureBarrierArmed() {
 				if err := os.WriteFile(barrier, []byte("entered"), 0600); err != nil {
 					return 11
 				}
@@ -160,6 +236,10 @@ func vscreenTestHost() int {
 				response.Sources = append(response.Sources, virtual)
 			}
 		case "start_capture":
+			if os.Getenv("MIRROR_FIXTURE_CAPTURE_DENIED") == "1" {
+				response.Error = "screen_recording_denied"
+				break
+			}
 			options := request.Capture
 			selected := physical
 			if options.Source == virtual.Source {
@@ -194,4 +274,13 @@ func vscreenTestHost() int {
 			}
 		}
 	}
+}
+
+func mirrorFixtureBarrierArmed() bool {
+	path := os.Getenv("MIRROR_FIXTURE_ARM_BARRIER")
+	if path == "" {
+		return true
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }

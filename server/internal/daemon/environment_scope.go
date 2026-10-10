@@ -150,6 +150,14 @@ func (d *Daemon) runScopedEnvironmentMutation(ctx context.Context, scope environ
 	if !d.environmentRuntimeOwnedHere(scope) {
 		return nil, errors.New("runtime scope changed")
 	}
+	// Route the physical (Git/filesystem) mutation to the owned environment
+	// service so the control parent holds no Git or worktree writer. The child
+	// re-resolves the selection path and runs this same handler; the double-gate
+	// (the service owner runs locally and only environment-process mode routes)
+	// prevents a parent->child->parent recursion.
+	if !d.environmentServiceOwner && d.environmentProcessMode() {
+		return d.routeEnvironmentOperationMutation(ctx, scope, request, selection)
+	}
 	ctx = withEnvironmentScope(ctx, scope)
 	switch request.Action {
 	case "clean_cache":
@@ -177,6 +185,12 @@ func (d *Daemon) runScopedEnvironmentMutation(ctx context.Context, scope environ
 func (d *Daemon) runScopedEnvironmentRestore(ctx context.Context, scope environmentOperationScope, archiveID string) (worktreeArchiveResult, error) {
 	if !d.environmentRuntimeOwnedHere(scope) {
 		return worktreeArchiveResult{}, errors.New("runtime scope changed")
+	}
+	// Route the physical archive restore to the owned environment service so the
+	// control parent holds no Git or worktree writer. The child runs the restore
+	// and returns the typed result; the double-gate prevents recursion.
+	if !d.environmentServiceOwner && d.environmentProcessMode() {
+		return d.routeEnvironmentOperationRestore(ctx, scope, archiveID)
 	}
 	return d.restoreEnvironmentOperation(withEnvironmentScope(ctx, scope), archiveID, scope.WorkspaceID), nil
 }

@@ -22,8 +22,8 @@ import (
 )
 
 // gitEnv returns an environment for git subprocesses that contact remotes.
-// It passes the full daemon environment so credential helpers (e.g. gh) can
-// locate their config, and disables TTY prompting so auth failures produce
+// It passes the full daemon environment so credential helpers can locate their
+// intentional authentication, and disables TTY prompting so auth failures produce
 // clear errors instead of blocking on a non-existent terminal.
 //
 // safe.directory=* is set via GIT_CONFIG_* env vars so git trusts all
@@ -31,8 +31,9 @@ import (
 // caches and worktrees, so the ownership check adds no security value
 // and breaks CI environments where the runner UID differs from the
 // directory owner.
-func gitEnv() []string {
-	base := os.Environ()
+func gitEnv() []string { return gitEnvironmentWithSafeDirectory(os.Environ()) }
+
+func gitEnvironmentWithSafeDirectory(base []string) []string {
 
 	// Find the existing GIT_CONFIG_COUNT so we append at the next index
 	// rather than overwriting any env-scoped git config (auth, URL
@@ -97,7 +98,9 @@ func runGitCombinedOutputWithTimeoutContext(parent context.Context, timeout time
 	defer cancel()
 
 	cmd := newGitCommand(args...)
+	cmd.Env = gitEnvironmentForContext(ctx)
 	out, err := processtree.CombinedOutput(ctx, cmd, 5*time.Second)
+	out = redactRepositoryAuthOutput(ctx, out)
 	if ctx.Err() == context.DeadlineExceeded {
 		return out, fmt.Errorf("git command timed out after %s: %w", timeout, ctx.Err())
 	}
@@ -121,7 +124,9 @@ func runGitOutputWithTimeoutContext(parent context.Context, timeout time.Duratio
 	defer cancel()
 
 	cmd := newGitCommand(args...)
+	cmd.Env = gitEnvironmentForContext(ctx)
 	out, err := processtree.Output(ctx, cmd, 5*time.Second)
+	out = redactRepositoryAuthOutput(ctx, out)
 	if ctx.Err() == context.DeadlineExceeded {
 		return out, fmt.Errorf("git command timed out after %s: %w", timeout, ctx.Err())
 	}
@@ -145,6 +150,7 @@ func runGitWithTimeoutContext(parent context.Context, timeout time.Duration, arg
 	defer cancel()
 
 	cmd := newGitCommand(args...)
+	cmd.Env = gitEnvironmentForContext(ctx)
 	err := processtree.Run(ctx, cmd, 5*time.Second)
 	if ctx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("git command timed out after %s: %w", timeout, ctx.Err())
@@ -165,8 +171,9 @@ type CachedRepo struct {
 
 // Cache manages bare git clones for workspace repositories.
 type Cache struct {
-	root   string // base directory for all caches (e.g. ~/multica_workspaces/.repos)
-	logger *slog.Logger
+	repositoryAuth RepositoryAuth
+	root           string // base directory for all caches (e.g. ~/multica_workspaces/.repos)
+	logger         *slog.Logger
 	// repoLocks maps bare repo path → dedicated mutex. Any mutating operation
 	// on a given bare repo (clone, fetch, worktree add, ref update) must
 	// hold its lock — git's own lockfiles (packed-refs.lock, config.lock,
@@ -370,16 +377,21 @@ func (c *Cache) SyncContext(ctx context.Context, workspaceID string, repos []Rep
 		if repo.URL == "" {
 			continue
 		}
+		repoCtx, releaseAuth, authErr := c.repositoryContext(ctx, workspaceID, repo.URL)
+		if authErr != nil {
+			return authErr
+		}
 		barePath := filepath.Join(wsDir, bareDirName(repo.URL))
 
 		repoLock := c.lockForRepo(barePath)
-		if err := repoLock.LockContext(ctx); err != nil {
+		if err := repoLock.LockContext(repoCtx); err != nil {
+			releaseAuth()
 			return err
 		}
 		if isBareRepo(barePath) {
 			// Already cached — fetch latest.
 			c.logger.Info("repo cache: fetching", "url", repo.URL, "path", barePath)
-			if err := gitFetchContext(ctx, barePath); err != nil {
+			if err := gitFetchContext(repoCtx, barePath); err != nil {
 				c.logger.Warn("repo cache: fetch failed", "url", repo.URL, "error", err)
 				if firstErr == nil {
 					firstErr = err
@@ -388,7 +400,7 @@ func (c *Cache) SyncContext(ctx context.Context, workspaceID string, repos []Rep
 		} else {
 			// Not cached — bare clone.
 			c.logger.Info("repo cache: cloning", "url", repo.URL, "path", barePath)
-			if err := gitCloneBareContext(ctx, repo.URL, barePath); err != nil {
+			if err := gitCloneBareContext(repoCtx, repo.URL, barePath); err != nil {
 				c.logger.Error("repo cache: clone failed", "url", repo.URL, "error", err)
 				if firstErr == nil {
 					firstErr = err
@@ -396,6 +408,7 @@ func (c *Cache) SyncContext(ctx context.Context, workspaceID string, repos []Rep
 			}
 		}
 		repoLock.Unlock()
+		releaseAuth()
 	}
 	return firstErr
 }
@@ -783,6 +796,12 @@ func (c *Cache) CreateWorktree(params WorktreeParams) (*WorktreeResult, error) {
 // lock is held, so a client that times out behind maintenance cannot leave a
 // late, unwanted checkout.
 func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams) (*WorktreeResult, error) {
+	scoped, releaseAuth, authErr := c.repositoryContext(ctx, params.WorkspaceID, params.RepoURL)
+	if authErr != nil {
+		return nil, authErr
+	}
+	defer releaseAuth()
+	ctx = scoped
 	barePath := c.Lookup(params.WorkspaceID, params.RepoURL)
 	if barePath == "" {
 		return nil, fmt.Errorf("repo not found in cache: %s (workspace: %s)", params.RepoURL, params.WorkspaceID)

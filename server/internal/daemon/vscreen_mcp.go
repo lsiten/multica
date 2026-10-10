@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,15 +19,23 @@ const vscreenMCPMaxRequest = 64 << 10
 type vscreenToolInvoker func(context.Context, string, json.RawMessage) ([]map[string]any, error)
 
 type vscreenMCP struct {
-	path     string
-	invoke   vscreenToolInvoker
-	server   *http.Server
-	listener net.Listener
-	once     sync.Once
-	done     chan struct{}
+	closeRemote   func()
+	requiredToken string
+	path          string
+	invoke        vscreenToolInvoker
+	server        *http.Server
+	listener      net.Listener
+	once          sync.Once
+	serverOnce    sync.Once
+	requestMu     sync.Mutex
+	closing       bool
+	requests      sync.WaitGroup
+	watchStop     chan struct{}
+	watchDone     chan struct{}
+	done          chan struct{}
 }
 
-func startVscreenMCP(ctx context.Context, invoke vscreenToolInvoker) (json.RawMessage, *vscreenMCP, error) {
+func startVscreenMCP(ctx context.Context, invoke vscreenToolInvoker, authorization ...string) (json.RawMessage, *vscreenMCP, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -38,11 +47,25 @@ func startVscreenMCP(ctx context.Context, invoke vscreenToolInvoker) (json.RawMe
 	if err != nil {
 		return nil, nil, err
 	}
-	s := &vscreenMCP{path: "/" + token, invoke: invoke, listener: listener, done: make(chan struct{})}
+	s := &vscreenMCP{path: "/" + token, invoke: invoke, listener: listener, done: make(chan struct{}), watchStop: make(chan struct{}), watchDone: make(chan struct{})}
+	if len(authorization) > 0 {
+		s.requiredToken = authorization[0]
+	}
 	s.server = &http.Server{Handler: s, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 25 * time.Second, BaseContext: func(net.Listener) context.Context { return ctx }}
 	go func() { defer close(s.done); _ = s.server.Serve(listener) }()
-	context.AfterFunc(ctx, func() { s.Close() })
-	cfg, err := json.Marshal(map[string]any{"mcpServers": map[string]any{vscreenMCPName: map[string]any{"type": "http", "url": "http://" + listener.Addr().String() + s.path}}})
+	go func() {
+		defer close(s.watchDone)
+		select {
+		case <-ctx.Done():
+			s.closeServer()
+		case <-s.watchStop:
+		}
+	}()
+	entry := map[string]any{"type": "http", "url": "http://" + listener.Addr().String() + s.path}
+	if s.requiredToken != "" {
+		entry["headers"] = map[string]string{"Authorization": "Bearer " + s.requiredToken}
+	}
+	cfg, err := json.Marshal(map[string]any{"mcpServers": map[string]any{vscreenMCPName: entry}})
 	if err != nil {
 		s.Close()
 		return nil, nil, err
@@ -54,12 +77,36 @@ func (s *vscreenMCP) Close() {
 		return
 	}
 	s.once.Do(func() {
+		if s.closeRemote != nil {
+			s.closeRemote()
+			return
+		}
+		close(s.watchStop)
+		s.closeServer()
+		<-s.watchDone
+	})
+}
+func (s *vscreenMCP) closeServer() {
+	s.serverOnce.Do(func() {
+		s.requestMu.Lock()
+		s.closing = true
+		s.requestMu.Unlock()
 		_ = s.server.Close()
 		<-s.done
+		s.requests.Wait()
 	})
 }
 func (s *vscreenMCP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || r.URL.Path != s.path || r.Header.Get("Origin") != "" {
+	s.requestMu.Lock()
+	if s.closing {
+		s.requestMu.Unlock()
+		w.WriteHeader(http.StatusGone)
+		return
+	}
+	s.requests.Add(1)
+	s.requestMu.Unlock()
+	defer s.requests.Done()
+	if r.Method != http.MethodPost || r.URL.Path != s.path || r.Header.Get("Origin") != "" || s.requiredToken != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+s.requiredToken)) != 1 {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

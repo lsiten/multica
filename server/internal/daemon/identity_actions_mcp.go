@@ -78,7 +78,7 @@ func startTaskIdentityActionsMCPAt(lifetimeCtx context.Context, taskID string, a
 	return startTaskIdentityActionsMCPAtWithBroker(lifetimeCtx, taskID, allowEmail, sendEmail, logger, listenHost, advertisedHost, nil)
 }
 
-func startTaskIdentityActionsMCPAtWithBroker(lifetimeCtx context.Context, taskID string, allowEmail bool, sendEmail identityEmailInvoker, logger *slog.Logger, listenHost, advertisedHost string, broker *builtinMCPBroker) (json.RawMessage, *identityActionsMCPSet, error) {
+func startTaskIdentityActionsMCPAtWithBroker(lifetimeCtx context.Context, taskID string, allowEmail bool, sendEmail identityEmailInvoker, logger *slog.Logger, listenHost, advertisedHost string, broker mcpBroker) (json.RawMessage, *identityActionsMCPSet, error) {
 	if !allowEmail || sendEmail == nil {
 		return nil, nil, nil
 	}

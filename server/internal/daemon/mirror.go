@@ -20,6 +20,9 @@ type mirrorOfferMessage struct {
 }
 
 func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessage) {
+	if d.forwardMirrorControl(ctx, protocol.EventMirrorOffer, message) {
+		return
+	}
 	if d.cfg.NativeHostExecutable != "" && native.Supported() {
 		d.handleManagedMirrorOffer(ctx, message)
 		return

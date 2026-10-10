@@ -3,12 +3,15 @@ package jevmodels
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/daemon/processtree"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 //go:embed worker.py
@@ -44,11 +47,16 @@ func (m *Manager) installEngine(ctx context.Context) error {
 		{m.python(), "-I", "-c", "import importlib.metadata as m; import decider.serve; assert m.version('decider-ai') == '" + EngineVersion + "'"},
 	}
 	for _, args := range steps {
-		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Env = cleanEnvironment()
 		cmd.Stdout = log
 		cmd.Stderr = log
-		if err = cmd.Run(); err != nil {
+		if err = processtree.Run(ctx, cmd, time.Second); err != nil {
+			if errors.Is(err, processtree.ErrCleanup) {
+				m.mu.Lock()
+				m.cleanupErr = errors.Join(m.cleanupErr, err)
+				m.mu.Unlock()
+			}
 			return fmt.Errorf("install Jev engine failed (see daemon model install.log): %w", err)
 		}
 	}
