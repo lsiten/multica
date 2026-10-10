@@ -36,22 +36,30 @@ func TestCodexFileApprovalRetainsProviderReportedScope(t *testing.T) {
 }
 
 func TestCodexNativeQuestionNamesThePlatformDeliveryRoute(t *testing.T) {
-	c, writer, _ := newTestCodexClient(t)
-	c.handleLine(`{"id":23,"method":"item/tool/requestUserInput","params":{"questions":[]}}`)
-	lines := writer.Lines()
-	if len(lines) != 1 {
-		t.Fatal("native question received no routing reply")
-	}
-	var reply struct {
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-		Result json.RawMessage `json:"result"`
-	}
-	if err := json.Unmarshal([]byte(lines[0]), &reply); err != nil {
-		t.Fatal(err)
-	}
-	if reply.Error == nil || len(reply.Result) != 0 {
-		t.Fatal("native question guessed a member response")
+	for _, request := range []string{
+		`{"id":23,"method":"item/tool/requestUserInput","params":{"questions":[]}}`,
+		`{"id":23,"method":"mcpServer/elicitation/request","params":{"serverName":"external","mode":"form","message":"Choose a value","requestedSchema":{"type":"object","properties":{}}}}`,
+		`{"id":23,"method":"mcpServer/elicitation/request","params":{"serverName":"external","mode":"form","message":"Enter a value","_meta":{"codex_approval_kind":"mcp_tool_call"},"requestedSchema":{"type":"object","properties":{"value":{"type":"string"}}}}}`,
+	} {
+		t.Run(request, func(t *testing.T) {
+			c, writer, _ := newTestCodexClient(t)
+			c.handleLine(request)
+			lines := writer.Lines()
+			if len(lines) != 1 {
+				t.Fatal("native question received no routing reply")
+			}
+			var reply struct {
+				Error *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+				Result json.RawMessage `json:"result"`
+			}
+			if err := json.Unmarshal([]byte(lines[0]), &reply); err != nil {
+				t.Fatal(err)
+			}
+			if reply.Error == nil || len(reply.Result) != 0 {
+				t.Fatal("native question guessed a member response")
+			}
+		})
 	}
 }

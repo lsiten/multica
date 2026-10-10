@@ -619,6 +619,51 @@ func TestLLM2JevMCPRejectsInvalidVerdict(t *testing.T) {
 	}
 }
 
+func TestJevMCPAdvertisesReadOnlyTools(t *testing.T) {
+	for _, systemOne := range []bool{false, true} {
+		name, decisionTool := "semantic", llm2jevMCPToolName
+		if systemOne {
+			name, decisionTool = "systemone", jevMCPToolName
+		}
+		t.Run(name, func(t *testing.T) {
+			env := map[string]string{"OPENAI_BASE_URL": "http://127.0.0.1:1234/v1"}
+			if systemOne {
+				env["MULTICA_JEV_SYSTEMONE"] = "1"
+			}
+			task := Task{ID: "annotations", Agent: &AgentData{Model: "fixture", CustomEnv: env}}
+			config, set, err := startTaskLLM2JevMCP(t.Context(), task.ID, "codex", task, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer set.Close()
+			listed := callLLM2JevMCP(t, llm2jevMCPURL(t, config), "tools/list", nil)
+			tools := listed["tools"].([]any)
+			if len(tools) != 3 {
+				t.Fatalf("advertised tools=%d, want 3", len(tools))
+			}
+			for _, raw := range tools {
+				tool := raw.(map[string]any)
+				annotations, ok := tool["annotations"].(map[string]any)
+				if !ok || annotations["readOnlyHint"] != true || annotations["destructiveHint"] != false {
+					t.Fatalf("decision tool requires a needless write approval: %v", tool["name"])
+				}
+				switch tool["name"] {
+				case llm2jevMCPCapabilityTool:
+					if annotations["openWorldHint"] != false {
+						t.Fatal("capabilities advertises external access")
+					}
+				case decisionTool, llm2jevMCPCompletionTool:
+					if annotations["openWorldHint"] != true {
+						t.Fatalf("tool %s hides provider access", tool["name"])
+					}
+				default:
+					t.Fatalf("unexpected tool: %v", tool["name"])
+				}
+			}
+		})
+	}
+}
+
 func TestLLM2JevMCPCapabilitiesAndMeta(t *testing.T) {
 	task := Task{ID: "capabilities", Agent: &AgentData{Model: "fixture", CustomEnv: map[string]string{"OPENAI_BASE_URL": "http://127.0.0.1:1234/v1"}}}
 	config, set, err := startTaskLLM2JevMCP(context.Background(), task.ID, "claude", task, nil)

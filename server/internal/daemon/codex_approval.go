@@ -85,6 +85,15 @@ func codexApprovalOperation(request agent.ApprovalRequest) *protocol.MirrorCLIOp
 		} else {
 			operation.Kind = "unknown"
 		}
+	case "mcpServer/elicitation/request":
+		operation.Kind = "mcp"
+		operation.Target = read("serverName") + "\n" + read("message")
+		var meta struct {
+			Arguments json.RawMessage `json:"tool_params"`
+		}
+		if json.Unmarshal(params["_meta"], &meta) == nil && len(meta.Arguments) > 0 {
+			operation.Target += "\n" + string(meta.Arguments)
+		}
 	}
 	return operation
 }

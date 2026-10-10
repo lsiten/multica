@@ -2973,6 +2973,10 @@ func (c *codexClient) handleServerRequest(raw map[string]json.RawMessage) {
 	case "item/commandExecution/requestApproval", "execCommandApproval", "item/fileChange/requestApproval", "applyPatchApproval", "item/permissions/requestApproval":
 		c.requestHumanApproval(id, method, raw["params"])
 	case "mcpServer/elicitation/request", "item/tool/requestUserInput":
+		if method == "mcpServer/elicitation/request" && isCodexMCPToolApproval(raw["params"]) {
+			c.requestHumanApproval(id, method, raw["params"])
+			return
+		}
 		// Native question RPCs have no member-facing UI. An actionable tool
 		// error lets the agent use the durable platform flow without pretending
 		// that an empty answer is the member's acceptance or rejection.

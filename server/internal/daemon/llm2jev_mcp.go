@@ -342,6 +342,7 @@ func (s *llm2jevMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func llm2jevToolDescriptor() map[string]any {
 	return map[string]any{
+		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "openWorldHint": true},
 		"name":        llm2jevMCPToolName,
 		"description": "Evaluate candidates against a question using the current Agent model. Returns only yes, no, or uncertain semantic decisions; these are not token probabilities.",
 		"inputSchema": map[string]any{
@@ -367,6 +368,7 @@ func llm2jevToolDescriptor() map[string]any {
 
 func llm2jevCapabilitiesDescriptor() map[string]any {
 	return map[string]any{
+		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false},
 		"name":        llm2jevMCPCapabilityTool,
 		"description": "Report the decision provider capabilities. exact_logit and calibrated token probabilities are not available in semantic_runtime.",
 		"inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}},
@@ -375,6 +377,7 @@ func llm2jevCapabilitiesDescriptor() map[string]any {
 
 func llm2jevCompletionDescriptor() map[string]any {
 	return map[string]any{
+		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "openWorldHint": true},
 		"name":        llm2jevMCPCompletionTool,
 		"description": "Verify this task's completion against actual acceptance criteria and observed evidence. task_id and goal default to the current task. Returns satisfied, incomplete, or uncertain; native SystemOne may also return calibrated probabilities.",
 		"inputSchema": map[string]any{
@@ -544,6 +547,7 @@ func jevQuestionSchema() map[string]any {
 
 func jevSystemOneDescriptor() map[string]any {
 	return map[string]any{
+		"annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "openWorldHint": true},
 		"name":        jevMCPToolName,
 		"description": "Run the typed SystemOne readout. Questions support Choice (2-255 options), Score, and Noul; calibrated probabilities are returned by providers that support them.",
 		"inputSchema": map[string]any{

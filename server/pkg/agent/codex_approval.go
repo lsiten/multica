@@ -8,7 +8,20 @@ import (
 )
 
 func (c *codexClient) requestHumanApproval(id int, method string, params json.RawMessage) {
-	reply := func(approved bool) {
+	reply := func(approved bool, unavailable bool) {
+		if method == "mcpServer/elicitation/request" {
+			action := "decline"
+			if unavailable {
+				action = "cancel"
+				if c.cfg.Logger != nil {
+					c.cfg.Logger.Warn("codex: MCP approval unavailable; cancelling tool call", "method", method)
+				}
+			} else if approved {
+				action = "accept"
+			}
+			c.respond(id, map[string]any{"action": action, "content": nil})
+			return
+		}
 		if method == "item/permissions/requestApproval" {
 			if approved {
 				c.respond(id, codexPermissionsApprovalResponse(params, nil))
@@ -30,13 +43,13 @@ func (c *codexClient) requestHumanApproval(id int, method string, params json.Ra
 		c.respond(id, map[string]any{"decision": decision})
 	}
 	if c.cfg.RequestApproval == nil || c.approvalContext == nil || len(params) > 1800 || !json.Valid(params) {
-		reply(false)
+		reply(false, true)
 		return
 	}
 	c.mu.Lock()
 	if c.approvalPending {
 		c.mu.Unlock()
-		reply(false)
+		reply(false, true)
 		return
 	}
 	c.approvalPending = true
@@ -72,8 +85,33 @@ func (c *codexClient) requestHumanApproval(id int, method string, params json.Ra
 			}
 		}()
 		approved, err := c.cfg.RequestApproval(ctx, ApprovalRequest{Method: method, Params: append(json.RawMessage(nil), params...), FileChanges: files})
-		reply(err == nil && ctx.Err() == nil && approved)
+		reply(err == nil && ctx.Err() == nil && approved, err != nil || ctx.Err() != nil)
 	}()
+}
+
+// Codex also uses elicitation for tool consent. Only its tagged, empty approval
+// form belongs to the operation reviewer; ordinary forms still need member input.
+func isCodexMCPToolApproval(params json.RawMessage) bool {
+	var request struct {
+		ServerName string `json:"serverName"`
+		Mode       string `json:"mode"`
+		Message    string `json:"message"`
+		Meta       struct {
+			Kind string `json:"codex_approval_kind"`
+		} `json:"_meta"`
+		Schema struct {
+			Type       string                     `json:"type"`
+			Properties map[string]json.RawMessage `json:"properties"`
+			Required   []string                   `json:"required"`
+		} `json:"requestedSchema"`
+	}
+	if json.Unmarshal(params, &request) != nil {
+		return false
+	}
+	return request.ServerName != "" && request.Message != "" &&
+		(request.Mode == "form" || request.Mode == "openai/form") &&
+		request.Meta.Kind == "mcp_tool_call" && request.Schema.Type == "object" &&
+		len(request.Schema.Properties) == 0 && len(request.Schema.Required) == 0
 }
 
 func (c *codexClient) recordApprovalFiles(itemID string, changes []any) {
