@@ -54,6 +54,11 @@ func (s *llm2jevMCPServer) configureDecisionLogging(task Task, provider string) 
 		s.decisionLogSecrets = append(s.decisionLogSecrets, task.JevConfig.Endpoint)
 	}
 	sort.Slice(s.decisionLogSecrets, func(i, j int) bool { return len(s.decisionLogSecrets[i]) > len(s.decisionLogSecrets[j]) })
+	// F2 redaction seam: resolve the bounded redaction-rule DTO from the
+	// raw secrets. It carries only lengths and truncated digests, never the
+	// raw value, so no credential crosses the owner/AI boundary. A too-large
+	// or over-limit secret fails closed here rather than being shipped raw.
+	s.decisionLogPolicy, _ = resolveRedactionPolicy(s.decisionLogSecrets)
 	agentID := task.AgentID
 	if agentID == "" {
 		agentID = task.Agent.ID
@@ -67,7 +72,9 @@ func (s *llm2jevMCPServer) configureDecisionLogging(task Task, provider string) 
 	}
 	for index := 1; index < len(s.decisionLogAttrs); index += 2 {
 		if value, ok := s.decisionLogAttrs[index].(string); ok {
-			s.decisionLogAttrs[index] = redactJevLogText(value, s.decisionLogSecrets)
+			value = redactJevLogText(value, s.decisionLogSecrets)
+			value = redactWithPolicy(value, s.decisionLogPolicy)
+			s.decisionLogAttrs[index] = value
 		}
 	}
 	s.decisionLogRecord = protocol.JevDecisionLog{Source: source, Model: redactJevLogText(s.model, s.decisionLogSecrets), ModelRevision: redactJevLogText(modelRevision, s.decisionLogSecrets), ConfigRevision: configRevision, Device: device}

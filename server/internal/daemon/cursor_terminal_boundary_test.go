@@ -48,7 +48,7 @@ func TestIdleWatchdogYieldsToTerminalObservedDuringCleanup(t *testing.T) {
 			return false
 		}
 
-		go new(Daemon).runIdleWatchdog(ctx, time.Minute, time.Minute, &last, tools, &fired, &threshold,
+		go runIdleWatchdog(ctx, time.Minute, time.Minute, &last, tools, &fired, &threshold,
 			cancel, make(chan agent.Message), interrupt, terminal.Load, slog.Default())
 
 		synctest.Wait()

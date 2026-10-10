@@ -16,6 +16,11 @@ import (
 )
 
 func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID string) (protocol.VscreenStateSnapshot, error) {
+	if d.mirrorProcessMode() {
+		var value protocol.VscreenStateSnapshot
+		err := d.mirrorCall(ctx, mirrorProcessRequest{Operation: "snapshot", WorkspaceID: workspaceID, RuntimeID: runtimeID}, &value)
+		return value, err
+	}
 	if err := ctx.Err(); err != nil {
 		return protocol.VscreenStateSnapshot{}, err
 	}
@@ -87,7 +92,7 @@ func (d *Daemon) vscreenSnapshot(ctx context.Context, workspaceID, runtimeID str
 	}
 	state.NativeEpoch = display.Epoch.NativeEpoch
 	d.vscreenMu.Lock()
-	reporter := d.vscreenReporter
+	reporter := d.mirrorReportsLocked()
 	d.vscreenMu.Unlock()
 	if reporter != nil {
 		if err := reporter.InvalidateEpoch(workspaceID, runtimeID, state.NativeEpoch); err != nil {
@@ -123,6 +128,11 @@ func accessibilityPermissionGranted(hostGranted, injectorActive bool) bool {
 }
 
 func (d *Daemon) vscreenSources(ctx context.Context, workspaceID, runtimeID string) ([]native.SourceDescriptor, error) {
+	if d.mirrorProcessMode() {
+		var value []native.SourceDescriptor
+		err := d.mirrorCall(ctx, mirrorProcessRequest{Operation: "sources", WorkspaceID: workspaceID, RuntimeID: runtimeID}, &value)
+		return value, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

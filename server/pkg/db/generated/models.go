@@ -350,6 +350,26 @@ type ApplicationRevision struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+type ApplicationServiceAuthority struct {
+	RuntimeID         pgtype.UUID        `json:"runtime_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	DaemonID          string             `json:"daemon_id"`
+	OwnerID           pgtype.UUID        `json:"owner_id"`
+	MemberID          pgtype.UUID        `json:"member_id"`
+	ServiceInstanceID pgtype.UUID        `json:"service_instance_id"`
+	Generation        int64              `json:"generation"`
+	Revoked           bool               `json:"revoked"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ApplicationServiceGrant struct {
+	TokenHash  string             `json:"token_hash"`
+	RuntimeID  pgtype.UUID        `json:"runtime_id"`
+	Generation int64              `json:"generation"`
+	Operations []string           `json:"operations"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
 type Attachment struct {
 	ID              pgtype.UUID        `json:"id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
@@ -834,6 +854,31 @@ type DingtalkGroupRoute struct {
 	Revision          int64              `json:"revision"`
 	DiscoveredAt      pgtype.Timestamptz `json:"discovered_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ExecutionGrant struct {
+	TokenHash   string             `json:"token_hash"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	ExecutionID pgtype.UUID        `json:"execution_id"`
+	Operations  []string           `json:"operations"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	Revoked     bool               `json:"revoked"`
+}
+
+type ExecutionMessageReceipt struct {
+	ExecutionID pgtype.UUID `json:"execution_id"`
+	Sequence    int32       `json:"sequence"`
+	PayloadHash string      `json:"payload_hash"`
+}
+
+type ExecutionSnapshot struct {
+	RuntimeID       pgtype.UUID        `json:"runtime_id"`
+	SnapshotID      pgtype.UUID        `json:"snapshot_id"`
+	SupervisorEpoch int64              `json:"supervisor_epoch"`
+	NextPage        int32              `json:"next_page"`
+	Pages           []byte             `json:"pages"`
+	Complete        bool               `json:"complete"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type Feedback struct {
@@ -1646,6 +1691,14 @@ type RuntimeProfile struct {
 	RuntimeType    string             `json:"runtime_type"`
 }
 
+type RuntimeSupervisor struct {
+	RuntimeID   pgtype.UUID `json:"runtime_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	DaemonID    string      `json:"daemon_id"`
+	InstanceID  pgtype.UUID `json:"instance_id"`
+	Epoch       int64       `json:"epoch"`
+}
+
 type RuntimeVscreenIntervention struct {
 	ID                 pgtype.UUID        `json:"id"`
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
@@ -1802,6 +1855,31 @@ type SysCronExecution struct {
 	ErrorMsg     pgtype.Text        `json:"error_msg"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TaskActorClaim struct {
+	TokenHash    string             `json:"token_hash"`
+	TokenID      pgtype.UUID        `json:"token_id"`
+	TaskID       pgtype.UUID        `json:"task_id"`
+	RuntimeID    pgtype.UUID        `json:"runtime_id"`
+	DispatchedAt pgtype.Timestamptz `json:"dispatched_at"`
+	AgentID      pgtype.UUID        `json:"agent_id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type TaskExecution struct {
+	TaskID          pgtype.UUID        `json:"task_id"`
+	ExecutionID     pgtype.UUID        `json:"execution_id"`
+	RuntimeID       pgtype.UUID        `json:"runtime_id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	DaemonID        string             `json:"daemon_id"`
+	WorkerID        pgtype.UUID        `json:"worker_id"`
+	DispatchedAt    pgtype.Timestamptz `json:"dispatched_at"`
+	SupervisorEpoch int64              `json:"supervisor_epoch"`
+	Revoked         bool               `json:"revoked"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type TaskMessage struct {

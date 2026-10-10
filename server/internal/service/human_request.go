@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -21,6 +22,9 @@ import (
 // CreateHumanRequest atomically delivers one versioned request for a trusted run.
 func (s *TaskService) CreateHumanRequest(ctx context.Context, source db.AgentTaskQueue, workspaceID pgtype.UUID, input HumanRequestInput) (db.HumanRequest, error) {
 	var result db.HumanRequest
+	if !auth.TrustedInternalTaskActor(ctx) && s.TxStarter == nil {
+		return result, ErrTaskActorClaim
+	}
 	if err := input.Validate(); err != nil {
 		return result, err
 	}
@@ -40,7 +44,13 @@ func (s *TaskService) CreateHumanRequest(ctx context.Context, source db.AgentTas
 	var inbox db.InboxItem
 	changed := false
 	commentEvent := protocol.EventCommentCreated
-	err = s.runInTx(ctx, func(q *db.Queries) error {
+	err = s.runInTx(ctx, func(q *db.Queries) (returnErr error) {
+		var actorTask *db.AgentTaskQueue
+		defer func() {
+			if returnErr == nil && actorTask != nil {
+				returnErr = lockTaskActorClaim(ctx, q, *actorTask, workspaceID)
+			}
+		}()
 		if _, err := q.LockVscreenWorkspace(ctx, workspaceID); err != nil {
 			return err
 		}
@@ -67,6 +77,11 @@ func (s *TaskService) CreateHumanRequest(ctx context.Context, source db.AgentTas
 		if current.AgentID != source.AgentID || current.Status != "running" || current.OriginatorUserID != source.OriginatorUserID || current.AccountableUserID != source.AccountableUserID {
 			return ErrHumanRequestConflict
 		}
+		if err = lockTaskActorClaim(ctx, q, current, workspaceID); err != nil {
+			return err
+		}
+		actorTask = &current
+
 		expiry := input.ExpiresInSeconds
 		if expiry == 0 {
 			expiry = 7 * 86400

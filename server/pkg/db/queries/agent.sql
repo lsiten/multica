@@ -1389,7 +1389,8 @@ SET status = 'failed',
     failure_reason = 'runtime_recovery',
     wait_reason = NULL,
     prepare_lease_expires_at = NULL
-WHERE runtime_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory')
+WHERE agent_task_queue.runtime_id = $1 AND agent_task_queue.status IN ('dispatched', 'running', 'waiting_local_directory')
+AND NOT EXISTS (SELECT 1 FROM task_execution e WHERE e.task_id=agent_task_queue.id)
 RETURNING *;
 
 -- name: FailStaleTasks :many

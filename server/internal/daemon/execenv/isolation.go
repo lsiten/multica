@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -20,15 +21,18 @@ import (
 const PreparationHelperArg = "__multica_execenv_prepare"
 
 const (
-	preparationActionPrepare = "prepare"
-	preparationActionReuse   = "reuse"
-	preparationWaitDelay     = 2 * time.Second
+	preparationActionPrepare        = "prepare"
+	preparationActionReuse          = "reuse"
+	preparationActionPreparePrivate = "prepare_private"
+	preparationActionReusePrivate   = "reuse_private"
+	preparationWaitDelay            = 2 * time.Second
 )
 
 type preparationRequest struct {
-	Action  string         `json:"action"`
-	Prepare *PrepareParams `json:"prepare,omitempty"`
-	Reuse   *ReuseParams   `json:"reuse,omitempty"`
+	Physical *Environment   `json:"physical,omitempty"`
+	Action   string         `json:"action"`
+	Prepare  *PrepareParams `json:"prepare,omitempty"`
+	Reuse    *ReuseParams   `json:"reuse,omitempty"`
 }
 
 // preparationOpenclawGatewayPin is the private helper-protocol view of an
@@ -48,9 +52,10 @@ type preparationReuseParams struct {
 }
 
 type preparationRequestPayload struct {
-	Action  string                    `json:"action"`
-	Prepare *preparationPrepareParams `json:"prepare,omitempty"`
-	Reuse   *preparationReuseParams   `json:"reuse,omitempty"`
+	Physical *Environment              `json:"physical,omitempty"`
+	Action   string                    `json:"action"`
+	Prepare  *preparationPrepareParams `json:"prepare,omitempty"`
+	Reuse    *preparationReuseParams   `json:"reuse,omitempty"`
 }
 
 type preparationResponse struct {
@@ -122,6 +127,29 @@ func ReuseIsolated(ctx context.Context, command []string, params ReuseParams, lo
 	}, logger)
 }
 
+// PreparePrivateIsolated runs only task-private preparation in the killable
+// helper after the parent verifies and holds the physical result's claims.
+func PreparePrivateIsolated(ctx context.Context, command []string, params PrepareParams, physical *Environment, logger *slog.Logger) (*Environment, error) {
+	return runPreparationProcess(ctx, command, preparationRequest{Action: preparationActionPreparePrivate, Prepare: &params, Physical: physical}, logger)
+}
+
+// ReusePrivateIsolated refreshes provider state without repeating physical reuse.
+func ReusePrivateIsolated(ctx context.Context, command []string, params ReuseParams, physical *Environment, logger *slog.Logger) (*Environment, error) {
+	return runPreparationProcess(ctx, command, preparationRequest{Action: preparationActionReusePrivate, Reuse: &params, Physical: physical}, logger)
+}
+
+func privatePreparationEnvironment(environ []string) []string {
+	allowed := map[string]bool{"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "USERPROFILE": true, "SYSTEMROOT": true, "SystemRoot": true, "WINDIR": true, "COMSPEC": true, "PATHEXT": true, "APPDATA": true, "LOCALAPPDATA": true, "TMPDIR": true, "TMP": true, "TEMP": true, "LANG": true, "LC_ALL": true, "XDG_CONFIG_HOME": true, "XDG_CACHE_HOME": true, "XDG_DATA_HOME": true, "CODEX_HOME": true, "HERMES_HOME": true, "OPENCLAW_HOME": true, "OPENCLAW_CONFIG_PATH": true, "GORACE": true}
+	result := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && allowed[key] {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
 func runPreparationProcess(ctx context.Context, command []string, request preparationRequest, logger *slog.Logger) (*Environment, error) {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return nil, errors.New("execenv: preparation helper command is empty")
@@ -135,6 +163,23 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 	}
 
 	cmd := exec.Command(command[0], command[1:]...)
+	if request.Action == preparationActionPreparePrivate || request.Action == preparationActionReusePrivate {
+		cmd.Env = privatePreparationEnvironment(os.Environ())
+		var explicit map[string]string
+		if request.Prepare != nil {
+			explicit = request.Prepare.PrivateEnvironment
+		}
+		if request.Reuse != nil {
+			explicit = request.Reuse.PrivateEnvironment
+		}
+		for key, value := range explicit {
+			if !privatePreparationVariableAllowed(key, value, true) {
+				continue
+			}
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
+
 	controller, err := newPreparationProcessController(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("execenv: create preparation process controller: %w", err)
@@ -220,7 +265,7 @@ func runPreparationProcess(ctx context.Context, command []string, request prepar
 // this trusted local process boundary; ordinary json.Marshal calls on the
 // public type remain redacted.
 func marshalPreparationRequest(request preparationRequest) ([]byte, error) {
-	payload := preparationRequestPayload{Action: request.Action}
+	payload := preparationRequestPayload{Action: request.Action, Physical: request.Physical}
 	if request.Prepare != nil {
 		payload.Prepare = &preparationPrepareParams{
 			PrepareParams:   request.Prepare,
@@ -273,6 +318,22 @@ func RunPreparationHelper(in io.Reader, out io.Writer, logger *slog.Logger) erro
 
 	var response preparationResponse
 	switch request.Action {
+	case preparationActionPreparePrivate:
+		if request.Prepare == nil || request.Reuse != nil || request.Physical == nil {
+			return errors.New("invalid private prepare request")
+		}
+		request.Physical.logger = logger
+		response.Environment, err = PreparePrivate(*request.Prepare, request.Physical, logger)
+		if err != nil {
+			response.Error = err.Error()
+			response.ErrorKind = preparationErrorKind(err)
+		}
+	case preparationActionReusePrivate:
+		if request.Reuse == nil || request.Prepare != nil || request.Physical == nil {
+			return errors.New("invalid private reuse request")
+		}
+		request.Physical.logger = logger
+		response.Environment = ReusePrivate(*request.Reuse, request.Physical, logger)
 	case preparationActionPrepare:
 		if request.Prepare == nil || request.Reuse != nil {
 			return errors.New("invalid prepare request")

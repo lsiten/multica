@@ -96,7 +96,7 @@ func (d *Daemon) applicationTunnelLoop(ctx context.Context) {
 
 func (d *Daemon) serveApplicationTunnel(ctx context.Context, runtimeID string) {
 	for attempt := 0; ctx.Err() == nil; attempt++ {
-		connection, err := d.client.connectApplicationTunnel(ctx, runtimeID, "control", d.cfg.DaemonID)
+		connection, err := d.applicationTransportFor(runtimeID).Tunnel(ctx, "control")
 		if err == nil {
 			err = d.readApplicationTunnel(ctx, runtimeID, connection)
 			connection.Close()
@@ -178,7 +178,7 @@ func (d *Daemon) forwardApplicationTunnel(ctx context.Context, request protocol.
 	if request.Kind == "logs" && (request.Limit < 1 || request.Limit > 65536 || len(request.Cursor) > 512) {
 		return errors.New("invalid application log request")
 	}
-	data, err := d.client.connectApplicationTunnel(ctx, request.RuntimeID, "data", d.cfg.DaemonID)
+	data, err := d.applicationTransportFor(request.RuntimeID).Tunnel(ctx, "data")
 	if err != nil {
 		return err
 	}

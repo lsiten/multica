@@ -18,6 +18,13 @@ func (d *Daemon) requestTaskApproval(task Task) func(context.Context, agent.Appr
 		if task.InitiatorType != "member" || task.InitiatorID == "" {
 			return false, errors.New("daemon: no human approval initiator")
 		}
+		if d.mirrorProcessMode() {
+			var result struct {
+				Approved bool `json:"approved"`
+			}
+			err := d.mirrorCall(ctx, mirrorProcessRequest{Operation: "approval", Approval: &mirrorApprovalRequest{WorkspaceID: task.WorkspaceID, RuntimeID: task.RuntimeID, UserID: task.InitiatorID, Operation: *codexApprovalOperation(request)}}, &result)
+			return result.Approved, err
+		}
 		d.mu.Lock()
 		rm := d.runtimeMirrors[task.RuntimeID]
 		d.mu.Unlock()

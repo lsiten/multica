@@ -26,6 +26,9 @@ func (d *Daemon) retainVscreenCleanup(s *vscreenRuntime, receipt protocol.Vscree
 	return d.persistVscreenInterventionsLocked(s)
 }
 func (d *Daemon) handleVscreenCleanupAck(msg mirrorOfferMessage) {
+	if d.forwardMirrorControl(context.Background(), protocol.EventVscreenResult, msg) {
+		return
+	}
 	var receipt protocol.VscreenCommandReceipt
 	if json.Unmarshal(msg.raw, &receipt) != nil || receipt.Validate() != nil || receipt.State != protocol.VscreenReceiptSucceeded || !d.vscreenEnvelopeCurrent(receipt.VscreenEnvelope, msg.controlGeneration) {
 		return
@@ -59,7 +62,7 @@ func (d *Daemon) retireVscreenInterventionLocked(s *vscreenRuntime, workspaceID,
 		return &vscreen.Error{Reason: protocol.VscreenStaleSnapshot}
 	}
 	d.vscreenMu.Lock()
-	reporter := d.vscreenReporter
+	reporter := d.mirrorReportsLocked()
 	d.vscreenMu.Unlock()
 	if reporter != nil {
 		if err := reporter.CancelScope(workspaceID, runtimeID); err != nil {
@@ -114,7 +117,7 @@ func (d *Daemon) removeVscreenRuntime(ctx context.Context, s *vscreenRuntime, ru
 		}
 	}
 	d.vscreenMu.Lock()
-	reporter := d.vscreenReporter
+	reporter := d.mirrorReportsLocked()
 	d.vscreenMu.Unlock()
 	if reporter != nil {
 		if err := reporter.CancelScope("", runtimeID); err != nil {

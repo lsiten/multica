@@ -69,6 +69,7 @@ type IssueStatusData struct {
 // Task represents a claimed task from the server.
 // Agent data (name, skills) is populated by the claim endpoint.
 type Task struct {
+	physicalRepositoryScope  string // trusted physical DTO fingerprint; never serialized
 	HumanFollowupPrompt      string `json:"human_followup_prompt,omitempty"`
 	HumanResponsePrompt      string `json:"human_response_prompt,omitempty"`
 	ProjectSupervisionPrompt string `json:"project_supervision_prompt,omitempty"`
@@ -319,7 +320,12 @@ type TaskResult struct {
 	DurableWorkDir string `json:"durable_work_dir,omitempty"`
 	EnvRoot        string `json:"-"` // env root dir for writing GC metadata (not sent to server)
 	CodeRoot       string `json:"-"` // shared code root; its lifetime follows the latest using task
-	FailureReason  string `json:"-"` // classifier forwarded to FailTask on the blocked path; empty falls back to 'agent_error'
+	// PhysicalPreparationID binds the result to the physical root's reservation
+	// so the completion path can reject a late or old generation before writing
+	// GC metadata. Set only in environment mode; empty keeps the legacy path.
+	// Owner-side identity, not a backend wire field.
+	PhysicalPreparationID string `json:"-"`
+	FailureReason         string `json:"-"` // classifier forwarded to FailTask on the blocked path; empty falls back to 'agent_error'
 	// SessionRolloutMissing is set when the daemon withheld this task's Codex
 	// session because its rollout was not in the store (MUL-5305). Forwarded to
 	// the terminal report so the server clears the resume pointer and flags the

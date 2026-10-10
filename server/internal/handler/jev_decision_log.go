@@ -88,13 +88,21 @@ func (h *Handler) ReportJevDecisionLog(w http.ResponseWriter, r *http.Request) {
 	if report.CompletedAt != nil {
 		phase = 1
 	}
-	_, err = h.Queries.UpsertJevDecisionLog(r.Context(), db.UpsertJevDecisionLogParams{ID: id, WorkspaceID: wsID, TaskID: task.ID, AgentID: task.AgentID, AgentName: agent.Name, IssueIdentifier: issueIdentifier, Tool: report.Tool, Source: report.Source, Model: report.Model, ResultClass: report.ResultClass, ErrorCode: report.ErrorCode, StartedAt: pgtype.Timestamptz{Time: report.StartedAt, Valid: true}, DurationMs: report.DurationMS, Phase: phase, Payload: payload})
+	tx, qtx, ok := h.beginExecutionCallback(w, r, task.ID)
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	_, err = qtx.UpsertJevDecisionLog(r.Context(), db.UpsertJevDecisionLogParams{ID: id, WorkspaceID: wsID, TaskID: task.ID, AgentID: task.AgentID, AgentName: agent.Name, IssueIdentifier: issueIdentifier, Tool: report.Tool, Source: report.Source, Model: report.Model, ResultClass: report.ResultClass, ErrorCode: report.ErrorCode, StartedAt: pgtype.Timestamptz{Time: report.StartedAt, Valid: true}, DurationMs: report.DurationMS, Phase: phase, Payload: payload})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, 409, "Jev decision belongs to another task")
 		return
 	}
 	if err != nil {
 		writeError(w, 500, "failed to store Jev decision log")
+		return
+	}
+	if !commitExecutionCallback(w, r, tx) {
 		return
 	}
 	writeJSON(w, 200, map[string]string{"id": report.ID})

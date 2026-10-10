@@ -15,6 +15,8 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemon"
 	"github.com/multica-ai/multica/server/internal/daemon/applicationhost"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/modelservice"
+	"github.com/multica-ai/multica/server/internal/runtimeproc"
 	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 )
 
@@ -105,6 +107,16 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == runtimeproc.Entrypoint {
+		runtime.UnlockOSThread()
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := runRuntimeService(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 3 && os.Args[1] == applicationhost.Entrypoint {
 		runtime.UnlockOSThread()
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -183,5 +195,34 @@ func main() {
 			fmt.Fprintln(os.Stderr, cli.FormatError(err, debugFlag))
 		}
 		os.Exit(cli.ExitCodeFor(err))
+	}
+}
+
+func runRuntimeService(ctx context.Context) error {
+	bootstrap, err := runtimeproc.ReadBootstrap(os.Stdin, version+"/"+commit)
+	if err != nil {
+		return err
+	}
+	switch bootstrap.Identity.Scope.Service {
+	case "ai":
+		return modelservice.Run(ctx, bootstrap)
+	case "mirror":
+		return daemon.RunMirrorService(ctx, bootstrap)
+	case "application":
+		return daemon.RunApplicationService(ctx, bootstrap)
+	case "environment":
+		return daemon.RunEnvironmentService(ctx, bootstrap)
+	case "gateway":
+		return daemon.RunGatewayService(ctx, bootstrap)
+	case "worker":
+		return daemon.RunWorkerService(ctx, bootstrap)
+	case "probe":
+		service, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: bootstrap})
+		if err != nil {
+			return err
+		}
+		return service.Serve(ctx)
+	default:
+		return fmt.Errorf("unsupported runtime service %q", bootstrap.Identity.Scope.Service)
 	}
 }

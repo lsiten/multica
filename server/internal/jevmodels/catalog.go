@@ -52,6 +52,13 @@ type Selection struct {
 	ModelID  string
 	Revision string
 	Device   string
+	// ExecutionIdentity is the negotiated execution identity the caller binds this
+	// acquire to. It is optional: it is empty for legacy or pre-existing runs and
+	// is never fabricated by the manager. When set, it propagates onto the
+	// returned Lease so downstream JEV/gateway consumers can namespace by the
+	// exact execution. Pre-existing runs keep an empty value; no identity is
+	// invented to backfill them.
+	ExecutionIdentity string
 }
 
 func (s Selection) validate() error {

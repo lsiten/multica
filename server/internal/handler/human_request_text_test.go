@@ -23,6 +23,7 @@ func TestHumanTextReplyPersistsOneDecisionReplyAndContinuation(t *testing.T) {
 	req := newRequest(http.MethodPost, "/api/human-requests", input)
 	req.Header.Set("X-Task-ID", source)
 	req.Header.Set("X-Agent-ID", agent)
+	req = legacyTaskActorRequest(t, req)
 	req.Header.Set("X-Actor-Source", "task_token")
 	var created humanRequestResponse
 	testutil.Call(t, testHandler.CreateHumanRequest, req).Want(201).JSON(&created)
@@ -87,6 +88,7 @@ func TestHumanTextReplyCannotUseAnotherScopeOrAuthorizeCardOnly(t *testing.T) {
 	req := newRequest(http.MethodPost, "/", service.HumanRequestInput{Key: "publish", Kind: "confirmation", Title: "Publish delivery", ActionLabel: "Publish", Next: "Publish only after approval"})
 	req.Header.Set("X-Task-ID", source)
 	req.Header.Set("X-Agent-ID", agent)
+	req = legacyTaskActorRequest(t, req)
 	req.Header.Set("X-Actor-Source", "task_token")
 	var created humanRequestResponse
 	testutil.Call(t, testHandler.CreateHumanRequest, req).Want(201).JSON(&created)
@@ -110,6 +112,7 @@ func TestHumanTextReplyProjectsReceiptIntoChatQueueAndHistory(t *testing.T) {
 	create.Header.Set("X-Actor-Source", "task_token")
 	create.Header.Set("X-Task-ID", source)
 	create.Header.Set("X-Agent-ID", agent)
+	create = legacyTaskActorRequest(t, create)
 	var request humanRequestResponse
 	testutil.Call(t, testHandler.CreateHumanRequest, create).Want(201).JSON(&request)
 	testutil.Call(t, testHandler.ReplyHumanRequest, withURLParam(newRequest(http.MethodPost, "/", service.HumanTextReply{Revision: request.Revision, Text: "A", Channel: "chat", ScopeID: chat}), "requestId", uuidToString(request.ID))).Want(200)
@@ -147,6 +150,7 @@ func TestHumanTextAndCardRaceConsumesOnlyOneAnswer(t *testing.T) {
 	req.Header.Set("X-Actor-Source", "task_token")
 	req.Header.Set("X-Task-ID", source)
 	req.Header.Set("X-Agent-ID", agent)
+	req = legacyTaskActorRequest(t, req)
 	var created humanRequestResponse
 	testutil.Call(t, testHandler.CreateHumanRequest, req).Want(201).JSON(&created)
 	row, err := testHandler.Queries.GetHumanRequest(t.Context(), db.GetHumanRequestParams{ID: created.ID, WorkspaceID: parseUUID(testWorkspaceID)})

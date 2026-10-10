@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/testutil"
@@ -31,7 +32,7 @@ func TestHumanRequestQuickCreateCaptureTransfer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := testHandler.TaskService.CreateHumanRequest(ctx, source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "choice", Kind: "confirmation", Title: "Create captured task", ActionLabel: "Create task", Next: "Continue the captured task"})
+	row, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(ctx), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "choice", Kind: "confirmation", Title: "Create captured task", ActionLabel: "Create task", Next: "Continue the captured task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestHumanRequestRevisedRequestInbox(t *testing.T) {
 	tasks := service.NewTaskService(testHandler.Queries, testHandler.TaskService.TxStarter, nil, events.New())
 	var notifications []events.Event
 	tasks.Bus.Subscribe(protocol.EventInboxNew, func(event events.Event) { notifications = append(notifications, event) })
-	row, err := tasks.CreateHumanRequest(ctx, source, parseUUID(testWorkspaceID), input)
+	row, err := tasks.CreateHumanRequest(auth.WithTrustedInternalTaskActor(ctx), source, parseUUID(testWorkspaceID), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func TestHumanRequestRevisedRequestInbox(t *testing.T) {
 	dbfx.Cleanup(t, "DELETE FROM notification_bot_delivery WHERE bot_id=$1", bot)
 	input.Title = "Publish to production"
 	input.Next = "Updates production"
-	_, err = tasks.CreateHumanRequest(ctx, source, parseUUID(testWorkspaceID), input)
+	_, err = tasks.CreateHumanRequest(auth.WithTrustedInternalTaskActor(ctx), source, parseUUID(testWorkspaceID), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestHumanRequestRevisedRequestInbox(t *testing.T) {
 	if completed {
 		t.Fatal("an old worker finished the revised delivery")
 	}
-	if _, err := tasks.CreateHumanRequest(ctx, source, parseUUID(testWorkspaceID), input); err != nil {
+	if _, err := tasks.CreateHumanRequest(auth.WithTrustedInternalTaskActor(ctx), source, parseUUID(testWorkspaceID), input); err != nil {
 		t.Fatal(err)
 	}
 	if len(notifications) != 2 {
@@ -130,7 +131,7 @@ func TestHumanRequestAutopilotChangedObjective(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := testHandler.TaskService.CreateHumanRequest(ctx, source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "publish", Kind: "confirmation", Title: "Publish test", ActionLabel: "Publish test", Next: "Publish test only"})
+	row, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(ctx), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "publish", Kind: "confirmation", Title: "Publish test", ActionLabel: "Publish test", Next: "Publish test only"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestHumanRequestAutopilotProjectContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := testHandler.TaskService.CreateHumanRequest(ctx, source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "verify", Kind: "confirmation", Title: "Verify project", ActionLabel: "Verify", Next: "Continue this repository"})
+	row, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(ctx), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "verify", Kind: "confirmation", Title: "Verify project", ActionLabel: "Verify", Next: "Continue this repository"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +222,7 @@ func TestHumanRequestQuickCreateWaitingDoesNotFail(t *testing.T) {
 				t.Fatal(err)
 			}
 			if state != "none" {
-				row, err := testHandler.TaskService.CreateHumanRequest(ctx, source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "clarification", Kind: "input", Title: "Name target site", InputLabel: "Target address", ActionLabel: "Submit target", Next: "I will create the task after this answer"})
+				row, err := testHandler.TaskService.CreateHumanRequest(auth.WithTrustedInternalTaskActor(ctx), source, parseUUID(testWorkspaceID), service.HumanRequestInput{Key: "clarification", Kind: "input", Title: "Name target site", InputLabel: "Target address", ActionLabel: "Submit target", Next: "I will create the task after this answer"})
 				if err != nil {
 					t.Fatal(err)
 				}

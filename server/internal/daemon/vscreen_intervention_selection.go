@@ -15,8 +15,16 @@ import (
 // selectVscreenWindow is reachable only through the authenticated local-owner bridge.
 // Candidate metadata is returned directly; only a successfully adopted opaque handle is persisted.
 func (d *Daemon) selectVscreenWindow(ctx context.Context, capability, workspaceID, runtimeID, id, handle string, adopt bool) (*appcontrol.WindowCandidates, error) {
+	if d.mirrorProcessMode() {
+		action := "list_windows"
+		if adopt {
+			action = "adopt_window"
+		}
+		result, err := d.verifiedMirrorLocal(ctx, capability, mirrorLocalAction{Action: action, WorkspaceID: workspaceID, RuntimeID: runtimeID, InterventionID: id, WindowHandle: handle})
+		return result.Candidates, err
+	}
 	d.vscreenMu.Lock()
-	verify, reporter := d.vscreenLocalOwner, d.vscreenReporter
+	verify, reporter := d.vscreenLocalOwner, d.mirrorReportsLocked()
 	d.vscreenMu.Unlock()
 	if verify == nil || !verify(ctx, capability) {
 		return nil, errors.New("local_owner_required")

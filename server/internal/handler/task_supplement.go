@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/auth"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -381,27 +382,48 @@ type ackTaskSupplementRequest struct {
 }
 
 func (h *Handler) ClaimTaskSupplement(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskId")
-	if _, ok := h.requireDaemonTaskAccess(w, r, taskID); !ok {
+	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, chi.URLParam(r, "taskId"))
+	if !ok {
 		return
 	}
-	row, err := h.Queries.ClaimNextTaskSupplement(r.Context(), parseUUID(taskID))
+	if auth.ExecutionRequestFromContext(r.Context()).GrantHash != "" {
+		var input struct{}
+		if !decodeScopedExecutionBody(w, r, &input, 1024) {
+			return
+		}
+	}
+	tx, q, ok := h.beginExecutionCallback(w, r, task.ID)
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	row, err := q.ClaimNextTaskSupplement(r.Context(), task.ID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, http.StatusOK, map[string]any{})
+		if commitScopedExecutionWrite(w, r, tx, q, task.ID) {
+			writeJSON(w, 200, map[string]any{})
+		}
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to claim additional message")
+		writeError(w, 500, "failed to claim additional message")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"comment_id": uuidToString(row.CommentID), "author_name": row.AuthorName, "content": row.Content,
-	})
+	if _, err = q.GetTaskSupplementForRun(r.Context(), db.GetTaskSupplementForRunParams{TaskID: task.ID, CommentID: row.CommentID, WorkspaceID: parseUUID(workspaceID)}); err != nil {
+		writeError(w, 409, "additional message scope changed")
+		return
+	}
+	if _, err = q.GetCommentInWorkspace(r.Context(), db.GetCommentInWorkspaceParams{ID: row.CommentID, WorkspaceID: parseUUID(workspaceID)}); err != nil {
+		writeError(w, 409, "additional message scope changed")
+		return
+	}
+	if !commitScopedExecutionWrite(w, r, tx, q, task.ID) {
+		return
+	}
+	writeJSON(w, 200, map[string]any{"comment_id": uuidToString(row.CommentID), "author_name": row.AuthorName, "content": row.Content})
 }
-
 func (h *Handler) AckTaskSupplement(w http.ResponseWriter, r *http.Request) {
-	taskID := chi.URLParam(r, "taskId")
-	if _, ok := h.requireDaemonTaskAccess(w, r, taskID); !ok {
+	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, chi.URLParam(r, "taskId"))
+	if !ok {
 		return
 	}
 	commentID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "commentId"), "comment id")
@@ -409,33 +431,42 @@ func (h *Handler) AckTaskSupplement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req ackTaskSupplementRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeScopedExecutionBody(w, r, &req, 16<<10) {
+		return
+	}
+	tx, q, ok := h.beginExecutionCallback(w, r, task.ID)
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := q.GetTaskSupplementForRun(r.Context(), db.GetTaskSupplementForRunParams{TaskID: task.ID, CommentID: commentID, WorkspaceID: parseUUID(workspaceID)}); err != nil {
+		writeError(w, 409, "additional message is no longer deliverable")
+		return
+	}
+	if _, err := q.GetCommentInWorkspace(r.Context(), db.GetCommentInWorkspaceParams{ID: commentID, WorkspaceID: parseUUID(workspaceID)}); err != nil {
+		writeError(w, 409, "additional message scope changed")
 		return
 	}
 	var row db.TaskSupplement
 	var err error
 	if req.Delivered {
-		row, err = h.Queries.AckTaskSupplementDelivered(r.Context(), db.AckTaskSupplementDeliveredParams{
-			TaskID: parseUUID(taskID), CommentID: commentID,
-		})
+		row, err = q.AckTaskSupplementDelivered(r.Context(), db.AckTaskSupplementDeliveredParams{TaskID: task.ID, CommentID: commentID})
 	} else {
-		reason := stableTaskSupplementFailureReason(req.Error)
-		row, err = h.Queries.AckTaskSupplementFailed(r.Context(), db.AckTaskSupplementFailedParams{
-			TaskID: parseUUID(taskID), CommentID: commentID,
-			FailureReason: pgtype.Text{String: reason, Valid: true},
-		})
+		row, err = q.AckTaskSupplementFailed(r.Context(), db.AckTaskSupplementFailedParams{TaskID: task.ID, CommentID: commentID, FailureReason: pgtype.Text{String: stableTaskSupplementFailureReason(req.Error), Valid: true}})
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusConflict, "additional message is no longer deliverable")
+		writeError(w, 409, "additional message is no longer deliverable")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to acknowledge additional message")
+		writeError(w, 500, "failed to acknowledge additional message")
+		return
+	}
+	if !commitScopedExecutionWrite(w, r, tx, q, task.ID) {
 		return
 	}
 	h.publishTaskSupplementUpdate(r, row)
-	writeJSON(w, http.StatusOK, supplementReceipt(row))
+	writeJSON(w, 200, supplementReceipt(row))
 }
 
 func stableTaskSupplementFailureReason(reason string) string {

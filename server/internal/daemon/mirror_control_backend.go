@@ -39,10 +39,26 @@ func newMirrorControlBackend(d *Daemon) *mirrorControlBackend {
 // SetHumanInteractionEnabled toggles the host master switch for remote human
 // control. It never affects agent actions.
 func (d *Daemon) SetHumanInteractionEnabled(enabled bool) {
+	if d.mirrorProcessMode() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := d.mirrorCall(ctx, mirrorProcessRequest{Operation: "human_set", Payload: marshalRaw(map[string]bool{"enabled": enabled})}, nil); err != nil && d.logger != nil {
+			d.logger.Warn("mirror interaction setting unavailable", "error", err)
+		}
+		return
+	}
 	d.humanInteractionEnabled.Store(enabled)
 }
 
 func (d *Daemon) HumanInteractionEnabled() bool {
+	if d.mirrorProcessMode() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		var value struct {
+			Enabled bool `json:"enabled"`
+		}
+		return d.mirrorCall(ctx, mirrorProcessRequest{Operation: "human_get"}, &value) == nil && value.Enabled
+	}
 	return d.humanInteractionEnabled.Load()
 }
 

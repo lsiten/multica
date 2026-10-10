@@ -44,6 +44,9 @@ func (c vscreenPrimaryCapturer) Capture(ctx context.Context) (image.Image, error
 }
 
 func (d *Daemon) managedRuntimeMirror(runtimeID string, g mirrorControlGeneration, sources []native.SourceDescriptor) (*mirror.RuntimeMirror, bool) {
+	if d.mirrorProcessMode() {
+		return nil, false
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if g == 0 || d.mirrorControlGeneration != g {

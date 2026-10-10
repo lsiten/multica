@@ -31,12 +31,20 @@ func (d *Daemon) ReturnVscreenLocally(ctx context.Context, ownerCapability, work
 	return d.transferVscreenLocally(ctx, ownerCapability, workspaceID, runtimeID, interventionID, "", "to_virtual", summary)
 }
 func (d *Daemon) transferVscreenLocally(ctx context.Context, capability, workspaceID, runtimeID, id, destination, direction, summary string) error {
+	if d.mirrorProcessMode() {
+		action := "takeover"
+		if direction == "to_virtual" {
+			action = "return"
+		}
+		_, err := d.verifiedMirrorLocal(ctx, capability, mirrorLocalAction{Action: action, WorkspaceID: workspaceID, RuntimeID: runtimeID, InterventionID: id, Destination: destination, Summary: summary})
+		return err
+	}
 	if len(summary) > 2048 || !utf8.ValidString(summary) {
 		return errors.New("invalid human summary")
 	}
 	d.vscreenMu.Lock()
 	verify := d.vscreenLocalOwner
-	reporter := d.vscreenReporter
+	reporter := d.mirrorReportsLocked()
 	d.vscreenMu.Unlock()
 	if verify == nil || !verify(ctx, capability) {
 		return errors.New("local owner authentication required")

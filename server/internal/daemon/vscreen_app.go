@@ -27,6 +27,9 @@ func (a *vscreenAppInput) Quiesce(context.Context, vscreen.ResourceKey) error { 
 func (a *vscreenAppInput) Dispose(context.Context, vscreen.ResourceKey) error { return nil }
 
 func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider string, stop func(error)) (json.RawMessage, *vscreenMCP, *vscreenExecution, error) {
+	if d.mirrorProcessMode() {
+		return d.startProcessVscreen(ctx, task, provider, stop)
+	}
 	key, err := d.vscreenResource(task.WorkspaceID, task.RuntimeID)
 	if err != nil {
 		if task.MirrorSource != nil {
@@ -83,7 +86,7 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 			return native.SourceDescriptor{}, &vscreen.Error{Reason: protocol.VscreenSourceGone}
 		}
 		execution := newPhysicalVscreenExecution(ctx, task, *selected, refresh, injector, d.inputArbiter, stop)
-		cfg, broker, err := startVscreenMCP(ctx, execution.invoke)
+		cfg, broker, err := d.startVscreenExecutionMCP(ctx, execution)
 		if err != nil {
 			execution.Close()
 			return nil, nil, nil, err
@@ -169,7 +172,7 @@ func (d *Daemon) startTaskVscreen(ctx context.Context, task Task, provider strin
 		}
 		s.interventions.mu.Unlock()
 	}
-	cfg, broker, err := startVscreenMCP(ctx, execution.invoke)
+	cfg, broker, err := d.startVscreenExecutionMCP(ctx, execution)
 	if err != nil {
 		execution.Close()
 		return nil, nil, nil, err

@@ -21,7 +21,16 @@ type builtinMCPBroker struct {
 
 	mu     sync.RWMutex
 	routes map[string]http.Handler
-	closed bool
+	// genByPath is the current registration generation per path. A route is
+	// re-registered with a fresh generation, and a revoke is exact: it removes a
+	// route only if it is still the current generation for that path. This is
+	// the "exact registration-generation revoke" the F2 gateway listener
+	// contract needs, so a stale revoke (an older control's closure) cannot
+	// delete a route a newer control re-registered on the same path.
+	genByPath map[string]uint64
+	// generation is the monotonic source of per-path generations.
+	generation uint64
+	closed     bool
 }
 
 func startBuiltinMCPBroker(ctx context.Context) (*builtinMCPBroker, error) {
@@ -30,9 +39,10 @@ func startBuiltinMCPBroker(ctx context.Context) (*builtinMCPBroker, error) {
 		return nil, fmt.Errorf("listen for built-in MCP broker: %w", err)
 	}
 	broker := &builtinMCPBroker{
-		listener: listener,
-		baseURL:  "http://" + listener.Addr().String(),
-		routes:   make(map[string]http.Handler),
+		listener:  listener,
+		baseURL:   "http://" + listener.Addr().String(),
+		routes:    make(map[string]http.Handler),
+		genByPath: make(map[string]uint64),
 	}
 	broker.server = &http.Server{
 		Handler:           broker,
@@ -66,14 +76,24 @@ func (b *builtinMCPBroker) register(path string, handler http.Handler) (string, 
 		b.mu.Unlock()
 		return "", func() {}
 	}
+	// A fresh generation per registration: re-registering the same path bumps
+	// the generation, so a revoke from an older registration becomes stale.
+	b.generation++
+	generation := b.generation
 	b.routes[path] = handler
+	b.genByPath[path] = generation
 	b.mu.Unlock()
 	var once sync.Once
 	return b.baseURL + path, func() {
 		once.Do(func() {
 			b.mu.Lock()
-			delete(b.routes, path)
-			b.mu.Unlock()
+			defer b.mu.Unlock()
+			// Exact revoke: only remove the route if this registration is still
+			// the current generation for the path. A stale revoke (from a
+			// superseded registration) leaves the newer route in place.
+			if b.genByPath[path] == generation {
+				delete(b.routes, path)
+			}
 		})
 	}
 }
@@ -107,4 +127,15 @@ func (b *builtinMCPBroker) ready() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return !b.closed && b.listener != nil && b.server != nil
+}
+
+// mcpBroker is the seam the daemon hot path uses to reach the built-in MCP
+// listener. The legacy owner is the in-process *builtinMCPBroker; an opted-in
+// daemon routes the same seam through a gateway process (gatewayProcessClient)
+// whose listener and route table live in a separate process. Both owners keep
+// the exact register/ready/close contract so task consumers are unchanged.
+type mcpBroker interface {
+	register(path string, handler http.Handler) (string, func())
+	ready() bool
+	close()
 }

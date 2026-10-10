@@ -150,6 +150,9 @@ func (d *Daemon) managedMirrorFailure(msg mirrorOfferMessage, offer protocol.Mir
 }
 
 func (d *Daemon) handleVscreenViewerRevoke(msg mirrorOfferMessage) {
+	if d.forwardMirrorControl(context.Background(), protocol.EventMirrorViewerRevoke, msg) {
+		return
+	}
 	var p protocol.MirrorViewerRevokePayload
 	if json.Unmarshal(msg.raw, &p) != nil || p.GrantID == "" || p.SessionID == "" || p.ViewerID == "" || !d.vscreenEnvelopeCurrent(protocol.VscreenEnvelope{WorkspaceID: p.WorkspaceID, RuntimeID: p.RuntimeID, DaemonGeneration: p.DaemonGeneration, RequestID: p.GrantID}, msg.controlGeneration) {
 		return
@@ -176,6 +179,9 @@ func (d *Daemon) handleVscreenViewerRevoke(msg mirrorOfferMessage) {
 	}
 }
 func (d *Daemon) handleVscreenViewerRenew(msg mirrorOfferMessage) {
+	if d.forwardMirrorControl(context.Background(), protocol.EventMirrorViewerRenew, msg) {
+		return
+	}
 	var p protocol.MirrorViewerRenewPayload
 	if json.Unmarshal(msg.raw, &p) != nil || !d.vscreenEnvelopeCurrent(protocol.VscreenEnvelope{WorkspaceID: p.Grant.WorkspaceID, RuntimeID: p.Grant.RuntimeID, DaemonGeneration: p.DaemonGeneration, RequestID: p.Grant.GrantID}, msg.controlGeneration) {
 		return

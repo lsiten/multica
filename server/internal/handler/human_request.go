@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -31,6 +32,10 @@ func humanRequestToResponse(row db.HumanRequest, userID string) humanRequestResp
 func (h *Handler) CreateHumanRequest(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
 	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+		return
+	}
+	if _, authenticated := auth.TaskActorFromContext(r.Context()); !authenticated {
+		writeError(w, 403, "an authenticated task actor is required")
 		return
 	}
 	if r.Header.Get("X-Actor-Source") != "task_token" {
@@ -223,7 +228,7 @@ func humanRequestError(w http.ResponseWriter, err error) {
 		writeError(w, 400, err.Error())
 	case errors.Is(err, service.ErrHumanRequestForbidden):
 		writeError(w, 403, "human request access denied")
-	case errors.Is(err, service.ErrHumanRequestConflict), errors.Is(err, service.ErrDuplicatePendingTask):
+	case errors.Is(err, service.ErrTaskActorClaim), errors.Is(err, service.ErrHumanRequestConflict), errors.Is(err, service.ErrDuplicatePendingTask):
 		writeError(w, 409, "request changed or cannot continue; refresh the request before trying again")
 	case errors.Is(err, service.ErrChatTaskAgentArchived), errors.Is(err, service.ErrChatTaskAgentNoRuntime), errors.Is(err, service.ErrChatSessionArchived):
 		writeError(w, 409, "the requesting agent or conversation is unavailable; ask for an updated request")

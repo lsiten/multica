@@ -1,6 +1,11 @@
 package daemon
 
-import "path/filepath"
+import (
+	"context"
+	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"path/filepath"
+	"time"
+)
 
 // guardReviewPaths prevents new local-directory tasks from entering while a
 // merge checks and updates a repository. Existing overlapping tasks block it.
@@ -32,5 +37,12 @@ func (l *LocalPathLocker) guardReviewPaths(paths []string) (func(), bool) {
 			}
 		}
 	}
-	return l.mu.Unlock, true
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	release, available, err := execenv.ReserveSharedDirectoryPaths(ctx, paths)
+	cancel()
+	if err != nil || !available {
+		l.mu.Unlock()
+		return nil, false
+	}
+	return func() { release(); l.mu.Unlock() }, true
 }

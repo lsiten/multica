@@ -38,6 +38,25 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	if command.Action == "environment" || command.Environment != nil {
 		return d.runRemoteEnvironment(ctx, command)
 	}
+	// Delegate the physical (Git/filesystem) review work to the owned environment
+	// service before any Git/filesystem business work. The control parent retains
+	// the server claim/result/PAT transport (localReviewLoop); the child runs the
+	// same handler and its result is reconstructed, using the private artifact
+	// handoff for oversized results. Double-gated: the service owner never routes
+	// (it runs locally), and only environment-process mode takes this path.
+	if !d.environmentServiceOwner && d.environmentProcessMode() {
+		client, err := d.ensureEnvironmentProcess(ctx)
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		routed, err := client.routeReviewToChild(ctx, command)
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		return routed
+	}
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
 	input.VersionID, input.FilePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.Offset, command.Limit
 	input.Side = command.Side

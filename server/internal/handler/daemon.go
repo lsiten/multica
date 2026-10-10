@@ -126,6 +126,7 @@ func (h *Handler) requireDaemonTaskAccess(w http.ResponseWriter, r *http.Request
 // implementation; the simpler one is preserved for ergonomic call sites
 // that genuinely don't need workspace_id.
 func (h *Handler) requireDaemonTaskAccessWithWorkspace(w http.ResponseWriter, r *http.Request, taskID string) (db.AgentTaskQueue, string, bool) {
+	markExecutionCallback(r)
 	taskUUID, ok := parseUUIDOrBadRequest(w, taskID, "task_id")
 	if !ok {
 		return db.AgentTaskQueue{}, "", false
@@ -163,6 +164,18 @@ func (h *Handler) requireDaemonTaskAccessWithWorkspace(w http.ResponseWriter, r 
 
 	if !h.requireDaemonWorkspaceAccess(w, r, wsID) {
 		return db.AgentTaskQueue{}, "", false
+	}
+	// Once a claim uses worker authority, an identity-free daemon callback
+	// cannot downgrade it through another endpoint. Supported writes recheck
+	// under the task lock; this boundary also closes unsupported legacy paths.
+	if auth.ExecutionRequestFromContext(r.Context()).GrantHash == "" {
+		if _, err := h.Queries.GetTaskExecution(r.Context(), taskUUID); err == nil {
+			writeError(w, http.StatusConflict, service.ErrExecutionStale.Error())
+			return db.AgentTaskQueue{}, "", false
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, 500, "read execution authority")
+			return db.AgentTaskQueue{}, "", false
+		}
 	}
 	return task, wsID, true
 }
@@ -1399,7 +1412,7 @@ func (h *Handler) processHeartbeat(ctx context.Context, runtimeID string, suppor
 	ack := &protocol.DaemonHeartbeatAckPayload{
 		RuntimeID:          runtimeID,
 		Status:             "ok",
-		ServerCapabilities: []string{protocol.DaemonCapabilityRPCV1, protocol.DaemonCapabilityApplicationsV1},
+		ServerCapabilities: []string{protocol.DaemonCapabilityRPCV1, protocol.DaemonCapabilityApplicationsV1, protocol.ExecutionCapabilityV1},
 	}
 
 	probeUpdateCtx, cancelProbeUpdate := context.WithTimeout(ctx, heartbeatHasPendingTimeout)
@@ -4220,6 +4233,9 @@ func (h *Handler) ExtendTaskPrepareLease(w http.ResponseWriter, r *http.Request)
 
 	updated, err := h.TaskService.ExtendTaskPrepareLease(r.Context(), parseUUID(taskID), parseUUID(runtimeID))
 	if err != nil {
+		if writeExecutionConflict(w, err) {
+			return
+		}
 		slog.Warn("extend task prepare lease failed", "task_id", taskID, "runtime_id", runtimeID, "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -4273,6 +4289,9 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 		}, enableTaskSupplement)
 	}
 	if err != nil {
+		if writeExecutionConflict(w, err) {
+			return
+		}
 		slog.Warn("start task failed", "task_id", taskID, "error", err)
 		if errors.Is(err, pgx.ErrNoRows) {
 			status := http.StatusConflict
@@ -4334,6 +4353,9 @@ func (h *Handler) MarkTaskWaitingLocalDirectory(w http.ResponseWriter, r *http.R
 
 	task, err := h.TaskService.MarkTaskWaitingLocalDirectory(r.Context(), parseUUID(taskID), req.Reason)
 	if err != nil {
+		if writeExecutionConflict(w, err) {
+			return
+		}
 		slog.Warn("mark task waiting_local_directory failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -4364,6 +4386,14 @@ func (h *Handler) ReportTaskProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tx, _, ok := h.beginExecutionCallback(w, r, parseUUID(taskID))
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if !commitExecutionCallback(w, r, tx) {
+		return
+	}
 	h.TaskService.ReportProgress(r.Context(), taskID, workspaceID, req.Summary, req.Step, req.Total)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -4503,6 +4533,9 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			"task_id", taskID,
 			"failure_reason", taskfailure.ReasonAgentContextOverflow,
 		)
+		executionRequest := auth.ExecutionRequestFromContext(r.Context())
+		executionRequest.NormalizedFailureReason = string(taskfailure.ReasonAgentContextOverflow)
+		r = r.WithContext(auth.WithExecutionRequest(r.Context(), executionRequest))
 		h.failTask(w, r, taskID, workspaceID, TaskFailRequest{
 			Error:          req.Output,
 			FailureReason:  string(taskfailure.ReasonAgentContextOverflow),
@@ -4526,6 +4559,9 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	// missing continuity-gap flag.
 	task, transitioned, err := h.TaskService.CompleteTaskWithTransition(r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir, req.BranchName, req.SessionRolloutMissing, req.RetiredSessionID, req.DurableWorkDir)
 	if err != nil {
+		if writeExecutionConflict(w, err) {
+			return
+		}
 		// A CompleteTask error is an infrastructure failure (transaction /
 		// assistant-outcome write), not a bad request: an already-finalized
 		// callback is treated as idempotent success and returns no error. Return
@@ -5083,13 +5119,18 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tx, qtx, ok := h.beginExecutionCallback(w, r, parseUUID(taskID))
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
 	// Provider is lowercased on write so client-side pricing lookups tolerate
 	// case drift. An empty provider (an older daemon that omits the field) is
 	// stamped from the task's runtime, so generic model ids like `auto` still
 	// resolve to a provider instead of landing as '' and pricing $0.
 	var runtimeProvider string
 	runtimeProviderLoaded := false
-	for _, u := range req.Usage {
+	for index, u := range req.Usage {
 		provider := normalizeProvider(u.Provider)
 		if provider == "" {
 			if !runtimeProviderLoaded {
@@ -5103,7 +5144,7 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 			}
 			provider = runtimeProvider
 		}
-		if err := h.Queries.UpsertTaskUsage(r.Context(), db.UpsertTaskUsageParams{
+		if err := qtx.UpsertTaskUsage(r.Context(), db.UpsertTaskUsageParams{
 			TaskID:           parseUUID(taskID),
 			Provider:         provider,
 			Model:            u.Model,
@@ -5117,7 +5158,7 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to store task usage")
 			return
 		}
-		h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.CostUSDTicks)
+		req.Usage[index].Provider = provider
 
 		// Surface prompt-cache effectiveness per run so cache hit rates are
 		// observable in logs, not just queryable from runtime_usage. The ratio
@@ -5138,6 +5179,12 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if !commitExecutionCallback(w, r, tx) {
+		return
+	}
+	for _, u := range req.Usage {
+		h.TaskService.CaptureTaskUsage(r.Context(), task, u.Provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.CostUSDTicks)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -5230,6 +5277,31 @@ func (h *Handler) ReportProjectGraphEvent(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusConflict, "project is unavailable")
 		return
 	}
+	if _, err := qtx.LockChatSessionForTask(r.Context(), task.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, 500, "lock execution session")
+		return
+	}
+	if err := service.LockExecutionCallback(r.Context(), qtx, task.ID); err != nil {
+		if !writeExecutionConflict(w, err) {
+			writeError(w, 500, "check execution callback")
+		}
+		return
+	}
+	task, err = qtx.GetAgentTask(r.Context(), task.ID)
+	if err != nil {
+		writeError(w, 500, "read current graph task")
+		return
+	}
+	resolvedProject, err = qtx.GetAgentTaskProjectID(r.Context(), task.ID)
+	if err != nil || !resolvedProject.Valid || resolvedProject != projectID {
+		writeError(w, 409, "project does not match current task")
+		return
+	}
+	data, err = enrichProjectGraphEventData(req.Data, task)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
 	event, err := qtx.CreateProjectGraphEvent(r.Context(), db.CreateProjectGraphEventParams{
 		WorkspaceID: parseUUID(workspaceID), ProjectID: projectID,
 		TaskID: task.ID, EventType: req.EventType,
@@ -5240,8 +5312,7 @@ func (h *Handler) ReportProjectGraphEvent(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "failed to persist project graph event")
 		return
 	}
-	if err := tx.Commit(r.Context()); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to commit project graph event")
+	if !commitScopedExecutionWrite(w, r, tx, qtx, task.ID) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": uuidToString(event.ID)})
@@ -5251,6 +5322,7 @@ func (h *Handler) ReportProjectGraphEvent(w http.ResponseWriter, r *http.Request
 // Used by the daemon to detect terminal/interruption signals (cancelled,
 // failed, completed) while a task is executing mid-flight.
 func (h *Handler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
+	markExecutionCallback(r)
 	taskID := chi.URLParam(r, "taskId")
 	taskUUID, ok := parseUUIDOrBadRequest(w, taskID, "task_id")
 	if !ok {
@@ -5277,6 +5349,19 @@ func (h *Handler) GetTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tx, qtx, ok := h.beginExecutionCallback(w, r, parseUUID(taskID))
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	task, err = qtx.GetAgentTaskStatus(r.Context(), taskUUID)
+	if err != nil {
+		writeError(w, 500, "read execution status")
+		return
+	}
+	if !commitExecutionCallback(w, r, tx) {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": task.Status})
 }
 
@@ -5337,6 +5422,9 @@ func (h *Handler) failTask(w http.ResponseWriter, r *http.Request, taskID, works
 	// pointer or miss the continuity gap.
 	task, transitioned, err := h.TaskService.FailTaskWithTransition(r.Context(), parseUUID(taskID), req.Error, req.SessionID, req.WorkDir, req.BranchName, req.FailureReason, req.SessionRolloutMissing, req.RetiredSessionID, req.DurableWorkDir)
 	if err != nil {
+		if writeExecutionConflict(w, err) {
+			return
+		}
 		// A FailTask error is an infrastructure failure (the terminal
 		// transaction that also clears the withheld session, writes the
 		// continuity-gap flag, and creates the auto-retry rolled back), not a bad
@@ -5401,10 +5489,6 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if len(req.Messages) == 0 {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-		return
-	}
 
 	// Verify the caller owns this task's workspace. The access check already
 	// resolves the workspace id (it needs it to authorize the daemon), so take
@@ -5417,6 +5501,12 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tx, qtx, ok := h.beginExecutionCallback(w, r, parseUUID(taskID))
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	executionRequest := auth.ExecutionRequestFromContext(r.Context())
 	// Broadcast reach is deliberately unchanged: only issue- and chat-backed
 	// tasks streamed live messages before, and widening that to autopilot /
 	// quick-create tasks is a product decision, not part of this optimization.
@@ -5453,6 +5543,37 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	createdAts := taskMessageCreatedAts(req.Messages, time.Now().UTC())
 	for i, msg := range req.Messages {
+		if executionRequest.GrantHash != "" {
+			if msg.Seq < 0 || int64(msg.Seq) > 2147483647 {
+				writeError(w, 400, "invalid message sequence")
+				return
+			}
+			payload, err := json.Marshal(msg)
+			if err != nil {
+				writeError(w, 400, "invalid message payload")
+				return
+			}
+			digest := sha256.Sum256(payload)
+			payloadHash := hex.EncodeToString(digest[:])
+			executionID := parseUUID(executionRequest.ExecutionID)
+			existing, err := qtx.GetExecutionMessageReceipt(r.Context(), db.GetExecutionMessageReceiptParams{ExecutionID: executionID, Sequence: int32(msg.Seq)})
+			if err == nil {
+				if existing != payloadHash {
+					writeError(w, 409, "message sequence payload changed")
+					return
+				}
+				continue
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, 500, "read message receipt")
+				return
+			}
+			if err = qtx.CreateExecutionMessageReceipt(r.Context(), db.CreateExecutionMessageReceiptParams{ExecutionID: executionID, Sequence: int32(msg.Seq), PayloadHash: payloadHash}); err != nil {
+				writeError(w, 500, "write message receipt")
+				return
+			}
+		}
+
 		id, err := uuid.NewV7()
 		if err != nil {
 			slog.Error("failed to generate task message id", "task_id", taskID, "error", err)
@@ -5512,10 +5633,14 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 		params.OutputTruncations = append(params.OutputTruncations, boolArrayElement(msg.OutputTruncated))
 	}
 
-	created, err := h.Queries.CreateTaskMessages(r.Context(), params)
+	created, err := qtx.CreateTaskMessages(r.Context(), params)
 	if err != nil {
 		slog.Error("failed to create task messages", "task_id", taskID, "count", n, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to persist task message")
+		return
+	}
+
+	if !commitExecutionCallback(w, r, tx) {
 		return
 	}
 
@@ -5535,6 +5660,14 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if executionRequest.GrantHash != "" {
+		sequences := make([]int, 0, len(req.Messages))
+		for _, message := range req.Messages {
+			sequences = append(sequences, message.Seq)
+		}
+		writeJSON(w, 200, map[string]any{"status": "ok", "acked_sequences": sequences})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -5590,9 +5723,14 @@ func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 	// (Exec reports no error), so the ack still returns 200 — there is
 	// nothing for the daemon to retry — and the rebroadcast below is guarded
 	// by the same status check inside RebroadcastCancelledTask.
+	tx, qtx, ok := h.beginExecutionCallback(w, r, task.ID)
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
 	delivered := false
 	if durableWorkDir := strings.TrimSpace(req.DurableWorkDir); durableWorkDir != "" {
-		if err := h.Queries.SetAgentTaskDurableWorkDir(r.Context(), db.SetAgentTaskDurableWorkDirParams{
+		if err := qtx.SetAgentTaskDurableWorkDir(r.Context(), db.SetAgentTaskDurableWorkDirParams{
 			ID:             task.ID,
 			DurableWorkDir: pgtype.Text{String: durableWorkDir, Valid: true},
 		}); err != nil {
@@ -5604,7 +5742,7 @@ func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 		delivered = true
 	}
 	if branch := strings.TrimSpace(req.BranchName); branch != "" {
-		if err := h.Queries.SetAgentTaskBranchName(r.Context(), db.SetAgentTaskBranchNameParams{
+		if err := qtx.SetAgentTaskBranchName(r.Context(), db.SetAgentTaskBranchNameParams{
 			ID:         task.ID,
 			BranchName: pgtype.Text{String: branch, Valid: true},
 		}); err != nil {
@@ -5617,7 +5755,7 @@ func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg := strings.TrimSpace(req.ErrorMessage); msg != "" {
 		reason := strings.TrimSpace(req.FailureReason)
-		if err := h.Queries.SetAgentTaskErrorIfEmpty(r.Context(), db.SetAgentTaskErrorIfEmptyParams{
+		if err := qtx.SetAgentTaskErrorIfEmpty(r.Context(), db.SetAgentTaskErrorIfEmptyParams{
 			ID:            task.ID,
 			Error:         pgtype.Text{String: msg, Valid: true},
 			FailureReason: pgtype.Text{String: reason, Valid: reason != ""},
@@ -5628,6 +5766,9 @@ func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		delivered = true
+	}
+	if !commitExecutionCallback(w, r, tx) {
+		return
 	}
 	if delivered {
 		// The task:cancelled broadcast fired at cancel time, before this ack —

@@ -95,7 +95,9 @@ func (d *Daemon) runGC(ctx context.Context) {
 	}
 
 	stats := &gcStats{byPattern: map[string]int{}}
-	d.gcApplicationStorage(ctx, time.Now())
+	if !d.environmentServiceOwner {
+		d.gcApplicationStorage(ctx, time.Now())
+	}
 	for _, wsEntry := range entries {
 		// Skip every daemon-internal dot directory, not just .repos. A
 		// workspace directory is always a UUID, so a dot-prefixed entry is one
@@ -545,6 +547,8 @@ func (d *Daemon) applyLocalDirectoryGCOverride(meta *execenv.GCMeta, action gcAc
 // local_directory override. Split out so shouldCleanTaskDir can intercept
 // the result.
 func (d *Daemon) shouldCleanTaskDirForKind(ctx context.Context, taskDir string, meta *execenv.GCMeta) gcAction {
+	ctx = withEnvironmentScope(ctx, environmentOperationScope{WorkspaceID: meta.WorkspaceID, RuntimeID: meta.RuntimeID, Automatic: true})
+	ctx = context.WithValue(ctx, environmentFactOwnerKey{}, meta.TaskID)
 	switch meta.Kind {
 	case execenv.GCKindIssue:
 		return d.gcDecisionIssue(ctx, taskDir, meta)

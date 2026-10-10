@@ -18,12 +18,13 @@ type Stream struct {
 	writeMu    sync.Mutex
 	closeOnce  sync.Once
 	onClose    func()
+	done       chan struct{}
 }
 
 // NewStream preserves backpressure by writing bounded frames without an unbounded queue.
 func NewStream(connection *websocket.Conn, onClose func()) *Stream {
 	connection.SetReadLimit(64 << 10)
-	return &Stream{connection: connection, onClose: onClose}
+	return &Stream{connection: connection, onClose: onClose, done: make(chan struct{})}
 }
 
 func (s *Stream) Read(buffer []byte) (int, error) {
@@ -74,9 +75,14 @@ func (s *Stream) Close() error {
 		if s.onClose != nil {
 			s.onClose()
 		}
+		close(s.done)
 	})
 	return err
 }
+
+// Done closes after the stream and its gateway registration have been released.
+func (s *Stream) Done() <-chan struct{} { return s.done }
+
 func (s *Stream) LocalAddr() net.Addr  { return s.connection.LocalAddr() }
 func (s *Stream) RemoteAddr() net.Addr { return s.connection.RemoteAddr() }
 func (s *Stream) SetDeadline(deadline time.Time) error {

@@ -4,6 +4,7 @@
 package execenv
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,13 +38,14 @@ type ProjectResourceForEnv struct {
 
 // PrepareParams holds all inputs needed to set up an execution environment.
 type PrepareParams struct {
-	WorkspacesRoot  string // base path for all envs (e.g., ~/multica_workspaces)
-	WorkspaceID     string // workspace UUID — stable identity and path suffix
-	WorkspaceSlug   string // human-readable workspace path prefix
-	TaskID          string // task UUID — stable identity and path suffix
-	RuntimeID       string // runtime that owns this task environment
-	IssueIdentifier string // human-readable issue key (e.g. MUL-6063); empty for non-issue tasks
-	AgentName       string // for git branch naming only
+	PrivateEnvironment map[string]string
+	WorkspacesRoot     string // base path for all envs (e.g., ~/multica_workspaces)
+	WorkspaceID        string // workspace UUID — stable identity and path suffix
+	WorkspaceSlug      string // human-readable workspace path prefix
+	TaskID             string // task UUID — stable identity and path suffix
+	RuntimeID          string // runtime that owns this task environment
+	IssueIdentifier    string // human-readable issue key (e.g. MUL-6063); empty for non-issue tasks
+	AgentName          string // for git branch naming only
 	// EnvRootPreclaimed says the CALLER already holds this env root's claim
 	// (see ClaimEnvRoot) and has already reset it. Prepare then skips claiming.
 	//
@@ -419,187 +421,40 @@ func readablePathSegment(label, fallback, id string) string {
 // The workdir starts empty (no repo checkouts). The agent checks out repos
 // on demand via `multica repo checkout <url>`.
 func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
-	if params.WorkspacesRoot == "" {
-		return nil, fmt.Errorf("execenv: workspaces root is required")
-	}
-	if params.WorkspaceID == "" {
-		return nil, fmt.Errorf("execenv: workspace ID is required")
-	}
-	if params.TaskID == "" {
-		return nil, fmt.Errorf("execenv: task ID is required")
-	}
-	privateProvider := params.IsolateLocalContext && NeedsPrivateProviderCheckout(params.Provider, params.McpConfig) && (params.LocalWorkDir != "" || params.LocalWorktree != nil)
-	privateCopySource := ""
-	if privateProvider {
-		if params.LocalWorktree != nil {
-			copy := *params.LocalWorktree
-			copy.PrivateCheckout = true
-			params.LocalWorktree = &copy
-		} else if _, git := detectGitRepo(params.LocalWorkDir); git {
-			params.LocalWorktree = &LocalWorktreeParams{LocalPath: params.LocalWorkDir, PrivateCheckout: true, RetainCheckout: true}
-			params.LocalWorkDir = ""
-		} else {
-			privateCopySource, params.LocalWorkDir = params.LocalWorkDir, ""
-		}
-	}
-
-	envRoot, err := ResolveRootDir(RootDirParams{
-		WorkspacesRoot:  params.WorkspacesRoot,
-		WorkspaceID:     params.WorkspaceID,
-		WorkspaceSlug:   params.WorkspaceSlug,
-		TaskID:          params.TaskID,
-		IssueIdentifier: params.IssueIdentifier,
-	})
+	physical, err := PhysicalPreparationInput(params)
 	if err != nil {
 		return nil, err
 	}
-
-	// Self-heal the root-level daemon marker on every task start so a marker
-	// removed while the daemon runs is restored before the agent spawns. The
-	// per-workdir marker written below only covers cwds inside the workdir;
-	// the root marker keeps the CLI fail-closed guard active for subprocesses
-	// that lose all MULTICA_* env vars AND escape above the workdir. Non-fatal:
-	// without it the workdir marker still protects the common case.
-	if err := EnsureWorkspacesRootMarker(params.WorkspacesRoot); err != nil && logger != nil {
-		logger.Warn("execenv: workspaces root marker not written; fail-closed guard limited to the task workdir", "error", err)
+	env, err := preparePhysical(physical, params.EnvRootPreclaimed, logger)
+	if err != nil {
+		return nil, err
 	}
-
-	// Take exclusive ownership of the env root before touching anything in it.
-	// What follows wipes the directory, and while the segment was a UUIDv7
-	// prefix that routinely wiped a live sibling task's workdir, worktree and
-	// task-scoped config (#7326). taskKey now reads the id's random tail, which
-	// makes a shared path improbable rather than impossible — so prove
-	// ownership instead of assuming it. A task that refuses to start is
-	// recoverable; one that deletes a running sibling's uncommitted work is not.
-	//
-	// claimEnvRoot is the only thing standing between two same-key tasks, so it
-	// has to be atomic end to end: a read-then-delete would let both pass the
-	// check and one still delete the other. Once claimed, the claim is held for
-	// the rest of Prepare — the reset below clears the directory's CONTENTS and
-	// leaves the marker in place, so there is never a moment where the env root
-	// looks unowned to a racing task.
-	var lockFile *os.File
-	lockClaimed := false
-	if params.EnvRootPreclaimed {
-		// The caller holds the claim and already reset the root; just make sure
-		// the directory is there before populating it.
-		if err := os.MkdirAll(envRoot, 0o755); err != nil {
-			return nil, fmt.Errorf("execenv: create env root %s: %w", envRoot, err)
+	prepared, err := PreparePrivate(params, env, logger)
+	if err != nil {
+		if env.LocalWorktree != nil {
+			env.LocalWorktree.Discard(logger)
 		}
-	} else {
-		lock, reset, err := claimEnvRoot(envRoot, params.WorkspaceID, params.TaskID)
-		if err != nil {
-			return nil, fmt.Errorf("execenv: %w", err)
-		}
-		lockFile = lock
-		// Release the lock on every failure path below. The successful path
-		// hands it to the Environment.
-		lockClaimed = true
-		defer func() {
-			if lockClaimed {
-				releaseLockFile(lockFile)
-			}
-		}()
-		// reset means this task already owned the directory and the execution
-		// that left it there is gone — a rerun, which is meant to start from a
-		// clean tree. Reuse of a PRIOR task's directory never reaches here;
-		// that is Reuse, which takes an explicit WorkDir and deletes nothing.
-		if reset {
-			if err := resetEnvRootContents(envRoot); err != nil {
-				return nil, fmt.Errorf("execenv: reset existing env: %w", err)
-			}
-		}
+		env.ReleaseLock()
+		return nil, err
 	}
+	return prepared, nil
+}
 
-	// Create directory tree. For the standard flow the agent's workdir is
-	// envRoot/workdir; for local_directory tasks the user's path takes its
-	// place and we only need to create the scratch directories under
-	// envRoot.
-	workDir := filepath.Join(envRoot, "workdir")
-	scratchDirs := []string{filepath.Join(envRoot, "output"), filepath.Join(envRoot, "logs")}
-	if params.LocalWorkDir == "" && params.LocalWorktree == nil {
-		scratchDirs = append(scratchDirs, workDir)
-	} else if params.LocalWorkDir != "" {
-		workDir = params.LocalWorkDir
+// PreparePrivate materializes task-owned configuration only after physical acquisition.
+// Its caller retains the actual root/participant handles through execution.
+func PreparePrivate(params PrepareParams, env *Environment, logger *slog.Logger) (*Environment, error) {
+	if env == nil || env.RootDir == "" || env.WorkDir == "" {
+		return nil, errors.New("execenv: missing physical preparation")
 	}
-	for _, dir := range scratchDirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("execenv: create directory %s: %w", dir, err)
-		}
-	}
-	multicaConfigRoot := filepath.Join(envRoot, "multica-config")
-	if err := WriteReviewRuntime(envRoot, ReviewRuntime{WorkspaceID: params.WorkspaceID, TaskID: params.TaskID, RuntimeID: params.RuntimeID, AgentID: params.Task.AgentID, AgentName: params.AgentName}); err != nil {
-		return nil, fmt.Errorf("execenv: record task runtime: %w", err)
-	}
-	if err := os.MkdirAll(multicaConfigRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("execenv: create task-local Multica config directory: %w", err)
-	}
-	if err := os.Chmod(multicaConfigRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("execenv: restrict task-local Multica config directory: %w", err)
-	}
-
-	// Worktree mode: build the task's own checkout of the user's repo inside
-	// envRoot and use it as the workdir. Done before any context file is
-	// written so the sidecars land inside the disposable worktree instead of
-	// the user's directory.
-	var localWorktree *LocalWorktree
-	// Tracks whether Prepare reached its successful return. Everything after
-	// worktree creation can still fail — context files, provider homes, MCP
-	// config — and on those paths the caller never receives an Environment, so
-	// nothing downstream knows a worktree exists to clean up. Without the
-	// rollback below, each such failure would leave a registration in the
-	// user's repo and a branch that no task ever ran in.
+	envRoot, workDir := env.RootDir, env.WorkDir
+	privateProvider := env.PrivateProviderCheckout
 	prepareSucceeded := false
-	if params.LocalWorktree != nil {
-		wtParams := *params.LocalWorktree
-		wtParams.EnvRoot = envRoot
-		wtParams.AgentName = params.AgentName
-		wtParams.TaskID = params.TaskID
-		wtParams.ConversationKey, wtParams.ConversationID = localWorktreeConversation(params)
-		wtParams.WorkspaceID = params.WorkspaceID
-		wtParams.AgentID = params.Task.AgentID
-		wtParams.ProjectID, wtParams.SquadID, wtParams.RuntimeID = params.Task.ProjectID, params.Task.SquadID, params.RuntimeID
-		wtParams.RepositoryScope, err = RepositoryScopeFingerprint(params.Task.Repos, params.Task.ProjectResources)
-		if err != nil {
-			return nil, err
-		}
-		var err error
-		localWorktree, err = PrepareLocalWorktree(wtParams, logger)
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			if prepareSucceeded {
-				return
-			}
-			// Safe to discard unconditionally: no agent has run yet, so the
-			// worktree holds only what Prepare itself put there.
-			localWorktree.Discard(logger)
-		}()
-		workDir = localWorktree.WorkDir
-		// The resource may point at a subdirectory that holds only ignored
-		// files, in which case git doesn't materialise it in the worktree.
-		if err := os.MkdirAll(workDir, 0o755); err != nil {
-			return nil, fmt.Errorf("execenv: create worktree workdir %s: %w", workDir, err)
-		}
+	if err := os.MkdirAll(env.MulticaConfigRoot, 0700); err != nil {
+		return nil, err
 	}
-
-	env := &Environment{
-		RootDir:                 envRoot,
-		PrivateProviderCheckout: privateProvider,
-		WorkDir:                 workDir,
-		LocalDirectory:          params.LocalWorkDir != "",
-		LocalWorktree:           localWorktree,
-		MulticaConfigRoot:       multicaConfigRoot,
-		logger:                  logger,
-		lockFile:                lockFile,
+	if err := os.Chmod(env.MulticaConfigRoot, 0700); err != nil {
+		return nil, err
 	}
-	if privateCopySource != "" {
-		if err := os.CopyFS(workDir, os.DirFS(privateCopySource)); err != nil {
-			return nil, fmt.Errorf("copy private provider workspace: %w", err)
-		}
-	}
-
 	// Write context files into workdir (skills go to provider-native paths).
 	// Track every file/dir we create in a manifest so CleanupSidecars can
 	// roll a local_directory workdir back to its pre-Prepare state. Cloud
@@ -614,7 +469,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		}
 	}
 	contextDir := workDir
-	if (params.LocalWorkDir != "" || params.LocalWorktree != nil || privateProvider) && params.IsolateLocalContext {
+	if (env.LocalDirectory || env.LocalWorktree != nil || privateProvider) && params.IsolateLocalContext {
 		contextDir = filepath.Join(envRoot, "task-context")
 		if err := os.MkdirAll(contextDir, 0o700); err != nil {
 			return nil, fmt.Errorf("execenv: create isolated context: %w", err)
@@ -641,7 +496,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// local_directory flow writes into a directory that outlives the task and
 	// belongs to the user, where a leftover marker disables every multica
 	// command in that directory tree until someone removes it by hand.
-	if params.LocalWorkDir != "" {
+	if env.LocalDirectory {
 		defer func() {
 			if prepareSucceeded {
 				return
@@ -659,40 +514,10 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		return nil, fmt.Errorf("execenv: prepare omp mcp config: %w", err)
 	}
 
-	// Persist managed-env provenance for non-local resumable envs at Prepare time
-	// (not on completion, where .gc_meta.json is written). A same-issue
-	// follow-up can be claimed the instant the prior task completes — before
-	// the prior handler writes .gc_meta.json — so reuse eligibility must be
-	// provable from an artifact that exists the moment the env is created. Only
-	// managed (non-local_directory) issue, chat and automation envs get this marker;
-	// each has a durable workline identity. Non-fatal: a write failure
-	// only costs the next follow-up its session reuse (it falls back to a fresh
-	// session), which must never block dispatching this task.
-	if params.LocalWorkDir == "" && (params.Task.IssueID != "" || params.Task.ChatSessionID != "" || params.Task.AutopilotID != "") {
-		repositoryScope, err := RepositoryScopeFingerprint(params.Task.Repos, params.Task.ProjectResources)
-		if err != nil {
-			return nil, err
-		}
-		if err := WriteManagedEnvProvenance(envRoot, ManagedEnvProvenance{
-			WorkspaceID:     params.WorkspaceID,
-			RuntimeID:       params.RuntimeID,
-			ProjectID:       params.Task.ProjectID,
-			SquadID:         params.Task.SquadID,
-			RepositoryScope: repositoryScope,
-			IssueID:         params.Task.IssueID,
-			ChatSessionID:   params.Task.ChatSessionID,
-			AutopilotID:     params.Task.AutopilotID,
-			AgentID:         params.Task.AgentID,
-			AgentName:       params.AgentName,
-		}); err != nil && logger != nil {
-			logger.Warn("execenv: write managed env provenance failed (non-fatal); a follow-up may start a fresh session", "error", err)
-		}
-	}
-
 	// For Codex, set up a per-task CODEX_HOME seeded from ~/.codex/ with skills.
 	if params.Provider == "codex" {
 		codexHome := filepath.Join(envRoot, codexHomeDirName)
-		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, IsLocalDirectory: params.LocalWorkDir != "" || params.LocalWorktree != nil, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task), CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
+		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, IsLocalDirectory: env.LocalDirectory || env.LocalWorktree != nil, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task), CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
 			return nil, fmt.Errorf("execenv: prepare codex-home: %w", err)
 		}
 		if err := hydrateCodexSkills(codexHome, params.Task.AgentSkills, params.Task.DisabledRuntimeSkills, logger); err != nil {
@@ -771,7 +596,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		// tree now, while we still hold the in-memory manifest. Elsewhere the
 		// manifest is a convenience the GC can do without, so a warning stays
 		// the right response.
-		if params.LocalWorkDir != "" {
+		if env.LocalDirectory {
 			return nil, fmt.Errorf("execenv: write sidecar manifest: %w", err)
 		}
 		logger.Warn("execenv: write sidecar manifest failed (non-fatal)", "error", err)
@@ -799,13 +624,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	}
 
 	logger.Info("execenv: prepared env", "root", envRoot, "repos_available", len(params.Task.Repos))
-	if env.LocalDirectory {
-		if err := WriteReviewDirectory(envRoot, ReviewDirectory{WorkspaceID: params.WorkspaceID, TaskID: params.TaskID, Path: env.WorkDir}); err != nil {
-			logger.Warn("execenv: local review directory binding unavailable", "error", err)
-		}
-	}
 	prepareSucceeded = true
-	lockClaimed = false // ownership of any lock passes to the Environment
 	return env, nil
 }
 
@@ -813,6 +632,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 // the per-provider knobs (CodexVersion, OpenclawBin) so callers can pass
 // the same resolved binary path on both first-run and reuse paths.
 type ReuseParams struct {
+	PrivateEnvironment  map[string]string
 	IsolateLocalContext bool
 	// WorkspacesRoot is the daemon-owned root under which all task envs live.
 	// Passed on reuse so the root-level fail-closed marker is self-healed here
@@ -875,59 +695,25 @@ type ReuseParams struct {
 // Returns nil if the workdir does not exist or required provider setup fails
 // (caller should fall back to Prepare).
 func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
-	if _, err := os.Stat(params.WorkDir); err != nil {
+	env := reusePhysical(PhysicalReuseParams{WorkspacesRoot: params.WorkspacesRoot, WorkDir: params.WorkDir, RunRoot: params.RunRoot, LocalDirectory: params.LocalDirectory, ReusedLocalWorktree: params.ReusedLocalWorktree}, logger)
+	if env == nil {
 		return nil
 	}
+	return ReusePrivate(params, env, logger)
+}
 
-	// Self-heal the root-level daemon marker on the reuse path too, so a marker
-	// removed while the daemon runs is restored before a reused task spawns —
-	// otherwise reuse could run without the fail-closed guard until the next
-	// fresh Prepare. Non-fatal: the per-workdir marker still protects the common
-	// case, and an empty WorkspacesRoot (legacy callers) simply skips this.
-	if params.WorkspacesRoot != "" {
-		if err := EnsureWorkspacesRootMarker(params.WorkspacesRoot); err != nil && logger != nil {
-			logger.Warn("execenv: workspaces root marker not written on reuse; fail-closed guard limited to the task workdir", "error", err)
-		}
+// ReusePrivate refreshes only the task owner's private configuration after the
+// physical owner has selected and validated a reusable checkout.
+func ReusePrivate(params ReuseParams, env *Environment, logger *slog.Logger) *Environment {
+	if env == nil || env.WorkDir == "" {
+		return nil
 	}
-
-	rootDir := filepath.Dir(params.WorkDir)
-	codeRoot := rootDir
-	var reusedWorktree *LocalWorktree
-	if params.ReusedLocalWorktree != nil {
-		reusedWorktree = params.ReusedLocalWorktree
-		codeRoot = filepath.Dir(reusedWorktree.Path)
-		params.WorkDir = reusedWorktree.WorkDir
+	params.WorkDir = env.WorkDir
+	codeRoot := env.RootDir
+	if env.CodeRootDir != "" {
+		codeRoot = env.CodeRootDir
 	}
-	if params.RunRoot != "" {
-		owner, err := ReadEnvRootOwner(params.RunRoot)
-		if err != nil || owner == nil || owner.TaskID == "" || owner.WorkspaceID == "" || ValidateEnvRootOwnerPath(params.WorkspacesRoot, params.RunRoot, *owner) != nil {
-			logger.Warn("execenv: per-run configuration root has no valid owner")
-			return nil
-		}
-		rootDir = params.RunRoot
-	}
-	if params.LocalDirectory {
-		// For local_directory tasks the user's WorkDir is unrelated to
-		// envRoot (envRoot still lives under workspacesRoot/{wsID}/...),
-		// so reading it from filepath.Dir(WorkDir) would point at the
-		// parent of the user's directory. Callers that need a real
-		// RootDir on the reuse path should arrange to pass it in
-		// explicitly; for v1 the daemon only ever reuses local_directory
-		// workdirs after a fresh Prepare in the same task lifetime, so
-		// the empty RootDir on reuse is fine for the current callers
-		// (GC writes meta from Prepare's result, not Reuse's).
-		rootDir = ""
-	}
-	env := &Environment{
-		RootDir:        rootDir,
-		WorkDir:        params.WorkDir,
-		LocalDirectory: params.LocalDirectory,
-		logger:         logger,
-		LocalWorktree:  reusedWorktree,
-	}
-	if codeRoot != rootDir && !params.LocalDirectory {
-		env.CodeRootDir = codeRoot
-	}
+	reusedWorktree := env.LocalWorktree
 	contextDir := params.WorkDir
 	if params.IsolateLocalContext && reusedWorktree != nil {
 		contextDir = filepath.Join(env.RootDir, "task-context")
@@ -1589,12 +1375,18 @@ func claimEnvRoot(envRoot, workspaceID, taskID string) (lockFile *os.File, reset
 	}
 	// Past this point we are the only execution touching this env root, in this
 	// process or any other, so the checks below cannot race.
+	claimedFile := lockFile
 	defer func() {
 		if err != nil {
-			releaseLockFile(lockFile)
+			releaseLockFile(claimedFile)
 			lockFile = nil
 		}
 	}()
+	if reserved, reservationErr := PhysicalRootReserved(envRoot); reservationErr != nil {
+		return nil, false, reservationErr
+	} else if reserved {
+		return nil, false, errors.New("physical root handoff remains pending")
+	}
 	if err := removeStaleEnvRootOwnerTemps(envRoot); err != nil {
 		return nil, false, fmt.Errorf("remove stale env root owner temp files for %s: %w", envRoot, err)
 	}
@@ -1763,6 +1555,16 @@ func ReadEnvRootOwner(envRoot string) (*EnvRootOwner, error) {
 // directory instead would drop both the claim and the lock for as long as the
 // recreate takes, which is exactly the window claimEnvRoot exists to close.
 func resetEnvRootContents(envRoot string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	release, available, err := reserveSharedDirectoryPaths(ctx, []string{envRoot}, true)
+	if err != nil {
+		return err
+	}
+	if !available {
+		return errors.New("physical root has live or undelivered consumers")
+	}
+	defer release()
 	entries, err := os.ReadDir(envRoot)
 	if err != nil {
 		return err

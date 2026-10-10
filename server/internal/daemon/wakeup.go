@@ -221,7 +221,13 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 		vscreenReportBinding = reporter.Bind(response.Header.Get(protocol.DaemonGenerationHeader), enqueue)
 	}
 	wsRPCGeneration := d.wsRPC.attach(enqueue)
-	d.replayActiveMirrorViewerStates(enqueue, mirrorGeneration)
+	if d.mirrorProcessMode() {
+		if err := d.bindMirrorProcess(mirrorCtx, mirrorGeneration, enqueue); err != nil {
+			d.logger.Warn("mirror process binding unavailable", "error", err)
+		}
+	} else {
+		d.replayActiveMirrorViewerStates(enqueue, mirrorGeneration)
+	}
 	// A (re)connect may be a freshly-upgraded server: re-probe the batch claim
 	// route rather than staying on the legacy fallback forever (MUL-4257).
 	d.batchClaimUnsupported.Store(false)

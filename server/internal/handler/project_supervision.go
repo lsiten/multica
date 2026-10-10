@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/service"
 )
 
@@ -26,7 +27,7 @@ func (h *Handler) supervisionError(w http.ResponseWriter, err error) {
 		status = http.StatusForbidden
 		code = "project_supervision_forbidden"
 	}
-	if errors.Is(err, service.ErrProjectSupervisionConflict) {
+	if errors.Is(err, service.ErrProjectSupervisionConflict) || errors.Is(err, service.ErrTaskActorClaim) {
 		status = http.StatusConflict
 		code = "project_supervision_conflict"
 	}
@@ -89,6 +90,10 @@ func (h *Handler) CheckProjectSupervision(w http.ResponseWriter, r *http.Request
 	h.GetProjectSupervision(w, r)
 }
 func (h *Handler) ApplyProjectSupervision(w http.ResponseWriter, r *http.Request) {
+	if _, authenticated := auth.TaskActorFromContext(r.Context()); !authenticated {
+		writeError(w, 403, "an authenticated task actor is required")
+		return
+	}
 	project, _, ok := h.loadProjectScopeBindingTarget(w, r)
 	if !ok {
 		return
@@ -117,6 +122,10 @@ func (h *Handler) ApplyProjectSupervision(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"verified_actions": count})
 }
 func (h *Handler) ReportProjectSupervision(w http.ResponseWriter, r *http.Request) {
+	if _, authenticated := auth.TaskActorFromContext(r.Context()); !authenticated {
+		writeError(w, 403, "an authenticated task actor is required")
+		return
+	}
 	project, _, ok := h.loadProjectScopeBindingTarget(w, r)
 	if !ok {
 		return

@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,8 +11,19 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 )
 
+func repositoryScopeForTask(task Task) (string, error) {
+	if task.physicalRepositoryScope != "" {
+		decoded, err := hex.DecodeString(task.physicalRepositoryScope)
+		if err != nil || len(decoded) != 32 {
+			return "", errors.New("invalid physical repository fingerprint")
+		}
+		return task.physicalRepositoryScope, nil
+	}
+	return execenv.RepositoryScopeFingerprint(convertReposForEnv(task.Repos), convertProjectResourcesForEnv(task.ProjectResources))
+}
+
 func managedScopeForTask(task Task) (execenv.ManagedEnvProvenance, error) {
-	fingerprint, err := execenv.RepositoryScopeFingerprint(convertReposForEnv(task.Repos), convertProjectResourcesForEnv(task.ProjectResources))
+	fingerprint, err := repositoryScopeForTask(task)
 	return execenv.ManagedEnvProvenance{WorkspaceID: task.WorkspaceID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID, ProjectID: task.ProjectID, SquadID: task.SquadID, RepositoryScope: fingerprint}, err
 }
 

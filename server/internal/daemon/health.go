@@ -21,8 +21,9 @@ import (
 
 // HealthResponse is returned by the daemon's local health endpoint.
 type HealthResponse struct {
-	Status string `json:"status"`
-	PID    int    `json:"pid"`
+	ApplicationService *ApplicationServiceHealth `json:"application_service,omitempty"`
+	Status             string                    `json:"status"`
+	PID                int                       `json:"pid"`
 	// OS is the daemon's runtime.GOOS. The desktop app compares it against its
 	// own host OS to detect a daemon it cannot manage — e.g. a Windows desktop
 	// reaching a Linux daemon inside WSL2 over localhost forwarding. The
@@ -354,6 +355,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 		}
 
 		resp := HealthResponse{
+			ApplicationService:                d.applicationProcessHealth(r.Context()),
 			Status:                            status,
 			PID:                               os.Getpid(),
 			OS:                                runtime.GOOS,
@@ -505,10 +507,14 @@ func (d *Daemon) jevModelsHandler() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		models := manager.Catalog()
+		models, catalogErr := manager.Catalog(r.Context())
+		if catalogErr != nil {
+			http.Error(w, catalogErr.Error(), http.StatusInternalServerError)
+			return
+		}
 		statuses := make([]jevmodels.Status, 0, len(models))
 		for _, model := range models {
-			status, statusErr := manager.Status(model.ID, model.Revision)
+			status, statusErr := manager.Status(r.Context(), model.ID, model.Revision)
 			if statusErr != nil {
 				http.Error(w, statusErr.Error(), http.StatusInternalServerError)
 				return
@@ -543,13 +549,13 @@ func (d *Daemon) jevModelInstallHandler() http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		status, statusErr := manager.Status(req.ModelID, req.Revision)
+		status, statusErr := manager.Status(r.Context(), req.ModelID, req.Revision)
 		if errors.Is(statusErr, jevmodels.ErrUnknownModel) && req.Revision != "" {
-			if _, registerErr := manager.Register(r.Context(), req.ModelID, req.Revision, nil); registerErr != nil {
+			if _, registerErr := manager.Register(r.Context(), req.ModelID, req.Revision); registerErr != nil {
 				http.Error(w, registerErr.Error(), http.StatusBadRequest)
 				return
 			}
-			status, statusErr = manager.Status(req.ModelID, req.Revision)
+			status, statusErr = manager.Status(r.Context(), req.ModelID, req.Revision)
 		}
 		if statusErr != nil {
 			http.Error(w, statusErr.Error(), http.StatusBadRequest)
@@ -557,7 +563,7 @@ func (d *Daemon) jevModelInstallHandler() http.HandlerFunc {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(status)
 		} else {
-			result, startErr := manager.StartInstall(context.Background(), req.ModelID, req.Revision)
+			startErr := manager.StartInstall(r.Context(), req.ModelID, req.Revision)
 			if startErr != nil {
 				if errors.Is(startErr, jevmodels.ErrBusy) {
 					http.Error(w, "model download already in progress", http.StatusConflict)
@@ -566,11 +572,7 @@ func (d *Daemon) jevModelInstallHandler() http.HandlerFunc {
 				}
 				return
 			}
-			go func(modelID string, result <-chan error) {
-				if installErr := <-result; installErr != nil && d.logger != nil {
-					d.logger.Warn("jev model download failed", "model_id", modelID, "error", installErr)
-				}
-			}(req.ModelID, result)
+
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true, "status": "queued", "model_id": req.ModelID, "revision": req.Revision})
@@ -598,7 +600,7 @@ func (d *Daemon) jevModelCancelHandler() http.HandlerFunc {
 		}
 		manager, err := d.jevModelManager()
 		if err == nil {
-			err = manager.CancelInstall(req.ModelID, req.Revision)
+			err = manager.CancelInstall(r.Context(), req.ModelID, req.Revision)
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

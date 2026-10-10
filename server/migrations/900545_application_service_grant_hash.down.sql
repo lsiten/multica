@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS application_service_grant_hash_idx;

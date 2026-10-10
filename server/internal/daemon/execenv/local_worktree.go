@@ -225,8 +225,9 @@ type LocalWorktree struct {
 	// aborted, when set, makes Finalize refuse to commit or remove anything.
 	// Set by the daemon when a pre-commit step failed in a way that would make
 	// the committed branch wrong (see AbortWithReason).
-	aborted        error
-	executionLease *SharedDirectoryLease
+	aborted         error
+	executionLease  *SharedDirectoryLease
+	physicalControl PhysicalWorktreeControl
 }
 
 // MarshalJSON / UnmarshalJSON carry this struct's unexported state across the
@@ -568,10 +569,23 @@ func (w *LocalWorktree) BeginSharedExecution(ctx context.Context, receipt ...Sha
 			return err
 		}
 	}
+	if w.physicalControl != nil {
+		participant, err := lease.PhysicalParticipant()
+		if err == nil {
+			err = w.physicalControl.Attach(ctx, participant)
+		}
+		if err != nil {
+			lease.ReleaseUnsettled()
+			return err
+		}
+	}
 	return nil
 }
 
 func (w *LocalWorktree) Finalize(logger *slog.Logger) (LocalWorktreeOutcome, error) {
+	if w != nil && w.physicalControl != nil {
+		return w.finalizeThroughPhysicalOwner()
+	}
 	if w == nil || w.executionLease == nil {
 		return w.finalizeOwned(logger)
 	}

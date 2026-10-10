@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS task_actor_claim_hash;

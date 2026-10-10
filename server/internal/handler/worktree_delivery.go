@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -30,8 +29,7 @@ func (h *Handler) RecordWorktreeDelivery(w http.ResponseWriter, r *http.Request)
 		WorkDir    string `json:"work_dir"`
 		NoWork     bool   `json:"no_work"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeScopedExecutionBody(w, r, &req, 64<<10) {
 		return
 	}
 	valid := validWorktreeCommit(req.Commit) && req.BranchName != "" && !strings.HasPrefix(req.BranchName, "-")
@@ -42,13 +40,21 @@ func (h *Handler) RecordWorktreeDelivery(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid shared worktree delivery")
 		return
 	}
-	updated, err := h.Queries.RecordSharedWorktreeDelivery(r.Context(), db.RecordSharedWorktreeDeliveryParams{ID: task.ID, RuntimeID: task.RuntimeID, WorkspaceID: parseUUID(workspaceID), WorkDir: req.WorkDir, BranchName: req.BranchName, Commit: req.Commit, NoWork: req.NoWork})
+	tx, q, ok := h.beginExecutionCallback(w, r, task.ID)
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	updated, err := q.RecordSharedWorktreeDelivery(r.Context(), db.RecordSharedWorktreeDeliveryParams{ID: task.ID, RuntimeID: task.RuntimeID, WorkspaceID: parseUUID(workspaceID), WorkDir: req.WorkDir, BranchName: req.BranchName, Commit: req.Commit, NoWork: req.NoWork})
 	if err != nil {
 		if isNotFound(err) {
 			writeError(w, http.StatusConflict, "worktree delivery scope changed")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "failed to record worktree delivery")
+		return
+	}
+	if !commitScopedExecutionWrite(w, r, tx, q, task.ID) {
 		return
 	}
 	h.TaskService.NotifyWorktreeDelivery(updated, workspaceID)

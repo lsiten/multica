@@ -19,7 +19,7 @@ func managedReuseScopeMatches(task Task, scope *execenv.ManagedEnvProvenance) bo
 		scope.RuntimeID != task.RuntimeID || scope.ProjectID != task.ProjectID || scope.SquadID != task.SquadID {
 		return false
 	}
-	fingerprint, err := execenv.RepositoryScopeFingerprint(convertReposForEnv(task.Repos), convertProjectResourcesForEnv(task.ProjectResources))
+	fingerprint, err := repositoryScopeForTask(task)
 	if err != nil || scope.RepositoryScope != fingerprint {
 		return false
 	}

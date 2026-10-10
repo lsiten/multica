@@ -48,7 +48,7 @@ func (d *Daemon) applicationLoop(ctx context.Context) {
 }
 
 func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan struct{}, workers *sync.WaitGroup, runtimeID string) {
-	instances, err := d.client.syncApplications(ctx, runtimeID, d.cfg.DaemonID)
+	instances, err := d.applicationTransportFor(runtimeID).Sync(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
 			d.logger.Debug("application registry unavailable", "runtime_id", runtimeID, "error", err)
@@ -78,7 +78,7 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 			if stopErr != nil {
 				observation = applicationObservation(command, "unknown", "unknown", applicationHostError(stopErr, command))
 			}
-			if observeErr := d.client.observeApplication(ctx, runtimeID, d.cfg.DaemonID, observation); observeErr != nil && ctx.Err() == nil {
+			if observeErr := d.applicationTransportFor(runtimeID).Observe(ctx, observation); observeErr != nil && ctx.Err() == nil {
 				d.logger.Debug("application stop observation deferred", "instance_id", command.InstanceID, "error", observeErr)
 			}
 			lock.Unlock()
@@ -106,7 +106,7 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 					if restoreErr != nil {
 						restored = applicationObservation(command, "unknown", "unknown", applicationHostError(restoreErr, command))
 					}
-					if err := d.client.observeApplication(ctx, runtimeID, d.cfg.DaemonID, restored); err != nil && ctx.Err() == nil {
+					if err := d.applicationTransportFor(runtimeID).Observe(ctx, restored); err != nil && ctx.Err() == nil {
 						d.logger.Debug("application restore observation deferred", "instance_id", command.InstanceID, "error", err)
 					}
 				})
@@ -116,11 +116,11 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 		if inspectErr != nil {
 			observation.Error = applicationHostError(inspectErr, command)
 		}
-		if err := d.client.observeApplication(ctx, runtimeID, d.cfg.DaemonID, observation); err != nil && ctx.Err() == nil {
+		if err := d.applicationTransportFor(runtimeID).Observe(ctx, observation); err != nil && ctx.Err() == nil {
 			d.logger.Debug("application observation deferred", "instance_id", command.InstanceID, "error", err)
 		}
 	}
-	claims, err := d.client.claimApplications(ctx, runtimeID, d.cfg.DaemonID)
+	claims, err := d.applicationTransportFor(runtimeID).Claim(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
 			d.logger.Debug("application claim deferred", "runtime_id", runtimeID, "error", err)
@@ -156,7 +156,7 @@ func (d *Daemon) runApplicationClaim(parent context.Context, semaphore chan stru
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				err := d.client.renewApplicationLease(ctx, runtimeID, d.cfg.DaemonID, claim)
+				err := d.applicationTransportFor(runtimeID).RenewLease(ctx, claim)
 				var request *requestError
 				if errors.As(err, &request) && slices.Contains([]int{http.StatusConflict, http.StatusNotFound, http.StatusForbidden, http.StatusUnauthorized}, request.StatusCode) {
 					cancel()
@@ -172,7 +172,7 @@ func (d *Daemon) runApplicationClaim(parent context.Context, semaphore chan stru
 	case <-ctx.Done():
 		return
 	}
-	if err := d.client.renewApplicationLease(ctx, runtimeID, d.cfg.DaemonID, claim); err != nil {
+	if err := d.applicationTransportFor(runtimeID).RenewLease(ctx, claim); err != nil {
 		return
 	}
 	observation, err := d.executeApplication(ctx, claim.Command)
@@ -185,7 +185,7 @@ func (d *Daemon) runApplicationClaim(parent context.Context, semaphore chan stru
 		result.Error = applicationHostError(err, claim.Command)
 		result.Observation = applicationObservation(claim.Command, observation.ProcessState, observation.HealthState, result.Error)
 	}
-	if completeErr := d.client.completeApplication(ctx, runtimeID, d.cfg.DaemonID, claim, result); completeErr != nil {
+	if completeErr := d.applicationTransportFor(runtimeID).Complete(ctx, claim, result); completeErr != nil {
 		d.logger.Debug("application result will be reconciled by the next lease", "step_id", claim.StepID, "error", completeErr)
 	}
 	d.wakeApplications()
@@ -194,6 +194,17 @@ func (d *Daemon) runApplicationClaim(parent context.Context, semaphore chan stru
 func (d *Daemon) applicationRecords() ([]applicationhost.Record, error) {
 	root := filepath.Join(d.cfg.WorkspacesRoot, ".applications", d.cfg.DaemonID)
 	records := []applicationhost.Record{}
+	canonical, err := filepath.EvalSymlinks(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return records, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	base, err := filepath.EvalSymlinks(d.cfg.WorkspacesRoot)
+	if err != nil || canonical != filepath.Join(base, ".applications", d.cfg.DaemonID) {
+		return nil, errors.New("application inventory root is redirected")
+	}
 	workspaces, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return records, nil
@@ -202,7 +213,10 @@ func (d *Daemon) applicationRecords() ([]applicationhost.Record, error) {
 		return nil, err
 	}
 	for _, workspace := range workspaces {
-		if !workspace.IsDir() || workspace.Type()&os.ModeSymlink != 0 {
+		if workspace.Type()&os.ModeSymlink != 0 {
+			return nil, errors.New("application workspace inventory is redirected")
+		}
+		if !workspace.IsDir() {
 			continue
 		}
 		instances, readErr := os.ReadDir(filepath.Join(root, workspace.Name()))
@@ -210,7 +224,10 @@ func (d *Daemon) applicationRecords() ([]applicationhost.Record, error) {
 			return nil, readErr
 		}
 		for _, instance := range instances {
-			if !instance.IsDir() || instance.Type()&os.ModeSymlink != 0 {
+			if instance.Type()&os.ModeSymlink != 0 {
+				return nil, errors.New("application instance inventory is redirected")
+			}
+			if !instance.IsDir() {
 				continue
 			}
 			record, readErr := applicationhost.ReadRecord(filepath.Join(root, workspace.Name(), instance.Name(), "host.json"))
@@ -222,6 +239,9 @@ func (d *Daemon) applicationRecords() ([]applicationhost.Record, error) {
 			}
 			if record.Command.WorkspaceID != workspace.Name() || record.Command.InstanceID != instance.Name() {
 				return nil, errors.New("application record scope does not match its storage directory")
+			}
+			if len(records) >= 4096 {
+				return nil, errors.New("application inventory exceeds limit")
 			}
 			records = append(records, record)
 		}
@@ -261,7 +281,7 @@ func (d *Daemon) stopOwnedApplications() {
 				}
 			}
 			if stopErr == nil {
-				if err = d.client.observeApplication(ctx, record.Command.RuntimeID, d.cfg.DaemonID, status.Observation); err != nil {
+				if err = d.applicationTransportFor(record.Command.RuntimeID).Observe(ctx, status.Observation); err != nil {
 					d.logger.Debug("application shutdown report deferred", "instance_id", record.Command.InstanceID, "error", err)
 				}
 			} else {
@@ -291,6 +311,10 @@ func (d *Daemon) applicationReferencesDirectory(path string) (bool, error) {
 	}
 	for _, record := range records {
 		if record.Observation.ProcessState == "stopped" {
+			recordPath := filepath.Join(d.cfg.WorkspacesRoot, ".applications", d.cfg.DaemonID, record.Command.WorkspaceID, record.Command.InstanceID, "host.json")
+			if err := applicationhost.WithStoppedOwnership(recordPath, record.HostID, func(applicationhost.Record) error { return nil }); err != nil {
+				return true, err
+			}
 			continue
 		}
 		relative, relErr := filepath.Rel(root, record.SourceRoot)

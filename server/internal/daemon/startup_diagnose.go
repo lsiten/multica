@@ -56,7 +56,7 @@ func buildStartupDiagnosis(codexHome string, threshold time.Duration) string {
 // The buffered-messages guard matches the idle watchdog: a message sitting
 // in the channel means the drain loop is behind, not a dead backend, and
 // that message is about to flip outputReceived anyway.
-func (d *Daemon) runStartupWatchdog(
+func runStartupWatchdog(
 	agentCtx context.Context,
 	threshold time.Duration,
 	outputReceived *atomic.Bool,

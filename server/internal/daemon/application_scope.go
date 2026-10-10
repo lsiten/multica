@@ -29,6 +29,28 @@ func lockApplicationUntil(ctx context.Context, lock *sync.Mutex) error {
 }
 
 func (d *Daemon) stopUnavailableWorkspaceApplications(ctx context.Context, available map[string]string) {
+	if d.applicationProcessMode() {
+		d.applicationProcessMu.Lock()
+		client := d.applicationProcess
+		d.applicationProcessMu.Unlock()
+		if client != nil {
+			client.mu.Lock()
+			removed := []string{}
+			for id, grant := range client.grants {
+				if _, ok := available[grant.WorkspaceID]; !ok {
+					removed = append(removed, id)
+				}
+			}
+			client.mu.Unlock()
+			for _, id := range removed {
+				if err := client.remove(ctx, id); err != nil {
+					d.logger.Warn("application workspace shutdown unconfirmed", "error", err)
+				}
+			}
+		}
+		return
+	}
+
 	d.stopApplicationScopes(ctx, func(workspaceID, _ string) bool {
 		_, allowed := available[workspaceID]
 		return !allowed
@@ -36,6 +58,18 @@ func (d *Daemon) stopUnavailableWorkspaceApplications(ctx context.Context, avail
 }
 
 func (d *Daemon) stopRuntimeApplications(ctx context.Context, runtimeID string) {
+	if d.applicationProcessMode() {
+		d.applicationProcessMu.Lock()
+		client := d.applicationProcess
+		d.applicationProcessMu.Unlock()
+		if client != nil {
+			if err := client.remove(ctx, runtimeID); err != nil {
+				d.logger.Warn("application runtime shutdown unconfirmed", "error", err)
+			}
+		}
+		return
+	}
+
 	d.stopApplicationScopes(ctx, func(_ string, currentRuntimeID string) bool {
 		return currentRuntimeID == runtimeID
 	})

@@ -43,6 +43,9 @@ func (d *Daemon) sendVscreen(enqueue func([]byte) (*wsOutbound, error), g mirror
 }
 
 func (d *Daemon) handleVscreenQuery(ctx context.Context, msg mirrorOfferMessage) {
+	if d.forwardMirrorControl(ctx, protocol.EventVscreenQuery, msg) {
+		return
+	}
 	var query protocol.VscreenQuery
 	if json.Unmarshal(msg.raw, &query) != nil || !d.vscreenEnvelopeCurrent(query.VscreenEnvelope, msg.controlGeneration) {
 		return
@@ -87,6 +90,9 @@ func (d *Daemon) handleVscreenQuery(ctx context.Context, msg mirrorOfferMessage)
 }
 
 func (d *Daemon) handleVscreenCommand(ctx context.Context, msg mirrorOfferMessage) {
+	if d.forwardMirrorControl(ctx, protocol.EventVscreenCommand, msg) {
+		return
+	}
 	var command protocol.VscreenCommand
 	if json.Unmarshal(msg.raw, &command) != nil || command.Validate() != nil || !d.vscreenEnvelopeCurrent(command.VscreenEnvelope, msg.controlGeneration) {
 		return
@@ -146,6 +152,9 @@ func (d *Daemon) handleVscreenCommand(ctx context.Context, msg mirrorOfferMessag
 }
 
 func (d *Daemon) executeVscreenCommand(ctx context.Context, c protocol.VscreenCommand, g mirrorControlGeneration) error {
+	if d.mirrorProcessMode() {
+		return d.mirrorCall(ctx, mirrorProcessRequest{Operation: "execute_command", Payload: marshalRaw(c)}, nil)
+	}
 	key, err := d.vscreenResource(c.WorkspaceID, c.RuntimeID)
 	if err != nil {
 		return err

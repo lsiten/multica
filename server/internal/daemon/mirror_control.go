@@ -60,6 +60,9 @@ func (d *Daemon) runtimeMirror(runtimeID string) (*mirror.RuntimeMirror, bool) {
 }
 
 func (d *Daemon) runtimeMirrorForOffer(runtimeID string, generation mirrorControlGeneration) (*mirror.RuntimeMirror, bool, bool) {
+	if d.mirrorProcessMode() {
+		return nil, false, false
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if generation == 0 || d.mirrorControlGeneration != generation {
