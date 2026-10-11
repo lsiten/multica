@@ -1292,6 +1292,51 @@
     "actions_aria": "{{url}} 的操作"
   },
   "desktop": {
+    "processes": {
+      "title": "进程",
+      "description": "本守护进程托管的全部进程。仅本地显示，不会发送到服务端。",
+      "refresh": "刷新",
+      "empty": "没有正在运行的进程。",
+      "offline": "守护进程未运行。",
+      "load_failed": "加载进程失败。",
+      "stop": "停止",
+      "stop_confirm_title": "停止进程？",
+      "stop_confirm_description": "这会立即停止该进程。",
+      "all": "全部",
+      "category": {
+        "daemon": "守护进程",
+        "task_worker": "任务 worker",
+        "mcp": "MCP 服务",
+        "jev": "JEV 模型",
+        "application": "应用",
+        "gateway": "网关",
+        "environment": "环境",
+        "mirror": "镜像"
+      },
+      "memory": "内存",
+      "cpu": "CPU 时间",
+      "usage": {
+        "title": "资源占用",
+        "total_memory": "内存",
+        "total_cpu": "CPU 时间"
+      },
+      "service": {
+        "ai": "AI 服务",
+        "mirror": "镜像",
+        "application": "应用",
+        "gateway": "网关",
+        "environment": "环境"
+      },
+      "service_config": {
+        "title": "服务配置",
+        "description": "选择哪些服务作为独立进程运行。更改需要重启守护进程。",
+        "applied": "服务配置已更新，守护进程已重启。",
+        "apply_failed": "更新服务配置失败。",
+        "restart_confirm_title": "重启守护进程？",
+        "restart_confirm_description": "应用服务配置会重启守护进程并中断正在进行的任务。",
+        "apply": "应用并重启"
+      }
+    },
     "worktrees": {
       "scan_cleanup": "清理无任务目录",
       "cleanup_preview": "预览删除",

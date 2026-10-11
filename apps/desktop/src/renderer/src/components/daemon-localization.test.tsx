@@ -17,10 +17,10 @@ vi.mock("../platform/daemon-reauth", () => ({
 
 let emitLogLine: (line: string) => void = () => {};
 
-// Worktree and worker-process panels each have their own query-backed
+// Worktree and process-overview panels each have their own query-backed
 // component suites, so they are mocked out of this localization check.
 vi.mock("./worktree-manager", () => ({ WorktreeManager: () => null }));
-vi.mock("./worker-processes", () => ({ WorkerProcessManager: () => null }));
+vi.mock("./processes-overview", () => ({ ProcessesOverview: () => null }));
 
 function installDaemonAPI(status: DaemonStatus) {
   Object.defineProperty(window, "daemonAPI", {

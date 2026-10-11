@@ -34,6 +34,7 @@ import type {
   WorktreeCacheSelection,
   DaemonMcpReadiness,
   DaemonWorkerProcess,
+  DaemonProcessOverviewEntry,
 } from "../shared/daemon-types";
 import type { WorktreeArchiveRequest, WorktreeArchiveResult, WorktreeArchiveSummary } from "@multica/core/types/worktree-archives";
 import {
@@ -284,6 +285,8 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:restart"),
   getStatus: (): Promise<DaemonStatus> =>
     ipcRenderer.invoke("daemon:get-status"),
+  setProcessServices: (services: string[]): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("daemon:set-process-services", services),
   getMcpReadiness: (): Promise<DaemonMcpReadiness[]> =>
     ipcRenderer.invoke("daemon:mcp-readiness"),
   probeRuntimes: (): Promise<LocalRuntimeProbe> =>
@@ -294,6 +297,7 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:list-worktrees"),
   getJevModels: (): Promise<unknown> => ipcRenderer.invoke("daemon:jev-models"),
   getWorkerProcesses: (): Promise<DaemonWorkerProcess[]> => ipcRenderer.invoke("daemon:worker-processes"),
+  getProcessOverview: (): Promise<DaemonProcessOverviewEntry[]> => ipcRenderer.invoke("daemon:processes-overview"),
   stopWorkerProcess: (execId: string): Promise<unknown> => ipcRenderer.invoke("daemon:worker-process-stop", execId),
   getBuiltinMcpServices: (): Promise<unknown> => ipcRenderer.invoke("daemon:mcp-services"),
   registerJevModel: (modelId: string, revision: string): Promise<unknown> => ipcRenderer.invoke("daemon:jev-model-register", modelId, revision),

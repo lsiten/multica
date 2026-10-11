@@ -1292,6 +1292,51 @@
     "actions_aria": "{{url}} の操作"
   },
   "desktop": {
+    "processes": {
+      "title": "プロセス",
+      "description": "このデーモンが管理するすべてのプロセス。ローカルのみ表示され、サーバーには送信されません。",
+      "refresh": "更新",
+      "empty": "実行中のプロセスがありません。",
+      "offline": "デーモンは実行されていません。",
+      "load_failed": "プロセスの読み込みに失敗しました。",
+      "stop": "停止",
+      "stop_confirm_title": "プロセスを停止しますか？",
+      "stop_confirm_description": "これにより、すぐにプロセスが停止します。",
+      "all": "すべて",
+      "category": {
+        "daemon": "デーモン",
+        "task_worker": "タスク ワーカー",
+        "mcp": "MCP サービス",
+        "jev": "JEV モデル",
+        "application": "アプリケーション",
+        "gateway": "ゲートウェイ",
+        "environment": "環境",
+        "mirror": "ミラー"
+      },
+      "memory": "メモリ",
+      "cpu": "CPU 時間",
+      "usage": {
+        "title": "リソース使用状況",
+        "total_memory": "メモリ",
+        "total_cpu": "CPU 時間"
+      },
+      "service": {
+        "ai": "AI サービス",
+        "mirror": "ミラー",
+        "application": "アプリケーション",
+        "gateway": "ゲートウェイ",
+        "environment": "環境"
+      },
+      "service_config": {
+        "title": "サービス設定",
+        "description": "どのサービスを独立したプロセスとして実行するかを選択します。変更にはデーモンの再起動が必要です。",
+        "applied": "サービス設定を更新し、デーモンを再起動しました。",
+        "apply_failed": "サービス設定の更新に失敗しました。",
+        "restart_confirm_title": "デーモンを再起動しますか？",
+        "restart_confirm_description": "サービス設定を適用するとデーモンが再起動され、実行中のタスク作業が中断されます。",
+        "apply": "適用して再起動"
+      }
+    },
     "worktrees": {
       "scan_cleanup": "不要なディレクトリを削除",
       "cleanup_preview": "削除のプレビュー",

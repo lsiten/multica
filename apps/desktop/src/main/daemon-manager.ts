@@ -29,7 +29,7 @@ import type {
   DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
-import type { DaemonWorkerProcess } from "../shared/daemon-types";
+import type { DaemonWorkerProcess, DaemonProcessOverviewEntry } from "../shared/daemon-types";
 import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, type LocalReviewTransport } from "./local-review-request";
 import { LocalReviewCancellation } from "./local-review-cancellation";
 import { isPagedReviewDecision, pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
@@ -199,6 +199,8 @@ interface HealthPayload {
   agents?: string[];
 	workspaces?: unknown[];
 	mcp?: DaemonMcpReadiness[];
+	/** Profile's opt-in process ownership roles; empty omits the field pre-#xxx. */
+	process_services?: string[];
 }
 
 async function fetchHealthAtPort(
@@ -466,6 +468,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
     serverUrl: data.server_url,
     externallyManaged,
     mcp: data.mcp ?? [],
+    processServices: data.process_services ?? [],
   };
 }
 
@@ -1215,6 +1218,34 @@ async function restartDaemon(): Promise<{ success: boolean; error?: string }> {
   return startDaemon();
 }
 
+/**
+ * Sets the profile's opt-in process ownership roles and restarts the daemon so
+ * the new config takes effect. The write goes through `multica config set
+ * process_services`, which validates the role set via ValidateProcessServices,
+ * so an unsupported role is rejected before anything is persisted — the same
+ * gate the CLI enforces. The restart is the deliberate, user-confirmed side
+ * effect of changing the set; it is not fired on a failed write.
+ */
+async function setProcessServices(
+  services: string[],
+  active?: ActiveProfile,
+): Promise<{ success: boolean; error?: string }> {
+  const bin = await resolveCliBinary();
+  if (!bin) return { success: false, error: "multica CLI is not available." };
+  const profile = active ?? (await ensureActiveProfile());
+  if (!profile) return { success: false, error: "No active daemon profile." };
+  const wrote = await new Promise<boolean>((resolve) => {
+    execFile(
+      bin,
+      ["config", "set", "process_services", services.join(","), ...profileArgs(profile.name)],
+      { cwd: profileDir(profile.name), timeout: 15_000, env: desktopSpawnEnv() },
+      (err) => resolve(!err),
+    );
+  });
+  if (!wrote) return { success: false, error: "Failed to update process_services config." };
+  return restartDaemon();
+}
+
 async function daemonPidIsConfirmedAbsent(profile: string): Promise<boolean> {
   try {
     const raw = await readFile(profilePidPath(profile), "utf-8");
@@ -1512,6 +1543,21 @@ export function setupDaemonManager(
     setDesiredDaemonRunning(true, true);
     return lifecycleOperations.runForeground(() => restartDaemon());
   });
+  // Route the config-write + restart through the same singleflight gate as
+  // daemon:restart. The set-process-services intent stops and starts the
+  // daemon; running it ungated let it race a concurrent poll/recovery
+  // operation, leaving the IPC (and the confirm dialog) pending forever.
+  ipcMain.handle(
+    "daemon:set-process-services",
+    (_event, services: unknown) =>
+      lifecycleOperations.runForeground(() =>
+        setProcessServices(
+          Array.isArray(services)
+            ? services.filter((service): service is string => typeof service === "string")
+            : [],
+        ),
+      ),
+  );
   ipcMain.handle("daemon:get-status", () => fetchHealth());
   ipcMain.handle("daemon:mcp-readiness", async (): Promise<DaemonMcpReadiness[]> => {
     const response = await fetchWorktreeManager("/mcp/readiness");
@@ -1545,6 +1591,8 @@ export function setupDaemonManager(
         typeof item.state === "string" &&
         typeof item.ready === "boolean"
       );
+      // pid/memory_bytes/cpu_time_ms are optional numeric resource readings;
+      // the DaemonWorkerProcess type marks them optional, so no guard is needed.
     });
   });
   ipcMain.handle("daemon:worker-process-stop", (_event, execId: unknown) => {
@@ -1553,6 +1601,25 @@ export function setupDaemonManager(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ exec_id: execId }),
+    });
+  });
+  ipcMain.handle("daemon:processes-overview", async (): Promise<DaemonProcessOverviewEntry[]> => {
+    const response = await fetchWorktreeManager("/runtimes/processes/overview");
+    if (!response || typeof response !== "object") return [];
+    const value = (response as { processes?: unknown }).processes;
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry): entry is DaemonProcessOverviewEntry => {
+      if (!entry || typeof entry !== "object") return false;
+      const item = entry as Partial<DaemonProcessOverviewEntry>;
+      return (
+        typeof item.category === "string" &&
+        typeof item.id === "string" &&
+        typeof item.name === "string" &&
+        typeof item.state === "string" &&
+        typeof item.ready === "boolean"
+      );
+      // pid/memory_bytes/cpu_time_ms are optional numeric resource readings;
+      // the DaemonProcessOverviewEntry type marks them optional, so no guard is needed.
     });
   });
   ipcMain.handle("daemon:jev-model-register", (_event, modelId: unknown, revision: unknown) => {

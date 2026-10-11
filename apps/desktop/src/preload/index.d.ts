@@ -25,6 +25,7 @@ import type {
   WorktreeCacheSelection,
   DaemonMcpReadiness,
   DaemonWorkerProcess,
+  DaemonProcessOverviewEntry,
 } from "../shared/daemon-types";
 import type { TabSelectionShortcutKey } from "../shared/main-renderer-messages";
 
@@ -155,6 +156,7 @@ interface DaemonAPI {
   stop: () => Promise<{ success: boolean; error?: string }>;
   restart: () => Promise<{ success: boolean; error?: string }>;
   getStatus: () => Promise<DaemonStatus>;
+  setProcessServices: (services: string[]) => Promise<{ success: boolean; error?: string }>;
   getMcpReadiness: () => Promise<DaemonMcpReadiness[]>;
   probeRuntimes: () => Promise<LocalRuntimeProbe>;
   getHostName: () => Promise<string>;
@@ -190,6 +192,8 @@ interface DaemonAPI {
   openLogFile: () => Promise<{ success: boolean; error?: string }>;
   /** List live per-execution task workers on the daemon. Local only. */
   getWorkerProcesses: () => Promise<DaemonWorkerProcess[]>;
+  /** Unified overview of every child process the daemon supervises, with best-effort resource usage. Local only. */
+  getProcessOverview: () => Promise<DaemonProcessOverviewEntry[]>;
   /** Stop one live worker process by its execution id. Local only. */
   stopWorkerProcess: (execId: string) => Promise<unknown>;
 }

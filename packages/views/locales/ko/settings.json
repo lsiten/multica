@@ -1032,6 +1032,51 @@
     "actions_aria": "{{url}} 작업"
   },
   "desktop": {
+    "processes": {
+      "title": "프로세스",
+      "description": "이 데몬이 관리하는 모든 프로세스입니다. 로컬에서만 표시되며 서버로 전송되지 않습니다.",
+      "refresh": "새로고침",
+      "empty": "실행 중인 프로세스가 없습니다.",
+      "offline": "데몬이 실행되지 않습니다.",
+      "load_failed": "프로세스 로드 실패.",
+      "stop": "중지",
+      "stop_confirm_title": "프로세스를 중지하십니까?",
+      "stop_confirm_description": "이로 인해 프로세스가 즉시 중지됩니다.",
+      "all": "전체",
+      "category": {
+        "daemon": "데몬",
+        "task_worker": "태스크 워커",
+        "mcp": "MCP 서비스",
+        "jev": "JEV 모델",
+        "application": "애플리케이션",
+        "gateway": "게이트웨이",
+        "environment": "환경",
+        "mirror": "미러"
+      },
+      "memory": "메모리",
+      "cpu": "CPU 시간",
+      "usage": {
+        "title": "리소스 사용량",
+        "total_memory": "메모리",
+        "total_cpu": "CPU 시간"
+      },
+      "service": {
+        "ai": "AI 서비스",
+        "mirror": "미러",
+        "application": "애플리케이션",
+        "gateway": "게이트웨이",
+        "environment": "환경"
+      },
+      "service_config": {
+        "title": "서비스 설정",
+        "description": "어떤 서비스를 독립 프로세스로 실행할지 선택합니다. 변경에는 데몬 재시작이 필요합니다.",
+        "applied": "서비스 설정이 업데이트되고 데몬이 재시작되었습니다.",
+        "apply_failed": "서비스 설정 업데이트 실패.",
+        "restart_confirm_title": "데몬을 재시작하십니까?",
+        "restart_confirm_description": "서비스 설정을 적용하면 데몬이 재시작되고 실행 중인 작업이 중단됩니다.",
+        "apply": "적용 및 재시작"
+      }
+    },
     "worktrees": {
       "scan_cleanup": "사용하지 않는 디렉터리 삭제",
       "cleanup_preview": "삭제 미리보기",

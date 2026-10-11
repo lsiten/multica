@@ -1297,6 +1297,51 @@
     "actions_aria": "Actions for {{url}}"
   },
   "desktop": {
+    "processes": {
+      "title": "Processes",
+      "description": "All processes this daemon manages. Shown locally only — never sent to the server.",
+      "refresh": "Refresh",
+      "empty": "No processes running.",
+      "offline": "The daemon isn't running.",
+      "load_failed": "Failed to load processes.",
+      "stop": "Stop",
+      "stop_confirm_title": "Stop process?",
+      "stop_confirm_description": "This stops the process immediately.",
+      "all": "All",
+      "category": {
+        "daemon": "Daemon",
+        "task_worker": "Task worker",
+        "mcp": "MCP service",
+        "jev": "JEV model",
+        "application": "Application",
+        "gateway": "Gateway",
+        "environment": "Environment",
+        "mirror": "Mirror"
+      },
+      "memory": "Memory",
+      "cpu": "CPU time",
+      "usage": {
+        "title": "Resource usage",
+        "total_memory": "Memory",
+        "total_cpu": "CPU time"
+      },
+      "service": {
+        "ai": "AI service",
+        "mirror": "Mirror",
+        "application": "Application",
+        "gateway": "Gateway",
+        "environment": "Environment"
+      },
+      "service_config": {
+        "title": "Service configuration",
+        "description": "Choose which services run as separate processes. Changes require a daemon restart.",
+        "applied": "Service configuration updated and daemon restarted.",
+        "apply_failed": "Failed to update service configuration.",
+        "restart_confirm_title": "Restart the daemon?",
+        "restart_confirm_description": "Applying the service configuration restarts the daemon and interrupts any in-flight task work.",
+        "apply": "Apply and restart"
+      }
+    },
     "worktrees": {
       "scan_cleanup": "Delete unused directories",
       "cleanup_preview": "Preview deletion",

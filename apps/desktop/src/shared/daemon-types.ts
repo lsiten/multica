@@ -50,6 +50,29 @@ export interface DaemonWorkerProcess {
   ready: boolean;
   capabilities?: string[];
   started_at: string;
+  /** Local-only process resource reading; absent when the sampler is unavailable. */
+  pid?: number;
+  memory_bytes?: number;
+  cpu_time_ms?: number;
+}
+
+// DaemonProcessOverviewEntry is one row of the daemon's unified local process
+// overview (GET /runtimes/processes/overview). It is a read-side view carrying no
+// credential; resource readings are optional and absent when the sampler is
+// unavailable.
+export interface DaemonProcessOverviewEntry {
+  category: string;
+  id: string;
+  name: string;
+  state: string;
+  ready: boolean;
+  capabilities?: string[];
+  detail?: string;
+  started_at?: string;
+  pid?: number;
+  memory_bytes?: number;
+  cpu_time_ms?: number;
+  stoppable?: boolean;
 }
 
 export interface DaemonStatus {
@@ -76,6 +99,8 @@ export interface DaemonStatus {
   externallyManaged?: boolean;
   /** Built-in and task-managed MCP readiness snapshots from the daemon. */
   mcp?: DaemonMcpReadiness[];
+  /** Profile's opt-in process ownership roles (ai/mirror/application/environment/gateway). */
+  processServices?: string[];
 }
 
 export interface DaemonPrefs {

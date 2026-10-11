@@ -1297,6 +1297,51 @@
     "actions_aria": "Actions pour {{url}}"
   },
   "desktop": {
+    "processes": {
+      "title": "Processus",
+      "description": "Tous les processus gérés par ce démon. Affichés localement uniquement — jamais envoyés au serveur.",
+      "refresh": "Actualiser",
+      "empty": "Aucun processus en cours.",
+      "offline": "Le démon ne fonctionne pas.",
+      "load_failed": "Échec du chargement des processus.",
+      "stop": "Arrêter",
+      "stop_confirm_title": "Arrêter le processus ?",
+      "stop_confirm_description": "Cela arrête le processus immédiatement.",
+      "all": "Tout",
+      "category": {
+        "daemon": "Démon",
+        "task_worker": "Ouvrier de tâche",
+        "mcp": "Service MCP",
+        "jev": "Modèle JEV",
+        "application": "Application",
+        "gateway": "Passerelle",
+        "environment": "Environnement",
+        "mirror": "Miroir"
+      },
+      "memory": "Mémoire",
+      "cpu": "Temps CPU",
+      "usage": {
+        "title": "Utilisation des ressources",
+        "total_memory": "Mémoire",
+        "total_cpu": "Temps CPU"
+      },
+      "service": {
+        "ai": "Service IA",
+        "mirror": "Miroir",
+        "application": "Application",
+        "gateway": "Passerelle",
+        "environment": "Environnement"
+      },
+      "service_config": {
+        "title": "Configuration du service",
+        "description": "Choisissez quels services s'exécutent en tant que processus indépendants. Les modifications nécessitent un redémarrage du démon.",
+        "applied": "Configuration du service mise à jour et démon redémarré.",
+        "apply_failed": "Échec de la mise à jour de la configuration du service.",
+        "restart_confirm_title": "Redémarrer le démon ?",
+        "restart_confirm_description": "Appliquer la configuration du service redémarre le démon et interrompt tout le travail de tâche en cours.",
+        "apply": "Appliquer et redémarrer"
+      }
+    },
     "tabs": {
       "updates": "Mises à jour"
     },
