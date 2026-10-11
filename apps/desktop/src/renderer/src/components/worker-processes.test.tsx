@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { RESOURCES } from "@multica/views/locales";
 import { WorkerProcessManager } from "./worker-processes";
-import type { DaemonWorkerProcess } from "../../../shared/daemon-types";
+import type { DaemonStatus, DaemonWorkerProcess } from "../../../shared/daemon-types";
 import { toast } from "sonner";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
@@ -23,7 +23,7 @@ const worker = (over: Partial<DaemonWorkerProcess> = {}): DaemonWorkerProcess =>
   ...over,
 });
 
-function mount(status: { state: string; profile?: string; daemonId?: string }) {
+function mount(status: DaemonStatus) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
       <I18nProvider locale="zh-Hans" resources={RESOURCES}>
