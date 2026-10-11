@@ -176,6 +176,7 @@ var concurrentIndexCleanups = map[string]string{
 	"900545_application_service_grant_hash":         "application_service_grant_hash_idx",
 	"900547_task_actor_claim_hash":                  "task_actor_claim_hash",
 	"900548_task_actor_claim_task":                  "task_actor_claim_task",
+	"900550_document_content_version_index":         "document_content_version_owner_revision_idx",
 
 	"900498_human_request_key_index":                            "human_request_source_key",
 	"900499_human_request_recipient_index":                      "human_request_recipient_pending",

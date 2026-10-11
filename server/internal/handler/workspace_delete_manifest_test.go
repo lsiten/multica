@@ -47,6 +47,7 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"agent_task_queue":                   workspaceDelete,
 	"agent_to_label":                     workspaceDelete,
 	"attachment":                         workspaceDelete,
+	"document_content_version":           workspaceDelete,
 	"autopilot":                          workspaceDelete,
 	"autopilot_collaborator":             workspaceDelete,
 	"autopilot_quota_period":             workspaceDelete,

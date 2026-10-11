@@ -386,6 +386,9 @@ deleted_hourly AS (
 deleted_attachments AS (
     DELETE FROM attachment WHERE workspace_id = $1
 ),
+deleted_document_content_versions AS (
+    DELETE FROM document_content_version WHERE workspace_id = $1
+),
 deleted_channel_outbound_cards AS (
     DELETE FROM channel_outbound_card_message
     WHERE chat_session_id IN (SELECT id FROM ws_sessions)
