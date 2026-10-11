@@ -15,6 +15,7 @@ type activeWorker struct {
 	instanceID string
 	taskID     string
 	provider   string
+	pid        int
 	worker     *workerProcessClient
 	startedAt  time.Time
 }
@@ -70,6 +71,7 @@ func (d *Daemon) registerWorkerProcess(worker *workerProcessClient, execID, task
 		instanceID: worker.instanceID,
 		taskID:     taskID,
 		provider:   provider,
+		pid:        worker.pid,
 		worker:     worker,
 		startedAt:  time.Now(),
 	})

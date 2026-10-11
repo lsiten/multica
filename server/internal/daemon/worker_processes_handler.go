@@ -20,6 +20,9 @@ type workerProcessStateResponse struct {
 	Ready        bool     `json:"ready"`
 	Capabilities []string `json:"capabilities,omitempty"`
 	StartedAt    string   `json:"started_at"`
+	Pid          int      `json:"pid,omitempty"`
+	MemoryBytes  uint64   `json:"memory_bytes,omitempty"`
+	CpuTimeMS    uint64   `json:"cpu_time_ms,omitempty"`
 }
 
 func (d *Daemon) workerProcessStateResponse(r *http.Request, entry *activeWorker) workerProcessStateResponse {
@@ -33,6 +36,13 @@ func (d *Daemon) workerProcessStateResponse(r *http.Request, entry *activeWorker
 	if entry.worker == nil {
 		out.State = "unavailable"
 		return out
+	}
+	// Best-effort local resource reading. Never gates the status: a missing
+	// sampler or a vanished child leaves the fields unset (the panel shows "—").
+	if metrics := sampleProcessMetrics(entry.pid); metrics.Available {
+		out.Pid = entry.pid
+		out.MemoryBytes = metrics.MemoryBytes
+		out.CpuTimeMS = metrics.CPUTimeMS
 	}
 	probeCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()

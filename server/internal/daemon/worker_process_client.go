@@ -39,6 +39,7 @@ type workerProcessClient struct {
 	// control parent binds it server-side before the bind so the worker
 	// receives the exact execution identity it is bound to.
 	instanceID string
+	pid          int
 
 	gate      chan struct{}
 	uncertain error
@@ -153,6 +154,7 @@ func (d *Daemon) ensureWorkerProcess(ctx context.Context, execID string) (*worke
 		transport:  process.Client,
 		wait:       process.Wait,
 		instanceID: identity.InstanceID,
+		pid:        process.PID(),
 		gate:       make(chan struct{}, 1),
 	}, nil
 }

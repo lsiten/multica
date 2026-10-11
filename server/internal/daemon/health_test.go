@@ -936,3 +936,44 @@ func TestHealthHandlerReportsProfileIdentity(t *testing.T) {
 		}
 	})
 }
+
+func TestHealthHandlerReportsProcessServices(t *testing.T) {
+	t.Parallel()
+
+	d := &Daemon{
+		cfg: Config{
+			CLIVersion:      "v9.9.9",
+			DaemonID:        "daemon-process-services",
+			ServerBaseURL:   "http://localhost:8080",
+			ProcessServices: []string{"application", "gateway"},
+		},
+		workspaces: map[string]*workspaceState{},
+		logger:     slog.Default(),
+	}
+	d.ready.Store(true)
+
+	rec := httptest.NewRecorder()
+	d.healthHandler(time.Now()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	// The desktop reads process_services to render the service-ownership
+	// toggles, so lock both the snake_case key and the round-trip value.
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw response: %v", err)
+	}
+	if _, ok := raw["process_services"]; !ok {
+		t.Error("health response must include the process_services key")
+	}
+	var resp HealthResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode typed response: %v", err)
+	}
+	if len(resp.ProcessServices) != 2 ||
+		resp.ProcessServices[0] != "application" ||
+		resp.ProcessServices[1] != "gateway" {
+		t.Errorf("ProcessServices: got %v, want [application gateway]", resp.ProcessServices)
+	}
+}

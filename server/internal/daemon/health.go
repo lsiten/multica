@@ -75,6 +75,11 @@ type HealthResponse struct {
 	FailedTerminalReportCount  int      `json:"failed_terminal_report_count"`
 	FailedTerminalReportBytes  int64    `json:"failed_terminal_report_bytes"`
 	Agents                     []string `json:"agents"`
+	// ProcessServices is the profile's opt-in process ownership list (the roles
+	// this daemon extracted into separate child processes: ai/mirror/application/
+	// environment/gateway). Surfaced so a desktop panel can toggle it without
+	// reading the on-disk config; empty means the legacy in-process owners.
+	ProcessServices []string `json:"process_services,omitempty"`
 	// SkippedAgents maps a provider that WAS discovered on this machine to the
 	// reason the last registration round dropped it (version undetectable,
 	// below the minimum supported version). Purely diagnostic, and omitted when
@@ -373,6 +378,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 			RunningTaskCount:                  d.runningTasks.Load(),
 			ResourceWaitTaskCount:             d.resourceWaitTasks.Load(),
 			Agents:                            agents,
+			ProcessServices:                   d.cfg.ProcessServices,
 			SkippedAgents:                     d.skippedAgentsSnapshot(),
 
 			ReloadPendingReason: d.reloadPending(),
@@ -468,6 +474,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	mux.HandleFunc("/jev/models", d.jevModelsHandler())
 	mux.HandleFunc("/runtimes/processes", d.workerProcessesHandler())
 	mux.HandleFunc("/runtimes/processes/stop", d.workerProcessStopHandler())
+	mux.HandleFunc("/runtimes/processes/overview", d.processesOverviewHandler())
 	mux.HandleFunc("/jev/models/register", d.jevModelRegisterHandler())
 	mux.HandleFunc("/jev/models/install", d.jevModelInstallHandler())
 	mux.HandleFunc("/jev/models/cancel", d.jevModelCancelHandler())
