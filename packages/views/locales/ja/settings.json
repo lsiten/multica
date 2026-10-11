@@ -1305,7 +1305,7 @@
       "all": "すべて",
       "category": {
         "daemon": "デーモン",
-        "task_worker": "タスク ワーカー",
+        "task_worker": "タスクワーカー",
         "mcp": "MCP サービス",
         "jev": "JEV モデル",
         "application": "アプリケーション",

@@ -1310,7 +1310,7 @@
       "all": "Tout",
       "category": {
         "daemon": "Démon",
-        "task_worker": "Ouvrier de tâche",
+        "task_worker": "Travailleur de tâche",
         "mcp": "Service MCP",
         "jev": "Modèle JEV",
         "application": "Application",
@@ -1338,7 +1338,7 @@
         "applied": "Configuration du service mise à jour et démon redémarré.",
         "apply_failed": "Échec de la mise à jour de la configuration du service.",
         "restart_confirm_title": "Redémarrer le démon ?",
-        "restart_confirm_description": "Appliquer la configuration du service redémarre le démon et interrompt tout le travail de tâche en cours.",
+        "restart_confirm_description": "Appliquer la configuration du service redémarre le démon et interrompt toutes les exécutions en cours.",
         "apply": "Appliquer et redémarrer"
       }
     },
