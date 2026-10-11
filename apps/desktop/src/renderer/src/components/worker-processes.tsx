@@ -114,7 +114,7 @@ export function WorkerProcessManager({ status }: { status: DaemonStatus }) {
                   {row.capabilities.map((capability) => (
                     <span
                       key={capability}
-                      className="rounded bg-muted px-1.5 py-0.5 text-caption font-medium text-muted-foreground"
+                      className="rounded-sm bg-muted px-1.5 py-0.5 text-caption font-medium text-muted-foreground"
                     >
                       {capability}
                     </span>
