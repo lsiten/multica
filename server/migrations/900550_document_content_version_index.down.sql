@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS document_content_version_owner_revision_idx;

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
-import { ArrowLeft, MessageSquare } from "lucide-react";
+import { ArrowLeft, MessageSquare, PanelLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -13,7 +13,7 @@ import {
 import { useIsCompact } from "@multica/ui/hooks/use-mobile";
 import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@multica/core/paths";
 import { getCurrentSlug } from "@multica/core/platform";
-import { useChatStore } from "@multica/core/chat";
+import { useChatStore, useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { chatQuickActionsPendingOptions } from "@multica/core/chat/queries";
 import { useRegenerateChatQuickActions } from "@multica/core/chat/mutations";
 import { useQuickActionsPendingTimeout } from "@multica/core/chat/use-quick-actions-pending-timeout";
@@ -36,6 +36,9 @@ import { NoAgentBanner } from "./components/no-agent-banner";
 import { ArchivedAgentBanner } from "./components/archived-agent-banner";
 import { AgentAccessRevokedBanner } from "./components/agent-access-revoked-banner";
 import { RuntimeRequiredBanner } from "./components/runtime-required-banner";
+import { DocModeSurface } from "./components/doc-mode-surface";
+import { DocModeFileList } from "./components/doc-file-list";
+import { useDocWorkingIndicator } from "./components/use-doc-working-indicator";
 
 /**
  * Chat tab — the first-class two-pane surface (thread list on the left,
@@ -71,6 +74,12 @@ export function ChatPage() {
   const c = useChatController({
     isActive: isCurrentChatRoute && getCurrentSlug() === workspaceSlug,
   });
+  // Doc mode (v12): a document opened from the sidebar fills the detail pane
+  // while the conversation stays put. Read here so it can gate the pane below.
+  const activeDoc = useDocModeStore(selectActiveDocument(c.wsId));
+  // D7: floating "working" indicator bridges the agent-working signal
+  // with doc mode (see useDocWorkingIndicator). Clearing it never closes doc mode.
+  useDocWorkingIndicator(c.wsId, !!c.pendingTaskId);
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
   );
@@ -88,6 +97,10 @@ export function ChatPage() {
   // conversation pane is always mounted so it only needs to reset itself once a
   // real session takes over.
   const [composingNew, setComposingNew] = useState(false);
+  // Doc-mode entry point (B): the sidebar can be opened directly into a
+  // file list; clicking a document opens it in doc mode. Hidden by default
+  // so the chat page stays exactly as it is (v12 rule 1).
+  const [docFilesOpen, setDocFilesOpen] = useState(false);
   const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
   useEffect(() => {
     setAutonomyPolicy(null);
@@ -245,6 +258,16 @@ export function ChatPage() {
   const listHeader = (
     <PageHeader>
       <h1 className="flex-1 text-body font-semibold">{t(($) => $.page.title)}</h1>
+      <Button
+        variant={docFilesOpen ? "secondary" : "ghost"}
+        size="icon"
+        onClick={() => setDocFilesOpen((open) => !open)}
+        aria-label={t(($) => $.doc_file_list.toggle)}
+        aria-pressed={docFilesOpen}
+        className="text-muted-foreground"
+      >
+        <PanelLeft />
+      </Button>
       {newChatButton}
     </PageHeader>
   );
@@ -408,7 +431,9 @@ export function ChatPage() {
     return (
       <div className="flex flex-1 flex-col min-h-0">
         {listHeader}
-        <div className="flex-1 min-h-0 overflow-y-auto">{listBody}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {docFilesOpen ? <DocModeFileList wsId={c.wsId} /> : listBody}
+        </div>
       </div>
     );
   }
@@ -434,12 +459,22 @@ export function ChatPage() {
       >
         <div className="flex flex-col border-r h-full">
           {listHeader}
-          <div className="flex-1 min-h-0 overflow-y-auto">{listBody}</div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {docFilesOpen ? <DocModeFileList wsId={c.wsId} /> : listBody}
+          </div>
         </div>
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel id="detail" minSize="40%">
+        {/* v12 D10: the conversation stays in its original place; doc mode is a
+            floating layer above it (not a replacement), so the user keeps
+            multi-turning in the conversation while the document is open. */}
         <div className="flex flex-col min-h-0 h-full">
+          {activeDoc && (
+            <div className="h-1/2 min-h-0 shrink-0 border-b overflow-hidden">
+              <DocModeSurface wsId={c.wsId} />
+            </div>
+          )}
           {hasTarget ? (
             conversation
           ) : (

@@ -86,6 +86,32 @@ describe("useRecentContextStore.forgetContext", () => {
   });
 });
 
+describe("useRecentContextStore attachment context", () => {
+  it("records an attachment as a distinct context type alongside issue/project", () => {
+    const { recordVisit } = useRecentContextStore.getState();
+    recordVisit("ws-a", { type: "issue", id: "issue-1" });
+    recordVisit("ws-a", { type: "project", id: "project-1" });
+    recordVisit("ws-a", { type: "attachment", id: "attach-1", label: "spec.md", subtitle: "Markdown" });
+
+    const keys = useRecentContextStore
+      .getState()
+      .byWorkspace["ws-a"]?.map((e) => `${e.type}:${e.id}`);
+    // most-recent-first; the attachment visit is newest
+    expect(keys).toEqual(["attachment:attach-1", "project:project-1", "issue:issue-1"]);
+  });
+
+  it("keeps an attachment entry with the same id distinct from an issue of the same id", () => {
+    const { recordVisit } = useRecentContextStore.getState();
+    recordVisit("ws-a", { type: "issue", id: "same-id" });
+    recordVisit("ws-a", { type: "attachment", id: "same-id", label: "same-id.md" });
+
+    const keys = useRecentContextStore
+      .getState()
+      .byWorkspace["ws-a"]?.map((e) => `${e.type}:${e.id}`);
+    expect(keys).toEqual(["attachment:same-id", "issue:same-id"]);
+  });
+});
+
 describe("selectRecentContexts", () => {
   it("returns a stable empty array when wsId is null or unknown", () => {
     const a = selectRecentContexts(null)(useRecentContextStore.getState());

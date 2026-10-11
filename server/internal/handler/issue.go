@@ -4040,6 +4040,17 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	dueDateChanged := prevDueDate != resp.DueDate && (prevDueDate == nil) != (resp.DueDate == nil) ||
 		(prevDueDate != nil && resp.DueDate != nil && *prevDueDate != *resp.DueDate)
 
+	// A Markdown body edit is a content change: record it as a content version so
+	// the diff/rollback history is populated by ordinary issue edits, not only the
+	// dedicated content-version endpoint. Best effort — a version-log failure must
+	// not fail a real edit, so it is logged and a later edit retries it.
+	if descriptionChanged {
+		if err := h.RecordContentVersionFromIssueUpdate(r.Context(), issue, "", actorType, actorID, false); err != nil {
+			slog.Warn("record content version on issue update failed",
+				append(logger.RequestAttrs(r), "issue_id", id, "workspace_id", workspaceID, "error", err)...)
+		}
+	}
+
 	h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
 		"issue":               resp,
 		"assignee_changed":    assigneeChanged,

@@ -1,4 +1,18 @@
 {
+  "doc_mode": {
+    "issue": "议题",
+    "attachment": "附件",
+    "diff": "差异",
+    "close": "关闭",
+    "rollback": "回滚",
+    "working": "编辑中…"
+  },
+  "doc_file_list": {
+    "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",
+    "no_match": "\u65e0\u5339\u914d",
+    "toggle": "\u6587\u4ef6",
+    "empty": "\u6682\u65e0\u6587\u6863"
+  },
   "page": {
     "title": "聊天",
     "select_prompt": "选择一个对话，或点 + 新建",

@@ -1,6 +1,8 @@
 export { createChatStore, CHAT_MIN_W, CHAT_MIN_H, CHAT_DEFAULT_W, CHAT_DEFAULT_H, DRAFT_NEW_SESSION } from "./store";
 export type { ChatStoreOptions, ChatState, ChatTimelineItem } from "./store";
 export { useRecentContextStore, selectRecentContexts } from "./recent-context-store";
+export { useDocModeStore, selectActiveDocument, selectWorking, selectDiffView } from "./doc-mode-store";
+export type { DocumentRef, DocumentKind } from "./doc-mode-store";
 export type { RecentContextEntry, RecentContextType } from "./recent-context-store";
 export { canContinueChatFailure } from "./failure-recovery";
 

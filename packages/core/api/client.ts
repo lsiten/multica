@@ -3,6 +3,13 @@ import { applicationSchema, applicationListSchema, applicationPlanSchema, applic
 import type { Application, ApplicationList, ApplicationPlan, ApplicationBoard, ApplicationOperation, ApplicationOperationRequest, ApplicationLog, CreateApplicationRequest, UpdateApplicationRequest } from "../applications/schema";
 import type { IssueProgressView, ProgressFilters, ProgressScope } from "../types/issue-progress";
 import { IssueProgressViewSchema, ProgressActionResultSchema } from "./issue-progress";
+import {
+  DocumentContentVersionSchema,
+  DocumentContentVersionListSchema,
+  type DocumentContentVersion,
+  type DocumentContentVersionList,
+  type RecordDocumentContentVersionRequest,
+} from "./document-content-version";
 import { todayDateOnly } from "../issues/date";
 import { HumanRequestSchema, HumanRequestListSchema, HumanTextReplyResultSchema } from "../human-requests/schema";
 import type { ZodType } from "zod";
@@ -1874,6 +1881,110 @@ export class ApiClient {
     const result = parseWithFallback<{ task_id: string | null; status: string; issue_id: string } | null>(raw, ProgressActionResultSchema, null, { endpoint: "POST /api/issues/:id/progress/actions" });
     if (!result) throw new Error("Could not read the progress action receipt");
     return result;
+  }
+
+  // ---- Document content versions (based-on-document conversation + editing) ---
+  // The write-side log for a document's body. Issue = issue.description (text);
+  // attachment = a binary blob (image / PDF) versioned, never edited in place.
+  // A rollback is always a NEW version (linear history), never merged.
+  // A malformed response yields a thrown error so the UI can surface a real
+  // failure instead of a null that silently reads as "no document".
+  async recordIssueContentVersion(issueId: string, input: RecordDocumentContentVersionRequest): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(issueId)}/content-versions`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "POST /api/issues/:id/content-versions",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
+  }
+
+  async listIssueContentVersions(issueId: string, signal?: AbortSignal): Promise<DocumentContentVersionList> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(issueId)}/content-versions`, { signal });
+    return parseWithFallback<DocumentContentVersionList>(raw, DocumentContentVersionListSchema, [], {
+      endpoint: "GET /api/issues/:id/content-versions",
+    });
+  }
+
+  async getIssueContentVersion(issueId: string, revision: number, signal?: AbortSignal): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(issueId)}/content-versions/${revision}`, { signal });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "GET /api/issues/:id/content-versions/:revision",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
+  }
+
+  async rollbackIssueContentVersion(issueId: string, revision: number, input?: RecordDocumentContentVersionRequest): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(issueId)}/content-versions/${revision}/rollback`, {
+      method: "POST",
+      body: JSON.stringify(input ?? {}),
+    });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "POST /api/issues/:id/content-versions/:revision/rollback",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
+  }
+
+  async getIssueContentVersionCurrent(issueId: string, signal?: AbortSignal): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(issueId)}/content-versions/current`, { signal });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "GET /api/issues/:id/content-versions/current",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
+  }
+
+  async recordAttachmentContentVersion(attachmentId: string, input: RecordDocumentContentVersionRequest): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/attachments/${encodeURIComponent(attachmentId)}/content-versions`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "POST /api/attachments/:id/content-versions",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
+  }
+
+  async listAttachmentContentVersions(attachmentId: string, signal?: AbortSignal): Promise<DocumentContentVersionList> {
+    const raw = await this.fetch<unknown>(`/api/attachments/${encodeURIComponent(attachmentId)}/content-versions`, { signal });
+    return parseWithFallback<DocumentContentVersionList>(raw, DocumentContentVersionListSchema, [], {
+      endpoint: "GET /api/attachments/:id/content-versions",
+    });
+  }
+
+  async getAttachmentContentVersion(attachmentId: string, revision: number, signal?: AbortSignal): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/attachments/${encodeURIComponent(attachmentId)}/content-versions/${revision}`, { signal });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "GET /api/attachments/:id/content-versions/:revision",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
+  }
+
+  async rollbackAttachmentContentVersion(attachmentId: string, revision: number, input?: RecordDocumentContentVersionRequest): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/attachments/${encodeURIComponent(attachmentId)}/content-versions/${revision}/rollback`, {
+      method: "POST",
+      body: JSON.stringify(input ?? {}),
+    });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "POST /api/attachments/:id/content-versions/:revision/rollback",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
+  }
+
+  async getAttachmentContentVersionCurrent(attachmentId: string, signal?: AbortSignal): Promise<DocumentContentVersion> {
+    const raw = await this.fetch<unknown>(`/api/attachments/${encodeURIComponent(attachmentId)}/content-versions/current`, { signal });
+    const version = parseWithFallback<DocumentContentVersion | null>(raw, DocumentContentVersionSchema, null, {
+      endpoint: "GET /api/attachments/:id/content-versions/current",
+    });
+    if (!version) throw new Error("Malformed document content version response");
+    return version;
   }
 
   async getIssueGoal(id: string): Promise<IssueGoal> {

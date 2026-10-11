@@ -1,4 +1,18 @@
 {
+  "doc_mode": {
+    "issue": "이슈",
+    "attachment": "첨부 파일",
+    "diff": "차이",
+    "close": "닫기",
+    "rollback": "되돌리기",
+    "working": "편집 중…"
+  },
+  "doc_file_list": {
+    "filter_placeholder": "\ud30c\uc77c \ud544\ud130",
+    "no_match": "\uc77c\uce58 \uc5c6\uc74c",
+    "toggle": "\ud30c\uc77c",
+    "empty": "\ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4"
+  },
   "page": {
     "title": "채팅",
     "select_prompt": "대화를 선택하거나 +로 새로 시작하세요",

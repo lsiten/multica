@@ -100,12 +100,23 @@ export function useChatContextItems(wsId: string): MentionItem[] {
   });
 
   const recentQueries = useQueries({
-    queries: visibleRecentEntries.map((entry) => ({
-      ...(entry.type === "issue"
-        ? issueDetailOptions(wsId, entry.id)
-        : projectDetailOptions(wsId, entry.id)),
-      staleTime: 30_000,
-    })),
+    queries: visibleRecentEntries.map((entry) => {
+      if (entry.type === "attachment") {
+        // Attachments carry their own snapshot in the recent entry; no detail query.
+        return {
+          queryKey: ["recent-context", wsId, "attachment", entry.id] as const,
+          queryFn: async () => undefined as Issue | Project | undefined,
+          enabled: false,
+          staleTime: 30_000,
+        };
+      }
+      return {
+        ...(entry.type === "issue"
+          ? issueDetailOptions(wsId, entry.id)
+          : projectDetailOptions(wsId, entry.id)),
+        staleTime: 30_000,
+      };
+    }),
   });
 
   return useMemo(() => {

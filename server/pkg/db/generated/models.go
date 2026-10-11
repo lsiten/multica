@@ -856,6 +856,22 @@ type DingtalkGroupRoute struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
+type DocumentContentVersion struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	OwnerType   string             `json:"owner_type"`
+	OwnerID     pgtype.UUID        `json:"owner_id"`
+	Revision    int64              `json:"revision"`
+	ContentType string             `json:"content_type"`
+	Content     pgtype.Text        `json:"content"`
+	ContentUrl  pgtype.Text        `json:"content_url"`
+	SizeBytes   int64              `json:"size_bytes"`
+	ActorType   string             `json:"actor_type"`
+	ActorID     pgtype.UUID        `json:"actor_id"`
+	Note        pgtype.Text        `json:"note"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type ExecutionGrant struct {
 	TokenHash   string             `json:"token_hash"`
 	TaskID      pgtype.UUID        `json:"task_id"`

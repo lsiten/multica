@@ -2106,6 +2106,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/batch-delete", h.BatchDeleteIssues)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetIssue)
+					r.Get("/content-versions", h.ListDocumentContentVersions)
+					r.Post("/content-versions", h.RecordDocumentContentVersion)
+					r.Get("/content-versions/{revision}", h.GetDocumentContentVersion)
+					r.Post("/content-versions/{revision}/rollback", h.RollbackDocumentContentVersion)
+					r.Get("/content-versions/current", h.GetDocumentContentVersionLatest)
 					r.Put("/", h.UpdateIssue)
 					r.Get("/goal", h.GetIssueGoal)
 					r.Get("/progress", h.GetIssueProgress)
@@ -2323,6 +2328,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// from the attachment row.
 			r.Get("/api/attachments/{id}/content", h.GetAttachmentContent)
 			r.Delete("/api/attachments/{id}", h.DeleteAttachment)
+
+			// Attachment (binary) content versions — document mode.
+			r.Route("/api/attachments/{id}", func(r chi.Router) {
+				r.Get("/content-versions", h.ListDocumentContentVersionsForAttachment)
+				r.Post("/content-versions", h.RecordDocumentContentVersionForAttachment)
+				r.Get("/content-versions/{revision}", h.GetDocumentContentVersionForAttachment)
+				r.Post("/content-versions/{revision}/rollback", h.RollbackDocumentContentVersionForAttachment)
+				r.Get("/content-versions/current", h.GetDocumentContentVersionLatestForAttachment)
+			})
 
 			// Comments
 			r.Route("/api/comments/{commentId}", func(r chi.Router) {

@@ -178,7 +178,9 @@
     "./skills/stores": "./skills/stores/index.ts",
     "./autopilots/stores": "./autopilots/stores/index.ts",
     "./human-requests": "./human-requests/index.ts",
-    "./human-requests/schema": "./human-requests/schema.ts"
+    "./human-requests/schema": "./human-requests/schema.ts",
+    "./api/document-content-version": "./api/document-content-version.ts",
+    "./chat/document-content-version-queries": "./chat/document-content-version-queries.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

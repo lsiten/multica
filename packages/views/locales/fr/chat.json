@@ -1,4 +1,18 @@
 {
+  "doc_mode": {
+    "issue": "Ticket",
+    "attachment": "Pièce jointe",
+    "diff": "Diff",
+    "close": "Fermer",
+    "rollback": "Annuler",
+    "working": "Édition…"
+  },
+  "doc_file_list": {
+    "filter_placeholder": "Filtrer les fichiers",
+    "no_match": "Aucun r\u00e9sultat",
+    "toggle": "Fichiers",
+    "empty": "Aucun document"
+  },
   "page": {
     "title": "Discussion",
     "select_prompt": "Choisissez une conversation, ou démarrez-en une nouvelle avec +",

@@ -127,6 +127,15 @@ vi.mock("@multica/core/chat", () => ({
       selector ? selector(storeRef.current) : storeRef.current,
     { getState: () => storeRef.current },
   ),
+  // Doc mode is not exercised here: no document is open, so the surface never
+  // mounts. A null active document keeps the chat page's existing layout. The
+  // working-indicator hook still runs, so it gets a no-op setWorking that
+  // mutates nothing (an open document is required before it could set working).
+  useDocModeStore: (
+    selector?: (s: { setWorking: () => void }) => unknown,
+  ) =>
+    selector ? selector({ setWorking: () => {} }) : { setWorking: () => {} },
+  selectActiveDocument: () => () => null,
 }));
 
 vi.mock("./components/use-chat-controller", async () => {

@@ -1,4 +1,18 @@
 {
+  "doc_mode": {
+    "issue": "Issue",
+    "attachment": "Attachment",
+    "diff": "Diff",
+    "close": "Close",
+    "rollback": "Roll back",
+    "working": "Editing…"
+  },
+  "doc_file_list": {
+    "filter_placeholder": "Filter files",
+    "no_match": "No matches",
+    "toggle": "Files",
+    "empty": "No documents yet"
+  },
   "page": {
     "title": "Chat",
     "select_prompt": "Pick a conversation, or start a new one with +",
