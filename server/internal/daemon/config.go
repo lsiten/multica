@@ -116,6 +116,7 @@ var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
 type Config struct {
+
 	ProcessServices              []string // Profile opt-in: one process owner per supported role.
 	NativeHostExecutable         string   // Trusted same-binary absolute path; empty disables managed native work.
 	NativeHostBuild              string   // Version/commit identity; never read from renderer or PATH.
@@ -126,6 +127,7 @@ type Config struct {
 	DeviceName                   string
 	RuntimeName                  string
 	CLIVersion                   string                // multica CLI version (e.g. "0.1.13")
+	CLICommit                    string                // full build revision embedded in the running CLI; empty/unknown if unavailable
 	LaunchedBy                   string                // "desktop" when spawned by the Electron app, empty for standalone
 	Profile                      string                // profile name (empty = default)
 	Agents                       map[string]AgentEntry // keyed by provider: claude, codebuddy, codex, copilot, opencode, codearts, deveco, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro, antigravity, qoder, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, dim, zeroclaw (plus built-in runtime identities from agent.BuiltinRuntimes, e.g. omp)

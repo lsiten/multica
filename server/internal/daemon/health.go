@@ -44,11 +44,15 @@ type HealthResponse struct {
 	// pre-#6694 daemon that cannot identify itself at all. Callers key off
 	// the field's presence, so collapsing the two would make every default
 	// daemon look unidentifiable.
+
 	Profile                           string `json:"profile"`
 	DaemonID                          string `json:"daemon_id"`
 	DeviceName                        string `json:"device_name"`
 	ServerURL                         string `json:"server_url"`
 	CLIVersion                        string `json:"cli_version"`
+	// CLICommit belongs to this running process, not an installed replacement.
+	// Empty or unknown values do not attest a revision; never fall back to version.
+	CLICommit                        string `json:"cli_commit"`
 	LocalReviewPagingSupported        bool   `json:"local_review_paging_supported"`
 	LocalReviewIndexSupported         bool   `json:"local_review_index_supported"`
 	LocalReviewSelectedMergeSupported bool   `json:"local_review_selected_merge_supported"`
@@ -357,6 +361,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 		}
 
 		resp := HealthResponse{
+
 			ApplicationService:                d.applicationProcessHealth(r.Context()),
 			Status:                            status,
 			RemoteBootstrapPending:            d.remoteBootstrapPending.Load(),
@@ -369,6 +374,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 			DeviceName:                        d.cfg.DeviceName,
 			ServerURL:                         d.cfg.ServerBaseURL,
 			CLIVersion:                        d.cfg.CLIVersion,
+			CLICommit:                        d.cfg.CLICommit,
 			LocalReviewPagingSupported:        true,
 			LocalReviewIndexSupported:         true,
 			LocalReviewSelectedMergeSupported: true,
