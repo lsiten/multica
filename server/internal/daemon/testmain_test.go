@@ -17,6 +17,7 @@ import (
 // LOCALAPPDATA on Windows. Process-wide redirection isolates tests that forget
 // their own redirect; per-test t.Setenv overrides still take precedence.
 func TestMain(m *testing.M) {
+	daemonFixtureEntry(m)
 	for _, key := range []string{
 		"MULTICA_AGENT_ID",
 		"MULTICA_TASK_ID",
@@ -29,19 +30,29 @@ func TestMain(m *testing.M) {
 		os.Unsetenv(key)
 	}
 
-	scratchHome, err := testutil.IsolateUserHome("multica-daemon-tests-home-")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "isolate internal/daemon test home: %v\n", err)
-		os.Exit(1)
-	}
-	if err := os.Setenv("LOCALAPPDATA", filepath.Join(scratchHome, "AppData", "Local")); err != nil {
-		fmt.Fprintf(os.Stderr, "isolate internal/daemon LOCALAPPDATA: %v\n", err)
-		_ = os.RemoveAll(scratchHome)
-		os.Exit(1)
+	// The fake-host fixture re-runs this binary as a child; it must reuse the
+	// parent's isolated home so os.UserCacheDir (the shared-directory lease
+	// cache) resolves to the same directory on both sides. A second scratch
+	// home here would let the child create a lease the parent cannot see.
+	scratchHome := ""
+	if os.Getenv("TASK17_FAKE_HOST") != "1" {
+		var err error
+		scratchHome, err = testutil.IsolateUserHome("multica-daemon-tests-home-")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "isolate internal/daemon test home: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.Setenv("LOCALAPPDATA", filepath.Join(scratchHome, "AppData", "Local")); err != nil {
+			fmt.Fprintf(os.Stderr, "isolate internal/daemon LOCALAPPDATA: %v\n", err)
+			_ = os.RemoveAll(scratchHome)
+			os.Exit(1)
+		}
 	}
 
 	code := m.Run()
-	_ = os.RemoveAll(scratchHome)
+	if scratchHome != "" {
+		_ = os.RemoveAll(scratchHome)
+	}
 	os.Exit(code)
 }
 

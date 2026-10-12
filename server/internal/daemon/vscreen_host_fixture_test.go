@@ -21,7 +21,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func TestMain(m *testing.M) {
+func daemonFixtureEntry(m *testing.M) {
 	if len(os.Args) == 3 && os.Args[1] == applicationhost.Entrypoint && os.Getenv("APPLICATION_DAEMON_FIXTURE") == "1" {
 		if path := os.Getenv("APPLICATION_HOST_PID_FILE"); path != "" {
 			if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
@@ -103,7 +103,7 @@ func TestMain(m *testing.M) {
 	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-host" {
 		os.Exit(vscreenTestHost())
 	}
-	os.Exit(m.Run())
+	return
 }
 
 // vscreenTestHost is a test-owned inherited-socket process, never a user CLI.

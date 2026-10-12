@@ -132,7 +132,8 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 	newer := seedPRAt(t, pool, q, secondInstallationID, "newer", 4, "N")
 	// Other packages insert stale PRs concurrently into this shared database.
 	unrelated := seedPRAt(t, pool, q, 1, "unrelated", 999320, "U")
-	prs := []db.GithubPullRequest{settled, oldest, running, newer, unrelated}	t.Cleanup(func() {
+	prs := []db.GithubPullRequest{settled, oldest, running, newer, unrelated}
+	t.Cleanup(func() {
 		for _, pr := range prs {
 			_, _ = pool.Exec(context.Background(), `DELETE FROM github_pull_request_check_run WHERE pr_id=$1`, pr.ID)
 			_, _ = pool.Exec(context.Background(), `DELETE FROM github_pull_request WHERE id=$1`, pr.ID)

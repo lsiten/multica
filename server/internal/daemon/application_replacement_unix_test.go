@@ -196,6 +196,10 @@ func startReplacementHostFixture(t *testing.T, d *Daemon, command protocol.Appli
 		t.Fatal(err)
 	}
 	process.Env = append(process.Env, "TASK17_FAKE_HOST=1", "TASK17_RECORD="+path, "TASK17_CONTROL="+controlPath)
+	// Reuse the parent's isolated home so the child's os.UserCacheDir (the
+	// shared-directory lease cache) matches the parent's; the child TestMain
+	// skips its own isolation for TASK17_FAKE_HOST.
+	process.Env = append(process.Env, "HOME="+os.Getenv("HOME"), "USERPROFILE="+os.Getenv("USERPROFILE"))
 	if noChannel {
 		process.Env = append(process.Env, "TASK17_NO_CHANNEL=1")
 	}
