@@ -21,6 +21,11 @@ type localApplicationRequest struct {
 	CommandID     string `json:"command_id"`
 }
 
+type localApplicationChildRequest struct {
+	Input   localApplicationRequest            `json:"input"`
+	Command protocol.ApplicationControlCommand `json:"command"`
+}
+
 func (d *Daemon) taskLocalApplicationControl(ctx context.Context, task Task, appID string, body map[string]any) (any, bool, error) {
 	var input struct {
 		Action         string `json:"action"`
@@ -115,10 +120,13 @@ func (d *Daemon) runLocalApplication(ctx context.Context, input localApplication
 			return localApplicationResult{}, err
 		}
 		var result localApplicationResult
-		err = client.mutation(ctx, "application.local", input, &result)
+		err = client.mutation(ctx, "application.local", localApplicationChildRequest{Input: input, Command: record.Command}, &result)
 		return result, err
 	}
-	command := record.Command
+	return d.runLocalApplicationWithCommand(ctx, input, record.Command, record.HostID)
+}
+
+func (d *Daemon) runLocalApplicationWithCommand(ctx context.Context, input localApplicationRequest, command protocol.ApplicationControlCommand, previousHostID string) (localApplicationResult, error) {
 	release, err := d.lockLocalApplicationIntent(ctx, command.InstanceID)
 	if err != nil {
 		return localApplicationResult{}, err
@@ -139,7 +147,7 @@ func (d *Daemon) runLocalApplication(ctx context.Context, input localApplication
 			return *previous.Result, nil
 		}
 		observation, inspectErr := d.inspectApplication(ctx, command)
-		finished := inspectErr == nil && (input.Action == "stop" && observation.ProcessState == "stopped" || input.Action == "start" && observation.ProcessState == "running" || input.Action == "restart" && observation.ProcessState == "running" && record.HostID != previous.PreviousHostID)
+		finished := inspectErr == nil && (input.Action == "stop" && observation.ProcessState == "stopped" || input.Action == "start" && observation.ProcessState == "running" || input.Action == "restart" && observation.ProcessState == "running" && previousHostID != "" && previousHostID != previous.PreviousHostID)
 		if finished {
 			result := localApplicationResult{CommandID: input.CommandID, Observation: observation, SyncPending: true}
 			previous.Result = &result
@@ -157,7 +165,7 @@ func (d *Daemon) runLocalApplication(ctx context.Context, input localApplication
 	if input.Action == "stop" {
 		desired = "stopped"
 	}
-	intent := localApplicationIntent{Input: input, InstanceID: command.InstanceID, Generation: command.Generation, PreviousHostID: record.HostID, DesiredState: desired}
+	intent := localApplicationIntent{Input: input, InstanceID: command.InstanceID, Generation: command.Generation, PreviousHostID: previousHostID, DesiredState: desired}
 	if err := d.writeLocalIntent(intent); err != nil {
 		return localApplicationResult{}, err
 	}

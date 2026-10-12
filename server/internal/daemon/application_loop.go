@@ -252,12 +252,16 @@ func (d *Daemon) runApplicationClaim(parent context.Context, semaphore chan stru
 		}
 		return
 	}
-	if saved, err := d.pendingApplicationStep(ctx, runtimeID, claim); err != nil {
+	if saved, oldItem, err := d.pendingApplicationStep(ctx, runtimeID, claim); err != nil {
 		d.logger.Warn("application pending receipt could not be verified", "step_id", claim.StepID, "error", err)
 		return
 	} else if saved != nil {
 		if err := d.queueApplicationStep(runtimeID, claim, *saved); err != nil {
 			d.logger.Warn("application recovered receipt storage deferred", "error", err)
+		} else if oldItem != nil && oldItem.fileName != "" {
+			if err := d.terminalReports.acknowledge(*oldItem); err != nil {
+				d.logger.Warn("application stale receipt cleanup deferred", "error", err)
+			}
 		}
 		return
 	}

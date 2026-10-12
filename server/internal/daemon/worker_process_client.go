@@ -322,6 +322,8 @@ func buildWorkerContext(cfg Config, task Task, provider string, env *execenv.Env
 	prepared := PreparedEnv{Env: agentEnv}
 	if env != nil {
 		prepared.WorkDir = env.WorkDir
+		prepared.RootDir = env.RootDir
+		prepared.LocalWorktree = env.LocalWorktree != nil
 		prepared.CodexHome = env.CodexHome
 		prepared.ClaudeSettingsPath = env.ClaudeSettingsPath
 		prepared.QwenpawWorkspace = env.QwenpawWorkspace

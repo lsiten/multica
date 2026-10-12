@@ -16,19 +16,20 @@ export function isPagedReviewDecision(action: string): boolean {
 export const pagedReviewRequestSchema = z.object({
   task_id: z.string().min(1), workspace_id: z.string().min(1), runtime_id: z.string().optional(),
   path: z.string().min(1).max(4096), target: z.string().max(250).default(""),
-  action: z.enum(["merge_selected", "index", "stage", "unstage", "commit", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
+  action: z.enum(["merge_selected", "index", "stage", "unstage", "commit", "repositories", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
   index_id: digest.optional(), head: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(), branch: z.string().max(250).optional(),
   paths: z.array(z.string().min(1).max(4096)).max(10000).optional(), message: z.string().max(8000).optional(),
-  version_id: digest.optional(), file_path: z.string().min(1).max(4096).optional(),
+  version_id: digest.optional(), file_path: z.string().min(1).max(4096).optional(), relative_path: z.string().max(4096).optional(),
   side: z.enum(["old", "new"]).default("new"),
   offset: count.default(0), limit: count.min(1).max(65536).default(100),
   snapshot_id: digest.optional(), command_id: z.string().min(1).max(128).optional(),
   comment: z.string().max(8000).optional(),
 }).superRefine((request, context) => {
-  if (request.action !== "index" && request.action !== "repositories" && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
-  if (request.action !== "index" && request.action !== "manifest" && request.action !== "repositories" && !request.version_id) context.addIssue({ code: "custom", message: "Review version required" });
+  if (!["index", "repositories", "workspace_files", "file_content"].includes(request.action) && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
+  if (!["index", "manifest", "repositories", "workspace_files", "file_content"].includes(request.action) && !request.version_id) context.addIssue({ code: "custom", message: "Review version required" });
   if ((request.action === "file" || request.action === "context" || request.action === "content") && !request.file_path) context.addIssue({ code: "custom", message: "Review file required" });
-  if (request.action !== "content" && request.limit > 500) context.addIssue({ code: "custom", message: "Review page limit exceeded" });
+  if (request.action === "file_content" && !request.relative_path) context.addIssue({ code: "custom", message: "Workspace file required" });
+  if (!["content", "file_content"].includes(request.action) && request.limit > 500) context.addIssue({ code: "custom", message: "Review page limit exceeded" });
   if (isPagedReviewDecision(request.action) && (!request.command_id || request.snapshot_id !== request.version_id)) context.addIssue({ code: "custom", message: "Matching reviewed version and operation identity required" });
   if (isLocalIndexMutation(request.action)) {
     if ((request.paths?.length ?? 0) > 1000) context.addIssue({ code: "custom", message: "Index selection limit exceeded" });
@@ -79,11 +80,20 @@ export const reviewContentSchema = z.object({
   version_id: digest, runtime_id: z.string().optional(), path: z.string(), side: z.enum(["old", "new"]),
   content: z.object({ text: z.string().max(262144), encoding: z.enum(["utf8", "hex"]), offset: count, next_offset: count, size: count, has_more: z.boolean() }),
 });
+export const workspaceFileListSchema = z.object({
+  path: z.string(),
+  entries: z.array(z.object({ path: z.string(), size: count, directory: z.boolean() })).max(5000),
+  truncated: z.boolean().default(false),
+});
+export const workspaceFileContentSchema = z.object({
+  path: z.string(),
+  content: z.object({ text: z.string().max(262144), encoding: z.literal("utf8"), offset: count, next_offset: count, size: count, has_more: z.boolean() }),
+});
 export const reviewLeaseSchema = z.object({ version_id: digest, runtime_id: z.string().optional(), expires_at: z.string().datetime() });
 export type PagedReviewRequest = z.infer<typeof pagedReviewRequestSchema>;
 export type ReviewManifest = z.infer<typeof reviewManifestSchema>;
 export type ReviewFilePage = z.infer<typeof reviewFilePageSchema>;
-export type PagedReviewResponse = SelectedMergeResult | LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof reviewLeaseSchema>;
+export type PagedReviewResponse = SelectedMergeResult | LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof workspaceFileListSchema> | z.infer<typeof workspaceFileContentSchema> | z.infer<typeof reviewLeaseSchema>;
 
 export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unknown): PagedReviewResponse {
   if (request.action === "merge_selected") {
@@ -105,6 +115,20 @@ export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unkno
     if (content.offset !== request.offset || bytes < 0 || bytes > request.limit + 3 || content.next_offset > content.size || content.has_more !== (content.next_offset < content.size) || (content.has_more && bytes === 0)) throw new Error("Invalid review content pagination");
     if (content.encoding === "utf8" && new TextEncoder().encode(content.text).length !== bytes) throw new Error("Review content byte count mismatch");
     if (content.encoding === "hex" && (!/^[0-9a-f\s]*$/.test(content.text) || content.text.replace(/\s/g, "").length !== bytes * 2)) throw new Error("Invalid hexadecimal review content");
+    return result;
+  }
+  if (request.action === "workspace_files") {
+    const result = workspaceFileListSchema.parse(raw);
+    if (result.path !== request.path) throw new Error("Workspace file list identity mismatch");
+    return result;
+  }
+  if (request.action === "file_content") {
+    const result = workspaceFileContentSchema.parse(raw);
+    if (result.path !== request.relative_path) throw new Error("Workspace file identity mismatch");
+    const content = result.content;
+    const bytes = content.next_offset - content.offset;
+    if (content.offset !== request.offset || bytes < 0 || bytes > request.limit + 3 || content.next_offset > content.size || content.has_more !== (content.next_offset < content.size) || (content.has_more && bytes === 0)) throw new Error("Invalid workspace file pagination");
+    if (new TextEncoder().encode(content.text).length !== bytes) throw new Error("Workspace file byte count mismatch");
     return result;
   }
   if (request.action === "repositories") return reviewRepositoriesSchema.parse(raw);

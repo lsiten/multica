@@ -423,7 +423,22 @@ export function ChatPage() {
               <ArrowLeft className="h-4 w-4" />
               {t(($) => $.page.title)}
             </Button>
+            <Button
+              variant={docFilesOpen ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => setDocFilesOpen((open) => !open)}
+              aria-label={t(($) => $.doc_file_list.toggle)}
+              aria-pressed={docFilesOpen}
+              className="ml-auto text-muted-foreground"
+            >
+              <PanelLeft />
+            </Button>
           </div>
+          {docFilesOpen && (
+            <div className="h-1/3 min-h-0 shrink-0 border-b overflow-hidden">
+              <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} />
+            </div>
+          )}
           {conversation}
         </div>
       );
@@ -432,7 +447,7 @@ export function ChatPage() {
       <div className="flex flex-1 flex-col min-h-0">
         {listHeader}
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {docFilesOpen ? <DocModeFileList wsId={c.wsId} /> : listBody}
+          {docFilesOpen ? <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} /> : listBody}
         </div>
       </div>
     );
@@ -460,7 +475,7 @@ export function ChatPage() {
         <div className="flex flex-col border-r h-full">
           {listHeader}
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {docFilesOpen ? <DocModeFileList wsId={c.wsId} /> : listBody}
+            {docFilesOpen ? <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} /> : listBody}
           </div>
         </div>
       </ResizablePanel>

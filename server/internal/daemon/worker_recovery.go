@@ -88,7 +88,7 @@ func (d *Daemon) recoverWorkerOutcomes(ctx context.Context) error {
 		if result.Status != "completed" {
 			kind = terminalTaskReportFail
 		}
-		report := terminalTaskReport{kind: kind, taskID: identity.TaskID, output: result.Output, errorMessage: result.RunError, failureReason: taskRunFailureReason(errors.New(result.RunError)), execution: identity, accountID: d.accountID}
+		report := terminalTaskReport{kind: kind, taskID: identity.TaskID, output: result.Output, errorMessage: result.RunError, failureReason: taskRunFailureReason(errors.New(result.RunError)), execution: identity, accountID: d.accountID, workDir: result.WorkDir, worktreeDeliveryPending: result.WorktreeDeliveryPending}
 		if result.Status == "completed" {
 			report.failureReason = ""
 		}

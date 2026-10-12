@@ -175,6 +175,15 @@ SELECT * FROM attachment
 WHERE chat_message_id = $1 AND workspace_id = $2
 ORDER BY created_at ASC;
 
+-- name: ListAttachmentsByChatSession :many
+-- The chat file browser needs the complete attachment set for a session,
+-- including files whose message is outside the currently loaded transcript
+-- page. Keep both tenant and session predicates here so callers cannot turn
+-- a session id into a cross-workspace attachment lookup.
+SELECT * FROM attachment
+WHERE chat_session_id = $1 AND workspace_id = $2
+ORDER BY created_at ASC, id ASC;
+
 -- name: ListAttachmentsByChatMessageIDs :many
 SELECT * FROM attachment
 WHERE chat_message_id = ANY($1::uuid[]) AND workspace_id = $2

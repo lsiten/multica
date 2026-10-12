@@ -67,7 +67,7 @@ func TestApplicationStepFinishesOfflineReclaimsSlotAndRecoversWithoutRestart(t *
 		t.Fatalf("reclaimed receipt repeated restart: %q %v", starts, err)
 	}
 	offline.Store(false)
-	if pending, delivered := restarted.replayPendingTerminalReports(ctx); pending != 0 || delivered != 2 {
+	if pending, delivered := restarted.replayPendingTerminalReports(ctx); pending != 0 || delivered != 1 {
 		t.Fatalf("recovered results not uploaded: %d/%d", pending, delivered)
 	}
 }

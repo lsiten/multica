@@ -52,13 +52,13 @@ func (d *Daemon) queueApplicationStep(runtimeID string, claim protocol.Applicati
 	return d.queueTaskReport(terminalTaskReport{kind: applicationStepReport, taskID: claim.StepID, runtimeID: runtimeID, applicationStep: receipt})
 }
 
-func (d *Daemon) pendingApplicationStep(ctx context.Context, runtimeID string, claim protocol.ApplicationClaim) (*protocol.ApplicationStepResult, error) {
+func (d *Daemon) pendingApplicationStep(ctx context.Context, runtimeID string, claim protocol.ApplicationClaim) (*protocol.ApplicationStepResult, *pendingTerminalTaskReport, error) {
 	if d.terminalReports == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	items, err := d.terminalReports.list()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, item := range items {
 		receipt := item.report.applicationStep
@@ -71,11 +71,12 @@ func (d *Daemon) pendingApplicationStep(ctx context.Context, runtimeID string, c
 		if result.State == "completed" && receipt.Result.ClaimToken != claim.ClaimToken {
 			observation, inspectErr := d.inspectApplication(ctx, command)
 			if inspectErr != nil {
-				return nil, inspectErr
+				return nil, nil, inspectErr
 			}
 			result.Observation = observation
 		}
-		return &result, nil
+		copyItem := item
+		return &result, &copyItem, nil
 	}
-	return nil, nil
+	return nil, nil, nil
 }

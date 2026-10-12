@@ -46,7 +46,7 @@ export function documentContentVersionCurrentOptions(
       ref.kind === "attachment"
         ? api.getAttachmentContentVersionCurrent(ref.id, signal)
         : api.getIssueContentVersionCurrent(ref.id, signal),
-    enabled: !!ref.id && !!wsId,
+    enabled: !!ref.id && !!wsId && ref.kind !== "workspace_file",
     // A document body is stable between edits; the record mutation invalidates
     // it, so a long staleTime keeps the doc-mode view cheap and offline-tolerant.
     staleTime: 30_000,
@@ -74,7 +74,7 @@ export function documentContentVersionsOptions(
       ref.kind === "attachment"
         ? api.listAttachmentContentVersions(ref.id, signal)
         : api.listIssueContentVersions(ref.id, signal),
-    enabled: !!ref.id && !!wsId,
+    enabled: !!ref.id && !!wsId && ref.kind !== "workspace_file",
     staleTime: 10_000,
   });
 }
@@ -96,7 +96,7 @@ export function documentContentVersionOptions(
       ref.kind === "attachment"
         ? api.getAttachmentContentVersion(ref.id, revision, signal)
         : api.getIssueContentVersion(ref.id, revision, signal),
-    enabled: !!ref.id && !!wsId && revision > 0,
+    enabled: !!ref.id && !!wsId && revision > 0 && ref.kind !== "workspace_file",
   });
 }
 
@@ -119,7 +119,9 @@ export function useRecordDocumentContentVersion(wsId: string) {
     }): Promise<DocumentContentVersion> => {
       return ref.kind === "attachment"
         ? api.recordAttachmentContentVersion(ref.id, input)
-        : api.recordIssueContentVersion(ref.id, input);
+        : ref.kind === "issue"
+          ? api.recordIssueContentVersion(ref.id, input)
+          : Promise.reject(new Error("workspace files are read-only"));
     },
     onSuccess: () => {
       client.invalidateQueries({ queryKey: documentContentVersionKeys.all(wsId) });
@@ -143,7 +145,9 @@ export function useRollbackDocumentContentVersion(wsId: string) {
     }): Promise<DocumentContentVersion> => {
       return ref.kind === "attachment"
         ? api.rollbackAttachmentContentVersion(ref.id, revision, input)
-        : api.rollbackIssueContentVersion(ref.id, revision, input);
+        : ref.kind === "issue"
+          ? api.rollbackIssueContentVersion(ref.id, revision, input)
+          : Promise.reject(new Error("workspace files are read-only"));
     },
     onSuccess: () => {
       client.invalidateQueries({ queryKey: documentContentVersionKeys.all(wsId) });

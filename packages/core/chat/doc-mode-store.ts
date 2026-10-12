@@ -10,7 +10,7 @@ import { defaultStorage } from "../platform/storage";
 // auto-switching back to the chat (D9). Only an explicit close returns to the
 // chat. This store holds the client-only doc-mode state that gates that UI;
 // server data (the document content / versions) stays in TanStack Query.
-export type DocumentKind = "issue" | "attachment";
+export type DocumentKind = "issue" | "attachment" | "workspace_file";
 
 export interface DocumentRef {
   kind: DocumentKind;
@@ -18,6 +18,11 @@ export interface DocumentRef {
   // Optional display metadata carried with the document.
   label?: string;
   contentType?: string;
+  /** Workspace-file refs resolve their absolute path through the session API. */
+  sessionId?: string;
+  taskId?: string;
+  runtimeId?: string;
+  relativePath?: string;
 }
 
 interface DocModeState {

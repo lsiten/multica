@@ -130,6 +130,7 @@ import type {
   ChatMessage,
   ChatMessagesPage,
   ChatDraftRestoresResponse,
+  ChatSessionFilesResponse,
   ChatPendingTask,
   PrioritizeQueuedChatTaskResponse,
   PendingChatTasksResponse,
@@ -303,6 +304,8 @@ import {
   AttachmentResponseSchema,
   CancelTaskResponseSchema,
   ChatDraftRestoresResponseSchema,
+  ChatSessionFilesResponseSchema,
+  EMPTY_CHAT_SESSION_FILES_RESPONSE,
   ChatMessageListSchema,
   ChatMessagesPageSchema,
   ChatPendingTaskSchema,
@@ -4459,6 +4462,13 @@ export class ApiClient {
     const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/messages`);
     return parseWithFallback(raw, ChatMessageListSchema, EMPTY_CHAT_MESSAGE_LIST, {
       endpoint: "GET /api/chat/sessions/:id/messages",
+    });
+  }
+
+  async listChatSessionFiles(sessionId: string): Promise<ChatSessionFilesResponse> {
+    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/files`);
+    return parseWithFallback(raw, ChatSessionFilesResponseSchema, EMPTY_CHAT_SESSION_FILES_RESPONSE, {
+      endpoint: "GET /api/chat/sessions/:id/files",
     });
   }
 

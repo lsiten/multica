@@ -5,7 +5,8 @@
     "diff": "差异",
     "close": "关闭",
     "rollback": "回滚",
-    "working": "编辑中…"
+    "working": "编辑中…",
+    "truncated": "预览已截断，完整文件 {{total}}"
   },
   "doc_file_list": {
     "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",

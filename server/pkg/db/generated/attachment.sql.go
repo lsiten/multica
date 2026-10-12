@@ -754,6 +754,57 @@ func (q *Queries) ListAttachmentsByChatMessageIDs(ctx context.Context, arg ListA
 	return items, nil
 }
 
+const listAttachmentsByChatSession = `-- name: ListAttachmentsByChatSession :many
+SELECT id, workspace_id, issue_id, comment_id, uploader_type, uploader_id, filename, url, content_type, size_bytes, created_at, chat_session_id, chat_message_id, task_id, source_context_id FROM attachment
+WHERE chat_session_id = $1 AND workspace_id = $2
+ORDER BY created_at ASC, id ASC
+`
+
+type ListAttachmentsByChatSessionParams struct {
+	ChatSessionID pgtype.UUID `json:"chat_session_id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+}
+
+// The chat file browser needs the complete attachment set for a session,
+// including files whose message is outside the currently loaded transcript
+// page. Keep both tenant and session predicates here so callers cannot turn
+// a session id into a cross-workspace attachment lookup.
+func (q *Queries) ListAttachmentsByChatSession(ctx context.Context, arg ListAttachmentsByChatSessionParams) ([]Attachment, error) {
+	rows, err := q.db.Query(ctx, listAttachmentsByChatSession, arg.ChatSessionID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Attachment{}
+	for rows.Next() {
+		var i Attachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.CommentID,
+			&i.UploaderType,
+			&i.UploaderID,
+			&i.Filename,
+			&i.Url,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.CreatedAt,
+			&i.ChatSessionID,
+			&i.ChatMessageID,
+			&i.TaskID,
+			&i.SourceContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAttachmentsByComment = `-- name: ListAttachmentsByComment :many
 SELECT id, workspace_id, issue_id, comment_id, uploader_type, uploader_id, filename, url, content_type, size_bytes, created_at, chat_session_id, chat_message_id, task_id, source_context_id FROM attachment
 WHERE comment_id = $1 AND workspace_id = $2

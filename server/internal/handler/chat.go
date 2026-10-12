@@ -379,6 +379,104 @@ func (h *Handler) GetChatSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, responses[0])
 }
 
+type ChatSessionFileTaskResponse struct {
+	ID              string `json:"id"`
+	RuntimeID       string `json:"runtime_id"`
+	WorkDir         string `json:"work_dir,omitempty"`
+	RelativeWorkDir string `json:"relative_work_dir,omitempty"`
+	CreatedAt       string `json:"created_at"`
+}
+
+type ChatSessionFilesResponse struct {
+	WorkspaceID string                        `json:"workspace_id"`
+	ProjectID   *string                       `json:"project_id,omitempty"`
+	Attachments []AttachmentResponse          `json:"attachments"`
+	Tasks       []ChatSessionFileTaskResponse `json:"tasks"`
+	// Repos is the project's configured repositories resolved on the server
+	// (project resource -> workspace repos fallback). The file browser lists
+	// them as references when the session has no task worktree to browse, so a
+	// chat about a project with no run still shows what the project is about.
+	Repos []RepoData `json:"repos,omitempty"`
+}
+
+// ListChatSessionFiles is the chat file-manager projection. It deliberately
+// resolves the session first, then reads attachments and task worktrees with
+// the same workspace guard; a client cannot substitute another workspace's
+// session or task id. The UI can use task workdirs with the existing local
+// review transport, while attachments stay on the normal attachment preview
+// path.
+func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	workspaceID := ctxWorkspaceID(r.Context())
+	sessionID := chi.URLParam(r, "sessionId")
+	session, ok := h.gatePublicChatSessionForUser(w, r, userID, workspaceID, sessionID)
+	if !ok {
+		return
+	}
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	attachments, err := h.Queries.ListAttachmentsByChatSession(r.Context(), db.ListAttachmentsByChatSessionParams{
+		ChatSessionID: session.ID,
+		WorkspaceID:   workspaceUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list chat attachments")
+		return
+	}
+	// The file browser browses at most five task workdirs, so cap the query to
+	// that many instead of over-fetching rows the client discards.
+	tasks, err := h.Queries.ListChatSessionFileTasks(r.Context(), db.ListChatSessionFileTasksParams{
+		ChatSessionID: session.ID,
+		WorkspaceID:   workspaceUUID,
+		PageLimit:     5,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list chat worktrees")
+		return
+	}
+	attachmentMode := attachmentURLModeFromRequest(r)
+	attachmentResponses := make([]AttachmentResponse, 0, len(attachments))
+	for _, attachment := range attachments {
+		attachmentResponses = append(attachmentResponses, h.attachmentToResponse(attachment, attachmentMode))
+	}
+	taskResponses := make([]ChatSessionFileTaskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		if !task.WorkDir.Valid || strings.TrimSpace(task.WorkDir.String) == "" {
+			continue
+		}
+		workDir := task.WorkDir.String
+		taskResponses = append(taskResponses, ChatSessionFileTaskResponse{
+			ID:              uuidToString(task.ID),
+			RuntimeID:       uuidToString(task.RuntimeID),
+			WorkDir:         workDir,
+			RelativeWorkDir: relativeWorkDir(workDir, workspaceID, uuidToString(task.ID)),
+			CreatedAt:       timestampToString(task.CreatedAt),
+		})
+	}
+	// Resolve the project's configured repos (project resource -> workspace
+	// repos fallback) so the file browser can list them even when the session
+	// has no task worktree. A read failure degrades to no repos rather than
+	// failing the whole projection.
+	var repos []RepoData
+	if session.ProjectID.Valid {
+		if projectCtx, err := h.resolveClaimProjectContext(r.Context(), session.ProjectID, workspaceUUID); err == nil {
+			repos = projectCtx.Repos
+		}
+	}
+	writeJSON(w, http.StatusOK, ChatSessionFilesResponse{
+		WorkspaceID: workspaceID,
+		ProjectID:   uuidToPtr(session.ProjectID),
+		Attachments: attachmentResponses,
+		Tasks:       taskResponses,
+		Repos:       repos,
+	})
+}
+
 type UpdateChatSessionRequest struct {
 	Title     *string         `json:"title"`
 	ProjectID json.RawMessage `json:"project_id"`

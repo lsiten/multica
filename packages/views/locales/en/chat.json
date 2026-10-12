@@ -5,7 +5,8 @@
     "diff": "Diff",
     "close": "Close",
     "rollback": "Roll back",
-    "working": "Editing…"
+    "working": "Editing…",
+    "truncated": "Preview truncated — full file is {{total}}"
   },
   "doc_file_list": {
     "filter_placeholder": "Filter files",

@@ -5,7 +5,8 @@
     "diff": "Diff",
     "close": "Fermer",
     "rollback": "Annuler",
-    "working": "Édition…"
+    "working": "Édition…",
+    "truncated": "Aperçu tronqué — fichier complet : {{total}}"
   },
   "doc_file_list": {
     "filter_placeholder": "Filtrer les fichiers",

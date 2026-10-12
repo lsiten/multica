@@ -115,6 +115,31 @@ export interface ChatSession {
   updated_at: string;
 }
 
+/** Files that can be opened from the selected chat's project/workspace. */
+export interface ChatSessionFileTask {
+  id: string;
+  runtime_id: string;
+  work_dir?: string;
+  relative_work_dir?: string;
+  created_at: string;
+}
+
+/** A repository the chat's project is configured against (server-resolved). */
+export interface ChatSessionRepo {
+  url: string;
+  description?: string;
+  ref?: string;
+}
+
+export interface ChatSessionFilesResponse {
+  workspace_id: string;
+  project_id?: string | null;
+  attachments: import("./attachment").Attachment[];
+  tasks: ChatSessionFileTask[];
+  /** Project's configured repos, resolved server-side (no task worktree). */
+  repos: ChatSessionRepo[];
+}
+
 export interface PendingChatTaskItem {
   task_id: string;
   status: string;

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -158,7 +159,7 @@ func (d *Daemon) loadLocalAuthority() bool {
 		return false
 	}
 	var snapshot localAuthoritySnapshot
-	if json.NewDecoder(file).Decode(&snapshot) != nil || snapshot.Version != 1 || snapshot.AccountID == "" || snapshot.TokenHash != tokenFingerprint(d.client.Token()) || snapshot.Backend != strings.TrimRight(d.cfg.ServerBaseURL, "/") || snapshot.Profile != d.cfg.Profile || snapshot.DaemonID != d.cfg.DaemonID {
+	if json.NewDecoder(io.LimitReader(file, 1<<20)).Decode(&snapshot) != nil || snapshot.Version != 1 || snapshot.AccountID == "" || snapshot.TokenHash != tokenFingerprint(d.client.Token()) || snapshot.Backend != strings.TrimRight(d.cfg.ServerBaseURL, "/") || snapshot.Profile != d.cfg.Profile || snapshot.DaemonID != d.cfg.DaemonID {
 		return false
 	}
 	d.mu.Lock()

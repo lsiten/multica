@@ -32,6 +32,7 @@ type worktreeReviewRequest struct {
 	SnapshotID    string `json:"snapshot_id"`
 	VersionID     string `json:"version_id,omitempty"`
 	FilePath      string `json:"file_path,omitempty"`
+	RelativePath  string `json:"relative_path,omitempty"`
 	Side          string `json:"side,omitempty"`
 	Offset        int    `json:"offset,omitempty"`
 	Limit         int    `json:"limit,omitempty"`

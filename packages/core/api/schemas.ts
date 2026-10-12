@@ -16,6 +16,7 @@ import type {
   CancelTaskResponse,
   ChatMessage,
   ChatDraftRestoresResponse,
+  ChatSessionFilesResponse,
   ChatPendingTask,
   ChatSession,
   ContinueChatTaskResponse,
@@ -2441,6 +2442,38 @@ export const ChatSessionListSchema = z
   .transform((sessions) => sessions.filter((session) => session.id !== ""))
   .default([]);
 export const EMPTY_CHAT_SESSION_LIST: ChatSession[] = [];
+
+const ChatSessionFileTaskSchema = z.object({
+  id: z.string(),
+  runtime_id: z.string().default(""),
+  work_dir: z.string().optional().catch(undefined),
+  relative_work_dir: z.string().optional().catch(undefined),
+  created_at: z.string().default(""),
+}).loose();
+
+const ChatSessionRepoSchema = z.object({
+  // A malformed url must not fail the whole response, which would drop the
+  // session's attachments and tasks too. Catch to "" so the display layer's
+  // `repo.url` filter simply hides the broken row instead of the whole list.
+  url: z.string().catch(""),
+  description: z.string().optional().catch(undefined),
+  ref: z.string().optional().catch(undefined),
+});
+
+export const ChatSessionFilesResponseSchema = z.object({
+  workspace_id: z.string().default(""),
+  project_id: z.string().nullable().optional(),
+  attachments: z.array(AttachmentSchema).default([]),
+  tasks: z.array(ChatSessionFileTaskSchema).default([]),
+  repos: z.array(ChatSessionRepoSchema).default([]),
+}).loose();
+
+export const EMPTY_CHAT_SESSION_FILES_RESPONSE: ChatSessionFilesResponse = {
+  workspace_id: "",
+  attachments: [],
+  tasks: [],
+  repos: [],
+};
 
 // Deferred-cancellation draft restores
 // (`GET /api/chat/sessions/{id}/draft-restores`, #5219) feed the composer

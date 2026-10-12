@@ -25,25 +25,26 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		IndexID    string   `json:"index_id,omitempty"`
-		Branch     string   `json:"branch,omitempty"`
-		Head       string   `json:"head,omitempty"`
-		Message    string   `json:"message,omitempty"`
-		Paths      []string `json:"paths,omitempty"`
-		TaskID     string   `json:"task_id"`
-		Path       string   `json:"path"`
-		Target     string   `json:"target"`
-		Action     string   `json:"action"`
-		SnapshotID string   `json:"snapshot_id"`
-		VersionID  string   `json:"version_id,omitempty"`
-		FilePath   string   `json:"file_path,omitempty"`
-		Side       string   `json:"side,omitempty"`
-		Offset     int      `json:"offset,omitempty"`
-		Limit      int      `json:"limit,omitempty"`
-		Comment    string   `json:"comment"`
-		CommandID  string   `json:"command_id"`
+		IndexID      string   `json:"index_id,omitempty"`
+		Branch       string   `json:"branch,omitempty"`
+		Head         string   `json:"head,omitempty"`
+		Message      string   `json:"message,omitempty"`
+		Paths        []string `json:"paths,omitempty"`
+		TaskID       string   `json:"task_id"`
+		Path         string   `json:"path"`
+		Target       string   `json:"target"`
+		Action       string   `json:"action"`
+		SnapshotID   string   `json:"snapshot_id"`
+		VersionID    string   `json:"version_id,omitempty"`
+		FilePath     string   `json:"file_path,omitempty"`
+		RelativePath string   `json:"relative_path,omitempty"`
+		Side         string   `json:"side,omitempty"`
+		Offset       int      `json:"offset,omitempty"`
+		Limit        int      `json:"limit,omitempty"`
+		Comment      string   `json:"comment"`
+		CommandID    string   `json:"command_id"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && input.Action != "workspace_files" && input.Action != "file_content" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
 		writeError(w, http.StatusBadRequest, "task and target branch required")
 		return
 	}
@@ -78,12 +79,12 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	case "repositories", "manifest", "files", "file", "context", "content", "commits", "lease":
+	case "repositories", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease":
 		maxLimit := 500
-		if input.Action == "content" {
+		if input.Action == "content" || input.Action == "file_content" {
 			maxLimit = 64 << 10
 		}
-		if len(input.VersionID) > 64 || len(input.FilePath) > 4096 || input.Offset < 0 || input.Limit < 0 || input.Limit > maxLimit || (input.Action != "manifest" && input.Action != "repositories" && input.VersionID == "") || (input.Side != "" && input.Side != "old" && input.Side != "new") {
+		if len(input.VersionID) > 64 || len(input.FilePath) > 4096 || len(input.RelativePath) > 4096 || input.Offset < 0 || input.Limit < 0 || input.Limit > maxLimit || (input.Action != "manifest" && input.Action != "repositories" && input.Action != "workspace_files" && input.Action != "file_content" && input.VersionID == "") || (input.Side != "" && input.Side != "old" && input.Side != "new") || (input.Action == "file_content" && strings.TrimSpace(input.RelativePath) == "") {
 			writeError(w, http.StatusBadRequest, "invalid review page request")
 			return
 		}
@@ -147,8 +148,9 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		SnapshotID: input.SnapshotID, Comment: input.Comment, ActorID: user,
 		CommandID: input.CommandID,
 		VersionID: input.VersionID, FilePath: input.FilePath, Offset: input.Offset, Limit: input.Limit,
-		Side:    input.Side,
-		IndexID: input.IndexID, Branch: input.Branch, Head: input.Head, Message: input.Message, Paths: input.Paths,
+		RelativePath: input.RelativePath,
+		Side:         input.Side,
+		IndexID:      input.IndexID, Branch: input.Branch, Head: input.Head, Message: input.Message, Paths: input.Paths,
 	})
 	if err != nil {
 		writeError(w, http.StatusTooManyRequests, "local review relay busy")

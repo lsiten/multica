@@ -5,7 +5,8 @@
     "diff": "차이",
     "close": "닫기",
     "rollback": "되돌리기",
-    "working": "편집 중…"
+    "working": "편집 중…",
+    "truncated": "미리보기가 잘렸습니다 (파일 전체 {{total}})"
   },
   "doc_file_list": {
     "filter_placeholder": "\ud30c\uc77c \ud544\ud130",

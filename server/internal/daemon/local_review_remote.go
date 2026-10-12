@@ -58,7 +58,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		return routed
 	}
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
-	input.VersionID, input.FilePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.Offset, command.Limit
+	input.VersionID, input.FilePath, input.RelativePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.RelativePath, command.Offset, command.Limit
 	input.Side = command.Side
 	input.IndexID, input.Branch, input.Head, input.Message, input.Paths = command.IndexID, command.Branch, command.Head, command.Message, command.Paths
 	input.CommandID = command.ID
@@ -108,7 +108,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	var response worktreeReviewResponse
 	err = nil
 	switch command.Action {
-	case "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "commits", "lease", "submit", "approve", "request_changes":
+	case "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes":
 		response, err = call(command.Action)
 	case "merge":
 		if command.SnapshotID == "" {

@@ -948,6 +948,17 @@ WHERE message.chat_session_id = $1
   )
 ORDER BY message.created_at ASC, message.id ASC;
 
+-- name: ListChatSessionFileTasks :many
+-- Task rows do not carry workspace_id themselves, so keep the chat-session
+-- join as a tenant guard while exposing only worktrees from this session.
+SELECT task.*
+FROM agent_task_queue AS task
+JOIN chat_session AS session ON session.id = task.chat_session_id
+WHERE task.chat_session_id = $1
+  AND session.workspace_id = $2
+ORDER BY task.created_at DESC, task.id DESC
+LIMIT sqlc.arg(page_limit);
+
 -- name: ListChatTaskInputOwners :many
 -- Retry children keep the original direct-chat input owner in
 -- chat_input_task_id. The chat transcript exposes that stable owner so every

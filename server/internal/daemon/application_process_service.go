@@ -130,11 +130,20 @@ func (s *applicationProcessService) transport(id string) applicationTransport {
 func (s *applicationProcessService) mutate(ctx context.Context, r runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
 	switch r.Operation {
 	case "application.local":
-		var input localApplicationRequest
-		if json.Unmarshal(r.Payload, &input) != nil {
+		var input localApplicationChildRequest
+		if json.Unmarshal(r.Payload, &input) != nil || input.Command.WorkspaceID != input.Input.WorkspaceID || input.Command.RuntimeID != input.Input.RuntimeID || input.Command.ApplicationID != input.Input.ApplicationID || input.Command.Revision != input.Input.Revision || !s.daemon.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: input.Command.WorkspaceID, RuntimeID: input.Command.RuntimeID}) {
 			return nil, &runtimeproc.Error{Code: "malformed", Message: "invalid local application command"}
 		}
-		result, err := s.daemon.runLocalApplication(ctx, input)
+		previousHostID := ""
+		if records, recordErr := s.daemon.applicationRecords(); recordErr == nil {
+			for _, record := range records {
+				if record.Command.InstanceID == input.Command.InstanceID && record.Command.RuntimeID == input.Command.RuntimeID {
+					previousHostID = record.HostID
+					break
+				}
+			}
+		}
+		result, err := s.daemon.runLocalApplicationWithCommand(ctx, input.Input, input.Command, previousHostID)
 		if err != nil {
 			return nil, &runtimeproc.Error{Code: "local_application_failed", Message: err.Error()}
 		}

@@ -29,6 +29,7 @@ import {
   ChatDraftRestoresResponseSchema,
   ChatPendingTaskSchema,
   ChatSessionListSchema,
+  ChatSessionFilesResponseSchema,
   ChatSessionSchema,
   PrioritizeQueuedChatTaskResponseSchema,
   CreateFeedbackResponseSchema,
@@ -2454,5 +2455,38 @@ describe("AgentActivityBucketListSchema duration", () => {
     expect(parsed[0]?.task_count).toBe(201);
     expect(parsed[0]?.duration_ms).toBeUndefined();
     expect(parsed[0]?.duration_count).toBeUndefined();
+  });
+});
+
+describe("ChatSessionFilesResponseSchema", () => {
+  // A single malformed repo must not fail the whole response: that would drop
+  // the session's attachments and task files too (the file list's real
+  // source of truth), not just the broken repo row.
+  it("keeps attachments and tasks when a repo has a malformed url", () => {
+    const parsed = ChatSessionFilesResponseSchema.parse({
+      workspace_id: "ws-1",
+      project_id: "proj-1",
+      attachments: [
+        { id: "att-1", filename: "report.pdf", url: "", content_type: "application/pdf" },
+      ],
+      tasks: [
+        { id: "task-1", runtime_id: "rt-1", work_dir: "/work", created_at: "2026-01-01" },
+      ],
+      repos: [
+        { url: "https://github.com/acme/widgets.git", description: "", ref: "main" },
+        { url: 123, description: "broken" },
+      ],
+    });
+
+    expect(parsed.attachments).toHaveLength(1);
+    expect(parsed.attachments[0]?.filename).toBe("report.pdf");
+    expect(parsed.tasks).toHaveLength(1);
+    expect(parsed.project_id).toBe("proj-1");
+    // The valid repo survives; the malformed url degrades to "" so the
+    // display layer's `repo.url` filter hides only that row.
+    expect(parsed.repos[0]).toEqual(
+      expect.objectContaining({ url: "https://github.com/acme/widgets.git" }),
+    );
+    expect(parsed.repos[1]?.url).toBe("");
   });
 });

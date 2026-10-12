@@ -1,6 +1,7 @@
 "use client";
 
 import { X, GitCompare, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
 import {
   useDocModeStore,
@@ -8,6 +9,7 @@ import {
   selectWorking,
   selectDiffView,
 } from "@multica/core/chat";
+import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import {
   useDocumentContentVersionCurrent,
   useDocumentContentVersions,
@@ -17,6 +19,7 @@ import type { DocumentContentVersion } from "@multica/core/api/document-content-
 import { RichContent } from "../../rich-content";
 import { Attachment } from "../../editor/attachment";
 import { useT } from "../../i18n";
+import { requestReviewPage } from "../../platform/local-review-pages";
 
 // A ref with an empty id keeps the content-versions hooks disabled (see their
 // `enabled: !!ref.id` guard) so they can be called unconditionally even when no
@@ -50,8 +53,57 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
   const current = useDocumentContentVersionCurrent(wsId, activeRef);
   const versions = useDocumentContentVersions(wsId, activeRef);
   const rollback = useRollbackDocumentContentVersion(wsId);
+  const { data: sessionFiles } = useQuery({
+    ...chatSessionFilesOptions(wsId, doc?.sessionId ?? ""),
+  });
+  const workspaceTask = doc?.kind === "workspace_file"
+    ? sessionFiles?.tasks.find((task) => task.id === doc.taskId && task.work_dir)
+    : undefined;
+  const workspaceContent = useQuery({
+    queryKey: ["chat-workspace-file-content", wsId, doc?.id, doc?.relativePath],
+    queryFn: () => requestReviewPage({
+      task_id: workspaceTask!.id,
+      workspace_id: wsId,
+      runtime_id: workspaceTask!.runtime_id,
+      path: workspaceTask!.work_dir!,
+      action: "file_content",
+      relative_path: doc!.relativePath!,
+      offset: 0,
+      limit: 256 * 1024,
+    }),
+    enabled: doc?.kind === "workspace_file" && !!workspaceTask && !!doc.relativePath,
+    staleTime: 15_000,
+  });
 
   if (!doc) return null;
+
+  if (doc.kind === "workspace_file") {
+    // The content query only fetches the first page; a truncated file reports
+    // has_more, so surface the full size instead of silently cutting the text.
+    const fileContent =
+      workspaceContent.data && "content" in workspaceContent.data
+        ? workspaceContent.data.content
+        : null;
+    return (
+      <div className="flex h-full flex-col min-h-0">
+        <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
+          <h2 className="truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => closeDoc(wsId)}>
+            <X className="h-4 w-4" />
+            {t(($) => $.doc_mode.close)}
+          </Button>
+        </div>
+        <WorkspaceFileBody
+          loading={workspaceContent.isLoading || (!!doc.taskId && !sessionFiles)}
+          error={workspaceContent.isError || !workspaceTask}
+          content={fileContent?.text ?? null}
+          truncated={fileContent?.has_more ?? false}
+          total={fileContent?.size ?? 0}
+          label={doc.relativePath ?? doc.label ?? "File"}
+        />
+      </div>
+    );
+  }
 
   const isText = doc.contentType?.startsWith("text/") ?? current.data?.content != null;
 
@@ -163,6 +215,47 @@ function DocBody({
   return (
     <div className="mx-auto max-w-3xl p-6">
       <RichContent content={content ?? ""} className="doc-mode-body" />
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function WorkspaceFileBody({
+  loading,
+  error,
+  content,
+  truncated,
+  total,
+  label,
+}: {
+  loading: boolean;
+  error: boolean;
+  content: string | null;
+  truncated: boolean;
+  total: number;
+  label: string;
+}) {
+  const { t } = useT("chat");
+  if (loading) {
+    return <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>;
+  }
+  if (error || content === null) {
+    return <div className="flex h-full items-center justify-center text-muted-foreground"><p className="text-body">{label}</p></div>;
+  }
+  return (
+    <div className="flex h-full flex-col min-h-0">
+      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-6 font-mono text-caption">{content}</pre>
+      {truncated && (
+        <p className="border-t px-6 py-2 text-caption text-muted-foreground">
+          {t(($) => $.doc_mode.truncated, { total: formatBytes(total) })}
+        </p>
+      )}
     </div>
   );
 }

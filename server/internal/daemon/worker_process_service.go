@@ -148,6 +148,8 @@ type workerContext struct {
 // runTask: the workdir, codex home, and the resolved agent environment map.
 type PreparedEnv struct {
 	WorkDir            string            `json:"work_dir"`
+	RootDir            string            `json:"root_dir,omitempty"`
+	LocalWorktree      bool              `json:"local_worktree,omitempty"`
 	CodexHome          string            `json:"codex_home"`
 	ClaudeSettingsPath string            `json:"claude_settings_path,omitempty"`
 	QwenpawWorkspace   string            `json:"qwenpaw_workspace,omitempty"`
@@ -482,18 +484,20 @@ func (s *workerProcessService) executionClient(grant protocol.ExecutionGrantResp
 // success); the terminal result the server settles the execution from is the
 // one executePreparedProvider produced through runProviderExecution.
 type workerRunResult struct {
-	InstanceID          string                      `json:"instance_id"`
-	PID                 int                         `json:"pid"`
-	Ran                 bool                        `json:"ran"`
-	Output              string                      `json:"output,omitempty"`
-	SessionID           string                      `json:"session_id,omitempty"`
-	Status              string                      `json:"status,omitempty"`
-	ToolCount           int32                       `json:"tool_count"`
-	RunError            string                      `json:"run_error,omitempty"`
-	BudgetExceeded      bool                        `json:"budget_exceeded"`
-	TokenBudgetExceeded bool                        `json:"token_budget_exceeded"`
-	Usage               []TaskUsageEntry            `json:"usage,omitempty"`
-	Execution           *protocol.ExecutionIdentity `json:"execution,omitempty"`
+	InstanceID              string                      `json:"instance_id"`
+	PID                     int                         `json:"pid"`
+	Ran                     bool                        `json:"ran"`
+	Output                  string                      `json:"output,omitempty"`
+	SessionID               string                      `json:"session_id,omitempty"`
+	Status                  string                      `json:"status,omitempty"`
+	ToolCount               int32                       `json:"tool_count"`
+	RunError                string                      `json:"run_error,omitempty"`
+	BudgetExceeded          bool                        `json:"budget_exceeded"`
+	TokenBudgetExceeded     bool                        `json:"token_budget_exceeded"`
+	Usage                   []TaskUsageEntry            `json:"usage,omitempty"`
+	Execution               *protocol.ExecutionIdentity `json:"execution,omitempty"`
+	WorkDir                 string                      `json:"work_dir,omitempty"`
+	WorktreeDeliveryPending bool                        `json:"worktree_delivery_pending,omitempty"`
 }
 
 // runErrMsg renders a run error as a string for the result payload; an empty
@@ -560,18 +564,20 @@ func (s *workerProcessService) executeProviderRun(ctx context.Context, client *E
 	}
 	// Persist the worker's genuine outcome before control adds directory-delivery metadata.
 	return workerRunResult{
-		InstanceID:          s.bootstrap.Identity.InstanceID,
-		PID:                 os.Getpid(),
-		Ran:                 true,
-		Output:              result.Output,
-		SessionID:           result.SessionID,
-		Status:              status,
-		ToolCount:           tools,
-		RunError:            runErrMsg(runErr),
-		BudgetExceeded:      result.BudgetExceeded || result.TokenBudgetExceeded,
-		TokenBudgetExceeded: result.TokenBudgetExceeded,
-		Usage:               usageEntriesForResult(runCtx.Provider, result.Usage),
-		Execution:           &client.identity,
+		InstanceID:              s.bootstrap.Identity.InstanceID,
+		PID:                     os.Getpid(),
+		Ran:                     true,
+		Output:                  result.Output,
+		SessionID:               result.SessionID,
+		Status:                  status,
+		ToolCount:               tools,
+		RunError:                runErrMsg(runErr),
+		BudgetExceeded:          result.BudgetExceeded || result.TokenBudgetExceeded,
+		TokenBudgetExceeded:     result.TokenBudgetExceeded,
+		Usage:                   usageEntriesForResult(runCtx.Provider, result.Usage),
+		Execution:               &client.identity,
+		WorkDir:                 runCtx.Env.WorkDir,
+		WorktreeDeliveryPending: runCtx.Env.LocalWorktree,
 	}
 
 }

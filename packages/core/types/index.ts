@@ -214,6 +214,9 @@ export type {
   CancelTaskResponse,
   ChatDraftRestore,
   ChatDraftRestoresResponse,
+  ChatSessionFileTask,
+  ChatSessionFilesResponse,
+  ChatSessionRepo,
 } from "./chat";
 export type { StorageAdapter } from "./storage";
 export type {
