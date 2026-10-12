@@ -139,6 +139,7 @@ import {
 } from "./schemas";
 import type { ZodType } from "zod";
 import { getCurrentSlug } from "./workspace-store";
+import { currentSessionEpoch, sessionEpochChanged } from "./session-epoch";
 import { parseWithFallback } from "@/lib/parse-response";
 import { createRequestId } from "@/lib/request-id";
 import { buildCommentUpdateBody } from "./revision";
@@ -225,6 +226,11 @@ class ApiClient {
     return this.token;
   }
 
+  private handleUnauthorized(credentialUsed: string | null, sessionEpoch: number): void {
+    if (this.token !== credentialUsed || sessionEpochChanged(sessionEpoch)) return;
+    this.options.onUnauthorized?.();
+  }
+
   setOptions(options: ApiClientOptions) {
     this.options = { ...this.options, ...options };
   }
@@ -236,6 +242,8 @@ class ApiClient {
     const rid = createRequestId();
     const start = Date.now();
     const method = init.method ?? "GET";
+    const credentialUsed = this.token;
+    const sessionEpoch = currentSessionEpoch();
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -316,9 +324,7 @@ class ApiClient {
       // 401 sign-out hook: invoke once, let the platform layer (auth-store)
       // clear the token + navigate. Subsequent requests in flight will also
       // 401 and re-enter here, so the callback must be idempotent.
-      if (res.status === 401) {
-        this.options.onUnauthorized?.();
-      }
+      if (res.status === 401) this.handleUnauthorized(credentialUsed, sessionEpoch);
 
       let body: unknown;
       try {
@@ -1358,6 +1364,8 @@ class ApiClient {
     const slug = getCurrentSlug();
     if (slug) headers["X-Workspace-Slug"] = slug;
 
+    const credentialUsed = this.token;
+    const sessionEpoch = currentSessionEpoch();
     const formData = new FormData();
     // RN's FormData accepts `{ uri, name, type }` as the file value.
     // `as never` quiets TS (the global FormData type expects `Blob | string`).
@@ -1378,7 +1386,7 @@ class ApiClient {
     const duration = Date.now() - start;
 
     if (!res.ok) {
-      if (res.status === 401) this.options.onUnauthorized?.();
+      if (res.status === 401) this.handleUnauthorized(credentialUsed, sessionEpoch);
       let body: unknown;
       try {
         body = await res.json();

@@ -30,7 +30,8 @@ type fakeWorkerTransport struct {
 	healthState string
 	// refuseBind makes the bind return a not-launchable decision so a
 	// refused bind (not launchable) can be exercised without a real child.
-	refuseBind bool
+	refuseBind  bool
+	executionID string
 }
 
 func (f *fakeWorkerTransport) Health(_ context.Context) (runtimeproc.Status, error) {
@@ -65,6 +66,7 @@ func (f *fakeWorkerTransport) Call(_ context.Context, request runtimeproc.Reques
 	case "worker.bind":
 		var in workerBindRequest
 		_ = json.Unmarshal(request.Payload, &in)
+		f.executionID = in.Grant.Identity.ExecutionID
 		var launchable bool
 		var reason string
 		if f.refuseBind {
@@ -88,8 +90,11 @@ func (f *fakeWorkerTransport) Call(_ context.Context, request runtimeproc.Reques
 	case "worker.run":
 		// The control parent only reaches a run after a launchable bind, so the
 		// worker genuinely produces a result (not a fabricated success).
-		result, _ := json.Marshal(workerRunResult{InstanceID: "instance", PID: 1, Ran: true, Status: "completed"})
+		result := json.RawMessage(`{"accepted":true}`)
 		receipt = &runtimeproc.Receipt{State: "completed", Result: result}
+	case "worker.result":
+		result, _ := json.Marshal(workerResultStatus{ExecutionID: f.executionID, Accepted: true, Result: &workerRunResult{InstanceID: "instance", PID: 1, Ran: true, Status: "completed"}})
+		receipt = &runtimeproc.Receipt{State: "read", Result: result}
 	default:
 		receipt = &runtimeproc.Receipt{State: "completed"}
 	}

@@ -14,7 +14,7 @@ export function applicationBoardOptions(workspaceId: string) {
   return queryOptions({
     queryKey: applicationKeys.board(workspaceId),
     queryFn: ({ signal }) => api.getApplicationBoard(workspaceId, signal),
-    refetchInterval: 10_000,
+    refetchInterval: (query) => query.state.status !== "error" && query.state.data?.operations.some((operation) => operation.state === "queued" || operation.state === "running" || operation.state === "cancelling") ? 5000 : 30_000,
     refetchIntervalInBackground: false,
   });
 }
@@ -53,7 +53,8 @@ export function applicationOperationOptions(workspaceId: string, id: string, ope
   return queryOptions({
     queryKey: applicationKeys.operation(workspaceId, id, operationId),
     queryFn: ({ signal }) => api.getApplicationOperation(workspaceId, id, operationId, signal),
-    refetchInterval: (query) => query.state.data?.state === "queued" || query.state.data?.state === "running" || query.state.data?.state === "cancelling" ? 2000 : false,
+    refetchInterval: (query) => query.state.status === "error" ? 30_000 : query.state.data?.state === "queued" || query.state.data?.state === "running" || query.state.data?.state === "cancelling" ? 5000 : false,
+    refetchIntervalInBackground: false,
   });
 }
 

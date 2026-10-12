@@ -11,6 +11,8 @@ import { api } from "@multica/core/api";
 import { useHasOnboarded } from "@multica/core/paths";
 import { setCurrentWorkspace } from "@multica/core/platform";
 import { ThemeProvider } from "@multica/ui/components/common/theme-provider";
+import { Button } from "@multica/ui/components/ui/button";
+import { DragStrip } from "@multica/views/platform";
 import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
 import { Toaster } from "@multica/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
@@ -36,6 +38,24 @@ import {
   tearDownOnSessionExpiry,
   type SessionTeardown,
 } from "./platform/session-teardown";
+
+function DesktopLocalApplicationsPage() {
+  const [applications,setApplications]=useState<Array<{workspace_id:string;runtime_id:string;application_id:string;revision:number}>>([]);
+  const [busy,setBusy]=useState<string>("");
+  const [error,setError]=useState("");
+  const [syncMessage,setSyncMessage]=useState("");
+  const commandIds=useRef<Record<string,string>>({});
+  const load=()=>void window.daemonAPI.listLocalApplications().then((raw)=>{setApplications(Array.isArray(raw)?raw as typeof applications:[]);}).catch((cause)=>setError(cause instanceof Error?cause.message:"Local runtime unavailable"));
+  useEffect(load,[]);
+  const run=async (application:typeof applications[number],action:"start"|"stop"|"restart")=>{
+    const key=`${application.application_id}:${action}`;setBusy(key);setError("");setSyncMessage("");
+    const command_id=commandIds.current[key] ?? (commandIds.current[key]=crypto.randomUUID());
+    try { const result=await window.daemonAPI.localApplicationOperation({...application,action,command_id}) as {sync_pending?:boolean}|null; if(result?.sync_pending)setSyncMessage("Local change applied; synchronization is pending.");delete commandIds.current[key];await load(); }
+    catch(cause){setError(cause instanceof Error?cause.message:"Local operation failed");}
+    finally{setBusy("");}
+  };
+  return <div className="flex h-screen flex-col"><DragStrip/><main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-auto p-8"><h1 className="text-title font-semibold">Local applications</h1><p className="text-body text-muted-foreground">The server is unavailable. Local application controls remain available; changes will sync when the connection recovers.</p>{syncMessage&&<p role="status" className="text-caption text-muted-foreground">{syncMessage}</p>}{error&&<div className="flex items-center gap-3"><p role="alert" className="text-caption text-destructive">{error}</p><Button size="sm" variant="outline" onClick={load}>Retry</Button></div>}{applications.length===0?<p className="text-body text-muted-foreground">No verified local application recipes are available.</p>:applications.map((application)=><section key={`${application.workspace_id}:${application.application_id}`} className="rounded-lg border p-4"><p className="break-all text-body font-medium">{application.application_id}</p><p className="text-caption text-muted-foreground">Runtime {application.runtime_id} · revision {application.revision}</p><div className="mt-3 flex gap-2">{(["start","stop","restart"] as const).map((action)=><Button key={action} size="sm" variant="outline" disabled={busy!==""} aria-busy={busy===`${application.application_id}:${action}`} onClick={()=>void run(application,action)}>{busy===`${application.application_id}:${action}`?"Working…":action}</Button>)}</div></section>)}</main></div>;
+}
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -202,6 +222,13 @@ function AppContent() {
   } = useWorkspaceList({
     enabled: !!user,
   });
+  const [localInventoryReady,setLocalInventoryReady]=useState(false);
+  useEffect(()=>{
+    if(!user || typeof window.daemonAPI.listLocalApplications!=="function") return;
+    let active=true;
+    void window.daemonAPI.listLocalApplications().then((raw)=>{if(active&&Array.isArray(raw)&&raw.length>0)setLocalInventoryReady(true)}).catch(()=>{});
+    return ()=>{active=false};
+  },[user]);
   const wsCount = workspaces.length;
   const hasOnboarded = useHasOnboarded();
 
@@ -317,8 +344,10 @@ function AppContent() {
   }, [user, workspaceListReady, wsCount]);
 
   if (authStatus === "recovering") {
+    if (typeof window.daemonAPI.listLocalApplications === "function") return <DesktopLocalApplicationsPage />;
     return <DesktopAuthRecoveryPage />;
   }
+  if (user && localInventoryReady && (!workspaceListReady || workspaceListUnavailable)) return <DesktopLocalApplicationsPage />;
   if (isLoading || bootstrapping) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -328,6 +357,7 @@ function AppContent() {
   }
 
   if (workspaceListUnavailable) {
+    if (user && typeof window.daemonAPI.listLocalApplications === "function") return <DesktopLocalApplicationsPage />;
     return (
       <DesktopAuthRecoveryPage
         isRetrying={workspaceListRetrying}
@@ -464,6 +494,8 @@ export default function App() {
       {runtimeConfigResult.ok ? (
         <CoreProvider
           apiBaseUrl={runtimeConfigResult.config.apiUrl}
+          localApplicationSupported={(workspaceId,id,runtimeId,revision)=>window.daemonAPI.localApplicationSupported({workspace_id:workspaceId,application_id:id,runtime_id:runtimeId,revision,action:"start",command_id:crypto.randomUUID()})}
+          localApplicationOperation={(workspaceId,id,input)=>window.daemonAPI.localApplicationOperation({workspace_id:workspaceId,application_id:id,runtime_id:input.runtime_id,revision:input.revision,action:input.action,command_id:input.idempotency_key})}
           wsUrl={runtimeConfigResult.config.wsUrl}
           onLogout={
             windowContext.kind === "main" ? handleDaemonLogout : undefined

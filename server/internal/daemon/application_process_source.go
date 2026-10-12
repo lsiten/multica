@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/multica-ai/multica/server/internal/daemon/applicationhost"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -40,6 +42,9 @@ func (d *Daemon) prepareApplicationSource(ctx context.Context, command protocol.
 	if d.applicationSourceProvider != nil {
 		return d.applicationSourceProvider(ctx, applicationSourceInput(command))
 	}
+	if prepared, local, err := d.localApplicationSource(applicationSourceInput(command)); local {
+		return prepared, err
+	}
 	var prepared applicationPreparedSource
 	var err error
 	if d.environmentProcessMode() {
@@ -66,6 +71,51 @@ func (d *Daemon) prepareApplicationSource(ctx context.Context, command protocol.
 		prepared.LocalValues[source] = value
 	}
 	return prepared, nil
+}
+
+func (d *Daemon) localApplicationSource(source applicationSourceRequest) (applicationPreparedSource, bool, error) {
+	intent, err := d.readLocalIntent(source.InstanceID)
+	if err != nil {
+		return applicationPreparedSource{}, true, err
+	}
+	if intent == nil || intent.Result != nil || intent.Input.ApplicationID != source.ApplicationID || intent.Input.WorkspaceID != source.WorkspaceID || intent.Input.RuntimeID != source.RuntimeID || intent.Input.Revision != source.Revision {
+		return applicationPreparedSource{}, false, nil
+	}
+	if d.localAuthorityRejected.Load() || !d.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: source.WorkspaceID, RuntimeID: source.RuntimeID}) {
+		return applicationPreparedSource{}, true, errors.New("local application source authority changed")
+	}
+	records, err := d.applicationRecords()
+	if err != nil {
+		return applicationPreparedSource{}, true, err
+	}
+	for _, record := range records {
+		if record.Command.InstanceID != source.InstanceID {
+			continue
+		}
+		if !bytes.Equal(marshalRaw(applicationSourceInput(record.Command)), marshalRaw(source)) {
+			return applicationPreparedSource{}, true, errors.New("local application source recipe changed")
+		}
+		root, rootErr := filepath.EvalSymlinks(record.SourceRoot)
+		workDir, dirErr := filepath.EvalSymlinks(record.WorkDir)
+		relative, relErr := filepath.Rel(root, workDir)
+		info, statErr := os.Stat(workDir)
+		if rootErr != nil || dirErr != nil || root != record.SourceRoot || workDir != record.WorkDir || relErr != nil || !filepath.IsLocal(relative) || statErr != nil || !info.IsDir() {
+			return applicationPreparedSource{}, true, errors.New("verified local application source is unavailable")
+		}
+		prepared := applicationPreparedSource{Root: root, WorkDir: workDir, Version: record.Observation.CodeVersion, Dirty: record.Observation.Dirty, LocalValues: map[string]string{}}
+		for _, name := range source.LocalEnv {
+			value, ok := os.LookupEnv(name)
+			if !ok {
+				return prepared, true, fmt.Errorf("local environment reference %s is unavailable", name)
+			}
+			prepared.LocalValues[name] = value
+		}
+		return prepared, true, nil
+	}
+	// A first local start has no host record yet. Fall back to the immutable
+	// command recipe; once a host exists, the branch above requires its source
+	// identity to match before reuse.
+	return applicationPreparedSource{}, false, nil
 }
 func preparedApplicationEnvironment(config protocol.ApplicationConfig, prepared applicationPreparedSource) ([]string, error) {
 	// Preserve LocalEnv references in the protected host record. Values exist only

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // LogPage has a resumable cursor and explicitly signals rotation gaps.
@@ -20,44 +22,51 @@ type LogPage struct {
 }
 
 type boundedLog struct {
-	mu       sync.Mutex
-	path     string
-	hostID   string
-	file     *os.File
-	limit    int64
-	size     int64
-	rotation uint64
-	secrets  []string
-	pending  []byte
+	mu             sync.Mutex
+	path           string
+	hostID         string
+	file           *os.File
+	limit          int64
+	size           int64
+	rotation       uint64
+	secrets        []string
+	pending        []byte
+	backlog        []byte
+	retryAt        time.Time
+	failure        error
+	dropped        uint64
+	restorePending bool
 }
+
+var errUnsafeLog = errors.New("application log ownership is unsafe")
 
 func openLog(path, hostID string, limit int64, secrets []string) (*boundedLog, error) {
 	if limit < 1 {
 		return nil, errors.New("application log size limit must be positive")
 	}
-	if existing, err := os.Lstat(path); err == nil && !existing.Mode().IsRegular() {
-		return nil, errors.New("application log must be a private regular file")
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		return nil, err
-	}
-	if err = protectPrivateFile(file); err != nil {
-		file.Close()
-		return nil, err
-	}
-	info, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-	log := &boundedLog{path: path, hostID: hostID, file: file, limit: limit, size: info.Size()}
+	log := &boundedLog{path: path, hostID: hostID, limit: limit}
 	for _, secret := range secrets {
 		if secret != "" {
 			log.secrets = append(log.secrets, secret)
 		}
 	}
 	sort.Slice(log.secrets, func(i, j int) bool { return len(log.secrets[i]) > len(log.secrets[j]) })
+	if err := log.open(); err != nil {
+		if errors.Is(err, errUnsafeLog) {
+			return nil, err
+		}
+		log.deferWrite(err)
+	}
+	if err := log.restoreBacklog(); err != nil {
+		if errors.Is(err, errUnsafeLog) {
+			if log.file != nil {
+				_ = log.file.Close()
+			}
+			return nil, err
+		}
+		log.restorePending = true
+		log.deferWrite(err)
+	}
 	return log, nil
 }
 
@@ -87,10 +96,11 @@ scan:
 			consumed++
 		}
 	}
-	if err := l.writeBytes(output); err != nil {
-		return 0, err
-	}
 	l.pending = append(l.pending[:0], l.pending[consumed:]...)
+	l.buffer(output)
+	if err := l.flush(false); err != nil {
+		l.deferWrite(err)
+	}
 	return len(raw), nil
 }
 
@@ -99,29 +109,45 @@ func (l *boundedLog) writeRedacted(raw []byte) error {
 	for _, secret := range l.secrets {
 		text = strings.ReplaceAll(text, secret, "[redacted]")
 	}
-	return l.writeBytes([]byte(text))
+	l.buffer([]byte(text))
+	return l.flush(true)
 }
 
-func (l *boundedLog) writeBytes(remaining []byte) error {
-	for len(remaining) > 0 {
+func (l *boundedLog) flush(force bool) error {
+	if !force && time.Now().Before(l.retryAt) {
+		return nil
+	}
+	if l.file == nil {
+		if err := l.open(); err != nil {
+			return err
+		}
+	}
+	for len(l.backlog) > 0 {
 		if l.size >= l.limit {
 			if err := l.rotate(); err != nil {
 				return err
 			}
 		}
-		amount := min(int64(len(remaining)), l.limit-l.size)
-		written, err := l.file.Write(remaining[:amount])
+		amount := min(int64(len(l.backlog)), l.limit-l.size)
+		written, err := l.file.Write(l.backlog[:amount])
 		l.size += int64(written)
+		l.backlog = l.backlog[written:]
 		if err != nil {
 			return err
 		}
-		remaining = remaining[written:]
+		if written == 0 {
+			return io.ErrShortWrite
+		}
 	}
+	l.failure = nil
+	l.retryAt = time.Time{}
 	return nil
 }
 
 func (l *boundedLog) rotate() error {
-	if err := l.file.Close(); err != nil {
+	file := l.file
+	l.file = nil
+	if err := file.Close(); err != nil {
 		return err
 	}
 	for number := 2; number >= 1; number-- {
@@ -152,7 +178,23 @@ func (l *boundedLog) close() error {
 	defer l.mu.Unlock()
 	err := l.writeRedacted(l.pending)
 	l.pending = nil
-	return errors.Join(err, l.file.Close())
+	if err != nil {
+		l.deferWrite(err)
+		l.retryAt = time.Time{}
+		if err = l.flush(true); err != nil {
+			l.deferWrite(err)
+		}
+	}
+	if err := l.saveBacklog(); err != nil {
+		l.deferWrite(err)
+	}
+	if l.file != nil {
+		if err := l.file.Close(); err != nil {
+			l.deferWrite(err)
+		}
+		l.file = nil
+	}
+	return nil
 }
 
 func (l *boundedLog) page(cursor string, limit int) (LogPage, error) {
@@ -202,7 +244,7 @@ func openStoredLog(path string) (*os.File, os.FileInfo, error) {
 		return nil, nil, err
 	}
 	if !before.Mode().IsRegular() {
-		return nil, nil, errors.New("application log must be a private regular file")
+		return nil, nil, errUnsafeLog
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -211,11 +253,11 @@ func openStoredLog(path string) (*os.File, os.FileInfo, error) {
 	info, err := file.Stat()
 	if err != nil || !os.SameFile(before, info) {
 		file.Close()
-		return nil, nil, errors.New("application log changed while opening")
+		return nil, nil, fmt.Errorf("%w: log changed while opening", errUnsafeLog)
 	}
 	if err := validatePrivateFile(file); err != nil {
 		file.Close()
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %v", errUnsafeLog, err)
 	}
 	return file, info, nil
 }
@@ -227,6 +269,32 @@ func ReadStoredLogs(recordPath, cursor string, limit int) (LogPage, error) {
 		return LogPage{}, err
 	}
 	path := filepath.Join(filepath.Dir(recordPath), "service.log")
+	if _, err := os.Lstat(path + ".pending"); err == nil {
+		if err := WithStoppedOwnership(recordPath, record.HostID, func(current Record) error {
+			log, err := openLog(path, current.HostID, 4<<20, nil)
+			if err != nil {
+				return err
+			}
+			log.rotation = current.LogRotation
+			if err := log.close(); err != nil {
+				return err
+			}
+			current.LogRotation = log.rotation
+			current.LogPendingBytes = len(log.backlog)
+			current.LogDroppedBytes += log.dropped
+			if log.failure == nil {
+				current.LogError = ""
+			} else {
+				current.LogError = "log_storage_unavailable"
+			}
+			record = current
+			return WriteRecord(recordPath, current)
+		}); err != nil {
+			return LogPage{}, err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return LogPage{}, err
+	}
 	file, info, err := openStoredLog(path)
 	if err != nil {
 		return LogPage{}, err

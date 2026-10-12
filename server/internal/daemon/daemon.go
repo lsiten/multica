@@ -218,14 +218,10 @@ type terminalTaskReportKind uint8
 const (
 	terminalTaskReportComplete terminalTaskReportKind = iota + 1
 	terminalTaskReportFail
-
-	// CompleteTask and FailTask can make six 30-second HTTP attempts around
-	// the five backoffs in defaultTerminalRetrySchedule (124 seconds total).
-	// Keep the detached callback's own deadline above that worst-case budget
-	// so it does not silently shorten the client's existing retry contract.
-	// During daemon restart pollLoop still imposes its separate 30-second
-	// process drain boundary.
-	terminalTaskReportTimeout = 6 * time.Minute
+	taskMessagesReport
+	taskUsageReport
+	applicationObservationReport
+	applicationStepReport
 )
 
 // terminalTaskReport is the single daemon-side representation of a terminal
@@ -258,8 +254,16 @@ type terminalTaskReport struct {
 	// carries so a later pass can quarantine a record that does not belong
 	// to the current account. Empty for a legacy record written before the
 	// account was resolved; such a record is preserved, never adopted.
-	accountID   string
-	executionID string
+	accountID               string
+	executionID             string
+	messages                []TaskMessageData
+	usage                   []TaskUsageEntry
+	execution               *protocol.ExecutionIdentity
+	applicationObservation  *protocol.ApplicationObservation
+	applicationDesiredState string
+	applicationIntentID     string
+	applicationStep         *applicationStepReceipt
+	runtimeID               string
 }
 
 type terminalReportSendFunc func(context.Context, terminalTaskReport, []time.Duration) error
@@ -412,9 +416,10 @@ type Daemon struct {
 	mirrorChild             *mirrorProcessService
 	jevModelsMu             sync.Mutex
 	jevModelsClosing        bool
-	jevModelsOnce           sync.Once
 	jevModels               modelservice.Backend
 	jevModelsErr            error
+	jevModelRetryAt         time.Time
+	jevModelFailures        int
 	cfg                     Config
 	client                  *Client
 	repoCache               repoCacheBackend
@@ -428,7 +433,7 @@ type Daemon struct {
 	terminalReports      *terminalReportStore
 	terminalReportSend   terminalReportSendFunc
 	terminalReportWakeup chan struct{}
-	terminalReportNow    func() time.Time
+	reportNow            func() time.Time
 	terminalReportMu     sync.Mutex
 	terminalReportFlight map[string]struct{}
 
@@ -450,7 +455,14 @@ type Daemon struct {
 	// different account gets a disjoint lock and never adopts another's queue.
 	// Empty when discovery fails; the lock then falls back to a per-daemon
 	// namespace, which stays safe but does not cross a gateway boundary.
-	accountID string
+	accountID                   string
+	localBootstrap              bool
+	remoteBootstrapPending      atomic.Bool
+	localAuthorityRejected      atomic.Bool
+	applicationObservationTimes sync.Map
+	applicationPollStates       sync.Map
+	applicationWakeRuntimes     sync.Map
+	applicationWakeNotify       func([]string)
 
 	mu           sync.Mutex
 	workspaces   map[string]*workspaceState
@@ -873,7 +885,7 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		logger:                      logger,
 		terminalReports:             newTerminalReportStore(cfg),
 		terminalReportWakeup:        make(chan struct{}, 1),
-		terminalReportNow:           time.Now,
+		reportNow:                   time.Now,
 		terminalReportFlight:        make(map[string]struct{}),
 		workspaces:                  make(map[string]*workspaceState),
 		runtimeIndex:                make(map[string]Runtime),
@@ -927,6 +939,9 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	d.agentsAvailable.Store(&initialAgents)
 	d.executionEnvironmentCommand = defaultExecutionEnvironmentCommand
 	d.runner = taskRunnerFunc(d.runTask)
+	if d.terminalReports != nil {
+		client.taskReportQueue = d.queueTaskReport
+	}
 	d.runUpdateFn = d.runUpdate
 	return d
 }
@@ -2339,15 +2354,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Bind and serve the health port before the (potentially slow) preflight,
-	// so `daemon start` and the desktop see a live "starting" daemon instead
-	// of connection-refused while preflightAuth runs. preflightAuth's initial
-	// workspace sync detects every configured agent's version by exec'ing it,
-	// which on a cold cache with many agents takes ~20s. Liveness (port up) and
-	// readiness (status:"running") are reported separately: /health stays
-	// "starting" until d.ready is set after preflight, so a slow or *failing*
-	// preflight is never misreported as a started daemon. resolveAuth has
-	// already run, so a missing token still fails fast before we begin serving.
+	// Local control readiness is independent of remote registration. A cold
+	// bootstrap exposes pending remote authority and admits no task claims
+	// until the account and runtime scopes have been verified.
+	d.remoteBootstrapPending.Store(true)
+	d.ready.Store(true)
 	go d.serveHealth(ctx, healthLn, time.Now())
 
 	// Renew the PAT before the first API call, then do the initial
@@ -2356,7 +2367,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// scattered into Run, and tests can exercise the failure paths
 	// without the full Run setup.
 	if err := d.preflightAuth(ctx); err != nil {
-		return err
+		if !retryableBootstrapError(err) {
+			return err
+		}
+		if err := d.awaitRemoteBootstrap(ctx); err != nil {
+			return err
+		}
 	}
 
 	// Resolve the authenticated account first so the single-owner lock can be
@@ -2364,6 +2380,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// on one shared owner lock, so only one uploads. Acquisition is then
 	// best-effort; a blocked owner defers the loops instead of double-delivering.
 	d.resolveReportOutboxAccount(ctx)
+	if d.accountID == "" && d.cfg.WorkspacesRoot != "" {
+		if err := d.awaitRemoteBootstrap(ctx); err != nil {
+			return err
+		}
+	}
+	d.remoteBootstrapPending.Store(false)
+	if err := d.recoverWorkerOutcomes(ctx); err != nil {
+		d.logger.Warn("recover worker outcomes deferred", "error", err)
+	}
 	// Bind the terminal report store to the resolved account so it adopts only
 	// records of this account and quarantines the rest. An empty account
 	// leaves the store in its legacy upload-all behaviour.
@@ -2399,7 +2424,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	// Start workspace sync loop to discover newly created workspaces.
 	go d.workspaceSyncLoop(ctx)
-	go d.terminalReportReplayLoop(ctx)
+	terminalReportsDone := make(chan struct{})
+	go func() { defer close(terminalReportsDone); d.terminalReportReplayLoop(ctx) }()
+	defer func() { cancel(); <-terminalReportsDone }()
 	jevReportsDone := make(chan struct{})
 	go func() { defer close(jevReportsDone); d.jevDecisionReportLoop(ctx) }()
 	defer func() { cancel(); <-jevReportsDone }()
@@ -4437,6 +4464,10 @@ const DefaultTokenRenewalInterval = 3 * 24 * time.Hour
 // before creating their first workspace, and workspaceSyncLoop will
 // register runtimes once one appears.
 func (d *Daemon) preflightAuth(ctx context.Context) error {
+	if d.loadLocalAuthority() {
+		d.localBootstrap = true
+		return nil
+	}
 	d.tryRenewToken(ctx)
 	err := d.syncWorkspacesFromAPI(ctx, false)
 	if d.startupMayProceedWithoutRuntimes(err) {
@@ -4557,6 +4588,9 @@ func (d *Daemon) tryRenewToken(ctx context.Context) {
 // changed during the connection gap.
 func (d *Daemon) workspaceSyncLoop(ctx context.Context) {
 	timer := time.NewTimer(jitterDuration(d.workspaceSyncBaseInterval()))
+	if d.localBootstrap {
+		timer.Reset(0)
+	}
 	defer timer.Stop()
 
 	var reconcileCh <-chan struct{}
@@ -4660,8 +4694,14 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context, reconcileProfiles bo
 
 	workspaces, err := d.client.ListWorkspaces(apiCtx)
 	if err != nil {
+		var response *requestError
+		if errors.As(err, &response) && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) {
+			d.localAuthorityRejected.Store(true)
+			_ = os.Remove(d.localAuthorityPath())
+		}
 		return fmt.Errorf("list workspaces: %w", err)
 	}
+	d.localAuthorityRejected.Store(false)
 	d.logger.Debug("workspace sync: fetched workspaces", "count", len(workspaces))
 
 	apiIDs := make(map[string]string, len(workspaces)) // id -> name
@@ -4846,6 +4886,11 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context, reconcileProfiles bo
 	if registered > 0 || removed > 0 {
 		d.logger.Debug("workspace sync done", "registered", registered, "removed", removed, "tracked", len(apiIDs))
 	}
+	if d.accountID != "" {
+		if err := d.saveLocalAuthority(); err != nil {
+			d.logger.Debug("local authority snapshot remains pending", "error", err)
+		}
+	}
 	return nil
 }
 
@@ -4991,8 +5036,9 @@ func (d *Daemon) handleHeartbeatActions(ctx context.Context, runtimeID string, r
 		return
 	}
 	if slices.Contains(resp.ServerCapabilities, protocol.DaemonCapabilityApplicationsV1) {
-		d.applicationServerCapabilities.Store(runtimeID, true)
-		d.wakeApplications()
+		if _, loaded := d.applicationServerCapabilities.LoadOrStore(runtimeID, true); !loaded {
+			d.wakeApplications(runtimeID)
+		}
 	}
 	if slices.Contains(resp.ServerCapabilities, protocol.ExecutionCapabilityV1) {
 		// The server advertised execution reconciliation: the daemon may, on a
@@ -5072,7 +5118,7 @@ func (d *Daemon) handlePendingWorkHint(runtimeID, kind string) {
 		return
 	}
 	if kind == protocol.PendingWorkKindApplication {
-		d.wakeApplications()
+		d.wakeApplications(runtimeID)
 		return
 	}
 
@@ -6306,6 +6352,10 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	}()
 
 	result, err := d.runner.run(runCtx, task, provider, slot, taskLog)
+	if errors.Is(err, errWorkerOutcomeUncertain) {
+		taskLog.Warn("worker outcome unconfirmed; preserving execution for reconciliation", "error", err)
+		return
+	}
 	if errors.Is(err, errStartClaimRejected) {
 		// The row belongs to another claim (or is terminal). A task-id-only
 		// failure callback from this stale delivery could kill its new owner.
@@ -6331,7 +6381,13 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	// runCtx is cancelled, so dropping this on the cancelled path silently
 	// under-reports billing.
 	if len(result.Usage) > 0 {
-		if usageErr := d.client.ReportTaskUsage(ctx, task.ID, result.Usage); usageErr != nil {
+		var usageErr error
+		if result.Execution != nil {
+			usageErr = d.queueTaskReport(terminalTaskReport{kind: taskUsageReport, taskID: task.ID, usage: result.Usage, execution: result.Execution})
+		} else {
+			usageErr = d.client.ReportTaskUsage(ctx, task.ID, result.Usage)
+		}
+		if usageErr != nil {
 			taskLog.Warn("report task usage failed", "error", usageErr)
 		}
 	}
@@ -6590,6 +6646,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			jevVerification:         result.JevVerification,
 			worktreeDeliveryPending: result.WorktreeDeliveryPending,
 			worktreeCommit:          result.WorktreeCommit,
+			execution:               result.Execution,
 		})
 		if err == nil {
 			return
@@ -6635,6 +6692,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			jevVerification:       result.JevVerification,
 			sessionRolloutMissing: result.SessionRolloutMissing,
 			retiredSessionID:      result.RetiredSessionID,
+			execution:             result.Execution,
 		}); err != nil {
 			taskLog.Error("report failed task failed", "error", err)
 		} else if failureReason == "gui_human_intervention" {
@@ -6667,13 +6725,6 @@ func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTa
 	if _, err := persistedTerminalReport(report, time.Now()); err != nil {
 		return err
 	}
-	release, ok := d.beginTerminalReportDelivery(report.taskID)
-	if !ok {
-		return fmt.Errorf("terminal task report for %s is already being delivered", report.taskID)
-	}
-	defer release()
-
-	persisted := false
 	if d.terminalReports != nil {
 		if err := d.terminalReports.enqueue(report); err != nil {
 			// Durability is an availability improvement, not a prerequisite for
@@ -6685,33 +6736,18 @@ func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTa
 				"error", err,
 			)
 		} else {
-			persisted = true
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), terminalTaskReportTimeout)
-	defer cancel()
-	err := d.sendTerminalTaskReport(ctx, report, defaultTerminalRetrySchedule)
-	if err != nil {
-		quarantined := false
-		if persisted {
-			item := pendingTerminalTaskReport{fileName: terminalReportFileName(report.taskID), report: report}
-			quarantined = d.handleTerminalReportDeliveryError(ctx, item, err)
-		}
-		if persisted && !quarantined {
 			d.signalTerminalReportReplay()
+			return nil
 		}
-		return err
 	}
-	if !persisted {
-		return nil
+	release, ok := d.beginTerminalReportDelivery(report.storageKey())
+	if !ok {
+		return fmt.Errorf("task report for %s is already being delivered", report.taskID)
 	}
-	item := pendingTerminalTaskReport{fileName: terminalReportFileName(report.taskID), report: report}
-	if err := d.terminalReports.acknowledge(item); err != nil {
-		d.signalTerminalReportReplay()
-		return fmt.Errorf("acknowledge terminal task report: %w", err)
-	}
-	return nil
+	defer release()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 2*time.Second)
+	defer cancel()
+	return d.sendTerminalTaskReport(ctx, report, nil)
 }
 
 func (d *Daemon) beginTerminalReportDelivery(taskID string) (func(), bool) {
@@ -6732,9 +6768,9 @@ func (d *Daemon) beginTerminalReportDelivery(taskID string) (func(), bool) {
 	}, true
 }
 
-func (d *Daemon) terminalReportClock() time.Time {
-	if d.terminalReportNow != nil {
-		return d.terminalReportNow()
+func (d *Daemon) reportClock() time.Time {
+	if d.reportNow != nil {
+		return d.reportNow()
 	}
 	return time.Now()
 }
@@ -6743,11 +6779,25 @@ func (d *Daemon) sendTerminalTaskReport(ctx context.Context, report terminalTask
 	if d.terminalReportSend != nil {
 		return d.terminalReportSend(ctx, report, schedule)
 	}
+	if report.execution != nil {
+		return d.sendRecoveredExecutionReport(ctx, report)
+	}
 	switch report.kind {
 	case terminalTaskReportComplete:
 		return d.client.completeTaskWithJevRetrySchedule(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, report.jevVerification, schedule, worktreeDelivery{Pending: report.worktreeDeliveryPending, Commit: report.worktreeCommit})
 	case terminalTaskReportFail:
 		return d.client.failTaskWithRetrySchedule(ctx, report.taskID, report.errorMessage, report.sessionID, report.workDir, report.branchName, report.failureReason, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, schedule)
+	case taskMessagesReport:
+		return d.client.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/messages", report.taskID), map[string]any{"messages": report.messages}, nil)
+	case taskUsageReport:
+		return d.client.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/usage", report.taskID), map[string]any{"usage": report.usage}, nil)
+	case applicationObservationReport:
+		if err := d.client.postJSON(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/applications/observe", report.runtimeID), map[string]any{"daemon_id": d.cfg.DaemonID, "observation": report.applicationObservation, "desired_state": report.applicationDesiredState}, nil); err != nil {
+			return err
+		}
+		return d.ackLocalApplicationIntent(ctx, report)
+	case applicationStepReport:
+		return d.client.postJSON(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/applications/steps/%s/result", report.runtimeID, report.applicationStep.StepID), map[string]any{"daemon_id": d.cfg.DaemonID, "result": report.applicationStep.Result}, nil)
 	default:
 		return fmt.Errorf("unsupported terminal task report kind %d", report.kind)
 	}
@@ -9711,36 +9761,19 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// cancelled), so it must not double-settle either. A refused bind
 	// (ran=false, no error) or an uncertain outcome falls back to the
 	// in-process runner below. The default (gate OFF) path is untouched.
-	// The opt-in per-execution task worker is a SEPARATE execution path, not a
-	// drop-in swap of executeAndDrain. attemptWorkerRun reports whether the worker
-	// drove a genuine provider run and settled the execution via its OWN callback;
-	// when it did (UseWorkerResult) the control parent returns the projected worker
-	// result WITHOUT running the provider in-process (executeAndDrain) so the
-	// provider is not double-run, and handleTask's final pre-completion check
-	// (shouldInterruptAgent) discards the redundant in-process settle, so it is not
-	// double-settled either. A refused bind or an uncertain outcome falls back to
-	// the in-process runner below. The default (gate OFF) path never reaches here.
+	// Control consumes the worker's durable outcome and reports it after local
+	// directory finalization. An uncertain worker run must never be run again.
 	wdec, werr := d.attemptWorkerRun(ctx, task, provider, agentEnv, env)
 	if werr == nil && wdec.UseWorkerResult {
-		taskLog.Info("task executed in per-execution worker; settled by worker callback", "worker_status", wdec.Result.Status)
+		taskLog.Info("task executed in per-execution worker", "worker_status", wdec.Result.Status)
+		recordWorkerUsage(taskBudget, wdec.Result.Usage)
 		return projectWorkerResult(wdec.Result, env), nil
 	}
 	if werr != nil {
-		// An uncertain worker outcome (a genuine transport failure) may already have
-		// settled the execution via the worker's OWN callback. The plan requires
-		// 未确认负责人退出，不启动替代执行 / 超时不等于未执行, so the control parent
-		// must NOT blindly re-run the provider: it first checks whether the task is
-		// already terminal server-side. If it is, the worker settled the execution
-		// and re-running would only waste the provider run -- a terminal task stays
-		// terminal, so handleTask's final pre-completion check (shouldInterruptAgent)
-		// discards the redundant settle. If it is NOT terminal, the worker's callback
-		// was lost, so the in-process run below is the recovery.
-		if status, statusErr := d.client.GetTaskStatus(ctx, task.ID); shouldInterruptAgent(status, statusErr) {
-			taskLog.Warn("per-execution worker outcome uncertain but task already terminal; not re-running the provider",
-				"status", status, "error", werr)
-			return TaskResult{}, nil
+		if env.LocalWorktree != nil {
+			env.LocalWorktree.AbortWithReason(werr)
 		}
-		taskLog.Warn("per-execution worker outcome uncertain; falling back to in-process runner", "error", werr)
+		return TaskResult{WorkDir: env.WorkDir, EnvRoot: env.RootDir}, errors.Join(errWorkerOutcomeUncertain, werr)
 	}
 
 	// Shared across the resume-retry below so the retry's transcript rows

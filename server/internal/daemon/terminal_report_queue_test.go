@@ -43,7 +43,7 @@ func TestTerminalReportStoreRoundTripAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list terminal reports: %v", err)
 	}
-	if len(items) != 1 || items[0].report != report {
+	if len(items) != 1 || !terminalReportsEqual(items[0].report, report) {
 		t.Fatalf("round trip = %+v, want %+v", items, report)
 	}
 
@@ -116,7 +116,7 @@ func TestTerminalReportStoreRecoversFlushedTempFileAfterCrash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recover interrupted report: %v", err)
 	}
-	if len(items) != 1 || items[0].report != report {
+	if len(items) != 1 || !terminalReportsEqual(items[0].report, report) {
 		t.Fatalf("recovered reports = %+v, want %+v", items, report)
 	}
 	if _, err := os.Stat(tempName); !errors.Is(err, os.ErrNotExist) {
@@ -124,7 +124,7 @@ func TestTerminalReportStoreRecoversFlushedTempFileAfterCrash(t *testing.T) {
 	}
 }
 
-func TestTerminalReportReplaysAfterClientRetryWindow(t *testing.T) {
+func TestTerminalReportQueuesWithoutForegroundRetries(t *testing.T) {
 	defer noSleepRetry(t)()
 	previousSchedule := defaultTerminalRetrySchedule
 	defaultTerminalRetrySchedule = []time.Duration{time.Nanosecond, time.Nanosecond}
@@ -168,11 +168,14 @@ func TestTerminalReportReplaysAfterClientRetryWindow(t *testing.T) {
 		workDir:        "/tmp/work",
 		durableWorkDir: "/tmp/project",
 	}
-	if err := d.reportTerminalTask(context.Background(), report); err == nil {
-		t.Fatal("terminal report unexpectedly succeeded while server was offline")
+	if err := d.reportTerminalTask(context.Background(), report); err != nil {
+		t.Fatalf("local enqueue failed while server was offline: %v", err)
 	}
-	if got, want := calls.Load(), int32(len(defaultTerminalRetrySchedule)+1); got != want {
-		t.Fatalf("initial callback attempts = %d, want exhausted window of %d", got, want)
+	if calls.Load() != 0 {
+		t.Fatal("foreground terminal reporting waited on the backend")
+	}
+	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+		t.Fatalf("offline replay pending/delivered = %d/%d", pending, delivered)
 	}
 	if items, err := d.terminalReports.list(); err != nil || len(items) != 1 {
 		t.Fatalf("pending reports after exhausted retries = %d, %v; want 1", len(items), err)
@@ -183,8 +186,8 @@ func TestTerminalReportReplaysAfterClientRetryWindow(t *testing.T) {
 	if pending != 0 || delivered != 1 {
 		t.Fatalf("replay result pending=%d delivered=%d, want 0/1", pending, delivered)
 	}
-	if got := calls.Load(); got != int32(len(defaultTerminalRetrySchedule)+2) {
-		t.Fatalf("calls after recovery = %d, want one replay after retry exhaustion", got)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("calls after recovery = %d, want one failed and one successful replay", got)
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -215,8 +218,8 @@ func TestTerminalReportReplaysAfterDaemonRestart(t *testing.T) {
 	beforeRestart.terminalReportSend = func(context.Context, terminalTaskReport, []time.Duration) error {
 		return errors.New("network unavailable")
 	}
-	if err := beforeRestart.reportTerminalTask(context.Background(), report); err == nil {
-		t.Fatal("terminal report unexpectedly succeeded before restart")
+	if err := beforeRestart.reportTerminalTask(context.Background(), report); err != nil {
+		t.Fatalf("terminal report was not locally queued before restart: %v", err)
 	}
 
 	afterRestart := New(cfg, logger)
@@ -232,7 +235,7 @@ func TestTerminalReportReplaysAfterDaemonRestart(t *testing.T) {
 	if pending != 0 || delivered != 1 {
 		t.Fatalf("restart replay pending=%d delivered=%d, want 0/1", pending, delivered)
 	}
-	if replayed != report {
+	if !terminalReportsEqual(replayed, report) {
 		t.Fatalf("restart replay = %+v, want %+v", replayed, report)
 	}
 }
@@ -280,7 +283,7 @@ func TestTerminalReportPermanentRejectionQuarantinesOriginalAndStopsReplay(t *te
 
 	base := time.Date(2026, time.September, 18, 0, 0, 0, 0, time.UTC)
 	now := base
-	d.terminalReportNow = func() time.Time { return now }
+	d.reportNow = func() time.Time { return now }
 	report := terminalTaskReport{
 		kind: terminalTaskReportComplete, taskID: "task-rejected", output: "original successful answer",
 		branchName: "agent/original", sessionID: "session-original",
@@ -300,8 +303,11 @@ func TestTerminalReportPermanentRejectionQuarantinesOriginalAndStopsReplay(t *te
 		}
 	}
 
-	if err := d.reportTerminalTask(context.Background(), report); err == nil {
-		t.Fatal("permanently rejected completion unexpectedly succeeded")
+	if err := d.reportTerminalTask(context.Background(), report); err != nil {
+		t.Fatal(err)
+	}
+	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+		t.Fatalf("first rejected replay = %d/%d", pending, delivered)
 	}
 	now = base.Add(5 * time.Minute)
 	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 1 || delivered != 0 {
@@ -337,7 +343,7 @@ func TestTerminalReportPermanentRejectionQuarantinesOriginalAndStopsReplay(t *te
 	if err != nil {
 		t.Fatalf("validate failed terminal report: %v", err)
 	}
-	if got != report {
+	if !terminalReportsEqual(got, report) {
 		t.Fatalf("quarantined payload = %+v, want original %+v", got, report)
 	}
 	if record.PermanentRejectionCount != terminalReportPermanentRejectionLimit || record.QuarantinedAt == nil {
@@ -398,12 +404,15 @@ func TestTerminalReportForegroundAndReplayDoNotSendConcurrently(t *testing.T) {
 		<-releaseSend
 		return nil
 	}
-	foregroundDone := make(chan error, 1)
-	go func() { foregroundDone <- d.reportTerminalTask(context.Background(), report) }()
+	uploadDone := make(chan struct{})
+	go func() { defer close(uploadDone); d.replayPendingTerminalReports(t.Context()) }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("foreground terminal send did not start")
+		t.Fatal("background terminal send did not start")
+	}
+	if err := d.reportTerminalTask(t.Context(), report); err != nil {
+		t.Fatalf("enqueue while upload was pending: %v", err)
 	}
 
 	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 1 || delivered != 0 {
@@ -413,9 +422,7 @@ func TestTerminalReportForegroundAndReplayDoNotSendConcurrently(t *testing.T) {
 		t.Fatalf("concurrent terminal sends = %d, want exactly one in flight", got)
 	}
 	close(releaseSend)
-	if err := <-foregroundDone; err != nil {
-		t.Fatalf("foreground terminal report: %v", err)
-	}
+	<-uploadDone
 	if items, err := d.terminalReports.list(); err != nil || len(items) != 0 {
 		t.Fatalf("pending reports after foreground ack = %d, %v", len(items), err)
 	}
@@ -512,13 +519,14 @@ func TestTerminalReportFindsOtherNamespacesWithoutAdoptingThem(t *testing.T) {
 	}
 }
 
-func TestRunBatchPollerReleasesSlotAfterTerminalRetryExhaustion(t *testing.T) {
+func TestRunBatchPollerReleasesSlotAfterLocalResultPersistence(t *testing.T) {
 	defer noSleepRetry(t)()
 	previousSchedule := defaultTerminalRetrySchedule
 	defaultTerminalRetrySchedule = []time.Duration{time.Nanosecond, time.Nanosecond}
 	t.Cleanup(func() { defaultTerminalRetrySchedule = previousSchedule })
 
 	var completeAttempts atomic.Int32
+	var firstServed atomic.Bool
 	var secondServed atomic.Bool
 	secondStarted := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -526,7 +534,7 @@ func TestRunBatchPollerReleasesSlotAfterTerminalRetryExhaustion(t *testing.T) {
 		switch {
 		case strings.HasSuffix(req.URL.Path, "/api/daemon/tasks/claim"):
 			switch {
-			case completeAttempts.Load() == 0:
+			case firstServed.CompareAndSwap(false, true):
 				_, _ = w.Write([]byte(`{"tasks":[{"id":"t1","runtime_id":"rt-1","issue_id":"i1"}]}`))
 			case secondServed.CompareAndSwap(false, true):
 				_, _ = w.Write([]byte(`{"tasks":[{"id":"t2","runtime_id":"rt-1","issue_id":"i2"}]}`))
@@ -577,10 +585,10 @@ func TestRunBatchPollerReleasesSlotAfterTerminalRetryExhaustion(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		cancel()
 		<-pollDone
-		t.Fatalf("second task did not start after first report exhausted retries; attempts=%d", completeAttempts.Load())
+		t.Fatalf("second task did not start after first local result was persisted; attempts=%d", completeAttempts.Load())
 	}
-	if got, want := completeAttempts.Load(), int32(len(defaultTerminalRetrySchedule)+1); got != want {
-		t.Fatalf("first terminal callback attempts = %d, want %d", got, want)
+	if got := completeAttempts.Load(); got != 0 {
+		t.Fatalf("slot was held until remote terminal callback: attempts=%d", got)
 	}
 	cancel()
 	<-pollDone
@@ -589,7 +597,7 @@ func TestRunBatchPollerReleasesSlotAfterTerminalRetryExhaustion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list pending reports: %v", err)
 	}
-	if len(items) != 1 || items[0].report.taskID != "t1" {
-		t.Fatalf("pending reports = %+v, want only exhausted task t1", items)
+	if len(items) != 2 {
+		t.Fatalf("pending reports = %+v, want both locally completed tasks retained", items)
 	}
 }

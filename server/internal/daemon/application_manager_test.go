@@ -336,10 +336,15 @@ func TestApplicationDaemonLoopReportsAndSurvivesControllerRestart(t *testing.T) 
 	pending = []protocol.ApplicationClaim{claim}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	d.terminalReports = newTerminalReportStore(d.cfg)
+	uploaderDone := make(chan struct{})
+	go func() { defer close(uploaderDone); d.terminalReportReplayLoop(ctx) }()
 	go func() { defer close(done); d.applicationLoop(ctx) }()
 	t.Cleanup(func() {
 		cancel()
 		<-done
+		<-uploaderDone
+		d.reportOutboxOwner.release()
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer stopCancel()
 		stop := initial
@@ -357,18 +362,23 @@ func TestApplicationDaemonLoopReportsAndSurvivesControllerRestart(t *testing.T) 
 	mu.Unlock()
 	cancel()
 	<-done
+	<-uploaderDone
+	d.reportOutboxOwner.release()
 	if err := applicationhost.CheckHealth(context.Background(), initial.Config); err != nil {
 		t.Fatalf("controller context stopped the service: %v", err)
 	}
 	recovered := &Daemon{cfg: d.cfg, client: NewClient(server.URL), logger: d.logger, runtimeIndex: d.runtimeIndex, workspaces: d.workspaces, applicationWake: make(chan struct{}, 1), applicationHostLauncher: d.applicationHostLauncher}
 	recovered.applicationServerCapabilities.Store(initial.RuntimeID, true)
+	recovered.terminalReports = newTerminalReportStore(recovered.cfg)
 	mu.Lock()
 	observations = nil
 	mu.Unlock()
 	recoveryCtx, recoveryCancel := context.WithCancel(context.Background())
 	recoveryDone := make(chan struct{})
 	go func() { defer close(recoveryDone); recovered.applicationLoop(recoveryCtx) }()
-	t.Cleanup(func() { recoveryCancel(); <-recoveryDone })
+	replayDone := make(chan struct{})
+	go func() { defer close(replayDone); recovered.terminalReportReplayLoop(recoveryCtx) }()
+	t.Cleanup(func() { recoveryCancel(); <-recoveryDone; <-replayDone; recovered.reportOutboxOwner.release() })
 	waitApplicationManager(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()

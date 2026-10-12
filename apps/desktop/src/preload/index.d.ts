@@ -147,6 +147,9 @@ type DaemonReauthResult =
   | { ok: false; reason: "transient"; message: string };
 
 interface DaemonAPI {
+  listLocalApplications: () => Promise<unknown>;
+  localApplicationSupported:(request:unknown)=>Promise<boolean>;
+  localApplicationOperation: (request:unknown)=>Promise<unknown|null>;
   getBuiltinMcpServices: () => Promise<unknown>;
   getJevModels: () => Promise<unknown>;
   registerJevModel: (modelId: string, revision: string) => Promise<unknown>;

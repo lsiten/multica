@@ -270,3 +270,50 @@ func TestApplicationNewStartAfterConfirmedExitGetsNewGeneration(t *testing.T) {
 		t.Fatalf("start reused a completed generation: %+v", next)
 	}
 }
+
+func TestApplicationLocalDesiredStateConvergesAndConflictRollsBack(t *testing.T) {
+	if testPool == nil {
+		t.Skip("database unavailable")
+	}
+	projectID := dbfx.Project(t, "local application state convergence")
+	app := applicationTestCreate(t, projectID, "local service", "service")
+	applicationTestOperationCleanup(t, app.ID)
+	runtimeID := applicationTestRuntime(t)
+	applicationTestEnqueue(t, app, runtimeID, "start", "initial-local-state")
+	claim := applicationTestClaim(t, runtimeID)[0]
+	applicationTestFinish(t, runtimeID, claim, "completed")
+	observation := protocol.ApplicationObservation{InstanceID: claim.Command.InstanceID, Generation: claim.Command.Generation, Revision: claim.Command.Revision, ProcessState: "stopped", HealthState: "unknown"}
+	report := func(desired string, status int) {
+		t.Helper()
+		request := squadScopeReq("", http.MethodPost, "/observe", map[string]any{"daemon_id": applicationTestDaemonID, "observation": observation, "desired_state": desired}, map[string]string{"runtimeId": runtimeID})
+		request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID))
+		testutil.Call(t, testHandler.ReportRuntimeApplication, request).Want(status)
+	}
+	report("invalid", http.StatusBadRequest)
+	var desired, observed string
+	read := func() {
+		t.Helper()
+		if err := testPool.QueryRow(t.Context(), "SELECT desired_state,process_state FROM application_instance WHERE id=$1", claim.Command.InstanceID).Scan(&desired, &observed); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read()
+	if desired != "running" || observed != "running" {
+		t.Fatalf("rejected report leaked observation: %s/%s", desired, observed)
+	}
+	report("stopped", http.StatusNoContent)
+	report("stopped", http.StatusNoContent)
+	read()
+	if desired != "stopped" || observed != "stopped" {
+		t.Fatalf("local stop did not converge: %s/%s", desired, observed)
+	}
+	observation.ProcessState, observation.HealthState = "running", "healthy"
+	report("running", http.StatusNoContent)
+	applicationTestEnqueue(t, app, runtimeID, "publish", "pending-server-publish")
+	observation.ProcessState, observation.HealthState = "stopped", "unknown"
+	report("stopped", http.StatusConflict)
+	read()
+	if desired != "running" || observed != "running" {
+		t.Fatalf("local report overwrote pending remote operation: %s/%s", desired, observed)
+	}
+}

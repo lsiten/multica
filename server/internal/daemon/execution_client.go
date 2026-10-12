@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -92,6 +93,7 @@ func NewExecutionClient(baseURL string, grant protocol.ExecutionGrantResponse) (
 	}
 	client := NewClient(baseURL)
 	client.SetToken(grant.Token)
+	client.client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &ExecutionClient{client: client, identity: grant.Identity}, nil
 }
 
@@ -105,6 +107,27 @@ func (c *ExecutionClient) callback(ctx context.Context, operation, commentID str
 	path, ok := protocol.ExecutionCallbackPath("POST", operation, c.identity.TaskID, commentID)
 	if !ok {
 		return errors.New("unsupported worker operation or resource")
+	}
+	if c.client.taskReportQueue != nil && (operation == "usage" || operation == "messages") {
+		raw, err := json.Marshal(request)
+		if err != nil {
+			return err
+		}
+		var body struct {
+			Messages []TaskMessageData `json:"messages"`
+			Usage    []TaskUsageEntry  `json:"usage"`
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return err
+		}
+		if operation == "usage" {
+			return c.client.ReportTaskUsage(ctx, c.identity.TaskID, body.Usage)
+		}
+		prepared, err := stableTaskMessages(c.identity.TaskID, c.identity.ExecutionID, body.Messages)
+		if err != nil {
+			return err
+		}
+		return c.client.ReportTaskMessages(ctx, c.identity.TaskID, prepared)
 	}
 	return c.client.postJSON(ctx, path, request, response)
 }

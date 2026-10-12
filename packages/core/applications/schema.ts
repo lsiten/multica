@@ -96,6 +96,7 @@ export const applicationLogSchema = z.object({ text: z.string(), cursor: z.strin
 export type ApplicationLog = z.infer<typeof applicationLogSchema>;
 
 export const applicationOperationSchema = z.object({
+  local:z.boolean().optional().default(false),sync_pending:z.boolean().optional().default(false),
   id: identifier, workspace_id: identifier, application_id: identifier,
   action: z.enum(["start", "stop", "restart", "publish", "unpublish", "unknown"]).catch("unknown"),
   actor_type: z.enum(["member", "agent", "unknown"]).catch("unknown"), actor_id: identifier,

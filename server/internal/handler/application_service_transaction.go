@@ -68,12 +68,14 @@ func (s *applicationServiceTransaction) commit(w http.ResponseWriter, r *http.Re
 	}
 	// clock_timestamp() in this read checks expiry at the actual commit boundary,
 	// not at the outer transaction's start time.
-	grant, err := s.queries.GetApplicationServiceGrant(r.Context(), s.identity.TokenHash)
-	if err != nil || !applicationServiceGrantMatches(s.identity, grant) {
-		writeApplicationServiceCredentialError(w, err)
-		return false
+	if s.identity.TokenHash != "" {
+		grant, err := s.queries.GetApplicationServiceGrant(r.Context(), s.identity.TokenHash)
+		if err != nil || !applicationServiceGrantMatches(s.identity, grant) {
+			writeApplicationServiceCredentialError(w, err)
+			return false
+		}
 	}
-	if err = s.tx.Commit(r.Context()); err != nil {
+	if err := s.tx.Commit(r.Context()); err != nil {
 		writeError(w, 500, "commit application service request")
 		return false
 	}

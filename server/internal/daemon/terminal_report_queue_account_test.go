@@ -192,8 +192,7 @@ func TestDaemonReportTerminalTaskStampsAccount(t *testing.T) {
 	d := New(cfg, logger)
 	d.accountID = "account-a"
 	d.terminalReports.bindAccount("account-a")
-	// The online callback fails so the record stays pending and inspectable;
-	// a non-permanent error is not quarantined, only retained for replay.
+	// Enqueue persists the current account without waiting on remote delivery.
 	d.terminalReportSend = func(context.Context, terminalTaskReport, []time.Duration) error {
 		return errors.New("offline")
 	}
@@ -203,8 +202,8 @@ func TestDaemonReportTerminalTaskStampsAccount(t *testing.T) {
 		taskID: "task-stamp",
 		output: "final answer",
 	}
-	if err := d.reportTerminalTask(context.Background(), report); err == nil {
-		t.Fatal("expected delivery to fail while offline")
+	if err := d.reportTerminalTask(context.Background(), report); err != nil {
+		t.Fatalf("local persistence failed while offline: %v", err)
 	}
 
 	items, err := d.terminalReports.list()

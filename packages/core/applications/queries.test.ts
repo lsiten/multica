@@ -2,10 +2,38 @@
 import { expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "../api";
-import { applicationKeys, applicationLogsOptions, applicationPlanOptions } from "./queries";
+import { applicationKeys, applicationLogsOptions, applicationPlanOptions, applicationBoardOptions, applicationOperationOptions } from "./queries";
+import { applicationOperationSchema } from "./schema";
 
 vi.mock("../api", () => ({ api: { getApplicationLogs: readApplicationLogs } }));
 const readApplicationLogs = vi.hoisted(() => vi.fn<ApiClient["getApplicationLogs"]>());
+
+it("uses slower safety polls for idle boards and stops terminal operation polling", () => {
+  const client = new QueryClient();
+  const boardOptions = applicationBoardOptions("workspace");
+  const operationOptions = applicationOperationOptions("workspace", "app", "operation");
+  const board = client.getQueryCache().build(client, { queryKey: applicationKeys.board("workspace"), queryFn: boardOptions.queryFn });
+  const operation = client.getQueryCache().build(client, { queryKey: applicationKeys.operation("workspace", "app", "operation"), queryFn: operationOptions.queryFn });
+  const boardInterval = boardOptions.refetchInterval;
+  const operationInterval = operationOptions.refetchInterval;
+  if (typeof boardInterval !== "function" || typeof operationInterval !== "function") throw new Error("Missing state-aware polling");
+  try {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const completed = applicationOperationSchema.parse({ id, workspace_id: id, application_id: id, action: "start", actor_type: "member", actor_id: id, state: "completed", created_at: "2026-10-12T00:00:00Z", snapshot: { root_runtime_id: id, root_revision: 1, placements: {}, plan: { root_id: id, nodes: [], waves: [] } } });
+    const data = { applications: [], instances: [], endpoints: [], operations: [completed], summary: { services: 0, compositions: 0, instances: 0, running: 0, unhealthy: 0, offline: 0, stopped: 0, runtimes: 0 } };
+    board.setData(data);
+    operation.setData(completed);
+    expect(boardInterval(board)).toBe(30_000);
+    expect(operationInterval(operation)).toBe(false);
+    const running = { ...completed, state: "running" as const };
+    board.setData({ ...data, operations: [running] });
+    operation.setData(running);
+    expect(boardInterval(board)).toBe(5000);
+    expect(operationInterval(operation)).toBe(5000);
+    expect(boardOptions.refetchIntervalInBackground).toBe(false);
+    expect(operationOptions.refetchIntervalInBackground).toBe(false);
+  } finally { client.clear(); }
+});
 
 it("separates workspace, project and graph revision caches", () => {
   expect(applicationKeys.list("first", "project")).not.toEqual(applicationKeys.list("second", "project"));

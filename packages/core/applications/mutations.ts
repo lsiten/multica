@@ -8,7 +8,7 @@ export function useApplicationOperation(workspaceId: string, id: string) {
   return useMutation({
     mutationFn: (input: ApplicationOperationRequest) => api.enqueueApplicationOperation(workspaceId, id, input),
     onSuccess: (operation) => client.setQueryData(applicationKeys.operation(workspaceId, id, operation.id), operation),
-    onSettled: () => client.invalidateQueries({ queryKey: applicationKeys.all(workspaceId) }),
+    onSettled: (operation) => { if (operation?.local && operation.sync_pending) return; return client.invalidateQueries({ queryKey: applicationKeys.all(workspaceId) }); },
   });
 }
 

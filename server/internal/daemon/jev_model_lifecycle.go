@@ -22,7 +22,23 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 	if d.jevModelsClosing {
 		return nil, jevmodels.ErrClosed
 	}
-	d.jevModelsOnce.Do(func() {
+	if d.jevModels != nil {
+		return d.jevModels, nil
+	}
+	if time.Now().Before(d.jevModelRetryAt) {
+		return nil, d.jevModelsErr
+	}
+	defer func() {
+		if d.jevModelsErr != nil {
+			d.jevModelFailures++
+			d.jevModelRetryAt = time.Now().Add(reportRetryDelay(d.jevModelFailures, d.jevModelsErr))
+		} else {
+			d.jevModelFailures = 0
+			d.jevModelRetryAt = time.Time{}
+		}
+	}()
+	d.jevModelsErr = nil
+	func() {
 		if err := cli.ValidateProcessServices(d.cfg.ProcessServices); err != nil {
 			d.jevModelsErr = err
 			return
@@ -39,16 +55,18 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 		if slices.Contains(d.cfg.ProcessServices, "ai") {
 			query, cancel := context.WithTimeout(d.daemonLifecycleCtx(), 5*time.Second)
 			defer cancel()
-			var account struct {
+			account := struct {
 				ID string `json:"id"`
-			}
-			if d.client == nil {
+			}{ID: d.accountID}
+			if account.ID == "" && d.client == nil {
 				d.jevModelsErr = errors.New("model process account unavailable")
 				return
 			}
-			if err := d.client.getJSON(query, "/api/me", &account); err != nil {
-				d.jevModelsErr = fmt.Errorf("model process account: %w", err)
-				return
+			if account.ID == "" {
+				if err := d.client.getJSON(query, "/api/me", &account); err != nil {
+					d.jevModelsErr = fmt.Errorf("model process account: %w", err)
+					return
+				}
 			}
 			if account.ID == "" {
 				d.jevModelsErr = errors.New("model process account identity missing")
@@ -64,7 +82,7 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 		if err == nil {
 			d.jevModels = &modelservice.Local{Manager: manager}
 		}
-	})
+	}()
 	return d.jevModels, d.jevModelsErr
 }
 

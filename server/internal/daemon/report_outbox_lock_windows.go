@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"errors"
 	"golang.org/x/sys/windows"
 	"os"
 )
@@ -24,17 +25,23 @@ func lockReportOutboxDomain(path string) (*os.File, bool, error) {
 	}
 	file := os.NewFile(uintptr(handle), path)
 	var info windows.ByHandleFileInformation
-	if err = windows.GetFileInformationByHandle(handle, &info); err != nil || info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+	if err = windows.GetFileInformationByHandle(handle, &info); err != nil {
 		file.Close()
 		return nil, false, err
 	}
+	if info.FileAttributes&(windows.FILE_ATTRIBUTE_REPARSE_POINT|windows.FILE_ATTRIBUTE_DIRECTORY) != 0 {
+		file.Close()
+		return nil, false, errors.New("report outbox lock must be a regular file without redirection")
+	}
 	var overlap windows.Overlapped
 	if err = windows.LockFileEx(handle, windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &overlap); err != nil {
-		// The file is already open and private, so a lock failure here means
-		// another process owns it; report owned rather than a hard error so the
-		// uploader defers instead of crashing.
+		// Only a lock violation proves another owner; storage failures retain
+		// their error so callers can retry without bypassing the ownership fence.
 		file.Close()
-		return nil, true, nil
+		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+			return nil, true, nil
+		}
+		return nil, false, err
 	}
 	return file, false, nil
 }

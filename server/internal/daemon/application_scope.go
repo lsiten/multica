@@ -34,15 +34,23 @@ func (d *Daemon) stopUnavailableWorkspaceApplications(ctx context.Context, avail
 		client := d.applicationProcess
 		d.applicationProcessMu.Unlock()
 		if client != nil {
-			client.mu.Lock()
-			removed := []string{}
-			for id, grant := range client.grants {
+			removed := map[string]bool{}
+			for id, grant := range client.grantSnapshot() {
 				if _, ok := available[grant.WorkspaceID]; !ok {
-					removed = append(removed, id)
+					removed[id] = true
 				}
 			}
-			client.mu.Unlock()
-			for _, id := range removed {
+			records, err := d.applicationRecords()
+			if err != nil {
+				d.logger.Warn("application workspace inventory unavailable", "error", err)
+				return
+			}
+			for _, record := range records {
+				if _, ok := available[record.Command.WorkspaceID]; !ok {
+					removed[record.Command.RuntimeID] = true
+				}
+			}
+			for id := range removed {
 				if err := client.remove(ctx, id); err != nil {
 					d.logger.Warn("application workspace shutdown unconfirmed", "error", err)
 				}

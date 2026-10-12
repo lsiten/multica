@@ -132,6 +132,11 @@ func (s *applicationMCPServer) invoke(ctx context.Context, name string, raw json
 			return nil, errors.New("body must be a JSON object of at most 64 KiB")
 		}
 	}
+	if name == "multica_application_control" && s.localControl != nil {
+		if result, handled, err := s.localControl(ctx, args.ApplicationID, body); handled {
+			return result, err
+		}
+	}
 	var result any
 	var err error
 	switch method {

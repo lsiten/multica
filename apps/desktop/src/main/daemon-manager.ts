@@ -1,4 +1,6 @@
 import { openVscreenPermissionSettings } from "./external-url";
+import { createDaemonQuitHandler } from "./daemon-quit";
+import { localApplicationRequestSchema, localApplicationInventorySchema, localApplicationResultSchema } from "@multica/core/applications/local-runtime";
 import { requestVscreenDesktop } from "./vscreen-desktop-request";
 import type { VscreenScope } from "@multica/core/types";
 import type { VscreenDesktopAction, VscreenDesktopResult } from "../shared/vscreen-desktop";
@@ -227,6 +229,7 @@ async function fetchWorktreeManager(
   path: string,
   init?: RequestInit,
   selectedProfile?: ActiveProfile,
+  timeoutMs = 120_000,
 ): Promise<unknown> {
   const active = selectedProfile ?? await ensureActiveProfile();
   if (!active) throw new Error("The daemon profile is not ready yet.");
@@ -235,7 +238,7 @@ async function fetchWorktreeManager(
     throw new Error("Sign in before managing worktrees.");
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`http://127.0.0.1:${active.port}${path}`, {
       ...init,
@@ -1622,6 +1625,33 @@ export function setupDaemonManager(
       // the DaemonProcessOverviewEntry type marks them optional, so no guard is needed.
     });
   });
+  ipcMain.handle("daemon:local-application-operation",async (_event,request:unknown):Promise<unknown|null>=>{
+    const input=localApplicationRequestSchema.parse(request);
+    const active=await ensureActiveProfile();
+    if(!active)throw new Error("Local daemon profile is not ready; retry local application operation");
+    const inventory=localApplicationInventorySchema.parse(await fetchWorktreeManager("/applications/local",undefined,active,5_000));
+    const local=inventory.applications.find((entry)=>entry.workspace_id===input.workspace_id&&entry.runtime_id===input.runtime_id&&entry.application_id===input.application_id&&entry.revision===input.revision);
+    if(!local)return null;
+    const raw=await fetchWorktreeManager("/applications/local",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)},active,10_000);
+    const result=localApplicationResultSchema.parse(raw);
+    if(result.command_id!==input.command_id)throw new Error("Local application command identity changed");
+    if(result.observation.instance_id!==local.instance_id || result.observation.revision!==input.revision)throw new Error("Local application observation scope changed");
+    const actor=await readProfileUserId(active.name);
+    if(!actor)throw new Error("Local account identity unavailable");
+    const now=new Date().toISOString();
+    return {id:input.command_id,workspace_id:input.workspace_id,application_id:input.application_id,action:input.action,actor_type:"member",actor_id:actor,state:"completed",created_at:now,completed_at:now,error:"",snapshot:{root_runtime_id:input.runtime_id,root_revision:input.revision,placements:{},plan:{root_id:input.application_id,nodes:[],waves:[]}},steps:[],local:true,sync_pending:result.sync_pending};
+  });
+  ipcMain.handle("daemon:list-local-applications",async ():Promise<unknown[]>=>{
+    const active=await ensureActiveProfile();if(!active)return [];
+    const inventory=localApplicationInventorySchema.parse(await fetchWorktreeManager("/applications/local",undefined,active,5_000));
+    return inventory.applications;
+  });
+  ipcMain.handle("daemon:local-application-supported",async (_event,request:unknown):Promise<boolean>=>{
+    const input=localApplicationRequestSchema.parse(request);
+    const active=await ensureActiveProfile();if(!active)throw new Error("Local daemon profile is not ready; retry local application support check");
+    const inventory=localApplicationInventorySchema.parse(await fetchWorktreeManager("/applications/local",undefined,active,5_000));
+    return inventory.applications.some((entry)=>entry.workspace_id===input.workspace_id&&entry.runtime_id===input.runtime_id&&entry.application_id===input.application_id&&entry.revision===input.revision);
+  });
   ipcMain.handle("daemon:jev-model-register", (_event, modelId: unknown, revision: unknown) => {
     if (typeof modelId !== "string" || !modelId.trim() || typeof revision !== "string") throw new Error("model ID and revision are required");
     return fetchWorktreeManager("/jev/models/register", {
@@ -1815,28 +1845,16 @@ export function setupDaemonManager(
   sendStatus({ state: "installing_cli" });
   void lifecycleOperations.runBackground(() => bootstrapCli());
 
-  let isQuitting = false;
-  app.on("before-quit", (event) => {
-    if (isQuitting) return;
-    setDesiredDaemonRunning(false);
-    stopPolling();
-    stopLogTail();
-
-    loadPrefs().then(async (prefs) => {
-      if (prefs.autoStop) {
-        isQuitting = true;
-        event.preventDefault();
-        try {
-          // stopDaemon no-ops for an externally-managed daemon (WSL2 etc.), so
-          // this is safe and instant in that case — the guard lives there. #3916
-          await stopDaemon();
-        } catch {
-          // Best-effort stop on quit
-        }
-        app.quit();
-      }
-    });
-  });
+  app.on("before-quit", createDaemonQuitHandler({
+    prepare: () => {
+      setDesiredDaemonRunning(false);
+      stopPolling();
+      stopLogTail();
+    },
+    autoStop: async () => (await loadPrefs()).autoStop,
+    stop: stopDaemon,
+    quit: () => app.quit(),
+  }));
 }
 
 export async function performVscreenDesktop(scope: VscreenScope, operation: VscreenDesktopAction, isCurrent: () => boolean): Promise<VscreenDesktopResult> {

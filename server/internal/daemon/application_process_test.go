@@ -28,6 +28,9 @@ import (
 )
 
 type applicationProcessBackend struct {
+	stopUploader                        func()
+	offline                             bool
+	requests                            int
 	stoppedObservations                 int
 	mu                                  sync.Mutex
 	command                             protocol.ApplicationControlCommand
@@ -75,6 +78,13 @@ func newApplicationProcessFixture(t *testing.T, configure ...func(*Daemon, *prot
 	if err != nil {
 		t.Fatal(err)
 	}
+	d.terminalReports = newTerminalReportStore(d.cfg)
+	d.terminalReports.bindAccount(d.accountID)
+	uploadCtx, stopUpload := context.WithCancel(t.Context())
+	uploadDone := make(chan struct{})
+	go func() { defer close(uploadDone); d.terminalReportReplayLoop(uploadCtx) }()
+	backend.stopUploader = sync.OnceFunc(func() { stopUpload(); <-uploadDone; d.reportOutboxOwner.release() })
+	t.Cleanup(backend.stopUploader)
 	t.Cleanup(func() {
 		if err := child.close(); err != nil {
 			t.Errorf("application child cleanup: %v", err)
@@ -88,6 +98,12 @@ func newApplicationProcessFixture(t *testing.T, configure ...func(*Daemon, *prot
 }
 func (b *applicationProcessBackend) serve(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
+	b.requests++
+	if b.offline {
+		b.mu.Unlock()
+		http.Error(w, "offline", 503)
+		return
+	}
 	if r.URL.Path == "/api/me" {
 		b.mu.Unlock()
 		if r.Header.Get("Authorization") != "Bearer parent-fixture-token" {
@@ -129,7 +145,8 @@ func (b *applicationProcessBackend) serve(w http.ResponseWriter, r *http.Request
 		_ = json.NewEncoder(w).Encode(b.grant)
 		return
 	}
-	if b.grant.Revoked || r.Header.Get("Authorization") != "Bearer "+b.grant.Token {
+	ownerReport := r.Header.Get("Authorization") == "Bearer parent-fixture-token" && (strings.HasSuffix(r.URL.Path, "/observe") || strings.HasSuffix(r.URL.Path, "/result"))
+	if !ownerReport && (b.grant.Revoked || r.Header.Get("Authorization") != "Bearer "+b.grant.Token) {
 		b.mu.Unlock()
 		http.Error(w, "scoped token required", 401)
 		return
@@ -261,8 +278,20 @@ func TestApplicationProcessOwnsRealHostAndDirectTunnel(t *testing.T) {
 	if _, err = child.inventory(ctx); err == nil {
 		t.Fatal("stopped child still responds")
 	}
+	store := newTerminalReportStore(d.cfg)
+	store.bindAccount(d.accountID)
+	pending, err := store.list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stoppedReports := 0
+	for _, item := range pending {
+		if item.report.kind == applicationObservationReport && item.report.applicationObservation.ProcessState == "stopped" {
+			stoppedReports++
+		}
+	}
 	backend.mu.Lock()
-	stoppedReports := backend.stoppedObservations
+	stoppedReports += backend.stoppedObservations
 	backend.mu.Unlock()
 	if stoppedReports < 1 {
 		t.Fatal("confirmed shutdown omitted stopped observation")
@@ -306,7 +335,7 @@ func TestApplicationProcessRotationJoinsOldRuntimeAndPreservesHost(t *testing.T)
 	if err != nil || strings.Count(string(raw), "start\n") != 1 {
 		t.Fatalf("application restarted: %q %v", raw, err)
 	}
-	if err = child.mutation(ctx, "application.bind", applicationProcessBinding{WorkspacesRoot: d.cfg.WorkspacesRoot, SourceAddress: child.source.address, Grants: []protocol.ApplicationServiceGrantResponse{grant}}); err == nil {
+	if err = child.mutation(ctx, "application.bind", applicationProcessBinding{WorkspacesRoot: d.cfg.WorkspacesRoot, SourceAddress: child.source.address, Grants: []protocol.ApplicationServiceGrantResponse{grant}}, nil); err == nil {
 		t.Fatal("stale grant binding accepted")
 	}
 	if child.uncertain != nil {
@@ -509,13 +538,13 @@ func TestApplicationProcessLostResponseRetainsExactRequest(t *testing.T) {
 	defer func() { child.process.Client = original }()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	err = child.mutation(ctx, "application.wake", nil)
+	err = child.mutation(ctx, "application.wake", nil, nil)
 	var uncertain *applicationUncertainOperation
 	if !errors.As(err, &uncertain) || uncertain.RequestID == "" {
 		t.Fatalf("lost result missing exact identity: %v", err)
 	}
 	priorCalls := calls.Load()
-	if err = child.mutation(ctx, "application.remove", map[string]string{"runtime_id": "other"}); !errors.As(err, &uncertain) {
+	if err = child.mutation(ctx, "application.remove", map[string]string{"runtime_id": "other"}, nil); !errors.As(err, &uncertain) {
 		t.Fatal("unknown outcome silently retried")
 	}
 	if calls.Load() != priorCalls {

@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
+	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -33,13 +34,15 @@ import (
 // decision (DecideWorkerLaunch), so a control-parent bind can never fabricate a
 // launch or a result.
 type workerProcessClient struct {
-	transport workerRuntimeTransport
-	wait      func(ctx context.Context) error
+	transport         workerRuntimeTransport
+	bootstrap         runtimeproc.Bootstrap
+	executionIdentity protocol.ExecutionIdentity
+	wait              func(ctx context.Context) error
 	// instanceID is this worker's canonical 32-char hex instance id; the
 	// control parent binds it server-side before the bind so the worker
 	// receives the exact execution identity it is bound to.
 	instanceID string
-	pid          int
+	pid        int
 
 	gate      chan struct{}
 	uncertain error
@@ -86,12 +89,11 @@ func (d *Daemon) ensureWorkerProcess(ctx context.Context, execID string) (*worke
 	if d.cfg.NativeHostExecutable == "" {
 		return nil, errors.New("worker executable is not configured; worker launch disabled")
 	}
-	var account struct {
-		ID string `json:"id"`
+	accountID, accountErr := d.verifiedAccount(ctx)
+	if accountErr != nil {
+		return nil, accountErr
 	}
-	if err := d.client.getJSON(ctx, "/api/me", &account); err != nil {
-		return nil, err
-	}
+	account := struct{ ID string }{ID: accountID}
 	if account.ID == "" {
 		return nil, errors.New("worker owner identity missing")
 	}
@@ -151,6 +153,7 @@ func (d *Daemon) ensureWorkerProcess(ctx context.Context, execID string) (*worke
 		return nil, err
 	}
 	return &workerProcessClient{
+		bootstrap:  bootstrap,
 		transport:  process.Client,
 		wait:       process.Wait,
 		instanceID: identity.InstanceID,
@@ -170,6 +173,7 @@ func (c *workerProcessClient) bind(ctx context.Context, in workerRunInput) (*wor
 	if err := c.mutation(ctx, "worker.bind", in, &status); err != nil {
 		return nil, err
 	}
+	c.executionIdentity = in.Grant.Identity
 	return &status, nil
 }
 
@@ -181,11 +185,16 @@ func (c *workerProcessClient) bind(ctx context.Context, in workerRunInput) (*wor
 // report (client.Callback), so the control parent never relaunches to recover a
 // lost report.
 func (c *workerProcessClient) run(ctx context.Context) (*workerRunResult, error) {
-	var result workerRunResult
-	if err := c.mutation(ctx, "worker.run", json.RawMessage(`{}`), &result); err != nil {
-		return nil, err
+	var accepted struct {
+		Accepted bool `json:"accepted"`
 	}
-	return &result, nil
+	if err := c.mutation(ctx, "worker.run", json.RawMessage(`{}`), &accepted); err != nil {
+		var domain *runtimeproc.Error
+		if errors.As(err, &domain) {
+			return nil, err
+		}
+	}
+	return waitWorkerResult(ctx, c.readResult)
 }
 
 // mutation submits one bounded worker operation and returns the domain result.
@@ -467,7 +476,7 @@ func (d *Daemon) runTaskInWorker(ctx context.Context, execID string, task Task, 
 		// in-process runner (which then settles), so this is not an error.
 		return result, false, nil
 	}
-	return result, result.Ran, nil
+	return result, true, nil
 }
 
 // workerRunDecision is the outcome of attempting the opt-in per-execution task
@@ -570,6 +579,18 @@ func projectWorkerResult(wr *workerRunResult, env *execenv.Environment) TaskResu
 		Status:    wr.Status,
 		Comment:   wr.Output,
 		SessionID: wr.SessionID,
+		Usage:     wr.Usage,
+		Execution: wr.Execution,
+	}
+	if wr.RunError != "" {
+		result.Comment = wr.RunError
+		result.FailureReason = taskRunFailureReason(errors.New(wr.RunError))
+	}
+	if wr.BudgetExceeded || wr.TokenBudgetExceeded {
+		result.Status, result.FailureReason, result.Comment = "blocked", "budget_exceeded", "Task stopped after reported provider usage reached its autonomy cost limit."
+		if wr.TokenBudgetExceeded {
+			result.FailureReason, result.Comment = "token_budget_exceeded", "Task stopped after reported token usage reached its autonomy limit."
+		}
 	}
 	if env != nil {
 		result.WorkDir = env.WorkDir
@@ -578,11 +599,34 @@ func projectWorkerResult(wr *workerRunResult, env *execenv.Environment) TaskResu
 	return result
 }
 
-func (d *Daemon) runWorkerExecution(ctx context.Context, worker *workerProcessClient, in workerRunInput) (*workerRunResult, error) {
+func recordWorkerUsage(budget *taskUsageBudget, entries []TaskUsageEntry) {
+	if budget == nil {
+		return
+	}
+	providers := map[string]map[string]agent.TokenUsage{}
+	for _, entry := range entries {
+		usage := providers[entry.Provider]
+		if usage == nil {
+			usage = map[string]agent.TokenUsage{}
+			providers[entry.Provider] = usage
+		}
+		usage[entry.Model] = addTaskUsage(usage[entry.Model], agent.TokenUsage{InputTokens: entry.InputTokens, OutputTokens: entry.OutputTokens, CacheReadTokens: entry.CacheReadTokens, CacheWriteTokens: entry.CacheWriteTokens, CostUSDTicks: entry.CostUSDTicks})
+	}
+	for provider, usage := range providers {
+		budget.RecordSnapshot("worker:"+provider, provider, usage)
+	}
+}
+
+func (d *Daemon) runWorkerExecution(ctx context.Context, worker *workerProcessClient, in workerRunInput) (result *workerRunResult, runErr error) {
 	if worker == nil {
 		return nil, errors.New("worker process is nil")
 	}
-	defer worker.close()
+	defer func() {
+		worker.close()
+		if worker.closeErr != nil {
+			runErr = errors.Join(errWorkerOutcomeUncertain, runErr, worker.closeErr)
+		}
+	}()
 	status, err := worker.bind(ctx, in)
 	if err != nil {
 		return nil, err

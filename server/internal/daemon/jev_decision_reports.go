@@ -23,7 +23,9 @@ type pendingJevDecision struct {
 	// account (a different account, or an empty/legacy v1 record) is preserved
 	// but not adopted, so a login change cannot replay another account's Jev
 	// decision. Empty until an account was resolved.
-	AccountID string `json:"account_id,omitempty"`
+	AccountID   string    `json:"account_id,omitempty"`
+	Attempts    int       `json:"attempts,omitempty"`
+	NextAttempt time.Time `json:"next_attempt,omitempty"`
 }
 
 func (d *Daemon) jevDecisionReportDir() string {
@@ -56,6 +58,14 @@ func (d *Daemon) enqueueJevDecision(taskID string, record protocol.JevDecisionLo
 	if d.accountID != "" {
 		report.AccountID = d.accountID
 	}
+	phase := "running"
+	if record.CompletedAt != nil {
+		phase = "completed"
+	}
+	return writeJevDecisionReport(dir, record.ID+"."+phase+".json", report)
+}
+
+func writeJevDecisionReport(dir, name string, report pendingJevDecision) error {
 	raw, err := json.Marshal(report)
 	if err != nil {
 		return err
@@ -76,11 +86,21 @@ func (d *Daemon) enqueueJevDecision(taskID string, record protocol.JevDecisionLo
 	if err = file.Close(); err != nil {
 		return err
 	}
-	phase := "running"
-	if record.CompletedAt != nil {
-		phase = "completed"
+	if err := os.Rename(file.Name(), filepath.Join(dir, name)); err != nil {
+		return err
 	}
-	return os.Rename(file.Name(), filepath.Join(dir, record.ID+"."+phase+".json"))
+	return syncTerminalReportDir(dir)
+}
+
+func quarantineJevDecisionReport(dir, name string) error {
+	failed := filepath.Join(dir, "failed")
+	if err := ensureTerminalReportDir(failed); err != nil {
+		return err
+	}
+	if err := os.Rename(filepath.Join(dir, name), filepath.Join(failed, name)); err != nil {
+		return err
+	}
+	return errors.Join(syncTerminalReportDir(dir), syncTerminalReportDir(failed))
 }
 
 func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
@@ -105,11 +125,22 @@ func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
 		path := filepath.Join(dir, entry.Name())
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if isolateErr := quarantineJevDecisionReport(dir, entry.Name()); isolateErr != nil {
+				return errors.Join(err, isolateErr)
+			}
+			d.logger.Warn("Jev decision report unreadable; retained in failed queue", "file", entry.Name())
+			continue
 		}
 		var report pendingJevDecision
 		if err := strictVscreenJSON(raw, &report); err != nil {
-			return errors.New("invalid queued Jev decision report")
+			if err := quarantineJevDecisionReport(dir, entry.Name()); err != nil {
+				return err
+			}
+			d.logger.Warn("invalid Jev decision report retained in failed queue", "file", entry.Name())
+			continue
 		}
 		// In account-aware mode a record whose account does not match the current
 		// account (a different account's record, or a legacy v1 record with no
@@ -119,7 +150,14 @@ func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
 			continue
 		}
 		if report.TaskID == "" || report.Record.Validate() != nil {
-			return errors.New("invalid queued Jev decision report")
+			if err := quarantineJevDecisionReport(dir, entry.Name()); err != nil {
+				return err
+			}
+			d.logger.Warn("invalid Jev decision payload retained in failed queue", "file", entry.Name())
+			continue
+		}
+		if d.reportClock().Before(report.NextAttempt) {
+			continue
 		}
 		requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		err = d.client.postJSON(requestCtx, fmt.Sprintf("/api/daemon/tasks/%s/jev-decision-logs", report.TaskID), report.Record, nil)
@@ -127,15 +165,16 @@ func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
 		if err != nil {
 			var response *requestError
 			if errors.As(err, &response) && (response.StatusCode == 400 || response.StatusCode == 403 || response.StatusCode == 404 || response.StatusCode == 409) {
-				failed := filepath.Join(dir, "failed")
-				if err := os.MkdirAll(failed, 0700); err != nil {
-					return err
-				}
-				if err := os.Rename(path, filepath.Join(failed, entry.Name())); err != nil {
+				if err := quarantineJevDecisionReport(dir, entry.Name()); err != nil {
 					return err
 				}
 				d.logger.Error("Jev decision report rejected; retained locally", "decision_id", report.Record.ID, "task_id", report.TaskID, "http_status", response.StatusCode)
 				continue
+			}
+			report.Attempts++
+			report.NextAttempt = d.reportClock().Add(reportRetryDelay(report.Attempts, err))
+			if saveErr := writeJevDecisionReport(dir, entry.Name(), report); saveErr != nil {
+				return errors.Join(err, saveErr)
 			}
 			return errors.New("Jev decision report upload deferred")
 		}
@@ -154,16 +193,18 @@ func (d *Daemon) jevDecisionReportLoop(ctx context.Context) {
 		d.logger.Info("report outbox is owned by another process; deferring Jev decision uploads")
 		return
 	}
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	consecutiveFailures := 0
 	for {
+		delay := 2 * time.Second
 		if err := d.flushJevDecisionReports(ctx); err != nil && ctx.Err() == nil {
+			consecutiveFailures++
+			delay = reportRetryDelay(consecutiveFailures, err)
 			d.logger.Warn("Jev decision reports remain pending", "error", err)
+		} else {
+			consecutiveFailures = 0
 		}
-		select {
-		case <-ctx.Done():
+		if sleepWithContext(ctx, delay) != nil {
 			return
-		case <-ticker.C:
 		}
 	}
 }

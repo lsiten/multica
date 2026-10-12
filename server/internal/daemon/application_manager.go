@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -136,21 +137,28 @@ func (d *Daemon) launchApplicationHost(ctx context.Context, command protocol.App
 	cmd.Dir = directory
 	diagnostics, err := os.OpenFile(filepath.Join(directory, "host-start.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
-		d.recordUnstartedApplication(command, err, record.HostID)
-		return nil, err
+		d.logger.Warn("application host diagnostics unavailable", "instance_id", command.InstanceID, "error", applicationHostError(err, command))
+		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	} else {
+		cmd.Stdout, cmd.Stderr = diagnostics, diagnostics
 	}
-	cmd.Stdout = diagnostics
-	cmd.Stderr = diagnostics
 	if err = ctx.Err(); err == nil {
 		err = cmd.Start()
 	}
 	if err != nil {
-		diagnostics.Close()
+		if diagnostics != nil {
+			diagnostics.Close()
+		}
 		d.recordUnstartedApplication(command, err, record.HostID)
 		return nil, err
 	}
 	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait(); diagnostics.Close() }()
+	go func() {
+		exited <- cmd.Wait()
+		if diagnostics != nil {
+			diagnostics.Close()
+		}
+	}()
 	timeout := time.NewTimer(15 * time.Second)
 	defer timeout.Stop()
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -337,6 +345,10 @@ func (d *Daemon) withApplicationLaunchOwnership(ctx context.Context, path, expec
 }
 
 func (d *Daemon) executeApplication(ctx context.Context, command protocol.ApplicationControlCommand) (protocol.ApplicationObservation, error) {
+	return d.executeApplicationWithLocalRestart(ctx, command, false)
+}
+
+func (d *Daemon) executeApplicationWithLocalRestart(ctx context.Context, command protocol.ApplicationControlCommand, localRestart bool) (protocol.ApplicationObservation, error) {
 	if d.applicationProcessMode() {
 		return protocol.ApplicationObservation{}, errors.New("application authority belongs to child")
 	}
@@ -418,7 +430,7 @@ func (d *Daemon) executeApplication(ctx context.Context, command protocol.Applic
 		if err == nil {
 			status, statusErr := client.Status(ctx)
 			if statusErr == nil {
-				if record.Command.Generation == command.Generation && record.Command.Revision == command.Revision {
+				if !localRestart && record.Command.Generation == command.Generation && record.Command.Revision == command.Revision {
 					return waitApplicationReady(ctx, client, command)
 				}
 				if command.Action != "restart" && status.Observation.ProcessState != "stopped" && status.Observation.ProcessState != "failed" {

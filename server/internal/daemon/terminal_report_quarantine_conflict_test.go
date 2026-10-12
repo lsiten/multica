@@ -17,7 +17,7 @@ func TestTerminalReportQuarantinePreservesConflictingPayloads(t *testing.T) {
 			d := New(Config{ServerBaseURL: "https://api.example.test", WorkspacesRoot: t.TempDir(), DaemonID: "conflicting-quarantine"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			base := time.Date(2026, time.October, 5, 0, 0, 0, 0, time.UTC)
 			now := base
-			d.terminalReportNow = func() time.Time { return now }
+			d.reportNow = func() time.Time { return now }
 			old := terminalTaskReport{kind: terminalTaskReportFail, taskID: "repeated-task", errorMessage: "earlier failure"}
 			current := old
 			current.errorMessage = "later failure"
@@ -46,9 +46,10 @@ func TestTerminalReportQuarantinePreservesConflictingPayloads(t *testing.T) {
 				calls++
 				return &requestError{StatusCode: http.StatusNotFound, Body: `{"error":"task not found"}`}
 			}
-			if err := d.reportTerminalTask(context.Background(), current); err == nil {
-				t.Fatal("missing task unexpectedly accepted")
+			if err := d.reportTerminalTask(context.Background(), current); err != nil {
+				t.Fatalf("local queue rejected valid report: %v", err)
 			}
+			d.replayPendingTerminalReports(t.Context())
 			for _, age := range []time.Duration{5 * time.Minute, terminalReportPermanentRejectionAge} {
 				now = base.Add(age)
 				d.replayPendingTerminalReports(context.Background())
@@ -78,9 +79,10 @@ func TestTerminalReportQuarantinePreservesConflictingPayloads(t *testing.T) {
 					t.Fatalf("later failure not durably quarantined: %+v %v", record, err)
 				}
 			}
-			if err := d.reportTerminalTask(context.Background(), current); err == nil {
-				t.Fatal("repeated missing task unexpectedly accepted")
+			if err := d.reportTerminalTask(context.Background(), current); err != nil {
+				t.Fatalf("local queue rejected repeated report: %v", err)
 			}
+			d.replayPendingTerminalReports(t.Context())
 			for _, age := range []time.Duration{5 * time.Minute, terminalReportPermanentRejectionAge} {
 				now = base.Add(terminalReportPermanentRejectionAge + age)
 				d.replayPendingTerminalReports(context.Background())
@@ -103,7 +105,7 @@ func TestTerminalReportQuarantineMatchesDecodedVerification(t *testing.T) {
 	d := New(Config{ServerBaseURL: "https://api.example.test", WorkspacesRoot: t.TempDir(), DaemonID: "verification-quarantine"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	base := time.Date(2026, time.October, 5, 0, 0, 0, 0, time.UTC)
 	now := base
-	d.terminalReportNow = func() time.Time { return now }
+	d.reportNow = func() time.Time { return now }
 	confidence := 0.9
 	report := terminalTaskReport{
 		kind: terminalTaskReportComplete, taskID: "verified-task", output: "verified result",

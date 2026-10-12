@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -35,6 +36,85 @@ func ReviewArtifactNamespace(root string) string {
 func ReviewArtifactName(requestID string) string {
 	sum := sha256.Sum256([]byte("review-artifact:" + requestID))
 	return hex.EncodeToString(sum[:]) + ".json"
+}
+
+func reviewArtifactPendingName(requestID string) string {
+	return ".pending-" + ReviewArtifactName(requestID)
+}
+
+// PersistReviewArtifactPending retains a result when the final artifact
+// namespace is temporarily unwritable. It is private, bounded, and keyed by
+// the immutable request id so a later owner can recover without rerunning work.
+func PersistReviewArtifactPending(root, requestID string, body []byte) error {
+	if len(body) == 0 || len(body) > reviewArtifactMaxOutput || !json.Valid(body) {
+		return errors.New("invalid pending review artifact")
+	}
+	if err := PrepareReviewArtifactNamespace(root); err != nil {
+		return err
+	}
+	namespace := ReviewArtifactNamespace(root)
+	tmp, err := os.CreateTemp(namespace, ".pending-write-")
+	if err != nil {
+		return err
+	}
+	name := filepath.Join(namespace, reviewArtifactPendingName(requestID))
+	cleanup := func() { _ = tmp.Close(); _ = os.Remove(tmp.Name()) }
+	if err = ProtectPrivateArtifact(tmp); err != nil {
+		cleanup()
+		return err
+	}
+	if _, err = tmp.Write(body); err != nil {
+		cleanup()
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err = os.Rename(tmp.Name(), name); err != nil {
+		cleanup()
+		return err
+	}
+	return SyncPrivateArtifactDirectory(namespace)
+}
+
+func ReadReviewArtifactPending(root, requestID string) ([]byte, error) {
+	path := filepath.Join(ReviewArtifactNamespace(root), reviewArtifactPendingName(requestID))
+	return os.ReadFile(path)
+}
+
+func RemoveReviewArtifactPending(root, requestID string) error {
+	path := filepath.Join(ReviewArtifactNamespace(root), reviewArtifactPendingName(requestID))
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func ListReviewArtifactPending(root string) ([][]byte, error) {
+	entries, err := os.ReadDir(ReviewArtifactNamespace(root))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out [][]byte
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), ".pending-") || !entry.Type().IsRegular() {
+			continue
+		}
+		raw, readErr := os.ReadFile(filepath.Join(ReviewArtifactNamespace(root), entry.Name()))
+		if readErr != nil {
+			return out, readErr
+		}
+		out = append(out, raw)
+	}
+	return out, nil
 }
 
 // ReviewArtifactReference is the small in-band pointer to a large result.

@@ -73,6 +73,9 @@ func (d *Daemon) resolveReportOutboxAccount(ctx context.Context) {
 	if d.client == nil {
 		return
 	}
+	if d.accountID != "" {
+		return
+	}
 	var account struct {
 		ID string `json:"id"`
 	}
@@ -82,6 +85,9 @@ func (d *Daemon) resolveReportOutboxAccount(ctx context.Context) {
 	}
 	if account.ID != "" {
 		d.accountID = account.ID
+		if err := d.saveLocalAuthority(); err != nil {
+			d.logger.Debug("persist local account identity", "error", err)
+		}
 	}
 }
 

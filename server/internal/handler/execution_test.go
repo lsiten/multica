@@ -38,6 +38,7 @@ func executionRouter() http.Handler {
 	router.Post("/api/daemon/runtimes/{runtimeId}/tasks/{taskId}/execution", testHandler.BindTaskExecution)
 	router.Post("/api/daemon/runtimes/{runtimeId}/tasks/{taskId}/execution-grants", testHandler.IssueExecutionGrant)
 	router.Post("/api/daemon/runtimes/{runtimeId}/executions/reconcile", testHandler.ReconcileExecutions)
+	router.Post("/api/daemon/runtimes/{runtimeId}/executions/reports", testHandler.ReplayExecutionReport)
 	router.Get("/api/daemon/runtimes/{runtimeId}/executions", testHandler.ListRuntimeExecutions)
 	router.Post("/api/daemon/runtimes/{runtimeId}/recover-orphans", testHandler.RecoverOrphanedTasks)
 	router.Post("/api/daemon/tasks/{taskId}/start", testHandler.StartTask)

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"net/http"
 	"slices"
 	"sync"
@@ -34,6 +35,34 @@ func seedBatchTask(t *testing.T, label string) string {
 		"status":     "running",
 		"started_at": testutil.Raw("now()"),
 	})
+}
+
+func TestReportTaskMessagesStableIDsDeduplicateLostAcknowledgement(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	taskID := seedBatchTask(t, "durable-message-replay")
+	id := uuid.NewString()
+	rows := []any{map[string]any{"id": id, "seq": 1, "type": "text", "content": "original durable message"}}
+	for range 2 {
+		testutil.Call(t, testHandler.ReportTaskMessages, batchMessagesRequest(t, taskID, rows)).Want(http.StatusOK)
+	}
+	stored, err := testHandler.Queries.ListTaskMessages(t.Context(), util.MustParseUUID(taskID))
+	if err != nil || len(stored) != 1 || util.UUIDToString(stored[0].ID) != id {
+		t.Fatalf("message replay duplicated rows or lost identity: %d, %v", len(stored), err)
+	}
+}
+
+func TestReportTaskMessagesRejectsMalformedStableID(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	taskID := seedBatchTask(t, "invalid-durable-message-id")
+	testutil.Call(t, testHandler.ReportTaskMessages, batchMessagesRequest(t, taskID, []any{map[string]any{"id": "not-a-uuid", "seq": 1, "type": "text", "content": "must not persist"}})).Want(http.StatusBadRequest)
+	stored, err := testHandler.Queries.ListTaskMessages(t.Context(), util.MustParseUUID(taskID))
+	if err != nil || len(stored) != 0 {
+		t.Fatalf("malformed stable id wrote messages: %d, %v", len(stored), err)
+	}
 }
 
 // batchMessagesRequest builds the daemon-authenticated POST the daemon sends,

@@ -42,6 +42,8 @@ let sessionRenewal: SessionRenewal | null = null;
 // three adjacent `() => void`, and nothing but the argument order would tell
 // them apart at the call site.
 interface InitCoreOptions {
+  localApplicationSupported?: import("../api/client").ApiClientOptions["localApplicationSupported"];
+  localApplicationOperation?: import("../api/client").ApiClientOptions["localApplicationOperation"];
   apiBaseUrl: string;
   storage: StorageAdapter;
   onLogin?: () => void;
@@ -52,6 +54,8 @@ interface InitCoreOptions {
 }
 
 function initCore({
+  localApplicationSupported,
+  localApplicationOperation,
   apiBaseUrl,
   storage,
   onLogin,
@@ -77,6 +81,8 @@ function initCore({
   );
 
   const api = new ApiClient(apiBaseUrl, {
+    localApplicationSupported,
+    localApplicationOperation,
     logger: createLogger("api"),
     // A 401 mid-session has to end the session, not just drop the token.
     // Dropping it alone left the shell mounted with `user` still set, so no
@@ -138,6 +144,8 @@ function initCore({
 }
 
 export function CoreProvider({
+  localApplicationSupported,
+  localApplicationOperation,
   children,
   apiBaseUrl = "",
   wsUrl = "ws://localhost:8080/ws",
@@ -158,6 +166,8 @@ export function CoreProvider({
   useMemo(
     () =>
       initCore({
+        localApplicationSupported,
+        localApplicationOperation,
         apiBaseUrl,
         storage,
         onLogin,

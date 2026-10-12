@@ -26,6 +26,7 @@ type requestError struct {
 	Path       string
 	StatusCode int
 	Body       string
+	RetryAfter time.Duration
 }
 
 func (e *requestError) Error() string {
@@ -95,10 +96,12 @@ func isRuntimeNotFoundError(err error) bool {
 
 // Client handles HTTP communication with the Multica server daemon API.
 type Client struct {
-	managedVscreen bool
-	baseURL        string
-	token          string
-	client         *http.Client
+	taskReportQueue func(terminalTaskReport) error
+	managedVscreen  bool
+	baseURL         string
+	token           string
+	tokenMu         sync.RWMutex
+	client          *http.Client
 
 	// bundleClient downloads skill bundles. Unlike client it carries no fixed
 	// Timeout: bundles can be large and slow on jittery links, so the caller
@@ -235,11 +238,15 @@ func daemonCommonCapabilities() []string {
 
 // SetToken sets the auth token for authenticated requests.
 func (c *Client) SetToken(token string) {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
 	c.token = token
 }
 
 // Token returns the current auth token.
 func (c *Client) Token() string {
+	c.tokenMu.RLock()
+	defer c.tokenMu.RUnlock()
 	return c.token
 }
 
@@ -610,6 +617,7 @@ func (c *Client) ReportProgress(ctx context.Context, taskID, summary string, ste
 
 // TaskMessageData represents a single agent execution message for batch reporting.
 type TaskMessageData struct {
+	ID string `json:"id,omitempty"`
 	// CallID is an opaque tool-call identity scoped to one backend execution.
 	CallID  string         `json:"call_id,omitempty"`
 	Seq     int            `json:"seq"`
@@ -629,8 +637,18 @@ type TaskMessageData struct {
 }
 
 func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages []TaskMessageData) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	prepared, err := stableTaskMessages(taskID, "", messages)
+	if err != nil {
+		return err
+	}
+	if c.taskReportQueue != nil {
+		return c.taskReportQueue(terminalTaskReport{kind: taskMessagesReport, taskID: taskID, messages: prepared})
+	}
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/messages", taskID), map[string]any{
-		"messages": messages,
+		"messages": prepared,
 	}, nil)
 }
 
@@ -684,6 +702,9 @@ func (c *Client) completeTaskWithJevRetrySchedule(ctx context.Context, taskID, o
 func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []TaskUsageEntry) error {
 	if len(usage) == 0 {
 		return nil
+	}
+	if c.taskReportQueue != nil {
+		return c.taskReportQueue(terminalTaskReport{kind: taskUsageReport, taskID: taskID, usage: usage})
 	}
 	// Usage upserts replace counters, so retrying a lost response cannot
 	// charge the same run twice in task_usage.
@@ -865,8 +886,8 @@ func (c *Client) ListWorkspaces(ctx context.Context) ([]WorkspaceInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+	if token := c.Token(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	c.setIdentityHeaders(req)
 	if c.workspaceETag != "" {
@@ -895,7 +916,7 @@ func (c *Client) ListWorkspaces(ctx context.Context) ([]WorkspaceInfo, error) {
 	}
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, &requestError{Method: http.MethodGet, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data))}
+		return nil, &requestError{Method: http.MethodGet, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data)), RetryAfter: responseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
 
 	var workspaces []WorkspaceInfo
@@ -1377,8 +1398,8 @@ func (c *Client) postJSONViaObserved(ctx context.Context, httpClient *http.Clien
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+	if token := c.Token(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	c.setIdentityHeaders(req)
 
@@ -1389,7 +1410,7 @@ func (c *Client) postJSONViaObserved(ctx context.Context, httpClient *http.Clien
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return &requestError{Method: http.MethodPost, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data))}
+		return &requestError{Method: http.MethodPost, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data)), RetryAfter: responseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
 	stats.observeResponseStarted()
 	respReader := stats.wrap(resp.Body)
@@ -1404,7 +1425,7 @@ func (c *Client) postJSONViaObserved(ctx context.Context, httpClient *http.Clien
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, respBody any) error {
-	return c.getJSONWithToken(ctx, path, c.token, respBody)
+	return c.getJSONWithToken(ctx, path, c.Token(), respBody)
 }
 
 // getJSONWithToken performs one GET with an explicit credential. It is used by
@@ -1428,7 +1449,7 @@ func (c *Client) getJSONWithToken(ctx context.Context, path, token string, respB
 
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return &requestError{Method: http.MethodGet, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data))}
+		return &requestError{Method: http.MethodGet, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data)), RetryAfter: responseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
 	if respBody == nil {
 		io.Copy(io.Discard, resp.Body)
@@ -1462,7 +1483,7 @@ func (c *Client) postJSONWithToken(ctx context.Context, path, token string, reqB
 
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return &requestError{Method: http.MethodPost, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data))}
+		return &requestError{Method: http.MethodPost, Path: path, StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(data)), RetryAfter: responseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	}
 	if respBody == nil {
 		io.Copy(io.Discard, resp.Body)

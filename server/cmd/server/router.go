@@ -1658,6 +1658,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/runtimes/{runtimeId}/recover-orphans", h.RecoverOrphanedTasks)
 		r.Post("/runtimes/{runtimeId}/execution-supervisor", h.AcquireExecutionSupervisor)
 		r.Post("/runtimes/{runtimeId}/executions/reconcile", h.ReconcileExecutions)
+		r.Post("/runtimes/{runtimeId}/executions/reports", h.ReplayExecutionReport)
 		r.Get("/runtimes/{runtimeId}/executions", h.ListRuntimeExecutions)
 		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/execution", h.BindTaskExecution)
 		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/execution-grants", h.IssueExecutionGrant)

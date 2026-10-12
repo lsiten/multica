@@ -134,6 +134,13 @@ func Run(ctx context.Context, recordPath string) (runErr error) {
 			return
 		}
 		stored.LogRotation = log.rotation
+		stored.LogPendingBytes = len(log.backlog)
+		stored.LogDroppedBytes = log.dropped
+		if log.failure != nil {
+			stored.LogError = "log_storage_unavailable"
+		} else {
+			stored.LogError = ""
+		}
 		runErr = errors.Join(runErr, closeErr, WriteRecord(recordPath, stored))
 	}()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -293,6 +300,13 @@ func (h *host) observation(process, health, message string) {
 	h.record.Observation.Error = message
 	h.log.mu.Lock()
 	h.record.LogRotation = h.log.rotation
+	h.record.LogPendingBytes = len(h.log.backlog)
+	h.record.LogDroppedBytes = h.log.dropped
+	if h.log.failure != nil {
+		h.record.LogError = "log_storage_unavailable"
+	} else {
+		h.record.LogError = ""
+	}
 	h.log.mu.Unlock()
 	if process == "starting" {
 		started := time.Now().UTC().Format(time.RFC3339Nano)
@@ -419,6 +433,7 @@ func (h *host) monitor(ctx context.Context, exited <-chan error) error {
 		case <-ctx.Done():
 			return <-exited
 		case <-ticker.C:
+			h.log.retry()
 			checkErr := CheckHealth(ctx, config)
 			if checkErr == nil {
 				health := "healthy"

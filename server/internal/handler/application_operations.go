@@ -222,8 +222,9 @@ func (h *Handler) SyncRuntimeApplications(w http.ResponseWriter, r *http.Request
 // ReportRuntimeApplication persists an observation from the instance's exact runtime.
 func (h *Handler) ReportRuntimeApplication(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		DaemonID    string                          `json:"daemon_id"`
-		Observation protocol.ApplicationObservation `json:"observation"`
+		DaemonID     string                          `json:"daemon_id"`
+		Observation  protocol.ApplicationObservation `json:"observation"`
+		DesiredState string                          `json:"desired_state,omitempty"`
 	}
 	if !decodeApplicationRequest(w, r, &input) {
 		return
@@ -237,14 +238,38 @@ func (h *Handler) ReportRuntimeApplication(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer session.rollback(r)
-	if err := session.service.Observe(r.Context(), runtime.WorkspaceID, runtime.ID, input.Observation); err != nil {
+	if input.DesiredState != "" && session.tx == nil {
+		tx, err := h.TxStarter.Begin(r.Context())
+		if err != nil {
+			h.applicationError(w, err)
+			return
+		}
+		session.tx, session.queries = tx, h.Queries.WithTx(tx)
+		session.service = &application.Service{Queries: session.queries, Transactions: tx}
+		if _, err := session.queries.LockApplicationWorkspace(r.Context(), runtime.WorkspaceID); err != nil {
+			h.applicationError(w, err)
+			return
+		}
+	}
+	changed, err := session.service.Observe(r.Context(), runtime.WorkspaceID, runtime.ID, input.Observation)
+	if err != nil {
 		h.applicationError(w, err)
 		return
+	}
+	if input.DesiredState != "" {
+		desiredChanged, err := session.service.ApplyLocalDesiredState(r.Context(), runtime.WorkspaceID, runtime.ID, input.Observation, input.DesiredState)
+		if err != nil {
+			h.applicationError(w, err)
+			return
+		}
+		changed = changed || desiredChanged
 	}
 	if !session.commit(w, r) {
 		return
 	}
-	h.applicationInstanceChanged(runtime.WorkspaceID, input.Observation.InstanceID, "")
+	if changed {
+		h.applicationInstanceChanged(runtime.WorkspaceID, input.Observation.InstanceID, "")
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

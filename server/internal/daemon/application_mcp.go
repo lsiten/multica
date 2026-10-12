@@ -44,7 +44,9 @@ func (d *Daemon) startTaskApplicationMCP(lifetimeCtx context.Context, task Task)
 	client.AgentID = task.AgentID
 	client.TaskID = task.ID
 	serviceCtx, cancel := context.WithCancel(lifetimeCtx)
-	handler := &applicationMCPServer{client: client}
+	handler := &applicationMCPServer{client: client, localControl: func(ctx context.Context, appID string, body map[string]any) (any, bool, error) {
+		return d.taskLocalApplicationControl(ctx, task, appID, body)
+	}}
 	endpoint, unregister := d.builtinMCP.register("/"+pathToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if serviceCtx.Err() != nil {
 			http.NotFound(w, r)
@@ -69,7 +71,10 @@ func (d *Daemon) startTaskApplicationMCP(lifetimeCtx context.Context, task Task)
 	return config, set, nil
 }
 
-type applicationMCPServer struct{ client *cli.APIClient }
+type applicationMCPServer struct {
+	client       *cli.APIClient
+	localControl func(context.Context, string, map[string]any) (any, bool, error)
+}
 
 func (s *applicationMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

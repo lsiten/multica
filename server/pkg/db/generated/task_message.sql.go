@@ -93,6 +93,18 @@ WITH incoming AS (
         NULLIF(m.output_truncated, '')::bool,
         NULLIF(m.call_id, '')
     FROM incoming AS m
+    ON CONFLICT (id) DO UPDATE SET seq = CASE
+        WHEN task_message.task_id=EXCLUDED.task_id
+         AND task_message.seq=EXCLUDED.seq
+         AND task_message.type=EXCLUDED.type
+         AND task_message.content IS NOT DISTINCT FROM EXCLUDED.content
+         AND task_message.input IS NOT DISTINCT FROM EXCLUDED.input
+         AND task_message.output IS NOT DISTINCT FROM EXCLUDED.output
+         AND task_message.tool IS NOT DISTINCT FROM EXCLUDED.tool
+         AND task_message.call_id IS NOT DISTINCT FROM EXCLUDED.call_id
+        THEN task_message.seq
+        ELSE NULL
+    END
     RETURNING id, task_id, seq, type, tool, content, input, output, created_at, output_truncated, call_id
 )
 SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated, call_id FROM inserted ORDER BY seq ASC
@@ -158,10 +170,9 @@ type CreateTaskMessagesRow struct {
 //
 // Atomicity is a deliberate side effect, not just a speedup: the per-message
 // loop this replaces could persist part of a batch and then fail, leaving the
-// transcript with a prefix of the batch and no way to complete it — the daemon
-// does not retry this endpoint. One statement makes the batch all-or-nothing,
-// which buys consistency; a batch that fails is still lost whole, so closing
-// the gap for real needs a retry plus a (task_id, seq) uniqueness rule.
+// transcript with a prefix of the batch. Daemons assign stable message ids
+// before durable enqueue, so a lost acknowledgement can replay the exact batch
+// without duplicate rows or duplicate broadcasts. Older daemons omit ids.
 //
 // The ORDER BY is a contract, not decoration. A bare `INSERT ... RETURNING`
 // has no defined row order, and the caller republishes these rows as realtime

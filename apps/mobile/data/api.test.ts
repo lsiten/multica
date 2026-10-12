@@ -1,10 +1,50 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "./api";
+import { invalidateSessionEpoch } from "./session-epoch";
 
 // api.ts refuses to load without a base URL; set it before the import runs.
 vi.hoisted(() => {
   process.env.EXPO_PUBLIC_API_URL = "https://api.example.test";
+});
+
+describe("API session ownership", () => {
+  afterEach(() => {
+    api.setToken(null);
+    api.setOptions({ onUnauthorized: undefined });
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each(["renewal", "account switch", "logout"] as const)("ignores an old 401 after %s", async (transition) => {
+    let respond!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { respond = resolve; })));
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const unauthorized = vi.fn();
+    api.setOptions({ onUnauthorized: unauthorized });
+    api.setToken("old-token");
+    const pending = api.deleteComment("comment-1");
+    const rejected = expect(pending).rejects.toMatchObject({ status: 401 });
+    if (transition !== "renewal") invalidateSessionEpoch();
+    if (transition !== "logout") api.setToken("new-token");
+    respond(new Response("{}", { status: 401 }));
+    await rejected;
+    expect(unauthorized).not.toHaveBeenCalled();
+    expect(api.getToken()).toBe(transition === "logout" ? "old-token" : "new-token");
+  });
+
+  it("ends the session when its current credential is rejected", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const unauthorized = vi.fn();
+    api.setOptions({ onUnauthorized: unauthorized });
+    api.setToken("current-token");
+    await expect(api.deleteComment("comment-1")).rejects.toMatchObject({ status: 401 });
+    expect(unauthorized).toHaveBeenCalledOnce();
+  });
 });
 
 // The real store pulls in expo-secure-store; the client only needs the slug.

@@ -5,7 +5,7 @@
 // Design:
 //   - Capture is non-blocking. Request handlers must never wait on analytics
 //     network I/O, so we enqueue into a bounded channel and a background
-//     worker flushes to PostHog in batches.
+//     worker persists batches; a separate uploader retries from private storage.
 //   - When the queue is full events are dropped (and counted). A broken
 //     analytics backend must never degrade the product.
 //   - When POSTHOG_API_KEY is empty the package runs a no-op client, which
@@ -22,6 +22,8 @@ import (
 // Event is a single analytics capture. Fields mirror PostHog's /capture/ shape
 // but are framework-agnostic so alternate backends can plug in later.
 type Event struct {
+	// ID is assigned once before enqueue and preserved for remote deduplication.
+	ID string
 	// Name of the event (e.g. "signup", "workspace_created").
 	Name string
 
@@ -89,6 +91,7 @@ func NewFromEnv() Client {
 		APIKey:      key,
 		Host:        host,
 		Environment: EnvironmentFromEnv(),
+		QueueDir:    os.Getenv("POSTHOG_QUEUE_DIR"),
 	})
 }
 

@@ -5224,8 +5224,8 @@ func TestReportTaskResult_NonCompletedHitsFailEndpoint(t *testing.T) {
 // Regression test for the MUL-2780 incident: a short 502 burst on the
 // /complete callback used to (a) drop the task at the first failure and
 // (b) wrongly fall back to /fail, surfacing a successful run as red.
-// With the retry helper in place, a transient 502 followed by a 200 must
-// resolve via /complete without ever touching /fail.
+// Background replay must preserve completion through a transient 502 without
+// changing the business outcome or making the caller wait for the network.
 func TestReportTaskResult_RetriesTransientCompleteThenSucceeds(t *testing.T) {
 	defer noSleepRetry(t)()
 
@@ -5248,11 +5248,20 @@ func TestReportTaskResult_RetriesTransientCompleteThenSucceeds(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
+	d := New(Config{ServerBaseURL: srv.URL, WorkspacesRoot: t.TempDir()}, slog.Default())
 	d.reportTaskResult(context.Background(), "task-retry", TaskResult{
 		Status:  "completed",
 		Comment: "ok",
 	}, slog.Default())
+	if completeCalls.Load() != 0 {
+		t.Fatal("result handling waited for a remote acknowledgement")
+	}
+	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+		t.Fatalf("first replay = %d/%d", pending, delivered)
+	}
+	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 0 || delivered != 1 {
+		t.Fatalf("recovered replay = %d/%d", pending, delivered)
+	}
 
 	if got := completeCalls.Load(); got != 2 {
 		t.Fatalf("expected 2 complete attempts (one 502, one 200), got %d", got)
@@ -5289,11 +5298,16 @@ func TestReportTaskResult_TransientCompleteExhaustedDoesNotFallback(t *testing.T
 	}))
 	t.Cleanup(srv.Close)
 
-	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
+	d := New(Config{ServerBaseURL: srv.URL, WorkspacesRoot: t.TempDir()}, slog.Default())
 	d.reportTaskResult(context.Background(), "task-stuck", TaskResult{
 		Status:  "completed",
 		Comment: "ok",
 	}, slog.Default())
+	for range len(defaultTerminalRetrySchedule) + 1 {
+		if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+			t.Fatalf("outage lost original completion: %d/%d", pending, delivered)
+		}
+	}
 
 	if got := completeCalls.Load(); got != int32(len(defaultTerminalRetrySchedule)+1) {
 		t.Fatalf("expected %d complete attempts, got %d", len(defaultTerminalRetrySchedule)+1, got)

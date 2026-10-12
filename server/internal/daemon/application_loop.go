@@ -14,7 +14,36 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func (d *Daemon) wakeApplications() {
+const applicationPollInterval = 30 * time.Second
+
+func (d *Daemon) wakeApplications(runtimeIDs ...string) {
+	selected := map[string]bool{}
+	for _, id := range runtimeIDs {
+		selected[id] = true
+	}
+	if d.applicationProcessMode() {
+		if len(runtimeIDs) == 0 {
+			d.applicationWakeRuntimes.Store("*", true)
+		} else {
+			for _, id := range runtimeIDs {
+				d.applicationWakeRuntimes.Store(id, true)
+			}
+		}
+	}
+	d.applicationPollStates.Range(func(key, value any) bool {
+		if len(selected) > 0 && !selected[key.(string)] {
+			return true
+		}
+		state := value.(*applicationPollState)
+		state.mu.Lock()
+		state.next = time.Time{}
+		state.wake++
+		state.mu.Unlock()
+		return true
+	})
+	if d.applicationWakeNotify != nil {
+		d.applicationWakeNotify(runtimeIDs)
+	}
 	if d.applicationWake != nil {
 		select {
 		case d.applicationWake <- struct{}{}:
@@ -23,11 +52,19 @@ func (d *Daemon) wakeApplications() {
 	}
 }
 
+type applicationPollState struct {
+	mu       sync.Mutex
+	failures int
+	next     time.Time
+	polling  bool
+	wake     uint64
+}
+
 func (d *Daemon) applicationLoop(ctx context.Context) {
 	var workers sync.WaitGroup
 	defer workers.Wait()
 	semaphore := make(chan struct{}, 4)
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(applicationPollInterval)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
@@ -48,6 +85,31 @@ func (d *Daemon) applicationLoop(ctx context.Context) {
 }
 
 func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan struct{}, workers *sync.WaitGroup, runtimeID string) {
+	value, _ := d.applicationPollStates.LoadOrStore(runtimeID, &applicationPollState{})
+	state := value.(*applicationPollState)
+	state.mu.Lock()
+	if state.polling || d.reportClock().Before(state.next) {
+		state.mu.Unlock()
+		return
+	}
+	state.polling = true
+	wake := state.wake
+	state.mu.Unlock()
+	success := false
+	defer func() {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		state.polling = false
+		if success {
+			state.failures = 0
+			if state.wake == wake {
+				state.next = d.reportClock().Add(downwardJitterDuration(applicationPollInterval))
+			}
+		} else if ctx.Err() == nil && state.wake == wake {
+			state.failures++
+			state.next = d.reportClock().Add(reportRetryDelay(state.failures, nil))
+		}
+	}()
 	instances, err := d.applicationTransportFor(runtimeID).Sync(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -62,6 +124,11 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 			continue
 		}
 		d.applicationCommands.Store(command.InstanceID, command)
+		if local, err := d.readLocalIntent(command.InstanceID); err == nil && local != nil && !local.Synced && local.Generation == command.Generation {
+			if local.Result == nil || instance.DesiredState != local.DesiredState {
+				continue
+			}
+		}
 		d.rememberApplicationGeneration(command)
 		if instance.HasPendingOperation {
 			continue
@@ -78,7 +145,7 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 			if stopErr != nil {
 				observation = applicationObservation(command, "unknown", "unknown", applicationHostError(stopErr, command))
 			}
-			if observeErr := d.applicationTransportFor(runtimeID).Observe(ctx, observation); observeErr != nil && ctx.Err() == nil {
+			if observeErr := d.queueApplicationObservation(runtimeID, observation); observeErr != nil && ctx.Err() == nil {
 				d.logger.Debug("application stop observation deferred", "instance_id", command.InstanceID, "error", observeErr)
 			}
 			lock.Unlock()
@@ -106,7 +173,7 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 					if restoreErr != nil {
 						restored = applicationObservation(command, "unknown", "unknown", applicationHostError(restoreErr, command))
 					}
-					if err := d.applicationTransportFor(runtimeID).Observe(ctx, restored); err != nil && ctx.Err() == nil {
+					if err := d.queueApplicationObservation(runtimeID, restored); err != nil && ctx.Err() == nil {
 						d.logger.Debug("application restore observation deferred", "instance_id", command.InstanceID, "error", err)
 					}
 				})
@@ -116,7 +183,7 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 		if inspectErr != nil {
 			observation.Error = applicationHostError(inspectErr, command)
 		}
-		if err := d.applicationTransportFor(runtimeID).Observe(ctx, observation); err != nil && ctx.Err() == nil {
+		if err := d.queueApplicationObservation(runtimeID, observation); err != nil && ctx.Err() == nil {
 			d.logger.Debug("application observation deferred", "instance_id", command.InstanceID, "error", err)
 		}
 	}
@@ -127,6 +194,7 @@ func (d *Daemon) pollRuntimeApplications(ctx context.Context, semaphore chan str
 		}
 		return
 	}
+	success = true
 	for _, claim := range claims {
 		if claim.Command.RuntimeID != runtimeID {
 			continue
@@ -175,6 +243,24 @@ func (d *Daemon) runApplicationClaim(parent context.Context, semaphore chan stru
 	if err := d.applicationTransportFor(runtimeID).RenewLease(ctx, claim); err != nil {
 		return
 	}
+	if local, err := d.readLocalIntent(claim.Command.InstanceID); err == nil && local != nil && !local.Synced && local.Generation == claim.Command.Generation && claim.Command.Action != "publish" && claim.Command.Action != "unpublish" {
+		observation, inspectErr := d.inspectApplication(ctx, claim.Command)
+		if inspectErr == nil {
+			if err := d.queueApplicationStep(runtimeID, claim, protocol.ApplicationStepResult{ClaimToken: claim.ClaimToken, State: "failed", Error: "superseded by local runtime command", Observation: observation}); err != nil {
+				d.logger.Warn("application superseded receipt storage deferred", "error", err)
+			}
+		}
+		return
+	}
+	if saved, err := d.pendingApplicationStep(ctx, runtimeID, claim); err != nil {
+		d.logger.Warn("application pending receipt could not be verified", "step_id", claim.StepID, "error", err)
+		return
+	} else if saved != nil {
+		if err := d.queueApplicationStep(runtimeID, claim, *saved); err != nil {
+			d.logger.Warn("application recovered receipt storage deferred", "error", err)
+		}
+		return
+	}
 	observation, err := d.executeApplication(ctx, claim.Command)
 	if ctx.Err() != nil {
 		return
@@ -185,10 +271,10 @@ func (d *Daemon) runApplicationClaim(parent context.Context, semaphore chan stru
 		result.Error = applicationHostError(err, claim.Command)
 		result.Observation = applicationObservation(claim.Command, observation.ProcessState, observation.HealthState, result.Error)
 	}
-	if completeErr := d.applicationTransportFor(runtimeID).Complete(ctx, claim, result); completeErr != nil {
-		d.logger.Debug("application result will be reconciled by the next lease", "step_id", claim.StepID, "error", completeErr)
+	if completeErr := d.queueApplicationStep(runtimeID, claim, result); completeErr != nil {
+		d.logger.Warn("application result storage deferred", "step_id", claim.StepID, "error", completeErr)
 	}
-	d.wakeApplications()
+	d.wakeApplications(runtimeID)
 }
 
 func (d *Daemon) applicationRecords() ([]applicationhost.Record, error) {
@@ -281,7 +367,7 @@ func (d *Daemon) stopOwnedApplications() {
 				}
 			}
 			if stopErr == nil {
-				if err = d.applicationTransportFor(record.Command.RuntimeID).Observe(ctx, status.Observation); err != nil {
+				if err = d.queueApplicationObservation(record.Command.RuntimeID, status.Observation); err != nil {
 					d.logger.Debug("application shutdown report deferred", "instance_id", record.Command.InstanceID, "error", err)
 				}
 			} else {

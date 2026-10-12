@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 const (
@@ -44,24 +46,32 @@ const (
 // untouched and reported on every replay pass; downgrading must never delete a
 // payload merely because the older binary cannot decode it.
 type persistedTerminalTaskReport struct {
-	Version                 int              `json:"version"`
-	CreatedAt               time.Time        `json:"created_at"`
-	Kind                    string           `json:"kind"`
-	TaskID                  string           `json:"task_id"`
-	Output                  string           `json:"output,omitempty"`
-	BranchName              string           `json:"branch_name,omitempty"`
-	ErrorMessage            string           `json:"error,omitempty"`
-	SessionID               string           `json:"session_id,omitempty"`
-	WorkDir                 string           `json:"work_dir,omitempty"`
-	DurableWorkDir          string           `json:"durable_work_dir,omitempty"`
-	FailureReason           string           `json:"failure_reason,omitempty"`
-	SessionRolloutMissing   bool             `json:"session_rollout_missing,omitempty"`
-	RetiredSessionID        string           `json:"retired_session_id,omitempty"`
-	JevVerification         *JevVerification `json:"jev_verification,omitempty"`
-	WorktreeDeliveryPending bool             `json:"worktree_delivery_pending,omitempty"`
-	WorktreeCommit          string           `json:"worktree_commit,omitempty"`
-	AccountID               string           `json:"account_id,omitempty"`
-	ExecutionID             string           `json:"execution_id,omitempty"`
+	Version                 int                              `json:"version"`
+	CreatedAt               time.Time                        `json:"created_at"`
+	Kind                    string                           `json:"kind"`
+	TaskID                  string                           `json:"task_id"`
+	Output                  string                           `json:"output,omitempty"`
+	BranchName              string                           `json:"branch_name,omitempty"`
+	ErrorMessage            string                           `json:"error,omitempty"`
+	SessionID               string                           `json:"session_id,omitempty"`
+	WorkDir                 string                           `json:"work_dir,omitempty"`
+	DurableWorkDir          string                           `json:"durable_work_dir,omitempty"`
+	FailureReason           string                           `json:"failure_reason,omitempty"`
+	SessionRolloutMissing   bool                             `json:"session_rollout_missing,omitempty"`
+	RetiredSessionID        string                           `json:"retired_session_id,omitempty"`
+	JevVerification         *JevVerification                 `json:"jev_verification,omitempty"`
+	WorktreeDeliveryPending bool                             `json:"worktree_delivery_pending,omitempty"`
+	WorktreeCommit          string                           `json:"worktree_commit,omitempty"`
+	AccountID               string                           `json:"account_id,omitempty"`
+	ExecutionID             string                           `json:"execution_id,omitempty"`
+	Messages                []TaskMessageData                `json:"messages,omitempty"`
+	Usage                   []TaskUsageEntry                 `json:"usage,omitempty"`
+	Execution               *protocol.ExecutionIdentity      `json:"execution,omitempty"`
+	ApplicationObservation  *protocol.ApplicationObservation `json:"application_observation,omitempty"`
+	RuntimeID               string                           `json:"runtime_id,omitempty"`
+	ApplicationDesiredState string                           `json:"application_desired_state,omitempty"`
+	ApplicationIntentID     string                           `json:"application_intent_id,omitempty"`
+	ApplicationStep         *applicationStepReceipt          `json:"application_step,omitempty"`
 
 	PermanentRejectionCount   int        `json:"permanent_rejection_count,omitempty"`
 	FirstPermanentRejectionAt *time.Time `json:"first_permanent_rejection_at,omitempty"`
@@ -168,6 +178,14 @@ func terminalReportKindName(kind terminalTaskReportKind) (string, error) {
 		return "complete", nil
 	case terminalTaskReportFail:
 		return "fail", nil
+	case taskMessagesReport:
+		return "messages", nil
+	case taskUsageReport:
+		return "usage", nil
+	case applicationObservationReport:
+		return "application-observation", nil
+	case applicationStepReport:
+		return "application-step", nil
 	default:
 		return "", fmt.Errorf("unsupported terminal task report kind %d", kind)
 	}
@@ -176,6 +194,12 @@ func terminalReportKindName(kind terminalTaskReportKind) (string, error) {
 func persistedTerminalReport(report terminalTaskReport, createdAt time.Time) (persistedTerminalTaskReport, error) {
 	if strings.TrimSpace(report.taskID) == "" {
 		return persistedTerminalTaskReport{}, errors.New("terminal task report has no task id")
+	}
+	if report.kind == applicationObservationReport && (report.applicationObservation == nil || report.runtimeID == "" || report.applicationObservation.InstanceID != report.taskID) {
+		return persistedTerminalTaskReport{}, errors.New("invalid application observation report")
+	}
+	if report.kind == applicationStepReport && (report.applicationStep == nil || report.applicationStep.validate(report.runtimeID, report.taskID) != nil) {
+		return persistedTerminalTaskReport{}, errors.New("invalid application step report")
 	}
 	kind, err := terminalReportKindName(report.kind)
 	if err != nil {
@@ -200,6 +224,14 @@ func persistedTerminalReport(report terminalTaskReport, createdAt time.Time) (pe
 		WorktreeCommit:          report.worktreeCommit,
 		AccountID:               report.accountID,
 		ExecutionID:             report.executionID,
+		Messages:                report.messages,
+		Usage:                   report.usage,
+		Execution:               report.execution,
+		ApplicationObservation:  report.applicationObservation,
+		RuntimeID:               report.runtimeID,
+		ApplicationDesiredState: report.applicationDesiredState,
+		ApplicationIntentID:     report.applicationIntentID,
+		ApplicationStep:         report.applicationStep,
 	}, nil
 }
 
@@ -216,6 +248,20 @@ func (record persistedTerminalTaskReport) terminalReport() (terminalTaskReport, 
 		kind = terminalTaskReportComplete
 	case "fail":
 		kind = terminalTaskReportFail
+	case "messages":
+		kind = taskMessagesReport
+	case "usage":
+		kind = taskUsageReport
+	case "application-observation":
+		kind = applicationObservationReport
+		if record.ApplicationObservation == nil || record.RuntimeID == "" || record.ApplicationObservation.InstanceID != record.TaskID {
+			return terminalTaskReport{}, errors.New("invalid queued application observation")
+		}
+	case "application-step":
+		kind = applicationStepReport
+		if record.ApplicationStep == nil || record.ApplicationStep.validate(record.RuntimeID, record.TaskID) != nil {
+			return terminalTaskReport{}, errors.New("invalid queued application step")
+		}
 	default:
 		return terminalTaskReport{}, fmt.Errorf("unsupported terminal report kind %q", record.Kind)
 	}
@@ -236,6 +282,14 @@ func (record persistedTerminalTaskReport) terminalReport() (terminalTaskReport, 
 		worktreeCommit:          record.WorktreeCommit,
 		accountID:               record.AccountID,
 		executionID:             record.ExecutionID,
+		messages:                record.Messages,
+		usage:                   record.Usage,
+		execution:               record.Execution,
+		applicationObservation:  record.ApplicationObservation,
+		runtimeID:               record.RuntimeID,
+		applicationDesiredState: record.ApplicationDesiredState,
+		applicationIntentID:     record.ApplicationIntentID,
+		applicationStep:         record.ApplicationStep,
 	}, nil
 }
 
@@ -275,7 +329,7 @@ func (s *terminalReportStore) enqueue(report terminalTaskReport) error {
 	if err := s.ensureDir(); err != nil {
 		return err
 	}
-	name := terminalReportFileName(report.taskID)
+	name := terminalReportFileName(report.storageKey())
 	path := filepath.Join(s.dir, name)
 	if existingBody, readErr := os.ReadFile(path); readErr == nil {
 		existing, decodeErr := decodePersistedTerminalReport(existingBody)
@@ -287,6 +341,12 @@ func (s *terminalReportStore) enqueue(report terminalTaskReport) error {
 			return fmt.Errorf("existing terminal report %s is invalid: %w", name, decodeErr)
 		}
 		if !terminalReportsEqual(existingReport, report) {
+			if report.kind == applicationObservationReport && existingReport.kind == report.kind && existingReport.accountID == report.accountID && existingReport.applicationObservation != nil && report.applicationObservation != nil {
+				if report.applicationObservation.Generation < existingReport.applicationObservation.Generation {
+					return nil
+				}
+				return writeTerminalReportRecord(s.dir, name, record)
+			}
 			return fmt.Errorf("terminal report for task %s conflicts with the original pending payload", report.taskID)
 		}
 		return nil
@@ -389,7 +449,7 @@ func (s *terminalReportStore) list() ([]pendingTerminalTaskReport, error) {
 			errs = append(errs, fmt.Errorf("validate %s: %w", entry.Name(), decodeErr))
 			continue
 		}
-		if want := terminalReportFileName(report.taskID); entry.Name() != want {
+		if want := terminalReportFileName(report.storageKey()); entry.Name() != want {
 			errs = append(errs, fmt.Errorf("terminal report %s does not match task id", entry.Name()))
 			continue
 		}
@@ -435,7 +495,7 @@ func (s *terminalReportStore) recoverTempFiles(entries []os.DirEntry) error {
 			errs = append(errs, fmt.Errorf("validate interrupted terminal report %s: %w", name, err))
 			continue
 		}
-		targetName := terminalReportFileName(report.taskID)
+		targetName := terminalReportFileName(report.storageKey())
 		wantPrefix := "." + strings.TrimSuffix(targetName, ".json") + "-"
 		if !strings.HasPrefix(name, wantPrefix) {
 			errs = append(errs, fmt.Errorf("interrupted terminal report %s does not match task id", name))
@@ -484,10 +544,25 @@ func (s *terminalReportStore) recoverTempFiles(entries []os.DirEntry) error {
 func (s *terminalReportStore) acknowledge(item pendingTerminalTaskReport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if item.fileName != terminalReportFileName(item.report.taskID) {
+	if item.fileName != terminalReportFileName(item.report.storageKey()) {
 		return errors.New("terminal report acknowledgement does not match task id")
 	}
 	path := filepath.Join(s.dir, item.fileName)
+	if body, err := os.ReadFile(path); err == nil {
+		current, err := decodePersistedTerminalReport(body)
+		if err != nil {
+			return err
+		}
+		report, err := current.terminalReport()
+		if err != nil {
+			return err
+		}
+		if !terminalReportsEqual(report, item.report) {
+			return nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove acknowledged terminal report: %w", err)
 	}
@@ -539,7 +614,7 @@ func (s *terminalReportStore) recordPermanentRejection(item pendingTerminalTaskR
 	if err != nil {
 		return false, fmt.Errorf("validate rejected terminal report: %w", err)
 	}
-	if item.fileName != terminalReportFileName(report.taskID) || !terminalReportsEqual(report, item.report) {
+	if item.fileName != terminalReportFileName(report.storageKey()) || !terminalReportsEqual(report, item.report) {
 		return false, errors.New("rejected terminal report no longer matches queued payload")
 	}
 
@@ -725,7 +800,7 @@ func (d *Daemon) handleTerminalReportDeliveryError(ctx context.Context, item pen
 	if !permanent || d.terminalReports == nil {
 		return false
 	}
-	quarantined, err := d.terminalReports.recordPermanentRejection(item, status, d.terminalReportClock())
+	quarantined, err := d.terminalReports.recordPermanentRejection(item, status, d.reportClock())
 	if err != nil {
 		d.logger.Error("record permanent terminal report rejection",
 			"task", item.report.taskID,
@@ -761,8 +836,14 @@ func (d *Daemon) handleTerminalReportDeliveryError(ctx context.Context, item pen
 			failureReason:         "agent_error.unknown",
 			sessionRolloutMissing: item.report.sessionRolloutMissing,
 			retiredSessionID:      item.report.retiredSessionID,
+			execution:             item.report.execution,
+			accountID:             item.report.accountID,
+			executionID:           item.report.executionID,
 		}
-		if err := d.sendTerminalTaskReport(ctx, fallback, defaultTerminalRetrySchedule); err != nil {
+		if err := d.sendTerminalTaskReport(ctx, fallback, nil); err != nil {
+			if queueErr := d.queueTaskReport(fallback); queueErr != nil {
+				d.logger.Error("persist quarantine compensation", "task", fallback.taskID, "error", queueErr)
+			}
 			d.logger.Error("terminal report quarantine failure compensation was not accepted",
 				"task", item.report.taskID,
 				"error", err,
@@ -780,8 +861,8 @@ func (d *Daemon) handleTerminalReportDeliveryError(ctx context.Context, item pen
 // A small fixed worker pool avoids one dead endpoint blocking every later task
 // for the HTTP client's full timeout while still bounding reconnect pressure.
 // The caller owns the outer backoff; each pending item gets exactly one HTTP
-// attempt. The one-time fail compensation after quarantine uses the normal
-// bounded terminal schedule because there will be no later replay for it.
+// attempt. Failed quarantine compensation is queued for its own replay rather
+// than holding the uploader through a second network retry schedule.
 func (d *Daemon) replayPendingTerminalReports(ctx context.Context) (pending, delivered int) {
 	defer func() {
 		waiting, settled := d.replayPendingWorktreeDeliveries(ctx)
@@ -822,7 +903,7 @@ func (d *Daemon) replayPendingTerminalReports(ctx context.Context) (pending, del
 				if ctx.Err() != nil {
 					continue
 				}
-				release, ok := d.beginTerminalReportDelivery(item.report.taskID)
+				release, ok := d.beginTerminalReportDelivery(item.report.storageKey())
 				if !ok {
 					continue
 				}
@@ -914,11 +995,16 @@ func (d *Daemon) terminalReportReplayLoop(ctx context.Context) {
 	// Startup is itself a replay trigger. The queue is loaded only after auth
 	// preflight, so recovered reports use the daemon's current credential.
 	timerCh := resetTimer(0)
+	waitingOnFailure := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-d.terminalReportWakeup:
+			// New diagnostics must not reset the outage backoff on every streaming batch.
+			if waitingOnFailure && timerCh != nil {
+				continue
+			}
 			backoff = terminalReportReplayInitialBackoff
 			timerCh = resetTimer(0)
 		case <-timerCh:
@@ -927,10 +1013,13 @@ func (d *Daemon) terminalReportReplayLoop(ctx context.Context) {
 				d.logger.Info("replayed pending terminal reports", "delivered", delivered, "remaining", pending)
 			}
 			if pending == 0 {
-				timerCh = nil
+				// Producers in extracted processes share disk storage, not this wake channel.
+				timerCh = resetTimer(time.Second)
+				waitingOnFailure = false
 				backoff = terminalReportReplayInitialBackoff
 				continue
 			}
+			waitingOnFailure = true
 			timerCh = resetTimer(backoff)
 			backoff *= 2
 			if backoff > terminalReportReplayMaxBackoff {

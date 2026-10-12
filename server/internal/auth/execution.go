@@ -15,6 +15,8 @@ type ExecutionRequest struct {
 	WorkerID    string
 	GrantHash   string
 	Operation   string
+	// Recovered is set only by the runtime-owner authenticated durable replay endpoint.
+	Recovered bool
 	// NormalizedFailureReason is server-set when /complete is classified as a failed result.
 	NormalizedFailureReason string
 }

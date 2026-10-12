@@ -92,6 +92,15 @@ func (c *applicationSourceCallback) serve(w http.ResponseWriter, r *http.Request
 	c.mu.RLock()
 	grant, ok := c.grants[input.Source.RuntimeID]
 	c.mu.RUnlock()
+	if prepared, local, err := c.daemon.localApplicationSource(input.Source); local {
+		if err != nil {
+			http.Error(w, "local application source authority unavailable", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(prepared)
+		return
+	}
 	if !ok || grant.Generation != input.GrantGeneration || grant.WorkspaceID != input.Source.WorkspaceID || !grant.ExpiresAt.After(time.Now()) || !c.daemon.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: input.Source.WorkspaceID, RuntimeID: input.Source.RuntimeID}) {
 		http.Error(w, "source authority changed", http.StatusForbidden)
 		return
@@ -136,14 +145,17 @@ func (s *applicationProcessService) prepareSource(ctx context.Context, source ap
 	cohort := s.cohorts[source.RuntimeID]
 	address := s.sourceAddress
 	s.mu.RUnlock()
-	if cohort == nil {
+	if cohort == nil && !s.daemon.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: source.WorkspaceID, RuntimeID: source.RuntimeID}) {
 		return applicationPreparedSource{}, errApplicationRuntimeUnavailable
 	}
 	deadline := time.Now().Add(10 * time.Minute)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	input := applicationSourceEnvelope{InstanceID: s.bootstrap.Identity.InstanceID, GrantGeneration: cohort.client.grant.Generation, Deadline: deadline, Source: source}
+	input := applicationSourceEnvelope{InstanceID: s.bootstrap.Identity.InstanceID, Deadline: deadline, Source: source}
+	if cohort != nil {
+		input.GrantGeneration = cohort.client.grant.Generation
+	}
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return applicationPreparedSource{}, err

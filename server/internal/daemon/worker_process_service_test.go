@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -41,6 +42,9 @@ func newWorkerService(t *testing.T) *workerProcessService {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("eval root: %v", err)
+	}
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
 	}
 	identity, err := runtimeproc.NewIdentity(runtimeproc.Scope{
 		Backend:  "http://127.0.0.1:1",
@@ -167,6 +171,20 @@ func TestWorkerNonLoopbackCallbackBuildsNoClient(t *testing.T) {
 	}
 	if !status.Launchable {
 		t.Fatalf("authorization gate is independent of transport readiness: reason %q", status.ReasonCode)
+	}
+}
+
+func TestWorkerCallbackAcceptsOnlyItsTrustedRemoteBackend(t *testing.T) {
+	s := newWorkerService(t)
+	s.bootstrap.Identity.Scope.Backend = "https://server.example"
+	grant := validWorkerGrant()
+	if s.executionClient(grant, "https://server.example", true) == nil {
+		t.Fatal("immutable remote backend was rejected")
+	}
+	for _, origin := range []string{"https://other.example", "https://server.example.attacker.test", "https://server.example?token=wrong", "https://user@server.example"} {
+		if s.executionClient(grant, origin, true) != nil {
+			t.Fatalf("untrusted callback accepted: %s", origin)
+		}
 	}
 }
 

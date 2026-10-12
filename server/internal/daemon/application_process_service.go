@@ -20,6 +20,14 @@ type applicationProcessBinding struct {
 	WorkspacesRoot string                                     `json:"workspaces_root"`
 	SourceAddress  string                                     `json:"source_address"`
 	Grants         []protocol.ApplicationServiceGrantResponse `json:"grants"`
+	LocalRuntimes  []applicationLocalRuntime                  `json:"local_runtimes,omitempty"`
+}
+type applicationLocalRuntime struct {
+	WorkspaceID string `json:"workspace_id"`
+	RuntimeID   string `json:"runtime_id"`
+}
+type applicationWakeRequest struct {
+	RuntimeIDs []string `json:"runtime_ids,omitempty"`
 }
 type applicationProcessInventory struct {
 	InstanceID   string                            `json:"instance_id"`
@@ -32,6 +40,7 @@ type applicationRuntimeCohort struct {
 	client *ApplicationServiceClient
 	cancel context.CancelFunc
 	done   chan struct{}
+	wake   chan struct{}
 }
 type applicationProcessService struct {
 	bootstrap     runtimeproc.Bootstrap
@@ -65,11 +74,29 @@ func RunApplicationService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	s := &applicationProcessService{bootstrap: b, daemon: d, cohorts: map[string]*applicationRuntimeCohort{}, lifetime: life, cancel: cancel, done: make(chan struct{})}
 	d.applicationTransport = s.transport
 	d.applicationSourceProvider = s.prepareSource
-	service, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, Capabilities: []string{"application.bind", "application.remove", "application.wake"}, ReadCapabilities: []string{"application.inventory"}, Handler: s.mutate, ReadHandler: s.read, Ready: s.ready, Shutdown: s.shutdown})
+	d.applicationWakeNotify = s.wakeCohorts
+	service, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, Capabilities: []string{"application.bind", "application.remove", "application.wake", "application.local"}, ReadCapabilities: []string{"application.inventory"}, Handler: s.mutate, ReadHandler: s.read, Ready: s.ready, Shutdown: s.shutdown})
 	if err != nil {
 		return err
 	}
 	return service.Serve(ctx)
+}
+func (s *applicationProcessService) wakeCohorts(runtimeIDs []string) {
+	selected := map[string]bool{}
+	for _, id := range runtimeIDs {
+		selected[id] = true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for id, c := range s.cohorts {
+		if len(selected) > 0 && !selected[id] {
+			continue
+		}
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+	}
 }
 func (s *applicationProcessService) ready(ctx context.Context) error {
 	go func() {
@@ -102,6 +129,16 @@ func (s *applicationProcessService) transport(id string) applicationTransport {
 }
 func (s *applicationProcessService) mutate(ctx context.Context, r runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
 	switch r.Operation {
+	case "application.local":
+		var input localApplicationRequest
+		if json.Unmarshal(r.Payload, &input) != nil {
+			return nil, &runtimeproc.Error{Code: "malformed", Message: "invalid local application command"}
+		}
+		result, err := s.daemon.runLocalApplication(ctx, input)
+		if err != nil {
+			return nil, &runtimeproc.Error{Code: "local_application_failed", Message: err.Error()}
+		}
+		return marshalRaw(result), nil
 	case "application.bind":
 		var binding applicationProcessBinding
 		if json.Unmarshal(r.Payload, &binding) != nil {
@@ -121,7 +158,11 @@ func (s *applicationProcessService) mutate(ctx context.Context, r runtimeproc.Re
 			return nil, &runtimeproc.Error{Code: "application_remove", Message: err.Error()}
 		}
 	case "application.wake":
-		s.daemon.wakeApplications()
+		var input applicationWakeRequest
+		if len(r.Payload) > 0 && json.Unmarshal(r.Payload, &input) != nil || len(input.RuntimeIDs) > 256 {
+			return nil, &runtimeproc.Error{Code: "malformed", Message: "invalid application wake scope"}
+		}
+		s.daemon.wakeApplications(input.RuntimeIDs...)
 	default:
 		return nil, &runtimeproc.Error{Code: "unknown_operation", Message: "unknown application operation"}
 	}
@@ -138,6 +179,16 @@ func (s *applicationProcessService) bind(ctx context.Context, b applicationProce
 	if len(b.Grants) > 256 {
 		return errors.New("too many application runtimes")
 	}
+	if len(b.LocalRuntimes) > 256 {
+		return errors.New("too many local application runtimes")
+	}
+	local := map[string]string{}
+	for _, scope := range b.LocalRuntimes {
+		if scope.RuntimeID == "" || scope.WorkspaceID == "" || local[scope.RuntimeID] != "" {
+			return errors.New("invalid local application runtime scope")
+		}
+		local[scope.RuntimeID] = scope.WorkspaceID
+	}
 	clients := map[string]*ApplicationServiceClient{}
 	for _, grant := range b.Grants {
 		client, err := NewApplicationServiceClient(s.bootstrap.Identity.Scope.Backend, s.bootstrap.Identity.Scope.DaemonID, s.bootstrap.Identity.InstanceID, grant)
@@ -148,6 +199,10 @@ func (s *applicationProcessService) bind(ctx context.Context, b applicationProce
 			return errors.New("duplicate application runtime")
 		}
 		clients[grant.RuntimeID] = client
+		if workspace, ok := local[grant.RuntimeID]; ok && workspace != grant.WorkspaceID {
+			return errors.New("application grant workspace changed")
+		}
+		local[grant.RuntimeID] = grant.WorkspaceID
 	}
 	s.mu.Lock()
 	if s.initialized && (s.daemon.cfg.WorkspacesRoot != canonical || s.sourceAddress != b.SourceAddress) {
@@ -156,6 +211,9 @@ func (s *applicationProcessService) bind(ctx context.Context, b applicationProce
 	}
 	if !s.initialized {
 		s.daemon.cfg.WorkspacesRoot = canonical
+		s.daemon.accountID = s.bootstrap.Identity.Scope.Account
+		s.daemon.terminalReports = newTerminalReportStore(s.daemon.cfg)
+		s.daemon.terminalReports.bindAccount(s.daemon.accountID)
 		s.sourceAddress = b.SourceAddress
 		s.initialized = true
 	}
@@ -186,7 +244,7 @@ func (s *applicationProcessService) bind(ctx context.Context, b applicationProce
 			return err
 		}
 		life, cancel := context.WithCancel(s.lifetime)
-		c := &applicationRuntimeCohort{client: client, cancel: cancel, done: make(chan struct{})}
+		c := &applicationRuntimeCohort{client: client, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1)}
 		s.daemon.mu.Lock()
 		workspace := s.daemon.workspaces[client.grant.WorkspaceID]
 		if workspace == nil {
@@ -201,6 +259,19 @@ func (s *applicationProcessService) bind(ctx context.Context, b applicationProce
 		s.mu.Unlock()
 		go s.runRuntime(life, id, c)
 	}
+	s.daemon.mu.Lock()
+	s.daemon.workspaces = map[string]*workspaceState{}
+	s.daemon.runtimeIndex = map[string]Runtime{}
+	for id, workspaceID := range local {
+		workspace := s.daemon.workspaces[workspaceID]
+		if workspace == nil {
+			workspace = &workspaceState{workspaceID: workspaceID}
+			s.daemon.workspaces[workspaceID] = workspace
+		}
+		workspace.runtimeIDs = append(workspace.runtimeIDs, id)
+		s.daemon.runtimeIndex[id] = Runtime{ID: id}
+	}
+	s.daemon.mu.Unlock()
 	return nil
 }
 func (s *applicationProcessService) runRuntime(ctx context.Context, id string, c *applicationRuntimeCohort) {
@@ -213,7 +284,7 @@ func (s *applicationProcessService) runRuntime(ctx context.Context, id string, c
 	var workers sync.WaitGroup
 	defer workers.Wait()
 	semaphore := make(chan struct{}, 4)
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(applicationPollInterval)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
@@ -224,7 +295,7 @@ func (s *applicationProcessService) runRuntime(ctx context.Context, id string, c
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-		case <-s.daemon.applicationWake:
+		case <-c.wake:
 		}
 	}
 }
@@ -232,14 +303,13 @@ func (s *applicationProcessService) remove(ctx context.Context, id string, stop 
 	s.mu.RLock()
 	c := s.cohorts[id]
 	s.mu.RUnlock()
-	if c == nil {
-		return nil
-	}
-	c.cancel()
-	select {
-	case <-c.done:
-	case <-ctx.Done():
-		return ctx.Err()
+	if c != nil {
+		c.cancel()
+		select {
+		case <-c.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	if stop {
 		s.daemon.stopRuntimeApplications(ctx, id)
@@ -256,7 +326,7 @@ func (s *applicationProcessService) remove(ctx context.Context, id string, stop 
 				if err = applicationhost.WaitStopped(ctx, path, record.HostID); err != nil {
 					return err
 				}
-				if err = c.client.Observe(ctx, record.Observation); err != nil && ctx.Err() == nil {
+				if err = s.daemon.queueApplicationObservation(id, record.Observation); err != nil && ctx.Err() == nil {
 					s.daemon.logger.Debug("application stopped observation deferred", "instance_id", record.Command.InstanceID, "error", err)
 				}
 			}
@@ -265,7 +335,9 @@ func (s *applicationProcessService) remove(ctx context.Context, id string, stop 
 	s.mu.Lock()
 	delete(s.cohorts, id)
 	s.mu.Unlock()
-	c.client.CloseIdleConnections()
+	if c != nil {
+		c.client.CloseIdleConnections()
+	}
 	s.daemon.mu.Lock()
 	delete(s.daemon.runtimeIndex, id)
 	for _, workspace := range s.daemon.workspaces {
@@ -351,5 +423,6 @@ func (s *applicationProcessService) shutdown(ctx context.Context) error {
 	for _, id := range ids {
 		result = errors.Join(result, s.remove(ctx, id, true))
 	}
+	s.daemon.stopOwnedApplications()
 	return result
 }

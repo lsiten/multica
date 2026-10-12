@@ -15,6 +15,7 @@ func TestPostHogClient_Batching(t *testing.T) {
 		mu       sync.Mutex
 		received [][]captureItem
 	)
+	receivedBatch := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/batch/" {
 			t.Errorf("unexpected path %s", r.URL.Path)
@@ -30,6 +31,10 @@ func TestPostHogClient_Batching(t *testing.T) {
 		mu.Lock()
 		received = append(received, payload.Batch)
 		mu.Unlock()
+		select {
+		case receivedBatch <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -39,10 +44,17 @@ func TestPostHogClient_Batching(t *testing.T) {
 		Host:       srv.URL,
 		BatchSize:  2,
 		FlushEvery: time.Hour, // irrelevant, we hit the size trigger
+		QueueDir:   t.TempDir(),
 	})
 
 	c.Capture(Event{Name: "signup", DistinctID: "u1", WorkspaceID: "w1"})
 	c.Capture(Event{Name: "workspace_created", DistinctID: "u1", WorkspaceID: "w1"})
+	select {
+	case <-receivedBatch:
+	case <-time.After(2 * time.Second):
+		c.Close()
+		t.Fatal("batch was not uploaded")
+	}
 	c.Close() // drains
 
 	mu.Lock()
@@ -68,42 +80,38 @@ func TestPostHogClient_Batching(t *testing.T) {
 }
 
 func TestPostHogClient_DropsWhenFull(t *testing.T) {
-	// Hold the first request so the worker is observably busy before filling the
-	// queue. Releasing it during cleanup avoids paying the client's flush timeout.
-	started := make(chan struct{})
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(started)
-		<-release
-	}))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	defer srv.Close()
-
-	c := NewPostHogClient(PostHogConfig{
-		APIKey:     "test-key",
-		Host:       srv.URL,
-		QueueSize:  2,
-		BatchSize:  1,
-		FlushEvery: time.Hour,
-	})
+	c := NewPostHogClient(PostHogConfig{APIKey: "test-key", Host: srv.URL, QueueSize: 2, BatchSize: 1, FlushEvery: time.Hour, QueueDir: t.TempDir()})
+	c.outboxMu.Lock()
+	locked := true
 	defer func() {
-		close(release)
+		if locked {
+			c.outboxMu.Unlock()
+		}
 		c.Close()
 	}()
-
-	// The first event is consumed by the worker and blocks in the handler. Two
-	// more fill the queue, so the final capture must be dropped.
 	c.Capture(Event{Name: "spam", DistinctID: "u"})
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("worker did not start the first request")
+	// Hold local persistence, rather than network delivery, to exercise the bounded producer queue.
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for len(c.ch) > 0 {
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("worker did not consume the first event")
+		}
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		c.Capture(Event{Name: "spam", DistinctID: "u"})
 	}
 	if c.dropped.Load() == 0 {
-		t.Fatalf("expected some drops when queue saturated")
+		t.Fatal("queue overflow was not counted")
 	}
+	c.outboxMu.Unlock()
+	locked = false
 }
 
 func TestEmailDomain(t *testing.T) {

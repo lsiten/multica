@@ -31,6 +31,22 @@ function respond(body: unknown) {
 afterEach(() => { vi.unstubAllGlobals(); setCurrentWorkspace(null, null); setSchemaLogger(noopLogger); });
 
 describe("application API boundary", () => {
+  it("runs verified local lifecycle without a backend operation and keeps publish remote",async()=>{
+    const receipt={id:userId,workspace_id:workspaceId,application_id:applicationId,action:"start",actor_type:"member",actor_id:userId,state:"completed",created_at:"2026-10-12T00:00:00Z",snapshot:{root_runtime_id:projectId,root_revision:1,placements:{},plan:{root_id:applicationId,nodes:[],waves:[]}},steps:[],local:true,sync_pending:true};
+    const fetch=respond({...receipt,action:"publish",local:false});
+    const local=vi.fn(async()=>receipt);
+    const client=new ApiClient("https://api.test",{localApplicationOperation:local});
+    expect((await client.enqueueApplicationOperation(workspaceId,applicationId,{action:"start",revision:1,runtime_id:projectId,idempotency_key:userId})).local).toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+    await client.enqueueApplicationOperation(workspaceId,applicationId,{action:"publish",revision:1,runtime_id:projectId,idempotency_key:userId});
+    expect(local).toHaveBeenCalledOnce();expect(fetch).toHaveBeenCalledOnce();
+  });
+  it("does not submit a second remote operation after a local operation becomes uncertain",async()=>{
+    const fetch=respond({});
+    const client=new ApiClient("https://api.test",{localApplicationOperation:async()=>{throw new Error("local outcome uncertain")}});
+    await expect(client.enqueueApplicationOperation(workspaceId,applicationId,{action:"restart",revision:1,runtime_id:projectId,idempotency_key:userId})).rejects.toThrow("local outcome uncertain");
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("validates cancellation scope and continues to distinguish cancelling from cancelled", async () => {
     const operationId = foreignWorkspaceId;
     const receipt = { id: operationId, workspace_id: workspaceId, application_id: applicationId, action: "start", actor_type: "member", actor_id: userId,

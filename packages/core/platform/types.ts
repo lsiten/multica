@@ -18,6 +18,8 @@ export interface ClientIdentity {
 }
 
 export interface CoreProviderProps {
+  localApplicationSupported?: import("../api/client").ApiClientOptions["localApplicationSupported"];
+  localApplicationOperation?: import("../api/client").ApiClientOptions["localApplicationOperation"];
   children: React.ReactNode;
   /** API base URL. Default: "" (same-origin). */
   apiBaseUrl?: string;

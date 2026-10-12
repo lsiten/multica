@@ -74,7 +74,7 @@ func TestJevDecisionReportsSurviveRestartAndRetryWithoutCredentials(t *testing.T
 	if d.flushJevDecisionReports(context.Background()) == nil {
 		t.Fatal("temporary backend outage was not reported")
 	}
-	restarted := &Daemon{cfg: cfg, client: NewClient(backend.URL), logger: d.logger}
+	restarted := &Daemon{cfg: cfg, client: NewClient(backend.URL), logger: d.logger, reportNow: func() time.Time { return time.Now().Add(time.Minute) }}
 	reject = false
 	if err := restarted.flushJevDecisionReports(context.Background()); err != nil {
 		t.Fatal(err)
@@ -107,5 +107,56 @@ func TestJevDecisionReportsRetainPermanentRejections(t *testing.T) {
 	files, err := os.ReadDir(filepath.Join(d.jevDecisionReportDir(), "failed"))
 	if err != nil || len(files) != 1 {
 		t.Fatalf("rejected audit was discarded: %v / %d", err, len(files))
+	}
+}
+
+func TestJevDecisionReportsIsolateCorruptRecords(t *testing.T) {
+	var received int
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received++
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer backend.Close()
+	d := &Daemon{cfg: Config{WorkspacesRoot: t.TempDir(), ServerBaseURL: backend.URL}, client: NewClient(backend.URL), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := d.enqueueJevDecision("task", mkJevDecisionRecord()); err != nil {
+		t.Fatal(err)
+	}
+	corrupt := filepath.Join(d.jevDecisionReportDir(), "000-poison.json")
+	if err := os.WriteFile(corrupt, []byte(`{`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.flushJevDecisionReports(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if received != 1 {
+		t.Fatalf("healthy records delivered = %d, want 1 despite corrupt predecessor", received)
+	}
+	retained, err := os.ReadFile(filepath.Join(d.jevDecisionReportDir(), "failed", "000-poison.json"))
+	if err != nil || string(retained) != "{" {
+		t.Fatalf("corrupt evidence was not retained: %q, %v", retained, err)
+	}
+}
+
+func TestJevDecisionReportsPersistRetryBackoff(t *testing.T) {
+	var requests int
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer backend.Close()
+	cfg := Config{WorkspacesRoot: t.TempDir(), ServerBaseURL: backend.URL}
+	d := &Daemon{cfg: cfg, client: NewClient(backend.URL), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := d.enqueueJevDecision("task", mkJevDecisionRecord()); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.flushJevDecisionReports(t.Context()); err == nil {
+		t.Fatal("transient failure was hidden")
+	}
+	restarted := &Daemon{cfg: cfg, client: NewClient(backend.URL), logger: d.logger}
+	if err := restarted.flushJevDecisionReports(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("restart ignored persisted retry schedule: requests = %d", requests)
 	}
 }

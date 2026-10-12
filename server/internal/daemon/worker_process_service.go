@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,7 +47,18 @@ type workerProcessService struct {
 	// the worker can build and launch the provider run without a *Daemon. It is
 	// nil until a bind carries the context; a nil runContext means the worker
 	// has no context to run a provider (fail-closed: it must not fabricate one).
-	runContext *workerContext
+	runContext          *workerContext
+	lifetime            context.Context
+	workCancel          context.CancelFunc
+	workDone            chan struct{}
+	workResult          *workerRunResult
+	workArtifact        *runtimeproc.ReviewArtifactReference
+	workError           error
+	workPendingResult   *workerRunResult
+	workPendingRaw      []byte
+	workPersistRetryAt  time.Time
+	workPersistFailures int
+	executeProvider     func(context.Context, *ExecutionClient, *workerContext) workerRunResult
 }
 
 // RunWorkerService starts the worker role and owns its private record until a
@@ -63,11 +76,11 @@ func RunWorkerService(ctx context.Context, b runtimeproc.Bootstrap) error {
 		return err
 	}
 	defer lock.Close()
-	s := &workerProcessService{bootstrap: b, state: "starting"}
+	s := &workerProcessService{bootstrap: b, state: "starting", lifetime: ctx}
 	service, err := runtimeproc.NewService(runtimeproc.Config{
 		Bootstrap:        b,
 		Capabilities:     []string{"worker.bind", "worker.acquire", "worker.run", "worker.report", "worker.gate-record", "worker.honor-cancel", "worker.cancel"},
-		ReadCapabilities: []string{"worker.status", "worker.gate-status"},
+		ReadCapabilities: []string{"worker.status", "worker.gate-status", "worker.result"},
 		Handler:          s.mutate,
 		ReadHandler:      s.read,
 		Ready:            s.ready,
@@ -199,6 +212,16 @@ func (s *workerProcessService) mutate(ctx context.Context, r runtimeproc.Request
 		// A callback url must be a plain loopback http origin; a worker that
 		// would call a non-loopback host is not bound and cannot launch.
 		client := s.executionClient(in.Grant, in.CallbackURL, granted)
+		if client != nil && in.Context != nil && in.Context.Config.WorkspacesRoot != "" {
+			store := newTerminalReportStore(in.Context.Config)
+			store.bindAccount(s.bootstrap.Identity.Scope.Account)
+			identity := in.Grant.Identity
+			client.client.taskReportQueue = func(report terminalTaskReport) error {
+				report.execution = &identity
+				report.accountID = s.bootstrap.Identity.Scope.Account
+				return store.enqueue(report)
+			}
+		}
 		decision := DecideWorkerLaunch(
 			in.Grant.Identity.TaskID,
 			in.Grant.Identity.RuntimeID,
@@ -214,6 +237,10 @@ func (s *workerProcessService) mutate(ctx context.Context, r runtimeproc.Request
 			return nil, &runtimeproc.Error{Code: "invalid_authorization", Message: err.Error()}
 		}
 		s.mu.Lock()
+		if (s.bound || s.workDone != nil) && s.identity != in.Grant.Identity {
+			s.mu.Unlock()
+			return nil, &runtimeproc.Error{Code: "execution_changed", Message: "worker cannot bind a different execution"}
+		}
 		s.client = client
 		s.identity = in.Grant.Identity
 		s.authorization = decision
@@ -338,6 +365,9 @@ func (s *workerProcessService) mutate(ctx context.Context, r runtimeproc.Request
 			ReasonCode: live.State,
 		}), nil
 	case "worker.cancel":
+		if err := s.stopProviderRun(ctx); err != nil {
+			return nil, &runtimeproc.Error{Code: "stop_unconfirmed", Message: err.Error()}
+		}
 		s.mu.Lock()
 		s.client = nil
 		s.identity = protocol.ExecutionIdentity{}
@@ -364,54 +394,8 @@ func (s *workerProcessService) mutate(ctx context.Context, r runtimeproc.Request
 		if runCtx == nil {
 			return nil, &runtimeproc.Error{Code: "no_context", Message: "worker has no execution context; run refused"}
 		}
-		// Assemble the exact provider run the legacy in-process runner would:
-		// backend + ExecOptions + prompt, resolved identically through the shared
-		// launch seam. A missing provider/agent or an unresolved backend refuses
-		// the run instead of fabricating one.
-		run, err := buildWorkerProviderRun(*runCtx, runCtx.Provider, slog.Default(), workerApproveAll, agent.LocalProcessLauncher{})
-		if err != nil {
-			return nil, &runtimeproc.Error{Code: "launch_failed", Message: "worker could not build provider run: " + err.Error()}
-		}
-		// Genuinely run the provider: create the phase recorder (runProviderExecution
-		// dereferences it, so it must be non-nil), wire the *Daemon-free seams from
-		// the scoped client, and drive the shared provider run the legacy in-process
-		// runner calls. Nil budget is tolerated by runProviderExecution.
-		var msgSeq atomic.Int32
-		phaseRecorder := newTaskPhaseRecorder(slog.Default(), time.Now)
-		result, tools, runErr := executePreparedProvider(
-			ctx, run.Backend, run.Prompt, run.Options, slog.Default(), runCtx.Task.ID, runCtx.Env.CodexHome, &msgSeq, nil, phaseRecorder,
-			func(c context.Context, taskID string, messages []TaskMessageData) error {
-				return client.ReportTaskMessages(c, messages)
-			},
-			func(c context.Context, taskID, sessionID, workDir string) error {
-				return client.PinTaskSession(c, sessionID, workDir)
-			},
-			workerSupplementSubscribe(),
-			func(c context.Context, taskID string) (*TaskSupplement, error) { return client.ClaimSupplement(c) },
-			func(c context.Context, taskID, commentID string, delivered bool, reason string) error {
-				return client.AckSupplement(c, commentID, delivered, reason)
-			},
-			defaultTaskSupplementReadyInterval, defaultTaskSupplementPollInterval,
-			runCtx.Config.AgentIdleWatchdog, runCtx.Config.AgentToolWatchdog, runCtx.Config.AgentStartupTimeout,
-		)
-		// Report the terminal result through the scoped client so the server
-		// settles the execution. A lost report is owned by the server's terminal
-		// report outbox: the worker never relaunches or fabricates a result to
-		// recover it, so a report failure is logged, never faked as success.
-		if reportErr := s.reportWorkerRun(ctx, client, result, runErr); reportErr != nil {
-			slog.Default().Warn("worker terminal result report failed", "worker", s.bootstrap.Identity.InstanceID, "error", reportErr.Error())
-		}
-		return marshalRaw(workerRunResult{
-			InstanceID:     s.bootstrap.Identity.InstanceID,
-			PID:            os.Getpid(),
-			Ran:            true,
-			Output:         result.Output,
-			SessionID:      result.SessionID,
-			Status:         result.Status,
-			ToolCount:      tools,
-			RunError:       runErrMsg(runErr),
-			BudgetExceeded: result.BudgetExceeded || result.TokenBudgetExceeded,
-		}), nil
+		s.startProviderRun(client, runCtx)
+		return json.RawMessage(`{"accepted":true}`), nil
 
 	default:
 		return nil, &runtimeproc.Error{Code: "unknown_operation", Message: "unknown worker operation"}
@@ -423,6 +407,19 @@ func (s *workerProcessService) mutate(ctx context.Context, r runtimeproc.Request
 func (s *workerProcessService) read(ctx context.Context, r runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if r.Operation == "worker.result" {
+		if s.workPendingResult != nil && !time.Now().Before(s.workPersistRetryAt) {
+			s.persistWorkerResultLocked()
+		}
+		if s.workError != nil {
+			return nil, &runtimeproc.Error{Code: "result_unavailable", Message: s.workError.Error()}
+		}
+		result := s.workResult
+		if s.workArtifact != nil {
+			result = nil
+		}
+		return marshalRaw(workerResultStatus{ExecutionID: s.identity.ExecutionID, Accepted: s.workDone != nil, Pending: s.workResult == nil, Result: result, Artifact: s.workArtifact}), nil
+	}
 	if r.Operation == "worker.gate-status" {
 		if s.gate == nil {
 			return marshalRaw(completionVerification{Reason: "completion_verifier_unavailable"}), nil
@@ -443,6 +440,9 @@ func (s *workerProcessService) read(ctx context.Context, r runtimeproc.Request) 
 // shutdown releases the bound client and grant so a stopped worker holds no
 // live credential; it is a domain cleanup, never a provider launch.
 func (s *workerProcessService) shutdown(ctx context.Context) error {
+	if err := s.stopProviderRun(ctx); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	s.client = nil
 	s.identity = protocol.ExecutionIdentity{}
@@ -460,8 +460,15 @@ func (s *workerProcessService) executionClient(grant protocol.ExecutionGrantResp
 	if !granted || callbackURL == "" {
 		return nil
 	}
-	if err := validateGatewayForwardTarget(callbackURL); err != nil {
-		return nil
+	if strings.TrimRight(callbackURL, "/") == strings.TrimRight(s.bootstrap.Identity.Scope.Backend, "/") {
+		origin, err := url.Parse(callbackURL)
+		if err != nil || origin.Host == "" || origin.User != nil || origin.RawQuery != "" || origin.Fragment != "" || origin.Scheme != "http" && origin.Scheme != "https" {
+			return nil
+		}
+	} else {
+		if err := validateGatewayForwardTarget(callbackURL); err != nil {
+			return nil
+		}
 	}
 	client, err := NewExecutionClient(callbackURL, grant)
 	if err != nil {
@@ -475,15 +482,18 @@ func (s *workerProcessService) executionClient(grant protocol.ExecutionGrantResp
 // success); the terminal result the server settles the execution from is the
 // one executePreparedProvider produced through runProviderExecution.
 type workerRunResult struct {
-	InstanceID     string `json:"instance_id"`
-	PID            int    `json:"pid"`
-	Ran            bool   `json:"ran"`
-	Output         string `json:"output,omitempty"`
-	SessionID      string `json:"session_id,omitempty"`
-	Status         string `json:"status,omitempty"`
-	ToolCount      int32  `json:"tool_count"`
-	RunError       string `json:"run_error,omitempty"`
-	BudgetExceeded bool   `json:"budget_exceeded"`
+	InstanceID          string                      `json:"instance_id"`
+	PID                 int                         `json:"pid"`
+	Ran                 bool                        `json:"ran"`
+	Output              string                      `json:"output,omitempty"`
+	SessionID           string                      `json:"session_id,omitempty"`
+	Status              string                      `json:"status,omitempty"`
+	ToolCount           int32                       `json:"tool_count"`
+	RunError            string                      `json:"run_error,omitempty"`
+	BudgetExceeded      bool                        `json:"budget_exceeded"`
+	TokenBudgetExceeded bool                        `json:"token_budget_exceeded"`
+	Usage               []TaskUsageEntry            `json:"usage,omitempty"`
+	Execution           *protocol.ExecutionIdentity `json:"execution,omitempty"`
 }
 
 // runErrMsg renders a run error as a string for the result payload; an empty
@@ -514,4 +524,54 @@ func (s *workerProcessService) reportWorkerRun(ctx context.Context, client *Exec
 		return client.Callback(ctx, "fail", map[string]any{"error": runErr.Error()}, nil)
 	}
 	return client.Callback(ctx, "complete", map[string]any{"output": result.Output}, nil)
+}
+
+func (s *workerProcessService) executeProviderRun(ctx context.Context, client *ExecutionClient, runCtx *workerContext) workerRunResult {
+	run, err := buildWorkerProviderRun(*runCtx, runCtx.Provider, slog.Default(), workerApproveAll, agent.LocalProcessLauncher{})
+	if err != nil {
+		return workerRunResult{InstanceID: s.bootstrap.Identity.InstanceID, PID: os.Getpid(), Status: "failed", RunError: err.Error(), Execution: &client.identity}
+	}
+
+	// Genuinely run the provider: create the phase recorder (runProviderExecution
+	// dereferences it, so it must be non-nil), wire the *Daemon-free seams from
+	// the scoped client, and drive the shared provider run the legacy in-process
+	// runner calls. Nil budget is tolerated by runProviderExecution.
+	var msgSeq atomic.Int32
+	phaseRecorder := newTaskPhaseRecorder(slog.Default(), time.Now)
+	result, tools, runErr := executePreparedProvider(
+		ctx, run.Backend, run.Prompt, run.Options, slog.Default(), runCtx.Task.ID, runCtx.Env.CodexHome, &msgSeq, nil, phaseRecorder,
+		func(c context.Context, taskID string, messages []TaskMessageData) error {
+			return client.ReportTaskMessages(c, messages)
+		},
+		func(c context.Context, taskID, sessionID, workDir string) error {
+			return client.PinTaskSession(c, sessionID, workDir)
+		},
+		workerSupplementSubscribe(),
+		func(c context.Context, taskID string) (*TaskSupplement, error) { return client.ClaimSupplement(c) },
+		func(c context.Context, taskID, commentID string, delivered bool, reason string) error {
+			return client.AckSupplement(c, commentID, delivered, reason)
+		},
+		defaultTaskSupplementReadyInterval, defaultTaskSupplementPollInterval,
+		runCtx.Config.AgentIdleWatchdog, runCtx.Config.AgentToolWatchdog, runCtx.Config.AgentStartupTimeout,
+	)
+	status := result.Status
+	if runErr != nil {
+		status = "failed"
+	}
+	// Persist the worker's genuine outcome before control adds directory-delivery metadata.
+	return workerRunResult{
+		InstanceID:          s.bootstrap.Identity.InstanceID,
+		PID:                 os.Getpid(),
+		Ran:                 true,
+		Output:              result.Output,
+		SessionID:           result.SessionID,
+		Status:              status,
+		ToolCount:           tools,
+		RunError:            runErrMsg(runErr),
+		BudgetExceeded:      result.BudgetExceeded || result.TokenBudgetExceeded,
+		TokenBudgetExceeded: result.TokenBudgetExceeded,
+		Usage:               usageEntriesForResult(runCtx.Provider, result.Usage),
+		Execution:           &client.identity,
+	}
+
 }

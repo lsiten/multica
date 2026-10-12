@@ -112,6 +112,9 @@ func TestApplicationExpiredResumeReconcilesExistingProcessWhenRuntimeReconnects(
 	var workers sync.WaitGroup
 	d.pollRuntimeApplications(ctx, make(chan struct{}, 4), &workers, command.RuntimeID)
 	workers.Wait()
+	if pending, delivered := d.replayPendingTerminalReports(ctx); pending != 0 || delivered != 1 {
+		t.Fatalf("queued reconnect observation not delivered: %d/%d", pending, delivered)
+	}
 	select {
 	case observation := <-observed:
 		if observation.Generation != 3 || observation.ProcessState != "running" {

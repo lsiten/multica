@@ -24,7 +24,7 @@ func (c *Client) observeApplication(ctx context.Context, runtimeID, daemonID str
 }
 
 func (c *Client) completeApplication(ctx context.Context, runtimeID, daemonID string, claim protocol.ApplicationClaim, result protocol.ApplicationStepResult) error {
-	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/applications/steps/%s/result", runtimeID, claim.StepID), map[string]any{"daemon_id": daemonID, "result": result}, nil, defaultTerminalRetrySchedule)
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/applications/steps/%s/result", runtimeID, claim.StepID), map[string]any{"daemon_id": daemonID, "result": result}, nil)
 }
 
 func (c *Client) renewApplicationLease(ctx context.Context, runtimeID, daemonID string, claim protocol.ApplicationClaim) error {

@@ -563,6 +563,8 @@ export interface ApiClientIdentity {
 }
 
 export interface ApiClientOptions {
+  localApplicationSupported?: (workspaceId:string,id:string,runtimeId:string,revision:number)=>Promise<boolean>;
+	localApplicationOperation?: (workspaceId:string,id:string,input:ApplicationOperationRequest)=>Promise<unknown|null>;
   logger?: Logger;
   onUnauthorized?: () => void;
   /** Identifies the client to the server. Sent as X-Client-* headers. */
@@ -858,12 +860,24 @@ export class ApiClient {
   }
 
   async enqueueApplicationOperation(workspaceId: string, id: string, input: ApplicationOperationRequest): Promise<ApplicationOperation> {
+    if (this.options.localApplicationOperation && ["start","stop","restart"].includes(input.action)) {
+      const local = await this.options.localApplicationOperation(workspaceId,id,input);
+      if (local !== null) {
+        const result = parseWithFallback<ApplicationOperation|null>(local,applicationOperationSchema,null,{endpoint:"local application runtime"});
+        if (!result || result.workspace_id!==workspaceId || result.application_id!==id || result.action!==input.action) throw new Error("Invalid local application operation receipt");
+        return result;
+      }
+    }
     const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/operations`, {
       method: "POST", body: JSON.stringify(input), headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" },
     });
     const result = parseWithFallback<ApplicationOperation | null>(raw, applicationOperationSchema, null, { endpoint: "POST /api/applications/:id/operations" });
     if (!result || result.workspace_id !== workspaceId || result.application_id !== id || result.action !== input.action) throw new Error("Invalid application operation receipt");
     return result;
+  }
+
+  supportsLocalApplication(workspaceId:string,id:string,runtimeId:string,revision:number):Promise<boolean>{
+    return this.options.localApplicationSupported?.(workspaceId,id,runtimeId,revision)??Promise.resolve(false);
   }
 
   async getApplicationOperation(workspaceId: string, id: string, operationId: string, signal?: AbortSignal): Promise<ApplicationOperation> {
@@ -1115,6 +1129,9 @@ export class ApiClient {
     const rid = createRequestId();
     const start = Date.now();
     const method = init?.method ?? "GET";
+    // The signal remains attached through body consumption, not only until headers arrive.
+    const timeout = AbortSignal.timeout(30_000);
+    const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
 
     // Rebuilt per attempt rather than captured once: authHeaders() reads the
     // CSRF cookie at call time, and the retry below exists precisely because
@@ -1135,6 +1152,7 @@ export class ApiClient {
     const send = () =>
       fetch(`${this.baseUrl}${path}`, {
         ...init,
+        signal,
         headers: buildHeaders(),
         credentials: "include",
       });

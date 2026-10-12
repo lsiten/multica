@@ -92,6 +92,11 @@ UPDATE application_instance AS target SET observed_generation=$3,observed_revisi
 started_at=$10,observed_at=now(),metrics=$11,updated_at=now()
 WHERE target.id=$1 AND target.workspace_id=$2 AND target.generation=$3 AND EXISTS(SELECT 1 FROM runtime_lock) RETURNING target.*;
 
+-- name: ApplyLocalApplicationDesiredState :one
+UPDATE application_instance SET desired_state=$3,updated_at=now()
+WHERE id=$1 AND workspace_id=$2 AND generation=$4 AND revision=$5
+RETURNING *;
+
 -- name: DeleteApplicationInstances :exec
 DELETE FROM application_instance WHERE application_id=$1 AND workspace_id=$2;
 
@@ -157,7 +162,30 @@ SELECT * FROM application_operation_step WHERE operation_id=$1 AND workspace_id=
 SELECT count(*) FROM application_operation_step WHERE instance_id=$1 AND workspace_id=$2 AND state IN ('queued','running');
 
 -- name: ListRuntimeApplicationInstances :many
-SELECT * FROM application_instance WHERE workspace_id=$1 AND runtime_id=$2;
+SELECT i.id,i.revision,i.generation,i.observed_generation,i.desired_state,i.process_state,latest.command,
+ EXISTS(SELECT 1 FROM application_operation_step s WHERE s.instance_id=i.id AND s.workspace_id=i.workspace_id AND s.state IN ('queued','running')) AS has_pending_operations,
+ EXISTS(SELECT 1 FROM application_operation_step s WHERE s.instance_id=i.id AND s.workspace_id=i.workspace_id AND s.generation=i.generation AND s.action IN ('start','restart','resume') AND s.state='completed') AS may_restore,
+ CAST(((m.id IS NOT NULL AND r.owner_id IS NOT NULL AND (r.owner_id=m.user_id OR r.visibility='public')) AND (
+  COALESCE(latest.command->>'access_agent_id','')='' OR (ag.id IS NOT NULL AND (
+   (NOT EXISTS(SELECT 1 FROM project p WHERE p.lead_type='agent' AND p.lead_id=ag.id)
+    AND NOT EXISTS(SELECT 1 FROM agent_project_binding b WHERE b.agent_id=ag.id AND b.active)
+    AND NOT EXISTS(SELECT 1 FROM squad_member sm JOIN squad_project_binding b ON b.squad_id=sm.squad_id WHERE sm.member_type='agent' AND sm.member_id=ag.id AND b.active))
+   OR EXISTS(SELECT 1 FROM project p WHERE p.id=a.project_id AND p.lead_type='agent' AND p.lead_id=ag.id)
+   OR EXISTS(SELECT 1 FROM agent_project_binding b WHERE b.agent_id=ag.id AND b.project_id=a.project_id AND b.active)
+   OR EXISTS(SELECT 1 FROM squad_member sm JOIN squad_project_binding b ON b.squad_id=sm.squad_id WHERE sm.member_type='agent' AND sm.member_id=ag.id AND b.project_id=a.project_id AND b.active)
+  ))
+ )) IS TRUE AS boolean) AS command_authorized
+FROM application_instance i
+JOIN LATERAL (
+ SELECT s.command FROM application_operation_step s JOIN application_operation o ON o.id=s.operation_id AND o.workspace_id=s.workspace_id
+ WHERE s.instance_id=i.id AND s.workspace_id=i.workspace_id AND s.action IN ('start','restart','resume')
+ ORDER BY o.created_at DESC,s.id DESC LIMIT 1
+) latest ON true
+LEFT JOIN application a ON a.id=i.application_id AND a.workspace_id=i.workspace_id
+LEFT JOIN agent_runtime r ON r.id=i.runtime_id AND r.workspace_id=i.workspace_id
+LEFT JOIN member m ON m.workspace_id=i.workspace_id AND m.id::text=latest.command->>'access_member_id' AND m.user_id::text=latest.command->>'access_user_id'
+LEFT JOIN agent ag ON ag.id::text=latest.command->>'access_agent_id' AND ag.workspace_id=i.workspace_id AND ag.archived_at IS NULL
+WHERE i.workspace_id=$1 AND i.runtime_id=$2;
 
 -- name: ClaimApplicationOperationSteps :many
 UPDATE application_operation_step s SET state='running',claim_token=gen_random_uuid(),claimed_at=COALESCE(claimed_at,now()),lease_until=now()+interval '45 seconds'

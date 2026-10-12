@@ -173,7 +173,23 @@ func runApplicationControl(cmd *cobra.Command, args []string, action string) err
 		return err
 	}
 	var result map[string]any
-	if applicationControlWritesOperation(action) || action == "launch" || action == "service-access" || action == "cancel" {
+	local := false
+	if (action == "start" || action == "stop" || action == "restart") && !inDaemonManagedExecutionContext() {
+		profile := resolveProfile(cmd)
+		port := healthPortForProfile(profile)
+		probeCtx, probeCancel := context.WithTimeout(ctx, time.Second)
+		health := checkDaemonHealthOnPort(probeCtx, port)
+		probeCancel()
+		if daemonAlive(health) && daemonIdentityMismatch(health, profile, port) == nil && health["server_url"] == client.BaseURL {
+			result, local, err = localApplicationControl(ctx, localApplicationHTTPClient(3*time.Minute), fmt.Sprintf("http://127.0.0.1:%d", port), profile, client, args[0], body)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if local {
+		return cli.PrintJSON(cmd.OutOrStdout(), result)
+	} else if applicationControlWritesOperation(action) || action == "launch" || action == "service-access" || action == "cancel" {
 		err = client.PostJSON(ctx, path, body, &result)
 	} else {
 		err = client.GetJSON(ctx, path, &result)

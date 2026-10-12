@@ -22,15 +22,18 @@ const Entrypoint = "internal-application-host"
 
 // Record is machine-local ownership evidence. Token must never leave the host.
 type Record struct {
-	HostID      string                             `json:"host_id"`
-	BootID      string                             `json:"boot_id"`
-	Token       string                             `json:"token"`
-	Address     string                             `json:"address"`
-	WorkDir     string                             `json:"work_dir"`
-	SourceRoot  string                             `json:"source_root"`
-	LogRotation uint64                             `json:"log_rotation"`
-	Command     protocol.ApplicationControlCommand `json:"command"`
-	Observation protocol.ApplicationObservation    `json:"observation"`
+	HostID          string                             `json:"host_id"`
+	BootID          string                             `json:"boot_id"`
+	Token           string                             `json:"token"`
+	Address         string                             `json:"address"`
+	WorkDir         string                             `json:"work_dir"`
+	SourceRoot      string                             `json:"source_root"`
+	LogRotation     uint64                             `json:"log_rotation"`
+	LogError        string                             `json:"log_error,omitempty"`
+	LogPendingBytes int                                `json:"log_pending_bytes,omitempty"`
+	LogDroppedBytes uint64                             `json:"log_dropped_bytes,omitempty"`
+	Command         protocol.ApplicationControlCommand `json:"command"`
+	Observation     protocol.ApplicationObservation    `json:"observation"`
 }
 
 // NewRecord creates independent random identities for a local host and its control credential.

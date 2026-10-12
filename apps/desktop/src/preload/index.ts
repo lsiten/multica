@@ -272,6 +272,9 @@ type DaemonReauthResult =
   | { ok: false; reason: "transient"; message: string };
 
 const daemonAPI = {
+  listLocalApplications: (): Promise<unknown> => ipcRenderer.invoke("daemon:list-local-applications"),
+  localApplicationSupported:(request:unknown):Promise<boolean>=>ipcRenderer.invoke("daemon:local-application-supported",request),
+  localApplicationOperation: (request:unknown):Promise<unknown|null> => ipcRenderer.invoke("daemon:local-application-operation",request),
   readLocalReview: (request: unknown): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review", request),
   readLocalReviewBranches: (request: unknown, readID?: string): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review-branches", request, readID),
   readLocalReviewPage: (request: unknown, readID?: string): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review-page", request, readID),

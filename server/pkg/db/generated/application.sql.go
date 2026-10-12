@@ -116,6 +116,54 @@ func (q *Queries) ApplicationResourceInUse(ctx context.Context, arg ApplicationR
 	return in_use, err
 }
 
+const applyLocalApplicationDesiredState = `-- name: ApplyLocalApplicationDesiredState :one
+UPDATE application_instance SET desired_state=$3,updated_at=now()
+WHERE id=$1 AND workspace_id=$2 AND generation=$4 AND revision=$5
+RETURNING id, workspace_id, application_id, runtime_id, daemon_id, revision, observed_revision, generation, desired_state, process_state, health_state, error, code_version, dirty, started_at, observed_at, metrics, created_at, updated_at, observed_generation
+`
+
+type ApplyLocalApplicationDesiredStateParams struct {
+	ID           pgtype.UUID `json:"id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	DesiredState string      `json:"desired_state"`
+	Generation   int64       `json:"generation"`
+	Revision     int64       `json:"revision"`
+}
+
+func (q *Queries) ApplyLocalApplicationDesiredState(ctx context.Context, arg ApplyLocalApplicationDesiredStateParams) (ApplicationInstance, error) {
+	row := q.db.QueryRow(ctx, applyLocalApplicationDesiredState,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.DesiredState,
+		arg.Generation,
+		arg.Revision,
+	)
+	var i ApplicationInstance
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ApplicationID,
+		&i.RuntimeID,
+		&i.DaemonID,
+		&i.Revision,
+		&i.ObservedRevision,
+		&i.Generation,
+		&i.DesiredState,
+		&i.ProcessState,
+		&i.HealthState,
+		&i.Error,
+		&i.CodeVersion,
+		&i.Dirty,
+		&i.StartedAt,
+		&i.ObservedAt,
+		&i.Metrics,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ObservedGeneration,
+	)
+	return i, err
+}
+
 const cancelApplicationOperationSteps = `-- name: CancelApplicationOperationSteps :exec
 UPDATE application_operation_step SET state='cancelled',completed_at=now(),claim_token=NULL,lease_until=NULL,error='operation cancelled'
 WHERE operation_id=$1 AND workspace_id=$2 AND state IN ('queued','running')
@@ -1937,7 +1985,30 @@ func (q *Queries) ListExpiredApplicationOperations(ctx context.Context, arg List
 }
 
 const listRuntimeApplicationInstances = `-- name: ListRuntimeApplicationInstances :many
-SELECT id, workspace_id, application_id, runtime_id, daemon_id, revision, observed_revision, generation, desired_state, process_state, health_state, error, code_version, dirty, started_at, observed_at, metrics, created_at, updated_at, observed_generation FROM application_instance WHERE workspace_id=$1 AND runtime_id=$2
+SELECT i.id,i.revision,i.generation,i.observed_generation,i.desired_state,i.process_state,latest.command,
+ EXISTS(SELECT 1 FROM application_operation_step s WHERE s.instance_id=i.id AND s.workspace_id=i.workspace_id AND s.state IN ('queued','running')) AS has_pending_operations,
+ EXISTS(SELECT 1 FROM application_operation_step s WHERE s.instance_id=i.id AND s.workspace_id=i.workspace_id AND s.generation=i.generation AND s.action IN ('start','restart','resume') AND s.state='completed') AS may_restore,
+ CAST(((m.id IS NOT NULL AND r.owner_id IS NOT NULL AND (r.owner_id=m.user_id OR r.visibility='public')) AND (
+  COALESCE(latest.command->>'access_agent_id','')='' OR (ag.id IS NOT NULL AND (
+   (NOT EXISTS(SELECT 1 FROM project p WHERE p.lead_type='agent' AND p.lead_id=ag.id)
+    AND NOT EXISTS(SELECT 1 FROM agent_project_binding b WHERE b.agent_id=ag.id AND b.active)
+    AND NOT EXISTS(SELECT 1 FROM squad_member sm JOIN squad_project_binding b ON b.squad_id=sm.squad_id WHERE sm.member_type='agent' AND sm.member_id=ag.id AND b.active))
+   OR EXISTS(SELECT 1 FROM project p WHERE p.id=a.project_id AND p.lead_type='agent' AND p.lead_id=ag.id)
+   OR EXISTS(SELECT 1 FROM agent_project_binding b WHERE b.agent_id=ag.id AND b.project_id=a.project_id AND b.active)
+   OR EXISTS(SELECT 1 FROM squad_member sm JOIN squad_project_binding b ON b.squad_id=sm.squad_id WHERE sm.member_type='agent' AND sm.member_id=ag.id AND b.project_id=a.project_id AND b.active)
+  ))
+ )) IS TRUE AS boolean) AS command_authorized
+FROM application_instance i
+JOIN LATERAL (
+ SELECT s.command FROM application_operation_step s JOIN application_operation o ON o.id=s.operation_id AND o.workspace_id=s.workspace_id
+ WHERE s.instance_id=i.id AND s.workspace_id=i.workspace_id AND s.action IN ('start','restart','resume')
+ ORDER BY o.created_at DESC,s.id DESC LIMIT 1
+) latest ON true
+LEFT JOIN application a ON a.id=i.application_id AND a.workspace_id=i.workspace_id
+LEFT JOIN agent_runtime r ON r.id=i.runtime_id AND r.workspace_id=i.workspace_id
+LEFT JOIN member m ON m.workspace_id=i.workspace_id AND m.id::text=latest.command->>'access_member_id' AND m.user_id::text=latest.command->>'access_user_id'
+LEFT JOIN agent ag ON ag.id::text=latest.command->>'access_agent_id' AND ag.workspace_id=i.workspace_id AND ag.archived_at IS NULL
+WHERE i.workspace_id=$1 AND i.runtime_id=$2
 `
 
 type ListRuntimeApplicationInstancesParams struct {
@@ -1945,36 +2016,39 @@ type ListRuntimeApplicationInstancesParams struct {
 	RuntimeID   pgtype.UUID `json:"runtime_id"`
 }
 
-func (q *Queries) ListRuntimeApplicationInstances(ctx context.Context, arg ListRuntimeApplicationInstancesParams) ([]ApplicationInstance, error) {
+type ListRuntimeApplicationInstancesRow struct {
+	ID                   pgtype.UUID `json:"id"`
+	Revision             int64       `json:"revision"`
+	Generation           int64       `json:"generation"`
+	ObservedGeneration   int64       `json:"observed_generation"`
+	DesiredState         string      `json:"desired_state"`
+	ProcessState         string      `json:"process_state"`
+	Command              []byte      `json:"command"`
+	HasPendingOperations bool        `json:"has_pending_operations"`
+	MayRestore           bool        `json:"may_restore"`
+	CommandAuthorized    bool        `json:"command_authorized"`
+}
+
+func (q *Queries) ListRuntimeApplicationInstances(ctx context.Context, arg ListRuntimeApplicationInstancesParams) ([]ListRuntimeApplicationInstancesRow, error) {
 	rows, err := q.db.Query(ctx, listRuntimeApplicationInstances, arg.WorkspaceID, arg.RuntimeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ApplicationInstance{}
+	items := []ListRuntimeApplicationInstancesRow{}
 	for rows.Next() {
-		var i ApplicationInstance
+		var i ListRuntimeApplicationInstancesRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.WorkspaceID,
-			&i.ApplicationID,
-			&i.RuntimeID,
-			&i.DaemonID,
 			&i.Revision,
-			&i.ObservedRevision,
 			&i.Generation,
+			&i.ObservedGeneration,
 			&i.DesiredState,
 			&i.ProcessState,
-			&i.HealthState,
-			&i.Error,
-			&i.CodeVersion,
-			&i.Dirty,
-			&i.StartedAt,
-			&i.ObservedAt,
-			&i.Metrics,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.ObservedGeneration,
+			&i.Command,
+			&i.HasPendingOperations,
+			&i.MayRestore,
+			&i.CommandAuthorized,
 		); err != nil {
 			return nil, err
 		}

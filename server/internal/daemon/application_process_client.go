@@ -53,12 +53,11 @@ func (d *Daemon) ensureApplicationProcess(ctx context.Context) (*applicationProc
 	if d.applicationProcess != nil {
 		return d.applicationProcess, nil
 	}
-	var account struct {
-		ID string `json:"id"`
+	accountID, accountErr := d.verifiedAccount(ctx)
+	if accountErr != nil {
+		return nil, accountErr
 	}
-	if err := d.client.getJSON(ctx, "/api/me", &account); err != nil {
-		return nil, err
-	}
+	account := struct{ ID string }{ID: accountID}
 	if account.ID == "" {
 		return nil, errors.New("application owner identity missing")
 	}
@@ -115,10 +114,36 @@ func (d *Daemon) ensureApplicationProcess(ctx context.Context) (*applicationProc
 		return nil, err
 	}
 	client := &applicationProcessClient{daemon: d, process: process, bootstrap: b, source: source, gate: make(chan struct{}, 1), control: make(chan struct{}, 1), grants: map[string]protocol.ApplicationServiceGrantResponse{}}
+	if err := client.bindLocal(ctx, nil); err != nil {
+		source.close()
+		process.Close()
+		return nil, err
+	}
 	d.applicationProcess = client
 	return client, nil
 }
-func (c *applicationProcessClient) mutation(ctx context.Context, operation string, input any) error {
+func (c *applicationProcessClient) bindLocal(ctx context.Context, grants []protocol.ApplicationServiceGrantResponse) error {
+	canonical, err := filepath.EvalSymlinks(c.daemon.cfg.WorkspacesRoot)
+	if err != nil {
+		return err
+	}
+	c.daemon.mu.Lock()
+	local := []applicationLocalRuntime{}
+	for workspaceID, workspace := range c.daemon.workspaces {
+		for _, id := range workspace.runtimeIDs {
+			if _, owned := c.daemon.runtimeIndex[id]; owned {
+				local = append(local, applicationLocalRuntime{WorkspaceID: workspaceID, RuntimeID: id})
+			}
+		}
+	}
+	c.daemon.mu.Unlock()
+	err = c.mutation(ctx, "application.bind", applicationProcessBinding{WorkspacesRoot: canonical, SourceAddress: c.source.address, Grants: grants, LocalRuntimes: local}, nil)
+	if err == nil {
+		c.bindingReady = true
+	}
+	return err
+}
+func (c *applicationProcessClient) mutation(ctx context.Context, operation string, input any, out any) error {
 	select {
 	case c.gate <- struct{}{}:
 	case <-ctx.Done():
@@ -152,6 +177,11 @@ func (c *applicationProcessClient) mutation(ctx context.Context, operation strin
 	if response.Receipt == nil || response.Receipt.State != "completed" {
 		c.uncertain = &applicationUncertainOperation{RequestID: request.RequestID, Operation: operation, Cause: errors.New("pending receipt")}
 		return c.uncertain
+	}
+	if out != nil && len(response.Receipt.Result) > 0 {
+		if err := json.Unmarshal(response.Receipt.Result, out); err != nil {
+			return err
+		}
 	}
 	domainErr := response.Receipt.Error
 	ack, err := c.process.Client.Request("acknowledge", response.Status.Fence, nil)
@@ -219,7 +249,7 @@ func (c *applicationProcessClient) sync(ctx context.Context) (resultErr error) {
 		if roster[id] {
 			continue
 		}
-		if err := c.mutation(ctx, "application.remove", map[string]string{"runtime_id": id}); err != nil {
+		if err := c.mutation(ctx, "application.remove", map[string]string{"runtime_id": id}, nil); err != nil {
 			return err
 		}
 		if err := c.daemon.client.RevokeApplicationServiceGrant(ctx, id, protocol.RevokeApplicationServiceGrantRequest{ServiceInstanceID: grant.ServiceInstanceID, Generation: grant.Generation}); err != nil {
@@ -249,22 +279,29 @@ func (c *applicationProcessClient) sync(ctx context.Context) (resultErr error) {
 	}
 	c.storeGrants(grants)
 	if !changed && c.bindingReady && len(roster) > 0 {
-		return c.mutation(ctx, "application.wake", nil)
+		ids := []string{}
+		all := false
+		c.daemon.applicationWakeRuntimes.Range(func(key, _ any) bool {
+			if _, loaded := c.daemon.applicationWakeRuntimes.LoadAndDelete(key); loaded {
+				if key == "*" {
+					all = true
+				} else {
+					ids = append(ids, key.(string))
+				}
+			}
+			return true
+		})
+		if all {
+			ids = nil
+		}
+		return c.mutation(ctx, "application.wake", applicationWakeRequest{RuntimeIDs: ids}, nil)
 	}
 	list := make([]protocol.ApplicationServiceGrantResponse, 0, len(grants))
 	for _, grant := range grants {
 		list = append(list, grant)
 	}
-	canonical, err := filepath.EvalSymlinks(c.daemon.cfg.WorkspacesRoot)
-	if err != nil {
-		return err
-	}
 	c.bindingReady = false
-	err = c.mutation(ctx, "application.bind", applicationProcessBinding{WorkspacesRoot: canonical, SourceAddress: c.source.address, Grants: list})
-	if err == nil {
-		c.bindingReady = true
-	}
-	return err
+	return c.bindLocal(ctx, list)
 }
 func (c *applicationProcessClient) remove(ctx context.Context, id string) error {
 	select {
@@ -275,14 +312,13 @@ func (c *applicationProcessClient) remove(ctx context.Context, id string) error 
 	defer func() { <-c.control }()
 	grants := c.grantSnapshot()
 	grant, ok := grants[id]
-	if !ok {
-		return nil
-	}
-	if err := c.mutation(ctx, "application.remove", map[string]string{"runtime_id": id}); err != nil {
+	if err := c.mutation(ctx, "application.remove", map[string]string{"runtime_id": id}, nil); err != nil {
 		return err
 	}
-	if err := c.daemon.client.RevokeApplicationServiceGrant(ctx, id, protocol.RevokeApplicationServiceGrantRequest{ServiceInstanceID: grant.ServiceInstanceID, Generation: grant.Generation}); err != nil {
-		return err
+	if ok {
+		if err := c.daemon.client.RevokeApplicationServiceGrant(ctx, id, protocol.RevokeApplicationServiceGrantRequest{ServiceInstanceID: grant.ServiceInstanceID, Generation: grant.Generation}); err != nil {
+			return err
+		}
 	}
 	delete(grants, id)
 	c.storeGrants(grants)
@@ -343,20 +379,35 @@ func (c *applicationProcessClient) close() error {
 	return c.closeErr
 }
 func (d *Daemon) applicationProcessLoop(ctx context.Context, client *applicationProcessClient) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	failures := 0
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		case <-d.applicationWake:
+		}
 		update, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err := client.sync(update)
 		cancel()
 		if err != nil && ctx.Err() == nil {
+			failures++
 			d.logger.Warn("application service reconciliation deferred", "error", err)
+		} else {
+			failures = 0
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		case <-d.applicationWake:
+		delay := downwardJitterDuration(applicationPollInterval)
+		if failures > 0 {
+			delay = max(delay, reportRetryDelay(failures, err))
 		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(delay)
 	}
 }

@@ -21,9 +21,10 @@ import (
 
 // HealthResponse is returned by the daemon's local health endpoint.
 type HealthResponse struct {
-	ApplicationService *ApplicationServiceHealth `json:"application_service,omitempty"`
-	Status             string                    `json:"status"`
-	PID                int                       `json:"pid"`
+	ApplicationService     *ApplicationServiceHealth `json:"application_service,omitempty"`
+	Status                 string                    `json:"status"`
+	RemoteBootstrapPending bool                      `json:"remote_bootstrap_pending"`
+	PID                    int                       `json:"pid"`
 	// OS is the daemon's runtime.GOOS. The desktop app compares it against its
 	// own host OS to detect a daemon it cannot manage — e.g. a Windows desktop
 	// reaching a Linux daemon inside WSL2 over localhost forwarding. The
@@ -348,12 +349,8 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 			agents = append(agents, name)
 		}
 
-		// "starting" until preflight (PAT renew + initial workspace sync +
-		// runtime registration) completes; "running" once the daemon can
-		// actually claim tasks. The health port is bound before preflight for
-		// liveness/diagnostics, so callers must not treat a reachable endpoint
-		// as ready — they gate on this status. Consumers that only know
-		// "running" (older CLI/desktop) safely treat "starting" as not-ready.
+		// Running describes the local control plane. A cold offline bootstrap
+		// exposes its separate remote readiness and admits no task claims.
 		status := "starting"
 		if d.ready.Load() {
 			status = "running"
@@ -362,6 +359,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 		resp := HealthResponse{
 			ApplicationService:                d.applicationProcessHealth(r.Context()),
 			Status:                            status,
+			RemoteBootstrapPending:            d.remoteBootstrapPending.Load(),
 			PID:                               os.Getpid(),
 			OS:                                runtime.GOOS,
 			Uptime:                            time.Since(startedAt).Truncate(time.Second).String(),
@@ -463,6 +461,7 @@ func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt tim
 	cleanupDesktop := d.registerVscreenDesktop(ctx, mux, startedAt)
 	defer cleanupDesktop()
 	mux.HandleFunc("/health", d.healthHandler(startedAt))
+	mux.HandleFunc("/applications/local", d.localApplicationsHandler())
 	mux.HandleFunc("/mcp/readiness", d.mcpReadinessHandler())
 	mux.HandleFunc("/mcp/services", d.builtinMCPDetailsHandler())
 	mux.HandleFunc("/shutdown", d.shutdownHandler())

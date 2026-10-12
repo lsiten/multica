@@ -1290,7 +1290,10 @@ describe("ApiClient", () => {
     const request = new URL(fetchMock.mock.calls[1]![0]);
     expect(request.searchParams.get("limit")).toBe("7");
     expect(request.searchParams.get("before")).toBe(cursor);
-    expect(fetchMock.mock.calls[1]![1].signal).toBe(controller.signal);
+    const requestSignal = fetchMock.mock.calls[1]![1].signal;
+    expect(requestSignal.aborted).toBe(false);
+    controller.abort();
+    expect(requestSignal.aborted).toBe(true);
   });
 
   it("drops the continuation when the task page is malformed", async () => {

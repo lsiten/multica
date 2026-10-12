@@ -176,32 +176,32 @@ func validObservation(observation protocol.ApplicationObservation) error {
 	return nil
 }
 
-func storeObservation(ctx context.Context, q *db.Queries, workspaceID, runtimeID pgtype.UUID, observation protocol.ApplicationObservation) error {
+func storeObservation(ctx context.Context, q *db.Queries, workspaceID, runtimeID pgtype.UUID, observation protocol.ApplicationObservation) (bool, error) {
 	if err := validObservation(observation); err != nil {
-		return err
+		return false, err
 	}
 	id, err := util.ParseUUID(observation.InstanceID)
 	if err != nil {
-		return fmt.Errorf("%w: invalid instance_id", ErrInvalid)
+		return false, fmt.Errorf("%w: invalid instance_id", ErrInvalid)
 	}
 	instance, err := q.GetApplicationInstance(ctx, db.GetApplicationInstanceParams{ID: id, WorkspaceID: workspaceID})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
+		return false, ErrNotFound
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if instance.RuntimeID != runtimeID {
-		return ErrForbidden
+		return false, ErrForbidden
 	}
 	if instance.Generation != observation.Generation || instance.Revision != observation.Revision {
-		return ErrConflict
+		return false, ErrConflict
 	}
 	var startedAt pgtype.Timestamptz
 	if observation.StartedAt != nil {
 		started, parseErr := time.Parse(time.RFC3339Nano, *observation.StartedAt)
 		if parseErr != nil {
-			return fmt.Errorf("%w: invalid started_at", ErrInvalid)
+			return false, fmt.Errorf("%w: invalid started_at", ErrInvalid)
 		}
 		startedAt = pgtype.Timestamptz{Time: started, Valid: true}
 	}
@@ -211,17 +211,18 @@ func storeObservation(ctx context.Context, q *db.Queries, workspaceID, runtimeID
 	}
 	raw, err := json.Marshal(metrics)
 	if err != nil {
-		return err
+		return false, err
 	}
 	_, err = q.ReportApplicationInstance(ctx, db.ReportApplicationInstanceParams{ID: id, WorkspaceID: workspaceID, ObservedGeneration: observation.Generation, ObservedRevision: observation.Revision, ProcessState: observation.ProcessState, HealthState: observation.HealthState, Error: observation.Error, CodeVersion: observation.CodeVersion, Dirty: observation.Dirty, StartedAt: startedAt, Metrics: raw})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrConflict
+		return false, ErrConflict
 	}
-	return err
+	changed := instance.ObservedGeneration != observation.Generation || instance.ObservedRevision != observation.Revision || instance.ProcessState != observation.ProcessState || instance.HealthState != observation.HealthState || instance.Error != observation.Error || instance.CodeVersion != observation.CodeVersion || instance.Dirty != observation.Dirty || instance.StartedAt.Valid != startedAt.Valid || (startedAt.Valid && !instance.StartedAt.Time.Equal(startedAt.Time))
+	return changed, err
 }
 
 // Observe persists local facts without treating a network outage as a process exit.
-func (s *Service) Observe(ctx context.Context, workspaceID, runtimeID pgtype.UUID, observation protocol.ApplicationObservation) error {
+func (s *Service) Observe(ctx context.Context, workspaceID, runtimeID pgtype.UUID, observation protocol.ApplicationObservation) (bool, error) {
 	return storeObservation(ctx, s.Queries, workspaceID, runtimeID, observation)
 }
 
@@ -233,15 +234,8 @@ func (s *Service) RuntimeInstances(ctx context.Context, workspaceID, runtimeID p
 	}
 	result := make([]protocol.ApplicationRuntimeInstance, 0, len(instances))
 	for _, instance := range instances {
-		raw, getErr := s.Queries.GetApplicationInstanceStartCommand(ctx, db.GetApplicationInstanceStartCommandParams{InstanceID: instance.ID, WorkspaceID: workspaceID})
-		if errors.Is(getErr, pgx.ErrNoRows) {
-			continue
-		}
-		if getErr != nil {
-			return nil, getErr
-		}
 		var command protocol.ApplicationControlCommand
-		if err = json.Unmarshal(raw, &command); err != nil {
+		if err = json.Unmarshal(instance.Command, &command); err != nil {
 			return nil, err
 		}
 		if command.Revision != instance.Revision {
@@ -255,20 +249,8 @@ func (s *Service) RuntimeInstances(ctx context.Context, workspaceID, runtimeID p
 		} else if resume {
 			command.Action = "resume"
 		}
-		canRestore, err := s.Queries.ApplicationInstanceMayRestore(ctx, db.ApplicationInstanceMayRestoreParams{WorkspaceID: workspaceID, InstanceID: instance.ID, Generation: instance.Generation})
-		if err != nil {
-			return nil, err
-		}
-		authorized, err := applicationCommandAuthorized(ctx, s.Queries, command)
-		if err != nil {
-			return nil, err
-		}
-		pending, err := s.Queries.CountApplicationInstanceOperations(ctx, db.CountApplicationInstanceOperationsParams{InstanceID: instance.ID, WorkspaceID: workspaceID})
-		if err != nil {
-			return nil, err
-		}
-		confirmedStopped := instance.DesiredState == "stopped" && instance.ProcessState == "stopped" && instance.Generation == instance.ObservedGeneration && pending == 0
-		result = append(result, protocol.ApplicationRuntimeInstance{DesiredState: instance.DesiredState, CanRestore: canRestore.Valid && canRestore.Bool && authorized, HasPendingOperation: pending > 0, ConfirmedStopped: confirmedStopped, Command: command})
+		confirmedStopped := instance.DesiredState == "stopped" && instance.ProcessState == "stopped" && instance.Generation == instance.ObservedGeneration && !instance.HasPendingOperations
+		result = append(result, protocol.ApplicationRuntimeInstance{DesiredState: instance.DesiredState, CanRestore: instance.MayRestore && instance.CommandAuthorized && !instance.HasPendingOperations, HasPendingOperation: instance.HasPendingOperations, ConfirmedStopped: confirmedStopped, Command: command})
 	}
 	return result, nil
 }
@@ -342,7 +324,7 @@ func (s *Service) Complete(ctx context.Context, workspaceID, runtimeID, stepID p
 			return pgtype.UUID{}, fmt.Errorf("%w: cancelled stop did not retain a running process", ErrInvalid)
 		}
 	}
-	if err = storeObservation(ctx, q, workspaceID, runtimeID, result.Observation); err != nil {
+	if _, err = storeObservation(ctx, q, workspaceID, runtimeID, result.Observation); err != nil {
 		return pgtype.UUID{}, err
 	}
 	step, err = q.CompleteApplicationOperationStep(ctx, db.CompleteApplicationOperationStepParams{ID: stepID, WorkspaceID: workspaceID, RuntimeID: runtimeID, ClaimToken: claimToken, State: result.State, Error: result.Error})

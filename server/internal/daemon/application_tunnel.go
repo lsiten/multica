@@ -41,8 +41,8 @@ func (c *Client) connectApplicationTunnel(ctx context.Context, runtimeID, kind, 
 		return nil, err
 	}
 	headers := http.Header{}
-	if c.token != "" {
-		headers.Set("Authorization", "Bearer "+c.token)
+	if token := c.Token(); token != "" {
+		headers.Set("Authorization", "Bearer "+token)
 	}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	connection, response, err := dialer.DialContext(ctx, address, headers)

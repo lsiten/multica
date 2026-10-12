@@ -53,12 +53,11 @@ func (d *Daemon) ensureEnvironmentProcess(ctx context.Context) (*environmentProc
 	if d.environmentProcess != nil {
 		return d.environmentProcess, nil
 	}
-	var account struct {
-		ID string `json:"id"`
+	accountID, accountErr := d.verifiedAccount(ctx)
+	if accountErr != nil {
+		return nil, accountErr
 	}
-	if err := d.client.getJSON(ctx, "/api/me", &account); err != nil {
-		return nil, err
-	}
+	account := struct{ ID string }{ID: accountID}
 	if account.ID == "" {
 		return nil, errors.New("environment owner identity missing")
 	}

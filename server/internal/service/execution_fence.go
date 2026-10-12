@@ -51,7 +51,9 @@ func LockExecutionCallback(ctx context.Context, q *db.Queries, taskID pgtype.UUI
 	if err != nil {
 		return fmt.Errorf("execution membership: %w", err)
 	}
-	if request.GrantHash != "" {
+	if request.Recovered {
+		// Owner-authenticated replay keeps all execution and membership fences above.
+	} else if request.GrantHash != "" {
 		grant, err := q.GetExecutionGrant(ctx, request.GrantHash)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrExecutionStale
@@ -65,7 +67,7 @@ func LockExecutionCallback(ctx context.Context, q *db.Queries, taskID pgtype.UUI
 	} else {
 		return ErrExecutionStale
 	}
-	if task.CompletedAt.Valid && time.Since(task.CompletedAt.Time) > 24*time.Hour {
+	if !request.Recovered && task.CompletedAt.Valid && time.Since(task.CompletedAt.Time) > 24*time.Hour {
 		return ErrExecutionStale
 	}
 	switch request.Operation {
