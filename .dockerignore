@@ -39,6 +39,11 @@ coverage
 # app workspaces so they do not silently enter the build context.
 /apps/*
 !/apps/web/
+# Dockerfile.web runs a frozen pnpm install that reads the workspace-wide
+# lock, which records a patchedDependencies entry for the mobile patch. The
+# build context must include it (but not the whole mobile workspace) so the
+# frozen install can resolve the lock.
+!/apps/mobile/patches/
 
 # Repository-only tooling
 /.github/
