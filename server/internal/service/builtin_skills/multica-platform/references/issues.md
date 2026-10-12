@@ -484,6 +484,7 @@ multica issue update <id> --description-file /tmp/other-run/description.md
 multica issue update <id> --description-file ./description.md
 ```
 
+
 ## Issue wakeups
 
 For event, condition and timer rules, recurring checks and check-ins, read
