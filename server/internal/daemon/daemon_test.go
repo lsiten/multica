@@ -568,6 +568,11 @@ func TestTaskMulticaEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 		"TMP":                          "/task/tmp",
 		"TEMP":                         "/task/tmp",
 	}
+	if runtime.GOOS == "windows" {
+		// Windows tasks inherit host TMP/TEMP; see TestTaskMulticaEnvironmentTempPolicy.
+		delete(want, "TMP")
+		delete(want, "TEMP")
+	}
 	if !maps.Equal(env, want) {
 		t.Fatalf("taskMulticaEnvironment() = %#v, want %#v", env, want)
 	}
@@ -590,20 +595,18 @@ func TestTaskMulticaEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 
 func TestTaskMulticaEnvironmentTempPolicy(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_TMPDIR", "")
-	for _, provider := range []string{"claude", "codex", "pi"} {
+	for _, provider := range []string{"claude", "codex", "pi", "opencode", "cursor"} {
 		t.Run(provider, func(t *testing.T) {
 			env := taskMulticaEnvironment(Task{}, provider, "", "", "", "", "", 0, 0, "/task/tmp")
 			if env["TMPDIR"] != "/task/tmp" {
 				t.Fatalf("TMPDIR = %q, want private task temp", env["TMPDIR"])
 			}
-			if runtime.GOOS == "windows" && provider == "claude" {
+			if runtime.GOOS == "windows" {
+				// Every provider can start Git Bash, whose /tmp mount is shared.
 				for _, key := range []string{"TMP", "TEMP"} {
 					if _, overridden := env[key]; overridden {
 						t.Errorf("%s must inherit the host path for Git Bash's shared /tmp", key)
 					}
-				}
-				if env["CLAUDE_CODE_TMPDIR"] != "/task/tmp" {
-					t.Errorf("CLAUDE_CODE_TMPDIR = %q, want private task temp", env["CLAUDE_CODE_TMPDIR"])
 				}
 			} else {
 				for _, key := range []string{"TMP", "TEMP"} {
@@ -611,9 +614,12 @@ func TestTaskMulticaEnvironmentTempPolicy(t *testing.T) {
 						t.Errorf("%s = %q, want existing private task temp", key, env[key])
 					}
 				}
-				if _, overridden := env["CLAUDE_CODE_TMPDIR"]; overridden {
-					t.Error("other platforms/providers must not override CLAUDE_CODE_TMPDIR")
-				}
+			}
+			wantClaudeTemp := runtime.GOOS == "windows" && provider == "claude"
+			if got, ok := env["CLAUDE_CODE_TMPDIR"]; wantClaudeTemp && got != "/task/tmp" {
+				t.Errorf("CLAUDE_CODE_TMPDIR = %q, want private task temp", got)
+			} else if !wantClaudeTemp && ok {
+				t.Error("only Windows Claude gets a CLAUDE_CODE_TMPDIR default")
 			}
 		})
 	}
