@@ -13,6 +13,11 @@ COPY packages/ui/package.json packages/ui/
 COPY packages/views/package.json packages/views/
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/eslint-config/package.json packages/eslint-config/
+# The workspace lock records a patch under apps/mobile/patches; the frozen
+# install reads that file even though this image only builds apps/web. Copy
+# just the patch (not apps/mobile's package.json) so pnpm can resolve it
+# without pulling mobile-only dependencies.
+COPY apps/mobile/patches/ apps/mobile/patches/
 
 RUN corepack enable && \
     PNPM_VERSION="$(node -p 'require("./package.json").packageManager')" && \
