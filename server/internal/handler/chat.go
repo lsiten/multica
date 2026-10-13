@@ -389,11 +389,30 @@ type ChatSessionFileTaskResponse struct {
 	CreatedAt       string `json:"created_at"`
 }
 
+// ChatSessionProjectResponse is the compact project-tab payload for the chat
+// file manager. Keep it separate from ProjectResponse so this projection does
+// not imply that issue/resource counts were loaded.
+type ChatSessionProjectResponse struct {
+	ID          string  `json:"id"`
+	WorkspaceID string  `json:"workspace_id"`
+	Title       string  `json:"title"`
+	Description *string `json:"description"`
+	Icon        *string `json:"icon"`
+	Status      string  `json:"status"`
+	Priority    string  `json:"priority"`
+}
+
 type ChatSessionFilesResponse struct {
 	WorkspaceID string                        `json:"workspace_id"`
 	ProjectID   *string                       `json:"project_id,omitempty"`
+	Projects    []ChatSessionProjectResponse  `json:"projects,omitempty"`
 	Attachments []AttachmentResponse          `json:"attachments"`
 	Tasks       []ChatSessionFileTaskResponse `json:"tasks"`
+	// ProjectAttachments and ProjectTasks are additive projections for the
+	// selected project's durable file browser. The existing attachments/tasks
+	// fields remain scoped to the current chat for older clients.
+	ProjectAttachments []AttachmentResponse          `json:"project_attachments,omitempty"`
+	ProjectTasks       []ChatSessionFileTaskResponse `json:"project_tasks,omitempty"`
 	// Repos is the project's configured repositories resolved on the server
 	// (project resource -> workspace repos fallback). The file browser lists
 	// them as references when the session has no task worktree to browse, so a
@@ -430,6 +449,34 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list chat attachments")
 		return
 	}
+	associatedProjects, err := h.Queries.ListChatSessionProjects(r.Context(), db.ListChatSessionProjectsParams{
+		ID:          session.ID,
+		WorkspaceID: workspaceUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list chat projects")
+		return
+	}
+	selectedProjectID := session.ProjectID
+	if rawProjectID := strings.TrimSpace(r.URL.Query().Get("project_id")); rawProjectID != "" {
+		projectID, parseErr := parseUUIDLoose(rawProjectID)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, parseErr.Error())
+			return
+		}
+		allowed := false
+		for _, project := range associatedProjects {
+			if project.ID == projectID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			writeError(w, http.StatusNotFound, "project is not associated with this chat")
+			return
+		}
+		selectedProjectID = projectID
+	}
 	// The file browser browses at most five task workdirs, so cap the query to
 	// that many instead of over-fetching rows the client discards.
 	tasks, err := h.Queries.ListChatSessionFileTasks(r.Context(), db.ListChatSessionFileTasksParams{
@@ -448,10 +495,10 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	taskResponses := make([]ChatSessionFileTaskResponse, 0, len(tasks))
 	for _, task := range tasks {
-		if !task.WorkDir.Valid || strings.TrimSpace(task.WorkDir.String) == "" {
+		workDir := chatSessionTaskWorkDir(task)
+		if workDir == "" {
 			continue
 		}
-		workDir := task.WorkDir.String
 		taskResponses = append(taskResponses, ChatSessionFileTaskResponse{
 			ID:              uuidToString(task.ID),
 			RuntimeID:       uuidToString(task.RuntimeID),
@@ -460,23 +507,89 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:       timestampToString(task.CreatedAt),
 		})
 	}
+	projectTaskResponses := make([]ChatSessionFileTaskResponse, 0)
+	projectAttachmentResponses := make([]AttachmentResponse, 0)
+	if selectedProjectID.Valid {
+		projectTasks, projectErr := h.Queries.ListChatProjectFileTasks(r.Context(), db.ListChatProjectFileTasksParams{
+			ProjectID:   selectedProjectID,
+			WorkspaceID: workspaceUUID,
+			PageLimit:   25,
+		})
+		if projectErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list project worktrees")
+			return
+		}
+		projectTaskResponses = make([]ChatSessionFileTaskResponse, 0, len(projectTasks))
+		for _, task := range projectTasks {
+			workDir := chatSessionTaskWorkDir(task)
+			if workDir == "" {
+				continue
+			}
+			projectTaskResponses = append(projectTaskResponses, ChatSessionFileTaskResponse{
+				ID:              uuidToString(task.ID),
+				RuntimeID:       uuidToString(task.RuntimeID),
+				WorkDir:         workDir,
+				RelativeWorkDir: relativeWorkDir(workDir, workspaceID, uuidToString(task.ID)),
+				CreatedAt:       timestampToString(task.CreatedAt),
+			})
+		}
+		projectAttachments, projectErr := h.Queries.ListAttachmentsByProject(r.Context(), db.ListAttachmentsByProjectParams{
+			ProjectID:   selectedProjectID,
+			WorkspaceID: workspaceUUID,
+		})
+		if projectErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list project attachments")
+			return
+		}
+		projectAttachmentResponses = make([]AttachmentResponse, 0, len(projectAttachments))
+		for _, attachment := range projectAttachments {
+			projectAttachmentResponses = append(projectAttachmentResponses, h.attachmentToResponse(attachment, attachmentMode))
+		}
+	}
+	projectResponses := make([]ChatSessionProjectResponse, 0, len(associatedProjects))
+	for _, project := range associatedProjects {
+		projectResponses = append(projectResponses, ChatSessionProjectResponse{
+			ID:          uuidToString(project.ID),
+			WorkspaceID: uuidToString(project.WorkspaceID),
+			Title:       project.Title,
+			Description: textToPtr(project.Description),
+			Icon:        textToPtr(project.Icon),
+			Status:      project.Status,
+			Priority:    project.Priority,
+		})
+	}
 	// Resolve the project's configured repos (project resource -> workspace
 	// repos fallback) so the file browser can list them even when the session
 	// has no task worktree. A read failure degrades to no repos rather than
 	// failing the whole projection.
 	var repos []RepoData
-	if session.ProjectID.Valid {
-		if projectCtx, err := h.resolveClaimProjectContext(r.Context(), session.ProjectID, workspaceUUID); err == nil {
+	if selectedProjectID.Valid {
+		if projectCtx, err := h.resolveClaimProjectContext(r.Context(), selectedProjectID, workspaceUUID); err == nil {
 			repos = projectCtx.Repos
 		}
 	}
 	writeJSON(w, http.StatusOK, ChatSessionFilesResponse{
-		WorkspaceID: workspaceID,
-		ProjectID:   uuidToPtr(session.ProjectID),
-		Attachments: attachmentResponses,
-		Tasks:       taskResponses,
-		Repos:       repos,
+		WorkspaceID:        workspaceID,
+		ProjectID:          uuidToPtr(selectedProjectID),
+		Projects:           projectResponses,
+		Attachments:        attachmentResponses,
+		Tasks:              taskResponses,
+		ProjectAttachments: projectAttachmentResponses,
+		ProjectTasks:       projectTaskResponses,
+		Repos:              repos,
 	})
+}
+
+// chatSessionTaskWorkDir prefers the active checkout and falls back to the
+// durable archive path retained after a task completes or is reclaimed.
+func chatSessionTaskWorkDir(task db.AgentTaskQueue) string {
+	if task.WorkDir.Valid && strings.TrimSpace(task.WorkDir.String) != "" {
+		return task.WorkDir.String
+	}
+	if task.DurableWorkDir.Valid && strings.TrimSpace(task.DurableWorkDir.String) != "" {
+		return task.DurableWorkDir.String
+	}
+	return ""
 }
 
 type UpdateChatSessionRequest struct {

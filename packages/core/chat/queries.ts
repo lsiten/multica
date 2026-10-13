@@ -35,7 +35,7 @@ export const chatKeys = {
   /** Full sessions list (active + archived); the dropdown splits locally. */
   sessions: (wsId: string) => [...chatKeys.all(wsId), "sessions"] as const,
   session: (wsId: string, id: string) => [...chatKeys.all(wsId), "session", id] as const,
-  sessionFiles: (wsId: string, id: string) => [...chatKeys.all(wsId), "session-files", id] as const,
+  sessionFiles: (wsId: string, id: string, projectId?: string | null) => [...chatKeys.all(wsId), "session-files", id, projectId ?? null] as const,
   messagesAll: () => ["chat", "messages"] as const,
   messages: (sessionId: string) => [...chatKeys.messagesAll(), sessionId] as const,
   messagesPageAll: () => ["chat", "messages-page"] as const,
@@ -83,10 +83,10 @@ export function chatSessionsOptions(wsId: string) {
   });
 }
 
-export function chatSessionFilesOptions(wsId: string, sessionId: string) {
+export function chatSessionFilesOptions(wsId: string, sessionId: string, projectId?: string | null) {
   return queryOptions({
-    queryKey: chatKeys.sessionFiles(wsId, sessionId),
-    queryFn: () => api.listChatSessionFiles(sessionId),
+    queryKey: chatKeys.sessionFiles(wsId, sessionId, projectId),
+    queryFn: () => api.listChatSessionFiles(sessionId, projectId),
     enabled: !!wsId && !!sessionId,
     staleTime: 15_000,
   });

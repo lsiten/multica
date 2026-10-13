@@ -12,7 +12,14 @@
     "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",
     "no_match": "\u65e0\u5339\u914d",
     "toggle": "\u6587\u4ef6",
-    "empty": "\u6682\u65e0\u6587\u6863"
+    "empty": "\u6682\u65e0\u6587\u6863",
+    "tabs_label": "\u804a\u5929\u6587\u4ef6",
+    "projects_label": "\u9879\u76ee",
+    "project_files": "\u9879\u76ee\u6587\u4ef6",
+    "attachments": "\u5f53\u524d\u9644\u4ef6",
+    "issues": "\u9879\u76ee\u95ee\u9898",
+    "no_attachments": "\u5f53\u524d\u804a\u5929\u6682\u65e0\u9644\u4ef6",
+    "no_issues": "\u8be5\u9879\u76ee\u6682\u65e0\u95ee\u9898"
   },
   "page": {
     "title": "聊天",

@@ -2482,6 +2482,9 @@ describe("ChatSessionFilesResponseSchema", () => {
     expect(parsed.attachments[0]?.filename).toBe("report.pdf");
     expect(parsed.tasks).toHaveLength(1);
     expect(parsed.project_id).toBe("proj-1");
+    expect(parsed.projects).toEqual([]);
+    expect(parsed.project_attachments).toEqual([]);
+    expect(parsed.project_tasks).toEqual([]);
     // The valid repo survives; the malformed url degrades to "" so the
     // display layer's `repo.url` filter hides only that row.
     expect(parsed.repos[0]).toEqual(

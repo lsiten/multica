@@ -1,14 +1,17 @@
 "use client";
 
 import { FileText, GitBranch, Paperclip, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
+import { api } from "@multica/core/api";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import { useQuery } from "@tanstack/react-query";
 import { requestReviewPage } from "../../platform/local-review-pages";
 import { useT } from "../../i18n";
-import type { ChatSessionRepo } from "@multica/core/types";
+import { AppLink } from "../../navigation";
+import { paths, useWorkspaceSlug } from "@multica/core/paths";
+import type { ChatSessionRepo, Issue } from "@multica/core/types";
 
 // The file list is the chat's server-side projection of openable documents:
 // the session's attachments plus the files the session's tasks checked out of
@@ -23,6 +26,7 @@ export interface DocumentListItem {
   label: string;
   sessionId?: string;
   taskId?: string;
+  projectId?: string;
   runtimeId?: string;
   relativePath?: string;
   contentType?: string;
@@ -46,20 +50,39 @@ function repoLabel(repo: ChatSessionRepo): string {
 
 export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?: string | null }) {
   const { t } = useT("chat");
+  const workspaceSlug = useWorkspaceSlug();
+  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues">("files");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const { data: sessionFiles } = useQuery({
-    ...chatSessionFilesOptions(wsId, sessionId ?? ""),
+    ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId),
   });
+  useEffect(() => {
+    if (selectedProjectId === undefined && sessionFiles) {
+      setSelectedProjectId(sessionFiles.project_id ?? sessionFiles.projects?.[0]?.id);
+    }
+  }, [selectedProjectId, sessionFiles]);
+  const projectID = selectedProjectId ?? sessionFiles?.project_id ?? "";
   // The project is the header for its files; it has no document body of its
   // own, so it is shown but not opened through the doc-mode surface.
   const { data: project } = useQuery({
-    ...projectDetailOptions(wsId, sessionFiles?.project_id ?? ""),
-    enabled: !!sessionFiles?.project_id,
+    ...projectDetailOptions(wsId, projectID),
+    enabled: !!projectID,
+  });
+  const { data: projectIssues } = useQuery({
+    queryKey: ["chat-project-issues", wsId, projectID],
+    queryFn: () => api.listIssues({ project_id: projectID, limit: 100, offset: 0 }),
+    enabled: !!projectID,
+    staleTime: 15_000,
   });
   // Stable across renders (keyed on sessionFiles) so the derived document memo
   // below is not recomputed on every render.
   const fileTasks = useMemo(
-    () => (sessionFiles?.tasks ?? []).filter((task) => task.work_dir).slice(0, 5),
-    [sessionFiles],
+    () => {
+      const projectTasks = sessionFiles?.project_tasks;
+      const tasks = selectedProjectId && projectTasks && projectTasks.length > 0 ? projectTasks : sessionFiles?.tasks ?? [];
+      return tasks.filter((task) => task.work_dir).slice(0, 25);
+    },
+    [selectedProjectId, sessionFiles],
   );
   // A single cached query (Promise.all) replaces useQueries: useQueries returns
   // a fresh array on every render, which defeated the allDocuments memo below.
@@ -104,6 +127,16 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
         sessionId: sessionId ?? undefined,
       }),
     );
+    const projectAttachmentDocuments = (selectedProjectId ? sessionFiles?.project_attachments ?? [] : []).map(
+      (attachment): DocumentListItem => ({
+        kind: "attachment",
+        id: attachment.id,
+        label: attachment.filename || attachment.url,
+        contentType: attachment.content_type,
+        sessionId: sessionId ?? undefined,
+        projectId: selectedProjectId,
+      }),
+    );
     const workspaceDocuments = (workspaceFiles.data ?? []).flatMap((files, taskIndex) => {
       if (!files || !("entries" in files)) return [];
       const task = fileTasks[taskIndex];
@@ -114,13 +147,14 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           id: `${task?.id ?? ""}:${entry.path}`,
           label: entry.path,
           sessionId: sessionId ?? undefined,
+          projectId: selectedProjectId,
           taskId: task?.id,
           runtimeId: task?.runtime_id,
           relativePath: entry.path,
         }));
     });
-    return [...workspaceDocuments, ...attachmentDocuments];
-  }, [sessionFiles, workspaceFiles.data, fileTasks, sessionId]);
+    return [...workspaceDocuments, ...attachmentDocuments, ...projectAttachmentDocuments];
+  }, [sessionFiles, workspaceFiles.data, fileTasks, selectedProjectId, sessionId]);
 
   // When the session has no task worktree to browse, the project's configured
   // repos stand in for its files. They are not openable in doc mode (there is
@@ -145,7 +179,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     return repoReferences.filter((repo) => repoLabel(repo).toLowerCase().includes(query));
   }, [repoReferences, filter]);
 
-  const hasContent = !!project || allDocuments.length > 0 || repoReferences.length > 0;
+  const hasContent = !!project || allDocuments.length > 0 || repoReferences.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
 
   if (!hasContent) {
     return (
@@ -177,60 +211,112 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           />
         </div>
       </div>
-      {project && (
-        <div className="px-3 py-2">
-          <h3 className="truncate text-body font-semibold">{project.title}</h3>
-        </div>
-      )}
-      {visibleRepoReferences.length > 0 && (
-        <ul className="divide-y">
-          {visibleRepoReferences.map((repo) => (
-            <li key={repo.url}>
-              <a
-                href={repo.url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50"
-              >
-                <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-body">{repoLabel(repo)}</span>
-              </a>
-            </li>
+      <div className="grid grid-cols-3 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
+        {(["files", "attachments", "issues"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            onClick={() => setActiveTab(tab)}
+            className={
+              "border-b-2 px-2 py-1.5 text-caption transition-colors " +
+              (activeTab === tab ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
+            }
+          >
+            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : t(($) => $.doc_file_list.issues)}
+          </button>
+        ))}
+      </div>
+      {(sessionFiles?.projects ?? []).length > 0 && (
+        <div className="flex gap-1 overflow-x-auto border-b px-2 py-1.5" role="tablist" aria-label={t(($) => $.doc_file_list.projects_label)}>
+          {(sessionFiles?.projects ?? []).map((projectTab) => (
+            <button
+              key={projectTab.id}
+              type="button"
+              role="tab"
+              aria-selected={projectTab.id === projectID}
+              onClick={() => setSelectedProjectId(projectTab.id)}
+              className={"max-w-40 shrink-0 truncate rounded-md px-2 py-1 text-caption " + (projectTab.id === projectID ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50")}
+            >
+              {projectTab.title || projectTab.id}
+            </button>
           ))}
-        </ul>
-      )}
-      {showNoMatch ? (
-        <div className="p-4 text-muted-foreground">
-          <p className="text-body">{t(($) => $.doc_file_list.no_match)}</p>
         </div>
-      ) : visible.length > 0 ? (
-        <ul className="flex-1 divide-y overflow-y-auto">
-          {visible.map((doc) => {
-            const isActive = activeDoc?.id === doc.id && activeDoc?.kind === doc.kind;
-            return (
-              <li key={`${doc.kind}:${doc.id}`}>
-                <button
-                  type="button"
-                  onClick={() => openDoc(wsId, { ...doc })}
-                  aria-current={isActive ? "true" : undefined}
-                  className={
-                    "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50" +
-                    (isActive ? " bg-accent/10" : "")
-                  }
-                >
-                  {doc.kind === "workspace_file" ? (
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : (
+      )}
+      {activeTab === "issues" ? (
+        <div className="flex-1 overflow-y-auto">
+          {projectID && (projectIssues?.issues ?? []).length > 0 ? (
+            <ul className="divide-y">
+              {(projectIssues?.issues ?? []).map((issue: Issue) => (
+                <li key={issue.id}>
+                  <AppLink href={workspaceSlug ? paths.workspace(workspaceSlug).issueDetail(issue.identifier || issue.id) : `/issues/${issue.identifier || issue.id}`} className="block px-3 py-2 hover:bg-accent/50">
+                    <span className="block truncate text-caption font-medium">{issue.identifier}</span>
+                    <span className="block truncate text-body">{issue.title}</span>
+                  </AppLink>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="p-4 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_issues)}</p>
+          )}
+        </div>
+      ) : activeTab === "attachments" ? (
+        <div className="flex-1 overflow-y-auto">
+          {(sessionFiles?.attachments ?? []).length > 0 ? (
+            <ul className="divide-y">
+              {(sessionFiles?.attachments ?? []).map((attachment) => (
+                <li key={attachment.id}>
+                  <button type="button" onClick={() => openDoc(wsId, { kind: "attachment", id: attachment.id, label: attachment.filename || attachment.url, contentType: attachment.content_type, sessionId: sessionId ?? undefined })} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50">
                     <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-body">{doc.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                    <span className="min-w-0 flex-1 truncate text-body">{attachment.filename || attachment.url}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="p-4 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_attachments)}</p>
+          )}
+        </div>
       ) : (
-        <div className="flex-1" />
+        <>
+          {project && (
+            <div className="px-3 py-2">
+              <h3 className="truncate text-body font-semibold">{project.title}</h3>
+            </div>
+          )}
+          {visibleRepoReferences.length > 0 && (
+            <ul className="divide-y">
+              {visibleRepoReferences.map((repo) => (
+                <li key={repo.url}>
+                  <a href={repo.url} target="_blank" rel="noreferrer" className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50">
+                    <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate text-body">{repoLabel(repo)}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showNoMatch ? (
+            <div className="p-4 text-muted-foreground"><p className="text-body">{t(($) => $.doc_file_list.no_match)}</p></div>
+          ) : visible.length > 0 ? (
+            <ul className="flex-1 divide-y overflow-y-auto">
+              {visible.map((doc) => {
+                const isActive = activeDoc?.id === doc.id && activeDoc?.kind === doc.kind;
+                return (
+                  <li key={`${doc.kind}:${doc.id}`}>
+                    <button type="button" onClick={() => openDoc(wsId, { ...doc })} aria-current={isActive ? "true" : undefined} className={"flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50" + (isActive ? " bg-accent/10" : "")}>
+                      {doc.kind === "workspace_file" ? <FileText className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                      <span className="min-w-0 flex-1 truncate text-body">{doc.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="flex-1" />
+          )}
+        </>
       )}
     </div>
   );

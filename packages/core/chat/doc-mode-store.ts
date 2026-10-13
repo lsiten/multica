@@ -20,6 +20,7 @@ export interface DocumentRef {
   contentType?: string;
   /** Workspace-file refs resolve their absolute path through the session API. */
   sessionId?: string;
+  projectId?: string;
   taskId?: string;
   runtimeId?: string;
   relativePath?: string;

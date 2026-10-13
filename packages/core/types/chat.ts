@@ -124,6 +124,17 @@ export interface ChatSessionFileTask {
   created_at: string;
 }
 
+/** A project tab associated with the selected chat. */
+export interface ChatSessionProject {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description?: string | null;
+  icon?: string | null;
+  status?: string;
+  priority?: string;
+}
+
 /** A repository the chat's project is configured against (server-resolved). */
 export interface ChatSessionRepo {
   url: string;
@@ -134,8 +145,12 @@ export interface ChatSessionRepo {
 export interface ChatSessionFilesResponse {
   workspace_id: string;
   project_id?: string | null;
+  projects?: ChatSessionProject[];
   attachments: import("./attachment").Attachment[];
   tasks: ChatSessionFileTask[];
+  /** Attachments and worktrees resolved from the selected project. */
+  project_attachments?: import("./attachment").Attachment[];
+  project_tasks?: ChatSessionFileTask[];
   /** Project's configured repos, resolved server-side (no task worktree). */
   repos: ChatSessionRepo[];
 }

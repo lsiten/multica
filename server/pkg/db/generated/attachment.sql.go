@@ -993,6 +993,60 @@ func (q *Queries) ListAttachmentsByIssue(ctx context.Context, arg ListAttachment
 	return items, nil
 }
 
+const listAttachmentsByProject = `-- name: ListAttachmentsByProject :many
+SELECT DISTINCT attachment.id, attachment.workspace_id, attachment.issue_id, attachment.comment_id, attachment.uploader_type, attachment.uploader_id, attachment.filename, attachment.url, attachment.content_type, attachment.size_bytes, attachment.created_at, attachment.chat_session_id, attachment.chat_message_id, attachment.task_id, attachment.source_context_id
+FROM attachment
+LEFT JOIN issue ON issue.id = attachment.issue_id
+LEFT JOIN chat_session ON chat_session.id = attachment.chat_session_id
+WHERE attachment.workspace_id = $2
+  AND (issue.project_id = $1 OR chat_session.project_id = $1)
+ORDER BY attachment.created_at ASC, attachment.id ASC
+`
+
+type ListAttachmentsByProjectParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Project attachments are derived from issue-owned files and chat files in
+// sessions using the project. Keep the workspace predicate on the attachment
+// row as well as the joined owners for tenant isolation.
+func (q *Queries) ListAttachmentsByProject(ctx context.Context, arg ListAttachmentsByProjectParams) ([]Attachment, error) {
+	rows, err := q.db.Query(ctx, listAttachmentsByProject, arg.ProjectID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Attachment{}
+	for rows.Next() {
+		var i Attachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.CommentID,
+			&i.UploaderType,
+			&i.UploaderID,
+			&i.Filename,
+			&i.Url,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.CreatedAt,
+			&i.ChatSessionID,
+			&i.ChatMessageID,
+			&i.TaskID,
+			&i.SourceContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAttachmentsBySourceContext = `-- name: ListAttachmentsBySourceContext :many
 SELECT id, workspace_id, issue_id, comment_id, uploader_type, uploader_id, filename, url, content_type, size_bytes, created_at, chat_session_id, chat_message_id, task_id, source_context_id FROM attachment
 WHERE workspace_id = $1

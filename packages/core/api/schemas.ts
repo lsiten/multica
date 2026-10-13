@@ -2451,6 +2451,16 @@ const ChatSessionFileTaskSchema = z.object({
   created_at: z.string().default(""),
 }).loose();
 
+const ChatSessionProjectSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  title: z.string().default(""),
+  description: z.string().nullable().optional().catch(undefined),
+  icon: z.string().nullable().optional().catch(undefined),
+  status: z.string().optional().catch(undefined),
+  priority: z.string().optional().catch(undefined),
+}).loose();
+
 const ChatSessionRepoSchema = z.object({
   // A malformed url must not fail the whole response, which would drop the
   // session's attachments and tasks too. Catch to "" so the display layer's
@@ -2463,15 +2473,22 @@ const ChatSessionRepoSchema = z.object({
 export const ChatSessionFilesResponseSchema = z.object({
   workspace_id: z.string().default(""),
   project_id: z.string().nullable().optional(),
+  projects: z.array(ChatSessionProjectSchema).default([]),
   attachments: z.array(AttachmentSchema).default([]),
   tasks: z.array(ChatSessionFileTaskSchema).default([]),
+  project_attachments: z.array(AttachmentSchema).default([]),
+  project_tasks: z.array(ChatSessionFileTaskSchema).default([]),
   repos: z.array(ChatSessionRepoSchema).default([]),
 }).loose();
 
 export const EMPTY_CHAT_SESSION_FILES_RESPONSE: ChatSessionFilesResponse = {
   workspace_id: "",
+  project_id: null,
+  projects: [],
   attachments: [],
   tasks: [],
+  project_attachments: [],
+  project_tasks: [],
   repos: [],
 };
 

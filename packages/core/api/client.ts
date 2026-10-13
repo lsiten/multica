@@ -4465,8 +4465,9 @@ export class ApiClient {
     });
   }
 
-  async listChatSessionFiles(sessionId: string): Promise<ChatSessionFilesResponse> {
-    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/files`);
+  async listChatSessionFiles(sessionId: string, projectId?: string | null): Promise<ChatSessionFilesResponse> {
+    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/files${query}`);
     return parseWithFallback(raw, ChatSessionFilesResponseSchema, EMPTY_CHAT_SESSION_FILES_RESPONSE, {
       endpoint: "GET /api/chat/sessions/:id/files",
     });

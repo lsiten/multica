@@ -12,7 +12,14 @@
     "filter_placeholder": "Filter files",
     "no_match": "No matches",
     "toggle": "Files",
-    "empty": "No documents yet"
+    "empty": "No documents yet",
+    "tabs_label": "Chat files",
+    "projects_label": "Projects",
+    "project_files": "Project files",
+    "attachments": "Attachments",
+    "issues": "Issues",
+    "no_attachments": "No attachments in this chat",
+    "no_issues": "No issues in this project"
   },
   "page": {
     "title": "Chat",

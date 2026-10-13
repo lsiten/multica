@@ -54,10 +54,10 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
   const versions = useDocumentContentVersions(wsId, activeRef);
   const rollback = useRollbackDocumentContentVersion(wsId);
   const { data: sessionFiles } = useQuery({
-    ...chatSessionFilesOptions(wsId, doc?.sessionId ?? ""),
+    ...chatSessionFilesOptions(wsId, doc?.sessionId ?? "", doc?.projectId),
   });
   const workspaceTask = doc?.kind === "workspace_file"
-    ? sessionFiles?.tasks.find((task) => task.id === doc.taskId && task.work_dir)
+    ? [...(sessionFiles?.project_tasks ?? []), ...(sessionFiles?.tasks ?? [])].find((task) => task.id === doc.taskId && task.work_dir)
     : undefined;
   const workspaceContent = useQuery({
     queryKey: ["chat-workspace-file-content", wsId, doc?.id, doc?.relativePath],

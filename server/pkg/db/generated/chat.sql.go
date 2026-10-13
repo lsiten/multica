@@ -2401,6 +2401,112 @@ func (q *Queries) ListChatMessagesPageForChannelContext(ctx context.Context, arg
 	return items, nil
 }
 
+const listChatProjectFileTasks = `-- name: ListChatProjectFileTasks :many
+SELECT task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir, task.channel_context_revision, task.comment_thread_id, task.cancelled_by_type, task.cancelled_by_id, task.cancelled_by_name, task.issue_snapshot
+FROM agent_task_queue AS task
+JOIN agent AS task_agent ON task_agent.id = task.agent_id
+LEFT JOIN issue AS issue ON issue.id = task.issue_id
+LEFT JOIN chat_session AS task_session ON task_session.id = task.chat_session_id
+WHERE task_agent.workspace_id = $2
+  AND (
+    issue.project_id = $1
+    OR task_session.project_id = $1
+  )
+  AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) IS NOT NULL
+ORDER BY task.created_at DESC, task.id DESC
+LIMIT $3
+`
+
+type ListChatProjectFileTasksParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	PageLimit   int32       `json:"page_limit"`
+}
+
+// Project files are durable across chat turns and are therefore resolved from
+// the selected project rather than only the currently open session. A task
+// can carry its project through an issue or through its chat session context.
+// Keep the agent workspace guard because agent_task_queue has no workspace_id.
+func (q *Queries) ListChatProjectFileTasks(ctx context.Context, arg ListChatProjectFileTasksParams) ([]AgentTaskQueue, error) {
+	rows, err := q.db.Query(ctx, listChatProjectFileTasks, arg.ProjectID, arg.WorkspaceID, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentTaskQueue{}
+	for rows.Next() {
+		var i AgentTaskQueue
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.Status,
+			&i.Priority,
+			&i.DispatchedAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Result,
+			&i.Error,
+			&i.CreatedAt,
+			&i.Context,
+			&i.RuntimeID,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.TriggerCommentID,
+			&i.ChatSessionID,
+			&i.AutopilotRunID,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.ParentTaskID,
+			&i.FailureReason,
+			&i.TriggerSummary,
+			&i.ForceFreshSession,
+			&i.IsLeaderTask,
+			&i.WaitReason,
+			&i.InitiatorUserID,
+			&i.HandoffNote,
+			&i.PrepareLeaseExpiresAt,
+			&i.SquadID,
+			&i.RuntimeMcpOverlay,
+			&i.EscalationForTaskID,
+			&i.FireAt,
+			&i.OriginatorUserID,
+			&i.RuntimeConnectedApps,
+			&i.CoalescedCommentIds,
+			&i.DeliveredCommentIds,
+			&i.ChatInputTaskID,
+			&i.ChatFinalizeDeferredAt,
+			&i.OriginatorSource,
+			&i.DelegatedFromTaskID,
+			&i.RetryOfTaskID,
+			&i.RerunOfTaskID,
+			&i.RuleVersionID,
+			&i.TriggerEvidenceKind,
+			&i.TriggerEvidenceRefID,
+			&i.AccountableUserID,
+			&i.SessionRolloutMissing,
+			&i.RetiredSessionID,
+			&i.QuickActionsDisabled,
+			&i.RegenerateQuickActionsFor,
+			&i.BranchName,
+			&i.DurableWorkDir,
+			&i.ChannelContextRevision,
+			&i.CommentThreadID,
+			&i.CancelledByType,
+			&i.CancelledByID,
+			&i.CancelledByName,
+			&i.IssueSnapshot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChatSessionFileTasks = `-- name: ListChatSessionFileTasks :many
 SELECT task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir, task.channel_context_revision, task.comment_thread_id, task.cancelled_by_type, task.cancelled_by_id, task.cancelled_by_name, task.issue_snapshot
 FROM agent_task_queue AS task
@@ -2488,6 +2594,94 @@ func (q *Queries) ListChatSessionFileTasks(ctx context.Context, arg ListChatSess
 			&i.CancelledByID,
 			&i.CancelledByName,
 			&i.IssueSnapshot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listChatSessionProjects = `-- name: ListChatSessionProjects :many
+SELECT project.id, project.workspace_id, project.title, project.description, project.icon, project.status, project.lead_type, project.lead_id, project.created_at, project.updated_at, project.priority, project.start_date, project.due_date
+FROM project
+WHERE project.workspace_id = $2
+  AND project.id IN (
+    SELECT session.project_id
+    FROM chat_session AS session
+    WHERE session.id = $1 AND session.workspace_id = $2
+      AND session.project_id IS NOT NULL
+    UNION
+    SELECT issue.project_id
+    FROM agent_task_queue AS task
+    JOIN chat_session AS session ON session.id = task.chat_session_id
+    JOIN issue ON issue.id = task.issue_id
+    WHERE task.chat_session_id = $1
+      AND session.workspace_id = $2
+      AND issue.project_id IS NOT NULL
+    UNION
+    SELECT lead_project.id
+    FROM project AS lead_project
+    JOIN chat_session AS session ON session.agent_id = lead_project.lead_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND lead_project.workspace_id = $2
+      AND lead_project.lead_type = 'agent'
+    UNION
+    SELECT binding.project_id
+    FROM agent_project_binding AS binding
+    JOIN chat_session AS session ON session.agent_id = binding.agent_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND binding.active
+    UNION
+    SELECT binding.project_id
+    FROM squad_member AS member
+    JOIN chat_session AS session ON session.agent_id = member.member_id
+    JOIN squad_project_binding AS binding ON binding.squad_id = member.squad_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND member.member_type = 'agent'
+      AND binding.active
+  )
+ORDER BY project.updated_at DESC, project.id
+`
+
+type ListChatSessionProjectsParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// A chat's associated projects are its selected context, task projects, and
+// every project the selected agent can use through lead, direct, or squad
+// bindings. Resolve through the workspace-scoped project table so stale or
+// foreign references never leak.
+func (q *Queries) ListChatSessionProjects(ctx context.Context, arg ListChatSessionProjectsParams) ([]Project, error) {
+	rows, err := q.db.Query(ctx, listChatSessionProjects, arg.ID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Project{}
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Icon,
+			&i.Status,
+			&i.LeadType,
+			&i.LeadID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Priority,
+			&i.StartDate,
+			&i.DueDate,
 		); err != nil {
 			return nil, err
 		}

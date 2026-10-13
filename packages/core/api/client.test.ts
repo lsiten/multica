@@ -1927,6 +1927,34 @@ describe("ApiClient", () => {
     });
   });
 
+  describe("listChatSessionFiles project projection", () => {
+    it("parses associated projects and additive project file fields", async () => {
+      const responseBody = {
+        workspace_id: "ws-1",
+        project_id: "project-1",
+        projects: [{ id: "project-1", workspace_id: "ws-1", title: "Catalog", status: "in_progress" }],
+        attachments: [],
+        tasks: [],
+        project_attachments: [{ id: "attachment-1", filename: "spec.md", url: "", content_type: "text/markdown" }],
+        project_tasks: [{ id: "task-1", runtime_id: "runtime-1", work_dir: "/work", created_at: "2026-06-12" }],
+        repos: [],
+      };
+      const fetchMock = vi.fn().mockImplementation(() =>
+        Promise.resolve(new Response(JSON.stringify(responseBody), { status: 200, headers: { "Content-Type": "application/json" } })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await new ApiClient("https://api.example.test").listChatSessionFiles("session-1");
+      expect(result.projects?.[0]).toEqual(expect.objectContaining({ id: "project-1", title: "Catalog" }));
+      expect(result.project_attachments).toHaveLength(1);
+      expect(result.project_tasks?.[0]?.work_dir).toBe("/work");
+
+      await new ApiClient("https://api.example.test").listChatSessionFiles("session-1", "project-1");
+      const calls = fetchMock.mock.calls;
+      expect(calls[1]?.[0]).toBe("https://api.example.test/api/chat/sessions/session-1/files?project_id=project-1");
+    });
+  });
+
   describe("cancelTaskById response parsing", () => {
     const taskResponse = {
       id: "task-1",

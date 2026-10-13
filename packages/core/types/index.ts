@@ -215,6 +215,7 @@ export type {
   ChatDraftRestore,
   ChatDraftRestoresResponse,
   ChatSessionFileTask,
+  ChatSessionProject,
   ChatSessionFilesResponse,
   ChatSessionRepo,
 } from "./chat";

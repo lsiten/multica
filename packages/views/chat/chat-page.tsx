@@ -97,10 +97,11 @@ export function ChatPage() {
   // conversation pane is always mounted so it only needs to reset itself once a
   // real session takes over.
   const [composingNew, setComposingNew] = useState(false);
-  // Doc-mode entry point (B): the sidebar can be opened directly into a
-  // file list; clicking a document opens it in doc mode. Hidden by default
-  // so the chat page stays exactly as it is (v12 rule 1).
-  const [docFilesOpen, setDocFilesOpen] = useState(false);
+  // Keep the Codex-style file manager visible when a chat is selected. The
+  // panel is the durable entry point for project files, project issues, and
+  // this conversation's attachments; users can still collapse it with the
+  // header button when they want the conversation to fill the window.
+  const [docFilesOpen, setDocFilesOpen] = useState(true);
   const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
   useEffect(() => {
     setAutonomyPolicy(null);
@@ -475,7 +476,7 @@ export function ChatPage() {
         <div className="flex flex-col border-r h-full">
           {listHeader}
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {docFilesOpen ? <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} /> : listBody}
+            {listBody}
           </div>
         </div>
       </ResizablePanel>
@@ -500,6 +501,16 @@ export function ChatPage() {
           )}
         </div>
       </ResizablePanel>
+      {docFilesOpen && (
+        <>
+          <ResizableHandle />
+          <ResizablePanel id="files" defaultSize={300} minSize={240} maxSize={480}>
+            <div className="flex h-full min-h-0 flex-col border-l">
+              <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} />
+            </div>
+          </ResizablePanel>
+        </>
+      )}
     </ResizablePanelGroup>
   );
 }

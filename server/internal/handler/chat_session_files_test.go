@@ -88,6 +88,51 @@ func TestListChatSessionFiles(t *testing.T) {
 	if resp.Tasks[0].WorkDir != "/work" {
 		t.Fatalf("work_dir: want /work, got %q", resp.Tasks[0].WorkDir)
 	}
+	if len(resp.Projects) != 1 || resp.Projects[0].ID != projectID {
+		t.Fatalf("projects: want selected project %s, got %+v", projectID, resp.Projects)
+	}
+	if len(resp.ProjectTasks) != 1 || resp.ProjectTasks[0].WorkDir != "/work" {
+		t.Fatalf("project_tasks: want /work, got %+v", resp.ProjectTasks)
+	}
+	if len(resp.ProjectAttachments) != 1 || resp.ProjectAttachments[0].ID != attachmentID {
+		t.Fatalf("project_attachments: want %s, got %+v", attachmentID, resp.ProjectAttachments)
+	}
+}
+
+func TestListChatSessionFiles_DurableWorkDirFallback(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "SessionFilesDurableAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	projectID := dbfx.Project(t, "Durable Files Project")
+	dbfx.Exec(t, `UPDATE chat_session SET project_id = $1 WHERE id = $2`, projectID, sessionID)
+	dbfx.Task(t, agentID, testutil.Cols{
+		"runtime_id":       handlerTestRuntimeID(t),
+		"chat_session_id":  sessionID,
+		"durable_work_dir": "/archive/worktree",
+		"status":           "completed",
+	})
+
+	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil)
+	req = withURLParam(req, "sessionId", sessionID)
+	req = withChatTestWorkspaceCtx(t, req)
+	w := httptest.NewRecorder()
+	testHandler.ListChatSessionFiles(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp ChatSessionFilesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v; body: %s", err, w.Body.String())
+	}
+	if len(resp.Tasks) != 1 || resp.Tasks[0].WorkDir != "/archive/worktree" {
+		t.Fatalf("tasks durable fallback: got %+v", resp.Tasks)
+	}
+	if len(resp.ProjectTasks) != 1 || resp.ProjectTasks[0].WorkDir != "/archive/worktree" {
+		t.Fatalf("project_tasks durable fallback: got %+v", resp.ProjectTasks)
+	}
 }
 
 // TestListChatSessionFiles_WorkspaceIsolation guards the tenant boundary: a
@@ -125,7 +170,6 @@ func TestListChatSessionFiles_WorkspaceIsolation(t *testing.T) {
 		t.Fatalf("cross-workspace: expected 404, got %d: %s", w.Code, w.Body.String())
 	}
 }
-
 
 // TestListChatSessionFiles_ProjectReposWithoutTask covers the projection's
 // project-repo resolution: a chat about a project that has no task worktree

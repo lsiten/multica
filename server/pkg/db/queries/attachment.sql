@@ -184,6 +184,18 @@ SELECT * FROM attachment
 WHERE chat_session_id = $1 AND workspace_id = $2
 ORDER BY created_at ASC, id ASC;
 
+-- name: ListAttachmentsByProject :many
+-- Project attachments are derived from issue-owned files and chat files in
+-- sessions using the project. Keep the workspace predicate on the attachment
+-- row as well as the joined owners for tenant isolation.
+SELECT DISTINCT attachment.*
+FROM attachment
+LEFT JOIN issue ON issue.id = attachment.issue_id
+LEFT JOIN chat_session ON chat_session.id = attachment.chat_session_id
+WHERE attachment.workspace_id = $2
+  AND (issue.project_id = $1 OR chat_session.project_id = $1)
+ORDER BY attachment.created_at ASC, attachment.id ASC;
+
 -- name: ListAttachmentsByChatMessageIDs :many
 SELECT * FROM attachment
 WHERE chat_message_id = ANY($1::uuid[]) AND workspace_id = $2

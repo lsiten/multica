@@ -959,6 +959,73 @@ WHERE task.chat_session_id = $1
 ORDER BY task.created_at DESC, task.id DESC
 LIMIT sqlc.arg(page_limit);
 
+-- name: ListChatProjectFileTasks :many
+-- Project files are durable across chat turns and are therefore resolved from
+-- the selected project rather than only the currently open session. A task
+-- can carry its project through an issue or through its chat session context.
+-- Keep the agent workspace guard because agent_task_queue has no workspace_id.
+SELECT task.*
+FROM agent_task_queue AS task
+JOIN agent AS task_agent ON task_agent.id = task.agent_id
+LEFT JOIN issue AS issue ON issue.id = task.issue_id
+LEFT JOIN chat_session AS task_session ON task_session.id = task.chat_session_id
+WHERE task_agent.workspace_id = $2
+  AND (
+    issue.project_id = $1
+    OR task_session.project_id = $1
+  )
+  AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) IS NOT NULL
+ORDER BY task.created_at DESC, task.id DESC
+LIMIT sqlc.arg(page_limit);
+
+-- name: ListChatSessionProjects :many
+-- A chat's associated projects are its selected context, task projects, and
+-- every project the selected agent can use through lead, direct, or squad
+-- bindings. Resolve through the workspace-scoped project table so stale or
+-- foreign references never leak.
+SELECT project.*
+FROM project
+WHERE project.workspace_id = $2
+  AND project.id IN (
+    SELECT session.project_id
+    FROM chat_session AS session
+    WHERE session.id = $1 AND session.workspace_id = $2
+      AND session.project_id IS NOT NULL
+    UNION
+    SELECT issue.project_id
+    FROM agent_task_queue AS task
+    JOIN chat_session AS session ON session.id = task.chat_session_id
+    JOIN issue ON issue.id = task.issue_id
+    WHERE task.chat_session_id = $1
+      AND session.workspace_id = $2
+      AND issue.project_id IS NOT NULL
+    UNION
+    SELECT lead_project.id
+    FROM project AS lead_project
+    JOIN chat_session AS session ON session.agent_id = lead_project.lead_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND lead_project.workspace_id = $2
+      AND lead_project.lead_type = 'agent'
+    UNION
+    SELECT binding.project_id
+    FROM agent_project_binding AS binding
+    JOIN chat_session AS session ON session.agent_id = binding.agent_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND binding.active
+    UNION
+    SELECT binding.project_id
+    FROM squad_member AS member
+    JOIN chat_session AS session ON session.agent_id = member.member_id
+    JOIN squad_project_binding AS binding ON binding.squad_id = member.squad_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND member.member_type = 'agent'
+      AND binding.active
+  )
+ORDER BY project.updated_at DESC, project.id;
+
 -- name: ListChatTaskInputOwners :many
 -- Retry children keep the original direct-chat input owner in
 -- chat_input_task_id. The chat transcript exposes that stable owner so every
