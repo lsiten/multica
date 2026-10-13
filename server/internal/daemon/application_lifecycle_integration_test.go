@@ -29,6 +29,18 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
+func drainApplicationTerminalReports(t *testing.T, d *Daemon, ctx context.Context) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		pending, _ := d.replayPendingTerminalReports(ctx)
+		if pending == 0 || time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func TestApplicationFullLifecycleUsesRealAPIHostAndRemoteGateway(t *testing.T) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
@@ -140,6 +152,7 @@ func TestApplicationFullLifecycleUsesRealAPIHostAndRemoteGateway(t *testing.T) {
 	request(http.MethodPost, "/api/applications/"+app.ID+"/operations", map[string]any{"action": "start", "revision": app.Revision, "runtime_id": runtimeID, "idempotency_key": "lifecycle-start"}, &operation)
 	d.pollRuntimeApplications(ctx, semaphore, &workers, runtimeID)
 	workers.Wait()
+	drainApplicationTerminalReports(t, d, ctx)
 	request(http.MethodGet, "/api/applications/"+app.ID+"/operations/"+operation.ID, nil, &operation)
 	if operation.State != "completed" {
 		t.Fatalf("real service was not ready: %+v", operation)
@@ -215,6 +228,7 @@ func TestApplicationFullLifecycleUsesRealAPIHostAndRemoteGateway(t *testing.T) {
 	request(http.MethodPost, "/api/applications/"+consumer.ID+"/operations", map[string]any{"action": "start", "revision": consumer.Revision, "runtime_id": consumerRuntimeID, "placements": map[string]string{app.ID: runtimeID}, "idempotency_key": "consumer-start"}, &operation)
 	consumerDaemon.pollRuntimeApplications(ctx, semaphore, &workers, consumerRuntimeID)
 	workers.Wait()
+	drainApplicationTerminalReports(t, consumerDaemon, ctx)
 	request(http.MethodGet, "/api/applications/"+consumer.ID+"/operations/"+operation.ID, nil, &operation)
 	if operation.State != "completed" {
 		t.Fatalf("cross-runtime consumer was not ready: %+v", operation)
@@ -302,6 +316,7 @@ func TestApplicationFullLifecycleUsesRealAPIHostAndRemoteGateway(t *testing.T) {
 	request(http.MethodPost, "/api/applications/"+app.ID+"/operations", map[string]any{"action": "unpublish", "revision": app.Revision, "runtime_id": runtimeID, "idempotency_key": "dependency-unpublish"}, &operation)
 	d.pollRuntimeApplications(ctx, semaphore, &workers, runtimeID)
 	workers.Wait()
+	drainApplicationTerminalReports(t, d, ctx)
 	response, err = (&http.Client{Timeout: 8 * time.Second}).Get(dependencyURL)
 	if err != nil {
 		t.Fatal(err)
@@ -323,6 +338,7 @@ func TestApplicationFullLifecycleUsesRealAPIHostAndRemoteGateway(t *testing.T) {
 	request(http.MethodPost, "/api/applications/"+consumer.ID+"/operations", map[string]any{"action": "stop", "revision": consumer.Revision, "runtime_id": consumerRuntimeID, "idempotency_key": "consumer-stop"}, &operation)
 	consumerDaemon.pollRuntimeApplications(ctx, semaphore, &workers, consumerRuntimeID)
 	workers.Wait()
+	drainApplicationTerminalReports(t, consumerDaemon, ctx)
 	request(http.MethodGet, "/api/applications/"+consumer.ID+"/operations/"+operation.ID, nil, &operation)
 	if operation.State != "completed" {
 		t.Fatalf("cross-runtime consumer shutdown was not confirmed: %+v", operation)
@@ -337,6 +353,7 @@ func TestApplicationFullLifecycleUsesRealAPIHostAndRemoteGateway(t *testing.T) {
 	}
 	d.pollRuntimeApplications(ctx, semaphore, &workers, runtimeID)
 	workers.Wait()
+	drainApplicationTerminalReports(t, d, ctx)
 	request(http.MethodGet, "/api/applications/"+app.ID+"/operations/"+operation.ID, nil, &operation)
 	if operation.State != "failed" {
 		t.Fatalf("reconnect incorrectly changed timeout into operation success: state=%s", operation.State)
