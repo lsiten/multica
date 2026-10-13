@@ -130,14 +130,17 @@ func (d *Daemon) ensureMirrorProcess(ctx context.Context) (*mirrorProcessClient,
 	if err != nil {
 		return nil, err
 	}
-	if err = reconcileStoppedMirror(ctx, root, identity.Scope); err != nil {
-		return nil, err
-	}
-	// Best-effort: retire a dead prior owner so a crashed service's record does
-	// not permanently block this start. A live owner is never retired (the
-	// owner.lock is the final gate), so this is safe even if liveness is wrong.
+	// Retire a dead prior owner FIRST, before the fail-closed reconcile below.
+	// A crashed (non-stopped) record must not permanently block this start, and
+	// the reconcile below returns on a non-stopped record, so it would leave a
+	// crashed owner unretired. A live owner is never retired (the owner.lock is
+	// the final gate), so this is safe even if the liveness pre-check is wrong.
 	if err = d.crashDetectAndReconcile(ctx, root, identity.Scope, "mirror"); err != nil {
 		d.logger.Warn("mirror crash-detection reconcile skipped; start proceeds", "error", err)
+	}
+	// Fail closed if a stopped owner still has pending unconfirmed work.
+	if err = reconcileStoppedMirror(ctx, root, identity.Scope); err != nil {
+		return nil, err
 	}
 	bootstrap, err := runtimeproc.NewBootstrap(root, identity)
 	if err != nil {
