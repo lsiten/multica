@@ -17,8 +17,9 @@ it("rejects mismatched profile identity before reading inventory", async () => {
   expect(inventory).not.toHaveBeenCalled();
 });
 
-it("rejects unavailable health rather than returning an empty inventory", async () => {
-  await expect(requestReviewInventory({ resolveProfile: async () => ({ name: "desktop", port: 4567 }), health: async () => null, inventory: async () => [] })).rejects.toThrow();
+it("resolves to null when health is unavailable so the renderer can fall back", async () => {
+  const result = await requestReviewInventory({ resolveProfile: async () => ({ name: "desktop", port: 4567 }), health: async () => null, inventory: async () => [] });
+  expect(result).toBeNull();
 });
 
 it("rejects malformed inventory rather than claiming repositories were removed", async () => {
