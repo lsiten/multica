@@ -2002,3 +2002,18 @@ func TestLoadConfigProcessServicesDefaultsOnUnlessExplicitlyEmpty(t *testing.T) 
 		t.Fatalf("explicit ProcessServices = %v, want [ai]", cfg.ProcessServices)
 	}
 }
+
+func TestLoadConfigWorkerProcessIsOptIn(t *testing.T) {
+	stageFakeAgent(t)
+	redirectTestHome(t, t.TempDir())
+	os.Unsetenv("MULTICA_WORKER_PROCESS_ENABLED")
+	t.Cleanup(func() { os.Unsetenv("MULTICA_WORKER_PROCESS_ENABLED") })
+
+	cfg, err := LoadConfig(Overrides{ServerURL: "http://localhost:0", WorkspacesRoot: t.TempDir()})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.WorkerProcessEnabled {
+		t.Fatal("worker process must remain opt-in until native worker settlement is proven")
+	}
+}

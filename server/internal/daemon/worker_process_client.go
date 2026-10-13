@@ -338,14 +338,12 @@ func buildWorkerContext(cfg Config, task Task, provider string, env *execenv.Env
 }
 
 // workerProcessEnabled reports whether this profile runs the per-execution task
-// worker (F3). It is the gate of the move-out: it is the capability-gated default
-// (cfg.WorkerProcessEnabled is set at config load to native.Supported() when no
-// env value is present, so the worker is the default on a supported platform while
-// the legacy in-process runner (executeAndDrain) stays the fallback whenever the
-// worker cannot be launched, is refused, or fails — see attemptWorkerRun), and it
-// is also false when no managed executable is configured (a worker with no binary
-// to launch would fail closed). The hot path is a separate execution path, not a
-// drop-in swap of executeAndDrain.
+// worker (F3). It is the gate of the move-out: config loading keeps it opt-in
+// until native child settlement is proven for the installed desktop build, while
+// MULTICA_WORKER_PROCESS_ENABLED can explicitly enable it. It is also false when
+// no managed executable is configured (a worker with no binary to launch would
+// fail closed). The hot path is a separate execution path, not a drop-in swap of
+// executeAndDrain.
 func (d *Daemon) workerProcessEnabled() bool {
 	return d.cfg.WorkerProcessEnabled && d.cfg.NativeHostExecutable != ""
 }

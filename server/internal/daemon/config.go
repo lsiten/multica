@@ -17,7 +17,6 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/cli"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/vscreen/native"
 	"github.com/multica-ai/multica/server/pkg/agent"
 )
 
@@ -559,14 +558,14 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if llm2jevTimeout <= 0 {
 		llm2jevTimeout = 45 * time.Second
 	}
-	// WorkerProcessEnabled is the default-when-supported decision: on a platform the
-	// native host is supported (native.Supported) the per-execution task worker is
-	// the default, so the hot path runs the provider in a separate process; the
-	// legacy in-process runner (executeAndDrain) is the fallback whenever the worker
-	// cannot be launched, is refused, or fails (attemptWorkerRun), so a
-	// capability-gated default never loses or double-runs a task. An explicit env
-	// value still overrides the capability-gated default.
-	workerProcessEnabled := native.Supported()
+	// Keep the per-execution worker opt-in until its native child process has
+	// proved healthy for the installed desktop build. A worker launch or callback
+	// transport failure is deliberately fail-closed to avoid double-running a
+	// provider, which means enabling it by default can leave a real chat task in
+	// running state while reconciliation waits for evidence that never arrives.
+	// The stable in-process runner remains the default; operators and the desktop
+	// process panel can opt in explicitly with MULTICA_WORKER_PROCESS_ENABLED=1.
+	workerProcessEnabled := false
 	if raw, ok := os.LookupEnv("MULTICA_WORKER_PROCESS_ENABLED"); ok {
 		workerProcessEnabled = strings.ToLower(strings.TrimSpace(raw)) != "false" && strings.TrimSpace(raw) != "0"
 	}
