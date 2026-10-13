@@ -43,6 +43,7 @@ func TestEnvironmentCommandRoutesPhysicalActionToChild(t *testing.T) {
 	d.cfg.ServerBaseURL = backend.URL
 	d.cfg.DaemonID = "owned-environment-daemon"
 	d.cfg.ProcessServices = []string{"environment"}
+	d.environmentProcessActive.Store(true)
 	d.cfg.AgentTimeout = 15 * time.Second
 	d.cfg.NativeHostBuild = "fixture/commit"
 	executable, err := os.Executable()
@@ -130,6 +131,7 @@ func TestEnvironmentOperationRoutesPhysicalMutationToChild(t *testing.T) {
 	d.cfg.ServerBaseURL = backend.URL
 	d.cfg.DaemonID = "owned-environment-daemon"
 	d.cfg.ProcessServices = []string{"environment"}
+	d.environmentProcessActive.Store(true)
 	d.cfg.AgentTimeout = 15 * time.Second
 	d.cfg.NativeHostBuild = "fixture/commit"
 	executable, err := os.Executable()

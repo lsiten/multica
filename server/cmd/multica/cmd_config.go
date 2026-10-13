@@ -105,7 +105,11 @@ func runConfigShow(cmd *cobra.Command, _ []string) error {
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "runtime_name:", valueOrDefault(cfg.RuntimeName, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "workspaces_root:", valueOrDefault(cfg.WorkspacesRoot, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "max_concurrent_tasks:", intOrDefault(cfg.MaxConcurrentTasks, "(not set)"))
-	fmt.Fprintf(os.Stdout, "%-34s %s\n", "process_services:", strings.Join(cfg.ProcessServices, ","))
+	psDisplay := "(not set)"
+	if cfg.ProcessServices != nil {
+		psDisplay = strings.Join(*cfg.ProcessServices, ",")
+	}
+	fmt.Fprintf(os.Stdout, "%-34s %s\n", "process_services:", psDisplay)
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "poll_interval:", valueOrDefault(cfg.PollInterval, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "ws_claim_poll_interval:", valueOrDefault(cfg.WSClaimPollInterval, "(not set)"))
 	fmt.Fprintf(os.Stdout, "%-34s %s\n", "heartbeat_interval:", valueOrDefault(cfg.HeartbeatInterval, "(not set)"))
@@ -179,7 +183,10 @@ func applyConfigSet(cfg *cli.CLIConfig, key, value string) error {
 		if err := cli.ValidateProcessServices(roles); err != nil {
 			return err
 		}
-		cfg.ProcessServices = roles
+		// Store as a non-nil pointer so an explicit empty list (in-process
+		// opt-out) stays distinguishable from "never set", which the daemon
+		// maps to DefaultProcessServices.
+		cfg.ProcessServices = &roles
 	case "workspaces_root":
 		value = strings.TrimSpace(value)
 		if value == "" {

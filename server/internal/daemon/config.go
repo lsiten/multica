@@ -116,7 +116,6 @@ var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
 type Config struct {
-
 	ProcessServices              []string // Profile opt-in: one process owner per supported role.
 	NativeHostExecutable         string   // Trusted same-binary absolute path; empty disables managed native work.
 	NativeHostBuild              string   // Version/commit identity; never read from renderer or PATH.
@@ -283,10 +282,19 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		slog.Warn("could not load CLI config for backend overrides; proceeding without",
 			"profile", overrides.Profile, "err", err)
 	} else {
-		if err := cli.ValidateProcessServices(cliCfg.ProcessServices); err != nil {
-			return Config{}, err
+		// An unset process_services (nil) defaults to every supported role so the
+		// multiprocess owners run by default; the fail-closed fallback still keeps
+		// the legacy in-process runner if a separate process can't start, so no
+		// task is lost or double-run. An explicit empty list (non-nil) keeps the
+		// legacy in-process owners, preserving an operator's "disable all" choice.
+		if cliCfg.ProcessServices == nil {
+			processServices = cli.DefaultProcessServices()
+		} else {
+			if err := cli.ValidateProcessServices(*cliCfg.ProcessServices); err != nil {
+				return Config{}, err
+			}
+			processServices = append([]string(nil), *cliCfg.ProcessServices...)
 		}
-		processServices = append([]string(nil), cliCfg.ProcessServices...)
 		if oc := openclawOverrideFrom(cliCfg); oc != nil {
 			applyOpenclawOverride(oc)
 		}

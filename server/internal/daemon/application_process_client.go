@@ -45,7 +45,7 @@ type applicationProcessClient struct {
 }
 
 func (d *Daemon) applicationProcessMode() bool {
-	return slices.Contains(d.cfg.ProcessServices, "application")
+	return d.applicationProcessActive.Load()
 }
 func (d *Daemon) ensureApplicationProcess(ctx context.Context) (*applicationProcessClient, error) {
 	d.applicationProcessMu.Lock()

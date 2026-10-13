@@ -45,7 +45,7 @@ type environmentProcessClient struct {
 }
 
 func (d *Daemon) environmentProcessMode() bool {
-	return slices.Contains(d.cfg.ProcessServices, "environment")
+	return d.environmentProcessActive.Load()
 }
 func (d *Daemon) ensureEnvironmentProcess(ctx context.Context) (*environmentProcessClient, error) {
 	d.environmentProcessMu.Lock()

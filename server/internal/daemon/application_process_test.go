@@ -66,6 +66,7 @@ func newApplicationProcessFixture(t *testing.T, configure ...func(*Daemon, *prot
 	d.cfg.NativeHostBuild = "fixture/commit"
 	d.cfg.NativeVscreenPreferencesPath = filepath.Join(canonical, "vscreen.json")
 	d.cfg.ProcessServices = []string{"application"}
+	d.applicationProcessActive.Store(true)
 	d.client.SetToken("parent-fixture-token")
 	command.Config.Environment["APPLICATION_HOST_PID_FILE"] = filepath.Join(canonical, "host.pid")
 	for _, edit := range configure {

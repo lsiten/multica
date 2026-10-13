@@ -21,11 +21,15 @@ const (
 
 // CLIConfig holds persistent CLI settings.
 type CLIConfig struct {
-	ProcessServices []string `json:"process_services,omitempty"`
-	ServerURL       string   `json:"server_url,omitempty"`
-	AppURL          string   `json:"app_url,omitempty"`
-	WorkspaceID     string   `json:"workspace_id,omitempty"`
-	Token           string   `json:"token,omitempty"`
+	// ProcessServices is a pointer so the daemon can tell "never set" from an
+	// explicit empty list. nil (absent key) defaults to every supported role;
+	// a non-nil empty slice (JSON `[]`) keeps the legacy in-process owners, so
+	// an operator's "disable all" choice is preserved.
+	ProcessServices *[]string `json:"process_services,omitempty"`
+	ServerURL       string    `json:"server_url,omitempty"`
+	AppURL          string    `json:"app_url,omitempty"`
+	WorkspaceID     string    `json:"workspace_id,omitempty"`
+	Token           string    `json:"token,omitempty"`
 
 	// DeviceName is the human-readable label shown in the server's Runtimes
 	// UI for the daemon started with this profile. When multiple daemons run

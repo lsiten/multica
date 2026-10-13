@@ -1961,3 +1961,44 @@ func TestApplyOpenclawOverride_CLITimeout(t *testing.T) {
 		}
 	})
 }
+
+// TestLoadConfigProcessServicesDefaultsOnUnlessExplicitlyEmpty verifies the
+// opt-in contract after the pointer change: an UNSET process_services (no config
+// / omitted key) defaults to every supported role so the multiprocess owners
+// run by default, while an EXPLICIT empty list keeps the legacy in-process
+// owners (preserving an operator's "disable all" choice). An explicit selection
+// is respected verbatim.
+func TestLoadConfigProcessServicesDefaultsOnUnlessExplicitlyEmpty(t *testing.T) {
+	stageFakeAgent(t)
+	redirectTestHome(t, t.TempDir())
+	base := Overrides{ServerURL: "http://localhost:0", WorkspacesRoot: t.TempDir()}
+
+	// Unset (no config file) defaults to every supported role.
+	cfg, err := LoadConfig(base)
+	if err != nil {
+		t.Fatalf("LoadConfig default: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.ProcessServices, cli.DefaultProcessServices()) {
+		t.Fatalf("default ProcessServices = %v, want %v", cfg.ProcessServices, cli.DefaultProcessServices())
+	}
+
+	// An explicit empty list keeps the legacy in-process owners (no default).
+	writeCLIConfigForProfile(t, "", cli.CLIConfig{ProcessServices: &[]string{}})
+	cfg, err = LoadConfig(base)
+	if err != nil {
+		t.Fatalf("LoadConfig explicit empty: %v", err)
+	}
+	if len(cfg.ProcessServices) != 0 {
+		t.Fatalf("explicit empty ProcessServices = %v, want []", cfg.ProcessServices)
+	}
+
+	// An explicit selection is respected.
+	writeCLIConfigForProfile(t, "", cli.CLIConfig{ProcessServices: &[]string{"ai"}})
+	cfg, err = LoadConfig(base)
+	if err != nil {
+		t.Fatalf("LoadConfig explicit set: %v", err)
+	}
+	if !reflect.DeepEqual(cfg.ProcessServices, []string{"ai"}) {
+		t.Fatalf("explicit ProcessServices = %v, want [ai]", cfg.ProcessServices)
+	}
+}

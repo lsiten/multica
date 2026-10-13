@@ -432,27 +432,33 @@ type repoCacheBackend interface {
 
 // Daemon is the local agent runtime that polls for and executes tasks.
 type Daemon struct {
-	environmentProcessMu    sync.Mutex
-	environmentProcess      *environmentProcessClient
-	environmentServiceOwner bool // physical service excludes application lifecycle/retention authority
-	mirrorProcessMu         sync.Mutex
-	mirrorProcess           *mirrorProcessClient
-	mirrorProcessClosed     bool
-	mirrorPendingRemoval    map[string]bool
-	mirrorReportBridge      mirrorReportPort
-	mirrorChild             *mirrorProcessService
-	jevModelsMu             sync.Mutex
-	jevModelsClosing        bool
-	jevModels               modelservice.Backend
-	jevModelsErr            error
-	jevModelRetryAt         time.Time
-	jevModelFailures        int
-	cfg                     Config
-	client                  *Client
-	repoCache               repoCacheBackend
-	skillCache              *SkillBundleCache
-	logger                  *slog.Logger
-	builtinMCP              mcpBroker
+	environmentProcessMu sync.Mutex
+	environmentProcess   *environmentProcessClient
+	// environmentProcessActive mirrors environmentProcessMode once startup
+	// has decided. It is set optimistically when the role is configured and
+	// cleared if the separate process can't start, so the whole daemon
+	// (setup, loops, task paths) treats a failed separate process as the
+	// in-process owner rather than a broken owner.
+	environmentProcessActive atomic.Bool
+	environmentServiceOwner  bool // physical service excludes application lifecycle/retention authority
+	mirrorProcessMu          sync.Mutex
+	mirrorProcess            *mirrorProcessClient
+	mirrorProcessClosed      bool
+	mirrorPendingRemoval     map[string]bool
+	mirrorReportBridge       mirrorReportPort
+	mirrorChild              *mirrorProcessService
+	jevModelsMu              sync.Mutex
+	jevModelsClosing         bool
+	jevModels                modelservice.Backend
+	jevModelsErr             error
+	jevModelRetryAt          time.Time
+	jevModelFailures         int
+	cfg                      Config
+	client                   *Client
+	repoCache                repoCacheBackend
+	skillCache               *SkillBundleCache
+	logger                   *slog.Logger
+	builtinMCP               mcpBroker
 
 	// terminalReports is the durable outbox for complete/fail callbacks. The
 	// sender hook is production-wired through Client and overridable in focused
@@ -721,14 +727,22 @@ type Daemon struct {
 	// controlService is the opt-in control record owner (see startControlRuntime); nil when
 	// ControlRuntimeRoot is unset or acquisition failed. It is served off the daemon ctx so a
 	// clean daemon exit publishes a "stopped" record a successor control can confirm.
-	controlService               *runtimeproc.Service
-	applicationWake              chan struct{}
-	applicationHostLauncher      func(string) (*exec.Cmd, error)
-	applicationProcessMu         sync.Mutex
-	applicationProcess           *applicationProcessClient
-	applicationTransport         func(string) applicationTransport
-	gatewayProcessMu             sync.Mutex
-	gatewayProcess               *gatewayProcessClient
+	controlService          *runtimeproc.Service
+	applicationWake         chan struct{}
+	applicationHostLauncher func(string) (*exec.Cmd, error)
+	applicationProcessMu    sync.Mutex
+	applicationProcess      *applicationProcessClient
+	// applicationProcessActive mirrors applicationProcessMode once startup has
+	// decided; cleared on a failed separate-process start so the daemon treats
+	// it as the in-process owner (see environmentProcessActive).
+	applicationProcessActive atomic.Bool
+	applicationTransport     func(string) applicationTransport
+	gatewayProcessMu         sync.Mutex
+	gatewayProcess           *gatewayProcessClient
+	// gatewayProcessActive mirrors gatewayProcessMode once startup has decided;
+	// cleared on a failed separate-process start so the daemon treats it as the
+	// in-process owner (see environmentProcessActive).
+	gatewayProcessActive         atomic.Bool
 	applicationSourceProvider    func(context.Context, applicationSourceRequest) (applicationPreparedSource, error)
 	environmentOperationsMu      sync.Mutex
 	environmentOperations        map[string]*environmentOperationLive
@@ -947,6 +961,18 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		runtimeMirrors:              make(map[string]*mirror.RuntimeMirror),
 		inputArbiter:                mirror.NewArbiter(),
 		workerProcessRegistry:       newWorkerProcessRegistry(),
+	}
+	// Decide the per-role process mode optimistically from config. Run clears
+	// the flag if a separate process can't start, so a failure falls back to
+	// the in-process owner instead of exiting (see the service-start blocks).
+	if slices.Contains(d.cfg.ProcessServices, "environment") {
+		d.environmentProcessActive.Store(true)
+	}
+	if slices.Contains(d.cfg.ProcessServices, "application") {
+		d.applicationProcessActive.Store(true)
+	}
+	if slices.Contains(d.cfg.ProcessServices, "gateway") {
+		d.gatewayProcessActive.Store(true)
 	}
 	if d.mirrorProcessMode() {
 		d.inputArbiter = nil
@@ -2315,21 +2341,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 	// The built-in MCP listener is either owned in-process (legacy default) or by
-	// a gateway process. A gateway owner needs authenticated identity, so it is
-	// launched after resolveAuth below; this keeps the legacy default on the
-	// earliest-start, auth-free path.
-	if !d.gatewayProcessMode() {
-		builtinMCP, err := startBuiltinMCPBroker(ctx)
-		if err != nil {
-			_ = healthLn.Close()
-			return err
-		}
-		d.builtinMCP = builtinMCP
-		defer func() {
-			builtinMCP.close()
-			d.builtinMCP = nil
-		}()
-	}
+	// a gateway process. A gateway owner needs authenticated identity, so the
+	// gateway process is launched after resolveAuth below; the in-process broker
+	// is started in the gateway service block when the gateway process is not
+	// active, which also covers a gateway start that failed and fell back.
 
 	agentNames := make([]string, 0, len(d.agents()))
 	for name := range d.agents() {
@@ -2471,13 +2486,24 @@ func (d *Daemon) Run(ctx context.Context) error {
 		environment, err := d.ensureEnvironmentProcess(environmentCtx)
 		stop()
 		if err != nil {
-			return fmt.Errorf("start environment service: %w", err)
-		}
-		defer func() {
-			if err := environment.close(); err != nil {
-				d.logger.Warn("environment service shutdown unconfirmed", "error", err)
+			// Fail closed to the legacy in-process owner. No separate process
+			// started, so the in-process loops are not a double-run; the earlier
+			// !environmentProcessMode() marker guard was skipped while the flag
+			// was optimistic, so re-run it here for the in-process owner.
+			d.environmentProcessActive.Store(false)
+			d.logger.Warn("environment service start failed; falling back to in-process", "error", err)
+			if mErr := execenv.EnsureWorkspacesRootMarker(d.cfg.WorkspacesRoot); mErr != nil {
+				d.logger.Warn("workspaces root marker not written; CLI fail-closed guard limited to task workdirs", "error", mErr)
 			}
-		}()
+			go d.gcLoop(ctx)
+			go d.environmentRecycleLoop(ctx)
+		} else {
+			defer func() {
+				if cerr := environment.close(); cerr != nil {
+					d.logger.Warn("environment service shutdown unconfirmed", "error", cerr)
+				}
+			}()
+		}
 	} else {
 		go d.gcLoop(ctx)
 		go d.environmentRecycleLoop(ctx)
@@ -2485,13 +2511,19 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.autoUpdateLoop(ctx)
 	go d.tokenRenewalLoop(ctx)
 	go d.localReviewLoop(ctx)
+	var application *applicationProcessClient
 	if d.applicationProcessMode() {
 		appCtx, appCancel := context.WithTimeout(ctx, 30*time.Second)
-		application, appErr := d.ensureApplicationProcess(appCtx)
+		var appErr error
+		application, appErr = d.ensureApplicationProcess(appCtx)
 		appCancel()
 		if appErr != nil {
-			return fmt.Errorf("start application service: %w", appErr)
+			// Fail closed to the legacy in-process owner.
+			d.applicationProcessActive.Store(false)
+			d.logger.Warn("application service start failed; falling back to in-process", "error", appErr)
 		}
+	}
+	if d.applicationProcessMode() {
 		applicationsDone := make(chan struct{})
 		go func() { defer close(applicationsDone); d.applicationProcessLoop(ctx, application) }()
 		defer func() {
@@ -2515,11 +2547,25 @@ func (d *Daemon) Run(ctx context.Context) error {
 		gateway, err := d.ensureGatewayProcess(gatewayCtx)
 		gatewayCancel()
 		if err != nil {
-			return fmt.Errorf("start gateway service: %w", err)
+			d.gatewayProcessActive.Store(false)
+			d.logger.Warn("gateway service start failed; falling back to in-process", "error", err)
+		} else {
+			d.builtinMCP = gateway
+			defer func() {
+				d.retainGatewayOnRetainedRestart(gateway)
+				d.builtinMCP = nil
+			}()
 		}
-		d.builtinMCP = gateway
+	}
+	if !d.gatewayProcessMode() {
+		builtinMCP, err := startBuiltinMCPBroker(ctx)
+		if err != nil {
+			_ = healthLn.Close()
+			return err
+		}
+		d.builtinMCP = builtinMCP
 		defer func() {
-			d.retainGatewayOnRetainedRestart(gateway)
+			builtinMCP.close()
 			d.builtinMCP = nil
 		}()
 	}

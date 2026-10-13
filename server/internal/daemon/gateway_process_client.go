@@ -42,7 +42,7 @@ type gatewayProcessClient struct {
 }
 
 func (d *Daemon) gatewayProcessMode() bool {
-	return slices.Contains(d.cfg.ProcessServices, "gateway")
+	return d.gatewayProcessActive.Load()
 }
 
 // ensureGatewayProcess starts the gateway child exactly once and returns the
