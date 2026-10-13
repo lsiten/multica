@@ -80,6 +80,12 @@ func (d *Daemon) ensureApplicationProcess(ctx context.Context) (*applicationProc
 	if err = d.reconcileApplicationManager(ctx, root, identity.Scope); err != nil {
 		return nil, err
 	}
+	// Best-effort: retire a dead prior owner so a crashed service's record does
+	// not permanently block this start. A live owner is never retired (the
+	// owner.lock is the final gate), so this is safe even if liveness is wrong.
+	if err = d.crashDetectAndReconcile(ctx, root, identity.Scope, "application"); err != nil {
+		d.logger.Warn("application crash-detection reconcile skipped; start proceeds", "error", err)
+	}
 	b, err := runtimeproc.NewBootstrap(root, identity)
 	if err != nil {
 		return nil, err

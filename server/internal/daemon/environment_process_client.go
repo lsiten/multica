@@ -99,6 +99,12 @@ func (d *Daemon) ensureEnvironmentProcess(ctx context.Context) (*environmentProc
 		key, value, _ := strings.Cut(entry, "=")
 		environment[key] = value
 	}
+	// Best-effort: retire a dead prior owner so a crashed service's record does
+	// not permanently block this start. A live owner is never retired (the
+	// owner.lock is the final gate), so this is safe even if liveness is wrong.
+	if err := d.crashDetectAndReconcile(ctx, root, identity.Scope, "environment"); err != nil {
+		d.logger.Warn("environment crash-detection reconcile skipped; start proceeds", "error", err)
+	}
 	process, err := runtimeproc.Start(context.Background(), runtimeproc.LaunchConfig{Executable: executable, SHA256: hex.EncodeToString(hash.Sum(nil)), Environment: environment, Bootstrap: bootstrap, StartupTimeout: 30 * time.Second})
 	if err != nil {
 		return nil, err

@@ -109,6 +109,12 @@ func (d *Daemon) ensureGatewayProcess(ctx context.Context) (*gatewayProcessClien
 			environment[name] = value
 		}
 	}
+	// Best-effort: retire a dead prior owner so a crashed service's record does
+	// not permanently block this start. A live owner is never retired (the
+	// owner.lock is the final gate), so this is safe even if liveness is wrong.
+	if err := d.crashDetectAndReconcile(ctx, root, identity.Scope, "gateway"); err != nil {
+		d.logger.Warn("gateway crash-detection reconcile skipped; start proceeds", "error", err)
+	}
 	process, err := runtimeproc.Start(context.Background(), runtimeproc.LaunchConfig{
 		Executable:     executable,
 		SHA256:         hex.EncodeToString(hash.Sum(nil)),
