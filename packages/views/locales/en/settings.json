@@ -356,7 +356,7 @@
     "model_downloading": "Downloading",
     "model_verifying": "Verifying",
     "model_failed": "Failed",
-    "model_stopped": "Service stopped",
+    "model_stopped": "Downloaded · starts when used",
     "title": "Jev decision model",
     "description": "Jev model settings shared by this workspace.",
     "source_title": "Jev model source",

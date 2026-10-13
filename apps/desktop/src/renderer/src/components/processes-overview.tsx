@@ -192,8 +192,11 @@ function normalizeJev(raw: unknown): UnifiedProcess[] {
     };
     if (typeof item.model_id !== "string") continue;
     const installed = item.installed === true;
+    const running = item.state === "ready" || item.state === "starting";
     let detail: string | undefined;
-    if (!installed && typeof item.total_bytes === "number" && item.total_bytes > 0) {
+    if (installed && !running) {
+      detail = "downloaded";
+    } else if (!installed && typeof item.total_bytes === "number" && item.total_bytes > 0) {
       const pct = item.downloaded_bytes ? Math.round((item.downloaded_bytes / item.total_bytes) * 100) : 0;
       detail = `${pct}%`;
     }
@@ -202,7 +205,7 @@ function normalizeJev(raw: unknown): UnifiedProcess[] {
       id: item.model_id,
       name: item.model_id,
       state: item.state ?? (installed ? "installed" : "not_installed"),
-      ready: installed,
+      ready: running,
       detail,
       stoppable: false,
     });

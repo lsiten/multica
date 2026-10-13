@@ -355,7 +355,7 @@
     "model_downloading": "下载中",
     "model_verifying": "校验中",
     "model_failed": "失败",
-    "model_stopped": "服务已停止",
+    "model_stopped": "已下载·使用时启动",
     "title": "Jev 决策模型",
     "description": "工作区共享 Jev 决策模型设置。",
     "source_title": "Jev 模型来源",
