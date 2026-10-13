@@ -683,3 +683,49 @@ func TestExecutionNormalizedCompletionReplayKeepsTransportScope(t *testing.T) {
 	}
 	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("fail"), grant.Token, TaskFailRequest{Error: "not an authorized transport"})).Want(403)
 }
+
+// TestExecutionAcquireAdoptsStaleSameDaemonSupervisor is the regression for the
+// "chat stuck thinking" root cause: a prior incarnation of the SAME daemon
+// (identical daemon_id, a different instance) left a supervisor row it did not
+// release on exit. A restart reuses daemon_id with a new instance, so without
+// adoption the new instance can never clear the stale row and every bind 409s.
+func TestExecutionAcquireAdoptsStaleSameDaemonSupervisor(t *testing.T) {
+	f := newExecutionFixture(t)
+	// newExecutionFixture already holds epoch 1 for f.instance; simulate a prior
+	// incarnation that left a higher-epoch row the new instance must adopt.
+	staleInstance := uuid.NewString()
+	f.fx.Exec(t, "UPDATE runtime_supervisor SET instance_id=$1, epoch=3 WHERE runtime_id=$2", staleInstance, f.runtime)
+	adopting := uuid.NewString()
+	var resp protocol.SupervisorResponse
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/execution-supervisor"), f.control, protocol.SupervisorRequest{InstanceID: adopting})).Want(200).JSON(&resp)
+	if resp.Epoch != 4 {
+		t.Fatalf("adopted epoch=%d, want 4", resp.Epoch)
+	}
+	if resp.InstanceID != adopting {
+		t.Fatalf("adopting instance=%s, want %s", resp.InstanceID, adopting)
+	}
+	var ownerDaemon string
+	var ownerEpoch int64
+	f.fx.QueryRow(t, "SELECT daemon_id, epoch FROM runtime_supervisor WHERE runtime_id=$1", f.runtime).Scan(&ownerDaemon, &ownerEpoch)
+	if ownerDaemon != f.daemon || ownerEpoch != 4 {
+		t.Fatalf("row after adopt: daemon=%s epoch=%d (want %s, 4)", ownerDaemon, ownerEpoch, f.daemon)
+	}
+}
+
+// TestExecutionAcquireRejectsCrossDaemonSupervisor pins the mutual-exclusion
+// boundary: a supervisor row held by a DIFFERENT daemon must never be adopted,
+// even though it looks like a stale acquire (epoch mismatch). Cross-daemon
+// control is never given away.
+func TestExecutionAcquireRejectsCrossDaemonSupervisor(t *testing.T) {
+	f := newExecutionFixture(t)
+	otherDaemon := "execution-" + uuid.NewString()
+	f.fx.Exec(t, "UPDATE runtime_supervisor SET daemon_id=$1, instance_id=$2, epoch=3 WHERE runtime_id=$3", otherDaemon, uuid.NewString(), f.runtime)
+	adopting := uuid.NewString()
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/execution-supervisor"), f.control, protocol.SupervisorRequest{InstanceID: adopting})).Want(409)
+	var ownerDaemon string
+	var ownerEpoch int64
+	f.fx.QueryRow(t, "SELECT daemon_id, epoch FROM runtime_supervisor WHERE runtime_id=$1", f.runtime).Scan(&ownerDaemon, &ownerEpoch)
+	if ownerDaemon != otherDaemon || ownerEpoch != 3 {
+		t.Fatalf("cross-daemon row was mutated: daemon=%s epoch=%d (want %s, 3)", ownerDaemon, ownerEpoch, otherDaemon)
+	}
+}

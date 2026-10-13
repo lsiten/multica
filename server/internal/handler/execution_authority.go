@@ -102,7 +102,25 @@ func (h *Handler) AcquireExecutionSupervisor(w http.ResponseWriter, r *http.Requ
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		owner, err = q.GetRuntimeSupervisor(r.Context(), runtime.ID)
-		if err == nil && (owner.InstanceID != instance || owner.Epoch != req.ExpectedEpoch+1 || owner.DaemonID != runtime.DaemonID.String || owner.WorkspaceID != runtime.WorkspaceID) {
+		if err != nil {
+			// The row vanished between the acquire and this read: keep the 409 so
+			// the caller retries a fresh acquire instead of adopting a phantom.
+		} else if req.ExpectedEpoch == 0 && owner.InstanceID != instance && owner.DaemonID == runtime.DaemonID.String && owner.WorkspaceID == runtime.WorkspaceID {
+			// A prior incarnation of THIS SAME daemon (identical daemon_id and
+			// workspace, a different instance) left a supervisor row it did not
+			// release on exit. Adopting it is safe: the old instance is dead, and
+			// the takeover is bounded to the same daemon_id, so a different daemon
+			// never inherits control. Without this a restart reuses daemon_id with
+			// a new instance and can never clear a stale row, so every bind 409s
+			// and the chat stays "thinking" forever.
+			owner, err = q.TransferRuntimeSupervisor(r.Context(), db.TransferRuntimeSupervisorParams{
+				RuntimeID:     runtime.ID,
+				WorkspaceID:   runtime.WorkspaceID,
+				DaemonID:      runtime.DaemonID.String,
+				InstanceID:    instance,
+				ExpectedEpoch: owner.Epoch,
+			})
+		} else if owner.InstanceID != instance || owner.Epoch != req.ExpectedEpoch+1 || owner.DaemonID != runtime.DaemonID.String || owner.WorkspaceID != runtime.WorkspaceID {
 			err = pgx.ErrNoRows
 		}
 	}
