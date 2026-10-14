@@ -74,7 +74,18 @@ func TestHandleTaskReportsWindowsCodexProcessStartFailure(t *testing.T) {
 		},
 	}, 0)
 
-	body, _ := failBody.Load().(map[string]any)
+	// The daemon persists terminal reports before delivering them. On Windows
+	// the replay worker may deliver the callback just after handleTask returns,
+	// so wait for the observable HTTP side effect instead of racing that worker.
+	deadline := time.Now().Add(2 * time.Second)
+	var body map[string]any
+	for time.Now().Before(deadline) {
+		body, _ = failBody.Load().(map[string]any)
+		if body != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if body == nil {
 		t.Fatal("runtime CreateProcess failure was not reported through the task /fail endpoint")
 	}
