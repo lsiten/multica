@@ -1,6 +1,7 @@
 "use client";
 
-import { X, GitCompare, Loader2 } from "lucide-react";
+import { X, GitCompare, Loader2, Pencil } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -13,6 +14,7 @@ import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import {
   useDocumentContentVersionCurrent,
   useDocumentContentVersions,
+  useRecordDocumentContentVersion,
   useRollbackDocumentContentVersion,
 } from "@multica/core/chat/document-content-version-queries";
 import type { DocumentContentVersion } from "@multica/core/api/document-content-version";
@@ -20,6 +22,10 @@ import { RichContent } from "../../rich-content";
 import { Attachment } from "../../editor/attachment";
 import { useT } from "../../i18n";
 import { requestReviewPage } from "../../platform/local-review-pages";
+import { ApiError } from "@multica/core/api";
+import { useAuthStore } from "@multica/core/auth";
+import { FileViewer } from "../../skills/components/file-viewer";
+import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
 
 // A ref with an empty id keeps the content-versions hooks disabled (see their
 // `enabled: !!ref.id` guard) so they can be called unconditionally even when no
@@ -47,6 +53,11 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
   const diffView = useDocModeStore(selectDiffView(wsId));
   const closeDoc = useDocModeStore((s) => s.closeDoc);
   const setDiffView = useDocModeStore((s) => s.setDiffView);
+  const record = useRecordDocumentContentVersion(wsId);
+  const user = useAuthStore((s) => s.user);
+  const [editing, setEditing] = useState(false);
+  const [edited, setEdited] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Hooks must run unconditionally; the empty id disables the queries below.
   const activeRef = doc ?? EMPTY_DOC;
@@ -74,6 +85,37 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
     enabled: doc?.kind === "workspace_file" && !!workspaceTask && !!doc.relativePath,
     staleTime: 15_000,
   });
+
+  const openEdit = useCallback(() => {
+    if (!current.data?.content) return;
+    setEdited(current.data.content);
+    setSaveError(null);
+    setEditing(true);
+    setDiffView(wsId, false);
+  }, [current.data?.content, setDiffView, wsId]);
+
+  const save = useCallback(async () => {
+    if (!doc || !current.data) return;
+    try {
+      await record.mutateAsync({
+        ref: doc,
+        input: {
+          content_type: current.data.content_type ?? doc.contentType ?? "text/markdown",
+          content: edited,
+          expected_revision: current.data.revision,
+        },
+      });
+      setEditing(false);
+      setSaveError(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        current.refetch();
+        setSaveError("changed_reload");
+      } else {
+        setSaveError("save_failed");
+      }
+    }
+  }, [record, doc, edited, current]);
 
   if (!doc) return null;
 
@@ -106,6 +148,10 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
   }
 
   const isText = doc.contentType?.startsWith("text/") ?? current.data?.content != null;
+  // Editing is available for an issue's text document (the requirement doc) to
+  // any workspace member — mirrors the backend, whose record handler gates on
+  // requireUserID only. Attachments (binary) and workspace files are read-only.
+  const canEdit = !!user && doc.kind === "issue" && isText && current.data?.content != null;
 
   return (
     <div className="flex h-full flex-col min-h-0">
@@ -114,6 +160,17 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
           {doc.label ?? (doc.kind === "issue" ? t(($) => $.doc_mode.issue) : t(($) => $.doc_mode.attachment))}
         </h2>
         <div className="flex items-center gap-1">
+          {canEdit && (
+            <Button
+              variant={editing ? "secondary" : "ghost"}
+              size="sm"
+              className="gap-1.5"
+              onClick={openEdit}
+            >
+              <Pencil className="h-4 w-4" />
+              {t(($) => $.doc_mode.edit)}
+            </Button>
+          )}
           <Button
             variant={diffView ? "secondary" : "ghost"}
             size="sm"
@@ -136,7 +193,26 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {diffView ? (
+        {editing ? (
+          <DocEdit
+            label={doc.label ?? "Document"}
+            content={edited}
+            dirty={edited !== (current.data?.content ?? "")}
+            saving={record.isPending}
+            error={saveError}
+            onChange={setEdited}
+            onSave={save}
+            onCancel={() => {
+              setEditing(false);
+              setSaveError(null);
+            }}
+            saveLabel={t(($) => $.doc_mode.save)}
+            savingLabel={t(($) => $.doc_mode.saving)}
+            discardLabel={t(($) => $.doc_mode.discard)}
+            changeLabel={t(($) => $.doc_mode.changed_reload)}
+            failLabel={t(($) => $.doc_mode.save_failed)}
+          />
+        ) : diffView ? (
           <DocVersionHistory
             versions={versions.data ?? []}
             loading={versions.isLoading}
@@ -322,6 +398,78 @@ function FloatingWorkingIndicator({
         <Loader2 className="h-4 w-4 animate-spin" />
         <span className="text-body">{workingLabel}</span>
         <span className="text-faint-foreground">· {label}</span>
+      </div>
+    </div>
+  );
+}
+
+// Scope 1: a human edits the requirement document's Markdown body in place. The
+// editor is the same FileViewer the skill pages use (a raw text/code editor,
+// "codex-like"). Save commits a new content version; the server appends it and
+// a confirmed requirement is auto-reopened to change (maybeReopenRequirementOnEdit).
+// The draft is never clobbered by a concurrent current-version change: on a 409
+// conflict the user sees the message and reloads, rather than losing their edits.
+function DocEdit({
+  label,
+  content,
+  dirty,
+  saving,
+  error,
+  onChange,
+  onSave,
+  onCancel,
+  saveLabel,
+  savingLabel,
+  discardLabel,
+  changeLabel,
+  failLabel,
+}: {
+  label: string;
+  content: string;
+  dirty: boolean;
+  saving: boolean;
+  error: string | null;
+  onChange: (content: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saveLabel: string;
+  savingLabel: string;
+  discardLabel: string;
+  changeLabel: string;
+  failLabel: string;
+}) {
+  return (
+    <div className="flex h-full flex-col min-h-0">
+      <div className="min-h-0 flex-1">
+        <FileViewer
+          path={label || "document"}
+          content={content}
+          mode="raw"
+          readOnly={false}
+          autoFocus
+          onChange={onChange}
+        />
+      </div>
+      {error ? (
+        <div className="shrink-0 border-t px-4 py-2">
+          <Alert variant="destructive">
+            <AlertDescription>
+              {error === "changed_reload" ? changeLabel : failLabel}
+            </AlertDescription>
+          </Alert>
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between gap-2 border-t px-4 py-2">
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
+          {discardLabel}
+        </Button>
+        <Button
+          size="sm"
+          onClick={onSave}
+          disabled={!dirty || saving || error === "changed_reload"}
+        >
+          {saving ? savingLabel : saveLabel}
+        </Button>
       </div>
     </div>
   );

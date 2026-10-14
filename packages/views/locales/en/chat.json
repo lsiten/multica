@@ -14,7 +14,13 @@
     "close": "Close",
     "rollback": "Roll back",
     "working": "Editing…",
-    "truncated": "Preview truncated — full file is {{total}}"
+    "truncated": "Preview truncated — full file is {{total}}",
+    "edit": "Edit",
+    "save": "Save",
+    "saving": "Saving…",
+    "discard": "Discard",
+    "changed_reload": "The document changed elsewhere — your changes were not saved. Reload to try again.",
+    "save_failed": "Couldn't save changes."
   },
   "doc_file_list": {
     "filter_placeholder": "Filter files",

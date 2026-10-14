@@ -13,7 +13,13 @@
     "close": "Fermer",
     "rollback": "Annuler",
     "working": "Édition…",
-    "truncated": "Aperçu tronqué — fichier complet : {{total}}"
+    "truncated": "Aperçu tronqué — fichier complet : {{total}}",
+    "edit": "Modifier",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "discard": "Annuler",
+    "changed_reload": "Le document a été modifié ailleurs — vos modifications n'ont pas été enregistrées. Rechargez pour réessayer.",
+    "save_failed": "Impossible d'enregistrer les modifications."
   },
   "doc_file_list": {
     "filter_placeholder": "Filtrer les fichiers",

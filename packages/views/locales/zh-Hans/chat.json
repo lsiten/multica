@@ -13,7 +13,13 @@
     "close": "关闭",
     "rollback": "回滚",
     "working": "编辑中…",
-    "truncated": "预览已截断，完整文件 {{total}}"
+    "truncated": "预览已截断，完整文件 {{total}}",
+    "edit": "编辑",
+    "save": "保存",
+    "saving": "保存中…",
+    "discard": "放弃",
+    "changed_reload": "文档已在别处修改，未保存你的更改。请刷新后重试。",
+    "save_failed": "保存失败。"
   },
   "doc_file_list": {
     "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",

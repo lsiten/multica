@@ -13,7 +13,13 @@
     "close": "閉じる",
     "rollback": "巻き戻す",
     "working": "編集中…",
-    "truncated": "プレビューが切断されています（ファイルは {{total}}）"
+    "truncated": "プレビューが切断されています（ファイルは {{total}}）",
+    "edit": "編集",
+    "save": "保存",
+    "saving": "保存中…",
+    "discard": "破棄",
+    "changed_reload": "ドキュメントが別の場所で変更されました。あなたの変更は保存されていません。再読み込みして再度お試しください。",
+    "save_failed": "変更を保存できませんでした。"
   },
   "doc_file_list": {
     "filter_placeholder": "\u30d5\u30a1\u30a4\u30eb\u3092\u30d5\u30a3\u30eb\u30bf\u30fc",
