@@ -1,5 +1,12 @@
 {
-  "inline_run": {
+
+  "requirement": {
+    "marker": "要件",
+    "marker_short": "R",
+    "pending_confirm": "確認待ち",
+    "confirmed": "確認済み",
+    "change_pending": "変更確認待ち"
+  },  "inline_run": {
     "label": "{{name}} の実行",
     "stop": "停止",
     "stopping": "停止中...",

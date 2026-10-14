@@ -135,6 +135,36 @@ export function useCreateChatSession() {
   });
 }
 
+export function useCreateGroupChatSession() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+
+  return useMutation({
+    mutationFn: (data: {
+      agent_id: string;
+      title?: string;
+      project_id?: string | null;
+      participants?: { member_type: "member" | "agent"; member_id: string }[];
+    }) => {
+      logger.info("createGroupChatSession.start", {
+        agent_id: data.agent_id,
+        project_id: data.project_id,
+        participantCount: data.participants?.length ?? 0,
+      });
+      return api.createGroupChat(data);
+    },
+    onSuccess: (session) => {
+      logger.info("createGroupChatSession.success", { sessionId: session.id, agentId: session.agent_id });
+    },
+    onError: (err) => {
+      logger.error("createGroupChatSession.error", err);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+    },
+  });
+}
+
 /**
  * Clears the session's unread state server-side. Optimistically flips
  * has_unread to false in the cached list so the FAB badge drops

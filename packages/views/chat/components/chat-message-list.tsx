@@ -63,6 +63,7 @@ import {
 } from "../lib/copy-text";
 import { stripChatQuickActionsProtocol } from "../lib/quick-actions";
 import { useT } from "../../i18n";
+import { GroupMessageAuthor } from "./group-message-author";
 
 // ─── Public component ────────────────────────────────────────────────────
 
@@ -516,6 +517,7 @@ const MessageBubble = memo(function MessageBubble({
     return (
       <div className="flex justify-end">
         <div className="rounded-2xl bg-muted px-3.5 py-2 text-body max-w-[80%] break-words">
+          {message.author_id && <GroupMessageAuthor message={message} />}
           {/* User messages are authored as markdown in ContentEditor, so they
            * render through the SAME RichContent as assistant replies and as
            * Issue/Comment — a Mermaid fence a user pastes is a diagram here

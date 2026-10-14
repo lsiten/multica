@@ -143,6 +143,7 @@ vi.mock("@multica/core/hooks/use-file-upload", () => ({
 }));
 vi.mock("@multica/core/chat/mutations", () => ({
   useCreateChatSession: () => ({ mutateAsync: h.createSessionMutate }),
+  useCreateGroupChatSession: () => ({ mutate: vi.fn() }),
   useMarkChatSessionRead: () => ({ mutate: h.markReadMutate }),
   useSetChatSessionArchived: () => ({ mutate: h.archivedMutate }),
   useSetChatSessionProject: () => ({

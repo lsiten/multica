@@ -96,6 +96,10 @@ type IssueCreateParams struct {
 	// Stage groups this issue into an ordered barrier group under its parent
 	// (NULL = unstaged). See issue_wakeup_system.go for the staged-barrier wake.
 	Stage pgtype.Int4
+	// Kind is "task" (default) or "requirement". A requirement issue carries a
+	// requirement document (its description) plus a confirm/change lifecycle
+	// tracked in the requirement table (created in the same transaction).
+	Kind string
 	// SourceContext is set only by the comment-scoped manual create endpoint.
 	// Its immutable snapshot and cloned attachment rows commit in the same
 	// transaction as the new issue.
@@ -364,6 +368,12 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		return IssueCreateResult{}, fmt.Errorf("next top position: %w", err)
 	}
 
+	// The kind column defaults to 'task'; an empty input must not land an
+	// invalid value against the issue_kind check constraint.
+	kind := p.Kind
+	if kind == "" {
+		kind = "task"
+	}
 	var issue db.Issue
 	var assignedTask db.AgentTaskQueue
 	if p.OriginType.Valid {
@@ -384,6 +394,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			DueDate:       p.DueDate,
 			Number:        issueNumber,
 			ProjectID:     projectID,
+			Kind:        kind,
 			OriginType:    p.OriginType,
 			OriginID:      p.OriginID,
 			Stage:         p.Stage,
@@ -407,6 +418,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			DueDate:       p.DueDate,
 			Number:        issueNumber,
 			ProjectID:     projectID,
+			Kind:        kind,
 			Stage:         p.Stage,
 			Properties:    properties,
 		})
@@ -417,6 +429,21 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			return IssueCreateResult{}, ErrIssuePropertiesTooLarge
 		}
 		return IssueCreateResult{}, fmt.Errorf("create issue: %w", err)
+	}
+	// A requirement issue starts its confirm lifecycle with a 1:1 requirement row
+	// (pending_confirm). The agent later delivers a confirm card; a member's
+	// approval pins the document revision and flips it to confirmed
+	// (see handler.requirement.go). Best-effort: a missing row must not block
+	// the issue, but the confirm flow depends on it existing.
+	if kind == "requirement" {
+		if _, err := qtx.CreateRequirement(ctx, db.CreateRequirementParams{
+			WorkspaceID:       p.WorkspaceID,
+			IssueID:         issue.ID,
+			LifecycleStatus: "pending_confirm",
+			UnconfirmedChange: false,
+		}); err != nil {
+			return IssueCreateResult{}, fmt.Errorf("create requirement: %w", err)
+		}
 	}
 	if p.GoalObjective.Valid {
 		if _, err := qtx.UpsertIssueGoal(ctx, db.UpsertIssueGoalParams{

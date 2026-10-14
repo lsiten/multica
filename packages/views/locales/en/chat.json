@@ -1,5 +1,13 @@
 {
-  "doc_mode": {
+
+  "group": {
+    "badge": "Group",
+    "participants_one": "{{count}} member",
+    "participants_other": "{{count}} members",
+    "you": "You",
+    "open_members": "Members",
+    "no_members": "No members yet"
+  },  "doc_mode": {
     "issue": "Issue",
     "attachment": "Attachment",
     "diff": "Diff",
@@ -183,6 +191,7 @@
   },
   "window": {
     "new_chat_tooltip": "New chat",
+    "new_group_chat_tooltip": "New group chat",
     "restore_tooltip": "Restore",
     "expand_tooltip": "Expand",
     "minimize_tooltip": "Minimize",

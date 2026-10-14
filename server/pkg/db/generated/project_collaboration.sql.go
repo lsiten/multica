@@ -218,7 +218,7 @@ WITH RECURSIVE base AS (
        (pa.permission_mode='public_to' AND EXISTS(SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id=pa.id
         AND (ait.target_type='workspace' OR (ait.target_type='member' AND ait.target_id = $5::uuid)))))
 ), searchable_parents AS MATERIALIZED (
- SELECT p.id, p.workspace_id, p.title, p.description, p.status, p.priority, p.assignee_type, p.assignee_id, p.creator_type, p.creator_id, p.parent_issue_id, p.acceptance_criteria, p.context_refs, p.position, p.due_date, p.created_at, p.updated_at, p.number, p.project_id, p.origin_type, p.origin_id, p.first_executed_at, p.start_date, p.metadata, p.stage, p.properties, p.revision, p.last_activity_at, p.triage_state, p.duplicate_of_issue_id FROM issue p LEFT JOIN agent a ON p.assignee_type='agent' AND a.id=p.assignee_id AND a.workspace_id=p.workspace_id
+ SELECT p.id, p.workspace_id, p.title, p.description, p.status, p.priority, p.assignee_type, p.assignee_id, p.creator_type, p.creator_id, p.parent_issue_id, p.acceptance_criteria, p.context_refs, p.position, p.due_date, p.created_at, p.updated_at, p.number, p.project_id, p.origin_type, p.origin_id, p.first_executed_at, p.start_date, p.metadata, p.stage, p.properties, p.revision, p.last_activity_at, p.triage_state, p.duplicate_of_issue_id, p.kind FROM issue p LEFT JOIN agent a ON p.assignee_type='agent' AND a.id=p.assignee_id AND a.workspace_id=p.workspace_id
  WHERE p.workspace_id = $2::uuid AND p.project_id = $1::uuid AND $6::text<>''
   AND ($4::boolean OR COALESCE(p.assignee_type,'') <> 'agent' OR a.owner_id = $5::uuid OR
    (a.permission_mode='public_to' AND EXISTS(SELECT 1 FROM agent_invocation_target ait WHERE ait.agent_id=a.id AND

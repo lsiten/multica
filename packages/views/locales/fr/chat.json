@@ -1,5 +1,12 @@
 {
-  "doc_mode": {
+
+  "group": {
+    "badge": "Groupe",
+    "participants_other": "{{count}} membres",
+    "you": "Vous",
+    "open_members": "Membres",
+    "no_members": "Aucun membre"
+  },  "doc_mode": {
     "issue": "Ticket",
     "attachment": "Pièce jointe",
     "diff": "Diff",
@@ -176,6 +183,7 @@
   },
   "window": {
     "new_chat_tooltip": "Nouvelle discussion",
+    "new_group_chat_tooltip": "Nouvelle discussion de groupe",
     "restore_tooltip": "Restaurer",
     "expand_tooltip": "Développer",
     "minimize_tooltip": "Réduire",

@@ -1057,6 +1057,9 @@ export const ChatMessageSchema = z.object({
   // Optional additive data degrades independently: a malformed suggestion
   // must not hide the assistant reply that contains it.
   quick_actions: z.array(ChatQuickActionSchema).catch([]).optional().default([]),
+  // Group-chat sender; null for one-to-one chats and older servers.
+  author_type: z.string().nullable().optional().catch(undefined),
+  author_id: z.string().nullable().optional().catch(undefined),
 }).loose();
 
 export const ChatMessageListSchema = z.array(ChatMessageSchema).default([]);
@@ -1544,6 +1547,9 @@ export const IssueSchema = z.object({
     .optional()
     .catch(undefined),
   project_id: z.string().nullable(),
+  // "task" (ordinary) or "requirement". Optional for older backends; absent
+  // means task.
+  kind: z.string().optional().catch(undefined),
   position: z.number(),
   // Older backends predate `stage`; default to null so a missing field parses
   // cleanly into the non-optional Issue.stage (number | null).
@@ -1565,6 +1571,16 @@ export const IssueSchema = z.object({
   // Detail-only and potentially large. A malformed additive field must not
   // erase an otherwise usable issue returned by a mixed-version server.
   source_context: IssueSourceContextSchema.optional().catch(undefined),
+}).loose();
+
+
+export const RequirementSchema = z.object({
+  issue_id: z.string(),
+  lifecycle_status: z.string(),
+  confirmed_revision: z.number().int().nullable().optional().catch(undefined),
+  confirmed_by: z.string().nullable().optional().catch(undefined),
+  confirmed_at: z.string().nullable().optional().catch(undefined),
+  unconfirmed_change: z.boolean().default(false),
 }).loose();
 
 export const IssueGoalSchema = z.object({
@@ -2407,6 +2423,13 @@ const ChatChannelSourceSchema = z.object({
   route_revision: z.number().default(0),
 }).loose();
 
+
+export const ChatParticipantSchema = z.object({
+  member_type: z.string().default("member"),
+  member_id: z.string().default(""),
+  joined_at: z.string().default(""),
+}).loose();
+
 export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
@@ -2416,6 +2439,9 @@ export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   squad_id: z.string().nullable().optional(),
   title: z.string().default(""),
   status: z.enum(["active", "archived"]).catch("active"),
+  kind: z.string().optional().catch(undefined),
+  is_project_default: z.boolean().optional().catch(undefined),
+  participants: z.array(ChatParticipantSchema).optional().catch(undefined),
   has_unread: z.boolean().default(false),
   unread_count: z.number().optional(),
   last_message: ChatLastMessageSchema.nullable().optional().catch(undefined),

@@ -16,7 +16,20 @@ func init() { rootCmd.AddCommand(newHumanRequestCommand()) }
 func newHumanRequestCommand() *cobra.Command {
 	command := &cobra.Command{Use: "human-request", Short: "Deliver actionable requests and read their exact member responses"}
 	create := &cobra.Command{Use: "create", Args: cobra.NoArgs, Short: "Create or revise this run's request using a stable key", Long: `Deliver a versioned request to the run's designated member. Required fields: key, kind (confirmation|choice|input|manual), title, action_label, next. Manual requests also need steps and verification; choices need two to four {id,label,recommended} entries; input needs input_label. Optional: impact, details, expires_in_seconds, response_mode. Ordinary choice/input requests may set response_mode=chat_or_card; authorization/manual requests require card_only. Never put credentials or executable button actions in this document. Reusing a key with unchanged content is idempotent; changing it invalidates old confirmations. Example:
-{"key":"screen-recording","kind":"manual","title":"Enable screen recording for Multica","steps":["Open System Settings > Privacy & Security > Screen Recording and enable Multica"],"action_label":"Check permission","verification":"Read screen recording permission from the runtime","next":"I will check the permission before continuing"}`, RunE: func(cmd *cobra.Command, args []string) error {
+{"key":"screen-recording","kind":"manual","title":"Enable screen recording for Multica","steps":["Open System Settings > Privacy & Security > Screen Recording and enable Multica"],"action_label":"Check permission","verification":"Read screen recording permission from the runtime","next":"I will check the permission before continuing"}`,
+			// Requirement lifecycle: a kind="requirement" issue carries a requirement
+			// document (its description). When the document is ready, deliver a
+			// confirmation card with key "requirement-confirm"; the member's approval
+			// deterministically confirms the requirement (no agent action needed).
+			// After confirmation, if the member edits the document that is a change —
+			// deliver a choice card with key "requirement-change-review" whose choices
+			// are {keep,redo,cancel,adjust}; the lead's answer re-applies the impact
+			// across the requirement's sub-issues and re-confirms the document.
+			// Example requirement-confirm:
+			//{"key":"requirement-confirm","kind":"confirmation","title":"Confirm requirement MUL-1","action_label":"Confirm","next":"I will create sub-tasks after confirmation"}
+			// Example requirement-change-review:
+			//{"key":"requirement-change-review","kind":"choice","title":"Requirement changed: impact","action_label":"Decide","choices":[{"id":"keep","label":"No impact","recommended":true},{"id":"redo","label":"Rework affected sub-tasks"},{"id":"cancel","label":"Cancel affected sub-tasks"},{"id":"adjust","label":"Flag for re-review"}],"next":"I will apply the impact to the sub-tasks"}
+ RunE: func(cmd *cobra.Command, args []string) error {
 		path, _ := cmd.Flags().GetString("body-file")
 		raw, err := os.ReadFile(path)
 		if err != nil {

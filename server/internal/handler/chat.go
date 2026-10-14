@@ -823,6 +823,13 @@ func (h *Handler) SetChatSessionArchived(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// A project's default group chat is never archived manually; only the
+	// project reaching a terminal status archives it (archiveProjectGroupOnTerminalStatus).
+	if req.Archived && isGroupChatManualArchive(session) {
+		writeError(w, http.StatusBadRequest, "a project's default group chat cannot be archived manually")
+		return
+	}
+
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to start transaction")

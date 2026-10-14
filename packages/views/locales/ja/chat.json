@@ -1,5 +1,12 @@
 {
-  "doc_mode": {
+
+  "group": {
+    "badge": "グループ",
+    "participants_other": "{{count}} 人のメンバー",
+    "you": "あなた",
+    "open_members": "メンバー",
+    "no_members": "メンバーいません"
+  },  "doc_mode": {
     "issue": "課題",
     "attachment": "添付ファイル",
     "diff": "差分",
@@ -172,6 +179,7 @@
   },
   "window": {
     "new_chat_tooltip": "新規チャット",
+    "new_group_chat_tooltip": "グループチャットを作成",
     "restore_tooltip": "復元",
     "expand_tooltip": "展開",
     "minimize_tooltip": "最小化",

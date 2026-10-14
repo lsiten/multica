@@ -34,6 +34,21 @@ export type IssuePriority = "urgent" | "high" | "medium" | "low" | "none";
 
 export type IssueAssigneeType = "member" | "agent" | "squad";
 
+/**
+ * The kind of work an issue represents. "task" is the ordinary issue; "requirement"
+ * is a requirement-backed issue whose description is the requirement document and
+ * which carries a confirm / change lifecycle (see Requirement). Optional for
+ * compatibility with a backend that predates the field; treat an absent kind as
+ * "task".
+ */
+export type IssueKind = "task" | "requirement" | (string & {});
+
+/** Requirement lifecycle states. */
+export type RequirementLifecycleStatus =
+  | "pending_confirm"
+  | "confirmed"
+  | (string & {});
+
 export interface IssueReaction {
   id: string;
   issue_id: string;
@@ -203,6 +218,11 @@ export interface Issue {
    */
   duplicate_of?: IssueDuplicateOf | null;
   project_id: string | null;
+  /**
+   * "task" (ordinary issue) or "requirement" (requirement-backed, its description
+   * is the requirement document). Optional for older backends; absent means task.
+   */
+  kind?: IssueKind;
   position: number;
   // Ordered barrier group among sibling sub-issues (null = unstaged). The
   // parent assignee is woken when a stage closes while a later one waits;
@@ -231,4 +251,19 @@ export interface Issue {
   last_activity_at?: string | null;
   /** Present only on issue detail responses for issues created from a comment. */
   source_context?: IssueSourceContext;
+}
+
+/**
+ * Requirement lifecycle for a kind="requirement" issue. The requirement document
+ * is the backing issue's description; its revisions live in document_content_version.
+ * confirmed_revision pins the document revision at confirm time; unconfirmed_change
+ * is true when the document was edited after confirmation (a change to re-confirm).
+ */
+export interface Requirement {
+  issue_id: string;
+  lifecycle_status: RequirementLifecycleStatus;
+  confirmed_revision?: number | null;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
+  unconfirmed_change: boolean;
 }

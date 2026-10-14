@@ -234,6 +234,10 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "failed to commit content version")
 		return
 	}
+	/* Requirement change flow: editing the document after confirmation reopens
+	   the requirement so the agent can initiate a change confirmation. Best-effort.
+	*/
+	h.maybeReopenRequirementOnEdit(r.Context(), issue)
 	writeJSON(w, http.StatusCreated, documentContentVersionToResponse(row, false))
 }
 

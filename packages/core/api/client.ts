@@ -1,4 +1,5 @@
 import type { HumanRequest, HumanRequestAnswer, HumanTextReplyResult } from "../types/human-request";
+import type { Requirement } from "../types";
 import { applicationSchema, applicationListSchema, applicationPlanSchema, applicationBoardSchema, applicationOperationSchema, applicationLaunchSchema, applicationLogSchema } from "../applications/schema";
 import type { Application, ApplicationList, ApplicationPlan, ApplicationBoard, ApplicationOperation, ApplicationOperationRequest, ApplicationLog, CreateApplicationRequest, UpdateApplicationRequest } from "../applications/schema";
 import type { IssueProgressView, ProgressFilters, ProgressScope } from "../types/issue-progress";
@@ -377,6 +378,7 @@ import {
   ListIssuesResponseSchema,
   CreateIssueResponseSchema,
   IssueSchema,
+  RequirementSchema,
   IssueGoalSchema,
   AgentTaskSchema,
   SourceContextPreviewSchema,
@@ -1937,6 +1939,17 @@ export class ApiClient {
     if (!version) throw new Error("Malformed document content version response");
     return version;
   }
+
+  async getRequirement(issueId: string, options?: { signal?: AbortSignal }): Promise<Requirement | null> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(issueId)}/requirement`,
+      options?.signal ? { signal: options.signal } : undefined,
+    );
+    return parseWithFallback<Requirement | null>(raw, RequirementSchema, null, {
+      endpoint: "GET /api/issues/:id/requirement",
+    });
+  }
+
 
   async rollbackIssueContentVersion(issueId: string, revision: number, input?: RecordDocumentContentVersionRequest): Promise<DocumentContentVersion> {
     const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(issueId)}/content-versions/${revision}/rollback`, {
@@ -4388,6 +4401,29 @@ export class ApiClient {
     workspaceSlug?: string,
   ): Promise<ChatSession> {
     return this.fetch("/api/chat/sessions", {
+      method: "POST",
+      headers: workspaceHeader(workspaceSlug),
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Creates a manually-created group chat (kind='group'). Unlike a project's
+   * default group, it is not tied to a project (project_id is optional) and is
+   * not a project default, so it can be archived or deleted like an ordinary
+   * chat. The caller is always added as a member participant; any requested
+   * participants are added on top.
+   */
+  async createGroupChat(
+    data: {
+      agent_id: string;
+      title?: string;
+      project_id?: string | null;
+      participants?: { member_type: "member" | "agent"; member_id: string }[];
+    },
+    workspaceSlug?: string,
+  ): Promise<ChatSession> {
+    return this.fetch("/api/chat/sessions/groups", {
       method: "POST",
       headers: workspaceHeader(workspaceSlug),
       body: JSON.stringify(data),

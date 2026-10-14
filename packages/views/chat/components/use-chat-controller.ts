@@ -31,6 +31,7 @@ import {
 } from "@multica/core/chat/queries";
 import {
   useCreateChatSession,
+  useCreateGroupChatSession,
   useMarkChatSessionRead,
   useSetChatSessionProject,
   useSetChatSessionArchived,
@@ -346,6 +347,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
 
   const qc = useQueryClient();
   const createSession = useCreateChatSession();
+  const createGroupSession = useCreateGroupChatSession();
   const markRead = useMarkChatSessionRead();
   const setSessionProject = useSetChatSessionProject();
   const setArchived = useSetChatSessionArchived();
@@ -833,6 +835,42 @@ export function useChatController(opts?: { isActive?: boolean }) {
     [activeAgent, setSelectedAgentId, setActiveSession],
   );
 
+  // Starts a manually-created group chat bound to the picked agent and opens it.
+  // Unlike handleStartNewChat (which only sets the agent and lets the first
+  // message lazily create a direct session), a group chat is created explicitly
+  // here so the caller can open it immediately. project_id is optional so the
+  // group may be standalone; requested participants (if any) are added alongside
+  // the creator by the server.
+  const handleStartNewGroupChat = useCallback(
+    (agent: Agent, participants?: { member_type: "member" | "agent"; member_id: string }[]) => {
+      uiLogger.info("startNewGroupChat", {
+        agentId: agent.id,
+        previousSessionId: activeSessionId,
+      });
+      setSelectedAgentId(agent.id);
+      setSelectedProjectId(null);
+      setSelectedSquadId(null);
+      createGroupSession.mutate(
+        { agent_id: agent.id, participants },
+        {
+          onSuccess: (session) => {
+            setActiveSession(session.id);
+            requestInputFocus();
+          },
+        },
+      );
+    },
+    [
+      activeSessionId,
+      createGroupSession,
+      requestInputFocus,
+      setSelectedAgentId,
+      setSelectedProjectId,
+      setSelectedSquadId,
+      setActiveSession,
+    ],
+  );
+
   const handleProjectChange = useCallback(
     (projectId: string | null) => {
       if (projectId === activeProjectId) return;
@@ -966,6 +1004,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     uploadEnabled,
     handleNewChat,
     handleStartNewChat,
+    handleStartNewGroupChat,
     handleSelectSession,
     handleProjectChange,
     handleSquadChange,

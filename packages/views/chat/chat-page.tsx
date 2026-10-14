@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
-import { ArrowLeft, MessageSquare, PanelLeft } from "lucide-react";
+import { ArrowLeft, MessageSquare, PanelLeft, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -29,7 +29,7 @@ import { ChatQueue } from "./components/chat-queue";
 import { ChatThreadList } from "./components/chat-thread-list";
 import { ChatSessionHeader } from "./components/chat-session-header";
 import { EmptyState } from "./components/chat-empty-state";
-import { NewChatButton } from "./components/new-chat-button";
+import { NewChatButton, AgentPicker } from "./components/new-chat-button";
 import { useChatController } from "./components/use-chat-controller";
 import { OfflineBanner } from "./components/offline-banner";
 import { NoAgentBanner } from "./components/no-agent-banner";
@@ -195,6 +195,10 @@ export function ChatPage() {
     setComposingNew(true);
   };
 
+  const startNewGroupChat = (agent: Agent | null) => {
+    if (agent) c.handleStartNewGroupChat(agent);
+  };
+
   const changeProjectContext = (projectId: string | null) => {
     if (projectId === c.activeProjectId) return;
     c.handleProjectChange(projectId);
@@ -256,6 +260,25 @@ export function ChatPage() {
     />
   );
 
+  const newGroupChatButton = (
+    <AgentPicker
+      agents={c.availableAgents}
+      userId={c.user?.id}
+      onSelect={startNewGroupChat}
+      side="bottom"
+      align="start"
+      triggerRender={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full text-muted-foreground"
+          aria-label={t(($) => $.window.new_group_chat_tooltip)}
+        />
+      }
+      trigger={<Users />}
+    />
+  );
+
   const listHeader = (
     <PageHeader>
       <h1 className="flex-1 text-body font-semibold">{t(($) => $.page.title)}</h1>
@@ -270,6 +293,7 @@ export function ChatPage() {
         <PanelLeft />
       </Button>
       {newChatButton}
+      {newGroupChatButton}
     </PageHeader>
   );
 

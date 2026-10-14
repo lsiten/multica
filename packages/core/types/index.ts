@@ -1,5 +1,8 @@
 export type { Issue, IssueStatus, BuiltInIssueStatus, IssuePriority, IssueAssigneeType, IssueMetadata, IssueMetadataValue, IssueReaction, SourceContextAttachment, SourceContextAuthor, SourceContextIssueSnapshot, SourceContextCommentSnapshot, SourceContextSnapshot, SourceContextLimitUsage, SourceContextPreview, SourceContextAuthorState, IssueSourceContext,
   IssueDuplicateOf,
+  Requirement,
+  IssueKind,
+  RequirementLifecycleStatus,
 } from "./issue";
 export type { IssueGoal, UpsertIssueGoalRequest } from "./issue-goal";
 export type { ProgressScope, ProgressIssueRef, ProgressRun, ProgressRequest, ProgressEntry, ProgressSummary, IssueProgressView, ProgressFilter, ProgressFilters, IssueNextStep, ProgressAction } from "./issue-progress";

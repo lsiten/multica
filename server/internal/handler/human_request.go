@@ -180,6 +180,9 @@ func (h *Handler) RespondHumanRequest(w http.ResponseWriter, r *http.Request) {
 		humanRequestError(w, err)
 		return
 	}
+	// The answer deterministically drives a requirement lifecycle transition when
+	// the card is a requirement confirm/change-review; the member only confirms.
+	h.applyRequirementFromHumanResponse(r.Context(), result, parseUUID(actor))
 	writeJSON(w, http.StatusOK, humanRequestToResponse(result, actor))
 }
 
@@ -212,6 +215,8 @@ func (h *Handler) ReplyHumanRequest(w http.ResponseWriter, r *http.Request) {
 		humanRequestError(w, err)
 		return
 	}
+	// A text reply that answers a requirement card also drives the lifecycle.
+	h.applyRequirementFromHumanResponse(r.Context(), result, parseUUID(actor))
 	var response struct {
 		Origin *service.HumanReplyOrigin `json:"origin"`
 	}

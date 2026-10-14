@@ -444,6 +444,11 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure the project's default group chat exists (idempotent; created
+	// when the project has an agent lead). Best-effort: a failure must not
+	// fail the project create.
+	_, _ = h.ensureProjectGroupChat(r.Context(), project, parseUUID(userID))
+
 	resourceResp := make([]ProjectResourceResponse, len(resourceRows))
 	for i, row := range resourceRows {
 		resourceResp[i] = projectResourceToResponse(row)
@@ -589,6 +594,12 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		h.writeProjectWriteError(w, r, err, "update")
 		return
 	}
+	h.archiveProjectGroupOnTerminalStatus(r.Context(), project)
+
+	// Ensure the project's default group chat exists (idempotent; created
+	// when the project gets an agent lead). Best-effort: a failure must not
+	// fail the project update.
+	_, _ = h.ensureProjectGroupChat(r.Context(), project, parseUUID(userID))
 	resp := projectToResponse(project)
 	resp.IssueCount, resp.DoneCount = h.loadProjectIssueStats(r.Context(), wsUUID, project.ID)
 	resp.ResourceCount = h.loadProjectResourceCount(r.Context(), project.ID)

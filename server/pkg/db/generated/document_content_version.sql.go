@@ -19,7 +19,7 @@ SET description = $1,
 WHERE id = $2
   AND workspace_id = $3
   AND ($4::bigint IS NULL OR revision = $4::bigint)
-RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id
+RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, kind
 `
 
 type ApplyIssueDescriptionForContentVersionParams struct {
@@ -72,6 +72,7 @@ func (q *Queries) ApplyIssueDescriptionForContentVersion(ctx context.Context, ar
 		&i.LastActivityAt,
 		&i.TriageState,
 		&i.DuplicateOfIssueID,
+		&i.Kind,
 	)
 	return i, err
 }

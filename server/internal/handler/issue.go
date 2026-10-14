@@ -3053,6 +3053,9 @@ type CreateIssueRequest struct {
 
 	AllowDuplicate bool    `json:"allow_duplicate,omitempty"`
 	GoalObjective  *string `json:"goal_objective,omitempty"`
+	// Kind is "task" (default) or "requirement". A requirement issue carries a
+	// requirement document (its description) plus a confirm/change lifecycle.
+	Kind *string `json:"kind,omitempty"`
 }
 
 // UnmarshalJSON rejects duplicate object members before Go's ordinary map
@@ -3218,6 +3221,13 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validateIssueEnum(w, "priority", priority, validIssuePriorities) {
 		return
+	}
+	if req.Kind != nil {
+		k := *req.Kind
+		if k != "task" && k != "requirement" {
+			writeError(w, http.StatusBadRequest, "kind must be 'task' or 'requirement'")
+			return
+		}
 	}
 	if req.Stage != nil && *req.Stage < 1 {
 		writeError(w, http.StatusBadRequest, "stage must be >= 1")
@@ -3430,6 +3440,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		Properties:     properties,
 		AllowDuplicate: req.AllowDuplicate,
 		GoalObjective:  goalObjective,
+		Kind:         func() string { if req.Kind != nil { return *req.Kind }; return "task" }(),
 	}, service.IssueCreateOpts{
 		ActorID:          actualCreatorID,
 		AnalyticsAgentID: analyticsAgentID,

@@ -88,6 +88,15 @@ export interface ChatSession {
   workspace_id: string;
   agent_id: string;
   creator_id: string;
+  /**
+   * "direct" (ordinary one-to-one chat) or "group" (a project's multi-member
+   * chat). Optional for older backends; absent means direct.
+   */
+  kind?: "direct" | "group" | (string & {});
+  /** True when this is the project's default group chat. Group-only. */
+  is_project_default?: boolean;
+  /** Group participants (members + the session agent). Group-only. */
+  participants?: ChatParticipant[];
   /** Durable project context for every turn in this session. Null when the
    *  conversation uses workspace context only; optional for older servers. */
   project_id?: string | null;
@@ -218,6 +227,13 @@ export interface ChatMessage {
   message_kind?: ChatMessageKind;
   /** Up to three server-validated follow-ups generated with this reply. */
   quick_actions?: ChatQuickAction[];
+  /**
+   * The sender of this message, present for group-chat messages. For a
+   * one-to-one chat the author is null (every message is from the session's
+   * human). Optional so older servers / non-group messages stay valid.
+   */
+  author_type?: "member" | "agent" | (string & {}) | null;
+  author_id?: string | null;
 }
 
 export interface ChatMessagesCursor {
@@ -362,4 +378,11 @@ export interface ChatPendingTask {
    * database status `queued` before claim, but is never duplicated here.
    */
   queued_tasks?: ChatQueuedTask[];
+}
+
+/** A member (human or agent) of a group chat. */
+export interface ChatParticipant {
+  member_type: "member" | "agent" | (string & {});
+  member_id: string;
+  joined_at: string;
 }

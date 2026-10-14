@@ -2549,14 +2549,21 @@ func (s *TaskService) SendDirectChatMessage(
 
 		// Create the user message already owned by this task (task_id = task.id),
 		// so it belongs to this immutable input batch the instant it exists.
-		msg, err := qtx.CreateChatMessage(ctx, db.CreateChatMessageParams{
+		userMsg := db.CreateChatMessageParams{
 			ID:            dbid.NewV7(),
 			ChatSessionID: session.ID,
 			Role:          "user",
 			Content:       content,
 			TaskID:        task.ID,
 			MessageKind:   pgtype.Text{String: protocol.ChatMessageKindMessage, Valid: true},
-		})
+		}
+		// In a group chat the author names the sender member so the transcript
+		// shows who spoke; a one-to-one chat leaves the author NULL.
+		if session.Kind == "group" {
+			userMsg.AuthorType = pgtype.Text{String: "member", Valid: true}
+			userMsg.AuthorID = task.OriginatorUserID
+		}
+		msg, err := qtx.CreateChatMessage(ctx, userMsg)
 		if err != nil {
 			return fmt.Errorf("create user chat message: %w", err)
 		}

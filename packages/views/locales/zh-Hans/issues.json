@@ -1,5 +1,12 @@
 {
-  "inline_run": {
+
+  "requirement": {
+    "marker": "需求",
+    "marker_short": "R",
+    "pending_confirm": "待确认",
+    "confirmed": "已确认",
+    "change_pending": "变更待确认"
+  },  "inline_run": {
     "label": "{{name}} 的运行",
     "stop": "停止",
     "stopping": "正在停止...",

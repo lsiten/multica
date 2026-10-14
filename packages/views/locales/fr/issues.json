@@ -1,5 +1,12 @@
 {
-  "inline_run": {
+
+  "requirement": {
+    "marker": "Exigence",
+    "marker_short": "R",
+    "pending_confirm": "En attente",
+    "confirmed": "Confirmé",
+    "change_pending": "Changement à confirmer"
+  },  "inline_run": {
     "label": "Exécution de {{name}}",
     "stop": "Arrêter",
     "stopping": "Arrêt...",

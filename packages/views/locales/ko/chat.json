@@ -1,5 +1,12 @@
 {
-  "doc_mode": {
+
+  "group": {
+    "badge": "그룹",
+    "participants_other": "회원 {{count}}명",
+    "you": "나",
+    "open_members": "회원",
+    "no_members": "아직 회원 없음"
+  },  "doc_mode": {
     "issue": "이슈",
     "attachment": "첨부 파일",
     "diff": "차이",
@@ -172,6 +179,7 @@
   },
   "window": {
     "new_chat_tooltip": "새 채팅",
+    "new_group_chat_tooltip": "그룹 채팅 만들기",
     "restore_tooltip": "복원",
     "expand_tooltip": "펼치기",
     "minimize_tooltip": "최소화",

@@ -1,4 +1,4 @@
-import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePriority, IssueAssigneeType } from "./issue";
+import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePriority, IssueAssigneeType , IssueKind} from "./issue";
 import type { IssuePropertyValues, PropertyFilterValue } from "./property";
 import type { MemberRole } from "./workspace";
 import type { Project, ProjectStatus } from "./project";
@@ -26,6 +26,9 @@ export interface CreateIssueRequest {
   properties?: IssuePropertyValues;
   /** Enables the task's review-gated goal mode when non-empty. */
   goal_objective?: string;
+  /** "task" (default) or "requirement". A requirement issue carries a
+   *  requirement document (its description) plus a confirm/change lifecycle. */
+  kind?: IssueKind;
 }
 
 export interface CreateCommentSubIssueManualRequest {

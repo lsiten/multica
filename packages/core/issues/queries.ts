@@ -31,6 +31,18 @@ export function issueTasksOptions(issueId: string) {
   });
 }
 
+/** Lifecycle of a kind="requirement" issue (confirm / change). Returns null for
+ * non-requirement issues or on an older backend. */
+export function requirementOptions(wsId: string, issueId: string) {
+  return queryOptions({
+    queryKey: [...issueKeys.all(wsId), "requirement", issueId] as const,
+    queryFn: () => api.getRequirement(issueId),
+    enabled: !!issueId,
+    staleTime: 30_000,
+  });
+}
+
+
 export interface IssueSortParam {
   sort_by?: ListIssuesParams["sort_by"];
   sort_direction?: ListIssuesParams["sort_direction"];

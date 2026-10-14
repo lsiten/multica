@@ -2112,6 +2112,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/content-versions", h.RecordDocumentContentVersion)
 					r.Get("/content-versions/{revision}", h.GetDocumentContentVersion)
 					r.Post("/content-versions/{revision}/rollback", h.RollbackDocumentContentVersion)
+					r.Get("/requirement", h.GetRequirement)
 					r.Get("/content-versions/current", h.GetDocumentContentVersionLatest)
 					r.Put("/", h.UpdateIssue)
 					r.Get("/goal", h.GetIssueGoal)
@@ -2538,6 +2539,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			r.Route("/api/chat/sessions", func(r chi.Router) {
 				r.Post("/", h.CreateChatSession)
+				r.Post("/groups", h.CreateGroupChat)
 				r.Get("/", h.ListChatSessions)
 				r.Route("/{sessionId}", func(r chi.Router) {
 					r.Get("/", h.GetChatSession)
@@ -2557,7 +2559,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/pending-task", h.GetPendingChatTask)
 					r.Delete("/queued-tasks", h.ClearQueuedChatTasks)
 					r.Post("/queued-tasks/{taskId}/prioritize", h.PrioritizeQueuedChatTask)
-					r.Post("/read", h.MarkChatSessionRead)
+					// Group chat (kind=group) participants.
+					r.Get("/participants", h.ListGroupParticipants)
+					r.Post("/participants", h.AddGroupParticipant)
+					r.Delete("/participants/{memberType}/{memberID}", h.RemoveGroupParticipant)
 					// Deferred-cancellation draft restores (#5219):
 					// creator-only fetch + idempotent consume.
 					r.Get("/draft-restores", h.ListChatDraftRestores)

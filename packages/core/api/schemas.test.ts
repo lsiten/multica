@@ -31,6 +31,7 @@ import {
   ChatSessionListSchema,
   ChatSessionFilesResponseSchema,
   ChatSessionSchema,
+  ChatMessageSchema,
   PrioritizeQueuedChatTaskResponseSchema,
   CreateFeedbackResponseSchema,
   DuplicateIssueErrorBodySchema,
@@ -47,6 +48,8 @@ import {
   InboxUnreadSummarySchema,
   IssueTriggerPreviewSchema,
   ListIssuesResponseSchema,
+  IssueSchema,
+  RequirementSchema,
   ListPropertiesResponseSchema,
   MirrorSessionResponseSchema,
   PinnedItemListSchema,
@@ -2493,3 +2496,83 @@ describe("ChatSessionFilesResponseSchema", () => {
     expect(parsed.repos[1]?.url).toBe("");
   });
 });
+describe("requirement + group chat schema fields", () => {
+  const baseSession = {
+    id: "chat-1",
+    workspace_id: "ws-1",
+    agent_id: "agent-1",
+    creator_id: "user-1",
+    title: "Channel chat",
+    status: "active",
+    has_unread: false,
+    created_at: "2026-08-18T00:00:00Z",
+    updated_at: "2026-08-18T00:00:00Z",
+  };
+  it("parses a requirement issue kind and a malformed kind falls back", () => {
+    expect(IssueSchema.parse({ ...baseIssue, kind: "requirement" }).kind).toBe("requirement");
+    expect(IssueSchema.parse({ ...baseIssue, kind: 42 }).kind).toBeUndefined();
+  });
+
+  it("parses a Requirement lifecycle with fallbacks", () => {
+    const parsed = RequirementSchema.parse({
+      issue_id: "issue-1",
+      lifecycle_status: "confirmed",
+      confirmed_revision: 5,
+      confirmed_by: "user-1",
+      confirmed_at: "2026-08-18T00:00:00Z",
+      unconfirmed_change: false,
+    });
+    expect(parsed.unconfirmed_change).toBe(false);
+    // A malformed revision degrades without failing the whole requirement.
+    expect(RequirementSchema.parse({ ...parsed, confirmed_revision: "abc" }).confirmed_revision).toBeUndefined();
+  });
+
+  it("parses group chat metadata and degrades a malformed participant list", () => {
+    const parsed = ChatSessionSchema.parse({
+      ...baseSession,
+      kind: "group",
+      is_project_default: true,
+      participants: [
+        { member_type: "member", member_id: "user-1", joined_at: "2026-08-18T00:00:00Z" },
+        { member_type: "agent", member_id: "agent-1", joined_at: "2026-08-18T00:00:00Z" },
+      ],
+    });
+    expect(parsed.kind).toBe("group");
+    expect(parsed.is_project_default).toBe(true);
+    expect(parsed.participants?.length).toBe(2);
+    expect(parsed.participants?.[0]?.member_id).toBe("user-1");
+
+    // A malformed participant array degrades to undefined without dropping the session.
+    const bad = ChatSessionSchema.parse({ ...baseSession, participants: "not-an-array" });
+    expect(bad.participants).toBeUndefined();
+    expect(bad.id).toBe("chat-1");
+  });
+
+  it("keeps a malformed group-chat field from failing the whole session", () => {
+    expect(parseWithFallback({ id: 42 }, ChatSessionSchema, EMPTY_CHAT_SESSION, {
+      endpoint: "GET /api/chat/sessions/:id",
+    })).toEqual(EMPTY_CHAT_SESSION);
+  });
+
+  it("parses a group-chat message author and degrades a malformed one", () => {
+    const baseMsg = {
+      id: "msg-1",
+      chat_session_id: "chat-1",
+      role: "user",
+      content: "hi",
+      task_id: null,
+      created_at: "2026-08-18T00:00:00Z",
+    };
+    const parsed = ChatMessageSchema.parse({
+      ...baseMsg,
+      author_type: "member",
+      author_id: "user-1",
+    });
+    expect(parsed.author_type).toBe("member");
+    expect(parsed.author_id).toBe("user-1");
+    // A malformed author degrades independently without dropping the message.
+    expect(ChatMessageSchema.parse({ ...baseMsg, author_type: 42 }).author_type).toBeUndefined();
+    expect(ChatMessageSchema.parse(baseMsg).author_type).toBeUndefined();
+  });
+});
+

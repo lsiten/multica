@@ -32,6 +32,7 @@ import { isImeComposing } from "@multica/core/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
+import { GroupChatParticipants } from "./group-chat-participants";
 
 /**
  * Per-session header for the conversation pane: agent avatar + editable chat
@@ -199,6 +200,18 @@ export function ChatSessionHeader({
             {title}
           </button>
         )}
+        {session.kind === "group" && (
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <span
+              title={t(($) => $.group.badge)}
+              aria-label={t(($) => $.group.badge)}
+              className="inline-flex shrink-0 items-center rounded-xs bg-accent px-1.5 py-0.5 text-[0.6rem] font-semibold text-accent-foreground"
+            >
+              {t(($) => $.group.badge)}
+            </span>
+            <GroupChatParticipants session={session} />
+          </div>
+        )}
         {agent && (
           <div className="truncate text-caption text-muted-foreground">
             {agent.name}
@@ -226,24 +239,28 @@ export function ChatSessionHeader({
               {t(($) => $.header.view_profile)}
             </DropdownMenuItem>
           )}
-          <DropdownMenuSeparator />
-          {isArchived ? (
+          {session.kind !== "group" && (
             <>
-              <DropdownMenuItem onClick={doUnarchive}>
-                <ArchiveRestore className="h-4 w-4" />
-                {t(($) => $.header.unarchive)}
-              </DropdownMenuItem>
-              {/* Hard delete is offered only once a chat is archived. */}
-              <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="h-4 w-4" />
-                {t(($) => $.header.delete)}
-              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {isArchived ? (
+                <>
+                  <DropdownMenuItem onClick={doUnarchive}>
+                    <ArchiveRestore className="h-4 w-4" />
+                    {t(($) => $.header.unarchive)}
+                  </DropdownMenuItem>
+                  {/* Hard delete is offered only once a chat is archived. */}
+                  <DropdownMenuItem variant="destructive" onClick={() => setConfirmDelete(true)}>
+                    <Trash2 className="h-4 w-4" />
+                    {t(($) => $.header.delete)}
+                  </DropdownMenuItem>
+                </>
+              ) : (
+                <DropdownMenuItem onClick={doArchive}>
+                  <Archive className="h-4 w-4" />
+                  {t(($) => $.header.archive)}
+                </DropdownMenuItem>
+              )}
             </>
-          ) : (
-            <DropdownMenuItem onClick={doArchive}>
-              <Archive className="h-4 w-4" />
-              {t(($) => $.header.archive)}
-            </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

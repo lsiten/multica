@@ -793,7 +793,7 @@ func (q *Queries) MergeQueuedProjectCoordination(ctx context.Context, arg MergeQ
 
 const promoteSupervisionIssue = `-- name: PromoteSupervisionIssue :one
 UPDATE issue SET status='todo',revision=revision+1,updated_at=now()
-WHERE id=$1 AND workspace_id=$2 AND project_id=$3 AND status='backlog' AND revision=$4 RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id
+WHERE id=$1 AND workspace_id=$2 AND project_id=$3 AND status='backlog' AND revision=$4 RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, kind
 `
 
 type PromoteSupervisionIssueParams struct {
@@ -842,6 +842,7 @@ func (q *Queries) PromoteSupervisionIssue(ctx context.Context, arg PromoteSuperv
 		&i.LastActivityAt,
 		&i.TriageState,
 		&i.DuplicateOfIssueID,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -919,7 +920,7 @@ func (q *Queries) SaveProjectSupervision(ctx context.Context, arg SaveProjectSup
 
 const setSupervisionIssueAssignment = `-- name: SetSupervisionIssueAssignment :one
 UPDATE issue SET assignee_type=$3,assignee_id=$4,revision=revision+1,updated_at=now()
-WHERE id=$1 AND workspace_id=$2 AND project_id=$5 AND revision=$6 RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id
+WHERE id=$1 AND workspace_id=$2 AND project_id=$5 AND revision=$6 RETURNING id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, kind
 `
 
 type SetSupervisionIssueAssignmentParams struct {
@@ -972,6 +973,7 @@ func (q *Queries) SetSupervisionIssueAssignment(ctx context.Context, arg SetSupe
 		&i.LastActivityAt,
 		&i.TriageState,
 		&i.DuplicateOfIssueID,
+		&i.Kind,
 	)
 	return i, err
 }

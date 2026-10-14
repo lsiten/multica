@@ -24,6 +24,9 @@ vi.mock("@multica/core/issues/queries", () => ({
   issueDetailOptions: (_workspaceId: string, issueId: string) => ({
     queryKey: ["issue", issueId],
   }),
+  requirementOptions: (_workspaceId: string, issueId: string) => ({
+    queryKey: ["requirement", issueId],
+  }),
 }));
 
 vi.mock("./status-icon", () => ({

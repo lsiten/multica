@@ -718,6 +718,17 @@ type ChatMessage struct {
 	ChannelOutboundMessageIds     []string           `json:"channel_outbound_message_ids"`
 	ChannelTypingSettled          bool               `json:"channel_typing_settled"`
 	HumanRequestID                pgtype.UUID        `json:"human_request_id"`
+	AuthorType                    pgtype.Text        `json:"author_type"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+}
+
+type ChatParticipant struct {
+	ID            pgtype.UUID        `json:"id"`
+	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
+	MemberType    string             `json:"member_type"`
+	MemberID      pgtype.UUID        `json:"member_id"`
+	JoinedAt      pgtype.Timestamptz `json:"joined_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type ChatPinnedAgent struct {
@@ -748,6 +759,8 @@ type ChatSession struct {
 	ProjectID           pgtype.UUID        `json:"project_id"`
 	ExplicitlyCreatedAt pgtype.Timestamptz `json:"explicitly_created_at"`
 	SquadID             pgtype.UUID        `json:"squad_id"`
+	Kind                string             `json:"kind"`
+	IsProjectDefault    bool               `json:"is_project_default"`
 }
 
 type ClientUsageDaily struct {
@@ -1096,6 +1109,7 @@ type Issue struct {
 	LastActivityAt     pgtype.Timestamptz `json:"last_activity_at"`
 	TriageState        pgtype.Text        `json:"triage_state"`
 	DuplicateOfIssueID pgtype.UUID        `json:"duplicate_of_issue_id"`
+	Kind               string             `json:"kind"`
 }
 
 type IssueChildEvent struct {
@@ -1698,6 +1712,19 @@ type QuickAction struct {
 	CreatedByID   pgtype.UUID        `json:"created_by_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Requirement struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	IssueID           pgtype.UUID        `json:"issue_id"`
+	LifecycleStatus   string             `json:"lifecycle_status"`
+	ConfirmedRevision pgtype.Int8        `json:"confirmed_revision"`
+	ConfirmedBy       pgtype.UUID        `json:"confirmed_by"`
+	ConfirmedAt       pgtype.Timestamptz `json:"confirmed_at"`
+	UnconfirmedChange bool               `json:"unconfirmed_change"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 type RuntimeMirrorEvent struct {

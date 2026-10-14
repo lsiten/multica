@@ -49,6 +49,7 @@ vi.mock("./components/chat-empty-state", () => ({
 }));
 vi.mock("./components/new-chat-button", () => ({
   NewChatButton: () => <div>new-chat-button</div>,
+  AgentPicker: () => <div>agent-picker</div>,
 }));
 vi.mock("./components/offline-banner", () => ({
   OfflineBanner: () => null,
