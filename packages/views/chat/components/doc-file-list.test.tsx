@@ -104,7 +104,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     // attachments + task-workdir files are the openable rows.
     await screen.findByText("Acme");
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    expect(screen.getByText("src/app.ts")).toBeInTheDocument();
+    expect(screen.getByText("app.ts")).toBeInTheDocument();
   });
 
   it("opens the clicked attachment through openDoc", async () => {
@@ -116,7 +116,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
 
   it("opens the clicked workspace file through openDoc", async () => {
     renderList(newClient());
-    fireEvent.click(await screen.findByText("src/app.ts"));
+    fireEvent.click(await screen.findByText("app.ts"));
     const active = useDocModeStore.getState().activeByWorkspace["ws-1"];
     expect(active).toMatchObject({ kind: "workspace_file", id: expect.stringContaining("src/app.ts") });
   });
@@ -128,7 +128,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
       target: { value: "report" },
     });
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    expect(screen.queryByText("src/app.ts")).not.toBeInTheDocument();
+    expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
   });
 
   it("shows a no-match state when the filter excludes everything", async () => {
@@ -157,7 +157,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     // The attachment is a session file, so it still shows even without a
     // worktree; the worktree file (src/app.ts) is gone.
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    expect(screen.queryByText("src/app.ts")).not.toBeInTheDocument();
+    expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
   });
 
   it("keeps the list after a refresh (server data, not recent context)", async () => {
@@ -169,6 +169,6 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     renderList(queryClient);
     expect(screen.getByText("Acme")).toBeInTheDocument();
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    expect(screen.getByText("src/app.ts")).toBeInTheDocument();
+    expect(screen.getByText("app.ts")).toBeInTheDocument();
   });
 });
