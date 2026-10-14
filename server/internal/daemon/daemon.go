@@ -450,6 +450,7 @@ type Daemon struct {
 	jevModelsMu              sync.Mutex
 	jevModelsClosing         bool
 	jevModels                modelservice.Backend
+	jevModelsFallback        modelservice.Backend
 	jevModelsErr             error
 	jevModelRetryAt          time.Time
 	jevModelFailures         int
