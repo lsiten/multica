@@ -92,10 +92,10 @@ func (d *Daemon) processesOverviewHandler() http.HandlerFunc {
 		var out []processOverviewEntry
 		out = append(out, d.daemonProcessEntry(r))
 		out = append(out, d.taskWorkerOverviewEntries(r)...)
-		out = append(out, d.singletonProcessEntry(r, "application", "application service", d.snapshotApplicationProcess))
-		out = append(out, d.singletonProcessEntry(r, "gateway", "gateway", d.snapshotGatewayProcess))
-		out = append(out, d.singletonProcessEntry(r, "environment", "environment service", d.snapshotEnvironmentProcess))
-		out = append(out, d.singletonProcessEntry(r, "mirror", "mirror service", d.snapshotMirrorProcess))
+		out = append(out, d.singletonProcessEntry(r, "application", "application service", d.snapshotApplicationProcess, d.applicationProcessMode))
+		out = append(out, d.singletonProcessEntry(r, "gateway", "gateway", d.snapshotGatewayProcess, d.gatewayProcessMode))
+		out = append(out, d.singletonProcessEntry(r, "environment", "environment service", d.snapshotEnvironmentProcess, d.environmentProcessMode))
+		out = append(out, d.singletonProcessEntry(r, "mirror", "mirror service", d.snapshotMirrorProcess, func() bool { return false }))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"processes": out})
 	}
@@ -173,22 +173,47 @@ func (d *Daemon) taskWorkerOverviewEntries(r *http.Request) []processOverviewEnt
 	return out
 }
 
-// singletonProcessEntry reports one long-lived service child the daemon can host.
-// It always returns a row: a nil child means the category is a managed service that
-// is not started on this daemon, reported as "stopped" rather than omitted, so the
-// panel shows every supervised category in one place.
-func (d *Daemon) singletonProcessEntry(r *http.Request, category, name string, resolve func() *runtimeproc.Process) processOverviewEntry {
+// singletonProcessEntry reports one long-lived service the daemon can host.
+// It always returns a row: a missing child means the category is a managed
+// service, reported rather than omitted, so the panel shows every supervised
+// category in one place.
+//
+// A missing child is NOT "stopped": the fail-closed design guarantees the
+// in-process owner runs whenever the separate process is absent, so the
+// service is functional. processModeActive distinguishes the two cases:
+// true means the daemon is still in process mode (a child is being started or
+// the start is retrying) so the row is "starting"; false means the separate
+// process failed and the daemon fell back to the in-process owner, which is
+// running. This stops the panel from showing a working service that the
+// in-process fallback runs as "stopped".
+func (d *Daemon) singletonProcessEntry(r *http.Request, category, name string, resolve func() *runtimeproc.Process, processModeActive func() bool) processOverviewEntry {
 	entry := processOverviewEntry{
 		Category: category,
 		ID:       category,
 		Name:     name,
 	}
 	process := resolve()
-	if process == nil {
-		entry.State = "stopped"
+	if process != nil {
+		return describeRuntimeProcess(r.Context(), process, entry)
+	}
+	// Still in process mode: a child is being started (or the start is retrying),
+	// so the row is "starting" rather than "stopped".
+	if processModeActive() {
+		entry.State = "starting"
 		return entry
 	}
-	return describeRuntimeProcess(r.Context(), process, entry)
+	// In-process mode: the fail-closed in-process owner is the active owner once
+	// the daemon is up. Report it as running so the panel never shows a working
+	// service as "stopped". d.ready guards the not-yet-initialised case (a bare
+	// &Daemon{} with no running owner) which must still read as "stopped".
+	if d.ready.Load() {
+		entry.State = "running"
+		entry.Ready = true
+		entry.Detail = "in-process"
+		return entry
+	}
+	entry.State = "stopped"
+	return entry
 }
 
 // snapshotApplicationProcess returns the live application child process, or nil.

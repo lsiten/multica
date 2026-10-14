@@ -43,6 +43,35 @@ func TestProcessesOverviewHandlerNilSafe(t *testing.T) {
 	}
 }
 
+func TestProcessesOverviewReportsInProcessFallbackAsRunning(t *testing.T) {
+	// A ready daemon in in-process mode (the fail-closed fallback after a
+	// separate-process start failure) must report its service rows as running,
+	// not stopped: the in-process owner is the active owner, so a working
+	// service must never surface as "stopped".
+	d := &Daemon{}
+	d.ready.Store(true)
+	rec := httptest.NewRecorder()
+	d.processesOverviewHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/runtimes/processes/overview", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body struct {
+		Processes []processOverviewEntry `json:"processes"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	for _, category := range []string{"application", "gateway", "environment", "mirror"} {
+		row := findOverviewRow(t, body.Processes, category)
+		if row.State != "running" {
+			t.Fatalf("singleton %q must report running when the in-process owner is active, got %q", category, row.State)
+		}
+		if row.Detail != "in-process" {
+			t.Fatalf("singleton %q must be marked in-process, got %q", category, row.Detail)
+		}
+	}
+}
+
 func findOverviewRow(t *testing.T, rows []processOverviewEntry, category string) processOverviewEntry {
 	t.Helper()
 	for _, row := range rows {
