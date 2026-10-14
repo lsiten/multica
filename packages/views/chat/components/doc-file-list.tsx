@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, GitBranch, Paperclip, Search } from "lucide-react";
+import { GitBranch, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
@@ -12,6 +12,7 @@ import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import type { ChatSessionRepo, Issue } from "@multica/core/types";
+import { fileIcon } from "../../editor/utils/file-icon";
 
 // The file list is the chat's server-side projection of openable documents:
 // the session's attachments plus the files the session's tasks checked out of
@@ -142,8 +143,8 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
       const task = fileTasks[taskIndex];
       return files.entries
         .filter((entry) => !entry.directory)
-        .map((entry) => ({
-          kind: "workspace_file" as const,
+        .map((entry): DocumentListItem => ({
+          kind: "workspace_file",
           id: `${task?.id ?? ""}:${entry.path}`,
           label: entry.path,
           sessionId: sessionId ?? undefined,
@@ -265,14 +266,18 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
         <div className="flex-1 overflow-y-auto">
           {(sessionFiles?.attachments ?? []).length > 0 ? (
             <ul className="divide-y">
-              {(sessionFiles?.attachments ?? []).map((attachment) => (
-                <li key={attachment.id}>
-                  <button type="button" onClick={() => openDoc(wsId, { kind: "attachment", id: attachment.id, label: attachment.filename || attachment.url, contentType: attachment.content_type, sessionId: sessionId ?? undefined })} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50">
-                    <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-body">{attachment.filename || attachment.url}</span>
-                  </button>
-                </li>
-              ))}
+              {(sessionFiles?.attachments ?? []).map((attachment) => {
+                const name = attachment.filename || attachment.url;
+                const Icon = fileIcon(attachment.content_type, name);
+                return (
+                  <li key={attachment.id}>
+                    <button type="button" onClick={() => openDoc(wsId, { kind: "attachment", id: attachment.id, label: name, contentType: attachment.content_type, sessionId: sessionId ?? undefined })} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50">
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate text-body">{name}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="p-4 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_attachments)}</p>
@@ -303,10 +308,11 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
             <ul className="flex-1 divide-y overflow-y-auto">
               {visible.map((doc) => {
                 const isActive = activeDoc?.id === doc.id && activeDoc?.kind === doc.kind;
+                const Icon = fileIcon(doc.contentType ?? "", doc.label);
                 return (
                   <li key={`${doc.kind}:${doc.id}`}>
                     <button type="button" onClick={() => openDoc(wsId, { ...doc })} aria-current={isActive ? "true" : undefined} className={"flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50" + (isActive ? " bg-accent/10" : "")}>
-                      {doc.kind === "workspace_file" ? <FileText className="h-4 w-4 shrink-0 text-muted-foreground" /> : <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate text-body">{doc.label}</span>
                     </button>
                   </li>
