@@ -60,7 +60,12 @@ type IssueResponse struct {
 	// field at all: with omitempty a built-in fixture hides it from BOTH
 	// renderings, and the drift guard goes green on a payload that has drifted.
 	// (MUL-6749)
-	StatusName    string  `json:"status_name"`
+	StatusName string `json:"status_name"`
+	// Kind is "task" (default) or "requirement". A requirement issue carries a
+	// requirement document (its description) plus a confirm/change lifecycle. Emitted
+	// unconditionally so a requirement is distinguishable in issue get/list without a
+	// second call; "" only occurs for unset fixtures.
+	Kind          string  `json:"kind"`
 	Priority      string  `json:"priority"`
 	AssigneeType  *string `json:"assignee_type"`
 	AssigneeID    *string `json:"assignee_id"`
@@ -492,6 +497,7 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 		Description:        textToPtr(i.Description),
 		Status:             i.Status,
 		StatusCategory:     statusCategory,
+		Kind:               i.Kind,
 		Priority:           i.Priority,
 		AssigneeType:       textToPtr(i.AssigneeType),
 		AssigneeID:         uuidToPtr(i.AssigneeID),
@@ -530,6 +536,7 @@ func issueListRowToResponse(i db.ListIssuesRow, issuePrefix string) IssueRespons
 		Description:        textToPtr(i.Description),
 		Status:             i.Status,
 		StatusCategory:     statusCategory,
+		Kind:               i.Kind,
 		Priority:           i.Priority,
 		AssigneeType:       textToPtr(i.AssigneeType),
 		AssigneeID:         uuidToPtr(i.AssigneeID),
@@ -600,6 +607,7 @@ func openIssueRowToResponse(i db.ListOpenIssuesRow, issuePrefix string) IssueRes
 		Description:        textToPtr(i.Description),
 		Status:             i.Status,
 		StatusCategory:     statusCategory,
+		Kind:               i.Kind,
 		Priority:           i.Priority,
 		AssigneeType:       textToPtr(i.AssigneeType),
 		AssigneeID:         uuidToPtr(i.AssigneeID),
@@ -3440,7 +3448,12 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		Properties:     properties,
 		AllowDuplicate: req.AllowDuplicate,
 		GoalObjective:  goalObjective,
-		Kind:         func() string { if req.Kind != nil { return *req.Kind }; return "task" }(),
+		Kind: func() string {
+			if req.Kind != nil {
+				return *req.Kind
+			}
+			return "task"
+		}(),
 	}, service.IssueCreateOpts{
 		ActorID:          actualCreatorID,
 		AnalyticsAgentID: analyticsAgentID,

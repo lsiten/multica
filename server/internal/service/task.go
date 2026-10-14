@@ -8053,7 +8053,10 @@ func IssueToMap(issue db.Issue, issuePrefix string) map[string]any {
 		// — clients localize those from the key — and a CUSTOM one is filled in
 		// by IssueToMapResolved, which has the catalog. Emitted unconditionally
 		// so this rendering cannot lose a key the HTTP one carries. (MUL-6749)
-		"status_name":     "",
+		"status_name": "",
+		// Mirrors handler.IssueResponse.Kind; a requirement is distinguishable
+		// in the broadcast/HTTP renderings without a second call.
+		"kind":            issue.Kind,
 		"priority":        issue.Priority,
 		"assignee_type":   util.TextToPtr(issue.AssigneeType),
 		"assignee_id":     util.UUIDToPtr(issue.AssigneeID),

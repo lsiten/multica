@@ -1399,7 +1399,7 @@ const listIssues = `-- name: ListIssues :many
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
-       i.revision, i.duplicate_of_issue_id
+       i.revision, i.duplicate_of_issue_id, i.kind
 FROM issue i
 WHERE i.workspace_id = $1
   AND ($4::text IS NULL OR i.status = $4)
@@ -1494,6 +1494,7 @@ type ListIssuesRow struct {
 	Properties         []byte             `json:"properties"`
 	Revision           int64              `json:"revision"`
 	DuplicateOfIssueID pgtype.UUID        `json:"duplicate_of_issue_id"`
+	Kind               string             `json:"kind"`
 }
 
 // involves_user_id widens the assignee filter to surface issues where the user
@@ -1549,6 +1550,7 @@ func (q *Queries) ListIssues(ctx context.Context, arg ListIssuesParams) ([]ListI
 			&i.Properties,
 			&i.Revision,
 			&i.DuplicateOfIssueID,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -1564,7 +1566,7 @@ const listOpenIssues = `-- name: ListOpenIssues :many
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
-       i.revision, i.duplicate_of_issue_id
+       i.revision, i.duplicate_of_issue_id, i.kind
 FROM issue i
 WHERE i.workspace_id = $1
   -- Negate only known terminal keys so an unknown legacy key remains visible.
@@ -1705,6 +1707,7 @@ type ListOpenIssuesRow struct {
 	Properties         []byte             `json:"properties"`
 	Revision           int64              `json:"revision"`
 	DuplicateOfIssueID pgtype.UUID        `json:"duplicate_of_issue_id"`
+	Kind               string             `json:"kind"`
 }
 
 // See ListIssues for the semantics of involves_user_id (mirrors the 4-branch
@@ -1754,6 +1757,7 @@ func (q *Queries) ListOpenIssues(ctx context.Context, arg ListOpenIssuesParams) 
 			&i.Properties,
 			&i.Revision,
 			&i.DuplicateOfIssueID,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
