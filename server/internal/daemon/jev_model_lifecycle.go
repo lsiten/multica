@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/multica-ai/multica/server/internal/modelservice"
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
@@ -53,29 +52,36 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 			python = "python3"
 		}
 		if slices.Contains(d.cfg.ProcessServices, "ai") {
-			query, cancel := context.WithTimeout(d.daemonLifecycleCtx(), 5*time.Second)
-			defer cancel()
+			// Attempt the separate process first. Any failure — account
+			// unavailable, a launch error, or a live prior owner that requires
+			// reconciliation — falls through to the in-process manager below so
+			// the JEV model is still served by the daemon. This is the same
+			// fail-closed behaviour environment/application/gateway use: a
+			// separate-process start failure must never leave the model
+			// unavailable, and must not abort the whole daemon.
 			account := struct {
 				ID string `json:"id"`
 			}{ID: d.accountID}
-			if account.ID == "" && d.client == nil {
-				d.jevModelsErr = errors.New("model process account unavailable")
-				return
+			if account.ID == "" && d.client != nil {
+				// The account only names the process scope; the in-process
+				// manager below needs neither it nor the network, so a failed
+				// lookup is a reason to fall back, not to fail closed.
+				query, cancel := context.WithTimeout(d.daemonLifecycleCtx(), 5*time.Second)
+				_ = d.client.getJSON(query, "/api/me", &account)
+				cancel()
 			}
-			if account.ID == "" {
-				if err := d.client.getJSON(query, "/api/me", &account); err != nil {
-					d.jevModelsErr = fmt.Errorf("model process account: %w", err)
+			if account.ID != "" {
+				// The deferred daemon close drains this process before it exits.
+				// Passing the canceled run context here would kill it before
+				// authenticated Stop can clean up.
+				d.jevModels, d.jevModelsErr = modelservice.Launch(context.Background(), root, runtimeproc.Scope{Backend: d.cfg.ServerBaseURL, Account: account.ID, Profile: d.cfg.Profile, DaemonID: d.cfg.DaemonID, Service: "ai"}, d.cfg.NativeHostExecutable, d.cfg.NativeHostBuild)
+				if d.jevModels != nil {
 					return
 				}
+				// The separate process could not start: fall through to the
+				// in-process manager below instead of leaving the model
+				// unavailable.
 			}
-			if account.ID == "" {
-				d.jevModelsErr = errors.New("model process account identity missing")
-				return
-			}
-			// The deferred daemon close drains this process before it exits. Passing the
-			// canceled run context here would kill it before authenticated Stop can clean up.
-			d.jevModels, d.jevModelsErr = modelservice.Launch(context.Background(), root, runtimeproc.Scope{Backend: d.cfg.ServerBaseURL, Account: account.ID, Profile: d.cfg.Profile, DaemonID: d.cfg.DaemonID, Service: "ai"}, d.cfg.NativeHostExecutable, d.cfg.NativeHostBuild)
-			return
 		}
 		manager, err := jevmodels.New(context.Background(), jevmodels.Config{RootDir: root, PythonPath: python})
 		d.jevModelsErr = err
