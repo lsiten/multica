@@ -2586,6 +2586,16 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	}
 	var taskContext map[string]json.RawMessage
 	if len(task.Context) > 0 && json.Unmarshal(task.Context, &taskContext) == nil {
+		var groupContext struct {
+			Phase    string `json:"phase"`
+			LeadPlan string `json:"lead_plan"`
+			Reports  string `json:"reports"`
+		}
+		if raw, ok := taskContext["group_collaboration"]; ok && json.Unmarshal(raw, &groupContext) == nil {
+			resp.GroupCollaborationPhase = groupContext.Phase
+			resp.GroupCollaborationLeadPlan = groupContext.LeadPlan
+			resp.GroupCollaborationReports = groupContext.Reports
+		}
 		if override, exists := taskContext["autonomy_policy"]; exists {
 			resp.Agent.RuntimeConfigOverride = json.RawMessage(`{"multica_autonomy":` + string(override) + `}`)
 		}

@@ -2657,7 +2657,7 @@ func (s *TaskService) SendDirectChatMessage(
 // except the session's lead. It is deliberately best-effort: an unavailable
 // specialist must not make the human's lead turn fail, and the lead can still
 // report the missing specialist in the shared room.
-func (s *TaskService) enqueueGroupParticipantTasks(ctx context.Context, session db.ChatSession, initiatorUserID, inputTaskID pgtype.UUID) {
+func (s *TaskService) enqueueGroupParticipantTasks(ctx context.Context, session db.ChatSession, initiatorUserID, inputTaskID pgtype.UUID, leadPlan string) {
 	participants, err := s.Queries.ListGroupParticipants(ctx, session.ID)
 	if err != nil {
 		slog.Warn("group chat: list participants failed", "chat_session_id", util.UUIDToString(session.ID), "error", err)
@@ -2694,6 +2694,7 @@ func (s *TaskService) enqueueGroupParticipantTasks(ctx context.Context, session 
 					"phase":           "specialist",
 					"lead_agent_id":   util.UUIDToString(session.AgentID),
 					"chat_session_id": util.UUIDToString(session.ID),
+					"lead_plan":       truncateGroupCollaborationText(leadPlan),
 				},
 			})
 			if marshalErr != nil {
@@ -2758,7 +2759,11 @@ func (s *TaskService) maybeAdvanceGroupCollaboration(ctx context.Context, task d
 		if err != nil || session.Kind != "group" {
 			return
 		}
-		s.enqueueGroupParticipantTasks(ctx, session, task.InitiatorUserID, task.ChatInputTaskID)
+		leadPlan := ""
+		if message, messageErr := s.Queries.GetChatMessageByTaskAssistant(ctx, task.ID); messageErr == nil {
+			leadPlan = message.Content
+		}
+		s.enqueueGroupParticipantTasks(ctx, session, task.InitiatorUserID, task.ChatInputTaskID, leadPlan)
 	case "specialist":
 		leadAgentID, _ := group["lead_agent_id"].(string)
 		leadUUID, parseErr := util.ParseUUID(leadAgentID)
@@ -2789,11 +2794,30 @@ func (s *TaskService) enqueueGroupLeadSynthesis(ctx context.Context, specialist 
 		if err != nil || !lead.RuntimeID.Valid {
 			return err
 		}
+		reports, err := qtx.ListGroupCollaborationSpecialistMessages(ctx, db.ListGroupCollaborationSpecialistMessagesParams{
+			ChatSessionID:   specialist.ChatSessionID,
+			ChatInputTaskID: specialist.ChatInputTaskID,
+		})
+		if err != nil {
+			return err
+		}
+		var reportText strings.Builder
+		for _, report := range reports {
+			if strings.TrimSpace(report.Content) == "" {
+				continue
+			}
+			if reportText.Len() > 0 {
+				reportText.WriteString("\n\n")
+			}
+			reportText.WriteString("Specialist report:\n")
+			reportText.WriteString(truncateGroupCollaborationText(report.Content))
+		}
 		payload, err := json.Marshal(map[string]any{
 			"group_collaboration": map[string]string{
 				"phase":           "synthesis",
 				"lead_agent_id":   util.UUIDToString(lead.ID),
 				"chat_session_id": util.UUIDToString(specialist.ChatSessionID),
+				"reports":         reportText.String(),
 			},
 		})
 		if err != nil {
@@ -2817,6 +2841,20 @@ func (s *TaskService) enqueueGroupLeadSynthesis(ctx context.Context, specialist 
 	}
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, synthesis)
 	s.NotifyTaskEnqueued(ctx, synthesis)
+}
+
+const maxGroupCollaborationTextBytes = 24 * 1024
+
+func truncateGroupCollaborationText(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= maxGroupCollaborationTextBytes {
+		return value
+	}
+	runes := []rune(value)
+	for len(runes) > 0 && len(string(runes)) > maxGroupCollaborationTextBytes {
+		runes = runes[:len(runes)-1]
+	}
+	return string(runes) + "\n[truncated]"
 }
 
 // MikaOnboardingOpenResult carries the two rows that open a Mika conversation.

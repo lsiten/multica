@@ -876,6 +876,37 @@ func TestBuildChatPromptAudience(t *testing.T) {
 	}
 }
 
+func TestBuildChatPromptGroupCollaborationRoles(t *testing.T) {
+	base := Task{ChatSessionID: "sess-1", ChatType: execenv.ChatTypeGroup, ChatMessage: "ship it"}
+
+	lead := base
+	lead.GroupCollaborationPhase = "lead_plan"
+	leadPrompt := buildChatPrompt(lead)
+	if !strings.Contains(leadPrompt, "Publish a concrete plan") {
+		t.Fatalf("lead prompt missing planning role:\n%s", leadPrompt)
+	}
+
+	specialist := base
+	specialist.GroupCollaborationPhase = "specialist"
+	specialist.GroupCollaborationLeadPlan = "Plan: verify the API and UI"
+	specialistPrompt := buildChatPrompt(specialist)
+	for _, want := range []string{"Your role in this turn: specialist", "Plan: verify the API and UI", "report progress and evidence"} {
+		if !strings.Contains(specialistPrompt, want) {
+			t.Fatalf("specialist prompt missing %q:\n%s", want, specialistPrompt)
+		}
+	}
+
+	synthesis := base
+	synthesis.GroupCollaborationPhase = "synthesis"
+	synthesis.GroupCollaborationReports = "Specialist report:\nAPI is green"
+	synthesisPrompt := buildChatPrompt(synthesis)
+	for _, want := range []string{"Your role in this turn: lead synthesis", "API is green", "deliver one final result"} {
+		if !strings.Contains(synthesisPrompt, want) {
+			t.Fatalf("synthesis prompt missing %q:\n%s", want, synthesisPrompt)
+		}
+	}
+}
+
 func TestBuildChatPromptAgentIntro(t *testing.T) {
 	// Historical proactive-introduction sessions remain readable even though
 	// new agent creation no longer creates one. Their message-less first turn

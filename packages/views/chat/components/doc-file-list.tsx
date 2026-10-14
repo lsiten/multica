@@ -12,7 +12,9 @@ import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import type { ChatSessionRepo, Issue } from "@multica/core/types";
+import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { fileIcon } from "../../editor/utils/file-icon";
+import { LocalReviewIndex } from "../../issues/components/local-review-index";
 
 // The file list is the chat's server-side projection of openable documents:
 // the session's attachments plus the files the session's tasks checked out of
@@ -85,7 +87,7 @@ function repoLabel(repo: ChatSessionRepo): string {
 export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?: string | null }) {
   const { t } = useT("chat");
   const workspaceSlug = useWorkspaceSlug();
-  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues">("files");
+  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "git">("files");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const { data: sessionFiles } = useQuery({
     ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId),
@@ -131,6 +133,19 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     },
     [selectedProjectId, sessionFiles],
   );
+  // Source Control must act on the current chat's lead/requirement checkout.
+  // Falling back to an arbitrary project sibling would make stage/commit apply
+  // to the wrong worktree, so use the same task ordering as the file tree.
+  const gitTask = fileTasks[0];
+  const gitRequest: LocalReviewRequest | null = gitTask?.work_dir
+    ? {
+        task_id: gitTask.id,
+        workspace_id: wsId,
+        runtime_id: gitTask.runtime_id,
+        path: gitTask.work_dir,
+        target: gitTask.branch_name || "HEAD",
+      }
+    : null;
   // A single cached query (Promise.all) replaces useQueries: useQueries returns
   // a fresh array on every render, which defeated the allDocuments memo below.
   // A cached data array is stable across renders, so the memo holds. Per-task
@@ -320,8 +335,8 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           ))}
         </div>
       )}
-      <div className="grid grid-cols-3 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
-        {(["files", "attachments", "issues"] as const).map((tab) => (
+      <div className="grid grid-cols-4 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
+        {(["files", "attachments", "issues", "git"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -333,11 +348,25 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
               (activeTab === tab ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
             }
           >
-            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : t(($) => $.doc_file_list.issues)}
+            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : tab === "issues" ? t(($) => $.doc_file_list.issues) : t(($) => $.doc_file_list.git)}
           </button>
         ))}
       </div>
-      {activeTab === "issues" ? (
+      {activeTab === "git" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {gitRequest ? (
+            <LocalReviewIndex
+              request={gitRequest}
+              onChanged={() => {
+                void workspaceFiles.refetch();
+              }}
+              onBusyChange={() => undefined}
+            />
+          ) : (
+            <p className="p-2 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_git_checkout)}</p>
+          )}
+        </div>
+      ) : activeTab === "issues" ? (
         <div className="flex-1 overflow-y-auto">
           {projectID && (projectIssues?.issues ?? []).length > 0 ? (
             <ul className="divide-y">

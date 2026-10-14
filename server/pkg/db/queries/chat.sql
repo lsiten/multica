@@ -1390,6 +1390,19 @@ FROM agent_task_queue
 WHERE chat_session_id = $1
   AND chat_input_task_id = $2;
 
+-- name: ListGroupCollaborationSpecialistMessages :many
+-- The lead's synthesis task receives terminal specialist reports as a
+-- durable snapshot. Join through task context so user-authored messages can
+-- never enter the specialist report bundle.
+SELECT message.*
+FROM chat_message AS message
+JOIN agent_task_queue AS task ON task.id = message.task_id
+WHERE task.chat_session_id = $1
+  AND task.chat_input_task_id = $2
+  AND task.context->'group_collaboration'->>'phase' = 'specialist'
+  AND message.role = 'assistant'
+ORDER BY message.created_at ASC, message.id ASC;
+
 -- name: GetLastChatTaskSession :one
 -- Returns the most recent task in this chat session that managed to record a
 -- session_id. Includes completed, failed AND cancelled tasks: each of them may

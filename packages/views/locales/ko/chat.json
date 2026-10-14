@@ -28,7 +28,9 @@
     "filter_placeholder": "\ud30c\uc77c \ud544\ud130",
     "no_match": "\uc77c\uce58 \uc5c6\uc74c",
     "toggle": "\ud30c\uc77c",
-    "empty": "\ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4"
+    "empty": "\ubb38\uc11c\uac00 \uc5c6\uc2b5\ub2c8\ub2e4",
+    "git": "소스 제어",
+    "no_git_checkout": "이 채팅에 사용할 체크아웃된 저장소가 없습니다"
   },
   "page": {
     "title": "채팅",

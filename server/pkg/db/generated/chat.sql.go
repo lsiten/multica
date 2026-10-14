@@ -2919,6 +2919,67 @@ func (q *Queries) ListChatTaskInputOwners(ctx context.Context, chatSessionID pgt
 	return items, nil
 }
 
+const listGroupCollaborationSpecialistMessages = `-- name: ListGroupCollaborationSpecialistMessages :many
+SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids, message.channel_typing_settled, message.human_request_id, message.author_type, message.author_id
+FROM chat_message AS message
+JOIN agent_task_queue AS task ON task.id = message.task_id
+WHERE task.chat_session_id = $1
+  AND task.chat_input_task_id = $2
+  AND task.context->'group_collaboration'->>'phase' = 'specialist'
+  AND message.role = 'assistant'
+ORDER BY message.created_at ASC, message.id ASC
+`
+
+type ListGroupCollaborationSpecialistMessagesParams struct {
+	ChatSessionID   pgtype.UUID `json:"chat_session_id"`
+	ChatInputTaskID pgtype.UUID `json:"chat_input_task_id"`
+}
+
+// The lead's synthesis task receives terminal specialist reports as a
+// durable snapshot. Join through task context so user-authored messages can
+// never enter the specialist report bundle.
+func (q *Queries) ListGroupCollaborationSpecialistMessages(ctx context.Context, arg ListGroupCollaborationSpecialistMessagesParams) ([]ChatMessage, error) {
+	rows, err := q.db.Query(ctx, listGroupCollaborationSpecialistMessages, arg.ChatSessionID, arg.ChatInputTaskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChatMessage{}
+	for rows.Next() {
+		var i ChatMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChatSessionID,
+			&i.Role,
+			&i.Content,
+			&i.TaskID,
+			&i.CreatedAt,
+			&i.FailureReason,
+			&i.ElapsedMs,
+			&i.MessageKind,
+			&i.ChannelMediaPendingUntil,
+			&i.ChannelIngested,
+			&i.QuickActions,
+			&i.ChannelContextRevision,
+			&i.ChannelOutboundType,
+			&i.ChannelOutboundInstallationID,
+			&i.ChannelOutboundChatID,
+			&i.ChannelOutboundMessageIds,
+			&i.ChannelTypingSettled,
+			&i.HumanRequestID,
+			&i.AuthorType,
+			&i.AuthorID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingChatTasksByCreator = `-- name: ListPendingChatTasksByCreator :many
 SELECT atq.id AS task_id, atq.status, atq.chat_session_id, cs.agent_id
 FROM agent_task_queue atq

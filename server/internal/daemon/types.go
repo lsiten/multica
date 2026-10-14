@@ -114,8 +114,11 @@ type Task struct {
 	ProjectDescription            string                       `json:"project_description,omitempty"` // durable project-level context injected into the brief
 	ProjectResources              []ProjectResourceData        `json:"project_resources,omitempty"`   // project-scoped resources to expose to the agent
 	JevConfig                     *protocol.WorkspaceJevConfig `json:"jev_config,omitempty"`
-	IsLeaderTask                  bool                         `json:"is_leader_task,omitempty"`                   // true when executing in the squad-leader coordinator role
-	LeaderRoleResolved            bool                         `json:"leader_role_resolved,omitempty"`             // server capability: IsLeaderTask/SquadID authoritatively answer "is this a leader run". Absent on servers predating it — those before #4951 never sent is_leader_task at all, later ones send it without this guarantee — so taskIsSquadLeader falls back to the briefing marker for both (MUL-5811)
+	IsLeaderTask                  bool                         `json:"is_leader_task,omitempty"`       // true when executing in the squad-leader coordinator role
+	LeaderRoleResolved            bool                         `json:"leader_role_resolved,omitempty"` // server capability: IsLeaderTask/SquadID authoritatively answer "is this a leader run". Absent on servers predating it — those before #4951 never sent is_leader_task at all, later ones send it without this guarantee — so taskIsSquadLeader falls back to the briefing marker for both (MUL-5811)
+	GroupCollaborationPhase       string                       `json:"group_collaboration_phase,omitempty"`
+	GroupCollaborationLeadPlan    string                       `json:"group_collaboration_lead_plan,omitempty"`
+	GroupCollaborationReports     string                       `json:"group_collaboration_reports,omitempty"`
 	PriorSessionID                string                       `json:"prior_session_id,omitempty"`                 // Claude session ID from a previous task on this issue
 	PriorWorkDir                  string                       `json:"prior_work_dir,omitempty"`                   // work_dir from a previous task on this issue
 	PriorSessionResumeUnavailable bool                         `json:"prior_session_resume_unavailable,omitempty"` // MUL-5305: server signals a more recent Codex session was withheld (rollout missing) and PriorSessionID (if any) is an older fallback; the run must disclose the continuity gap even if that older session resumes cleanly. Absent/false on old servers.

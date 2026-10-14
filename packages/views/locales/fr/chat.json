@@ -28,7 +28,9 @@
     "filter_placeholder": "Filtrer les fichiers",
     "no_match": "Aucun r\u00e9sultat",
     "toggle": "Fichiers",
-    "empty": "Aucun document"
+    "empty": "Aucun document",
+    "git": "Contrôle de code source",
+    "no_git_checkout": "Aucun dépôt extrait n'est disponible pour cette conversation"
   },
   "page": {
     "title": "Discussion",

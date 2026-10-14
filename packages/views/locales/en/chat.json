@@ -37,7 +37,9 @@
     "attachments": "Attachments",
     "issues": "Issues",
     "no_attachments": "No attachments in this chat",
-    "no_issues": "No issues in this project"
+    "no_issues": "No issues in this project",
+    "git": "Source Control",
+    "no_git_checkout": "No checked-out repository is available for this chat"
   },
   "page": {
     "title": "Chat",
