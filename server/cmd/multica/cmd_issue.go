@@ -553,6 +553,14 @@ func validateIssuePriority(priority string) error {
 	return validateIssueEnum("priority", priority, validIssuePriorities)
 }
 
+// validIssueKinds mirrors the chat_session-independent issue.kind check
+// constraint: an issue is either a plain task or a requirement.
+var validIssueKinds = []string{"task", "requirement"}
+
+func validateIssueKind(kind string) error {
+	return validateIssueEnum("kind", kind, validIssueKinds)
+}
+
 func validateIssueEnum(field, value string, allowed []string) error {
 	for _, a := range allowed {
 		if value == a {
@@ -626,6 +634,7 @@ func init() {
 	issueCreateCmd.Flags().String("description-file", "", "Read issue description from a UTF-8 file (preserves multi-line content verbatim; use this on Windows when stdin piping mangles non-ASCII bytes). The path must be inside the current working directory unless --allow-external-file is set.")
 	issueCreateCmd.Flags().Bool("allow-external-file", false, "Allow --description-file / --attachment to read a path outside the current working directory. Off by default so a stale file from another run/environment can't be picked up (MUL-4252).")
 	issueCreateCmd.Flags().String("status", "", "Issue status")
+	issueCreateCmd.Flags().String("kind", "", "Issue kind: task (default) or requirement. A requirement issue carries a requirement row whose description is the requirement document")
 	issueCreateCmd.Flags().String("priority", "", "Issue priority")
 	issueCreateCmd.Flags().String("assignee", "", "Assignee name (member, agent, or squad; fuzzy match)")
 	issueCreateCmd.Flags().String("assignee-id", "", "Assignee UUID — member, agent, or squad (mutually exclusive with --assignee)")
@@ -1439,6 +1448,12 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 	}
+	kindFlag, _ := cmd.Flags().GetString("kind")
+	if kindFlag != "" {
+		if err := validateIssueKind(kindFlag); err != nil {
+			return err
+		}
+	}
 
 	client, err := newAPIClient(cmd)
 	if err != nil {
@@ -1488,6 +1503,9 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	}
 	if priorityFlag != "" {
 		body["priority"] = priorityFlag
+	}
+	if kindFlag != "" {
+		body["kind"] = kindFlag
 	}
 	if v, _ := cmd.Flags().GetString("parent"); v != "" {
 		parent, err := resolveIssueRef(ctx, client, v)

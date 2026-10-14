@@ -276,6 +276,7 @@ func TestPlatformSkillDescriptionNamesEveryDomain(t *testing.T) {
 		"references/notifications.md": "notification",
 		"references/issues.md":        "issue",
 		"references/issue-wakeups.md": "issue wakeup",
+		"references/requirements.md":  "requirement",
 		"references/chat.md":          "chat",
 		"references/coordination.md":  "coordination",
 		"references/mentions.md":      "mention",
@@ -611,6 +612,48 @@ func TestPlatformSkillCoversPlatformContracts(t *testing.T) {
 			notWant: []string{
 				"multica agent skills set <agent-id> --skill-ids <skill-id>",
 				"merge the new skill id with the existing ids",
+			},
+		},
+		{
+			// The group chat (kind=group) is a new capability: the CLI
+			// creates a standalone group (project optional) and manages its
+			// participants. These anchors pin that contract so a drift out of
+			// the reference turns CI red instead of silently leaving the skill
+			// describing a group it can no longer create.
+			file: "references/chat.md",
+			want: []string{
+				"is_project_default=false",
+				"standalone",
+				"it can be archived or deleted like an ordinary chat",
+				"A project's **default** group is created automatically when the project gets a lead",
+				"cannot be archived manually",
+				"these commands never target it",
+				"multica chat group create",
+				"multica chat group members list <session-id>",
+				"there is no member name resolver here",
+				"Adding a member already present is a no-op",
+				"creating a group starts an agent",
+			},
+		},
+		{
+			// The requirement dimension is a new capability: a kind=requirement
+			// issue, its requirement document, and the confirm/change lifecycle
+			// the agent drives with human-request cards. Pin the contract so a
+			// drift out of the reference is caught.
+			file: "references/requirements.md",
+			want: []string{
+				"A **requirement** is an issue with `kind=requirement`",
+				"multica issue create",
+				"--kind requirement",
+				"multica issue requirement <issue-id>",
+				"the agent drives it, the human only answers",
+				"requirement-confirm",
+				"requirement-change-review",
+				"unconfirmed_change",
+				"sub-issues under the requirement issue",
+				"404 for a kind=task issue",
+				"pending_confirm",
+				"confirmed",
 			},
 		},
 	}

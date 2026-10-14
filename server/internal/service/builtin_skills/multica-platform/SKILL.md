@@ -1,6 +1,6 @@
 ---
 name: multica-platform
-description: "Use for Multica platform actions the runtime brief does not fully cover: issue and PR contracts, issue wakeups, coordination graphs, chat, charts and files in comments, mentions, agents, squads, autopilots, projects, runtimes, skill import, notifications. Not for the product code you are working on."
+description: "Use for Multica platform actions the runtime brief does not fully cover: issues and PR contracts, issue wakeups, requirements, coordination, chat, comments, mentions, agents, squads, autopilots, projects, runtimes, skill import, notifications. Not for the product code you are working on."
 user-invocable: false
 allowed-tools: Bash(multica *), Bash(git *), Bash(gh *)
 ---
@@ -29,7 +29,8 @@ Read the invariants below, then open the reference(s) your task actually needs
 | `references/autopilots.md` | Autopilots: schedule / webhook / manual triggers, `create_issue` vs `run_only`, why one did not fire |
 | `references/projects.md` | Projects, bounded project supervision and their durable resources (`github_repo`, `local_directory`, worktree mode) |
 | `references/runtimes.md` | Runtimes, daemons, `repo checkout`, and the task CLI boundary |
-| `references/chat.md` | Reading the current chat conversation: `chat history` (channel + thread list) and `chat thread [id]` (one thread's messages) |
+| `references/chat.md` | Chat: reading the current conversation (`chat history`, `chat thread [id]`), sending a message (`chat send`, with @-mentions in a group chat), and group chat — creating a (standalone or project-bound) group and managing its participants |
+| `references/requirements.md` | The requirement dimension: a `kind=requirement` issue, its requirement document, and the confirm/change lifecycle the agent drives with human-request cards |
 | `references/skill-import.md` | Importing a skill into this workspace from a URL or a local archive |
 
 Open what the task needs. A single-domain task usually needs one; a task that

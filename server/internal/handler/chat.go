@@ -1388,6 +1388,11 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     timestampToString(msg.CreatedAt),
 	})
 
+	// Group chat @-mentions notify the named members (and @all notifies every
+	// human participant). The main agent already ran above, so this only adds
+	// the member-side side effects; best-effort, it must not fail the send.
+	h.notifyGroupChatMentions(r.Context(), session, parseUUID(userID), req.Content, uuidToString(msg.ID))
+
 	// First user message → kick off best-effort LLM auto-titling (MUL-4295).
 	// Fire-and-forget and non-blocking: the response below is written whether
 	// or not a title is ever generated, and a disabled/failing LLM layer
