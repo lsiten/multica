@@ -144,11 +144,13 @@ export function useCreateGroupChatSession() {
       agent_id: string;
       title?: string;
       project_id?: string | null;
+      squad_id?: string | null;
       participants?: { member_type: "member" | "agent"; member_id: string }[];
     }) => {
       logger.info("createGroupChatSession.start", {
         agent_id: data.agent_id,
         project_id: data.project_id,
+        squad_id: data.squad_id,
         participantCount: data.participants?.length ?? 0,
       });
       return api.createGroupChat(data);

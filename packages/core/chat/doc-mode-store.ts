@@ -23,6 +23,7 @@ export interface DocumentRef {
   projectId?: string;
   taskId?: string;
   runtimeId?: string;
+  workDir?: string;
   relativePath?: string;
 }
 

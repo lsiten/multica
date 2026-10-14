@@ -145,6 +145,7 @@ type createGroupChatRequest struct {
 	AgentID      string  `json:"agent_id"`
 	Title        string  `json:"title"`
 	ProjectID    *string `json:"project_id"`
+	SquadID      *string `json:"squad_id"`
 	Participants []struct {
 		MemberType string `json:"member_type"`
 		MemberID   string `json:"member_id"`
@@ -188,6 +189,13 @@ func (h *Handler) CreateGroupChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	squadID := pgtype.UUID{Valid: false}
+	if req.SquadID != nil && strings.TrimSpace(*req.SquadID) != "" {
+		squadID, ok = parseUUIDOrBadRequest(w, strings.TrimSpace(*req.SquadID), "squad_id")
+		if !ok {
+			return
+		}
+	}
 
 	// Verify the agent exists in the workspace and is active.
 	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
@@ -202,8 +210,7 @@ func (h *Handler) CreateGroupChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "agent is archived")
 		return
 	}
-	// A group chat carries no squad context; validate the (optional) project scope only.
-	if err := h.validateChatExecutionScope(r.Context(), workspaceUUID, agent.ID, projectID, pgtype.UUID{}); err != nil {
+	if err := h.validateChatExecutionScope(r.Context(), workspaceUUID, agent.ID, projectID, squadID); err != nil {
 		writeChatScopeError(w, err)
 		return
 	}
@@ -232,6 +239,23 @@ func (h *Handler) CreateGroupChat(w http.ResponseWriter, r *http.Request) {
 		memberID, ok := parseUUIDOrBadRequest(w, p.MemberID, "member_id")
 		if !ok {
 			return
+		}
+		if p.MemberType == "agent" {
+			participantAgent, participantErr := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+				ID: memberID, WorkspaceID: workspaceUUID,
+			})
+			if errors.Is(participantErr, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "participant agent not found")
+				return
+			}
+			if participantErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to load participant agent")
+				return
+			}
+			if participantAgent.ArchivedAt.Valid {
+				writeError(w, http.StatusBadRequest, "participant agent is archived")
+				return
+			}
 		}
 		resolved = append(resolved, resolvedParticipant{memberType: p.MemberType, memberID: memberID})
 	}
@@ -268,17 +292,27 @@ func (h *Handler) CreateGroupChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if squadID.Valid {
+		if _, err := qtx.GetSquadInWorkspaceForChat(r.Context(), db.GetSquadInWorkspaceForChatParams{ID: squadID, WorkspaceID: workspaceUUID}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "squad not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to load squad")
+			return
+		}
+	}
 
 	session, err := qtx.CreateGroupChatSession(r.Context(), db.CreateGroupChatSessionParams{
 		WorkspaceID:      workspaceUUID,
-		AgentID:        agentID,
-		CreatorID:      creatorID,
-		Title:          req.Title,
-		IsAgentIntro:   false,
+		AgentID:          agentID,
+		CreatorID:        creatorID,
+		Title:            req.Title,
+		IsAgentIntro:     false,
 		IsProjectDefault: false,
-		ProjectID:      projectID,
-		SquadID:        pgtype.UUID{},
-		ID:           dbid.NewV7(),
+		ProjectID:        projectID,
+		SquadID:          squadID,
+		ID:               dbid.NewV7(),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create group chat")
@@ -331,7 +365,6 @@ func isGroupChatManualArchive(session db.ChatSession) bool {
 
 var _ pgtype.UUID
 
-
 // ensureProjectGroupChat creates a project's default group chat when it does not
 // exist yet. Default members: the project lead (when it is an agent) and the
 // caller (the project creator). Idempotent: a re-call returns the existing
@@ -347,24 +380,24 @@ func (h *Handler) ensureProjectGroupChat(ctx context.Context, project db.Project
 	}
 	session, err := h.Queries.CreateGroupChatSession(ctx, db.CreateGroupChatSessionParams{
 		WorkspaceID:      project.WorkspaceID,
-		AgentID:        project.LeadID,
-		CreatorID:      creator,
-		Title:          "Group",
-		IsAgentIntro:   false,
+		AgentID:          project.LeadID,
+		CreatorID:        creator,
+		Title:            "Group",
+		IsAgentIntro:     false,
 		IsProjectDefault: true,
-		ProjectID:      project.ID,
+		ProjectID:        project.ID,
 	})
 	if err != nil {
 		return db.ChatSession{}, err
 	}
 	// Add the creator and the lead as participants (best-effort; dedup is
 	// enforced by the unique index on (session, member_type, member_id)).
-	_ , _ = h.Queries.AddGroupParticipant(ctx, db.AddGroupParticipantParams{
+	_, _ = h.Queries.AddGroupParticipant(ctx, db.AddGroupParticipantParams{
 		ChatSessionID: session.ID,
 		MemberType:    "member",
 		MemberID:      creator,
 	})
-	_ , _ = h.Queries.AddGroupParticipant(ctx, db.AddGroupParticipantParams{
+	_, _ = h.Queries.AddGroupParticipant(ctx, db.AddGroupParticipantParams{
 		ChatSessionID: session.ID,
 		MemberType:    "agent",
 		MemberID:      project.LeadID,

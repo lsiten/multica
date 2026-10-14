@@ -30,6 +30,7 @@ import type {
   IssueStatus,
   IssuePriority,
   IssueAssigneeType,
+  IssueKind,
   IssuePropertyValue,
   SourceContextPreview,
 } from "@multica/core/types";
@@ -250,6 +251,7 @@ export function ManualCreatePanel({
   const [title, setTitle] = useState(draft.manual.title);
   const [goalMode, setGoalMode] = useState(false);
   const [goalObjective, setGoalObjective] = useState("");
+  const [issueKind, setIssueKind] = useState<IssueKind>("task");
   const [formResetKey, setFormResetKey] = useState(0);
   const titleEditorRef = useRef<TitleEditorRef>(null);
   const descEditorRef = useRef<ContentEditorRef>(null);
@@ -423,6 +425,7 @@ export function ManualCreatePanel({
     setTitle("");
     setGoalMode(false);
     setGoalObjective("");
+    setIssueKind("task");
     setStatus("todo");
     setPriority("none");
     setStartDate(null);
@@ -516,6 +519,7 @@ export function ManualCreatePanel({
               stage: parentIssueId && stage != null ? stage : undefined,
               project_id: projectId,
               goal_objective: goalMode ? goalObjective.trim() : undefined,
+              kind: issueKind,
             },
           },
         });
@@ -542,6 +546,7 @@ export function ManualCreatePanel({
           stage: parentIssueId && stage != null ? stage : undefined,
           project_id: projectId,
           goal_objective: goalMode ? goalObjective.trim() : undefined,
+          kind: issueKind,
         });
       }
 
@@ -1008,6 +1013,20 @@ export function ManualCreatePanel({
             <CreateRunHint assigneeType={assigneeType} assigneeId={assigneeId} status={status} />
 
              <div className="flex flex-wrap items-center gap-2 px-4 pb-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" className="gap-1.5" />}>
+                  <Shapes className="h-3.5 w-3.5" />
+                  {issueKind === "requirement" ? tIssues(($) => $.requirement.marker) : tIssues(($) => $.requirement.task)}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem onClick={() => setIssueKind("task")}>
+                    {tIssues(($) => $.requirement.task)}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIssueKind("requirement")}>
+                    {tIssues(($) => $.requirement.marker)}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <label className="flex items-center gap-1.5 text-caption text-muted-foreground cursor-pointer select-none">
                 <Switch
                   size="sm"

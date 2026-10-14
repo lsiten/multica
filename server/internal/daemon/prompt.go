@@ -647,6 +647,13 @@ func buildChatPrompt(task Task) string {
 	default:
 		b.WriteString("Audience: direct room.\n\n")
 	}
+	if task.ChatType == "group" {
+		b.WriteString("Group collaboration protocol:\n")
+		b.WriteString("- Work in the shared room. The lead agent proposes the execution plan and final synthesis.\n")
+		b.WriteString("- Specialist agents review the plan, add domain rules or corrections, and execute their assigned slice in parallel.\n")
+		b.WriteString("- Read the room transcript before acting, state your role and assumptions, and @mention the lead when a decision or user approval is required.\n")
+		b.WriteString("- Keep progress, evidence, blockers, and deliverables in this room. Do not ask the user to collect updates from other agents.\n\n")
+	}
 	// Channel awareness (MUL-3871). When the session is backed by an IM channel,
 	// the agent must KNOW it is operating inside that channel — otherwise an ask
 	// like "what did you just talk about" sends it to read Multica instead of the

@@ -1,6 +1,7 @@
 {
 
   "requirement": {
+    "task": "任务",
     "marker": "需求",
     "marker_short": "R",
     "pending_confirm": "待确认",

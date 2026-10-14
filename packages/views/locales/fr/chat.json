@@ -19,7 +19,10 @@
     "saving": "Enregistrement…",
     "discard": "Annuler",
     "changed_reload": "Le document a été modifié ailleurs — vos modifications n'ont pas été enregistrées. Rechargez pour réessayer.",
-    "save_failed": "Impossible d'enregistrer les modifications."
+    "save_failed": "Impossible d'enregistrer les modifications.",
+    "add_to_chat": "Ajouter au chat",
+    "add_selection_to_chat": "Ajouter la sélection",
+    "ask_agent_to_edit": "Demander une modification"
   },
   "doc_file_list": {
     "filter_placeholder": "Filtrer les fichiers",
@@ -205,7 +208,9 @@
     "history_group": "Historique des discussions",
     "agent_filter_placeholder": "Rechercher des agents...",
     "agent_needs_runtime": "Runtime requis",
-    "agent_needs_runtime_hint": "Associez un runtime avant de démarrer une discussion avec cet agent"
+    "agent_needs_runtime_hint": "Associez un runtime avant de démarrer une discussion avec cet agent",
+    "group_title_placeholder": "Nom du groupe (facultatif)",
+    "create_group": "Créer le groupe"
   },
   "empty_state": {
     "first_time_title": "Discutez avec vos agents",

@@ -3,6 +3,7 @@ import { createSafeId } from "@multica/core/utils";
 import { isLocalIndexAction } from "@multica/core/types/local-review-index";
 import { readWithCancellation } from "./local-review-cancellation";
 import { isPagedReviewDecision, pagedReviewRequestSchema, parsePagedReviewResponse, type PagedReviewInput } from "@multica/core/types/local-review-pages";
+import { ApplyRuntimeFileEditRequestSchema, parseRuntimeFileEditResult, type ApplyRuntimeFileEditRequest } from "@multica/core/api/runtime-file-edit";
 
 export async function requestReviewPage(input: PagedReviewInput, signal?: AbortSignal) {
   signal?.throwIfAborted();
@@ -35,6 +36,20 @@ export async function readLocalIndex(input: PagedReviewInput, signal?: AbortSign
   const response = await requestReviewPage({ ...input, action: "index" }, signal);
   if (!("kind" in response) || response.kind !== "index") throw new Error("Index status response expected");
   return response;
+}
+
+export async function applyReviewFileEdit(input: ApplyRuntimeFileEditRequest, signal?: AbortSignal) {
+  const request = ApplyRuntimeFileEditRequestSchema.parse(input);
+  signal?.throwIfAborted();
+  if (typeof window !== "undefined") {
+    const daemon: unknown = Reflect.get(window, "daemonAPI");
+    if (daemon && typeof daemon === "object" && "applyFileEdit" in daemon && typeof daemon.applyFileEdit === "function") {
+      const response = await daemon.applyFileEdit(request);
+      signal?.throwIfAborted();
+      return parseRuntimeFileEditResult(response);
+    }
+  }
+  return api.applyRuntimeFileEdit(request, signal);
 }
 
 export async function changeLocalIndex(input: PagedReviewInput & { action: "stage" | "unstage" | "commit" }) {

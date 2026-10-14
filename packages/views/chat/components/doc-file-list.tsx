@@ -1,7 +1,7 @@
 "use client";
 
-import { GitBranch, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronRight, File, Folder, GitBranch, Search } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import { api } from "@multica/core/api";
@@ -29,8 +29,41 @@ export interface DocumentListItem {
   taskId?: string;
   projectId?: string;
   runtimeId?: string;
+  workDir?: string;
   relativePath?: string;
   contentType?: string;
+}
+
+interface FileTreeNode {
+  path: string;
+  name: string;
+  directory: boolean;
+  document?: DocumentListItem;
+  children: FileTreeNode[];
+}
+
+function buildFileTree(documents: DocumentListItem[]): FileTreeNode[] {
+  const roots: FileTreeNode[] = [];
+  for (const document of documents) {
+    const parts = document.label.split("/").filter(Boolean);
+    let siblings = roots;
+    let path = "";
+    parts.forEach((part, index) => {
+      path = path ? `${path}/${part}` : part;
+      let node = siblings.find((candidate) => candidate.name === part);
+      if (!node) {
+        node = { path, name: part, directory: index < parts.length - 1, children: [] };
+        siblings.push(node);
+      }
+      if (index === parts.length - 1) node.document = document;
+      siblings = node.children;
+    });
+  }
+  const sort = (nodes: FileTreeNode[]): FileTreeNode[] => nodes.sort((a, b) => {
+    if (a.directory !== b.directory) return a.directory ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  }).map((node) => ({ ...node, children: sort(node.children) }));
+  return sort(roots);
 }
 
 // A git URL rendered as a short "owner/repo" label; falls back to the raw URL.
@@ -79,8 +112,13 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   // below is not recomputed on every render.
   const fileTasks = useMemo(
     () => {
-      const projectTasks = sessionFiles?.project_tasks;
-      const tasks = selectedProjectId && projectTasks && projectTasks.length > 0 ? projectTasks : sessionFiles?.tasks ?? [];
+      const sessionTasks = sessionFiles?.tasks ?? [];
+      const projectTasks = selectedProjectId ? sessionFiles?.project_tasks ?? [] : [];
+      const seen = new Set(sessionTasks.map((task) => task.id));
+      // The current chat's Agent/lead workspace wins. Project history fills in
+      // only after it, so opening a group or requirement chat never jumps to a
+      // sibling task's worktree merely because the project has many runs.
+      const tasks = [...sessionTasks, ...projectTasks.filter((task) => !seen.has(task.id))];
       return tasks.filter((task) => task.work_dir).slice(0, 25);
     },
     [selectedProjectId, sessionFiles],
@@ -110,6 +148,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   });
   const openDoc = useDocModeStore((s) => s.openDoc);
   const activeDoc = useDocModeStore(selectActiveDocument(wsId));
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
   // Local-only filter (v12: the sidebar is files + a filter box). Ephemeral UI
   // state, so it lives here, not in the persisted doc-mode store.
   const [filter, setFilter] = useState("");
@@ -151,6 +190,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           projectId: selectedProjectId,
           taskId: task?.id,
           runtimeId: task?.runtime_id,
+          workDir: task?.work_dir,
           relativePath: entry.path,
         }));
     });
@@ -170,6 +210,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     if (!query) return allDocuments;
     return allDocuments.filter((doc) => doc.label.toLowerCase().includes(query));
   }, [allDocuments, filter]);
+  const fileTree = useMemo(() => buildFileTree(visible), [visible]);
 
   // Repo references answer to the same filter so a filtered view stays
   // consistent (openable rows + repo rows) and reports no-match when both
@@ -196,6 +237,49 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   // Only surface no-match when the filter actively excludes every openable row;
   // a bare project header (or repo references) with no files is not "no match".
   const showNoMatch = filter.trim().length > 0 && visible.length === 0 && visibleRepoReferences.length === 0;
+  const renderTree = (nodes: FileTreeNode[], depth = 0): ReactNode[] => nodes.flatMap((node) => {
+    if (node.directory) {
+      const expanded = filter.trim().length > 0 || expandedDirs.has(node.path);
+      return [
+        <li key={`dir:${node.path}`}>
+          <button
+            type="button"
+            className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-body hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            style={{ paddingLeft: `${8 + depth * 14}px` }}
+            aria-expanded={expanded}
+            onClick={() => setExpandedDirs((current) => {
+              const next = new Set(current);
+              if (next.has(node.path)) next.delete(node.path); else next.add(node.path);
+              return next;
+            })}
+          >
+            <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+            <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 truncate">{node.name}</span>
+          </button>
+        </li>,
+        ...(expanded ? renderTree(node.children, depth + 1) : []),
+      ];
+    }
+    const doc = node.document;
+    if (!doc) return [];
+    const isActive = activeDoc?.id === doc.id && activeDoc?.kind === doc.kind;
+    const Icon = doc.contentType ? fileIcon(doc.contentType, doc.label) : File;
+    return [
+      <li key={`${doc.kind}:${doc.id}`}>
+        <button
+          type="button"
+          onClick={() => openDoc(wsId, { ...doc })}
+          aria-current={isActive ? "true" : undefined}
+          className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-body transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isActive ? "bg-accent/10" : ""}`}
+          style={{ paddingLeft: `${24 + depth * 14}px` }}
+        >
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate">{node.name}</span>
+        </button>
+      </li>,
+    ];
+  });
 
   return (
     <div className="flex h-full flex-col">
@@ -211,23 +295,6 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
             className="w-full rounded-md border border-transparent bg-muted/50 py-1.5 pl-8 pr-2 text-body outline-none transition-colors focus:border-ring focus:bg-background"
           />
         </div>
-      </div>
-      <div className="grid grid-cols-3 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
-        {(["files", "attachments", "issues"] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab}
-            onClick={() => setActiveTab(tab)}
-            className={
-              "border-b-2 px-2 py-1.5 text-caption transition-colors " +
-              (activeTab === tab ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
-            }
-          >
-            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : t(($) => $.doc_file_list.issues)}
-          </button>
-        ))}
       </div>
       {(sessionFiles?.projects ?? []).length > 0 && (
         <div className="flex gap-1 overflow-x-auto border-b px-2 py-1.5" role="tablist" aria-label={t(($) => $.doc_file_list.projects_label)}>
@@ -245,6 +312,23 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           ))}
         </div>
       )}
+      <div className="grid grid-cols-3 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
+        {(["files", "attachments", "issues"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            onClick={() => setActiveTab(tab)}
+            className={
+              "border-b-2 px-2 py-1.5 text-caption transition-colors " +
+              (activeTab === tab ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
+            }
+          >
+            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : t(($) => $.doc_file_list.issues)}
+          </button>
+        ))}
+      </div>
       {activeTab === "issues" ? (
         <div className="flex-1 overflow-y-auto">
           {projectID && (projectIssues?.issues ?? []).length > 0 ? (
@@ -291,12 +375,15 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
             </div>
           )}
           {visibleRepoReferences.length > 0 && (
-            <ul className="divide-y">
+            <ul className="divide-y" aria-label="Git repositories">
               {visibleRepoReferences.map((repo) => (
                 <li key={repo.url}>
-                  <a href={repo.url} target="_blank" rel="noreferrer" className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50">
-                    <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-body">{repoLabel(repo)}</span>
+                  <a href={repo.url} target="_blank" rel="noreferrer" className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50">
+                    <GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-body font-medium">{repoLabel(repo)}</span>
+                      <span className="mt-0.5 block truncate text-caption text-muted-foreground">{repo.ref ? `⎇ ${repo.ref}` : t(($) => $.doc_file_list.git_repository)}</span>
+                    </span>
                   </a>
                 </li>
               ))}
@@ -305,19 +392,8 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           {showNoMatch ? (
             <div className="p-4 text-muted-foreground"><p className="text-body">{t(($) => $.doc_file_list.no_match)}</p></div>
           ) : visible.length > 0 ? (
-            <ul className="flex-1 divide-y overflow-y-auto">
-              {visible.map((doc) => {
-                const isActive = activeDoc?.id === doc.id && activeDoc?.kind === doc.kind;
-                const Icon = fileIcon(doc.contentType ?? "", doc.label);
-                return (
-                  <li key={`${doc.kind}:${doc.id}`}>
-                    <button type="button" onClick={() => openDoc(wsId, { ...doc })} aria-current={isActive ? "true" : undefined} className={"flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50" + (isActive ? " bg-accent/10" : "")}>
-                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-body">{doc.label}</span>
-                    </button>
-                  </li>
-                );
-              })}
+            <ul className="flex-1 overflow-y-auto" aria-label={t(($) => $.doc_file_list.project_files)}>
+              {renderTree(fileTree)}
             </ul>
           ) : (
             <div className="flex-1" />

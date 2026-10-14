@@ -19,7 +19,10 @@
     "saving": "保存中…",
     "discard": "放弃",
     "changed_reload": "文档已在别处修改，未保存你的更改。请刷新后重试。",
-    "save_failed": "保存失败。"
+    "save_failed": "保存失败。",
+    "add_to_chat": "添加到对话",
+    "add_selection_to_chat": "添加选中内容",
+    "ask_agent_to_edit": "让 Agent 修改"
   },
   "doc_file_list": {
     "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",
@@ -29,6 +32,7 @@
     "tabs_label": "\u804a\u5929\u6587\u4ef6",
     "projects_label": "\u9879\u76ee",
     "project_files": "\u9879\u76ee\u6587\u4ef6",
+    "git_repository": "Git \u4ed3\u5e93",
     "attachments": "\u5f53\u524d\u9644\u4ef6",
     "issues": "\u9879\u76ee\u95ee\u9898",
     "no_attachments": "\u5f53\u524d\u804a\u5929\u6682\u65e0\u9644\u4ef6",
@@ -208,7 +212,9 @@
     "history_group": "历史对话",
     "agent_filter_placeholder": "搜索智能体...",
     "agent_needs_runtime": "需绑定运行时",
-    "agent_needs_runtime_hint": "请先绑定运行时，再与该智能体开始对话"
+    "agent_needs_runtime_hint": "请先绑定运行时，再与该智能体开始对话",
+    "group_title_placeholder": "群聊名称（可选）",
+    "create_group": "创建群聊"
   },
   "empty_state": {
     "first_time_title": "和你的智能体对话",

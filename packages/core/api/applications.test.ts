@@ -83,6 +83,13 @@ describe("application API boundary", () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain(ticket);
   });
 
+  it("accepts public-origin launch URLs served under /app/:endpoint", async () => {
+    const ticket = "b".repeat(64);
+    const url = `https://apps.example.test/app/${applicationId}/.__multica/launch?ticket=${ticket}`;
+    respond({ url });
+    expect(await new ApiClient("https://api.test").launchApplication(workspaceId, projectId, applicationId)).toBe(url);
+  });
+
   it("rejects malformed log pages instead of displaying invalid output", async () => {
     const client = new ApiClient("https://api.test");
     respond({ text: "output", cursor: "host:0:6", gap: false });

@@ -20,7 +20,10 @@
     "saving": "Saving…",
     "discard": "Discard",
     "changed_reload": "The document changed elsewhere — your changes were not saved. Reload to try again.",
-    "save_failed": "Couldn't save changes."
+    "save_failed": "Couldn't save changes.",
+    "add_to_chat": "Add to chat",
+    "add_selection_to_chat": "Add selection",
+    "ask_agent_to_edit": "Ask agent to edit"
   },
   "doc_file_list": {
     "filter_placeholder": "Filter files",
@@ -30,6 +33,7 @@
     "tabs_label": "Chat files",
     "projects_label": "Projects",
     "project_files": "Project files",
+    "git_repository": "Git repository",
     "attachments": "Attachments",
     "issues": "Issues",
     "no_attachments": "No attachments in this chat",
@@ -213,7 +217,9 @@
     "history_group": "Chat history",
     "agent_filter_placeholder": "Search agents...",
     "agent_needs_runtime": "Needs runtime",
-    "agent_needs_runtime_hint": "Bind a runtime before starting a chat with this agent"
+    "agent_needs_runtime_hint": "Bind a runtime before starting a chat with this agent",
+    "group_title_placeholder": "Group name (optional)",
+    "create_group": "Create group"
   },
   "empty_state": {
     "first_time_title": "Chat with your agents",

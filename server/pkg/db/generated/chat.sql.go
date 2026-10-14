@@ -1030,6 +1030,37 @@ func (q *Queries) GetChatSessionInWorkspace(ctx context.Context, arg GetChatSess
 	return i, err
 }
 
+const getGroupCollaborationTaskCounts = `-- name: GetGroupCollaborationTaskCounts :one
+SELECT
+    count(*) FILTER (WHERE context->'group_collaboration'->>'phase' = 'specialist')::int AS specialist_total,
+    count(*) FILTER (WHERE context->'group_collaboration'->>'phase' = 'specialist'
+        AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred'))::int AS specialist_active,
+    count(*) FILTER (WHERE context->'group_collaboration'->>'phase' = 'synthesis')::int AS synthesis_total
+FROM agent_task_queue
+WHERE chat_session_id = $1
+  AND chat_input_task_id = $2
+`
+
+type GetGroupCollaborationTaskCountsParams struct {
+	ChatSessionID   pgtype.UUID `json:"chat_session_id"`
+	ChatInputTaskID pgtype.UUID `json:"chat_input_task_id"`
+}
+
+type GetGroupCollaborationTaskCountsRow struct {
+	SpecialistTotal  int32 `json:"specialist_total"`
+	SpecialistActive int32 `json:"specialist_active"`
+	SynthesisTotal   int32 `json:"synthesis_total"`
+}
+
+// A group turn is complete only after every specialist task has reached a
+// terminal state and no synthesis task has been created for the shared input.
+func (q *Queries) GetGroupCollaborationTaskCounts(ctx context.Context, arg GetGroupCollaborationTaskCountsParams) (GetGroupCollaborationTaskCountsRow, error) {
+	row := q.db.QueryRow(ctx, getGroupCollaborationTaskCounts, arg.ChatSessionID, arg.ChatInputTaskID)
+	var i GetGroupCollaborationTaskCountsRow
+	err := row.Scan(&i.SpecialistTotal, &i.SpecialistActive, &i.SynthesisTotal)
+	return i, err
+}
+
 const getLastChatTaskSession = `-- name: GetLastChatTaskSession :one
 WITH retired_sessions AS (
     SELECT DISTINCT r.retired_session_id AS session_id
@@ -1840,6 +1871,7 @@ SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_
             ELSE (SELECT count(*) FROM chat_message m
                     WHERE m.chat_session_id = cs.id
                       AND m.role = 'assistant'
+                      AND m.message_kind != 'channel_command'
                       AND m.created_at > cs.last_read_at)
        END::int AS unread_count,
        COALESCE(lm.content, '') AS last_message_content,
@@ -2744,6 +2776,7 @@ SELECT cs.id, cs.workspace_id, cs.agent_id, cs.creator_id, cs.title, cs.session_
        (SELECT count(*) FROM chat_message m
           WHERE m.chat_session_id = cs.id
             AND m.role = 'assistant'
+            AND m.message_kind != 'channel_command'
             AND m.created_at > cs.last_read_at)::int AS unread_count,
        COALESCE(lm.content, '') AS last_message_content,
        COALESCE(lm.role, '') AS last_message_role,
@@ -3999,6 +4032,88 @@ func (q *Queries) SetChatSessionPinned(ctx context.Context, arg SetChatSessionPi
 		&i.SquadID,
 		&i.Kind,
 		&i.IsProjectDefault,
+	)
+	return i, err
+}
+
+const setChatTaskInputOwner = `-- name: SetChatTaskInputOwner :one
+UPDATE agent_task_queue
+SET chat_input_task_id = $2
+WHERE id = $1
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot
+`
+
+type SetChatTaskInputOwnerParams struct {
+	ID              pgtype.UUID `json:"id"`
+	ChatInputTaskID pgtype.UUID `json:"chat_input_task_id"`
+}
+
+// Shares an immutable user-input batch with a parallel group participant task.
+// The user message remains owned by the lead task; every specialist reads the
+// same batch without relying on trailing-history timing.
+func (q *Queries) SetChatTaskInputOwner(ctx context.Context, arg SetChatTaskInputOwnerParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, setChatTaskInputOwner, arg.ID, arg.ChatInputTaskID)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.SquadID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.CommentThreadID,
+		&i.CancelledByType,
+		&i.CancelledByID,
+		&i.CancelledByName,
+		&i.IssueSnapshot,
 	)
 	return i, err
 }

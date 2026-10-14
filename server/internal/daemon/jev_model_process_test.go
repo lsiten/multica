@@ -13,6 +13,16 @@ import (
 
 type unavailableModels struct{ modelservice.Backend }
 
+func TestBackendUsableRejectsTypedNil(t *testing.T) {
+	var backend *modelservice.Client
+	if backendUsable(backend) {
+		t.Fatal("typed-nil model backend must not be admitted")
+	}
+	if !backendUsable(unavailableModels{}) {
+		t.Fatal("non-nil model backend was rejected")
+	}
+}
+
 func (unavailableModels) Catalog(context.Context) ([]jevmodels.Model, error) {
 	return nil, errors.New("model child unavailable")
 }

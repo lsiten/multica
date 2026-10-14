@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Check, Plus } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -16,6 +16,7 @@ import type { Agent } from "@multica/core/types";
 import { isAgentRuntimeBound } from "@multica/core/agents";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
+import { Input } from "@multica/ui/components/ui/input";
 
 /**
  * Agent picker: a searchable, grouped (My agents / Others) list of agents in a
@@ -28,6 +29,8 @@ export function AgentPicker({
   userId,
   currentAgentId,
   onSelect,
+  onSelectMany,
+  multiSelect = false,
   trigger,
   triggerRender,
   side = "bottom",
@@ -37,6 +40,8 @@ export function AgentPicker({
   userId: string | undefined;
   currentAgentId?: string;
   onSelect: (agent: Agent) => void;
+  onSelectMany?: (agents: Agent[], title?: string) => void;
+  multiSelect?: boolean;
   trigger: React.ReactNode;
   triggerRender: React.ReactElement;
   side?: "top" | "bottom";
@@ -45,6 +50,8 @@ export function AgentPicker({
   const { t } = useT("chat");
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [groupTitle, setGroupTitle] = useState("");
   const { mine, others } = useMemo(() => {
     const mine: Agent[] = [];
     const others: Agent[] = [];
@@ -62,7 +69,21 @@ export function AgentPicker({
   const filteredOthers = others.filter((agent) => matches(agent.name));
 
   const handlePick = (agent: Agent) => {
+    if (multiSelect) {
+      setSelectedIds((ids) => ids.includes(agent.id) ? ids.filter((id) => id !== agent.id) : [...ids, agent.id]);
+      return;
+    }
     onSelect(agent);
+    setOpen(false);
+  };
+
+  const handleCreateGroup = () => {
+    const selected = agents.filter((agent) => selectedIds.includes(agent.id) && isAgentRuntimeBound(agent));
+    if (selected.length < 2 || !onSelectMany) return;
+    onSelectMany(selected, groupTitle.trim() || undefined);
+    setSelectedIds([]);
+    setGroupTitle("");
+    setFilter("");
     setOpen(false);
   };
 
@@ -89,7 +110,8 @@ export function AgentPicker({
                 <AgentPickerItem
                   key={agent.id}
                   agent={agent}
-                  isCurrent={agent.id === currentAgentId}
+                  isCurrent={agent.id === currentAgentId || selectedIds.includes(agent.id)}
+                  multiSelect={multiSelect}
                   onSelect={handlePick}
                 />
               ))}
@@ -101,13 +123,22 @@ export function AgentPicker({
                 <AgentPickerItem
                   key={agent.id}
                   agent={agent}
-                  isCurrent={agent.id === currentAgentId}
+                  isCurrent={agent.id === currentAgentId || selectedIds.includes(agent.id)}
+                  multiSelect={multiSelect}
                   onSelect={handlePick}
                 />
               ))}
             </PickerSection>
           )}
         </>
+      )}
+      {multiSelect && (
+        <div className="border-t p-2 space-y-2">
+          <Input value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} placeholder={t(($) => $.window.group_title_placeholder)} aria-label={t(($) => $.window.group_title_placeholder)} />
+          <Button type="button" size="sm" className="w-full" disabled={selectedIds.length < 2} onClick={handleCreateGroup}>
+            {t(($) => $.window.create_group)}{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+          </Button>
+        </div>
       )}
     </PropertyPicker>
   );
@@ -116,10 +147,12 @@ export function AgentPicker({
 function AgentPickerItem({
   agent,
   isCurrent,
+  multiSelect,
   onSelect,
 }: {
   agent: Agent;
   isCurrent: boolean;
+  multiSelect: boolean;
   onSelect: (agent: Agent) => void;
 }) {
   const { t } = useT("chat");
@@ -141,6 +174,7 @@ function AgentPickerItem({
         showStatusDot
       />
       <span className="truncate flex-1">{agent.name}</span>
+      {multiSelect && isCurrent && <Check className="h-4 w-4 shrink-0 text-primary" />}
       {!runtimeBound && (
         <span className="shrink-0 text-micro text-amber-600 dark:text-amber-400">
           {t(($) => $.window.agent_needs_runtime)}

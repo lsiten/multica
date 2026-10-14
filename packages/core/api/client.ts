@@ -846,7 +846,10 @@ export class ApiClient {
     const receipt = parseWithFallback<{ url: string } | null>(raw, applicationLaunchSchema, null, { endpoint: "POST /api/applications/:id/endpoints/:endpointId/launch", redactPayload: true });
     if (!receipt) throw new Error("Invalid application launch receipt");
     const address = new URL(receipt.url);
-    if (!address.hostname.startsWith(`${endpointId}.`) || address.username || address.password || address.hash || address.pathname !== "/.__multica/launch" || [...address.searchParams.keys()].length !== 1 || !/^[a-f0-9]{64}$/.test(address.searchParams.get("ticket") ?? "") || address.protocol !== "https:" && !(address.protocol === "http:" && address.hostname.endsWith(".localhost"))) throw new Error("Invalid application launch URL");
+    const dedicatedPath = address.hostname.startsWith(`${endpointId}.`) && address.pathname === "/.__multica/launch";
+    const publicOriginPath = address.pathname === `/app/${endpointId}/.__multica/launch`;
+    const safeProtocol = address.protocol === "https:" || (address.protocol === "http:" && address.hostname.endsWith(".localhost"));
+    if ((!dedicatedPath && !publicOriginPath) || address.username || address.password || address.hash || [...address.searchParams.keys()].length !== 1 || !/^[a-f0-9]{64}$/.test(address.searchParams.get("ticket") ?? "") || !safeProtocol) throw new Error("Invalid application launch URL");
     return receipt.url;
   }
 
@@ -4440,6 +4443,7 @@ export class ApiClient {
       agent_id: string;
       title?: string;
       project_id?: string | null;
+      squad_id?: string | null;
       participants?: { member_type: "member" | "agent"; member_id: string }[];
     },
     workspaceSlug?: string,

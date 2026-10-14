@@ -19,7 +19,10 @@
     "saving": "저장 중…",
     "discard": "버리기",
     "changed_reload": "문서가 다른 곳에서 변경되었습니다. 변경사항이 저장되지 않았습니다. 새로고침 후 다시 시도하세요.",
-    "save_failed": "변경을 저장할 수 없습니다."
+    "save_failed": "변경을 저장할 수 없습니다.",
+    "add_to_chat": "채팅에 추가",
+    "add_selection_to_chat": "선택 영역 추가",
+    "ask_agent_to_edit": "에이전트에게 편집 요청"
   },
   "doc_file_list": {
     "filter_placeholder": "\ud30c\uc77c \ud544\ud130",
@@ -201,7 +204,9 @@
     "history_group": "채팅 기록",
     "agent_filter_placeholder": "에이전트 검색...",
     "agent_needs_runtime": "런타임 필요",
-    "agent_needs_runtime_hint": "이 에이전트와 채팅하기 전에 런타임을 연결하세요"
+    "agent_needs_runtime_hint": "이 에이전트와 채팅하기 전에 런타임을 연결하세요",
+    "group_title_placeholder": "그룹 이름(선택 사항)",
+    "create_group": "그룹 만들기"
   },
   "empty_state": {
     "first_time_title": "에이전트와 채팅하기",

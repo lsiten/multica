@@ -115,6 +115,7 @@ SELECT cs.*,
        (SELECT count(*) FROM chat_message m
           WHERE m.chat_session_id = cs.id
             AND m.role = 'assistant'
+            AND m.message_kind != 'channel_command'
             AND m.created_at > cs.last_read_at)::int AS unread_count,
        COALESCE(lm.content, '') AS last_message_content,
        COALESCE(lm.role, '') AS last_message_role,
@@ -151,6 +152,7 @@ SELECT cs.*,
             ELSE (SELECT count(*) FROM chat_message m
                     WHERE m.chat_session_id = cs.id
                       AND m.role = 'assistant'
+                      AND m.message_kind != 'channel_command'
                       AND m.created_at > cs.last_read_at)
        END::int AS unread_count,
        COALESCE(lm.content, '') AS last_message_content,
@@ -1366,6 +1368,27 @@ UPDATE agent_task_queue
 SET chat_input_task_id = id
 WHERE id = $1
 RETURNING *;
+
+-- name: SetChatTaskInputOwner :one
+-- Shares an immutable user-input batch with a parallel group participant task.
+-- The user message remains owned by the lead task; every specialist reads the
+-- same batch without relying on trailing-history timing.
+UPDATE agent_task_queue
+SET chat_input_task_id = $2
+WHERE id = $1
+RETURNING *;
+
+-- name: GetGroupCollaborationTaskCounts :one
+-- A group turn is complete only after every specialist task has reached a
+-- terminal state and no synthesis task has been created for the shared input.
+SELECT
+    count(*) FILTER (WHERE context->'group_collaboration'->>'phase' = 'specialist')::int AS specialist_total,
+    count(*) FILTER (WHERE context->'group_collaboration'->>'phase' = 'specialist'
+        AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred'))::int AS specialist_active,
+    count(*) FILTER (WHERE context->'group_collaboration'->>'phase' = 'synthesis')::int AS synthesis_total
+FROM agent_task_queue
+WHERE chat_session_id = $1
+  AND chat_input_task_id = $2;
 
 -- name: GetLastChatTaskSession :one
 -- Returns the most recent task in this chat session that managed to record a

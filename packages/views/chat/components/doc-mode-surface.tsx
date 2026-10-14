@@ -1,6 +1,6 @@
 "use client";
 
-import { X, GitCompare, Loader2, Pencil } from "lucide-react";
+import { X, GitCompare, Loader2, Pencil, MessageSquareQuote } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
@@ -21,7 +21,8 @@ import type { DocumentContentVersion } from "@multica/core/api/document-content-
 import { RichContent } from "../../rich-content";
 import { Attachment } from "../../editor/attachment";
 import { useT } from "../../i18n";
-import { requestReviewPage } from "../../platform/local-review-pages";
+import { applyReviewFileEdit, requestReviewPage } from "../../platform/local-review-pages";
+import { createSafeId } from "@multica/core/utils";
 import { ApiError } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import { FileViewer } from "../../skills/components/file-viewer";
@@ -32,6 +33,17 @@ import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
 // document is open — that is what lets the early return below obey the rules
 // of hooks.
 const EMPTY_DOC = { kind: "issue" as const, id: "" };
+
+function fileContentText(value: unknown): string | null {
+  if (!value || typeof value !== "object" || !("content" in value)) return null;
+  const content = value.content;
+  if (!content || typeof content !== "object" || !("text" in content) || typeof content.text !== "string") return null;
+  return content.text;
+}
+
+function textCodeBlock(content: string): string {
+  return ["```text", content, "```"].join("\n");
+}
 
 /**
  * DocModeSurface — the confirmed v12 "based-on-document" surface.
@@ -46,7 +58,7 @@ const EMPTY_DOC = { kind: "issue" as const, id: "" };
  * shows the version history so the user can compare and roll back (D8/D9).
  * Closing (X) is the only way out — an edit completing never auto-closes (D9).
  */
-export function DocModeSurface({ wsId }: { wsId: string }) {
+export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToChat?: (content: string) => Promise<boolean> }) {
   const { t } = useT("chat");
   const doc = useDocModeStore(selectActiveDocument(wsId));
   const working = useDocModeStore(selectWorking(wsId));
@@ -58,6 +70,10 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
   const [editing, setEditing] = useState(false);
   const [edited, setEdited] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [workspaceEditing, setWorkspaceEditing] = useState(false);
+  const [workspaceEdited, setWorkspaceEdited] = useState("");
+  const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
 
   // Hooks must run unconditionally; the empty id disables the queries below.
   const activeRef = doc ?? EMPTY_DOC;
@@ -70,21 +86,72 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
   const workspaceTask = doc?.kind === "workspace_file"
     ? [...(sessionFiles?.project_tasks ?? []), ...(sessionFiles?.tasks ?? [])].find((task) => task.id === doc.taskId && task.work_dir)
     : undefined;
+  const workspacePath = workspaceTask?.work_dir ?? doc?.workDir;
+  const workspaceRuntimeId = workspaceTask?.runtime_id ?? doc?.runtimeId;
+  const workspaceRequest =
+    doc?.kind === "workspace_file" &&
+    workspacePath &&
+    workspaceRuntimeId &&
+    doc.taskId &&
+    doc.relativePath
+      ? {
+          task_id: doc.taskId,
+          workspace_id: wsId,
+          runtime_id: workspaceRuntimeId,
+          path: workspacePath,
+          action: "file_content" as const,
+          relative_path: doc.relativePath,
+          offset: 0,
+          limit: 256 * 1024,
+        }
+      : null;
   const workspaceContent = useQuery({
     queryKey: ["chat-workspace-file-content", wsId, doc?.id, doc?.relativePath],
-    queryFn: () => requestReviewPage({
-      task_id: workspaceTask!.id,
-      workspace_id: wsId,
-      runtime_id: workspaceTask!.runtime_id,
-      path: workspaceTask!.work_dir!,
-      action: "file_content",
-      relative_path: doc!.relativePath!,
-      offset: 0,
-      limit: 256 * 1024,
-    }),
-    enabled: doc?.kind === "workspace_file" && !!workspaceTask && !!doc.relativePath,
+    queryFn: () =>
+      workspaceRequest
+        ? requestReviewPage(workspaceRequest)
+        : Promise.reject(new Error("workspace file reference is incomplete")),
+    enabled: !!workspaceRequest,
     staleTime: 15_000,
   });
+
+  const openWorkspaceEdit = useCallback(() => {
+    if (fileContentText(workspaceContent.data) === null) return;
+    setWorkspaceEdited(fileContentText(workspaceContent.data) ?? "");
+    setWorkspaceSaveError(null);
+    setWorkspaceEditing(true);
+  }, [workspaceContent.data]);
+
+  const saveWorkspaceEdit = useCallback(async () => {
+    if (!doc || doc.kind !== "workspace_file" || !workspacePath || !workspaceRuntimeId || !workspaceRequest) return;
+    setWorkspaceSaving(true);
+    setWorkspaceSaveError(null);
+    try {
+      const result = await applyReviewFileEdit({
+        task_id: workspaceRequest.task_id,
+        workspace_id: workspaceRequest.workspace_id,
+        runtime_id: workspaceRequest.runtime_id,
+        path: workspaceRequest.path,
+        target: "HEAD",
+        relative_path: workspaceRequest.relative_path,
+        command_id: createSafeId(),
+        action: "merge_edit",
+        edit_base: fileContentText(workspaceContent.data) ?? "",
+        edit_new: workspaceEdited,
+      });
+      if (result?.conflict) {
+        setWorkspaceSaveError("changed_reload");
+        await workspaceContent.refetch();
+        return;
+      }
+      setWorkspaceEditing(false);
+      await workspaceContent.refetch();
+    } catch {
+      setWorkspaceSaveError("save_failed");
+    } finally {
+      setWorkspaceSaving(false);
+    }
+  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEdited]);
 
   const openEdit = useCallback(() => {
     if (!current.data?.content) return;
@@ -130,19 +197,53 @@ export function DocModeSurface({ wsId }: { wsId: string }) {
       <div className="flex h-full flex-col min-h-0">
         <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
           <h2 className="truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
+        <div className="flex items-center gap-1">
+          {fileContentText(workspaceContent.data) !== null && (
+            <Button variant={workspaceEditing ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={openWorkspaceEdit}>
+              <Pencil className="h-4 w-4" />
+              {t(($) => $.doc_mode.edit)}
+            </Button>
+          )}
+          {onSendToChat && fileContentText(workspaceContent.data) !== null && (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => void onSendToChat(`请查看文件 ${doc.relativePath ?? doc.label}\n\n${textCodeBlock(fileContentText(workspaceContent.data) ?? "")}`)}>
+              <MessageSquareQuote className="h-4 w-4" />
+              {t(($) => $.doc_mode.add_to_chat)}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => closeDoc(wsId)}>
             <X className="h-4 w-4" />
             {t(($) => $.doc_mode.close)}
           </Button>
         </div>
+        </div>
+      {workspaceEditing ? (
+        <DocEdit
+          label={doc.relativePath ?? doc.label ?? "File"}
+          content={workspaceEdited}
+          dirty={workspaceEdited !== (fileContentText(workspaceContent.data) ?? "")}
+          saving={workspaceSaving}
+          error={workspaceSaveError}
+          onChange={setWorkspaceEdited}
+          onSave={() => void saveWorkspaceEdit()}
+          onCancel={() => { setWorkspaceEditing(false); setWorkspaceSaveError(null); }}
+          saveLabel={t(($) => $.doc_mode.save)}
+          savingLabel={t(($) => $.doc_mode.saving)}
+          discardLabel={t(($) => $.doc_mode.discard)}
+          changeLabel={t(($) => $.doc_mode.changed_reload)}
+          failLabel={t(($) => $.doc_mode.save_failed)}
+        />
+      ) : (
         <WorkspaceFileBody
-          loading={workspaceContent.isLoading || (!!doc.taskId && !sessionFiles)}
-          error={workspaceContent.isError || !workspaceTask}
+          loading={workspaceContent.isLoading || (!!doc.taskId && !sessionFiles && !workspacePath)}
+          error={workspaceContent.isError || !workspacePath || !workspaceRuntimeId}
           content={fileContent?.text ?? null}
           truncated={fileContent?.has_more ?? false}
           total={fileContent?.size ?? 0}
           label={doc.relativePath ?? doc.label ?? "File"}
+          onAddToChat={onSendToChat ? (selection) => void onSendToChat(`请查看文件 ${doc.relativePath ?? doc.label} 的以下内容：\n\n${textCodeBlock(selection)}`) : undefined}
+          onAskAgent={onSendToChat ? (selection) => void onSendToChat(`请修改文件 ${doc.relativePath ?? doc.label} 中选中的内容。先基于以下选区给出修改方案和预期 diff，完成修改后等待用户确认，不要扩展到其它文件。\n\n选区：\n${textCodeBlock(selection)}`) : undefined}
         />
+      )}
       </div>
     );
   }
@@ -309,6 +410,8 @@ function WorkspaceFileBody({
   truncated,
   total,
   label,
+  onAddToChat,
+  onAskAgent,
 }: {
   loading: boolean;
   error: boolean;
@@ -316,8 +419,11 @@ function WorkspaceFileBody({
   truncated: boolean;
   total: number;
   label: string;
+  onAddToChat?: (selection: string) => void;
+  onAskAgent?: (selection: string) => void;
 }) {
   const { t } = useT("chat");
+  const [selection, setSelection] = useState<string | null>(null);
   if (loading) {
     return <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   }
@@ -326,7 +432,29 @@ function WorkspaceFileBody({
   }
   return (
     <div className="flex h-full flex-col min-h-0">
-      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-6 font-mono text-caption">{content}</pre>
+      <pre
+        className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-6 font-mono text-caption"
+        onMouseUp={() => {
+          const selected = window.getSelection()?.toString().trim() ?? "";
+          setSelection(selected || null);
+        }}
+      >{content}</pre>
+      {selection && (onAddToChat || onAskAgent) && (
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
+          {onAddToChat && (
+            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => { onAddToChat(selection); setSelection(null); }}>
+              <MessageSquareQuote className="h-4 w-4" />
+              {t(($) => $.doc_mode.add_selection_to_chat)}
+            </Button>
+          )}
+          {onAskAgent && (
+            <Button size="sm" className="gap-1.5" onClick={() => { onAskAgent(selection); setSelection(null); }}>
+              <Pencil className="h-4 w-4" />
+              {t(($) => $.doc_mode.ask_agent_to_edit)}
+            </Button>
+          )}
+        </div>
+      )}
       {truncated && (
         <p className="border-t px-6 py-2 text-caption text-muted-foreground">
           {t(($) => $.doc_mode.truncated, { total: formatBytes(total) })}

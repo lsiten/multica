@@ -394,6 +394,9 @@ export function useChatController(opts?: { isActive?: boolean }) {
     agent: activeAgent,
     selectedSquadId: candidateSquadId,
   });
+  const projectBindingsById = new Map(
+    projects.map((project, index) => [project.id, projectScopeQueries[index]?.data]),
+  );
   const executionScopeLoaded =
     projectsLoaded && squadsLoaded && projectScopeQueries.every((query) => query.isSuccess || query.isError);
   const availableProjects = executionScopeLoaded
@@ -842,16 +845,36 @@ export function useChatController(opts?: { isActive?: boolean }) {
   // group may be standalone; requested participants (if any) are added alongside
   // the creator by the server.
   const handleStartNewGroupChat = useCallback(
-    (agent: Agent, participants?: { member_type: "member" | "agent"; member_id: string }[]) => {
+    (agent: Agent, selectedAgents: Agent[] = [agent], title?: string) => {
       uiLogger.info("startNewGroupChat", {
         agentId: agent.id,
         previousSessionId: activeSessionId,
       });
       setSelectedAgentId(agent.id);
-      setSelectedProjectId(null);
-      setSelectedSquadId(null);
+      const targetScope = resolveChatExecutionScope({
+        projects,
+        squads,
+        bindingsByProject: projectBindingsById,
+        agent,
+        selectedSquadId: activeSquadId,
+      });
+      const projectId = targetScope.availableProjects.some((project) => project.id === activeProjectId)
+        ? activeProjectId
+        : targetScope.defaultProjectId;
+      const squadId = targetScope.availableSquads.some((squad) => squad.id === activeSquadId)
+        ? activeSquadId
+        : targetScope.defaultSquadId;
+      const agentParticipants = selectedAgents
+        .filter((candidate) => candidate.id !== agent.id)
+        .map((candidate) => ({ member_type: "agent" as const, member_id: candidate.id }));
       createGroupSession.mutate(
-        { agent_id: agent.id, participants },
+        {
+          agent_id: agent.id,
+          title,
+          project_id: projectId,
+          squad_id: squadId,
+          participants: agentParticipants,
+        },
         {
           onSuccess: (session) => {
             setActiveSession(session.id);
@@ -862,11 +885,15 @@ export function useChatController(opts?: { isActive?: boolean }) {
     },
     [
       activeSessionId,
+      activeProjectId,
+      activeSquadId,
+      availableAgents,
       createGroupSession,
+      projectBindingsById,
+      projects,
       requestInputFocus,
+      squads,
       setSelectedAgentId,
-      setSelectedProjectId,
-      setSelectedSquadId,
       setActiveSession,
     ],
   );

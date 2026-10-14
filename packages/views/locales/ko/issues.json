@@ -1,6 +1,7 @@
 {
 
   "requirement": {
+    "task": "작업",
     "marker": "요구사항",
     "marker_short": "R",
     "pending_confirm": "확인 대기",

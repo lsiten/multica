@@ -19,7 +19,10 @@
     "saving": "保存中…",
     "discard": "破棄",
     "changed_reload": "ドキュメントが別の場所で変更されました。あなたの変更は保存されていません。再読み込みして再度お試しください。",
-    "save_failed": "変更を保存できませんでした。"
+    "save_failed": "変更を保存できませんでした。",
+    "add_to_chat": "チャットに追加",
+    "add_selection_to_chat": "選択範囲を追加",
+    "ask_agent_to_edit": "エージェントに編集を依頼"
   },
   "doc_file_list": {
     "filter_placeholder": "\u30d5\u30a1\u30a4\u30eb\u3092\u30d5\u30a3\u30eb\u30bf\u30fc",
@@ -201,7 +204,9 @@
     "history_group": "チャット履歴",
     "agent_filter_placeholder": "エージェントを検索...",
     "agent_needs_runtime": "ランタイム未設定",
-    "agent_needs_runtime_hint": "このエージェントとチャットする前にランタイムを設定してください"
+    "agent_needs_runtime_hint": "このエージェントとチャットする前にランタイムを設定してください",
+    "group_title_placeholder": "グループ名（任意）",
+    "create_group": "グループを作成"
   },
   "empty_state": {
     "first_time_title": "エージェントとチャット",

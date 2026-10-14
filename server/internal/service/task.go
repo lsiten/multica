@@ -2431,6 +2431,26 @@ func (s *TaskService) SendDirectChatMessage(
 			return nil, fmt.Errorf("marshal chat autonomy policy: %w", err)
 		}
 	}
+	if session.Kind == "group" {
+		var contextEnvelope map[string]any
+		if len(taskContext) > 0 {
+			if err := json.Unmarshal(taskContext, &contextEnvelope); err != nil {
+				return nil, fmt.Errorf("decode group chat task context: %w", err)
+			}
+		} else {
+			contextEnvelope = make(map[string]any)
+		}
+		contextEnvelope["group_collaboration"] = map[string]string{
+			"phase":           "lead_plan",
+			"lead_agent_id":   util.UUIDToString(session.AgentID),
+			"chat_session_id": util.UUIDToString(session.ID),
+		}
+		var err error
+		taskContext, err = json.Marshal(contextEnvelope)
+		if err != nil {
+			return nil, fmt.Errorf("marshal group chat task context: %w", err)
+		}
+	}
 	// Build the per-task Composio overlay before the transaction — it can do
 	// network I/O and must not run with a DB transaction open.
 	overlay := s.buildRuntimeMCPOverlay(ctx, initiatorUserID, agent)
@@ -2631,6 +2651,172 @@ func (s *TaskService) SendDirectChatMessage(
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, out.Task)
 	s.NotifyTaskEnqueued(ctx, out.Task)
 	return &out, nil
+}
+
+// enqueueGroupParticipantTasks fans a group turn out to every agent participant
+// except the session's lead. It is deliberately best-effort: an unavailable
+// specialist must not make the human's lead turn fail, and the lead can still
+// report the missing specialist in the shared room.
+func (s *TaskService) enqueueGroupParticipantTasks(ctx context.Context, session db.ChatSession, initiatorUserID, inputTaskID pgtype.UUID) {
+	participants, err := s.Queries.ListGroupParticipants(ctx, session.ID)
+	if err != nil {
+		slog.Warn("group chat: list participants failed", "chat_session_id", util.UUIDToString(session.ID), "error", err)
+		return
+	}
+	type prepared struct {
+		agent db.Agent
+		prep  PreparedChatTaskEnqueue
+	}
+	preparedAgents := make([]prepared, 0, len(participants))
+	for _, participant := range participants {
+		if participant.MemberType != "agent" || participant.MemberID == session.AgentID {
+			continue
+		}
+		agent, loadErr := s.Queries.GetAgent(ctx, participant.MemberID)
+		if loadErr != nil || agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
+			continue
+		}
+		preparedTask, prepareErr := s.PrepareChatTaskEnqueue(ctx, agent.ID, initiatorUserID)
+		if prepareErr != nil {
+			continue
+		}
+		preparedAgents = append(preparedAgents, prepared{agent: agent, prep: preparedTask})
+	}
+	if len(preparedAgents) == 0 {
+		return
+	}
+
+	tasks := make([]db.AgentTaskQueue, 0, len(preparedAgents))
+	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
+		for _, item := range preparedAgents {
+			contextPayload, marshalErr := json.Marshal(map[string]any{
+				"group_collaboration": map[string]string{
+					"phase":           "specialist",
+					"lead_agent_id":   util.UUIDToString(session.AgentID),
+					"chat_session_id": util.UUIDToString(session.ID),
+				},
+			})
+			if marshalErr != nil {
+				return marshalErr
+			}
+			task, createErr := qtx.CreateChatTask(ctx, db.CreateChatTaskParams{
+				ID:                   dbid.NewV7(),
+				AgentID:              item.agent.ID,
+				RuntimeID:            item.agent.RuntimeID,
+				Priority:             2,
+				ChatSessionID:        session.ID,
+				InitiatorUserID:      initiatorUserID,
+				OriginatorUserID:     initiatorUserID,
+				AccountableUserID:    item.prep.accountableUser,
+				Context:              contextPayload,
+				RuntimeMcpOverlay:    item.prep.runtimeOverlay.Overlay,
+				RuntimeConnectedApps: item.prep.runtimeOverlay.ConnectedApps,
+				OriginatorSource:     item.prep.attrSource,
+				TriggerEvidenceKind:  item.prep.attrEvidenceKind,
+			})
+			if createErr != nil {
+				return createErr
+			}
+			task, createErr = qtx.SetChatTaskInputOwner(ctx, db.SetChatTaskInputOwnerParams{ID: task.ID, ChatInputTaskID: inputTaskID})
+			if createErr != nil {
+				return createErr
+			}
+			tasks = append(tasks, task)
+		}
+		return nil
+	}); err != nil {
+		slog.Warn("group chat: enqueue specialists failed", "chat_session_id", util.UUIDToString(session.ID), "error", err)
+		return
+	}
+	for _, task := range tasks {
+		s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
+		s.NotifyTaskEnqueued(ctx, task)
+	}
+}
+
+// maybeAdvanceGroupCollaboration is the durable group coordinator. The lead
+// gets the first turn to publish a plan, then specialists run against the same
+// immutable user-input batch. Once every specialist is terminal, exactly one
+// synthesis task is queued for the lead so the final answer is delivered by
+// the manager in the shared room.
+func (s *TaskService) maybeAdvanceGroupCollaboration(ctx context.Context, task db.AgentTaskQueue) {
+	if !task.ChatSessionID.Valid || !task.ChatInputTaskID.Valid || len(task.Context) == 0 {
+		return
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(task.Context, &envelope); err != nil {
+		return
+	}
+	group, ok := envelope["group_collaboration"].(map[string]any)
+	if !ok {
+		return
+	}
+	phase, _ := group["phase"].(string)
+	switch phase {
+	case "lead_plan":
+		session, err := s.Queries.GetChatSession(ctx, task.ChatSessionID)
+		if err != nil || session.Kind != "group" {
+			return
+		}
+		s.enqueueGroupParticipantTasks(ctx, session, task.InitiatorUserID, task.ChatInputTaskID)
+	case "specialist":
+		leadAgentID, _ := group["lead_agent_id"].(string)
+		leadUUID, parseErr := util.ParseUUID(leadAgentID)
+		if parseErr == nil {
+			s.enqueueGroupLeadSynthesis(ctx, task, leadUUID)
+		}
+	}
+}
+
+func (s *TaskService) enqueueGroupLeadSynthesis(ctx context.Context, specialist db.AgentTaskQueue, leadAgentID pgtype.UUID) {
+	prepared, err := s.PrepareChatTaskEnqueue(ctx, leadAgentID, specialist.InitiatorUserID)
+	if err != nil || s.TxStarter == nil {
+		return
+	}
+	var synthesis db.AgentTaskQueue
+	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
+		if _, err := qtx.LockChatSessionForEnqueue(ctx, specialist.ChatSessionID); err != nil {
+			return err
+		}
+		counts, err := qtx.GetGroupCollaborationTaskCounts(ctx, db.GetGroupCollaborationTaskCountsParams{
+			ChatSessionID:   specialist.ChatSessionID,
+			ChatInputTaskID: specialist.ChatInputTaskID,
+		})
+		if err != nil || counts.SpecialistTotal == 0 || counts.SpecialistActive > 0 || counts.SynthesisTotal > 0 {
+			return err
+		}
+		lead, err := qtx.GetAgentForClaimUpdate(ctx, leadAgentID)
+		if err != nil || !lead.RuntimeID.Valid {
+			return err
+		}
+		payload, err := json.Marshal(map[string]any{
+			"group_collaboration": map[string]string{
+				"phase":           "synthesis",
+				"lead_agent_id":   util.UUIDToString(lead.ID),
+				"chat_session_id": util.UUIDToString(specialist.ChatSessionID),
+			},
+		})
+		if err != nil {
+			return err
+		}
+		synthesis, err = qtx.CreateChatTask(ctx, db.CreateChatTaskParams{
+			ID: dbid.NewV7(), AgentID: lead.ID, RuntimeID: lead.RuntimeID, Priority: 2,
+			ChatSessionID: specialist.ChatSessionID, InitiatorUserID: specialist.InitiatorUserID,
+			OriginatorUserID: specialist.OriginatorUserID, AccountableUserID: prepared.accountableUser,
+			Context: payload, RuntimeMcpOverlay: prepared.runtimeOverlay.Overlay,
+			RuntimeConnectedApps: prepared.runtimeOverlay.ConnectedApps, OriginatorSource: prepared.attrSource,
+			TriggerEvidenceKind: prepared.attrEvidenceKind, TriggerEvidenceRefID: specialist.ChatSessionID,
+		})
+		if err != nil {
+			return err
+		}
+		synthesis, err = qtx.SetChatTaskInputOwner(ctx, db.SetChatTaskInputOwnerParams{ID: synthesis.ID, ChatInputTaskID: specialist.ChatInputTaskID})
+		return err
+	}); err != nil || !synthesis.ID.Valid {
+		return
+	}
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, synthesis)
+	s.NotifyTaskEnqueued(ctx, synthesis)
 }
 
 // MikaOnboardingOpenResult carries the two rows that open a Mika conversation.
@@ -4780,6 +4966,9 @@ func (s *TaskService) CompleteTaskWithTransition(ctx context.Context, taskID pgt
 			// Detached: the reply is already delivered and the user's next turn
 			// must never wait on suggestions.
 			s.GenerateChatQuickActionsAsync(task, ChatQuickActionsAutomatic)
+		}
+		if chatAssistantMsg != nil {
+			s.maybeAdvanceGroupCollaboration(ctx, task)
 		}
 	}
 

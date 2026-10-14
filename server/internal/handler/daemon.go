@@ -3135,6 +3135,12 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 		resp.ChatSessionID = uuidToString(cs.ID)
 		resp.ThreadName = cs.Title
+		if cs.Kind == "group" {
+			// Web group chats do not have a channel delivery snapshot. Marking
+			// the audience here keeps every participant's prompt aware that the
+			// transcript is shared and that replies are visible to the room.
+			resp.ChatType = "group"
+		}
 		// Legacy compatibility: agent creation no longer creates intro chats,
 		// but historical is_agent_intro sessions can still be resumed. Such a
 		// session carries no user message on its opening turn, so flag it for

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -26,20 +27,32 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 	// separate-process failure does not permanently mask it with the
 	// in-process fallback (an account that was unreachable at startup
 	// becomes reachable later).
-	if d.jevModels != nil {
+	if backendUsable(d.jevModels) {
 		return d.jevModels, nil
+	}
+	if d.jevModels != nil {
+		// An interface can be non-nil while holding a nil *Client after a
+		// failed/restarted AI process. Treat that state as unavailable instead
+		// of allowing the task runner to call through a nil receiver.
+		d.jevModels = nil
+		if d.jevModelsErr == nil {
+			d.jevModelsErr = errors.New("ai model backend is unavailable")
+		}
 	}
 	// The in-process fallback bridges a separate-process failure so the model
 	// stays available (fail-closed). While the backoff has not elapsed keep
 	// returning it instead of a retry error; when it has elapsed re-probe the
 	// separate process below rather than reusing the fallback forever, so the
 	// split service is eventually used instead of being masked in-process.
-	if d.jevModelsFallback != nil {
+	if backendUsable(d.jevModelsFallback) {
 		if time.Now().Before(d.jevModelRetryAt) {
 			return d.jevModelsFallback, nil
 		}
 	} else if time.Now().Before(d.jevModelRetryAt) {
 		return nil, d.jevModelsErr
+	}
+	if d.jevModelsFallback != nil && !backendUsable(d.jevModelsFallback) {
+		d.jevModelsFallback = nil
 	}
 	profile := strings.NewReplacer("/", "_", "\\", "_").Replace(d.cfg.Profile)
 	if profile == "" {
@@ -68,7 +81,7 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 			// passing the canceled run context here would kill it before
 			// authenticated Stop can clean up.
 			d.jevModels, processErr = modelservice.Launch(context.Background(), root, runtimeproc.Scope{Backend: d.cfg.ServerBaseURL, Account: account.ID, Profile: d.cfg.Profile, DaemonID: d.cfg.DaemonID, Service: "ai"}, d.cfg.NativeHostExecutable, d.cfg.NativeHostBuild)
-			if d.jevModels != nil {
+			if backendUsable(d.jevModels) {
 				// The split process recovered: retire the bridging fallback so
 				// the split service is used, not the in-process one.
 				if d.jevModelsFallback != nil {
@@ -86,7 +99,7 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 	// Bridge the separate-process failure with the in-process manager so the
 	// model stays available; it is re-probed on the backoff and is never
 	// cached as the permanent owner, so the split service is not masked.
-	if d.jevModelsFallback == nil {
+	if !backendUsable(d.jevModelsFallback) {
 		manager, err := jevmodels.New(context.Background(), jevmodels.Config{RootDir: root, PythonPath: python})
 		if err == nil {
 			d.jevModelsFallback = &modelservice.Local{Manager: manager}
@@ -99,7 +112,7 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 	// available, so the timer drives a re-probe rather than a surfaced failure.
 	d.jevModelFailures++
 	d.jevModelRetryAt = time.Now().Add(reportRetryDelay(d.jevModelFailures, processErr))
-	if d.jevModelsFallback != nil {
+	if backendUsable(d.jevModelsFallback) {
 		d.jevModelsErr = nil
 		return d.jevModelsFallback, nil
 	}
@@ -107,18 +120,31 @@ func (d *Daemon) jevModelManager() (modelservice.Backend, error) {
 	return nil, d.jevModelsErr
 }
 
+func backendUsable(backend modelservice.Backend) bool {
+	if backend == nil {
+		return false
+	}
+	value := reflect.ValueOf(backend)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return !value.IsNil()
+	default:
+		return true
+	}
+}
+
 func (d *Daemon) closeJevModelManager() {
 	d.jevModelsMu.Lock()
 	defer d.jevModelsMu.Unlock()
 	d.jevModelsClosing = true
-	if d.jevModels != nil {
+	if backendUsable(d.jevModels) {
 		if err := d.jevModels.Close(); err != nil {
 			if d.logger != nil {
 				d.logger.Warn("jev model manager close failed", "error", err)
 			}
 		}
 	}
-	if d.jevModelsFallback != nil {
+	if backendUsable(d.jevModelsFallback) {
 		if err := d.jevModelsFallback.Close(); err != nil {
 			if d.logger != nil {
 				d.logger.Warn("jev model fallback close failed", "error", err)

@@ -195,8 +195,9 @@ export function ChatPage() {
     setComposingNew(true);
   };
 
-  const startNewGroupChat = (agent: Agent | null) => {
-    if (agent) c.handleStartNewGroupChat(agent);
+  const startNewGroupChat = (agents: Agent[], title?: string) => {
+    const lead = agents[0];
+    if (lead) c.handleStartNewGroupChat(lead, agents, title);
   };
 
   const changeProjectContext = (projectId: string | null) => {
@@ -264,7 +265,9 @@ export function ChatPage() {
     <AgentPicker
       agents={c.availableAgents}
       userId={c.user?.id}
-      onSelect={startNewGroupChat}
+      onSelect={() => undefined}
+      onSelectMany={startNewGroupChat}
+      multiSelect
       side="bottom"
       align="start"
       triggerRender={
@@ -464,7 +467,11 @@ export function ChatPage() {
               <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} />
             </div>
           )}
-          {conversation}
+          {activeDoc ? (
+            <div className="flex-1 min-h-0">
+              <DocModeSurface wsId={c.wsId} onSendToChat={handleSend} />
+            </div>
+          ) : conversation}
         </div>
       );
     }
@@ -506,16 +513,12 @@ export function ChatPage() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel id="detail" minSize="40%">
-        {/* v12 D10: the conversation stays in its original place; doc mode is a
-            floating layer above it (not a replacement), so the user keeps
-            multi-turning in the conversation while the document is open. */}
         <div className="flex flex-col min-h-0 h-full">
-          {activeDoc && (
-            <div className="h-1/2 min-h-0 shrink-0 border-b overflow-hidden">
-              <DocModeSurface wsId={c.wsId} />
+          {activeDoc ? (
+            <div className="flex-1 min-h-0">
+              <DocModeSurface wsId={c.wsId} onSendToChat={handleSend} />
             </div>
-          )}
-          {hasTarget ? (
+          ) : hasTarget ? (
             conversation
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
