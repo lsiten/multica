@@ -9,6 +9,7 @@ import {
   canDeleteWorkspace,
   canEditAgent,
   canEditComment,
+  canEditRuntimeFile,
   canEditSkill,
   canManageMembers,
   canUpdateWorkspaceSettings,
@@ -370,6 +371,39 @@ describe("canDeleteRuntime", () => {
     const r = makeRuntime(ALICE);
     expect(canDeleteRuntime(r, { userId: BOB, role: "member" }).allowed)
       .toBe(false);
+  });
+});
+
+describe("canEditRuntimeFile", () => {
+  const r = makeRuntime(ALICE);
+  it("allows the runtime owner", () => {
+    expect(
+      canEditRuntimeFile(r, { userId: ALICE, role: "member" }).allowed,
+    ).toBe(true);
+  });
+  // Owner-only (unlike canDeleteRuntime): the backend gate in
+  // local_review_forward.go rejects edits from anyone but the owner, so a
+  // workspace admin must be DENIED here to stay consistent with the 403.
+  it("denies workspace admin (owner-only gate, no admin bypass)", () => {
+    const d = canEditRuntimeFile(r, { userId: BOB, role: "admin" });
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toBe("not_resource_owner");
+  });
+  it("denies non-owner member", () => {
+    const d = canEditRuntimeFile(r, { userId: BOB, role: "member" });
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toBe("not_resource_owner");
+  });
+  it("denies when not authenticated", () => {
+    const d = canEditRuntimeFile(r, { userId: null, role: null });
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toBe("not_authenticated");
+  });
+  it("denies when the runtime owner is unknown (null)", () => {
+    const orphan = makeRuntime(null);
+    expect(
+      canEditRuntimeFile(orphan, { userId: ALICE, role: "owner" }).allowed,
+    ).toBe(false);
   });
 });
 

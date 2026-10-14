@@ -180,7 +180,8 @@
     "./human-requests": "./human-requests/index.ts",
     "./human-requests/schema": "./human-requests/schema.ts",
     "./api/document-content-version": "./api/document-content-version.ts",
-    "./chat/document-content-version-queries": "./chat/document-content-version-queries.ts"
+    "./chat/document-content-version-queries": "./chat/document-content-version-queries.ts",
+    "./api/runtime-file-edit": "./api/runtime-file-edit.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

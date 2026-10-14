@@ -689,5 +689,15 @@
     "authorization_read_path": "Read",
     "authorization_write_path": "Write",
     "authorization_close": "Close request"
+  },
+  "file_edit": {
+    "edit": "Edit",
+    "save": "Save",
+    "saving": "Saving…",
+    "discard": "Discard",
+    "binary_read_only": "Binary files can’t be edited here.",
+    "conflict_runtime_won": "The runtime has a newer version. Your edit was discarded — rebase against the latest.",
+    "changed_reload": "The file changed since you opened it. Reload to edit against the latest version.",
+    "save_failed": "Couldn’t save the edit. Try again."
   }
 }

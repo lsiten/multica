@@ -43,6 +43,9 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		Limit        int      `json:"limit,omitempty"`
 		Comment      string   `json:"comment"`
 		CommandID    string   `json:"command_id"`
+		EditBase     string   `json:"edit_base,omitempty"`
+		EditNew      string   `json:"edit_new,omitempty"`
+		EditBaseSHA  string   `json:"edit_base_sha,omitempty"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && input.Action != "workspace_files" && input.Action != "file_content" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
 		writeError(w, http.StatusBadRequest, "task and target branch required")
@@ -88,6 +91,16 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid review page request")
 			return
 		}
+	case "edit", "merge_edit":
+		if strings.TrimSpace(input.RelativePath) == "" || len(input.RelativePath) > 4096 {
+			writeError(w, http.StatusBadRequest, "edited file path required")
+			return
+		}
+		if input.Action == "edit" && len(input.EditBaseSHA) != 64 {
+			writeError(w, http.StatusBadRequest, "edit base digest required")
+			return
+		}
+
 	case "submit", "approve", "request_changes", "merge":
 		if strings.TrimSpace(input.CommandID) == "" || len(input.CommandID) > 128 {
 			writeError(w, http.StatusBadRequest, "valid operation ID required")
@@ -126,6 +139,10 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "only the runtime owner can modify Git")
 		return
 	}
+	if (input.Action == "edit" || input.Action == "merge_edit") && uuidToString(runtime.OwnerID) != user {
+		writeError(w, http.StatusForbidden, "only the runtime owner can edit files")
+		return
+	}
 	path := task.WorkDir.String
 	if path == "" {
 		writeError(w, http.StatusConflict, "task has not reported a worktree")
@@ -151,6 +168,7 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		RelativePath: input.RelativePath,
 		Side:         input.Side,
 		IndexID:      input.IndexID, Branch: input.Branch, Head: input.Head, Message: input.Message, Paths: input.Paths,
+		EditBase:     input.EditBase, EditNew: input.EditNew, EditBaseSHA: input.EditBaseSHA,
 	})
 	if err != nil {
 		writeError(w, http.StatusTooManyRequests, "local review relay busy")

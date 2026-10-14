@@ -2,6 +2,7 @@ export * from "./access";
 export * from "./queries";
 export * from "./profiles";
 export * from "./mutations";
+export * from "./runtime-file-edit";
 export * from "./models";
 export * from "./local-skills";
 export * from "./types";

@@ -66,6 +66,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		input.CommandID = command.CommandID
 	}
 	input.ActorID, input.Comment = command.ActorID, command.Comment
+	input.EditBase, input.EditNew, input.EditBaseSHA = command.EditBase, command.EditNew, command.EditBaseSHA
 	verification := input
 	verification.RuntimeID = command.RuntimeID
 	directoryTask, err := d.reviewDirectoryTask(ctx, verification)
@@ -116,6 +117,28 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 			return result
 		}
 		response, err = call("merge")
+	case "edit", "merge_edit":
+		input.Action = command.Action
+		data, mErr := json.Marshal(input)
+		if mErr != nil {
+			result.Error = mErr.Error()
+			return result
+		}
+		editReq, mErr := http.NewRequestWithContext(ctx, http.MethodPost, "/worktrees/review", bytes.NewReader(data))
+		if mErr != nil {
+			result.Error = mErr.Error()
+			return result
+		}
+		editReq.Header.Set("Authorization", "Bearer "+d.client.Token())
+		editReq.Header.Set("X-Multica-Profile", d.cfg.Profile)
+		editW := &localReviewCapture{header: http.Header{}, status: http.StatusOK}
+		d.reviewOperationHandler(true)(editW, editReq)
+		if editW.status != http.StatusOK {
+			result.Error = editW.body.String()
+			return result
+		}
+		result.Edit = editW.body.Bytes()
+		return result
 	default:
 		result.Error = "unknown local review command"
 		return result

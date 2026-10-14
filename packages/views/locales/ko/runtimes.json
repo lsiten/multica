@@ -673,5 +673,15 @@
     "authorization_read_path": "읽기",
     "authorization_write_path": "쓰기",
     "authorization_close": "요청 닫기"
+  },
+  "file_edit": {
+    "edit": "편집",
+    "save": "저장",
+    "saving": "저장 중…",
+    "discard": "폐기",
+    "binary_read_only": "바이너리 파일은 여기서 편집할 수 없습니다.",
+    "conflict_runtime_won": "런타임에 더 새로운 버전이 있습니다. 편집 내용이 폐기되었습니다. 최신 버전을 기준으로 다시 편집하세요.",
+    "changed_reload": "파일이 열려 있는 동안 변경되었습니다. 최신을 다시 불러온 후 편집하세요.",
+    "save_failed": "변경을 저장할 수 없습니다. 다시 시도하세요."
   }
 }

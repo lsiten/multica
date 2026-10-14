@@ -39,6 +39,9 @@ type worktreeReviewRequest struct {
 	Comment       string `json:"comment"`
 	CommandID     string `json:"command_id"`
 	ActorID       string `json:"actor_id"`
+	EditBase      string `json:"edit_base,omitempty"`
+	EditNew       string `json:"edit_new,omitempty"`
+	EditBaseSHA   string `json:"edit_base_sha,omitempty"`
 }
 
 type worktreeReviewResponse struct {
@@ -313,6 +316,10 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 		}
 		if request.Action == "merge_selected" {
 			d.selectedReviewMutation(w, r, pagedReviewContext{request: request, path: path, root: root})
+			return
+		}
+		if request.Action == "edit" || request.Action == "merge_edit" {
+			d.reviewEdit(w, r, pagedReviewContext{request: request, path: path, root: root})
 			return
 		}
 		if request.VersionID != "" && !isReadReviewAction(request.Action) {

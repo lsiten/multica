@@ -673,5 +673,15 @@
     "authorization_read_path": "读取",
     "authorization_write_path": "写入",
     "authorization_close": "关闭请求"
+  },
+  "file_edit": {
+    "edit": "编辑",
+    "save": "保存",
+    "saving": "正在保存…",
+    "discard": "放弃",
+    "binary_read_only": "二进制文件无法在此编辑。",
+    "conflict_runtime_won": "运行时已有更新版本，你的改动已丢弃，请基于最新版本重新编辑。",
+    "changed_reload": "文件在你打开后已变化，请加载最新版本后再编辑。",
+    "save_failed": "无法保存改动，请重试。"
   }
 }

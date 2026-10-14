@@ -183,6 +183,37 @@ export function canDeleteRuntime(
   );
 }
 
+/**
+ * Edit a runtime's working file (human or agent, via `ForwardLocalReview`
+ * `edit` / `merge_edit`). This mirrors the owner-only backend gate in
+ * `local_review_forward.go`:
+ *
+ *     if (input.Action == "edit" || input.Action == "merge_edit") &&
+ *         uuidToString(runtime.OwnerID) != user { ... 403 }
+ *
+ * Unlike `canDeleteRuntime`, there is NO workspace-admin bypass: a remote
+ * runtime's files are the owner's workspace content, and the backend rejects
+ * the edit with 403 for anyone but the owner. Granting the edit affordance to
+ * admins would let them click Save and hit a 403, so the client rule stays
+ * owner-only to match the gate exactly. "Runtime write permission" (files and
+ * Git mutations) is owner-only in the backend.
+ */
+export function canEditRuntimeFile(
+  runtime: RuntimeDevice,
+  ctx: PermissionContext,
+): Decision {
+  if (ctx.userId === null) {
+    return deny("not_authenticated", "Sign in to edit this file.");
+  }
+  if (runtime.owner_id !== null && runtime.owner_id === ctx.userId) {
+    return ALLOW;
+  }
+  return deny(
+    "not_resource_owner",
+    "Only the runtime owner can edit files on this runtime.",
+  );
+}
+
 // ---- Workspace -------------------------------------------------------------
 
 export function canUpdateWorkspaceSettings(ctx: PermissionContext): Decision {

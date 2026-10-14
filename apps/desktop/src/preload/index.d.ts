@@ -166,6 +166,7 @@ interface DaemonAPI {
   /** List daemon-owned task environments, including active-state protection. */
   listWorktrees: () => Promise<ManagedWorktree[]>;
   readLocalReview: (request: unknown) => Promise<unknown>;
+  applyFileEdit: (request: unknown) => Promise<unknown>;
   readLocalReviewBranches: (request: unknown, readID?: string) => Promise<unknown>;
   readLocalReviewPage: (request: unknown, readID?: string) => Promise<unknown>;
   cancelLocalReviewRead: (readID: string) => void;

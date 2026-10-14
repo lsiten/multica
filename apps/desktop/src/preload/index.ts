@@ -276,6 +276,7 @@ const daemonAPI = {
   localApplicationSupported:(request:unknown):Promise<boolean>=>ipcRenderer.invoke("daemon:local-application-supported",request),
   localApplicationOperation: (request:unknown):Promise<unknown|null> => ipcRenderer.invoke("daemon:local-application-operation",request),
   readLocalReview: (request: unknown): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review", request),
+  applyFileEdit: (request: unknown): Promise<unknown> => ipcRenderer.invoke("daemon:apply-file-edit", request),
   readLocalReviewBranches: (request: unknown, readID?: string): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review-branches", request, readID),
   readLocalReviewPage: (request: unknown, readID?: string): Promise<unknown> => ipcRenderer.invoke("daemon:read-local-review-page", request, readID),
   cancelLocalReviewRead: (readID: string): void => ipcRenderer.send("daemon:cancel-local-review-read", readID),

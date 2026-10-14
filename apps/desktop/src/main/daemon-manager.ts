@@ -32,7 +32,7 @@ import type {
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
 import type { DaemonWorkerProcess, DaemonProcessOverviewEntry } from "../shared/daemon-types";
-import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, type LocalReviewTransport } from "./local-review-request";
+import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, requestLocalReviewFileEdit, type LocalReviewTransport } from "./local-review-request";
 import { LocalReviewCancellation } from "./local-review-cancellation";
 import { isPagedReviewDecision, pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
 import { requestReviewInventory } from "./local-review-inventory";
@@ -1699,6 +1699,7 @@ export function setupDaemonManager(
     }, profile),
   };
   ipcMain.handle("daemon:read-local-review", (_event, input: unknown) => requestLocalReview(input, reviewTransport));
+  ipcMain.handle("daemon:apply-file-edit", (_event, input: unknown) => requestLocalReviewFileEdit(input, reviewTransport));
   const reviewReads = new LocalReviewCancellation();
   ipcMain.handle("daemon:read-local-review-branches", (event, input: unknown, readID: unknown) => {
     if (typeof readID !== "string") return requestLocalReviewBranches(input, reviewTransport);

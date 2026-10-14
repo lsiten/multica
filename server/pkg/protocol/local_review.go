@@ -35,7 +35,10 @@ type LocalReviewCommand struct {
 	Offset                int                 `json:"offset,omitempty"`
 	Limit                 int                 `json:"limit,omitempty"`
 	ActorID               string              `json:"actor_id,omitempty"`
-	Comment               string              `json:"comment,omitempty"`
+	Comment      string  `json:"comment,omitempty"`
+	EditBase     string  `json:"edit_base,omitempty"`
+	EditNew      string  `json:"edit_new,omitempty"`
+	EditBaseSHA  string  `json:"edit_base_sha,omitempty"`
 }
 
 func IsLocalIndexMutation(action string) bool {
@@ -67,4 +70,5 @@ type LocalReviewResult struct {
 	Review       json.RawMessage `json:"review,omitempty"`
 	MergedCommit string          `json:"merged_commit"`
 	Error        string          `json:"error"`
+	Edit         json.RawMessage `json:"edit,omitempty"`
 }

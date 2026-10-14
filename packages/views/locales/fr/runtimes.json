@@ -689,5 +689,15 @@
     "authorization_read_path": "Lire",
     "authorization_write_path": "Écrire",
     "authorization_close": "Fermer la demande"
+  },
+  "file_edit": {
+    "edit": "Modifier",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "discard": "Annuler",
+    "binary_read_only": "Les fichiers binaires ne peuvent pas être modifiés ici.",
+    "conflict_runtime_won": "Le runtime a une version plus récente. Votre modification a été ignorée — rééditez à partir de la version la plus récente.",
+    "changed_reload": "Le fichier a changé depuis votre ouverture. Réchargez pour éditer la version la plus récente.",
+    "save_failed": "Impossible d’enregistrer la modification. Réessayez."
   }
 }

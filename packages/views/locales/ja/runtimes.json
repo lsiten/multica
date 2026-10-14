@@ -673,5 +673,15 @@
     "authorization_read_path": "読み取り",
     "authorization_write_path": "書き込み",
     "authorization_close": "リクエストを閉じる"
+  },
+  "file_edit": {
+    "edit": "編集",
+    "save": "保存",
+    "saving": "保存中…",
+    "discard": "取り消し",
+    "binary_read_only": "バイナリファイルはここでは編集できません。",
+    "conflict_runtime_won": "ランタイムに新しいバージョンがあります。変更は破棄されました。最新に対して再編集してください。",
+    "changed_reload": "ファイルが編集開始後に変更されています。最新を再読み込みしてから編集してください。",
+    "save_failed": "変更を保存できませんでした。再試行してください。"
   }
 }

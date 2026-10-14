@@ -29,6 +29,7 @@ import { pagedReviewCapabilitySchema, pagedReviewRequestSchema, parsePagedReview
 import { localIndexCapabilitySchema } from "../types/local-review-index";
 import { selectedMergeCapabilitySchema } from "../types/local-review-selection";
 import { localReviewBranchesSchema, localReviewCapabilitySchema, localReviewRelayResponseSchema, remoteWorktreesSchema } from "../types/local-review";
+import { ApplyRuntimeFileEditRequestSchema, parseRuntimeFileEditResult } from "./runtime-file-edit";
 import { environmentCommandSchema, parseEnvironmentPolicyStatus, parseEnvironmentRuntimes, parseEnvironmentOperationList, parseEnvironmentOperationStatus, type EnvironmentCommand } from "../types/environment-operations";
 import { parseManagedWorktrees, parseWorktreeCacheResults } from "../types/managed-worktree";
 import { parseWorktreeArchiveResults, parseWorktreeArchiveSummaries } from "../types/worktree-archives";
@@ -1248,6 +1249,26 @@ export class ApiClient {
       body: JSON.stringify({ task_id: request.task_id, path: request.path, target: request.target,
         action: request.action ?? "read", snapshot_id: request.snapshot_id, comment: request.comment, command_id: request.command_id }),
     }));
+  }
+
+  // Apply a human or agent edit to a runtime working file. "edit" is a
+  // compare-and-swap write (409 on a changed base); "merge_edit" is a three-way
+  // merge (an unresolvable conflict keeps the runtime version, conflict: true).
+  async applyRuntimeFileEdit(
+    request: import("./runtime-file-edit").ApplyRuntimeFileEditRequest,
+    signal?: AbortSignal,
+  ): Promise<import("./runtime-file-edit").RuntimeFileEditResult | null> {
+    const command = ApplyRuntimeFileEditRequestSchema.parse(request);
+    const timeout = AbortSignal.timeout(55000);
+    const raw = await this.fetch<unknown>("/api/local-reviews/execute", {
+      method: "POST", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      body: JSON.stringify({
+        task_id: command.task_id, path: command.path, target: command.target,
+        action: command.action, relative_path: command.relative_path, command_id: command.command_id,
+        edit_base_sha: command.edit_base_sha, edit_base: command.edit_base, edit_new: command.edit_new,
+      }),
+    });
+    return parseRuntimeFileEditResult(raw);
   }
 
   async executeRuntimeEnvironment(workspaceId: string, runtimeId: string, input: { action: "inventory" }, signal?: AbortSignal): Promise<import("../types/managed-worktree").ManagedWorktree[]>;
