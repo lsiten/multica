@@ -23,6 +23,7 @@ const session = vi.hoisted(() => ({
     projectTitle: "",
     hasProject: false,
     entries: [] as Array<{ path: string; size: number; directory: boolean }>,
+    entriesByPath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
   },
 }));
 
@@ -55,7 +56,7 @@ vi.mock("../../platform/local-review-pages", async () => {
   const actual = await vi.importActual<typeof import("../../platform/local-review-pages")>("../../platform/local-review-pages");
   return {
     ...actual,
-    requestReviewPage: () => Promise.resolve({ path: ".", entries: session.current.entries }),
+    requestReviewPage: (request: { path?: string }) => Promise.resolve({ path: ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries }),
   };
 });
 
@@ -94,6 +95,7 @@ beforeEach(() => {
     projectTitle: "Acme",
     hasProject: true,
     entries: [{ path: "src/app.ts", size: 10, directory: false }],
+    entriesByPath: {},
   };
 });
 
@@ -170,5 +172,26 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(screen.getByText("Acme")).toBeInTheDocument();
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
     expect(screen.getByText("app.ts")).toBeInTheDocument();
+  });
+
+  it("keeps the file tree and source control on the lead checkout", async () => {
+    session.current.files = {
+      ...session.current.files,
+      tasks: [
+        { id: "lead", runtime_id: "rt-1", work_dir: "/lead", created_at: "2026-01-01" } as never,
+        { id: "sibling", runtime_id: "rt-1", work_dir: "/sibling", created_at: "2026-01-02" } as never,
+      ],
+    };
+    session.current.entries = [];
+    session.current.entriesByPath = {
+      "/lead": [{ path: "src/app.ts", size: 10, directory: false }],
+      "/sibling": [{ path: "src/app.ts", size: 20, directory: false }],
+    };
+    renderList(newClient());
+    fireEvent.click(await screen.findByText("app.ts"));
+    expect(useDocModeStore.getState().activeByWorkspace["ws-1"]).toMatchObject({
+      kind: "workspace_file",
+      workDir: "/lead",
+    });
   });
 });

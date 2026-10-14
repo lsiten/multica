@@ -960,7 +960,11 @@ FROM agent_task_queue AS task
 JOIN chat_session AS session ON session.id = task.chat_session_id
 WHERE task.chat_session_id = $1
   AND session.workspace_id = $2
-ORDER BY task.created_at DESC, task.id DESC
+-- Group turns create the lead task first and specialists afterwards. Keep the
+-- lead checkout first so the file browser and Source Control never select a
+-- specialist worktree with the same relative paths.
+ORDER BY CASE WHEN task.context->'group_collaboration'->>'phase' = 'lead_plan' THEN 0 ELSE 1 END,
+         task.created_at DESC, task.id DESC
 LIMIT sqlc.arg(page_limit);
 
 -- name: ListChatProjectFileTasks :many

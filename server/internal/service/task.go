@@ -3343,6 +3343,9 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 	// Broadcast cancellation as a task:failed event so frontends clear the live card
 	s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, task)
 	s.NotifyTaskFinished(task)
+	// Cancellation is terminal for the specialist barrier too. The lead can
+	// synthesize available reports and surface the missing specialist.
+	s.maybeAdvanceGroupCollaboration(ctx, task)
 
 	return &CancelTaskResult{
 		Task:                 task,
@@ -5639,6 +5642,11 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 	// was persisted in the chat transcript. A retry-pending attempt stays silent
 	// because its child reports the eventual terminal outcome.
 	s.broadcastTaskFailedEvent(ctx, task, errMsg, failureReason, retried != nil)
+	if retried == nil {
+		// A terminal specialist failure still counts toward the group barrier;
+		// let the lead synthesize a partial result instead of waiting forever.
+		s.maybeAdvanceGroupCollaboration(ctx, task)
+	}
 
 	return &task, true, nil
 }

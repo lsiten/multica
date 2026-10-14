@@ -116,27 +116,31 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     () => {
       const sessionTasks = sessionFiles?.tasks ?? [];
       const projectTasks = selectedProjectId ? sessionFiles?.project_tasks ?? [] : [];
-      const seen = new Set(sessionTasks.map((task) => task.id));
-      // The current chat's Agent/lead workspace wins. Project history fills in
-      // only after it, so opening a group or requirement chat never jumps to a
-      // sibling task's worktree merely because the project has many runs.
-      const tasks = [...sessionTasks, ...projectTasks.filter((task) => !seen.has(task.id))];
-      return tasks
-        .filter((task) => task.work_dir)
-        .sort((a, b) => {
-          const aRequirement = a.issue_kind === "requirement" ? 1 : 0;
-          const bRequirement = b.issue_kind === "requirement" ? 1 : 0;
-          if (aRequirement !== bRequirement) return bRequirement - aRequirement;
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        })
-        .slice(0, 25);
+      // A chat session can contain several specialist worktrees and a project
+      // can contain many historical runs. The server orders the session list
+      // with the lead/requirement checkout first; keep that scope intact and
+      // only use project history when the chat has no checkout of its own.
+      const tasks = sessionTasks.length > 0 ? sessionTasks : projectTasks;
+      const ordered = sessionTasks.length > 0
+        ? tasks
+        : [...tasks].sort((a, b) => {
+            const aRequirement = a.issue_kind === "requirement" ? 1 : 0;
+            const bRequirement = b.issue_kind === "requirement" ? 1 : 0;
+            if (aRequirement !== bRequirement) return bRequirement - aRequirement;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          });
+      return ordered.filter((task) => task.work_dir).slice(0, 25);
     },
     [selectedProjectId, sessionFiles],
   );
   // Source Control must act on the current chat's lead/requirement checkout.
   // Falling back to an arbitrary project sibling would make stage/commit apply
   // to the wrong worktree, so use the same task ordering as the file tree.
-  const gitTask = fileTasks[0];
+  // A file tree and Source Control must describe the same checkout. Group
+  // specialists may have identical relative paths in separate worktrees, so
+  // browse only the lead checkout selected above instead of flattening them.
+  const workspaceTasks = useMemo(() => fileTasks.slice(0, 1), [fileTasks]);
+  const gitTask = workspaceTasks[0];
   const gitRequest: LocalReviewRequest | null = gitTask?.work_dir
     ? {
         task_id: gitTask.id,
@@ -152,10 +156,10 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   // failures are swallowed so one unreachable task neither drops every other
   // task's files nor triggers the repo-references fallback.
   const workspaceFiles = useQuery({
-    queryKey: ["chat-workspace-files", wsId, fileTasks.map((task) => task.id).join("|")],
+      queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
     queryFn: () =>
       Promise.all(
-        fileTasks.map((task) =>
+        workspaceTasks.map((task) =>
           requestReviewPage({
             task_id: task.id,
             workspace_id: wsId,
@@ -166,7 +170,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           }).catch(() => null),
         ),
       ),
-    enabled: !!sessionId && fileTasks.length > 0,
+    enabled: !!sessionId && workspaceTasks.length > 0,
     staleTime: 15_000,
   });
   const openDoc = useDocModeStore((s) => s.openDoc);
@@ -205,7 +209,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     );
     const workspaceDocuments = (workspaceFiles.data ?? []).flatMap((files, taskIndex) => {
       if (!files || !("entries" in files)) return [];
-      const task = fileTasks[taskIndex];
+      const task = workspaceTasks[taskIndex];
       return files.entries
         .filter((entry) => !entry.directory)
         .map((entry): DocumentListItem => ({
@@ -221,7 +225,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
         }));
     });
     return [...workspaceDocuments, ...attachmentDocuments, ...projectAttachmentDocuments];
-  }, [sessionFiles, workspaceFiles.data, fileTasks, selectedProjectId, sessionId]);
+  }, [sessionFiles, workspaceFiles.data, workspaceTasks, selectedProjectId, sessionId]);
 
   // When the session has no task worktree to browse, the project's configured
   // repos stand in for its files. They are not openable in doc mode (there is
