@@ -2,7 +2,7 @@ import { screen } from "@testing-library/react";
 import { renderWithI18n } from "../../test/i18n";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useQuery } from "@tanstack/react-query";
-import { RequirementBadge } from "./requirement-badge";
+import { RequirementBadge, TopLevelTaskBadge } from "./requirement-badge";
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
@@ -53,5 +53,17 @@ describe("RequirementBadge", () => {
       <RequirementBadge issue={{ id: "issue-1", kind: "requirement" } as never} showLifecycle />,
     );
     expect(screen.getByText("Confirmed")).toBeInTheDocument();
+  });
+
+  it("marks only ordinary tasks without a parent as top-level", () => {
+    renderWithI18n(
+      <>
+        <TopLevelTaskBadge issue={{ id: "root", kind: "task", parent_issue_id: null } as never} />
+        <TopLevelTaskBadge issue={{ id: "child", kind: "task", parent_issue_id: "root" } as never} />
+        <TopLevelTaskBadge issue={{ id: "requirement", kind: "requirement", parent_issue_id: null } as never} />
+      </>,
+    );
+    expect(screen.getByText("T")).toBeInTheDocument();
+    expect(screen.getAllByText("T")).toHaveLength(1);
   });
 });

@@ -7,6 +7,10 @@
     "pending_confirm": "待确认",
     "confirmed": "已确认",
     "change_pending": "变更待确认"
+  },
+  "task_hierarchy": {
+    "top_level": "顶级任务",
+    "top_level_short": "顶"
   },  "inline_run": {
     "label": "{{name}} 的运行",
     "stop": "停止",

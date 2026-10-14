@@ -46,6 +46,24 @@ export function RequirementBadge({
   );
 }
 
+/** Marks an ordinary task with no parent issue as a workspace-level task. */
+export function TopLevelTaskBadge({ issue, className }: { issue: Issue; className?: string }) {
+  const { t } = useT("issues");
+  if ((issue.kind ?? "task") === "requirement" || !!issue.parent_issue_id) return null;
+
+  return (
+    <span className={cn("inline-flex shrink-0 items-center gap-1", className)}>
+      <span
+        title={t(($) => $.task_hierarchy.top_level)}
+        aria-label={t(($) => $.task_hierarchy.top_level)}
+        className="inline-flex items-center rounded-xs bg-muted px-1 text-[0.6rem] font-semibold text-muted-foreground"
+      >
+        {t(($) => $.task_hierarchy.top_level_short)}
+      </span>
+    </span>
+  );
+}
+
 // A requirement may be pending confirm, confirmed, or confirmed-but-changed
 // (a doc edit after confirmation re-opens the requirement). The "changed" state
 // wins over "confirmed" because the un-confirmed change is the actionable fact.

@@ -7,6 +7,10 @@
     "pending_confirm": "確認待ち",
     "confirmed": "確認済み",
     "change_pending": "変更確認待ち"
+  },
+  "task_hierarchy": {
+    "top_level": "トップレベルタスク",
+    "top_level_short": "T"
   },  "inline_run": {
     "label": "{{name}} の実行",
     "stop": "停止",

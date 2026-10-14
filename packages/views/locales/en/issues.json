@@ -7,6 +7,10 @@
     "pending_confirm": "Pending",
     "confirmed": "Confirmed",
     "change_pending": "Change pending"
+  },
+  "task_hierarchy": {
+    "top_level": "Top-level task",
+    "top_level_short": "T"
   },  "inline_run": {
     "label": "{{name}} run",
     "stop": "Stop",

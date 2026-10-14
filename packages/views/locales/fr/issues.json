@@ -7,6 +7,10 @@
     "pending_confirm": "En attente",
     "confirmed": "Confirmé",
     "change_pending": "Changement à confirmer"
+  },
+  "task_hierarchy": {
+    "top_level": "Tâche de premier niveau",
+    "top_level_short": "T"
   },  "inline_run": {
     "label": "Exécution de {{name}}",
     "stop": "Arrêter",
