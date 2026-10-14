@@ -2868,6 +2868,17 @@ SELECT * FROM agent_task_queue
 WHERE issue_id = $1
 ORDER BY created_at DESC;
 
+-- name: GetLatestTaskWorkDirByIssue :one
+-- Child issues inherit the nearest ancestor's checkout when they do not have
+-- their own run directory yet. Prefer the active checkout, then the durable
+-- archive path retained after cleanup.
+SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, ''))::text AS work_dir
+FROM agent_task_queue
+WHERE issue_id = $1
+  AND COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) IS NOT NULL
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
 -- name: UpdateAgentStatus :one
 UPDATE agent SET status = $2, updated_at = now()
 WHERE id = $1

@@ -4691,6 +4691,25 @@ func (q *Queries) GetLatestTaskRolloutMissing(ctx context.Context, arg GetLatest
 	return session_rollout_missing, err
 }
 
+const getLatestTaskWorkDirByIssue = `-- name: GetLatestTaskWorkDirByIssue :one
+SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, ''))::text AS work_dir
+FROM agent_task_queue
+WHERE issue_id = $1
+  AND COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) IS NOT NULL
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+// Child issues inherit the nearest ancestor's checkout when they do not have
+// their own run directory yet. Prefer the active checkout, then the durable
+// archive path retained after cleanup.
+func (q *Queries) GetLatestTaskWorkDirByIssue(ctx context.Context, issueID pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getLatestTaskWorkDirByIssue, issueID)
+	var work_dir string
+	err := row.Scan(&work_dir)
+	return work_dir, err
+}
+
 const getWorkspaceAgentActivity30d = `-- name: GetWorkspaceAgentActivity30d :many
 SELECT
     atq.agent_id,

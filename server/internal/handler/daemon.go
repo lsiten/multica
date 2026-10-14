@@ -3130,6 +3130,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				}
 			}
 		}
+		if resp.PriorWorkDir == "" && issue.ParentIssueID.Valid {
+			h.inheritParentIssueWorkDir(r.Context(), issue, &resp)
+		}
 	}
 
 	// Chat task: populate workspace/session info from the chat_session table.
