@@ -366,7 +366,7 @@ function DocVersionHistory({
       {versions.map((v) => (
         <li key={v.id} className="flex items-center justify-between gap-3 py-3">
           <div className="min-w-0 flex-1">
-            <p className="text-body font-medium">v{v.revision}</p>
+            <p className="text-body font-medium">{`v${v.revision}`}</p>
             {v.note ? (
               <p className="truncate text-muted-foreground">{v.note}</p>
             ) : null}
