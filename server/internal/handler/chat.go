@@ -384,6 +384,10 @@ func (h *Handler) GetChatSession(w http.ResponseWriter, r *http.Request) {
 type ChatSessionFileTaskResponse struct {
 	ID              string `json:"id"`
 	RuntimeID       string `json:"runtime_id"`
+	IssueID         string `json:"issue_id,omitempty"`
+	IssueKind       string `json:"issue_kind,omitempty"`
+	ParentTaskID    string `json:"parent_task_id,omitempty"`
+	BranchName      string `json:"branch_name,omitempty"`
 	WorkDir         string `json:"work_dir,omitempty"`
 	RelativeWorkDir string `json:"relative_work_dir,omitempty"`
 	CreatedAt       string `json:"created_at"`
@@ -495,13 +499,17 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	taskResponses := make([]ChatSessionFileTaskResponse, 0, len(tasks))
 	for _, task := range tasks {
-		workDir := chatSessionTaskWorkDir(task)
+		workDir := h.resolveChatSessionTaskWorkDir(r.Context(), task, map[string]struct{}{})
 		if workDir == "" {
 			continue
 		}
 		taskResponses = append(taskResponses, ChatSessionFileTaskResponse{
 			ID:              uuidToString(task.ID),
 			RuntimeID:       uuidToString(task.RuntimeID),
+			IssueID:         uuidToString(task.IssueID),
+			IssueKind:       h.chatTaskIssueKind(r.Context(), task, workspaceUUID),
+			ParentTaskID:    uuidToString(task.ParentTaskID),
+			BranchName:      task.BranchName.String,
 			WorkDir:         workDir,
 			RelativeWorkDir: relativeWorkDir(workDir, workspaceID, uuidToString(task.ID)),
 			CreatedAt:       timestampToString(task.CreatedAt),
@@ -521,13 +529,17 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		projectTaskResponses = make([]ChatSessionFileTaskResponse, 0, len(projectTasks))
 		for _, task := range projectTasks {
-			workDir := chatSessionTaskWorkDir(task)
+			workDir := h.resolveChatSessionTaskWorkDir(r.Context(), task, map[string]struct{}{})
 			if workDir == "" {
 				continue
 			}
 			projectTaskResponses = append(projectTaskResponses, ChatSessionFileTaskResponse{
 				ID:              uuidToString(task.ID),
 				RuntimeID:       uuidToString(task.RuntimeID),
+				IssueID:         uuidToString(task.IssueID),
+				IssueKind:       h.chatTaskIssueKind(r.Context(), task, workspaceUUID),
+				ParentTaskID:    uuidToString(task.ParentTaskID),
+				BranchName:      task.BranchName.String,
 				WorkDir:         workDir,
 				RelativeWorkDir: relativeWorkDir(workDir, workspaceID, uuidToString(task.ID)),
 				CreatedAt:       timestampToString(task.CreatedAt),
@@ -590,6 +602,36 @@ func chatSessionTaskWorkDir(task db.AgentTaskQueue) string {
 		return task.DurableWorkDir.String
 	}
 	return ""
+}
+
+func (h *Handler) resolveChatSessionTaskWorkDir(ctx context.Context, task db.AgentTaskQueue, seen map[string]struct{}) string {
+	if workDir := chatSessionTaskWorkDir(task); workDir != "" {
+		return workDir
+	}
+	if !task.ParentTaskID.Valid {
+		return ""
+	}
+	id := uuidToString(task.ParentTaskID)
+	if _, ok := seen[id]; ok {
+		return ""
+	}
+	seen[id] = struct{}{}
+	parent, err := h.Queries.GetAgentTask(ctx, task.ParentTaskID)
+	if err != nil {
+		return ""
+	}
+	return h.resolveChatSessionTaskWorkDir(ctx, parent, seen)
+}
+
+func (h *Handler) chatTaskIssueKind(ctx context.Context, task db.AgentTaskQueue, workspaceID pgtype.UUID) string {
+	if !task.IssueID.Valid {
+		return ""
+	}
+	issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: workspaceID})
+	if err != nil {
+		return ""
+	}
+	return issue.Kind
 }
 
 type UpdateChatSessionRequest struct {

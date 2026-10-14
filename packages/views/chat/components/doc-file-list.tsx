@@ -119,7 +119,15 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
       // only after it, so opening a group or requirement chat never jumps to a
       // sibling task's worktree merely because the project has many runs.
       const tasks = [...sessionTasks, ...projectTasks.filter((task) => !seen.has(task.id))];
-      return tasks.filter((task) => task.work_dir).slice(0, 25);
+      return tasks
+        .filter((task) => task.work_dir)
+        .sort((a, b) => {
+          const aRequirement = a.issue_kind === "requirement" ? 1 : 0;
+          const bRequirement = b.issue_kind === "requirement" ? 1 : 0;
+          if (aRequirement !== bRequirement) return bRequirement - aRequirement;
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        })
+        .slice(0, 25);
     },
     [selectedProjectId, sessionFiles],
   );

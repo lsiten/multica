@@ -2472,6 +2472,10 @@ export const EMPTY_CHAT_SESSION_LIST: ChatSession[] = [];
 const ChatSessionFileTaskSchema = z.object({
   id: z.string(),
   runtime_id: z.string().default(""),
+  issue_id: z.string().optional().catch(undefined),
+  issue_kind: z.string().optional().catch(undefined),
+  parent_task_id: z.string().optional().catch(undefined),
+  branch_name: z.string().optional().catch(undefined),
   work_dir: z.string().optional().catch(undefined),
   relative_work_dir: z.string().optional().catch(undefined),
   created_at: z.string().default(""),

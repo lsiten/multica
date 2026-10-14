@@ -128,6 +128,10 @@ export interface ChatSession {
 export interface ChatSessionFileTask {
   id: string;
   runtime_id: string;
+  issue_id?: string;
+  issue_kind?: string;
+  parent_task_id?: string;
+  branch_name?: string;
   work_dir?: string;
   relative_work_dir?: string;
   created_at: string;
