@@ -538,6 +538,14 @@ WHERE chat_session_id IN (
 
 -- name: DeleteWorkspaceCommunicationRoots :exec
 WITH
+-- chat_participant is a child of chat_session with no foreign key (DB rule),
+-- so the app deletes it here, before the session rows are dropped below.
+deleted_participants AS (
+    DELETE FROM chat_participant
+    WHERE chat_participant.chat_session_id IN (
+        SELECT id FROM chat_session WHERE chat_session.workspace_id = $1
+    )
+),
 deleted_sessions AS (
     DELETE FROM chat_session WHERE chat_session.workspace_id = $1
 ),
@@ -564,6 +572,11 @@ WITH deleted_wakeup_receipts AS (
 ),
 deleted_child_events AS (
  DELETE FROM issue_child_event WHERE workspace_id=$1
+),
+-- requirement is 1:1 with a kind='requirement' issue and carries its own
+-- workspace_id (no FK); the app deletes it here alongside the issues.
+deleted_requirements AS (
+ DELETE FROM requirement WHERE requirement.workspace_id = $1
 ),
 deleted_issues AS (
     DELETE FROM issue WHERE issue.workspace_id = $1

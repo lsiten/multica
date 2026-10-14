@@ -212,6 +212,12 @@ func (q *Queries) DeleteWorkspaceComments(ctx context.Context, workspaceID pgtyp
 
 const deleteWorkspaceCommunicationRoots = `-- name: DeleteWorkspaceCommunicationRoots :exec
 WITH
+deleted_participants AS (
+    DELETE FROM chat_participant
+    WHERE chat_participant.chat_session_id IN (
+        SELECT id FROM chat_session WHERE chat_session.workspace_id = $1
+    )
+),
 deleted_sessions AS (
     DELETE FROM chat_session WHERE chat_session.workspace_id = $1
 ),
@@ -228,6 +234,8 @@ deleted_channel_installations AS (
 DELETE FROM lark_installation WHERE lark_installation.workspace_id = $1
 `
 
+// chat_participant is a child of chat_session with no foreign key (DB rule),
+// so the app deletes it here, before the session rows are dropped below.
 func (q *Queries) DeleteWorkspaceCommunicationRoots(ctx context.Context, workspaceID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteWorkspaceCommunicationRoots, workspaceID)
 	return err
@@ -305,6 +313,9 @@ WITH deleted_wakeup_receipts AS (
 deleted_child_events AS (
  DELETE FROM issue_child_event WHERE workspace_id=$1
 ),
+deleted_requirements AS (
+ DELETE FROM requirement WHERE requirement.workspace_id = $1
+),
 deleted_issues AS (
     DELETE FROM issue WHERE issue.workspace_id = $1
 ),
@@ -324,6 +335,8 @@ deleted_issue_view_preferences AS (
 DELETE FROM quick_action WHERE quick_action.workspace_id = $1
 `
 
+// requirement is 1:1 with a kind='requirement' issue and carries its own
+// workspace_id (no FK); the app deletes it here alongside the issues.
 func (q *Queries) DeleteWorkspaceIssueRoots(ctx context.Context, workspaceID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteWorkspaceIssueRoots, workspaceID)
 	return err
