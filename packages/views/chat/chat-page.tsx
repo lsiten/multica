@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
-import { ArrowLeft, MessageSquare, PanelLeft, Users } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, MessageSquare, PanelLeft, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -102,10 +102,17 @@ export function ChatPage() {
   // this conversation's attachments; users can still collapse it with the
   // header button when they want the conversation to fill the window.
   const [docFilesOpen, setDocFilesOpen] = useState(true);
+  const [docComposerCollapsed, setDocComposerCollapsed] = useState(false);
   const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
   useEffect(() => {
     setAutonomyPolicy(null);
   }, [c.activeSessionId, c.activeAgent?.id]);
+  useEffect(() => {
+    // A newly opened document starts with the composer available. Keep the
+    // collapsed state local to the document surface so it never hides the
+    // input after switching files or leaving/re-entering doc mode.
+    setDocComposerCollapsed(false);
+  }, [activeDoc?.id]);
   useEffect(() => {
     // Read the LIVE store value for the same reason as the session sync
     // effects below: under StrictMode's double-invoke this effect replays
@@ -319,6 +326,80 @@ export function ChatPage() {
   // `@container`: the conversation column's gutter (CHAT_GUTTER) widens with
   // THIS pane, which the user resizes independently of the browser window.
   const queuedTasks = c.pendingTask?.queued_tasks ?? [];
+  const chatInput = (
+    <ChatInput
+      historyMessages={c.messages}
+      historyWorkspaceId={c.wsId}
+      onSend={handleSend}
+      restoreDraftRequest={c.restoreDraftRequest}
+      conversationStarterRequest={c.conversationStarterRequest}
+      onConversationStarterApplied={c.handleConversationStarterApplied}
+      onRestoreDraftApplied={c.handleRestoreDraftApplied}
+      uploadEnabled={c.uploadEnabled && !c.isAgentAccessRevoked}
+      onStop={c.handleStop}
+      isRunning={!!c.pendingTaskId}
+      allowSubmitWhileRunning={c.pendingTask?.supports_queue === true}
+      disabled={
+        c.isSessionArchived ||
+        c.isAgentArchived ||
+        c.isAgentAccessRevoked ||
+        !c.isAgentRuntimeBound
+      }
+      noAgent={c.noAgent}
+      agentArchived={c.isAgentArchived}
+      agentAccessRevoked={c.isAgentAccessRevoked}
+      agentRuntimeRequired={!c.isAgentRuntimeBound}
+      agentName={c.activeAgent?.name}
+      agentId={c.activeAgent?.id}
+      projects={c.projects}
+      projectId={c.activeProjectId}
+      projectContextUnsupported={c.projectContextUnsupported}
+      onProjectChange={changeProjectContext}
+      squads={c.squads}
+      squadId={c.activeSquadId}
+      onSquadChange={c.handleSquadChange}
+      workspaceScopeAllowed={c.workspaceScopeAllowed}
+      isProjectUpdating={c.isProjectUpdating}
+      focusRequest={c.focusInputRequest}
+      autonomyPolicy={autonomyPolicy}
+      onAutonomyPolicyChange={setAutonomyPolicy}
+    />
+  );
+
+  const docComposer = activeDoc ? (
+    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-end px-4">
+      {docComposerCollapsed ? (
+        <Button
+          variant="secondary"
+          size="icon"
+          className="pointer-events-auto rounded-full border border-surface-border bg-surface shadow-lg"
+          onClick={() => setDocComposerCollapsed(false)}
+          aria-label={t(($) => $.doc_mode.expand_chat)}
+          title={t(($) => $.doc_mode.expand_chat)}
+        >
+          <ChevronUp className="h-4 w-4" />
+        </Button>
+      ) : (
+        <div className="pointer-events-auto flex w-[min(640px,calc(100%-1rem))] min-w-0 flex-col rounded-xl border border-surface-border bg-background/95 shadow-xl backdrop-blur">
+          <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-caption text-muted-foreground">
+            <span>{t(($) => $.doc_mode.chat_input)}</span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
+              onClick={() => setDocComposerCollapsed(true)}
+              aria-label={t(($) => $.doc_mode.collapse_chat)}
+              title={t(($) => $.doc_mode.collapse_chat)}
+            >
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </div>
+          {chatInput}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   const conversation = (
     <div className="flex flex-1 flex-col min-h-0 @container">
       {c.currentSession && (
@@ -393,43 +474,7 @@ export function ChatPage() {
         onClear={c.handleClearQueuedTasks}
       />
 
-      <ChatInput
-        historyMessages={c.messages}
-        historyWorkspaceId={c.wsId}
-        onSend={handleSend}
-        restoreDraftRequest={c.restoreDraftRequest}
-        conversationStarterRequest={c.conversationStarterRequest}
-        onConversationStarterApplied={c.handleConversationStarterApplied}
-        onRestoreDraftApplied={c.handleRestoreDraftApplied}
-        uploadEnabled={c.uploadEnabled && !c.isAgentAccessRevoked}
-        onStop={c.handleStop}
-        isRunning={!!c.pendingTaskId}
-        allowSubmitWhileRunning={c.pendingTask?.supports_queue === true}
-        disabled={
-          c.isSessionArchived ||
-          c.isAgentArchived ||
-          c.isAgentAccessRevoked ||
-          !c.isAgentRuntimeBound
-        }
-        noAgent={c.noAgent}
-        agentArchived={c.isAgentArchived}
-        agentAccessRevoked={c.isAgentAccessRevoked}
-        agentRuntimeRequired={!c.isAgentRuntimeBound}
-        agentName={c.activeAgent?.name}
-        agentId={c.activeAgent?.id}
-        projects={c.projects}
-        projectId={c.activeProjectId}
-        projectContextUnsupported={c.projectContextUnsupported}
-        onProjectChange={changeProjectContext}
-        squads={c.squads}
-        squadId={c.activeSquadId}
-        onSquadChange={c.handleSquadChange}
-        workspaceScopeAllowed={c.workspaceScopeAllowed}
-        isProjectUpdating={c.isProjectUpdating}
-        focusRequest={c.focusInputRequest}
-        autonomyPolicy={autonomyPolicy}
-        onAutonomyPolicyChange={setAutonomyPolicy}
-      />
+      {chatInput}
     </div>
   );
 
@@ -468,8 +513,9 @@ export function ChatPage() {
             </div>
           )}
           {activeDoc ? (
-            <div className="flex-1 min-h-0">
+            <div className="relative flex-1 min-h-0">
               <DocModeSurface wsId={c.wsId} onSendToChat={handleSend} />
+              {docComposer}
             </div>
           ) : conversation}
         </div>
@@ -515,8 +561,9 @@ export function ChatPage() {
       <ResizablePanel id="detail" minSize="40%">
         <div className="flex flex-col min-h-0 h-full">
           {activeDoc ? (
-            <div className="flex-1 min-h-0">
+            <div className="relative flex-1 min-h-0">
               <DocModeSurface wsId={c.wsId} onSendToChat={handleSend} />
+              {docComposer}
             </div>
           ) : hasTarget ? (
             conversation

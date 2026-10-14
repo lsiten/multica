@@ -23,7 +23,10 @@
     "save_failed": "Couldn't save changes.",
     "add_to_chat": "Add to chat",
     "add_selection_to_chat": "Add selection",
-    "ask_agent_to_edit": "Ask agent to edit"
+    "ask_agent_to_edit": "Ask agent to edit",
+    "chat_input": "Document chat",
+    "collapse_chat": "Collapse chat input",
+    "expand_chat": "Expand chat input"
   },
   "doc_file_list": {
     "filter_placeholder": "Filter files",

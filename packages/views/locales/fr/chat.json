@@ -22,7 +22,10 @@
     "save_failed": "Impossible d'enregistrer les modifications.",
     "add_to_chat": "Ajouter au chat",
     "add_selection_to_chat": "Ajouter la sélection",
-    "ask_agent_to_edit": "Demander une modification"
+    "ask_agent_to_edit": "Demander une modification",
+    "chat_input": "Conversation du document",
+    "collapse_chat": "Réduire la saisie de chat",
+    "expand_chat": "Développer la saisie de chat"
   },
   "doc_file_list": {
     "filter_placeholder": "Filtrer les fichiers",

@@ -22,7 +22,10 @@
     "save_failed": "保存失败。",
     "add_to_chat": "添加到对话",
     "add_selection_to_chat": "添加选中内容",
-    "ask_agent_to_edit": "让 Agent 修改"
+    "ask_agent_to_edit": "让 Agent 修改",
+    "chat_input": "文档对话",
+    "collapse_chat": "收起聊天输入框",
+    "expand_chat": "展开聊天输入框"
   },
   "doc_file_list": {
     "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",
