@@ -95,7 +95,7 @@ func (d *Daemon) processesOverviewHandler() http.HandlerFunc {
 		out = append(out, d.singletonProcessEntry(r, "application", "application service", d.snapshotApplicationProcess, d.applicationProcessMode))
 		out = append(out, d.singletonProcessEntry(r, "gateway", "gateway", d.snapshotGatewayProcess, d.gatewayProcessMode))
 		out = append(out, d.singletonProcessEntry(r, "environment", "environment service", d.snapshotEnvironmentProcess, d.environmentProcessMode))
-		out = append(out, d.singletonProcessEntry(r, "mirror", "mirror service", d.snapshotMirrorProcess, func() bool { return false }))
+		out = append(out, d.singletonProcessEntry(r, "mirror", "mirror service", d.snapshotMirrorProcess, d.mirrorProcessMode))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"processes": out})
 	}

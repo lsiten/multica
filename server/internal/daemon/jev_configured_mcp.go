@@ -95,7 +95,7 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 		logger.Warn("invalid Jev evaluation context", "task", task.ID, "error", err)
 	}
 
-	config, set, err := startTaskLLM2JevMCPAtWithLimitsAndBroker(ctx, task.ID, provider, effective, logger, "127.0.0.1", "", d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.builtinMCP)
+	config, set, err := startTaskLLM2JevMCPAtWithLimitsAndBroker(ctx, task.ID, provider, effective, logger, "127.0.0.1", "", d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.mcpBroker())
 	if err != nil {
 		if lease != nil {
 			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 10*time.Second)

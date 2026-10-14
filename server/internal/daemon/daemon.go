@@ -459,7 +459,19 @@ type Daemon struct {
 	repoCache                repoCacheBackend
 	skillCache               *SkillBundleCache
 	logger                   *slog.Logger
-	builtinMCP               mcpBroker
+	// mcpBrokerMu guards builtinMCP: the owner seam is swapped at runtime
+	// when a separate gateway process recovers after an in-process bridge,
+	// while tasks read it concurrently on the hot path.
+	mcpBrokerMu sync.RWMutex
+	builtinMCP  mcpBroker
+
+	// probe*ForTest are nil in production; set only by tests to exercise a
+	// separate-process recovery without launching a real child, so the
+	// re-probe handover (bridge retirement / flag / owner seam) is
+	// verifiable. They are never populated by the real daemon path.
+	probeEnvironmentProcessForTest func(ctx context.Context) (*environmentProcessClient, error)
+	probeApplicationProcessForTest func(ctx context.Context) (*applicationProcessClient, error)
+	probeGatewayProcessForTest     func(ctx context.Context) (*gatewayProcessClient, error)
 
 	// terminalReports is the durable outbox for complete/fail callbacks. The
 	// sender hook is production-wired through Client and overridable in focused
@@ -2487,17 +2499,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 		environment, err := d.ensureEnvironmentProcess(environmentCtx)
 		stop()
 		if err != nil {
-			// Fail closed to the legacy in-process owner. No separate process
-			// started, so the in-process loops are not a double-run; the earlier
-			// !environmentProcessMode() marker guard was skipped while the flag
-			// was optimistic, so re-run it here for the in-process owner.
+			// Fail closed to the in-process owner, but on a cancellable bridge a
+			// re-probe retires once the separate process recovers, so the separate
+			// process is not masked in-process forever and the two never double-run.
 			d.environmentProcessActive.Store(false)
 			d.logger.Warn("environment service start failed; falling back to in-process", "error", err)
 			if mErr := execenv.EnsureWorkspacesRootMarker(d.cfg.WorkspacesRoot); mErr != nil {
 				d.logger.Warn("workspaces root marker not written; CLI fail-closed guard limited to task workdirs", "error", mErr)
 			}
-			go d.gcLoop(ctx)
-			go d.environmentRecycleLoop(ctx)
+			bridgeCtx, bridgeCancel := context.WithCancel(ctx)
+			go d.gcLoop(bridgeCtx)
+			go d.environmentRecycleLoop(bridgeCtx)
+			go d.reProbeEnvironmentService(ctx, bridgeCancel)
 		} else {
 			defer func() {
 				if cerr := environment.close(); cerr != nil {
@@ -2513,15 +2526,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.tokenRenewalLoop(ctx)
 	go d.localReviewLoop(ctx)
 	var application *applicationProcessClient
+	var applicationFailed bool
 	if d.applicationProcessMode() {
 		appCtx, appCancel := context.WithTimeout(ctx, 30*time.Second)
 		var appErr error
 		application, appErr = d.ensureApplicationProcess(appCtx)
 		appCancel()
 		if appErr != nil {
-			// Fail closed to the legacy in-process owner.
+			// Fail closed to the in-process owner, but a re-probe retires it
+			// once the separate process recovers (see the bridge below).
 			d.applicationProcessActive.Store(false)
 			d.logger.Warn("application service start failed; falling back to in-process", "error", appErr)
+			applicationFailed = true
 		}
 	}
 	if d.applicationProcessMode() {
@@ -2536,13 +2552,24 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}()
 	} else {
 		applicationsDone := make(chan struct{})
-		go func() { defer close(applicationsDone); d.applicationLoop(ctx) }()
 		applicationTunnelDone := make(chan struct{})
-		go func() { defer close(applicationTunnelDone); d.applicationTunnelLoop(ctx) }()
-		defer func() { cancel(); <-applicationTunnelDone }()
-		defer func() { cancel(); <-applicationsDone; d.stopOwnedApplications() }()
+		if applicationFailed {
+			// Config wants the separate process but it could not start: keep the
+			// in-process owner on a cancellable bridge the re-probe retires on
+			// recovery, so it is a transient bridge, not the permanent owner.
+			bridgeCtx, bridgeCancel := context.WithCancel(ctx)
+			go func() { defer close(applicationsDone); d.applicationLoop(bridgeCtx) }()
+			go func() { defer close(applicationTunnelDone); d.applicationTunnelLoop(bridgeCtx) }()
+			go d.reProbeApplicationService(ctx, bridgeCancel)
+		} else {
+			go func() { defer close(applicationsDone); d.applicationLoop(ctx) }()
+			go func() { defer close(applicationTunnelDone); d.applicationTunnelLoop(ctx) }()
+			defer func() { cancel(); <-applicationTunnelDone }()
+			defer func() { cancel(); <-applicationsDone; d.stopOwnedApplications() }()
+		}
 	}
 
+	var gatewayFailed bool
 	if d.gatewayProcessMode() {
 		gatewayCtx, gatewayCancel := context.WithTimeout(ctx, 30*time.Second)
 		gateway, err := d.ensureGatewayProcess(gatewayCtx)
@@ -2550,11 +2577,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 		if err != nil {
 			d.gatewayProcessActive.Store(false)
 			d.logger.Warn("gateway service start failed; falling back to in-process", "error", err)
+			gatewayFailed = true
 		} else {
-			d.builtinMCP = gateway
+			d.setMCPBroker(gateway)
 			defer func() {
 				d.retainGatewayOnRetainedRestart(gateway)
-				d.builtinMCP = nil
+				d.setMCPBroker(nil)
 			}()
 		}
 	}
@@ -2564,11 +2592,17 @@ func (d *Daemon) Run(ctx context.Context) error {
 			_ = healthLn.Close()
 			return err
 		}
-		d.builtinMCP = builtinMCP
+		d.setMCPBroker(builtinMCP)
 		defer func() {
 			builtinMCP.close()
-			d.builtinMCP = nil
+			d.setMCPBroker(nil)
 		}()
+		if gatewayFailed {
+			// Config wants the separate gateway but it could not start: keep the
+			// in-process broker as a transient bridge a re-probe retires on
+			// recovery, so the separate gateway is not masked in-process forever.
+			go d.reProbeGatewayService(ctx)
+		}
 	}
 
 	// Preflight succeeded and the background loops are up: the daemon has
@@ -8763,7 +8797,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	listenHost, advertisedHost := "127.0.0.1", ""
 	identityMCPConfig, identityMCPServer, identityMCPErr := startTaskIdentityActionsMCPAtWithBroker(
 		ctx, task.ID, autonomyPolicy.allowsIdentityAction("email"),
-		hostIdentityEmailInvoker(task, communicationReceiptPath(d.cfg.WorkspacesRoot, task, "email")), taskLog, listenHost, advertisedHost, d.builtinMCP,
+		hostIdentityEmailInvoker(task, communicationReceiptPath(d.cfg.WorkspacesRoot, task, "email")), taskLog, listenHost, advertisedHost, d.mcpBroker(),
 	)
 	if identityMCPErr != nil {
 		return TaskResult{}, identityMCPErr
@@ -8854,7 +8888,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		} else {
 			var legacyServer *llm2jevMCPSet
 			llm2jevConfig, legacyServer, llm2jevErr = startTaskLLM2JevMCPAtWithLimitsAndBroker(
-				ctx, task.ID, provider, task, taskLog, listenHost, advertisedHost, d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.builtinMCP,
+				ctx, task.ID, provider, task, taskLog, listenHost, advertisedHost, d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.mcpBroker(),
 			)
 			if legacyServer != nil {
 				llm2jevServer = legacyServer

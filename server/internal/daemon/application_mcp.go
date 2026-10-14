@@ -29,7 +29,11 @@ func (set *applicationMCPSet) Close() {
 }
 
 func (d *Daemon) startTaskApplicationMCP(lifetimeCtx context.Context, task Task) (json.RawMessage, *applicationMCPSet, error) {
-	if _, supported := d.applicationServerCapabilities.Load(task.RuntimeID); !supported || d.builtinMCP == nil {
+	if _, supported := d.applicationServerCapabilities.Load(task.RuntimeID); !supported {
+		return nil, nil, nil
+	}
+	broker := d.mcpBroker()
+	if broker == nil {
 		return nil, nil, nil
 	}
 	token, err := taskScopedAuthToken(task)
@@ -47,7 +51,7 @@ func (d *Daemon) startTaskApplicationMCP(lifetimeCtx context.Context, task Task)
 	handler := &applicationMCPServer{client: client, localControl: func(ctx context.Context, appID string, body map[string]any) (any, bool, error) {
 		return d.taskLocalApplicationControl(ctx, task, appID, body)
 	}}
-	endpoint, unregister := d.builtinMCP.register("/"+pathToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	endpoint, unregister := broker.register("/"+pathToken, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if serviceCtx.Err() != nil {
 			http.NotFound(w, r)
 			return

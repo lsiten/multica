@@ -72,6 +72,36 @@ func TestProcessesOverviewReportsInProcessFallbackAsRunning(t *testing.T) {
 	}
 }
 
+func TestProcessesOverviewReportsConfigMirrorAsStarting(t *testing.T) {
+	// The mirror is config-based and on-demand: when the role is configured but
+	// no child is up yet it is "starting" (process mode), not a "running"
+	// in-process fallback — the mirror has no permanent in-process owner. The
+	// other long-lived services keep config off here, so they still read as the
+	// in-process fallback running.
+	d := &Daemon{}
+	d.ready.Store(true)
+	d.cfg.ProcessServices = []string{"mirror"}
+	rec := httptest.NewRecorder()
+	d.processesOverviewHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/runtimes/processes/overview", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body struct {
+		Processes []processOverviewEntry `json:"processes"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if row := findOverviewRow(t, body.Processes, "mirror"); row.State != "starting" {
+		t.Fatalf("config mirror must report starting, got %q", row.State)
+	}
+	for _, category := range []string{"application", "gateway", "environment"} {
+		if row := findOverviewRow(t, body.Processes, category); row.State != "running" {
+			t.Fatalf("singleton %q must report running, got %q", category, row.State)
+		}
+	}
+}
+
 func findOverviewRow(t *testing.T, rows []processOverviewEntry, category string) processOverviewEntry {
 	t.Helper()
 	for _, row := range rows {

@@ -158,7 +158,8 @@ func (d *Daemon) mcpReadinessSnapshot() []MCPReadinessSnapshot {
 	}
 	registry.mu.RUnlock()
 	out := make([]MCPReadinessSnapshot, 0, len(entries)+2)
-	if d.builtinMCP != nil && d.builtinMCP.ready() {
+	b := d.mcpBroker()
+	if b != nil && b.ready() {
 		out = append(out,
 			MCPReadinessSnapshot{Name: llm2jevMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessBrokerReady, Reason: "broker_listening"},
 			MCPReadinessSnapshot{Name: identityActionsMCPName, InstanceID: "builtin-broker", Enabled: true, Scope: "daemon", Ready: true, State: MCPReadinessBrokerReady, Reason: "broker_listening"},
