@@ -66,7 +66,7 @@ describe("JevTab",()=>{
  it("keeps downloaded weights installed after the worker stops",async()=>{
   daemon.getJevModels.mockResolvedValue({models:[],status:[{model_id:"Mapika/decider-2b",revision,state:"stopped",installed:true}]});
   const user=userEvent.setup();mount();await user.selectOptions(await screen.findByRole("combobox",{name:"Model source"}),"local");
-  expect(await screen.findByText("Service stopped")).toBeInTheDocument();
+  expect(await screen.findByText("Downloaded · starts when used")).toBeInTheDocument();
   expect(screen.getByRole("button",{name:"Downloaded"})).toBeDisabled();
   expect(screen.queryByRole("button",{name:"Confirm and download"})).not.toBeInTheDocument();
  });

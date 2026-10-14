@@ -415,7 +415,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
             </div>
           )}
           {visibleRepoReferences.length > 0 && (
-            <ul className="divide-y" aria-label="Git repositories">
+            <ul className="divide-y" aria-label={t(($) => $.doc_file_list.git_repositories)}>
               {visibleRepoReferences.map((repo) => (
                 <li key={repo.url}>
                   <a href={repo.url} target="_blank" rel="noreferrer" className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-accent/50">

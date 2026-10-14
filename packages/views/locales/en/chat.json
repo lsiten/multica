@@ -34,6 +34,7 @@
     "projects_label": "Projects",
     "project_files": "Project files",
     "git_repository": "Git repository",
+    "git_repositories": "Git repositories",
     "attachments": "Attachments",
     "issues": "Issues",
     "no_attachments": "No attachments in this chat",
