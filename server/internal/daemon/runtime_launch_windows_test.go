@@ -77,7 +77,11 @@ func TestHandleTaskReportsWindowsCodexProcessStartFailure(t *testing.T) {
 	// The daemon persists terminal reports before delivering them. On Windows
 	// the replay worker may deliver the callback just after handleTask returns,
 	// so wait for the observable HTTP side effect instead of racing that worker.
-	deadline := time.Now().Add(2 * time.Second)
+	// The Windows worker can spend several seconds draining the persisted
+	// terminal report when the full race-enabled daemon suite is contending for
+	// the scheduler. Keep the wait bounded, but longer than the normal local
+	// callback latency so CI does not race a valid failure report.
+	deadline := time.Now().Add(10 * time.Second)
 	var body map[string]any
 	for time.Now().Before(deadline) {
 		body, _ = failBody.Load().(map[string]any)
