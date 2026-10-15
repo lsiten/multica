@@ -157,7 +157,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   // task's files nor triggers the repo-references fallback.
   const workspaceFiles = useQuery({
       queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       Promise.all(
         workspaceTasks.map((task) =>
           requestReviewPage({
@@ -167,18 +167,18 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
             path: task.work_dir!,
             action: "workspace_files",
             relative_path: ".",
-          }).catch(() => null),
+          }, signal).catch(() => null),
         ),
       ),
     enabled: !!sessionId && workspaceTasks.length > 0,
-    staleTime: 15_000,
+    staleTime: 60_000,
   });
   const openDoc = useDocModeStore((s) => s.openDoc);
   const activeDoc = useDocModeStore(selectActiveDocument(wsId));
-  // Directories are visible on first open so a project checkout does not look
-  // empty. Keep only explicit user collapses in local UI state; filtering
-  // temporarily expands every matching ancestor without losing those choices.
-  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(() => new Set());
+  // Match the VS Code/GitHub tree convention: folders start closed so a large
+  // checkout stays scannable. Search is computed from allDocuments (before the
+  // tree is filtered), then matching ancestor folders are opened automatically.
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
   // Local-only filter (v12: the sidebar is files + a filter box). Ephemeral UI
   // state, so it lives here, not in the persisted doc-mode store.
   const [filter, setFilter] = useState("");
@@ -269,7 +269,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   const showNoMatch = filter.trim().length > 0 && visible.length === 0 && visibleRepoReferences.length === 0;
   const renderTree = (nodes: FileTreeNode[], depth = 0): ReactNode[] => nodes.flatMap((node) => {
     if (node.directory) {
-      const expanded = filter.trim().length > 0 || !collapsedDirs.has(node.path);
+      const expanded = filter.trim().length > 0 || expandedDirs.has(node.path);
       return [
         <li key={`dir:${node.path}`}>
           <button
@@ -277,7 +277,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
             className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-body hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{ paddingLeft: `${8 + depth * 14}px` }}
             aria-expanded={expanded}
-            onClick={() => setCollapsedDirs((current) => {
+            onClick={() => setExpandedDirs((current) => {
               const next = new Set(current);
               if (next.has(node.path)) next.delete(node.path); else next.add(node.path);
               return next;

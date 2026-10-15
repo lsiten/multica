@@ -110,6 +110,19 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     // attachments + task-workdir files are the openable rows.
     await screen.findByText("Acme");
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(screen.getByText("src")).toBeInTheDocument();
+    expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("src"));
+    expect(screen.getByText("app.ts")).toBeInTheDocument();
+  });
+
+  it("searches the full tree and opens matching ancestor folders", async () => {
+    renderList(newClient());
+    await screen.findByText("Acme");
+    expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(enChat.doc_file_list.filter_placeholder), {
+      target: { value: "app.ts" },
+    });
     expect(screen.getByText("app.ts")).toBeInTheDocument();
   });
 
@@ -122,6 +135,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
 
   it("opens the clicked workspace file through openDoc", async () => {
     renderList(newClient());
+    fireEvent.click(await screen.findByText("src"));
     fireEvent.click(await screen.findByText("app.ts"));
     const active = useDocModeStore.getState().activeByWorkspace["ws-1"];
     expect(active).toMatchObject({ kind: "workspace_file", id: expect.stringContaining("src/app.ts") });
@@ -175,6 +189,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     renderList(queryClient);
     expect(screen.getByText("Acme")).toBeInTheDocument();
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("src"));
     expect(screen.getByText("app.ts")).toBeInTheDocument();
   });
 
@@ -192,6 +207,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
       "/sibling": [{ path: "src/app.ts", size: 20, directory: false }],
     };
     renderList(newClient());
+    fireEvent.click(await screen.findByText("src"));
     fireEvent.click(await screen.findByText("app.ts"));
     expect(useDocModeStore.getState().activeByWorkspace["ws-1"]).toMatchObject({
       kind: "workspace_file",

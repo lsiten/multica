@@ -4814,10 +4814,11 @@ export class ApiClient {
   // the modal can render specific fallbacks instead of generic failure.
   async getAttachmentTextContent(
     id: string,
+    signal?: AbortSignal,
   ): Promise<{ text: string; originalContentType: string }> {
     let res: Response;
     try {
-      res = await this.fetchRaw(`/api/attachments/${id}/content`);
+      res = await this.fetchRaw(`/api/attachments/${id}/content`, { signal });
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 413) throw new PreviewTooLargeError();

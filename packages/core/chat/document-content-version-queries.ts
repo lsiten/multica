@@ -39,6 +39,7 @@ export const documentContentVersionKeys = {
 export function documentContentVersionCurrentOptions(
   wsId: string,
   ref: DocumentRef,
+  options?: { loadAttachments?: boolean },
 ) {
   return queryOptions({
     queryKey: documentContentVersionKeys.current(wsId, ref),
@@ -46,7 +47,7 @@ export function documentContentVersionCurrentOptions(
       ref.kind === "attachment"
         ? api.getAttachmentContentVersionCurrent(ref.id, signal)
         : api.getIssueContentVersionCurrent(ref.id, signal),
-    enabled: !!ref.id && !!wsId && ref.kind !== "workspace_file",
+    enabled: !!ref.id && !!wsId && ref.kind !== "workspace_file" && (ref.kind !== "attachment" || options?.loadAttachments !== false),
     // A document body is stable between edits; the record mutation invalidates
     // it, so a long staleTime keeps the doc-mode view cheap and offline-tolerant.
     staleTime: 30_000,
@@ -58,8 +59,8 @@ export function documentContentVersionCurrentOptions(
   });
 }
 
-export function useDocumentContentVersionCurrent(wsId: string, ref: DocumentRef) {
-  return useQuery(documentContentVersionCurrentOptions(wsId, ref));
+export function useDocumentContentVersionCurrent(wsId: string, ref: DocumentRef, options?: { loadAttachments?: boolean }) {
+  return useQuery(documentContentVersionCurrentOptions(wsId, ref, options));
 }
 
 // The full version history (revision DESC) — powers the diff view (D6) and the
@@ -67,6 +68,7 @@ export function useDocumentContentVersionCurrent(wsId: string, ref: DocumentRef)
 export function documentContentVersionsOptions(
   wsId: string,
   ref: DocumentRef,
+  options?: { loadAttachments?: boolean },
 ) {
   return queryOptions({
     queryKey: documentContentVersionKeys.list(wsId, ref),
@@ -74,13 +76,13 @@ export function documentContentVersionsOptions(
       ref.kind === "attachment"
         ? api.listAttachmentContentVersions(ref.id, signal)
         : api.listIssueContentVersions(ref.id, signal),
-    enabled: !!ref.id && !!wsId && ref.kind !== "workspace_file",
+    enabled: !!ref.id && !!wsId && ref.kind !== "workspace_file" && (ref.kind !== "attachment" || options?.loadAttachments !== false),
     staleTime: 10_000,
   });
 }
 
-export function useDocumentContentVersions(wsId: string, ref: DocumentRef) {
-  return useQuery(documentContentVersionsOptions(wsId, ref));
+export function useDocumentContentVersions(wsId: string, ref: DocumentRef, options?: { loadAttachments?: boolean }) {
+  return useQuery(documentContentVersionsOptions(wsId, ref, options));
 }
 
 // A single historical version — for the diff view (two versions diffed on the

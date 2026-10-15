@@ -363,11 +363,12 @@ export function ChatPage() {
       focusRequest={c.focusInputRequest}
       autonomyPolicy={autonomyPolicy}
       onAutonomyPolicyChange={setAutonomyPolicy}
+      embedded={!!activeDoc}
     />
   );
 
   const docComposer = activeDoc ? (
-    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-end px-4">
+    <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-end px-4">
       {docComposerCollapsed ? (
         <Button
           variant="secondary"
@@ -380,7 +381,7 @@ export function ChatPage() {
           <ChevronUp className="h-4 w-4" />
         </Button>
       ) : (
-        <div className="pointer-events-auto flex w-[min(640px,calc(100%-1rem))] min-w-0 flex-col rounded-xl border border-surface-border bg-background/95 shadow-xl backdrop-blur">
+        <div className="pointer-events-auto flex max-h-[min(70%,32rem)] w-[min(680px,calc(100%-1rem))] min-w-0 flex-col overflow-hidden rounded-2xl border border-surface-border bg-background/98 shadow-2xl backdrop-blur">
           <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-caption text-muted-foreground">
             <span>{t(($) => $.doc_mode.chat_input)}</span>
             <Button
@@ -394,7 +395,7 @@ export function ChatPage() {
               <ChevronDown className="h-4 w-4" />
             </Button>
           </div>
-          {chatInput}
+          <div className="min-h-0 overflow-hidden">{chatInput}</div>
         </div>
       )}
     </div>

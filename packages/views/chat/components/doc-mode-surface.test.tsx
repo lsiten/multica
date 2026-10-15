@@ -9,7 +9,7 @@ import enChat from "../../locales/en/chat.json";
 import { useDocModeStore } from "@multica/core/chat";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import { DocModeSurface } from "./doc-mode-surface";
-import { ApiError } from "@multica/core/api";
+import { ApiError, setApiInstance } from "@multica/core/api";
 
 const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
 
@@ -213,6 +213,27 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("DocModeSurface (fast text attachment preview)", () => {
+  it("reads text attachments directly instead of waiting for version history", async () => {
+    const read = vi.fn().mockResolvedValue({
+      text: "# Fast attachment",
+      originalContentType: "text/markdown",
+    });
+    setApiInstance({ getAttachmentTextContent: read } as never);
+    useDocModeStore.getState().openDoc("ws-1", {
+      kind: "attachment",
+      id: "att-text",
+      label: "REPORT.md",
+      contentType: "text/markdown",
+      sessionId: "session-1",
+    });
+    renderSurface();
+    await screen.findByText("Fast attachment");
+    expect(read).toHaveBeenCalledWith("att-text", expect.any(AbortSignal));
+  });
+});
+
 describe("DocModeSurface (requirement-doc human edit)", () => {
   beforeEach(() => {
     authState.user = { id: "u1" };

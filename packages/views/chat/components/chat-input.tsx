@@ -159,6 +159,8 @@ interface ChatInputProps {
    */
   draftKeyOverride?: string;
   editorKeyOverride?: string;
+  /** Compact sizing for the document-mode floating composer. */
+  embedded?: boolean;
 }
 
 export function ChatInput({
@@ -196,6 +198,7 @@ export function ChatInput({
   focusRequest,
   draftKeyOverride,
   editorKeyOverride,
+  embedded = false,
 }: ChatInputProps) {
   const { t } = useT("chat");
   const { t: tEditor } = useT("editor");
@@ -701,7 +704,10 @@ export function ChatInput({
         // user resizes or expands the window. The wrapper must be a flex
         // column for the card below to shrink into that cap instead of
         // spilling out of it.
-        "flex max-h-[50%] min-h-0 flex-col pb-3 pt-0",
+        cn(
+          "flex min-h-0 flex-col pt-0",
+          embedded ? "max-h-full pb-0" : "max-h-[50%] pb-3",
+        ),
         CHAT_GUTTER,
         // Static elevation, NOT queue-conditional: ChatQueue tucks its bottom
         // edge under this surface (z-0 + negative margin on its side), and the
@@ -725,7 +731,8 @@ export function ChatInput({
           // composer without a definite height (percentage max-height would
           // then resolve to none).
           CHAT_COLUMN,
-          "relative flex min-h-16 max-h-96 flex-col rounded-lg border border-surface-border bg-surface pb-9 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
+          "relative flex min-h-16 flex-col rounded-lg border border-surface-border bg-surface pb-9 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
+          embedded ? "max-h-full" : "max-h-96",
           // Visual + interaction lock when there's no agent. We don't
           // toggle ContentEditor's editable mode (Tiptap can't switch
           // cleanly post-mount, and the prop has been removed); instead

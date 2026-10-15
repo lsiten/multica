@@ -23,7 +23,7 @@ import { Attachment } from "../../editor/attachment";
 import { useT } from "../../i18n";
 import { applyReviewFileEdit, requestReviewPage } from "../../platform/local-review-pages";
 import { createSafeId } from "@multica/core/utils";
-import { ApiError } from "@multica/core/api";
+import { api, ApiError } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import { FileViewer } from "../../skills/components/file-viewer";
 import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
@@ -77,8 +77,19 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
 
   // Hooks must run unconditionally; the empty id disables the queries below.
   const activeRef = doc ?? EMPTY_DOC;
-  const current = useDocumentContentVersionCurrent(wsId, activeRef);
-  const versions = useDocumentContentVersions(wsId, activeRef);
+  const isTextAttachment = doc?.kind === "attachment" && (
+    doc.contentType?.startsWith("text/") ||
+    /\.(md|mdx|txt|json|ya?ml|csv|log|py|ts|tsx|js|jsx|go|rs|java|css|html)$/i.test(doc.label ?? "")
+  );
+  const current = useDocumentContentVersionCurrent(wsId, activeRef, { loadAttachments: !isTextAttachment || diffView });
+  const versions = useDocumentContentVersions(wsId, activeRef, { loadAttachments: diffView });
+  const attachmentTextContent = useQuery({
+    queryKey: ["attachment-text-content", doc?.id],
+    queryFn: ({ signal }) => api.getAttachmentTextContent(doc!.id, signal),
+    enabled: isTextAttachment && !diffView,
+    staleTime: 60_000,
+    retry: false,
+  });
   const rollback = useRollbackDocumentContentVersion(wsId);
   const { data: sessionFiles } = useQuery({
     ...chatSessionFilesOptions(wsId, doc?.sessionId ?? "", doc?.projectId),
@@ -107,12 +118,12 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
       : null;
   const workspaceContent = useQuery({
     queryKey: ["chat-workspace-file-content", wsId, doc?.id, doc?.relativePath],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       workspaceRequest
-        ? requestReviewPage(workspaceRequest)
+        ? requestReviewPage(workspaceRequest, signal)
         : Promise.reject(new Error("workspace file reference is incomplete")),
     enabled: !!workspaceRequest,
-    staleTime: 15_000,
+    staleTime: 60_000,
   });
 
   const openWorkspaceEdit = useCallback(() => {
@@ -248,7 +259,10 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
     );
   }
 
-  const isText = doc.contentType?.startsWith("text/") ?? current.data?.content != null;
+  const isText = isTextAttachment || doc.contentType?.startsWith("text/") || current.data?.content != null;
+  const bodyContent = isTextAttachment && attachmentTextContent.data
+    ? attachmentTextContent.data.text
+    : current.data?.content ?? null;
   // Editing is available for an issue's text document (the requirement doc) to
   // any workspace member — mirrors the backend, whose record handler gates on
   // requireUserID only. Attachments (binary) and workspace files are read-only.
@@ -322,9 +336,9 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
           />
         ) : (
           <DocBody
-            loading={current.isLoading}
-            error={current.isError}
-            content={current.data?.content ?? null}
+            loading={isTextAttachment ? attachmentTextContent.isLoading : current.isLoading}
+            error={isTextAttachment ? attachmentTextContent.isError : current.isError}
+            content={bodyContent}
             contentUrl={current.data?.content_url ?? null}
             contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
             isText={isText}
