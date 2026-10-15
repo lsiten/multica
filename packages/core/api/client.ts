@@ -834,6 +834,11 @@ function isReplayableBody(body: BodyInit | null | undefined): boolean {
   return false;
 }
 
+function isLocalApplicationHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "::1";
+}
+
 export class ApiClient {
   async cancelApplicationOperation(workspaceId: string, id: string, operationId: string): Promise<ApplicationOperation> {
     const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/operations/${encodeURIComponent(operationId)}/cancel`, { method: "POST", headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
@@ -848,7 +853,7 @@ export class ApiClient {
     const address = new URL(receipt.url);
     const dedicatedPath = address.hostname.startsWith(`${endpointId}.`) && address.pathname === "/.__multica/launch";
     const publicOriginPath = address.pathname === `/app/${endpointId}/.__multica/launch`;
-    const safeProtocol = address.protocol === "https:" || (address.protocol === "http:" && address.hostname.endsWith(".localhost"));
+    const safeProtocol = address.protocol === "https:" || (address.protocol === "http:" && isLocalApplicationHost(address.hostname));
     if ((!dedicatedPath && !publicOriginPath) || address.username || address.password || address.hash || [...address.searchParams.keys()].length !== 1 || !/^[a-f0-9]{64}$/.test(address.searchParams.get("ticket") ?? "") || !safeProtocol) throw new Error("Invalid application launch URL");
     return receipt.url;
   }

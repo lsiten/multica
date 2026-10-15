@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -57,4 +59,53 @@ func (d *Daemon) reviewDirectoryTask(ctx context.Context, request worktreeReview
 		return owner.TaskID, nil
 	}
 	return request.TaskID, nil
+}
+
+// bindVerifiedExternalReviewDirectory repairs the provenance marker for a
+// local project directory created by an older daemon. The server verifies the
+// task's persisted work_dir through the directory_task_id/path query before we
+// persist a durable binding, so a client cannot turn an arbitrary local Git
+// repository into a review checkout.
+func (d *Daemon) bindVerifiedExternalReviewDirectory(ctx context.Context, request worktreeReviewRequest) (string, string, error) {
+	if d.client == nil || request.RuntimeID == "" || request.TaskID == "" || request.WorkspaceID == "" {
+		return "", "", errors.New("external review directory proof unavailable")
+	}
+	canonical, err := filepath.EvalSymlinks(request.Path)
+	if err != nil {
+		return "", "", err
+	}
+	gitRoot, err := worktreeGit(ctx, canonical, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", "", err
+	}
+	query := url.Values{
+		"directory_task_id": {request.TaskID},
+		"path":              {request.Path},
+	}
+	endpoint := "/api/daemon/runtimes/" + url.PathEscape(request.RuntimeID) + "/tasks/" + url.PathEscape(request.TaskID) + "/review-binding?" + query.Encode()
+	var binding protocol.LocalReviewRuntimeBinding
+	if err := d.client.getJSON(ctx, endpoint, &binding); err != nil || binding.WorkspaceID != request.WorkspaceID || binding.TaskID != request.TaskID || binding.RuntimeID != request.RuntimeID {
+		return "", "", errors.New("external review directory identity mismatch")
+	}
+	archive := execenv.ReviewArchivePath(d.cfg.WorkspacesRoot, request.WorkspaceID, request.TaskID)
+	if err := os.MkdirAll(archive, 0o700); err != nil {
+		return "", "", err
+	}
+	if err := execenv.WriteReviewDirectory(archive, execenv.ReviewDirectory{
+		WorkspaceID: request.WorkspaceID,
+		TaskID:      request.TaskID,
+		Path:        gitRoot,
+		SourcePath:  canonical,
+	}); err != nil {
+		return "", "", err
+	}
+	if err := execenv.WriteReviewRuntime(archive, execenv.ReviewRuntime{
+		WorkspaceID: request.WorkspaceID,
+		TaskID:      request.TaskID,
+		RuntimeID:   request.RuntimeID,
+		AgentID:     binding.AgentID,
+	}); err != nil {
+		return "", "", err
+	}
+	return gitRoot, archive, nil
 }

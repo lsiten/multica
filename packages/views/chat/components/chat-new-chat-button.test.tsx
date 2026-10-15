@@ -11,7 +11,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-import { NewChatButton } from "./new-chat-button";
+import { AgentPicker, NewChatButton } from "./new-chat-button";
 
 const TEST_RESOURCES = { en: { chat: enChat, issues: enIssues } };
 
@@ -138,5 +138,33 @@ describe("NewChatButton", () => {
 
     expect(onStart).toHaveBeenCalledWith(agents[0]);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("AgentPicker multi-select", () => {
+  it("renders one selection check per selected agent", async () => {
+    const onSelectMany = vi.fn();
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <AgentPicker
+          agents={agents}
+          userId="user-1"
+          onSelect={() => undefined}
+          onSelectMany={onSelectMany}
+          multiSelect
+          triggerRender={<button type="button">Pick agents</button>}
+          trigger={null}
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Pick agents" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByText("Alpha"));
+    fireEvent.click(within(dialog).getByText("Beta"));
+
+    for (const name of ["Alpha", "Beta"]) {
+      const row = within(dialog).getByText(name).closest("button");
+      expect(row?.querySelectorAll("svg:not(.invisible)")).toHaveLength(1);
+    }
   });
 });

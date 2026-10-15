@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -97,6 +98,31 @@ func TestLocalReviewExternalDirectoryRequiresPreparedBinding(t *testing.T) {
 	request.TaskID, request.Path = "task1", t.TempDir()
 	if _, _, err := d.resolveReviewRoot(context.Background(), request); err == nil {
 		t.Fatal("binding accepted for another directory")
+	}
+}
+
+func TestLocalReviewExternalDirectoryRepairsVerifiedBinding(t *testing.T) {
+	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/daemon/runtimes/runtime1/tasks/task1/review-binding" || r.URL.Query().Get("directory_task_id") != "task1" {
+			http.Error(w, "unexpected binding request", http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(protocol.LocalReviewRuntimeBinding{WorkspaceID: "ws1", RuntimeID: "runtime1", TaskID: "task1", AgentID: "agent1"})
+	}))
+	d.workspaces = map[string]*workspaceState{"ws1": {runtimeIDs: []string{"runtime1"}}}
+	repo := createWorktreeTestRepo(t)
+	request := worktreeReviewRequest{WorkspaceID: "ws1", TaskID: "task1", RuntimeID: "runtime1", Path: repo, Target: "main"}
+	resolved, recordRoot, err := d.resolveReviewRoot(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := filepath.EvalSymlinks(repo)
+	if resolved != canonical || recordRoot != execenv.ReviewArchivePath(d.cfg.WorkspacesRoot, "ws1", "task1") {
+		t.Fatalf("unexpected repaired binding: path=%q root=%q", resolved, recordRoot)
+	}
+	runtime, err := execenv.ReadReviewRuntime(recordRoot)
+	if err != nil || runtime.RuntimeID != "runtime1" {
+		t.Fatalf("runtime binding was not persisted: %+v %v", runtime, err)
 	}
 }
 

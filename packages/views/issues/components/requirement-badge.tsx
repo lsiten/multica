@@ -49,7 +49,9 @@ export function RequirementBadge({
 /** Marks an ordinary task with no parent issue as a workspace-level task. */
 export function TopLevelTaskBadge({ issue, className }: { issue: Issue; className?: string }) {
   const { t } = useT("issues");
-  if ((issue.kind ?? "task") === "requirement" || !!issue.parent_issue_id) return null;
+  // `undefined` means an older/incomplete payload, not proof that the issue is
+  // a root. Only the server's explicit null parent identifies a top-level task.
+  if ((issue.kind ?? "task") === "requirement" || issue.parent_issue_id !== null) return null;
 
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-1", className)}>

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Check, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -111,7 +111,6 @@ export function AgentPicker({
                   key={agent.id}
                   agent={agent}
                   isCurrent={agent.id === currentAgentId || selectedIds.includes(agent.id)}
-                  multiSelect={multiSelect}
                   onSelect={handlePick}
                 />
               ))}
@@ -124,7 +123,6 @@ export function AgentPicker({
                   key={agent.id}
                   agent={agent}
                   isCurrent={agent.id === currentAgentId || selectedIds.includes(agent.id)}
-                  multiSelect={multiSelect}
                   onSelect={handlePick}
                 />
               ))}
@@ -147,12 +145,10 @@ export function AgentPicker({
 function AgentPickerItem({
   agent,
   isCurrent,
-  multiSelect,
   onSelect,
 }: {
   agent: Agent;
   isCurrent: boolean;
-  multiSelect: boolean;
   onSelect: (agent: Agent) => void;
 }) {
   const { t } = useT("chat");
@@ -174,7 +170,6 @@ function AgentPickerItem({
         showStatusDot
       />
       <span className="truncate flex-1">{agent.name}</span>
-      {multiSelect && isCurrent && <Check className="h-4 w-4 shrink-0 text-primary" />}
       {!runtimeBound && (
         <span className="shrink-0 text-micro text-amber-600 dark:text-amber-400">
           {t(($) => $.window.agent_needs_runtime)}

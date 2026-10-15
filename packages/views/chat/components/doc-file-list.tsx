@@ -87,7 +87,7 @@ function repoLabel(repo: ChatSessionRepo): string {
 export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?: string | null }) {
   const { t } = useT("chat");
   const workspaceSlug = useWorkspaceSlug();
-  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "git">("files");
+  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues">("files");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const { data: sessionFiles } = useQuery({
     ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId),
@@ -251,7 +251,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     return repoReferences.filter((repo) => repoLabel(repo).toLowerCase().includes(query));
   }, [repoReferences, filter]);
 
-  const hasContent = !!project || allDocuments.length > 0 || repoReferences.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
+  const hasContent = !!project || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
 
   if (!hasContent) {
     return (
@@ -342,8 +342,8 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           ))}
         </div>
       )}
-      <div className="grid grid-cols-4 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
-        {(["files", "attachments", "issues", "git"] as const).map((tab) => (
+      <div className="grid grid-cols-3 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
+        {(["files", "attachments", "issues"] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -355,25 +355,11 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
               (activeTab === tab ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
             }
           >
-            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : tab === "issues" ? t(($) => $.doc_file_list.issues) : t(($) => $.doc_file_list.git)}
+            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : t(($) => $.doc_file_list.issues)}
           </button>
         ))}
       </div>
-      {activeTab === "git" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {gitRequest ? (
-            <LocalReviewIndex
-              request={gitRequest}
-              onChanged={() => {
-                void workspaceFiles.refetch();
-              }}
-              onBusyChange={() => undefined}
-            />
-          ) : (
-            <p className="p-2 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_git_checkout)}</p>
-          )}
-        </div>
-      ) : activeTab === "issues" ? (
+      {activeTab === "issues" ? (
         <div className="flex-1 overflow-y-auto">
           {projectID && (projectIssues?.issues ?? []).length > 0 ? (
             <ul className="divide-y">
@@ -412,7 +398,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           )}
         </div>
       ) : (
-        <>
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {project && (
             <div className="px-3 py-2">
               <h3 className="truncate text-body font-semibold">{project.title}</h3>
@@ -442,7 +428,24 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           ) : (
             <div className="flex-1" />
           )}
-        </>
+          <section className="mt-2 border-t p-2" aria-label={t(($) => $.doc_file_list.git)}>
+            <div className="mb-2 flex items-center gap-2 text-caption font-medium text-muted-foreground">
+              <GitBranch className="h-3.5 w-3.5" />
+              {t(($) => $.doc_file_list.git)}
+            </div>
+            {gitRequest ? (
+              <LocalReviewIndex
+                request={gitRequest}
+                onChanged={() => {
+                  void workspaceFiles.refetch();
+                }}
+                onBusyChange={() => undefined}
+              />
+            ) : (
+              <p className="p-2 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_git_checkout)}</p>
+            )}
+          </section>
+        </div>
       )}
     </div>
   );

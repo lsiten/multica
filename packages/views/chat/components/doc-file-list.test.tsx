@@ -60,6 +60,10 @@ vi.mock("../../platform/local-review-pages", async () => {
   };
 });
 
+vi.mock("../../issues/components/local-review-index", () => ({
+  LocalReviewIndex: () => <div data-testid="local-review-index">Source control</div>,
+}));
+
 function newClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }

@@ -126,6 +126,13 @@ func (d *Daemon) resolveBoundReviewDirectory(ctx context.Context, request worktr
 			}
 		}
 	}
+	// A local-directory task may have been prepared by an older daemon before
+	// the review provenance marker was introduced. If the current runtime can
+	// prove the persisted task work_dir, repair the marker once and continue
+	// using the same archive root as all other review records.
+	if path, root, bindErr := d.bindVerifiedExternalReviewDirectory(ctx, request); bindErr == nil {
+		return path, root, nil
+	}
 	return "", "", errors.New("directory has no matching runtime task binding; run the task with an updated daemon first")
 }
 

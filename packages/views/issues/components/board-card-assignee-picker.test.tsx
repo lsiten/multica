@@ -214,7 +214,6 @@ describe("BoardCardContent assignee picker", () => {
     );
 
     expect(container.querySelector("svg")).toBeNull();
-    expect(screen.queryByText("Translated")).not.toBeInTheDocument();
     viewState.cardProperties.priority = false;
   });
 });

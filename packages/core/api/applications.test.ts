@@ -90,6 +90,15 @@ describe("application API boundary", () => {
     expect(await new ApiClient("https://api.test").launchApplication(workspaceId, projectId, applicationId)).toBe(url);
   });
 
+  it("accepts loopback public origins used by local application runtimes", async () => {
+    const ticket = "c".repeat(64);
+    for (const host of ["localhost:3000", "127.0.0.1:3000", "[::1]:3000"]) {
+      const url = `http://${host}/app/${applicationId}/.__multica/launch?ticket=${ticket}`;
+      respond({ url });
+      await expect(new ApiClient("https://api.test").launchApplication(workspaceId, projectId, applicationId)).resolves.toBe(url);
+    }
+  });
+
   it("rejects malformed log pages instead of displaying invalid output", async () => {
     const client = new ApiClient("https://api.test");
     respond({ text: "output", cursor: "host:0:6", gap: false });
