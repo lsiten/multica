@@ -118,7 +118,11 @@ func connectProcessVideo(t *testing.T, ctx context.Context, client *mirrorProces
 		select {
 		case frame := <-peer.frames:
 			if frame.Type == protocol.EventMirrorAnswerFailure {
-				t.Fatal("native fixture negotiation rejected")
+				var failure protocol.MirrorAnswerFailurePayload
+				if err := json.Unmarshal(frame.Payload, &failure); err != nil {
+					t.Fatalf("native fixture negotiation rejected; decode failure: %v", err)
+				}
+				t.Fatalf("native fixture negotiation rejected: %s", failure.Reason)
 			}
 			if frame.Type == protocol.EventMirrorAnswer {
 				if err := json.Unmarshal(frame.Payload, &answer); err != nil {

@@ -74,22 +74,16 @@ func TestHandleTaskReportsWindowsCodexProcessStartFailure(t *testing.T) {
 		},
 	}, 0)
 
-	// The daemon persists terminal reports before delivering them. On Windows
-	// the replay worker may deliver the callback just after handleTask returns,
-	// so wait for the observable HTTP side effect instead of racing that worker.
-	// The Windows worker can spend several seconds draining the persisted
-	// terminal report when the full race-enabled daemon suite is contending for
-	// the scheduler. Keep the wait bounded, but longer than the normal local
-	// callback latency so CI does not race a valid failure report.
-	deadline := time.Now().Add(10 * time.Second)
-	var body map[string]any
-	for time.Now().Before(deadline) {
-		body, _ = failBody.Load().(map[string]any)
-		if body != nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	// New constructs the durable outbox, but this focused unit test does not
+	// start the daemon lifecycle replay loop. Drain one replay pass explicitly
+	// so the assertion observes the same queued report the running daemon would
+	// deliver through its background uploader.
+	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 0 || delivered != 1 {
+		t.Fatalf("terminal report replay = pending %d, delivered %d; want pending 0 and delivered 1", pending, delivered)
 	}
+
+	// The explicit replay above performs the HTTP delivery synchronously.
+	body, _ := failBody.Load().(map[string]any)
 	if body == nil {
 		t.Fatal("runtime CreateProcess failure was not reported through the task /fail endpoint")
 	}
