@@ -43,10 +43,12 @@ import { GroupChatParticipants } from "./group-chat-participants";
 export function ChatSessionHeader({
   session,
   agent,
+  agents,
   onArchive,
 }: {
   session: ChatSession;
   agent: Agent | null;
+  agents?: Agent[];
   // Archiving the open conversation must move the pane off it (advance to the
   // next chat on desktop, back to the list on mobile), so the parent owns it —
   // see ChatPage.handleArchive. Falls back to a plain status flip if unwired.
@@ -209,7 +211,7 @@ export function ChatSessionHeader({
             >
               {t(($) => $.group.badge)}
             </span>
-            <GroupChatParticipants session={session} />
+            <GroupChatParticipants session={session} agents={agents ?? []} />
           </div>
         )}
         {agent && (

@@ -17,6 +17,15 @@ import { isAgentRuntimeBound } from "@multica/core/agents";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { Input } from "@multica/ui/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@multica/ui/components/ui/dialog";
 
 /**
  * Agent picker: a searchable, grouped (My agents / Others) list of agents in a
@@ -78,7 +87,12 @@ export function AgentPicker({
   };
 
   const handleCreateGroup = () => {
-    const selected = agents.filter((agent) => selectedIds.includes(agent.id) && isAgentRuntimeBound(agent));
+    // Preserve click order: the first selected agent is the group lead and
+    // owns the session's execution context. Filtering the source array here
+    // silently changed the lead whenever the picker was searched or sorted.
+    const selected = selectedIds
+      .map((id) => agents.find((agent) => agent.id === id))
+      .filter((agent): agent is Agent => !!agent && isAgentRuntimeBound(agent));
     if (selected.length < 2 || !onSelectMany) return;
     onSelectMany(selected, groupTitle.trim() || undefined);
     setSelectedIds([]);
@@ -86,6 +100,49 @@ export function AgentPicker({
     setFilter("");
     setOpen(false);
   };
+
+  if (multiSelect) {
+    return (
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger render={triggerRender}>{trigger}</DialogTrigger>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t(($) => $.window.create_group)}</DialogTitle>
+            <DialogDescription>{t(($) => $.window.new_group_chat_tooltip)}</DialogDescription>
+          </DialogHeader>
+          <Input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t(($) => $.window.agent_filter_placeholder)} aria-label={t(($) => $.window.agent_filter_placeholder)} />
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {filteredMine.length === 0 && filteredOthers.length === 0 ? (
+              <PickerEmpty />
+            ) : (
+              <>
+                {filteredMine.length > 0 && (
+                  <PickerSection label={t(($) => $.window.my_agents)}>
+                    {filteredMine.map((agent) => (
+                      <AgentPickerItem key={agent.id} agent={agent} isCurrent={selectedIds.includes(agent.id)} onSelect={handlePick} />
+                    ))}
+                  </PickerSection>
+                )}
+                {filteredOthers.length > 0 && (
+                  <PickerSection label={t(($) => $.window.others)}>
+                    {filteredOthers.map((agent) => (
+                      <AgentPickerItem key={agent.id} agent={agent} isCurrent={selectedIds.includes(agent.id)} onSelect={handlePick} />
+                    ))}
+                  </PickerSection>
+                )}
+              </>
+            )}
+          </div>
+          <Input value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} placeholder={t(($) => $.window.group_title_placeholder)} aria-label={t(($) => $.window.group_title_placeholder)} />
+          <DialogFooter>
+            <Button type="button" className="w-full" disabled={selectedIds.length < 2} onClick={handleCreateGroup}>
+              {t(($) => $.window.create_group)}{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <PropertyPicker

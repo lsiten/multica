@@ -136,6 +136,8 @@ export interface IssueStatusBranches {
   isTotalKnown: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
+  isError: boolean;
+  retry: () => void;
 }
 
 /**
@@ -441,6 +443,10 @@ export function useIssueStatusBranches({
   const headsFetching = statuses.some(
     (status) => branchData.get(status)?.headFetching,
   );
+  const isError = enabled && statuses.some((status) => branchData.get(status)?.isError);
+  const retryAll = useCallback(() => {
+    for (const status of statuses) retry(status);
+  }, [retry, statuses]);
 
   return {
     enabled,
@@ -454,5 +460,7 @@ export function useIssueStatusBranches({
       !facetsPending &&
       !headsPending &&
       (facetsFetching || headsFetching),
+    isError,
+    retry: retryAll,
   };
 }

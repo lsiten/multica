@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -58,6 +59,9 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 		manager, err := d.jevModelManager()
 		if err != nil {
 			return nil, nil, err
+		}
+		if !backendUsable(manager) {
+			return nil, nil, errors.New("local Jev model backend unavailable")
 		}
 		lease, err = manager.Acquire(ctx, jevmodels.Selection{ModelID: cfg.ModelID, Revision: cfg.ModelRevision, Device: cfg.Device}, modelservice.Execution{WorkspaceID: task.WorkspaceID, RuntimeID: task.RuntimeID, TaskID: task.ID, DispatchedAt: task.DispatchedAt})
 		if err != nil {

@@ -2429,6 +2429,9 @@ export const ChatParticipantSchema = z.object({
   member_id: z.string().default(""),
   joined_at: z.string().default(""),
 }).loose();
+export const ChatParticipantsResponseSchema = z.object({
+  participants: z.array(ChatParticipantSchema).default([]),
+}).loose();
 
 export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   id: z.string(),

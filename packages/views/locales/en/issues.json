@@ -56,6 +56,10 @@
     "hint": "Issues can't be shown until statuses load.",
     "retry": "Try again"
   },
+  "data_load_error": {
+    "title": "Couldn't load issues",
+    "retry": "Try again"
+  },
   "source_context": {
     "create_action": "Create sub-issue from here",
     "preview_loading": "Loading captured source preview…",

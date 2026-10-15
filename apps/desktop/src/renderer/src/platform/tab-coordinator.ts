@@ -271,13 +271,12 @@ function handleStoreChange(): void {
 }
 
 function handleReloadGenerationChange(generation: number): void {
-  // RFC: reload = remount + invalidate the current page's query scope.
-  // `type: "active"` limits invalidation to queries with mounted observers —
-  // i.e. exactly the current page — and is explicitly NOT a global cache
-  // invalidation. `refetchType: "none"` avoids fetching into a tree that is
-  // about to unmount; the remounted page refetches its now-stale queries.
+  // A desktop reload must invalidate cached server data across the current
+  // workspace, including inactive panels that will mount immediately after
+  // the remount. Refetch only mounted observers so reload does not fan out
+  // network requests for every historical tab.
   void generation;
-  queryClient?.invalidateQueries({ type: "active", refetchType: "none" });
+  queryClient?.invalidateQueries({ type: "all", refetchType: "active" });
 }
 
 /**

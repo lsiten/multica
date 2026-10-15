@@ -167,6 +167,34 @@ export function useCreateGroupChatSession() {
   });
 }
 
+export function useAddChatGroupParticipant() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ sessionId, memberId }: { sessionId: string; memberId: string }) =>
+      api.addChatGroupParticipant(sessionId, { member_type: "agent", member_id: memberId }),
+    onSuccess: (participant, { sessionId }) => {
+      qc.setQueryData<import("../types").ChatSession[]>(chatKeys.sessions(wsId), (sessions) =>
+        sessions?.map((session) =>
+          session.id === sessionId
+            ? { ...session, participants: [...(session.participants ?? []), participant] }
+            : session,
+        ),
+      );
+      qc.setQueryData<import("../types/chat").ChatParticipant[]>(["chat-group-participants", sessionId], (participants) =>
+        participants?.some((entry) => entry.member_type === participant.member_type && entry.member_id === participant.member_id)
+          ? participants
+          : [...(participants ?? []), participant],
+      );
+      qc.invalidateQueries({ queryKey: chatKeys.session(wsId, sessionId) });
+    },
+    onSettled: (_data, _error, { sessionId }) => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.session(wsId, sessionId) });
+    },
+  });
+}
+
 /**
  * Clears the session's unread state server-side. Optimistically flips
  * has_unread to false in the cached list so the FAB badge drops

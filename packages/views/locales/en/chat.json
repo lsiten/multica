@@ -6,6 +6,7 @@
     "participants_other": "{{count}} members",
     "you": "You",
     "open_members": "Members",
+    "add_agent": "Add an agent",
     "no_members": "No members yet"
   },  "doc_mode": {
     "issue": "Issue",
@@ -26,7 +27,8 @@
     "ask_agent_to_edit": "Ask agent to edit",
     "chat_input": "Document chat",
     "collapse_chat": "Collapse chat input",
-    "expand_chat": "Expand chat input"
+    "expand_chat": "Expand chat input",
+    "retry": "Retry"
   },
   "doc_file_list": {
     "filter_placeholder": "Filter files",
@@ -325,7 +327,10 @@
     "archive": "Archive",
     "unarchive": "Unarchive",
     "archived_title": "Archived",
-    "row_actions_aria": "Chat actions"
+    "row_actions_aria": "Chat actions",
+    "loading": "Loading chats…",
+    "load_error": "Could not load chats",
+    "retry": "Retry"
   },
   "header": {
     "view_profile": "View agent profile",

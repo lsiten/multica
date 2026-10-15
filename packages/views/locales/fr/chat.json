@@ -5,6 +5,7 @@
     "participants_other": "{{count}} membres",
     "you": "Vous",
     "open_members": "Membres",
+    "add_agent": "Ajouter un agent",
     "no_members": "Aucun membre"
   },  "doc_mode": {
     "issue": "Ticket",
@@ -25,7 +26,8 @@
     "ask_agent_to_edit": "Demander une modification",
     "chat_input": "Conversation du document",
     "collapse_chat": "Réduire la saisie de chat",
-    "expand_chat": "Développer la saisie de chat"
+    "expand_chat": "Développer la saisie de chat",
+    "retry": "Réessayer"
   },
   "doc_file_list": {
     "filter_placeholder": "Filtrer les fichiers",
@@ -324,7 +326,10 @@
     "archive": "Archiver",
     "unarchive": "Désarchiver",
     "archived_title": "Archivées",
-    "row_actions_aria": "Actions de discussion"
+    "row_actions_aria": "Actions de discussion",
+    "loading": "Chargement des discussions…",
+    "load_error": "Impossible de charger les discussions",
+    "retry": "Réessayer"
   },
   "header": {
     "view_profile": "Voir le profil de l'agent",

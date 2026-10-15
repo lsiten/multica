@@ -82,6 +82,8 @@ export interface IssueSurfaceData {
    * filter, an unfiltered one under an active chip.
    */
   isStatusCatalogError: boolean;
+  isDataError: boolean;
+  retryData: () => void;
   /** Re-runs the project list behind the project-status half of
    *  {@link isStatusCatalogError}. */
   retryProjectCatalog: () => void;
@@ -460,6 +462,15 @@ export function useIssueSurfaceData({
     resolveTableExportLookups,
     isLoading,
     isRefreshing,
+    isDataError:
+      (serverGroupBranches.enabled && serverGroupBranches.isError) ||
+      (serverStatusBranches.enabled && serverStatusBranches.isError) ||
+      (usesGantt && ganttIssuesQuery.isError),
+    retryData: () => {
+      serverGroupBranches.retryGroups();
+      serverStatusBranches.retry();
+      if (usesGantt) void ganttIssuesQuery.refetch();
+    },
     // isEmpty asserts "this window has no issues". The board/list/swimlane
     // data IS the full window, so an empty result proves it. The gantt query
     // is a scheduled-only PROJECTION — an empty subset cannot prove the

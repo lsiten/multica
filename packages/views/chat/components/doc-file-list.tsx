@@ -98,6 +98,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     }
   }, [selectedProjectId, sessionFiles]);
   const projectID = selectedProjectId ?? sessionFiles?.project_id ?? "";
+  const activeDoc = useDocModeStore(selectActiveDocument(wsId));
   // The project is the header for its files; it has no document body of its
   // own, so it is shown but not opened through the doc-mode surface.
   const { data: project } = useQuery({
@@ -107,7 +108,9 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   const { data: projectIssues } = useQuery({
     queryKey: ["chat-project-issues", wsId, projectID],
     queryFn: () => api.listIssues({ project_id: projectID, limit: 100, offset: 0 }),
-    enabled: !!projectID,
+    // The file list is the default tab; do not block its first paint on the
+    // issues projection. Fetch the heavier issue window only when requested.
+    enabled: !!projectID && activeTab === "issues",
     staleTime: 15_000,
   });
   // Stable across renders (keyed on sessionFiles) so the derived document memo
@@ -133,14 +136,20 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     },
     [selectedProjectId, sessionFiles],
   );
-  // Source Control must act on the current chat's lead/requirement checkout.
-  // Falling back to an arbitrary project sibling would make stage/commit apply
-  // to the wrong worktree, so use the same task ordering as the file tree.
-  // A file tree and Source Control must describe the same checkout. Group
-  // specialists may have identical relative paths in separate worktrees, so
-  // browse only the lead checkout selected above instead of flattening them.
+  // Source Control follows the directory currently open in the document
+  // surface, just like VS Code. It is deliberately derived from the active
+  // document's worktree rather than from the chat/project identity; switching
+  // to a file in another local directory changes the Git scope immediately.
+  // Until a file is opened, keep the first available checkout as the initial
+  // directory so the panel remains useful on a newly selected chat.
   const workspaceTasks = useMemo(() => fileTasks.slice(0, 1), [fileTasks]);
-  const gitTask = workspaceTasks[0];
+  const gitTask = useMemo(
+    () =>
+      activeDoc?.taskId
+        ? fileTasks.find((task) => task.id === activeDoc.taskId) ?? workspaceTasks[0]
+        : workspaceTasks[0],
+    [activeDoc?.taskId, fileTasks, workspaceTasks],
+  );
   const gitRequest: LocalReviewRequest | null = gitTask?.work_dir
     ? {
         task_id: gitTask.id,
@@ -170,11 +179,10 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           }, signal).catch(() => null),
         ),
       ),
-    enabled: !!sessionId && workspaceTasks.length > 0,
+    enabled: !!sessionId && workspaceTasks.length > 0 && activeTab === "files",
     staleTime: 60_000,
   });
   const openDoc = useDocModeStore((s) => s.openDoc);
-  const activeDoc = useDocModeStore(selectActiveDocument(wsId));
   // Match the VS Code/GitHub tree convention: folders start closed so a large
   // checkout stays scannable. Search is computed from allDocuments (before the
   // tree is filtered), then matching ancestor folders are opened automatically.

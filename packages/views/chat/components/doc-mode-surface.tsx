@@ -247,6 +247,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
         <WorkspaceFileBody
           loading={workspaceContent.isLoading || (!!doc.taskId && !sessionFiles && !workspacePath)}
           error={workspaceContent.isError || !workspacePath || !workspaceRuntimeId}
+          onRetry={() => { void workspaceContent.refetch(); }}
           content={fileContent?.text ?? null}
           truncated={fileContent?.has_more ?? false}
           total={fileContent?.size ?? 0}
@@ -338,6 +339,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
           <DocBody
             loading={isTextAttachment ? attachmentTextContent.isLoading : current.isLoading}
             error={isTextAttachment ? attachmentTextContent.isError : current.isError}
+            onRetry={() => { void (isTextAttachment ? attachmentTextContent.refetch() : current.refetch()); }}
             content={bodyContent}
             contentUrl={current.data?.content_url ?? null}
             contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
@@ -359,6 +361,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
 function DocBody({
   loading,
   error,
+  onRetry,
   content,
   contentUrl,
   contentType,
@@ -367,12 +370,14 @@ function DocBody({
 }: {
   loading: boolean;
   error: boolean;
+  onRetry: () => void;
   content: string | null;
   contentUrl: string | null;
   contentType: string;
   isText: boolean;
   label: string;
 }) {
+  const { t } = useT("chat");
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -382,8 +387,9 @@ function DocBody({
   }
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <p className="text-body">{label}</p>
+        <Button variant="outline" size="sm" onClick={onRetry}>{t(($) => $.doc_mode.retry)}</Button>
       </div>
     );
   }
@@ -420,6 +426,7 @@ function formatBytes(bytes: number): string {
 function WorkspaceFileBody({
   loading,
   error,
+  onRetry,
   content,
   truncated,
   total,
@@ -429,6 +436,7 @@ function WorkspaceFileBody({
 }: {
   loading: boolean;
   error: boolean;
+  onRetry: () => void;
   content: string | null;
   truncated: boolean;
   total: number;
@@ -442,7 +450,7 @@ function WorkspaceFileBody({
     return <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   }
   if (error || content === null) {
-    return <div className="flex h-full items-center justify-center text-muted-foreground"><p className="text-body">{label}</p></div>;
+    return <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><p className="text-body">{label}</p><Button variant="outline" size="sm" onClick={onRetry}>{t(($) => $.doc_mode.retry)}</Button></div>;
   }
   return (
     <div className="flex h-full flex-col min-h-0">

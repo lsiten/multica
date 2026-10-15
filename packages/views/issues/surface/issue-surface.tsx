@@ -295,6 +295,8 @@ function IssueSurfaceContent({
           <FilterDependencyErrorState kind="status" onRetry={controller.retryStatusCatalog} />
         ) : controller.isWorkingFilterError ? (
           <FilterDependencyErrorState kind="working" onRetry={controller.retryWorkingFilter} />
+        ) : controller.isDataError ? (
+          <FilterDependencyErrorState kind="data" onRetry={controller.retryData} />
         ) : controller.isLoading ? (
           renderLoading ? (
             renderLoading(renderContext)
@@ -411,7 +413,7 @@ function FilterDependencyErrorState({
   kind,
   onRetry,
 }: {
-  kind: "status" | "working";
+  kind: "status" | "working" | "data";
   onRetry: () => void;
 }) {
   const { t } = useT("issues");
@@ -422,7 +424,9 @@ function FilterDependencyErrorState({
     >
       <AlertTriangle className="h-10 w-10 text-faint-foreground" />
       <p className="text-body">
-        {kind === "working"
+        {kind === "data"
+          ? t(($) => $.data_load_error.title)
+          : kind === "working"
           ? t(($) => $.working_filter_error.title)
           : t(($) => $.status_catalog_error.title)}
       </p>
@@ -430,7 +434,7 @@ function FilterDependencyErrorState({
         <p className="text-caption">{t(($) => $.status_catalog_error.hint)}</p>
       )}
       <Button variant="outline" size="sm" className="mt-1" onClick={onRetry}>
-        {t(($) => $.status_catalog_error.retry)}
+        {kind === "data" ? t(($) => $.data_load_error.retry) : t(($) => $.status_catalog_error.retry)}
       </Button>
     </div>
   );

@@ -79,7 +79,11 @@ export function chatSessionsOptions(wsId: string) {
   return queryOptions({
     queryKey: chatKeys.sessions(wsId),
     queryFn: () => api.listChatSessions({ status: "all" }),
-    staleTime: Infinity,
+    // A desktop restart must reconcile the list with the server. Persisted
+    // query data must never make an empty history look authoritative forever.
+    staleTime: 30_000,
+    refetchOnMount: "always",
+    retry: 2,
   });
 }
 
@@ -141,7 +145,9 @@ export function chatSessionOptions(wsId: string, id: string) {
     queryKey: chatKeys.session(wsId, id),
     queryFn: () => api.getChatSession(id),
     enabled: !!id,
-    staleTime: Infinity,
+    staleTime: 30_000,
+    refetchOnMount: "always",
+    retry: 2,
   });
 }
 
@@ -150,7 +156,9 @@ export function chatMessagesOptions(sessionId: string) {
     queryKey: chatKeys.messages(sessionId),
     queryFn: () => api.listChatMessages(sessionId),
     enabled: !!sessionId,
-    staleTime: Infinity,
+    staleTime: 30_000,
+    refetchOnMount: "always",
+    retry: 2,
   });
 }
 
@@ -163,7 +171,9 @@ export function chatMessagesPageOptions(sessionId: string, limit = 50) {
     getNextPageParam: (lastPage) =>
       lastPage.has_more ? lastPage.next_cursor ?? undefined : undefined,
     enabled: !!sessionId,
-    staleTime: Infinity,
+    staleTime: 30_000,
+    refetchOnMount: "always",
+    retry: 2,
   });
 }
 
@@ -177,7 +187,9 @@ export function pendingChatTaskOptions(sessionId: string) {
     queryKey: chatKeys.pendingTask(sessionId),
     queryFn: () => api.getPendingChatTask(sessionId),
     enabled: !!sessionId,
-    staleTime: Infinity,
+    staleTime: 10_000,
+    refetchOnMount: "always",
+    retry: 2,
   });
 }
 

@@ -5,6 +5,7 @@
     "participants_other": "{{count}} 位成员",
     "you": "你",
     "open_members": "成员",
+    "add_agent": "添加智能体",
     "no_members": "暂无成员"
   },  "doc_mode": {
     "issue": "议题",
@@ -25,7 +26,8 @@
     "ask_agent_to_edit": "让 Agent 修改",
     "chat_input": "文档对话",
     "collapse_chat": "收起聊天输入框",
-    "expand_chat": "展开聊天输入框"
+    "expand_chat": "展开聊天输入框",
+    "retry": "重试"
   },
   "doc_file_list": {
     "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",
@@ -320,7 +322,10 @@
     "archive": "归档",
     "unarchive": "取消归档",
     "archived_title": "已归档",
-    "row_actions_aria": "聊天操作"
+    "row_actions_aria": "聊天操作",
+    "loading": "正在加载聊天记录…",
+    "load_error": "聊天记录加载失败",
+    "retry": "重试"
   },
   "header": {
     "view_profile": "查看智能体资料",

@@ -313,6 +313,8 @@ import {
   ChatPendingTaskSchema,
   ChatSessionListSchema,
   ChatSessionSchema,
+  ChatParticipantSchema,
+  ChatParticipantsResponseSchema,
   PrioritizeQueuedChatTaskResponseSchema,
   SendChatMessageResponseSchema,
   ContinueChatTaskResponseSchema,
@@ -4458,6 +4460,29 @@ export class ApiClient {
       headers: workspaceHeader(workspaceSlug),
       body: JSON.stringify(data),
     });
+  }
+
+  async addChatGroupParticipant(
+    sessionId: string,
+    participant: { member_type: "member" | "agent"; member_id: string },
+  ): Promise<import("../types/chat").ChatParticipant> {
+    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/participants`, {
+      method: "POST",
+      body: JSON.stringify(participant),
+    });
+    return parseWithFallback(raw, ChatParticipantSchema, {
+      member_type: participant.member_type,
+      member_id: participant.member_id,
+      joined_at: "",
+    }, { endpoint: "POST /api/chat/sessions/:id/participants" });
+  }
+
+  async listChatGroupParticipants(sessionId: string): Promise<import("../types/chat").ChatParticipant[]> {
+    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/participants`);
+    const response = parseWithFallback(raw, ChatParticipantsResponseSchema, { participants: [] }, {
+      endpoint: "GET /api/chat/sessions/:id/participants",
+    });
+    return response.participants;
   }
 
   async deleteChatSession(id: string): Promise<void> {

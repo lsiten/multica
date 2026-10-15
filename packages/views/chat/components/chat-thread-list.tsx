@@ -81,12 +81,18 @@ function toPreview(content: string): string {
 export function ChatThreadList({
   sessions,
   agents,
+  sessionsLoading = false,
+  sessionsError = false,
+  onRetrySessions,
   activeSessionId,
   onSelectSession,
   onArchive,
 }: {
   sessions: ChatSession[];
   agents: Agent[];
+  sessionsLoading?: boolean;
+  sessionsError?: boolean;
+  onRetrySessions?: () => void;
   activeSessionId: string | null;
   onSelectSession: (session: ChatSession) => void;
   // Archiving is owned by the parent so the selection advance stays layout-
@@ -109,6 +115,33 @@ export function ChatThreadList({
   const openInNewTab = navigation?.openInNewTab;
   const getShareableUrl = navigation?.getShareableUrl;
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
+
+  if (sessionsLoading) {
+    return (
+      <div className="space-y-2 px-2 py-2" aria-busy="true" aria-label={t(($) => $.list.loading)}>
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="flex h-14 items-center gap-3 rounded-md px-2">
+            <div className="size-8 shrink-0 animate-pulse rounded-full bg-muted" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (sessionsError) {
+    return (
+      <div role="alert" className="flex flex-col items-center gap-2 px-4 py-8 text-center text-muted-foreground">
+        <p className="text-body">{t(($) => $.list.load_error)}</p>
+        <button type="button" className="text-caption text-primary hover:underline" onClick={onRetrySessions}>
+          {t(($) => $.list.retry)}
+        </button>
+      </div>
+    );
+  }
 
   // Split the flat cache locally: active chats fill the default history view,
   // archived chats fill the "Archived" view. Both sorted pinned-first (then by

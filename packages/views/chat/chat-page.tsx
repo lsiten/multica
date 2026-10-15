@@ -312,6 +312,9 @@ export function ChatPage() {
       <ChatThreadList
         sessions={c.sessions}
         agents={c.agents}
+        sessionsLoading={c.sessionsLoading}
+        sessionsError={c.sessionsError}
+        onRetrySessions={c.retrySessions}
         activeSessionId={c.activeSessionId}
         onSelectSession={handleSelect}
         onArchive={handleArchive}
@@ -407,10 +410,18 @@ export function ChatPage() {
         <ChatSessionHeader
           session={c.currentSession}
           agent={c.activeAgent}
+          agents={c.agents}
           onArchive={handleArchive}
         />
       )}
-      {c.showSkeleton ? (
+      {c.messagesError ? (
+        <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+          <p className="text-body">{t(($) => $.message_list.failure.fallback)}</p>
+          <Button variant="outline" size="sm" onClick={c.retryMessages}>
+            {t(($) => $.message_list.failure.retry)}
+          </Button>
+        </div>
+      ) : c.showSkeleton ? (
         <ChatMessageSkeleton />
       ) : c.hasMessages ? (
         <ChatMessageList

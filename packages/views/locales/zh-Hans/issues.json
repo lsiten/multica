@@ -55,6 +55,10 @@
     "hint": "加载状态后才能显示任务。",
     "retry": "重试"
   },
+  "data_load_error": {
+    "title": "项目任务加载失败",
+    "retry": "重试"
+  },
   "source_context": {
     "create_action": "从这条评论创建子任务",
     "preview_loading": "正在加载来源上下文预览...",

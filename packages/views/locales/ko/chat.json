@@ -5,6 +5,7 @@
     "participants_other": "회원 {{count}}명",
     "you": "나",
     "open_members": "회원",
+    "add_agent": "에이전트 추가",
     "no_members": "아직 회원 없음"
   },  "doc_mode": {
     "issue": "이슈",
@@ -25,7 +26,8 @@
     "ask_agent_to_edit": "에이전트에게 편집 요청",
     "chat_input": "문서 채팅",
     "collapse_chat": "채팅 입력 접기",
-    "expand_chat": "채팅 입력 펼치기"
+    "expand_chat": "채팅 입력 펼치기",
+    "retry": "다시 시도"
   },
   "doc_file_list": {
     "filter_placeholder": "\ud30c\uc77c \ud544\ud130",
@@ -320,7 +322,10 @@
     "archive": "보관",
     "unarchive": "보관 해제",
     "archived_title": "보관됨",
-    "row_actions_aria": "채팅 작업"
+    "row_actions_aria": "채팅 작업",
+    "loading": "채팅을 불러오는 중…",
+    "load_error": "채팅을 불러오지 못했습니다",
+    "retry": "다시 시도"
   },
   "header": {
     "view_profile": "Agent 프로필 보기",

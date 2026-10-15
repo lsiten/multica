@@ -125,6 +125,8 @@ export interface IssueSurfaceController {
    * than an unexplained empty board. (MUL-6243)
    */
   isStatusCatalogError: boolean;
+  isDataError: boolean;
+  retryData: () => void;
   /** Re-runs the failed catalog request behind {@link isStatusCatalogError}. */
   retryStatusCatalog: () => void;
   /** First-load failure while the working filter needs issue membership. */
@@ -878,6 +880,8 @@ export function useIssueSurfaceController({
       !data.isRefreshing &&
       !(usesTable && (tableSearch.trim() || debouncedActiveSearch)),
     isStatusCatalogError: data.isStatusCatalogError,
+    isDataError: data.isDataError,
+    retryData: data.retryData,
     // Either catalog can be the one that failed, and the error state offers a
     // single retry — refresh both rather than guess which.
     retryStatusCatalog: () => {

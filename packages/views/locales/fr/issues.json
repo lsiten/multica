@@ -56,6 +56,10 @@
     "hint": "Les tâches ne peuvent pas s’afficher tant que les statuts ne sont pas chargés.",
     "retry": "Réessayer"
   },
+  "data_load_error": {
+    "title": "Impossible de charger les tâches",
+    "retry": "Réessayer"
+  },
   "source_context": {
     "create_action": "Créer une sous-tâche à partir d'ici",
     "preview_loading": "Chargement de l'aperçu de la source capturée…",

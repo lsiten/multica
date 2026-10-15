@@ -1,7 +1,10 @@
 "use client";
 
-import { Users } from "lucide-react";
-import type { ChatSession } from "@multica/core/types";
+import { Plus, Users } from "lucide-react";
+import type { Agent, ChatSession } from "@multica/core/types";
+import { useAddChatGroupParticipant } from "@multica/core/chat/mutations";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@multica/core/api";
 import { useActorName } from "@multica/core/workspace/hooks";
 import { cn } from "@multica/ui/lib/utils";
 import {
@@ -9,6 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@multica/ui/components/ui/popover";
+import { Button } from "@multica/ui/components/ui/button";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
@@ -19,16 +23,28 @@ import { useT } from "../../i18n";
  */
 export function GroupChatParticipants({
   session,
+  agents,
   className,
 }: {
   session: ChatSession;
+  agents: Agent[];
   className?: string;
 }) {
   const { t } = useT("chat");
   const { getActorName } = useActorName();
-  const participants = session.participants ?? [];
+  const participantsQuery = useQuery({
+    queryKey: ["chat-group-participants", session.id],
+    queryFn: () => api.listChatGroupParticipants(session.id),
+    enabled: session.kind === "group" && !session.participants,
+    staleTime: 30_000,
+    retry: 2,
+  });
+  const participants = session.participants ?? participantsQuery.data ?? [];
+  const addParticipant = useAddChatGroupParticipant();
+  const participantIds = new Set(participants.filter((p) => p.member_type === "agent").map((p) => p.member_id));
+  const availableAgents = agents.filter((candidate) => !participantIds.has(candidate.id) && candidate.id !== session.agent_id);
 
-  if (participants.length === 0) return null;
+  if (session.kind !== "group") return null;
 
   return (
     <Popover>
@@ -66,6 +82,27 @@ export function GroupChatParticipants({
             </li>
           ))}
         </ul>
+        {availableAgents.length > 0 && (
+          <div className="mt-3 border-t pt-3">
+            <div className="mb-1 text-caption font-medium text-muted-foreground">{t(($) => $.group.add_agent)}</div>
+            <div className="max-h-32 space-y-1 overflow-y-auto">
+              {availableAgents.map((candidate) => (
+                <Button
+                  key={candidate.id}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-2"
+                  disabled={addParticipant.isPending}
+                  onClick={() => addParticipant.mutate({ sessionId: session.id, memberId: candidate.id })}
+                >
+                  <Plus className="size-3.5" />
+                  <span className="truncate">{candidate.name}</span>
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

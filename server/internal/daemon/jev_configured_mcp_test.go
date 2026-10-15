@@ -2,14 +2,33 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/modelservice"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
+
+func TestStartTaskConfiguredJevMCPRejectsTypedNilBackend(t *testing.T) {
+	var backend *modelservice.Client
+	d := &Daemon{
+		jevModels:       backend,
+		jevModelsErr:    errors.New("model backend unavailable"),
+		jevModelRetryAt: time.Now().Add(time.Hour),
+	}
+	task := Task{
+		ID:        "typed-nil-jev-task",
+		JevConfig: &protocol.WorkspaceJevConfig{Source: "local", ModelID: "fixture", TimeoutSeconds: 45},
+		Agent:     &AgentData{Model: "fixture"},
+	}
+	if _, _, err := d.startTaskConfiguredJevMCP(context.Background(), task, "claude", nil); err == nil {
+		t.Fatal("typed-nil Jev backend must fail closed instead of panicking")
+	}
+}
 
 func TestStartTaskConfiguredJevMCPSourceMatrix(t *testing.T) {
 	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
