@@ -62,8 +62,8 @@ func TestCreateMirrorSessionConsumesOfferBeforeDaemonAnswer(t *testing.T) {
 		t.Fatalf("connect daemon websocket: %v: %s", err, body)
 	}
 	defer conn.Close()
-	deadline := time.Now().Add(time.Second)
-	for testHandler.DaemonHub.RuntimeConnectionCount(runtimeID) == 0 && time.Now().Before(deadline) {
+	connectionDeadline := time.Now().Add(time.Second)
+	for testHandler.DaemonHub.RuntimeConnectionCount(runtimeID) == 0 && time.Now().Before(connectionDeadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if got := testHandler.DaemonHub.RuntimeConnectionCount(runtimeID); got != 1 {
@@ -147,6 +147,13 @@ func TestDaemonMirrorAnswerFailureOverWebSocketExposesFailedSessionWithoutAnswer
 		t.Fatalf("connect daemon websocket: %v", err)
 	}
 	defer conn.Close()
+	connectionDeadline := time.Now().Add(time.Second)
+	for testHandler.DaemonHub.RuntimeConnectionCount(runtimeID) == 0 && time.Now().Before(connectionDeadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := testHandler.DaemonHub.RuntimeConnectionCount(runtimeID); got != 1 {
+		t.Fatalf("runtime connection count = %d, want 1", got)
+	}
 
 	createBody := map[string]any{
 		"viewer_id": "viewer-1",

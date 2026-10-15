@@ -23,7 +23,11 @@ func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessa
 	if d.forwardMirrorControl(ctx, protocol.EventMirrorOffer, message) {
 		return
 	}
-	if d.cfg.NativeHostExecutable != "" && native.Supported() {
+	// A managed mirror child owns an authenticated hostclient even on builds
+	// where the parent binary has no in-process native selectors (for example,
+	// Linux). The child host is the capability boundary in that mode, so do not
+	// reject its offers using the parent platform probe.
+	if d.cfg.NativeHostExecutable != "" && (native.Supported() || d.mirrorChild != nil) {
 		d.handleManagedMirrorOffer(ctx, message)
 		return
 	}
