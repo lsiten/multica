@@ -152,6 +152,28 @@ export function DaemonRuntimeActions() {
   return (
     <>
       <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <span
+          role="status"
+          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-caption ${
+            isRunning
+              ? "bg-success/10 text-success"
+              : isTransitioning || isInstalling
+                ? "bg-warning/10 text-warning"
+                : "bg-muted text-muted-foreground"
+          }`}
+        >
+          <span
+            aria-hidden="true"
+            className={`h-1.5 w-1.5 rounded-full ${
+              isRunning
+                ? "bg-success"
+                : isTransitioning || isInstalling
+                  ? "bg-warning"
+                  : "bg-muted-foreground/60"
+            }`}
+          />
+          {t(($) => $.desktop.daemon.title)}：{daemonStateLabel(status.state, t)}
+        </span>
         {isRunning && (
           <>
             <Button size="sm" variant="ghost" onClick={() => setPanelOpen(true)}>

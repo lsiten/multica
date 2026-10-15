@@ -7,6 +7,9 @@ const translations = {
   desktop: {
     daemon: {
       view_logs: "查看日志",
+      title: "守护进程",
+      state_running: "运行中",
+      state_recovery_paused: "恢复已暂停",
       managed_externally: "由应用外部管理",
       start: "启动",
       restart: "重启",
@@ -63,6 +66,7 @@ describe("DaemonRuntimeActions — externally managed daemon (#3916)", () => {
     // The translated view-logs label still renders, confirming the running
     // branch mounted and uses the selected locale.
     expect(await screen.findByText("查看日志")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("守护进程：运行中");
     expect(screen.getByText("由应用外部管理")).toBeInTheDocument();
     expect(screen.queryByText("重启")).not.toBeInTheDocument();
     expect(screen.queryByText("停止")).not.toBeInTheDocument();
@@ -77,6 +81,7 @@ describe("DaemonRuntimeActions — externally managed daemon (#3916)", () => {
     render(<DaemonRuntimeActions />);
 
     expect(await screen.findByText("重启")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("守护进程：运行中");
     expect(screen.getByText("停止")).toBeInTheDocument();
     expect(
       screen.queryByText("由应用外部管理"),
@@ -90,5 +95,6 @@ describe("DaemonRuntimeActions — recovery budget", () => {
     render(<DaemonRuntimeActions />);
 
     expect(await screen.findByText("启动")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("守护进程：恢复已暂停");
   });
 });
