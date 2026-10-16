@@ -2,7 +2,8 @@
 
 import { ChevronRight, File, Folder, GitBranch, Search } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useDocModeStore, selectActiveDocument, useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat";
+import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
+import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import { api } from "@multica/core/api";
 import { projectDetailOptions } from "@multica/core/projects/queries";
