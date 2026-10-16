@@ -74,9 +74,13 @@ func (d *Daemon) bindVerifiedExternalReviewDirectory(ctx context.Context, reques
 	if err != nil {
 		return "", "", err
 	}
-	gitRoot, err := worktreeGit(ctx, canonical, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return "", "", err
+	// Git is optional for the file browser. Keep the canonical directory as
+	// the review path when it is not a repository; Git-specific actions will
+	// report their own capability/error, while read-only workspace_files and
+	// file_content can still inspect the verified local directory.
+	reviewPath := canonical
+	if gitRoot, gitErr := worktreeGit(ctx, canonical, "rev-parse", "--show-toplevel"); gitErr == nil {
+		reviewPath = gitRoot
 	}
 	query := url.Values{
 		"directory_task_id": {request.TaskID},
@@ -94,7 +98,7 @@ func (d *Daemon) bindVerifiedExternalReviewDirectory(ctx context.Context, reques
 	if err := execenv.WriteReviewDirectory(archive, execenv.ReviewDirectory{
 		WorkspaceID: request.WorkspaceID,
 		TaskID:      request.TaskID,
-		Path:        gitRoot,
+		Path:        reviewPath,
 		SourcePath:  canonical,
 	}); err != nil {
 		return "", "", err
@@ -107,5 +111,5 @@ func (d *Daemon) bindVerifiedExternalReviewDirectory(ctx context.Context, reques
 	}); err != nil {
 		return "", "", err
 	}
-	return gitRoot, archive, nil
+	return reviewPath, archive, nil
 }

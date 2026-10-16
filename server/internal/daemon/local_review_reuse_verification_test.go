@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -66,4 +67,38 @@ func fmtReviewReuseCase(remote, permitted bool) string {
 		proof = "verified"
 	}
 	return transport + "/" + proof
+}
+
+func TestLocalReviewReadsVerifiedDirectoryWithoutGit(t *testing.T) {
+	d := newGCTestDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/daemon/runtimes/runtime1/tasks/task1/review-binding" {
+			http.Error(w, "unexpected binding request", http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(protocol.LocalReviewRuntimeBinding{WorkspaceID: "ws1", RuntimeID: "runtime1", TaskID: "task1", AgentID: "agent1"})
+	}))
+	d.workspaces = map[string]*workspaceState{"ws1": {runtimeIDs: []string{"runtime1"}}}
+	d.runtimeIndex = map[string]Runtime{"runtime1": {ID: "runtime1"}}
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "README.txt"), []byte("plain directory\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := d.runRemoteReview(t.Context(), protocol.LocalReviewCommand{
+		RuntimeID: "runtime1", WorkspaceID: "ws1", TaskID: "task1", Path: directory, Action: "workspace_files",
+	})
+	if result.Error != "" {
+		t.Fatalf("non-Git workspace_files failed: %s", result.Error)
+	}
+	var page struct {
+		Entries []struct {
+			Path string `json:"path"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(result.Page, &page); err != nil {
+		t.Fatalf("decode workspace files: %v; page=%s", err, result.Page)
+	}
+	if len(page.Entries) != 1 || page.Entries[0].Path != "README.txt" {
+		t.Fatalf("workspace files = %+v, want README.txt", page.Entries)
+	}
 }
