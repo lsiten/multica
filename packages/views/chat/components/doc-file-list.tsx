@@ -2,7 +2,7 @@
 
 import { ChevronRight, File, Folder, GitBranch, Search } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
+import { useDocModeStore, selectActiveDocument, useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import { api } from "@multica/core/api";
 import { projectDetailOptions } from "@multica/core/projects/queries";
@@ -99,6 +99,18 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   }, [selectedProjectId, sessionFiles]);
   const projectID = selectedProjectId ?? sessionFiles?.project_id ?? "";
   const activeDoc = useDocModeStore(selectActiveDocument(wsId));
+  const currentDirectory = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
+  const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
+  useEffect(() => {
+    if (!activeDoc?.workDir || !activeDoc.taskId || !activeDoc.runtimeId) return;
+    setCurrentDirectory({
+      path: activeDoc.workDir,
+      taskId: activeDoc.taskId,
+      runtimeId: activeDoc.runtimeId,
+      workspaceId: wsId,
+      label: activeDoc.relativePath,
+    });
+  }, [activeDoc?.relativePath, activeDoc?.runtimeId, activeDoc?.taskId, activeDoc?.workDir, setCurrentDirectory, wsId]);
   // The project is the header for its files; it has no document body of its
   // own, so it is shown but not opened through the doc-mode surface.
   const { data: project } = useQuery({
@@ -145,10 +157,12 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   const workspaceTasks = useMemo(() => fileTasks.slice(0, 1), [fileTasks]);
   const gitTask = useMemo(
     () =>
-      activeDoc?.taskId
+      currentDirectory?.taskId
+        ? fileTasks.find((task) => task.id === currentDirectory.taskId) ?? workspaceTasks[0]
+        : activeDoc?.taskId
         ? fileTasks.find((task) => task.id === activeDoc.taskId) ?? workspaceTasks[0]
         : workspaceTasks[0],
-    [activeDoc?.taskId, fileTasks, workspaceTasks],
+    [activeDoc?.taskId, currentDirectory?.taskId, fileTasks, workspaceTasks],
   );
   const gitRequest: LocalReviewRequest | null = gitTask?.work_dir
     ? {

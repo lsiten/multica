@@ -3,6 +3,8 @@ export type { ChatStoreOptions, ChatState, ChatTimelineItem } from "./store";
 export { useRecentContextStore, selectRecentContexts } from "./recent-context-store";
 export { useDocModeStore, selectActiveDocument, selectWorking, selectDiffView } from "./doc-mode-store";
 export type { DocumentRef, DocumentKind } from "./doc-mode-store";
+export { useLocalDirectoryStore, selectCurrentLocalDirectory } from "./local-directory-store";
+export type { CurrentLocalDirectory } from "./local-directory-store";
 export type { RecentContextEntry, RecentContextType } from "./recent-context-store";
 export { canContinueChatFailure } from "./failure-recovery";
 
