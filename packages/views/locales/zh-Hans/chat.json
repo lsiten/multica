@@ -6,7 +6,19 @@
     "you": "你",
     "open_members": "成员",
     "add_agent": "添加智能体",
-    "no_members": "暂无成员"
+    "no_members": "暂无成员",
+    "management_tab": "群管理",
+    "management_title": "群聊管理",
+    "group_name": "群聊名称",
+    "edit_name": "编辑群聊名称",
+    "save_name": "保存群聊名称",
+    "lead_agent": "群主智能体",
+    "members": "群成员",
+    "add_agents": "拉入智能体",
+    "remove_member": "移除成员",
+    "select_agents": "选择要加入群聊的一个或多个智能体。",
+    "add_selected": "添加选中智能体",
+    "no_available_agents": "暂无可添加的智能体"
   },  "doc_mode": {
     "issue": "议题",
     "attachment": "附件",

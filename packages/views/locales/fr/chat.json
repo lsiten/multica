@@ -6,7 +6,19 @@
     "you": "Vous",
     "open_members": "Membres",
     "add_agent": "Ajouter un agent",
-    "no_members": "Aucun membre"
+    "no_members": "Aucun membre",
+    "management_tab": "Groupe",
+    "management_title": "Gestion du groupe",
+    "group_name": "Nom du groupe",
+    "edit_name": "Modifier le nom du groupe",
+    "save_name": "Enregistrer le nom du groupe",
+    "lead_agent": "Agent principal",
+    "members": "Membres",
+    "add_agents": "Ajouter des agents",
+    "remove_member": "Retirer le membre",
+    "select_agents": "Sélectionnez un ou plusieurs agents à ajouter au groupe.",
+    "add_selected": "Ajouter la sélection",
+    "no_available_agents": "Aucun agent disponible"
   },  "doc_mode": {
     "issue": "Ticket",
     "attachment": "Pièce jointe",

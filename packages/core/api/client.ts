@@ -4485,6 +4485,16 @@ export class ApiClient {
     return response.participants;
   }
 
+  async removeChatGroupParticipant(
+    sessionId: string,
+    participant: { member_type: string; member_id: string },
+  ): Promise<void> {
+    await this.fetch(
+      `/api/chat/sessions/${sessionId}/participants/${encodeURIComponent(participant.member_type)}/${encodeURIComponent(participant.member_id)}`,
+      { method: "DELETE" },
+    );
+  }
+
   async deleteChatSession(id: string): Promise<void> {
     await this.fetch(`/api/chat/sessions/${id}`, { method: "DELETE" });
   }

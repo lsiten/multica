@@ -195,6 +195,35 @@ export function useAddChatGroupParticipant() {
   });
 }
 
+export function useRemoveChatGroupParticipant() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({ sessionId, memberType, memberId }: { sessionId: string; memberType: string; memberId: string }) =>
+      api.removeChatGroupParticipant(sessionId, { member_type: memberType, member_id: memberId }),
+    onMutate: async ({ sessionId, memberType, memberId }) => {
+      await qc.cancelQueries({ queryKey: ["chat-group-participants", sessionId] });
+      const previous = qc.getQueryData<import("../types/chat").ChatParticipant[]>(["chat-group-participants", sessionId]);
+      qc.setQueryData<import("../types/chat").ChatParticipant[]>(["chat-group-participants", sessionId], (participants) =>
+        participants?.filter((participant) => !(participant.member_type === memberType && participant.member_id === memberId)),
+      );
+      qc.setQueryData<import("../types").ChatSession[]>(chatKeys.sessions(wsId), (sessions) =>
+        sessions?.map((session) => session.id === sessionId
+          ? { ...session, participants: session.participants?.filter((participant) => !(participant.member_type === memberType && participant.member_id === memberId)) }
+          : session),
+      );
+      return { previous };
+    },
+    onError: (_error, { sessionId }, context) => {
+      if (context?.previous) qc.setQueryData(["chat-group-participants", sessionId], context.previous);
+    },
+    onSettled: (_data, _error, { sessionId }) => {
+      qc.invalidateQueries({ queryKey: ["chat-group-participants", sessionId] });
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+    },
+  });
+}
+
 /**
  * Clears the session's unread state server-side. Optimistically flips
  * has_unread to false in the cached list so the FAB badge drops

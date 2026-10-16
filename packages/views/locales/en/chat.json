@@ -7,7 +7,19 @@
     "you": "You",
     "open_members": "Members",
     "add_agent": "Add an agent",
-    "no_members": "No members yet"
+    "no_members": "No members yet",
+    "management_tab": "Group",
+    "management_title": "Group management",
+    "group_name": "Group name",
+    "edit_name": "Edit group name",
+    "save_name": "Save group name",
+    "lead_agent": "Lead agent",
+    "members": "Members",
+    "add_agents": "Add agents",
+    "remove_member": "Remove member",
+    "select_agents": "Select one or more agents to add to this group.",
+    "add_selected": "Add selected",
+    "no_available_agents": "No available agents"
   },  "doc_mode": {
     "issue": "Issue",
     "attachment": "Attachment",

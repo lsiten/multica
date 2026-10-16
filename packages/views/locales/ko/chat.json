@@ -6,7 +6,19 @@
     "you": "나",
     "open_members": "회원",
     "add_agent": "에이전트 추가",
-    "no_members": "아직 회원 없음"
+    "no_members": "아직 회원 없음",
+    "management_tab": "그룹 관리",
+    "management_title": "그룹 관리",
+    "group_name": "그룹 이름",
+    "edit_name": "그룹 이름 편집",
+    "save_name": "그룹 이름 저장",
+    "lead_agent": "리드 에이전트",
+    "members": "그룹 회원",
+    "add_agents": "에이전트 추가",
+    "remove_member": "회원 삭제",
+    "select_agents": "그룹에 추가할 에이전트를 선택하세요.",
+    "add_selected": "선택 항목 추가",
+    "no_available_agents": "추가할 수 있는 에이전트가 없습니다"
   },  "doc_mode": {
     "issue": "이슈",
     "attachment": "첨부 파일",

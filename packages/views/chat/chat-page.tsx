@@ -522,7 +522,7 @@ export function ChatPage() {
           </div>
           {docFilesOpen && (
             <div className="h-1/3 min-h-0 shrink-0 border-b overflow-hidden">
-              <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} />
+              <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} session={c.currentSession} agents={c.agents} />
             </div>
           )}
           {activeDoc ? (
@@ -593,7 +593,7 @@ export function ChatPage() {
           <ResizableHandle />
           <ResizablePanel id="files" defaultSize={300} minSize={240} maxSize={480}>
             <div className="flex h-full min-h-0 flex-col border-l">
-              <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} />
+              <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} session={c.currentSession} agents={c.agents} />
             </div>
           </ResizablePanel>
         </>

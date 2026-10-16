@@ -12,10 +12,11 @@ import { requestReviewPage } from "../../platform/local-review-pages";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
-import type { ChatSessionRepo, Issue } from "@multica/core/types";
+import type { Agent, ChatSession, ChatSessionRepo, Issue } from "@multica/core/types";
 import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { fileIcon } from "../../editor/utils/file-icon";
 import { LocalReviewIndex } from "../../issues/components/local-review-index";
+import { GroupChatManagement } from "./group-chat-management";
 
 // The file list is the chat's server-side projection of openable documents:
 // the session's attachments plus the files the session's tasks checked out of
@@ -85,10 +86,11 @@ function repoLabel(repo: ChatSessionRepo): string {
   return short || repo.url;
 }
 
-export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?: string | null }) {
+export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsId: string; sessionId?: string | null; session?: ChatSession | null; agents?: Agent[] }) {
   const { t } = useT("chat");
   const workspaceSlug = useWorkspaceSlug();
-  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues">("files");
+  const isGroupChat = session?.kind === "group";
+  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "group">("files");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const { data: sessionFiles } = useQuery({
     ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId),
@@ -102,6 +104,9 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
   const activeDoc = useDocModeStore(selectActiveDocument(wsId));
   const currentDirectory = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
+  useEffect(() => {
+    if (!isGroupChat && activeTab === "group") setActiveTab("files");
+  }, [activeTab, isGroupChat]);
   useEffect(() => {
     if (!activeDoc?.workDir || !activeDoc.taskId || !activeDoc.runtimeId) return;
     setCurrentDirectory({
@@ -274,7 +279,7 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
     return repoReferences.filter((repo) => repoLabel(repo).toLowerCase().includes(query));
   }, [repoReferences, filter]);
 
-  const hasContent = !!project || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
+  const hasContent = isGroupChat || !!project || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
 
   if (!hasContent) {
     return (
@@ -365,8 +370,8 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
           ))}
         </div>
       )}
-      <div className="grid grid-cols-3 border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
-        {(["files", "attachments", "issues"] as const).map((tab) => (
+      <div className="flex border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
+        {(["files", "attachments", "issues", ...(isGroupChat ? ["group" as const] : [])] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -374,15 +379,17 @@ export function DocModeFileList({ wsId, sessionId }: { wsId: string; sessionId?:
             aria-selected={activeTab === tab}
             onClick={() => setActiveTab(tab)}
             className={
-              "border-b-2 px-2 py-1.5 text-caption transition-colors " +
+              "flex-1 border-b-2 px-2 py-1.5 text-caption transition-colors " +
               (activeTab === tab ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
             }
           >
-            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : t(($) => $.doc_file_list.issues)}
+            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : tab === "issues" ? t(($) => $.doc_file_list.issues) : t(($) => $.group.management_tab)}
           </button>
         ))}
       </div>
-      {activeTab === "issues" ? (
+      {activeTab === "group" && session ? (
+        <GroupChatManagement session={session} agents={agents} />
+      ) : activeTab === "issues" ? (
         <div className="flex-1 overflow-y-auto">
           {projectID && (projectIssues?.issues ?? []).length > 0 ? (
             <ul className="divide-y">

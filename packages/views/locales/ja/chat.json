@@ -6,7 +6,19 @@
     "you": "あなた",
     "open_members": "メンバー",
     "add_agent": "Agent を追加",
-    "no_members": "メンバーいません"
+    "no_members": "メンバーいません",
+    "management_tab": "グループ管理",
+    "management_title": "グループ管理",
+    "group_name": "グループ名",
+    "edit_name": "グループ名を編集",
+    "save_name": "グループ名を保存",
+    "lead_agent": "リード Agent",
+    "members": "メンバー",
+    "add_agents": "Agent を追加",
+    "remove_member": "メンバーを削除",
+    "select_agents": "グループに追加する Agent を選択してください。",
+    "add_selected": "選択を追加",
+    "no_available_agents": "追加できる Agent はありません"
   },  "doc_mode": {
     "issue": "課題",
     "attachment": "添付ファイル",
