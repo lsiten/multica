@@ -27,6 +27,9 @@ import { api, ApiError } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import { FileViewer } from "../../skills/components/file-viewer";
 import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
+import { CodeBlockStatic } from "../../editor/code-block-static";
+import { languageForPath } from "../../common/task-transcript/diff-highlight";
+import type { Attachment as AttachmentRecord } from "@multica/core/types";
 
 // A ref with an empty id keeps the content-versions hooks disabled (see their
 // `enabled: !!ref.id` guard) so they can be called unconditionally even when no
@@ -94,6 +97,11 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
   const { data: sessionFiles } = useQuery({
     ...chatSessionFilesOptions(wsId, doc?.sessionId ?? "", doc?.projectId),
   });
+  const attachmentRecord = doc?.kind === "attachment"
+    ? [...(sessionFiles?.attachments ?? []), ...(sessionFiles?.project_attachments ?? [])].find(
+        (attachment) => attachment.id === doc.id,
+      )
+    : undefined;
   const workspaceTask = doc?.kind === "workspace_file"
     ? [...(sessionFiles?.project_tasks ?? []), ...(sessionFiles?.tasks ?? [])].find((task) => task.id === doc.taskId && task.work_dir)
     : undefined;
@@ -252,6 +260,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
           truncated={fileContent?.has_more ?? false}
           total={fileContent?.size ?? 0}
           label={doc.relativePath ?? doc.label ?? "File"}
+          path={doc.relativePath ?? doc.label ?? "File"}
           onAddToChat={onSendToChat ? (selection) => void onSendToChat(`请查看文件 ${doc.relativePath ?? doc.label} 的以下内容：\n\n${textCodeBlock(selection)}`) : undefined}
           onAskAgent={onSendToChat ? (selection) => void onSendToChat(`请修改文件 ${doc.relativePath ?? doc.label} 中选中的内容。先基于以下选区给出修改方案和预期 diff，完成修改后等待用户确认，不要扩展到其它文件。\n\n选区：\n${textCodeBlock(selection)}`) : undefined}
         />
@@ -264,6 +273,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
   const bodyContent = isTextAttachment && attachmentTextContent.data
     ? attachmentTextContent.data.text
     : current.data?.content ?? null;
+  const binaryAttachment = doc.kind === "attachment" && !isTextAttachment;
   // Editing is available for an issue's text document (the requirement doc) to
   // any workspace member — mirrors the backend, whose record handler gates on
   // requireUserID only. Attachments (binary) and workspace files are read-only.
@@ -337,11 +347,12 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
           />
         ) : (
           <DocBody
-            loading={isTextAttachment ? attachmentTextContent.isLoading : current.isLoading}
-            error={isTextAttachment ? attachmentTextContent.isError : current.isError}
+            loading={isTextAttachment ? attachmentTextContent.isLoading : binaryAttachment && attachmentRecord ? false : current.isLoading}
+            error={isTextAttachment ? attachmentTextContent.isError : binaryAttachment && attachmentRecord ? false : current.isError}
             onRetry={() => { void (isTextAttachment ? attachmentTextContent.refetch() : current.refetch()); }}
             content={bodyContent}
             contentUrl={current.data?.content_url ?? null}
+            attachment={attachmentRecord}
             contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
             isText={isText}
             label={doc.label ?? "Document"}
@@ -364,6 +375,7 @@ function DocBody({
   onRetry,
   content,
   contentUrl,
+  attachment,
   contentType,
   isText,
   label,
@@ -373,6 +385,7 @@ function DocBody({
   onRetry: () => void;
   content: string | null;
   contentUrl: string | null;
+  attachment?: AttachmentRecord;
   contentType: string;
   isText: boolean;
   label: string;
@@ -395,6 +408,13 @@ function DocBody({
   }
   // Binary (image / PDF): render via the attachment preview; never edited in
   // place (D3/D10). Text (Markdown/HTML): render inline via RichContent.
+  if (!isText && attachment) {
+    return (
+      <div className="mx-auto flex min-h-full max-w-4xl items-start justify-center p-6">
+        <Attachment attachment={{ kind: "record", attachment }} layout="block" />
+      </div>
+    );
+  }
   if (!isText && contentUrl) {
     return (
       <div className="p-6">
@@ -433,6 +453,7 @@ function WorkspaceFileBody({
   label,
   onAddToChat,
   onAskAgent,
+  path,
 }: {
   loading: boolean;
   error: boolean;
@@ -443,9 +464,12 @@ function WorkspaceFileBody({
   label: string;
   onAddToChat?: (selection: string) => void;
   onAskAgent?: (selection: string) => void;
+  path: string;
 }) {
   const { t } = useT("chat");
   const [selection, setSelection] = useState<string | null>(null);
+  const markdown = /\.mdx?$/i.test(path);
+  const language = languageForPath(path);
   if (loading) {
     return <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   }
@@ -454,13 +478,29 @@ function WorkspaceFileBody({
   }
   return (
     <div className="flex h-full flex-col min-h-0">
-      <pre
-        className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-6 font-mono text-caption"
+      <div
+        className="min-h-0 flex-1 overflow-auto p-6"
         onMouseUp={() => {
           const selected = window.getSelection()?.toString().trim() ?? "";
           setSelection(selected || null);
         }}
-      >{content}</pre>
+      >
+        {markdown ? (
+          <div className="mx-auto max-w-3xl">
+            <RichContent content={content} className="doc-mode-body" />
+          </div>
+        ) : language ? (
+          <CodeBlockStatic
+            body={content}
+            language={language}
+            lineNumbers
+            wrap
+            className="min-h-full rounded-lg p-4 text-caption"
+          />
+        ) : (
+          <pre className="m-0 whitespace-pre-wrap font-mono text-caption">{content}</pre>
+        )}
+      </div>
       {selection && (onAddToChat || onAskAgent) && (
         <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
           {onAddToChat && (

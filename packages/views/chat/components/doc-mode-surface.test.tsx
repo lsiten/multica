@@ -212,6 +212,55 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
       screen.queryByText(enChat.doc_mode.truncated.replace("{{total}}", "100 KB")),
     ).not.toBeInTheDocument();
   });
+
+  it("renders source files with syntax highlighting", async () => {
+    session.current.content = {
+      text: "const value = 1;",
+      encoding: "utf8",
+      offset: 0,
+      next_offset: 16,
+      size: 16,
+      has_more: false,
+    };
+    openWorkspaceDoc();
+    renderSurface();
+    await waitFor(() => expect(document.querySelector(".hljs-keyword")).not.toBeNull());
+  });
+});
+
+describe("DocModeSurface (image attachment preview)", () => {
+  it("uses the attachment record from the file projection for native image preview", async () => {
+    session.current.files = {
+      ...session.current.files,
+      attachments: [{
+        id: "att-image",
+        workspace_id: "ws-1",
+        issue_id: null,
+        comment_id: null,
+        chat_session_id: "session-1",
+        chat_message_id: null,
+        uploader_type: "member",
+        uploader_id: "u1",
+        filename: "board.png",
+        url: "https://cdn.example.test/board.png",
+        download_url: "https://cdn.example.test/board.png",
+        markdown_url: "https://cdn.example.test/board.png",
+        content_type: "image/png",
+        size_bytes: 128,
+        created_at: "2026-01-01",
+      }],
+    };
+    useDocModeStore.getState().openDoc("ws-1", {
+      kind: "attachment",
+      id: "att-image",
+      label: "board.png",
+      contentType: "image/png",
+      sessionId: "session-1",
+    });
+    renderSurface();
+    const image = await screen.findByRole("img", { name: "board.png" });
+    expect(image).toHaveAttribute("src", "https://cdn.example.test/board.png");
+  });
 });
 
 describe("DocModeSurface (fast text attachment preview)", () => {

@@ -371,21 +371,22 @@ export function ChatPage() {
   );
 
   const docComposer = activeDoc ? (
-    <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-end px-4">
+    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3 sm:px-5">
       {docComposerCollapsed ? (
         <Button
           variant="secondary"
-          size="icon"
-          className="pointer-events-auto rounded-full border border-surface-border bg-surface shadow-lg"
+          size="sm"
+          className="pointer-events-auto gap-2 rounded-full border border-surface-border bg-surface-raised px-3 shadow-lg"
           onClick={() => setDocComposerCollapsed(false)}
           aria-label={t(($) => $.doc_mode.expand_chat)}
           title={t(($) => $.doc_mode.expand_chat)}
         >
+          <span className="text-caption">{t(($) => $.doc_mode.chat_input)}</span>
           <ChevronUp className="h-4 w-4" />
         </Button>
       ) : (
-        <div className="pointer-events-auto flex max-h-[min(70%,32rem)] w-[min(680px,calc(100%-1rem))] min-w-0 flex-col overflow-hidden rounded-2xl border border-surface-border bg-background/98 shadow-2xl backdrop-blur">
-          <div className="flex h-9 shrink-0 items-center justify-between border-b px-3 text-caption text-muted-foreground">
+        <div className="pointer-events-auto flex max-h-[min(72%,36rem)] w-full max-w-2xl min-w-0 flex-col overflow-hidden rounded-xl border border-surface-border bg-surface-raised/95 shadow-xl backdrop-blur-sm">
+          <div className="flex h-9 shrink-0 items-center justify-between border-b bg-surface/60 px-3 text-caption text-muted-foreground">
             <span>{t(($) => $.doc_mode.chat_input)}</span>
             <Button
               variant="ghost"
