@@ -788,6 +788,11 @@ export function useChatController(opts?: { isActive?: boolean }) {
       previousSessionId: activeSessionId,
       previousPendingTask: pendingTaskId,
     });
+    // Read through the moment the user leaves the conversation. A running
+    // assistant may have appended messages after the initial open read; those
+    // messages were visible here and must not reappear as a badge after the
+    // user switches to a new chat.
+    if (activeSessionId) markRead.mutate(activeSessionId);
     // A fresh chat has no project unless the user explicitly chooses one.
     // The open session's project is server-owned history, not a default for
     // the next session.
@@ -800,6 +805,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     setSelectedProjectId,
     setSelectedSquadId,
     setActiveSession,
+    markRead,
     requestInputFocus,
   ]);
 
@@ -813,6 +819,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
         agentId: agent.id,
         previousSessionId: activeSessionId,
       });
+      if (activeSessionId) markRead.mutate(activeSessionId);
       setSelectedAgentId(agent.id);
       setSelectedProjectId(null);
       setSelectedSquadId(null);
@@ -825,12 +832,16 @@ export function useChatController(opts?: { isActive?: boolean }) {
       setSelectedProjectId,
       setSelectedSquadId,
       setActiveSession,
+      markRead,
       requestInputFocus,
     ],
   );
 
   const handleSelectSession = useCallback(
     (session: { id: string; agent_id: string; project_id?: string | null }) => {
+      if (activeSessionId && activeSessionId !== session.id) {
+        markRead.mutate(activeSessionId);
+      }
       // Sessions are bound 1:1 to an agent — picking a session from a
       // different agent implicitly switches the agent too.
       if (activeAgent && session.agent_id !== activeAgent.id) {
@@ -849,7 +860,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       }
       setActiveSession(session.id);
     },
-    [activeAgent, markRead, sessions, setSelectedAgentId, setActiveSession],
+    [activeAgent, activeSessionId, markRead, sessions, setSelectedAgentId, setActiveSession],
   );
 
   // Starts a manually-created group chat bound to the picked agent and opens it.
@@ -864,6 +875,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
         agentId: agent.id,
         previousSessionId: activeSessionId,
       });
+      if (activeSessionId) markRead.mutate(activeSessionId);
       setSelectedAgentId(agent.id);
       const targetScope = resolveChatExecutionScope({
         projects,
@@ -903,6 +915,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       activeSquadId,
       availableAgents,
       createGroupSession,
+      markRead,
       projectBindingsById,
       projects,
       requestInputFocus,

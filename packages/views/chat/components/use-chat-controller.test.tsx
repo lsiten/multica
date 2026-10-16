@@ -486,6 +486,20 @@ describe("useChatController project context", () => {
     expect(h.markReadMutate).toHaveBeenCalledWith(unreadSession.id);
     expect(h.store.setActiveSession).toHaveBeenCalledWith(unreadSession.id);
   });
+
+  it("marks the session read through the moment the user switches away", () => {
+    const current = makeSession({ id: "current", agent_id: "agent-a", has_unread: true, unread_count: 2 });
+    const next = makeSession({ id: "next", agent_id: "agent-a" });
+    h.store.activeSessionId = current.id;
+    h.sessions = [current, next];
+    h.agents = [agentA];
+    h.markReadMutate.mockClear();
+
+    const { result } = renderHook(() => useChatController());
+    act(() => result.current.handleSelectSession(next));
+
+    expect(h.markReadMutate).toHaveBeenCalledWith(current.id);
+  });
 });
 
 describe("useChatController.advanceSelectionAfterArchive", () => {
