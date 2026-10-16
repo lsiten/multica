@@ -12,10 +12,10 @@ import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 // finishes. Clearing `working` never closes doc mode (D9) — only an explicit
 // `closeDoc` returns to the conversation, so an edit completing does not
 // auto-switch away.
-export function useDocWorkingIndicator(wsId: string, isAgentWorking: boolean) {
-  const activeDoc = useDocModeStore(selectActiveDocument(wsId));
+export function useDocWorkingIndicator(sessionId: string, isAgentWorking: boolean) {
+  const activeDoc = useDocModeStore(selectActiveDocument(sessionId));
   const setWorking = useDocModeStore((s) => s.setWorking);
   useEffect(() => {
-    setWorking(wsId, !!activeDoc && isAgentWorking);
-  }, [activeDoc, isAgentWorking, wsId, setWorking]);
+    setWorking(sessionId, !!activeDoc && isAgentWorking);
+  }, [activeDoc, isAgentWorking, sessionId, setWorking]);
 }

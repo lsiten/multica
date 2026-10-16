@@ -28,66 +28,69 @@ export interface DocumentRef {
 }
 
 interface DocModeState {
-  // The document the chat is currently in doc mode about, per workspace.
+  // The document the chat is currently in doc mode about, per session.
   // Null when no document is open. Persisted so a reload restores doc mode.
-  activeByWorkspace: Record<string, DocumentRef | null>;
+  // Keyed by session (not workspace) so each session keeps its own open
+  // document: switching sessions shows that session's document, and switching
+  // back restores it, instead of leaking one session's document across another.
+  activeBySession: Record<string, DocumentRef | null>;
   // The floating "working" indicator (the agent is editing the document).
-  workingByWorkspace: Record<string, boolean>;
+  workingBySession: Record<string, boolean>;
   // The diff view toggle (D6: not shown by default; the user switches to it).
-  diffViewByWorkspace: Record<string, boolean>;
+  diffViewBySession: Record<string, boolean>;
   // Enter doc mode with a document (full-screen doc + floating working).
-  openDoc: (wsId: string, doc: DocumentRef) => void;
+  openDoc: (sessionId: string, doc: DocumentRef) => void;
   // Explicitly close the document (D9: only an explicit close returns to chat).
-  closeDoc: (wsId: string) => void;
+  closeDoc: (sessionId: string) => void;
   // Set the floating "working" state; an edit completing must NOT clear doc mode.
-  setWorking: (wsId: string, working: boolean) => void;
+  setWorking: (sessionId: string, working: boolean) => void;
   // Toggle the diff view (D6).
-  setDiffView: (wsId: string, diff: boolean) => void;
+  setDiffView: (sessionId: string, diff: boolean) => void;
 }
 
 export const useDocModeStore = create<DocModeState>()(
   persist(
     (set) => ({
-      activeByWorkspace: {},
-      workingByWorkspace: {},
-      diffViewByWorkspace: {},
-      openDoc: (wsId, doc) =>
+      activeBySession: {},
+      workingBySession: {},
+      diffViewBySession: {},
+      openDoc: (sessionId, doc) =>
         set((state) => ({
-          activeByWorkspace: { ...state.activeByWorkspace, [wsId]: doc },
+          activeBySession: { ...state.activeBySession, [sessionId]: doc },
           // Opening a document is an explicit action; keep the working flag
           // independent so a prior edit's "working" state does not leak in.
-          workingByWorkspace: { ...state.workingByWorkspace, [wsId]: false },
+          workingBySession: { ...state.workingBySession, [sessionId]: false },
         })),
-      closeDoc: (wsId) =>
+      closeDoc: (sessionId) =>
         set((state) => {
           if (
-            !state.activeByWorkspace[wsId] &&
-            state.workingByWorkspace[wsId] !== true
+            !state.activeBySession[sessionId] &&
+            state.workingBySession[sessionId] !== true
           )
             return state;
           return {
-            activeByWorkspace: {
-              ...state.activeByWorkspace,
-              [wsId]: null,
+            activeBySession: {
+              ...state.activeBySession,
+              [sessionId]: null,
             },
-            workingByWorkspace: {
-              ...state.workingByWorkspace,
-              [wsId]: false,
+            workingBySession: {
+              ...state.workingBySession,
+              [sessionId]: false,
             },
           };
         }),
-      setWorking: (wsId, working) =>
+      setWorking: (sessionId, working) =>
         set((state) => ({
-          workingByWorkspace: {
-            ...state.workingByWorkspace,
-            [wsId]: working,
+          workingBySession: {
+            ...state.workingBySession,
+            [sessionId]: working,
           },
         })),
-      setDiffView: (wsId, diff) =>
+      setDiffView: (sessionId, diff) =>
         set((state) => ({
-          diffViewByWorkspace: {
-            ...state.diffViewByWorkspace,
-            [wsId]: diff,
+          diffViewBySession: {
+            ...state.diffViewBySession,
+            [sessionId]: diff,
           },
         })),
     }),
@@ -95,26 +98,28 @@ export const useDocModeStore = create<DocModeState>()(
       name: "multica_doc_mode",
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({
-        activeByWorkspace: state.activeByWorkspace,
+        activeBySession: state.activeBySession,
         // "working" and "diff view" are ephemeral UI state, not persisted.
       }),
-      version: 1,
-      migrate: () => ({ activeByWorkspace: {} }),
+      version: 2,
+      // v1 persisted by workspace; drop it so no stale workspace-scoped document
+      // leaks across sessions once the key becomes session-scoped.
+      migrate: () => ({ activeBySession: {} }),
     },
   ),
 );
 
 const NO_DOC: DocumentRef | null = null;
 
-export function selectActiveDocument(wsId: string | null) {
+export function selectActiveDocument(sessionId: string | null) {
   return (state: DocModeState) =>
-    wsId ? (state.activeByWorkspace[wsId] ?? NO_DOC) : NO_DOC;
+    sessionId ? (state.activeBySession[sessionId] ?? NO_DOC) : NO_DOC;
 }
 
-export function selectWorking(wsId: string | null) {
-  return (state: DocModeState) => (wsId ? state.workingByWorkspace[wsId] ?? false : false);
+export function selectWorking(sessionId: string | null) {
+  return (state: DocModeState) => (sessionId ? state.workingBySession[sessionId] ?? false : false);
 }
 
-export function selectDiffView(wsId: string | null) {
-  return (state: DocModeState) => (wsId ? state.diffViewByWorkspace[wsId] ?? false : false);
+export function selectDiffView(sessionId: string | null) {
+  return (state: DocModeState) => (sessionId ? state.diffViewBySession[sessionId] ?? false : false);
 }

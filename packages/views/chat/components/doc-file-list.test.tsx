@@ -80,9 +80,9 @@ function renderList(queryClient: QueryClient) {
 
 beforeEach(() => {
   useDocModeStore.setState({
-    activeByWorkspace: {},
-    workingByWorkspace: {},
-    diffViewByWorkspace: {},
+    activeBySession: {},
+    workingBySession: {},
+    diffViewBySession: {},
   });
   session.current = {
     files: {
@@ -104,16 +104,18 @@ beforeEach(() => {
 });
 
 describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
-  it("lists the session's project, attachments, and workspace files", async () => {
+  it("lists workspace files in the files tab and attachments in their own tab", async () => {
     renderList(newClient());
-    // The project is the section header (no longer dropped) and the session's
-    // attachments + task-workdir files are the openable rows.
+    // The project is the section header and the task-workdir (source) files are
+    // the openable rows in the files tab; attachments are not mixed in.
     await screen.findByText("Acme");
-    expect(screen.getByText("report.pdf")).toBeInTheDocument();
     expect(screen.getByText("src")).toBeInTheDocument();
-    expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("src"));
     expect(screen.getByText("app.ts")).toBeInTheDocument();
+    // The attachment is only in the "Attachments" tab, not the files tab.
+    fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
   });
 
   it("searches the full tree and opens matching ancestor folders", async () => {
@@ -126,10 +128,14 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(screen.getByText("app.ts")).toBeInTheDocument();
   });
 
-  it("opens the clicked attachment through openDoc", async () => {
+  it("opens the clicked attachment (from the attachments tab) through openDoc", async () => {
     renderList(newClient());
+    // Wait for the panel to load, then switch to the attachments tab.
+    await screen.findByText("Acme");
+    // Attachments live in their own tab, not the files tab.
+    fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
     fireEvent.click(await screen.findByText("report.pdf"));
-    const active = useDocModeStore.getState().activeByWorkspace["ws-1"];
+    const active = useDocModeStore.getState().activeBySession["session-1"];
     expect(active).toMatchObject({ kind: "attachment", id: "att-1" });
   });
 
@@ -137,23 +143,26 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     renderList(newClient());
     fireEvent.click(await screen.findByText("src"));
     fireEvent.click(await screen.findByText("app.ts"));
-    const active = useDocModeStore.getState().activeByWorkspace["ws-1"];
+    const active = useDocModeStore.getState().activeBySession["session-1"];
     expect(active).toMatchObject({ kind: "workspace_file", id: expect.stringContaining("src/app.ts") });
   });
 
   it("filters documents by the filter box (client-side)", async () => {
     renderList(newClient());
-    await screen.findByText("report.pdf");
+    await screen.findByText("Acme");
+    // The files tab is source only, so the attachment is excluded from the tree;
+    // filtering the source file keeps it and its ancestor folder.
     fireEvent.change(screen.getByLabelText(enChat.doc_file_list.filter_placeholder), {
-      target: { value: "report" },
+      target: { value: "app.ts" },
     });
-    expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
+    expect(screen.getByText("app.ts")).toBeInTheDocument();
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
   });
 
   it("shows a no-match state when the filter excludes everything", async () => {
     renderList(newClient());
-    await screen.findByText("report.pdf");
+    // Wait for the source (files) tab to load before filtering.
+    await screen.findByText("Acme");
     fireEvent.change(screen.getByLabelText(enChat.doc_file_list.filter_placeholder), {
       target: { value: "zzz-nothing" },
     });
@@ -174,23 +183,27 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     // The repo shows as a reference row (not openable), labelled by owner/repo.
     await screen.findByText("Acme");
     expect(screen.getByText("acme/widgets")).toBeInTheDocument();
-    // The attachment is a session file, so it still shows even without a
-    // worktree; the worktree file (src/app.ts) is gone.
-    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    // The files tab has no source (worktree) file, so app.ts is gone; the
+    // attachment lives in its own tab, not the files tab.
     expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
   });
 
   it("keeps the list after a refresh (server data, not recent context)", async () => {
     const queryClient = newClient();
     const first = renderList(queryClient);
-    await screen.findByText("report.pdf");
+    await screen.findByText("Acme");
     // Simulate a refresh: unmount then remount against the same cached query.
     first.unmount();
     renderList(queryClient);
     expect(screen.getByText("Acme")).toBeInTheDocument();
-    expect(screen.getByText("report.pdf")).toBeInTheDocument();
     fireEvent.click(screen.getByText("src"));
     expect(screen.getByText("app.ts")).toBeInTheDocument();
+    // The attachment persists in its own tab across the refresh.
+    fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
   });
 
   it("keeps the file tree and source control on the lead checkout", async () => {
@@ -209,7 +222,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     renderList(newClient());
     fireEvent.click(await screen.findByText("src"));
     fireEvent.click(await screen.findByText("app.ts"));
-    expect(useDocModeStore.getState().activeByWorkspace["ws-1"]).toMatchObject({
+    expect(useDocModeStore.getState().activeBySession["session-1"]).toMatchObject({
       kind: "workspace_file",
       workDir: "/lead",
     });

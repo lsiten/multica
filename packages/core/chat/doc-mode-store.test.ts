@@ -8,36 +8,36 @@ import {
 
 beforeEach(() => {
   useDocModeStore.setState({
-    activeByWorkspace: {},
-    workingByWorkspace: {},
-    diffViewByWorkspace: {},
+    activeBySession: {},
+    workingBySession: {},
+    diffViewBySession: {},
   });
 });
 
 describe("useDocModeStore.openDoc", () => {
-  it("stores the active document per workspace (namespaced)", () => {
+  it("stores the active document per session (namespaced)", () => {
     const { openDoc } = useDocModeStore.getState();
-    openDoc("ws-a", { kind: "issue", id: "issue-1", label: "MUL-1" });
-    openDoc("ws-b", { kind: "attachment", id: "attach-1", contentType: "image/png" });
+    openDoc("session-a", { kind: "issue", id: "issue-1", label: "MUL-1" });
+    openDoc("session-b", { kind: "attachment", id: "attach-1", contentType: "image/png" });
 
-    expect(selectActiveDocument("ws-a")(useDocModeStore.getState())).toMatchObject({
+    expect(selectActiveDocument("session-a")(useDocModeStore.getState())).toMatchObject({
       kind: "issue",
       id: "issue-1",
     });
-    expect(selectActiveDocument("ws-b")(useDocModeStore.getState())).toMatchObject({
+    expect(selectActiveDocument("session-b")(useDocModeStore.getState())).toMatchObject({
       kind: "attachment",
       id: "attach-1",
       contentType: "image/png",
     });
-    // Other workspaces stay untouched.
-    expect(selectActiveDocument("ws-c")(useDocModeStore.getState())).toBeNull();
+    // Other sessions stay untouched.
+    expect(selectActiveDocument("session-c")(useDocModeStore.getState())).toBeNull();
   });
 
-  it("replaces the active document in the same workspace", () => {
+  it("replaces the active document in the same session", () => {
     const { openDoc } = useDocModeStore.getState();
-    openDoc("ws-a", { kind: "issue", id: "issue-1" });
-    openDoc("ws-a", { kind: "attachment", id: "attach-9" });
-    expect(selectActiveDocument("ws-a")(useDocModeStore.getState())).toMatchObject({
+    openDoc("session-a", { kind: "issue", id: "issue-1" });
+    openDoc("session-a", { kind: "attachment", id: "attach-9" });
+    expect(selectActiveDocument("session-a")(useDocModeStore.getState())).toMatchObject({
       kind: "attachment",
       id: "attach-9",
     });
@@ -47,25 +47,25 @@ describe("useDocModeStore.openDoc", () => {
 describe("useDocModeStore.closeDoc", () => {
   it("clears the active document and the working flag", () => {
     const { openDoc, setWorking, closeDoc } = useDocModeStore.getState();
-    openDoc("ws-a", { kind: "issue", id: "issue-1" });
-    setWorking("ws-a", true);
-    closeDoc("ws-a");
+    openDoc("session-a", { kind: "issue", id: "issue-1" });
+    setWorking("session-a", true);
+    closeDoc("session-a");
 
-    expect(selectActiveDocument("ws-a")(useDocModeStore.getState())).toBeNull();
-    expect(selectWorking("ws-a")(useDocModeStore.getState())).toBe(false);
+    expect(selectActiveDocument("session-a")(useDocModeStore.getState())).toBeNull();
+    expect(selectWorking("session-a")(useDocModeStore.getState())).toBe(false);
   });
 });
 
 describe("useDocModeStore.setWorking (D9: no auto-switch)", () => {
   it("an edit completing (working -> false) does NOT close doc mode", () => {
     const { openDoc, setWorking } = useDocModeStore.getState();
-    openDoc("ws-a", { kind: "issue", id: "issue-1" });
-    setWorking("ws-a", true);
+    openDoc("session-a", { kind: "issue", id: "issue-1" });
+    setWorking("session-a", true);
     // The agent finishes editing; doc mode must persist (no auto-switch to chat).
-    setWorking("ws-a", false);
+    setWorking("session-a", false);
 
-    expect(selectWorking("ws-a")(useDocModeStore.getState())).toBe(false);
-    expect(selectActiveDocument("ws-a")(useDocModeStore.getState())).toMatchObject({
+    expect(selectWorking("session-a")(useDocModeStore.getState())).toBe(false);
+    expect(selectActiveDocument("session-a")(useDocModeStore.getState())).toMatchObject({
       id: "issue-1",
     });
   });
@@ -73,17 +73,17 @@ describe("useDocModeStore.setWorking (D9: no auto-switch)", () => {
 
 describe("useDocModeStore.setDiffView (D6: off by default)", () => {
   it("diff view defaults to off and toggles only on explicit set", () => {
-    expect(selectDiffView("ws-a")(useDocModeStore.getState())).toBe(false);
+    expect(selectDiffView("session-a")(useDocModeStore.getState())).toBe(false);
     const { setDiffView } = useDocModeStore.getState();
-    setDiffView("ws-a", true);
-    expect(selectDiffView("ws-a")(useDocModeStore.getState())).toBe(true);
-    setDiffView("ws-a", false);
-    expect(selectDiffView("ws-a")(useDocModeStore.getState())).toBe(false);
+    setDiffView("session-a", true);
+    expect(selectDiffView("session-a")(useDocModeStore.getState())).toBe(true);
+    setDiffView("session-a", false);
+    expect(selectDiffView("session-a")(useDocModeStore.getState())).toBe(false);
   });
 });
 
 describe("selectors", () => {
-  it("null wsId yields stable null/false, not a new object each call", () => {
+  it("null sessionId yields stable null/false, not a new object each call", () => {
     const a = selectActiveDocument(null)(useDocModeStore.getState());
     const b = selectActiveDocument(null)(useDocModeStore.getState());
     expect(a).toBe(b);

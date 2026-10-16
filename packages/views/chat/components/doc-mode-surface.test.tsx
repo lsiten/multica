@@ -137,7 +137,7 @@ function newClient() {
 }
 
 function openWorkspaceDoc() {
-  useDocModeStore.getState().openDoc("ws-1", {
+  useDocModeStore.getState().openDoc("session-1", {
     kind: "workspace_file",
     id: "task-1:src/app.ts",
     label: "src/app.ts",
@@ -152,7 +152,7 @@ function renderSurface() {
   return render(
     <QueryClientProvider client={newClient()}>
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <DocModeSurface wsId="ws-1" />
+        <DocModeSurface wsId="ws-1" sessionId="session-1" />
       </I18nProvider>
     </QueryClientProvider>,
   );
@@ -160,9 +160,9 @@ function renderSurface() {
 
 beforeEach(() => {
   useDocModeStore.setState({
-    activeByWorkspace: {},
-    workingByWorkspace: {},
-    diffViewByWorkspace: {},
+    activeBySession: {},
+    workingBySession: {},
+    diffViewBySession: {},
   });
   session.current = {
     files: {
@@ -250,7 +250,7 @@ describe("DocModeSurface (image attachment preview)", () => {
         created_at: "2026-01-01",
       }],
     };
-    useDocModeStore.getState().openDoc("ws-1", {
+    useDocModeStore.getState().openDoc("session-1", {
       kind: "attachment",
       id: "att-image",
       label: "board.png",
@@ -270,7 +270,7 @@ describe("DocModeSurface (fast text attachment preview)", () => {
       originalContentType: "text/markdown",
     });
     setApiInstance({ getAttachmentTextContent: read } as never);
-    useDocModeStore.getState().openDoc("ws-1", {
+    useDocModeStore.getState().openDoc("session-1", {
       kind: "attachment",
       id: "att-text",
       label: "REPORT.md",
@@ -306,7 +306,7 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
   });
 
   function openIssueDoc() {
-    useDocModeStore.getState().openDoc("ws-1", {
+    useDocModeStore.getState().openDoc("session-1", {
       kind: "issue",
       id: "issue-1",
       label: "Requirement",
@@ -323,7 +323,7 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
   });
 
   it("never offers Edit for a binary (attachment) document", async () => {
-    useDocModeStore.getState().openDoc("ws-1", {
+    useDocModeStore.getState().openDoc("session-1", {
       kind: "attachment",
       id: "att-1",
       label: "Attachment",

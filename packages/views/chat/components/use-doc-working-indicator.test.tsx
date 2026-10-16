@@ -12,9 +12,9 @@ import { useDocWorkingIndicator } from "./use-doc-working-indicator";
 
 beforeEach(() => {
   useDocModeStore.setState({
-    activeByWorkspace: {},
-    workingByWorkspace: {},
-    diffViewByWorkspace: {},
+    activeBySession: {},
+    workingBySession: {},
+    diffViewBySession: {},
   });
 });
 
@@ -24,7 +24,7 @@ afterEach(() => {
 
 function Harness({ initial }: { initial: boolean }) {
   const [isAgentWorking, toggle] = useState(initial);
-  useDocWorkingIndicator("ws-a", isAgentWorking);
+  useDocWorkingIndicator("session-a", isAgentWorking);
   return (
     <button type="button" onClick={() => toggle((v) => !v)}>
       toggle
@@ -33,12 +33,12 @@ function Harness({ initial }: { initial: boolean }) {
 }
 
 function working() {
-  return selectWorking("ws-a")(useDocModeStore.getState());
+  return selectWorking("session-a")(useDocModeStore.getState());
 }
 
 describe("useDocWorkingIndicator (D7)", () => {
   it("sets working only when a doc is open AND the agent is working", () => {
-    useDocModeStore.getState().openDoc("ws-a", { kind: "issue", id: "issue-1" });
+    useDocModeStore.getState().openDoc("session-a", { kind: "issue", id: "issue-1" });
     const { container } = render(<Harness initial={false} />);
     const button = container.querySelector("button")!;
 
@@ -51,7 +51,7 @@ describe("useDocWorkingIndicator (D7)", () => {
   });
 
   it("clears working when the agent finishes but keeps doc mode (D9)", () => {
-    useDocModeStore.getState().openDoc("ws-a", { kind: "issue", id: "issue-1" });
+    useDocModeStore.getState().openDoc("session-a", { kind: "issue", id: "issue-1" });
     const { container } = render(<Harness initial={true} />);
     const button = container.querySelector("button")!;
     // The agent is working.
@@ -60,7 +60,7 @@ describe("useDocWorkingIndicator (D7)", () => {
     // The agent finishes: the working flag clears, doc mode must persist.
     act(() => fireEvent.click(button));
     expect(working()).toBe(false);
-    expect(selectActiveDocument("ws-a")(useDocModeStore.getState())).toMatchObject({
+    expect(selectActiveDocument("session-a")(useDocModeStore.getState())).toMatchObject({
       id: "issue-1",
     });
   });

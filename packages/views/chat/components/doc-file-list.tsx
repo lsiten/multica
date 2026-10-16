@@ -18,9 +18,9 @@ import { fileIcon } from "../../editor/utils/file-icon";
 import { LocalReviewIndex } from "../../issues/components/local-review-index";
 import { GroupChatManagement } from "./group-chat-management";
 
-// The file list is the chat's server-side projection of openable documents:
-// the session's attachments plus the files the session's tasks checked out of
-// the project's workspace (task work_dirs). It reads the chat session, not
+// The files tab is the chat's server-side projection of openable source code:
+// the files the session's tasks checked out of the project's workspace (task
+// work_dirs). Attachments have their own tab. It reads the chat session, not
 // client recent context, so the same list survives a refresh, another device,
 // and stays isolated to the session's own workspace. The project has no
 // document body of its own, so it renders as a section header rather than an
@@ -95,13 +95,20 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   const { data: sessionFiles } = useQuery({
     ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId),
   });
+  // A session's project context is its own; switching sessions must not carry the
+  // previous session's selected project into the new one (which would leave the
+  // panel showing a stale project title). Reset the sticky selection whenever the
+  // session changes so it re-derives from the new session's files below.
+  useEffect(() => {
+    setSelectedProjectId(undefined);
+  }, [sessionId]);
   useEffect(() => {
     if (selectedProjectId === undefined && sessionFiles) {
       setSelectedProjectId(sessionFiles.project_id ?? sessionFiles.projects?.[0]?.id);
     }
   }, [selectedProjectId, sessionFiles]);
   const projectID = selectedProjectId ?? sessionFiles?.project_id ?? "";
-  const activeDoc = useDocModeStore(selectActiveDocument(wsId));
+  const activeDoc = useDocModeStore(selectActiveDocument(sessionId ?? ""));
   const currentDirectory = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
   useEffect(() => {
@@ -215,26 +222,10 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     (files) => files !== null && "entries" in files && files.entries.length > 0,
   );
 
+  // The files tab is source code only: the files the session's tasks checked out
+  // of the project's workspace (task work_dirs). Attachments live in their own
+  // tab ("当前附件"), so they are excluded here instead of mixing into the tree.
   const allDocuments = useMemo(() => {
-    const attachmentDocuments = (sessionFiles?.attachments ?? []).map(
-      (attachment): DocumentListItem => ({
-        kind: "attachment",
-        id: attachment.id,
-        label: attachment.filename || attachment.url,
-        contentType: attachment.content_type,
-        sessionId: sessionId ?? undefined,
-      }),
-    );
-    const projectAttachmentDocuments = (selectedProjectId ? sessionFiles?.project_attachments ?? [] : []).map(
-      (attachment): DocumentListItem => ({
-        kind: "attachment",
-        id: attachment.id,
-        label: attachment.filename || attachment.url,
-        contentType: attachment.content_type,
-        sessionId: sessionId ?? undefined,
-        projectId: selectedProjectId,
-      }),
-    );
     const workspaceDocuments = (workspaceFiles.data ?? []).flatMap((files, taskIndex) => {
       if (!files || !("entries" in files)) return [];
       const task = workspaceTasks[taskIndex];
@@ -252,8 +243,21 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           relativePath: entry.path,
         }));
     });
-    return [...workspaceDocuments, ...attachmentDocuments, ...projectAttachmentDocuments];
-  }, [sessionFiles, workspaceFiles.data, workspaceTasks, selectedProjectId, sessionId]);
+    return workspaceDocuments;
+  }, [workspaceFiles.data, workspaceTasks, selectedProjectId, sessionId]);
+
+  // The attachments tab is the union of the session's and the project's
+  // attachments, de-duplicated by id so an attachment shared by both is not
+  // listed twice.
+  const sessionAttachments = useMemo(() => {
+    const seen = new Set<string>();
+    const merged = [...(sessionFiles?.attachments ?? []), ...(sessionFiles?.project_attachments ?? [])];
+    return merged.filter((attachment) => {
+      if (seen.has(attachment.id)) return false;
+      seen.add(attachment.id);
+      return true;
+    });
+  }, [sessionFiles]);
 
   // When the session has no task worktree to browse, the project's configured
   // repos stand in for its files. They are not openable in doc mode (there is
@@ -279,7 +283,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     return repoReferences.filter((repo) => repoLabel(repo).toLowerCase().includes(query));
   }, [repoReferences, filter]);
 
-  const hasContent = isGroupChat || !!project || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
+  const hasContent = isGroupChat || !!project || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || sessionAttachments.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
 
   if (!hasContent) {
     return (
@@ -327,7 +331,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
       <li key={`${doc.kind}:${doc.id}`}>
         <button
           type="button"
-          onClick={() => openDoc(wsId, { ...doc })}
+          onClick={() => openDoc(sessionId ?? "", { ...doc })}
           aria-current={isActive ? "true" : undefined}
           className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-body transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isActive ? "bg-accent/10" : ""}`}
           style={{ paddingLeft: `${24 + depth * 14}px` }}
@@ -408,14 +412,14 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
         </div>
       ) : activeTab === "attachments" ? (
         <div className="flex-1 overflow-y-auto">
-          {(sessionFiles?.attachments ?? []).length > 0 ? (
+          {sessionAttachments.length > 0 ? (
             <ul className="divide-y">
-              {(sessionFiles?.attachments ?? []).map((attachment) => {
+              {sessionAttachments.map((attachment) => {
                 const name = attachment.filename || attachment.url;
                 const Icon = fileIcon(attachment.content_type, name);
                 return (
                   <li key={attachment.id}>
-                    <button type="button" onClick={() => openDoc(wsId, { kind: "attachment", id: attachment.id, label: name, contentType: attachment.content_type, sessionId: sessionId ?? undefined })} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50">
+                    <button type="button" onClick={() => openDoc(sessionId ?? "", { kind: "attachment", id: attachment.id, label: name, contentType: attachment.content_type, sessionId: sessionId ?? undefined })} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50">
                       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate text-body">{name}</span>
                     </button>

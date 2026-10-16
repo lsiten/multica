@@ -76,10 +76,10 @@ export function ChatPage() {
   });
   // Doc mode (v12): a document opened from the sidebar fills the detail pane
   // while the conversation stays put. Read here so it can gate the pane below.
-  const activeDoc = useDocModeStore(selectActiveDocument(c.wsId));
+  const activeDoc = useDocModeStore(selectActiveDocument(c.activeSessionId ?? ""));
   // D7: floating "working" indicator bridges the agent-working signal
   // with doc mode (see useDocWorkingIndicator). Clearing it never closes doc mode.
-  useDocWorkingIndicator(c.wsId, !!c.pendingTaskId);
+  useDocWorkingIndicator(c.activeSessionId ?? "", !!c.pendingTaskId);
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
   );
@@ -527,7 +527,7 @@ export function ChatPage() {
           )}
           {activeDoc ? (
             <div className="relative flex-1 min-h-0">
-              <DocModeSurface wsId={c.wsId} onSendToChat={handleSend} />
+              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} />
               {docComposer}
             </div>
           ) : conversation}
@@ -575,7 +575,7 @@ export function ChatPage() {
         <div className="flex flex-col min-h-0 h-full">
           {activeDoc ? (
             <div className="relative flex-1 min-h-0">
-              <DocModeSurface wsId={c.wsId} onSendToChat={handleSend} />
+              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} />
               {docComposer}
             </div>
           ) : hasTarget ? (

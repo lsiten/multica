@@ -61,11 +61,11 @@ function textCodeBlock(content: string): string {
  * shows the version history so the user can compare and roll back (D8/D9).
  * Closing (X) is the only way out — an edit completing never auto-closes (D9).
  */
-export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToChat?: (content: string) => Promise<boolean> }) {
+export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string; sessionId: string; onSendToChat?: (content: string) => Promise<boolean> }) {
   const { t } = useT("chat");
-  const doc = useDocModeStore(selectActiveDocument(wsId));
-  const working = useDocModeStore(selectWorking(wsId));
-  const diffView = useDocModeStore(selectDiffView(wsId));
+  const doc = useDocModeStore(selectActiveDocument(sessionId));
+  const working = useDocModeStore(selectWorking(sessionId));
+  const diffView = useDocModeStore(selectDiffView(sessionId));
   const closeDoc = useDocModeStore((s) => s.closeDoc);
   const setDiffView = useDocModeStore((s) => s.setDiffView);
   const record = useRecordDocumentContentVersion(wsId);
@@ -177,8 +177,8 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
     setEdited(current.data.content);
     setSaveError(null);
     setEditing(true);
-    setDiffView(wsId, false);
-  }, [current.data?.content, setDiffView, wsId]);
+    setDiffView(sessionId, false);
+  }, [current.data?.content, setDiffView, sessionId]);
 
   const save = useCallback(async () => {
     if (!doc || !current.data) return;
@@ -229,7 +229,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
               {t(($) => $.doc_mode.add_to_chat)}
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => closeDoc(wsId)}>
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => closeDoc(sessionId)}>
             <X className="h-4 w-4" />
             {t(($) => $.doc_mode.close)}
           </Button>
@@ -301,7 +301,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
             variant={diffView ? "secondary" : "ghost"}
             size="sm"
             className="gap-1.5"
-            onClick={() => setDiffView(wsId, !diffView)}
+            onClick={() => setDiffView(sessionId, !diffView)}
           >
             <GitCompare className="h-4 w-4" />
             {t(($) => $.doc_mode.diff)}
@@ -310,7 +310,7 @@ export function DocModeSurface({ wsId, onSendToChat }: { wsId: string; onSendToC
             variant="ghost"
             size="sm"
             className="gap-1.5"
-            onClick={() => closeDoc(wsId)}
+            onClick={() => closeDoc(sessionId)}
           >
             <X className="h-4 w-4" />
             {t(($) => $.doc_mode.close)}
