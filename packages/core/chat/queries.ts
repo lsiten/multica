@@ -93,6 +93,8 @@ export function chatSessionFilesOptions(wsId: string, sessionId: string, project
     queryFn: () => api.listChatSessionFiles(sessionId, projectId),
     enabled: !!wsId && !!sessionId,
     staleTime: 15_000,
+    refetchOnMount: "always",
+    retry: 2,
   });
 }
 

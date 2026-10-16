@@ -472,6 +472,20 @@ describe("useChatController project context", () => {
     expect(h.store.setSelectedProjectId).not.toHaveBeenCalled();
     expect(h.store.setActiveSession).toHaveBeenCalledWith(projectSession.id);
   });
+
+  it("marks an unread session read immediately when selected", () => {
+    const unreadSession = makeSession({ id: "unread-project-session", agent_id: "agent-a", has_unread: true, unread_count: 5 });
+    h.store.activeSessionId = null;
+    h.sessions = [unreadSession];
+    h.agents = [agentA];
+    h.markReadMutate.mockClear();
+
+    const { result } = renderHook(() => useChatController());
+    act(() => result.current.handleSelectSession(unreadSession));
+
+    expect(h.markReadMutate).toHaveBeenCalledWith(unreadSession.id);
+    expect(h.store.setActiveSession).toHaveBeenCalledWith(unreadSession.id);
+  });
 });
 
 describe("useChatController.advanceSelectionAfterArchive", () => {

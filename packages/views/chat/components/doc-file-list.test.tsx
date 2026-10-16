@@ -25,6 +25,7 @@ const session = vi.hoisted(() => ({
     hasProject: false,
     entries: [] as Array<{ path: string; size: number; directory: boolean }>,
     entriesByPath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
+    error: null as Error | null,
   },
 }));
 
@@ -34,7 +35,7 @@ vi.mock("@multica/core/chat/queries", async () => {
     ...actual,
     chatSessionFilesOptions: (wsId: string, sessionId: string) => ({
       queryKey: ["chat", wsId, "session-files", sessionId] as const,
-      queryFn: () => Promise.resolve(session.current.files),
+      queryFn: () => session.current.error ? Promise.reject(session.current.error) : Promise.resolve(session.current.files),
       enabled: !!wsId && !!sessionId,
       staleTime: 15_000,
     }),
@@ -102,6 +103,7 @@ beforeEach(() => {
     hasProject: true,
     entries: [{ path: "src/app.ts", size: 10, directory: false }],
     entriesByPath: {},
+    error: null,
   };
 });
 
@@ -118,6 +120,16 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     // The attachment is only in the "Attachments" tab, not the files tab.
     fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
+  });
+
+  it("shows a retry state when the session file projection fails", async () => {
+    session.current.error = new Error("request failed");
+    renderList(newClient());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(enChat.doc_file_list.load_failed);
+    session.current.error = null;
+    fireEvent.click(screen.getByRole("button", { name: enChat.doc_file_list.retry }));
+    expect(await screen.findByText("Acme")).toBeInTheDocument();
   });
 
   it("searches the full tree and opens matching ancestor folders", async () => {

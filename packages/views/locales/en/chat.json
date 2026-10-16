@@ -56,6 +56,9 @@
     "issues": "Issues",
     "no_attachments": "No attachments in this chat",
     "no_issues": "No issues in this project",
+    "loading": "Loading project files…",
+    "load_failed": "Project files couldn't be loaded",
+    "retry": "Retry",
     "git": "Source Control",
     "no_git_checkout": "No checked-out repository is available for this chat"
   },

@@ -841,9 +841,15 @@ export function useChatController(opts?: { isActive?: boolean }) {
         });
         setSelectedAgentId(session.agent_id);
       }
+      // A direct user selection is an explicit read action. Clear the badge
+      // immediately instead of waiting for the deferred foreground effect;
+      // that effect remains for deep links and replies arriving while open.
+      if (sessions.find((item) => item.id === session.id)?.has_unread) {
+        markRead.mutate(session.id);
+      }
       setActiveSession(session.id);
     },
-    [activeAgent, setSelectedAgentId, setActiveSession],
+    [activeAgent, markRead, sessions, setSelectedAgentId, setActiveSession],
   );
 
   // Starts a manually-created group chat bound to the picked agent and opens it.

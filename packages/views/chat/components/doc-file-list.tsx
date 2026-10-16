@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, File, Folder, GitBranch, Search } from "lucide-react";
+import { ChevronRight, File, Folder, GitBranch, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
@@ -17,6 +17,7 @@ import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { fileIcon } from "../../editor/utils/file-icon";
 import { LocalReviewIndex } from "../../issues/components/local-review-index";
 import { GroupChatManagement } from "./group-chat-management";
+import { Button } from "@multica/ui/components/ui/button";
 
 // The files tab is the chat's server-side projection of openable source code:
 // the files the session's tasks checked out of the project's workspace (task
@@ -92,9 +93,10 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   const isGroupChat = session?.kind === "group";
   const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "group">("files");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
-  const { data: sessionFiles } = useQuery({
+  const sessionFilesQuery = useQuery({
     ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId),
   });
+  const { data: sessionFiles, isLoading: sessionFilesLoading, isError: sessionFilesError, refetch: refetchSessionFiles } = sessionFilesQuery;
   // A session's project context is its own; switching sessions must not carry the
   // previous session's selected project into the new one (which would leave the
   // panel showing a stale project title). Reset the sticky selection whenever the
@@ -221,6 +223,10 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     enabled: !!sessionId && workspaceTasks.length > 0 && activeTab === "files",
     staleTime: 60_000,
   });
+  const workspaceFileResults = workspaceFiles.data;
+  const workspaceFilesFailed = workspaceTasks.length > 0 &&
+    workspaceFileResults?.length === workspaceTasks.length &&
+    workspaceFileResults.every((files) => files === null);
   const openDoc = useDocModeStore((s) => s.openDoc);
   // Match the VS Code/GitHub tree convention: folders start closed so a large
   // checkout stays scannable. Search is computed from allDocuments (before the
@@ -296,6 +302,34 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   }, [repoReferences, filter]);
 
   const hasContent = isGroupChat || !!project || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || sessionAttachments.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
+
+  // A failed projection used to fall through to the empty state, which made a
+  // network/daemon failure look like a chat with no files. Keep this state
+  // explicit so the user can distinguish an empty project from an unavailable
+  // sidebar and retry without changing chats.
+  if (sessionFilesLoading && !sessionFiles) {
+    return (
+      <div className="flex h-full items-center justify-center p-4 text-muted-foreground" role="status">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+          <p className="text-body">{t(($) => $.doc_file_list.loading)}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (sessionFilesError && !sessionFiles) {
+    return (
+      <div className="flex h-full items-center justify-center p-4" role="alert">
+        <div className="flex max-w-xs flex-col items-center gap-3 text-center">
+          <p className="text-body text-destructive">{t(($) => $.doc_file_list.load_failed)}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void refetchSessionFiles()}>
+            {t(($) => $.doc_file_list.retry)}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasContent) {
     return (
@@ -448,6 +482,20 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           {project && (
             <div className="px-3 py-2">
               <h3 className="truncate text-body font-semibold">{project.title}</h3>
+            </div>
+          )}
+          {activeTab === "files" && workspaceFiles.isPending && workspaceTasks.length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-3 text-body text-muted-foreground" role="status">
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              {t(($) => $.doc_file_list.loading)}
+            </div>
+          )}
+          {activeTab === "files" && workspaceFilesFailed && (
+            <div className="flex items-center justify-between gap-3 border-b px-3 py-3" role="alert">
+              <p className="text-body text-destructive">{t(($) => $.doc_file_list.load_failed)}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => void workspaceFiles.refetch()}>
+                {t(($) => $.doc_file_list.retry)}
+              </Button>
             </div>
           )}
           {visibleRepoReferences.length > 0 && (

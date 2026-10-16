@@ -55,6 +55,9 @@
     "issues": "\u9879\u76ee\u95ee\u9898",
     "no_attachments": "\u5f53\u524d\u804a\u5929\u6682\u65e0\u9644\u4ef6",
     "no_issues": "\u8be5\u9879\u76ee\u6682\u65e0\u95ee\u9898",
+    "loading": "正在加载项目文件…",
+    "load_failed": "项目文件加载失败",
+    "retry": "重试",
     "git": "源代码管理",
     "no_git_checkout": "当前聊天没有可用的 Git 工作区"
   },

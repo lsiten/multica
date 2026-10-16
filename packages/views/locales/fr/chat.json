@@ -55,6 +55,9 @@
     "issues": "Tickets",
     "no_attachments": "Aucune pièce jointe dans cette discussion",
     "no_issues": "Aucun ticket dans ce projet",
+    "loading": "Chargement des fichiers du projet…",
+    "load_failed": "Impossible de charger les fichiers du projet",
+    "retry": "Réessayer",
     "git": "Contrôle de code source",
     "no_git_checkout": "Aucun dépôt extrait n'est disponible pour cette conversation"
   },
