@@ -162,22 +162,30 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     [selectedProjectId, sessionFiles],
   );
   // Source Control follows the directory currently open in the document
-  // surface, just like VS Code. It is deliberately derived from the active
-  // document's worktree rather than from the chat/project identity; switching
-  // to a file in another local directory changes the Git scope immediately.
-  // Until a file is opened, keep the first available checkout as the initial
-  // directory so the panel remains useful on a newly selected chat.
+  // surface, just like VS Code. It must not be resolved through the active
+  // chat's task list: switching chats does not switch the local directory, and
+  // a directory opened from another chat can still be the current Git scope.
+  // The task list is only the fallback for a newly selected chat that has not
+  // established a local-directory selection yet.
   const workspaceTasks = useMemo(() => fileTasks.slice(0, 1), [fileTasks]);
   const gitTask = useMemo(
     () =>
       currentDirectory?.taskId
-        ? fileTasks.find((task) => task.id === currentDirectory.taskId) ?? workspaceTasks[0]
+        ? fileTasks.find((task) => task.id === currentDirectory.taskId)
         : activeDoc?.taskId
-        ? fileTasks.find((task) => task.id === activeDoc.taskId) ?? workspaceTasks[0]
+        ? fileTasks.find((task) => task.id === activeDoc.taskId)
         : workspaceTasks[0],
     [activeDoc?.taskId, currentDirectory?.taskId, fileTasks, workspaceTasks],
   );
-  const gitRequest: LocalReviewRequest | null = gitTask?.work_dir
+  const gitRequest: LocalReviewRequest | null = currentDirectory?.path
+    ? {
+        task_id: currentDirectory.taskId,
+        workspace_id: currentDirectory.workspaceId,
+        runtime_id: currentDirectory.runtimeId,
+        path: currentDirectory.path,
+        target: gitTask?.branch_name || "HEAD",
+      }
+    : gitTask?.work_dir
     ? {
         task_id: gitTask.id,
         workspace_id: wsId,

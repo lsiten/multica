@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
 import enChat from "../../locales/en/chat.json";
 import { useDocModeStore } from "@multica/core/chat";
+import { useLocalDirectoryStore } from "@multica/core/chat/local-directory-store";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import { DocModeFileList } from "./doc-file-list";
 
@@ -84,6 +85,7 @@ beforeEach(() => {
     workingBySession: {},
     diffViewBySession: {},
   });
+  useLocalDirectoryStore.setState({ currentByWorkspace: {} });
   session.current = {
     files: {
       workspace_id: "ws-1",
@@ -226,5 +228,24 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
       kind: "workspace_file",
       workDir: "/lead",
     });
+  });
+
+  it("keeps Git bound to the current local directory when it belongs to another chat", async () => {
+    session.current.files = {
+      ...session.current.files,
+      tasks: [],
+    };
+    useLocalDirectoryStore.setState({
+      currentByWorkspace: {
+        "ws-1": {
+          path: "/Users/me/other-project",
+          taskId: "task-from-other-chat",
+          runtimeId: "runtime-local",
+          workspaceId: "ws-1",
+        },
+      },
+    });
+    renderList(newClient());
+    expect(await screen.findByTestId("local-review-index")).toBeInTheDocument();
   });
 });
