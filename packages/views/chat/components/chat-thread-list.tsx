@@ -170,8 +170,8 @@ export function ChatThreadList({
           <div key={index} className="flex h-14 items-center gap-3 rounded-md px-2">
             <div className="size-8 shrink-0 animate-pulse rounded-full bg-muted" />
             <div className="min-w-0 flex-1 space-y-2">
-              <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-5/6 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-2/3 animate-pulse rounded-md bg-muted" />
+              <div className="h-3 w-5/6 animate-pulse rounded-md bg-muted" />
             </div>
           </div>
         ))}
