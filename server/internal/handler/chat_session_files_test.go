@@ -210,3 +210,45 @@ func TestListChatSessionFiles_ProjectReposWithoutTask(t *testing.T) {
 		t.Fatalf("repos: want 1 repo at the configured URL, got %+v", resp.Repos)
 	}
 }
+
+// TestListChatSessionFiles_ResolvesExplicitGroupSquadProject verifies that a
+// group chat uses its durable squad context when the canonical squad leader is
+// not duplicated in squad_member. The previous projection only joined through
+// squad_member and therefore returned no project tabs for this valid group.
+func TestListChatSessionFiles_ResolvesExplicitGroupSquadProject(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "SquadProjectFilesAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	projectID := dbfx.Project(t, "Squad Project Files")
+	squadID := dbfx.Insert(t, "squad", testutil.Cols{
+		"workspace_id": testWorkspaceID,
+		"name":         "Squad Project Files Squad",
+		"leader_id":    agentID,
+		"creator_id":   testUserID,
+	})
+	dbfx.Insert(t, "squad_project_binding", testutil.Cols{
+		"squad_id":   squadID,
+		"project_id": projectID,
+		"created_by": testUserID,
+	})
+	dbfx.Exec(t, `UPDATE chat_session SET kind = 'group', squad_id = $1 WHERE id = $2`, squadID, sessionID)
+
+	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil)
+	req = withURLParam(req, "sessionId", sessionID)
+	req = withChatTestWorkspaceCtx(t, req)
+	w := httptest.NewRecorder()
+	testHandler.ListChatSessionFiles(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp ChatSessionFilesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v; body: %s", err, w.Body.String())
+	}
+	if len(resp.Projects) != 1 || resp.Projects[0].ID != projectID {
+		t.Fatalf("projects: want squad project %s, got %+v", projectID, resp.Projects)
+	}
+}

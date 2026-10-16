@@ -230,6 +230,18 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     });
   });
 
+  it("does not infer Git from a chat task before a directory is opened", async () => {
+    session.current.files = {
+      ...session.current.files,
+      tasks: [
+        { id: "task-1", runtime_id: "rt-1", work_dir: "/work", created_at: "2026-01-01" } as never,
+      ],
+    };
+    renderList(newClient());
+    await screen.findByText("Acme");
+    expect(screen.queryByTestId("local-review-index")).not.toBeInTheDocument();
+  });
+
   it("keeps Git bound to the current local directory when it belongs to another chat", async () => {
     session.current.files = {
       ...session.current.files,

@@ -2720,10 +2720,33 @@ WHERE project.workspace_id = $2
       AND session.workspace_id = $2
       AND binding.active
     UNION
+    -- A group chat carries its squad context on chat_session. Resolve that
+    -- context directly instead of requiring the lead agent to also have a
+    -- squad_member copy; the canonical leader is stored on squad.leader_id.
     SELECT binding.project_id
-    FROM squad_member AS member
+    FROM squad_project_binding AS binding
+    JOIN chat_session AS session ON session.squad_id = binding.squad_id
+    JOIN squad ON squad.id = binding.squad_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND squad.workspace_id = $2
+      AND binding.active
+    UNION
+    SELECT lead_project.id
+    FROM project AS lead_project
+    JOIN chat_session AS session ON session.squad_id IS NOT NULL
+    JOIN squad ON squad.id = session.squad_id
+    WHERE session.id = $1
+      AND session.workspace_id = $2
+      AND squad.workspace_id = $2
+      AND lead_project.workspace_id = $2
+      AND lead_project.lead_type = 'agent'
+      AND lead_project.lead_id = squad.leader_id
+    UNION
+    SELECT binding.project_id
+    FROM squad_project_binding AS binding
+    JOIN squad_member AS member ON member.squad_id = binding.squad_id
     JOIN chat_session AS session ON session.agent_id = member.member_id
-    JOIN squad_project_binding AS binding ON binding.squad_id = member.squad_id
     WHERE session.id = $1
       AND session.workspace_id = $2
       AND member.member_type = 'agent'

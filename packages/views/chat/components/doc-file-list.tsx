@@ -165,17 +165,21 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // surface, just like VS Code. It must not be resolved through the active
   // chat's task list: switching chats does not switch the local directory, and
   // a directory opened from another chat can still be the current Git scope.
-  // The task list is only the fallback for a newly selected chat that has not
-  // established a local-directory selection yet.
+  // These task workdirs populate the project file tree. They do not select a
+  // Git scope; Source Control follows the current local directory below.
   const workspaceTasks = useMemo(() => fileTasks.slice(0, 1), [fileTasks]);
+  // Source Control is deliberately directory-scoped like VS Code. A chat or
+  // project may provide file candidates for the tree, but it must not silently
+  // become the Git scope before the user opens a directory/file or restores a
+  // previously selected local directory.
   const gitTask = useMemo(
     () =>
       currentDirectory?.taskId
         ? fileTasks.find((task) => task.id === currentDirectory.taskId)
         : activeDoc?.taskId
         ? fileTasks.find((task) => task.id === activeDoc.taskId)
-        : workspaceTasks[0],
-    [activeDoc?.taskId, currentDirectory?.taskId, fileTasks, workspaceTasks],
+        : undefined,
+    [activeDoc?.taskId, currentDirectory?.taskId, fileTasks],
   );
   const gitRequest: LocalReviewRequest | null = currentDirectory?.path
     ? {
