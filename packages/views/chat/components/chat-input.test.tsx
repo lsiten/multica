@@ -891,6 +891,15 @@ describe("ChatInput project context", () => {
   });
 });
 
+describe("ChatInput embedded surface", () => {
+  it("removes nested chrome when hosted inside the document composer", () => {
+    const { container } = renderInput({ embedded: true });
+    const surface = container.querySelector('[data-slot="chat-input-surface"]');
+    expect(surface).toHaveClass("border-0", "bg-transparent", "rounded-none");
+    expect(surface).not.toHaveClass("border-surface-border", "bg-surface", "rounded-lg");
+  });
+});
+
 describe("ChatInput attachment wiring", () => {
   it("routes dropped files through the coordinator upload", async () => {
     renderInput();

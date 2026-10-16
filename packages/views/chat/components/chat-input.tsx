@@ -708,7 +708,7 @@ export function ChatInput({
           "flex min-h-0 flex-col pt-0",
           embedded ? "max-h-full pb-0" : "max-h-[50%] pb-3",
         ),
-        CHAT_GUTTER,
+        embedded ? "px-0" : CHAT_GUTTER,
         // Static elevation, NOT queue-conditional: ChatQueue tucks its bottom
         // edge under this surface (z-0 + negative margin on its side), and the
         // composer simply always paints on top. Its own chrome never varies.
@@ -731,7 +731,10 @@ export function ChatInput({
           // composer without a definite height (percentage max-height would
           // then resolve to none).
           CHAT_COLUMN,
-          "relative flex min-h-16 flex-col rounded-lg border border-surface-border bg-surface pb-9 transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
+          "relative flex min-h-16 flex-col pb-9 transition-[border-color,box-shadow]",
+          embedded
+            ? "rounded-none border-0 bg-transparent shadow-none focus-within:ring-0"
+            : "rounded-lg border border-surface-border bg-surface focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
           embedded ? "max-h-full" : "max-h-96",
           // Visual + interaction lock when there's no agent. We don't
           // toggle ContentEditor's editable mode (Tiptap can't switch
