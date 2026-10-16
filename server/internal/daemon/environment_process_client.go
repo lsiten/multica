@@ -179,6 +179,14 @@ func (c *environmentProcessClient) mutation(ctx context.Context, operation strin
 	}
 	response, err := c.process.Client.Call(ctx, request)
 	if err != nil {
+		// A caller-side cancellation or deadline is a clean abort, not an uncertain
+		// outcome: the request may still settle on the service, but the caller has
+		// given up and the transport is not suspect. Return it directly so a slow or
+		// canceled read never fail-closes the client and poisons later mutations. A
+		// genuine transport failure below remains uncertain (fail-closed).
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		var rejection *runtimeproc.Error
 		if errors.As(err, &rejection) && slices.Contains([]string{"unauthorized", "identity_mismatch", "stale_fence", "malformed", "unknown_operation", "retired_request", "draining", "stopped", "resource_exhausted", "deadline"}, rejection.Code) {
 			return err
