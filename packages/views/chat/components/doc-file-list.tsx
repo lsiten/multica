@@ -20,6 +20,8 @@ import { LocalReviewIndex } from "../../issues/components/local-review-index";
 import { GroupChatManagement } from "./group-chat-management";
 import { Button } from "@multica/ui/components/ui/button";
 
+const WORKSPACE_FILES_TIMEOUT_MS = 5_000;
+
 // The files tab is the chat's server-side projection of openable source code:
 // the files the session's tasks checked out of the project's workspace (task
 // work_dirs). Attachments have their own tab. It reads the chat session, not
@@ -190,20 +192,36 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
     queryFn: async ({ signal }) => {
       const readTask = async (task: typeof workspaceTasks[number]) => {
+        const requestController = new AbortController();
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            requestController.abort();
+            reject(new Error("workspace_files_timeout"));
+          }, WORKSPACE_FILES_TIMEOUT_MS);
+        });
+        const abortRequest = () => requestController.abort();
+        signal.addEventListener("abort", abortRequest, { once: true });
         try {
-          const files = await requestReviewPage({
-            task_id: task.id,
-            workspace_id: wsId,
-            runtime_id: task.runtime_id,
-            path: task.work_dir!,
-            action: "workspace_files",
-            relative_path: ".",
-          }, signal);
+          const files = await Promise.race([
+            requestReviewPage({
+              task_id: task.id,
+              workspace_id: wsId,
+              runtime_id: task.runtime_id,
+              path: task.work_dir!,
+              action: "workspace_files",
+              relative_path: ".",
+            }, requestController.signal),
+            timeout,
+          ]);
           if (!("entries" in files)) throw new Error("Workspace file list response expected");
           return { task, files };
         } catch (error) {
           if (signal.aborted) throw error;
           return null;
+        } finally {
+          if (timeoutId !== undefined) clearTimeout(timeoutId);
+          signal.removeEventListener("abort", abortRequest);
         }
       };
       const attempts = workspaceTasks.map(readTask);
