@@ -36,7 +36,7 @@ func (h *Handler) ListGroupParticipants(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	workspaceID := h.resolveWorkspaceID(r)
-	sessionID := chi.URLParam(r, "sessionID")
+	sessionID := chi.URLParam(r, "sessionId")
 	session, ok := h.loadChatSessionForUser(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
@@ -69,7 +69,7 @@ func (h *Handler) AddGroupParticipant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceID := h.resolveWorkspaceID(r)
-	sessionID := chi.URLParam(r, "sessionID")
+	sessionID := chi.URLParam(r, "sessionId")
 	session, ok := h.loadChatSessionForUser(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
@@ -115,7 +115,7 @@ func (h *Handler) RemoveGroupParticipant(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	workspaceID := h.resolveWorkspaceID(r)
-	sessionID := chi.URLParam(r, "sessionID")
+	sessionID := chi.URLParam(r, "sessionId")
 	session, ok := h.loadChatSessionForUser(w, r, userID, workspaceID, sessionID)
 	if !ok {
 		return
