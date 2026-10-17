@@ -157,6 +157,14 @@ export function useCreateGroupChatSession() {
     },
     onSuccess: (session) => {
       logger.info("createGroupChatSession.success", { sessionId: session.id, agentId: session.agent_id });
+      // Publish the newly-created session before invalidating the list. The
+      // chat controller opens the returned session immediately; without this
+      // optimistic cache entry its dangling-session guard can observe the old
+      // list for one render and clear the active id before the refetch lands.
+      qc.setQueryData<ChatSession[]>(chatKeys.sessions(wsId), (sessions) => {
+        if (!sessions || sessions.some((current) => current.id === session.id)) return sessions;
+        return sortChatSessions([session, ...sessions]);
+      });
     },
     onError: (err) => {
       logger.error("createGroupChatSession.error", err);
