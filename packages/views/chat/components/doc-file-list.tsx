@@ -181,15 +181,15 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // daemon binding while a later task still owns the live checkout.
   const workspaceTasks = fileTasks;
   // A single cached query replaces useQueries: useQueries returns a fresh array
-  // on every render, which defeated the allDocuments memo below. Try candidates
-  // in server order and stop at the first non-empty checkout. A stale lead task
-  // therefore cannot mask a later live worktree, and we avoid hammering the
-  // daemon with every historical task once a usable tree is found.
+  // on every render, which defeated the allDocuments memo below. Probe all
+  // candidates concurrently and resolve as soon as any non-empty checkout is
+  // available. A stale lead task cannot mask a later live worktree or make the
+  // panel wait for its timeout; empty checkouts are retained only as a final
+  // fallback after every candidate has settled.
   const workspaceFiles = useQuery({
     queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
     queryFn: async ({ signal }) => {
-      let emptyResult: { task: typeof workspaceTasks[number]; files: Extract<Awaited<ReturnType<typeof requestReviewPage>>, { entries: unknown[] }> } | null = null;
-      for (const task of workspaceTasks) {
+      const readTask = async (task: typeof workspaceTasks[number]) => {
         try {
           const files = await requestReviewPage({
             task_id: task.id,
@@ -200,14 +200,25 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             relative_path: ".",
           }, signal);
           if (!("entries" in files)) throw new Error("Workspace file list response expected");
-          const result = { task, files };
-          if (files.entries.length > 0) return [result];
-          emptyResult ??= result;
+          return { task, files };
         } catch (error) {
           if (signal.aborted) throw error;
+          return null;
         }
+      };
+      const attempts = workspaceTasks.map(readTask);
+      try {
+        const nonEmpty = await Promise.any(attempts.map(async (attempt) => {
+          const result = await attempt;
+          if (!result || result.files.entries.length === 0) throw new Error("Empty workspace");
+          return result;
+        }));
+        return [nonEmpty];
+      } catch {
+        const settled = await Promise.all(attempts);
+        const empty = settled.find((result) => result !== null);
+        return empty ? [empty] : [];
       }
-      return emptyResult ? [emptyResult] : [];
     },
     enabled: !!sessionId && workspaceTasks.length > 0 && activeTab === "files",
     staleTime: 60_000,
