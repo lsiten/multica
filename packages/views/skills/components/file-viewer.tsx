@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { parseFrontmatter } from "@multica/core/skills/frontmatter";
+import { toHtml } from "hast-util-to-html";
 import { RichContent } from "../../rich-content";
 import { useT } from "../../i18n";
+import { cn } from "@multica/ui/lib/utils";
+import { highlightCode } from "../../editor/syntax-highlight";
+import { languageForPath } from "../../common/task-transcript/diff-highlight";
+import "../../editor/styles/code.css";
 
 /**
  * How the body of the selected file is rendered. Owned by the page, not by
@@ -85,6 +90,21 @@ export function FileViewer({
     );
   }
 
+  const language = languageForPath(path);
+  if (language) {
+    return (
+      <HighlightedTextarea
+        path={path}
+        language={language}
+        value={content}
+        readOnly={readOnly}
+        autoFocus={autoFocus}
+        onChange={onChange}
+        onFocusHandled={onFocusHandled}
+      />
+    );
+  }
+
   return (
     <Textarea
       ref={editorRef}
@@ -99,5 +119,72 @@ export function FileViewer({
       }
       className="h-full min-h-full resize-none rounded-none border-0 px-6 pb-24 pt-5 font-mono text-body leading-relaxed read-only:cursor-default focus-visible:ring-0 sm:px-8"
     />
+  );
+}
+
+function HighlightedTextarea({
+  path,
+  language,
+  value,
+  readOnly,
+  autoFocus,
+  onChange,
+  onFocusHandled,
+}: {
+  path: string;
+  language: string;
+  value: string;
+  readOnly: boolean;
+  autoFocus?: boolean;
+  onChange: (content: string) => void;
+  onFocusHandled?: () => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const codeRef = useRef<HTMLPreElement>(null);
+  const html = useMemo(() => {
+    try {
+      return toHtml(highlightCode(value, language));
+    } catch {
+      return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+  }, [language, value]);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(0, 0);
+    onFocusHandled?.();
+  }, [autoFocus, onFocusHandled]);
+
+  const syncScroll = () => {
+    const textarea = textareaRef.current;
+    const code = codeRef.current;
+    if (!textarea || !code) return;
+    code.scrollTop = textarea.scrollTop;
+    code.scrollLeft = textarea.scrollLeft;
+  };
+
+  return (
+    <div className="relative h-full min-h-full overflow-hidden bg-muted/30">
+      <pre
+        ref={codeRef}
+        aria-hidden="true"
+        className="rich-text-editor pointer-events-none absolute inset-0 m-0 h-full min-h-full overflow-hidden whitespace-pre-wrap break-words rounded-none border-0 px-6 pb-24 pt-5 font-mono text-body leading-relaxed sm:px-8"
+      >
+        <code className={cn("hljs", `language-${language}`)} dangerouslySetInnerHTML={{ __html: html }} />
+      </pre>
+      <Textarea
+        ref={textareaRef}
+        value={value}
+        readOnly={readOnly}
+        onChange={(event) => onChange(event.target.value)}
+        onScroll={syncScroll}
+        aria-label={path}
+        spellCheck={false}
+        className="relative z-10 h-full min-h-full resize-none rounded-none border-0 bg-transparent px-6 pb-24 pt-5 font-mono text-body leading-relaxed text-transparent caret-foreground selection:bg-primary/30 focus-visible:ring-0 [-webkit-text-fill-color:transparent] sm:px-8"
+      />
+    </div>
   );
 }

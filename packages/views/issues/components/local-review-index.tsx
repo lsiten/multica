@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LocalReviewRequest } from "@multica/core/types/local-review";
+import { isInternalWorkspacePath } from "@multica/core/types/local-review";
 import { useAuthStore } from "@multica/core/auth";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
@@ -60,8 +61,9 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, onInvalidBi
     },
     enabled: !!data, networkMode: "always", retry: false, refetchInterval: 60000, refetchIntervalInBackground: true,
   });
-  const staged = data?.status.files.filter((file) => file.staged) ?? [];
-  const unstaged = data?.status.files.filter((file) => file.unstaged) ?? [];
+  const visibleFiles = data?.status.files.filter((file) => !isInternalWorkspacePath(file.path)) ?? [];
+  const staged = visibleFiles.filter((file) => file.staged);
+  const unstaged = visibleFiles.filter((file) => file.unstaged);
   const busy = disabled || query.isFetching || writing;
   const error = operation.error ?? query.error ?? lease.error;
   const invalidMessage = !message.trim() || new TextEncoder().encode(message).length > 8000;

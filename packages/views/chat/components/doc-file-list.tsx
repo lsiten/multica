@@ -14,6 +14,7 @@ import { AppLink } from "../../navigation";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import type { Agent, ChatSession, ChatSessionRepo, Issue } from "@multica/core/types";
 import type { LocalReviewRequest } from "@multica/core/types/local-review";
+import { isInternalWorkspacePath } from "@multica/core/types/local-review";
 import { fileIcon } from "../../editor/utils/file-icon";
 import { LocalReviewIndex } from "../../issues/components/local-review-index";
 import { GroupChatManagement } from "./group-chat-management";
@@ -146,12 +147,17 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // below is not recomputed on every render.
   const fileTasks = useMemo(
     () => {
-      const sessionTasks = sessionFiles?.tasks ?? [];
-      const projectTasks = selectedProjectId ? sessionFiles?.project_tasks ?? [] : [];
+      const sessionTasks = (sessionFiles?.tasks ?? []).filter((task) => task.work_dir);
+      const projectTasks = selectedProjectId
+        ? (sessionFiles?.project_tasks ?? []).filter((task) => task.work_dir)
+        : [];
       // A chat session can contain several specialist worktrees and a project
       // can contain many historical runs. The server orders the session list
       // with the lead/requirement checkout first; keep that scope intact and
       // only use project history when the chat has no checkout of its own.
+      // Sessions can also contain informational tasks without a worktree; they
+      // must not mask the project checkout that supplies the file tree and Git
+      // scope.
       const tasks = sessionTasks.length > 0 ? sessionTasks : projectTasks;
       const ordered = sessionTasks.length > 0
         ? tasks
@@ -161,7 +167,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             if (aRequirement !== bRequirement) return bRequirement - aRequirement;
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
           });
-      return ordered.filter((task) => task.work_dir).slice(0, 25);
+      return ordered.slice(0, 25);
     },
     [selectedProjectId, sessionFiles],
   );
@@ -250,6 +256,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
       if (!files || !("entries" in files)) return [];
       const task = workspaceTasks[taskIndex];
       return files.entries
+        .filter((entry) => !isInternalWorkspacePath(entry.path))
         .filter((entry) => !entry.directory)
         .map((entry): DocumentListItem => ({
           kind: "workspace_file",

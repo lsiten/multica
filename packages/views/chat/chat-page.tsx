@@ -77,6 +77,9 @@ export function ChatPage() {
   // Doc mode (v12): a document opened from the sidebar fills the detail pane
   // while the conversation stays put. Read here so it can gate the pane below.
   const activeDoc = useDocModeStore(selectActiveDocument(c.activeSessionId ?? ""));
+  // The store can briefly retain an id while the session list is refreshing;
+  // a document panel must follow the resolved session, not that stale pointer.
+  const selectedDoc = c.currentSession ? activeDoc : null;
   // D7: floating "working" indicator bridges the agent-working signal
   // with doc mode (see useDocWorkingIndicator). Clearing it never closes doc mode.
   useDocWorkingIndicator(c.activeSessionId ?? "", !!c.pendingTaskId);
@@ -366,11 +369,11 @@ export function ChatPage() {
       focusRequest={c.focusInputRequest}
       autonomyPolicy={autonomyPolicy}
       onAutonomyPolicyChange={setAutonomyPolicy}
-      embedded={!!activeDoc}
+      embedded={!!selectedDoc}
     />
   );
 
-  const docComposer = activeDoc ? (
+  const docComposer = selectedDoc ? (
     <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3 sm:px-5">
       {docComposerCollapsed ? (
         <Button
@@ -520,12 +523,12 @@ export function ChatPage() {
               <PanelLeft />
             </Button>
           </div>
-          {docFilesOpen && (
+          {docFilesOpen && !!c.currentSession && (
             <div className="h-1/3 min-h-0 shrink-0 border-b overflow-hidden">
               <DocModeFileList wsId={c.wsId} sessionId={c.activeSessionId} session={c.currentSession} agents={c.agents} />
             </div>
           )}
-          {activeDoc ? (
+          {selectedDoc ? (
             <div className="relative flex-1 min-h-0">
               <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} />
               {docComposer}
@@ -573,7 +576,7 @@ export function ChatPage() {
       <ResizableHandle />
       <ResizablePanel id="detail" minSize="40%">
         <div className="flex flex-col min-h-0 h-full">
-          {activeDoc ? (
+          {selectedDoc ? (
             <div className="relative flex-1 min-h-0">
               <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} />
               {docComposer}
@@ -588,7 +591,7 @@ export function ChatPage() {
           )}
         </div>
       </ResizablePanel>
-      {docFilesOpen && (
+      {docFilesOpen && !!c.currentSession && (
         <>
           <ResizableHandle />
           <ResizablePanel id="files" defaultSize={300} minSize={240} maxSize={480}>

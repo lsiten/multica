@@ -1,6 +1,18 @@
 import { z } from "zod";
 import { toWorktreeLifecycle, worktreeLifecycleSchema } from "./worktree-lifecycle";
 
+/** Files created by the local review transport, never part of the user's workspace. */
+export function isInternalWorkspacePath(path: string): boolean {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\/+/, "");
+  return (
+    normalized === ".task_owner" ||
+    normalized === ".task_lock" ||
+    normalized === ".review-runtime.json" ||
+    normalized === ".local-review-cache" ||
+    normalized.startsWith(".local-review-cache/")
+  );
+}
+
 export const localReviewCapabilitySchema = z.object({ local_review_supported: z.boolean().optional().catch(false) });
 export const localReviewBranchesSchema = z.object({ branches: z.array(z.string()) });
 export const localReviewRuntimeBindingSchema = z.object({ workspace_id: z.string().min(1), task_id: z.string().min(1), runtime_id: z.string().min(1) });

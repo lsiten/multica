@@ -133,11 +133,23 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
           action: "file_content" as const,
           relative_path: doc.relativePath,
           offset: 0,
-          limit: 256 * 1024,
+          // Keep the client request within the API relay's bounded page size.
+          // The daemon can read larger pages locally, but a disconnected or
+          // older desktop falls back to /api/local-reviews/execute, whose
+          // contract caps file_content pages at 64 KiB.
+          limit: 64 * 1024,
         }
       : null;
   const workspaceContent = useQuery({
-    queryKey: ["chat-workspace-file-content", wsId, doc?.id, doc?.relativePath],
+    queryKey: [
+      "chat-workspace-file-content",
+      wsId,
+      doc?.sessionId,
+      doc?.taskId,
+      workspaceRuntimeId,
+      workspacePath,
+      doc?.relativePath,
+    ],
     queryFn: ({ signal }) =>
       workspaceRequest
         ? requestReviewPage(workspaceRequest, signal)
@@ -145,13 +157,20 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
     enabled: !!workspaceRequest,
     staleTime: 60_000,
   });
+  const workspaceContentText =
+    workspaceRequest &&
+    workspaceContent.data &&
+    "path" in workspaceContent.data &&
+    workspaceContent.data.path === workspaceRequest.relative_path
+      ? fileContentText(workspaceContent.data)
+      : null;
 
   const openWorkspaceEdit = useCallback(() => {
-    if (fileContentText(workspaceContent.data) === null) return;
-    setWorkspaceEdited(fileContentText(workspaceContent.data) ?? "");
+    if (workspaceContentText === null) return;
+    setWorkspaceEdited(workspaceContentText);
     setWorkspaceSaveError(null);
     setWorkspaceEditing(true);
-  }, [workspaceContent.data]);
+  }, [workspaceContentText]);
 
   const saveWorkspaceEdit = useCallback(async () => {
     if (!doc || doc.kind !== "workspace_file" || !workspacePath || !workspaceRuntimeId || !workspaceRequest) return;
@@ -167,7 +186,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
         relative_path: workspaceRequest.relative_path,
         command_id: createSafeId(),
         action: "merge_edit",
-        edit_base: fileContentText(workspaceContent.data) ?? "",
+        edit_base: workspaceContentText ?? "",
         edit_new: workspaceEdited,
       });
       if (result?.conflict) {
@@ -182,7 +201,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
     } finally {
       setWorkspaceSaving(false);
     }
-  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEdited]);
+  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceContentText, workspaceEdited]);
 
   const openEdit = useCallback(() => {
     if (!current.data?.content) return;
@@ -221,7 +240,11 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
     // The content query only fetches the first page; a truncated file reports
     // has_more, so surface the full size instead of silently cutting the text.
     const fileContent =
-      workspaceContent.data && "content" in workspaceContent.data
+      workspaceContent.data &&
+      workspaceRequest &&
+      "path" in workspaceContent.data &&
+      workspaceContent.data.path === workspaceRequest.relative_path &&
+      "content" in workspaceContent.data
         ? workspaceContent.data.content
         : null;
     const officePath = doc.relativePath && workspacePath && isOfficePath(doc.relativePath)
@@ -243,14 +266,14 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
               {t(($) => $.doc_mode.open_in_office)}
             </Button>
           )}
-          {fileContentText(workspaceContent.data) !== null && (
+          {workspaceContentText !== null && (
             <Button variant={workspaceEditing ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={openWorkspaceEdit}>
               <Pencil className="h-4 w-4" />
               {t(($) => $.doc_mode.edit)}
             </Button>
           )}
-          {onSendToChat && fileContentText(workspaceContent.data) !== null && (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => void onSendToChat(`请查看文件 ${doc.relativePath ?? doc.label}\n\n${textCodeBlock(fileContentText(workspaceContent.data) ?? "")}`)}>
+          {onSendToChat && workspaceContentText !== null && (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => void onSendToChat(`请查看文件 ${doc.relativePath ?? doc.label}\n\n${textCodeBlock(workspaceContentText)}`)}>
               <MessageSquareQuote className="h-4 w-4" />
               {t(($) => $.doc_mode.add_to_chat)}
             </Button>
@@ -265,7 +288,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
         <DocEdit
           label={doc.relativePath ?? doc.label ?? "File"}
           content={workspaceEdited}
-          dirty={workspaceEdited !== (fileContentText(workspaceContent.data) ?? "")}
+          dirty={workspaceEdited !== (workspaceContentText ?? "")}
           saving={workspaceSaving}
           error={workspaceSaveError}
           onChange={setWorkspaceEdited}
