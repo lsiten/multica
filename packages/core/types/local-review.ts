@@ -3,11 +3,12 @@ import { toWorktreeLifecycle, worktreeLifecycleSchema } from "./worktree-lifecyc
 
 /** Files created by the local review transport, never part of the user's workspace. */
 export function isInternalWorkspacePath(path: string): boolean {
-  const normalized = path.replaceAll("\\", "/").replace(/^\.\/+/, "");
+  const normalized = path.replaceAll("\\", "/").replace(/^\.?\/+/, "");
+  const basename = normalized.split("/").pop() ?? normalized;
   return (
-    normalized === ".task_owner" ||
-    normalized === ".task_lock" ||
-    normalized === ".review-runtime.json" ||
+    basename === ".task_owner" ||
+    basename === ".task_lock" ||
+    basename === ".review-runtime.json" ||
     normalized === ".local-review-cache" ||
     normalized.startsWith(".local-review-cache/")
   );
