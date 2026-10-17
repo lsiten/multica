@@ -106,6 +106,7 @@ export function ChatPage() {
   // header button when they want the conversation to fill the window.
   const [docFilesOpen, setDocFilesOpen] = useState(true);
   const [docComposerCollapsed, setDocComposerCollapsed] = useState(false);
+  const [docQuoteFocusRequest, setDocQuoteFocusRequest] = useState(0);
   const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
   useEffect(() => {
     setAutonomyPolicy(null);
@@ -228,6 +229,13 @@ export function ChatPage() {
     const accepted = await c.handleSend(...args);
     if (accepted && args[4] !== undefined) setAutonomyPolicy(null);
     return accepted;
+  };
+
+  const handleAddToChat = (content: string) => {
+    const sessionId = useChatStore.getState().activeSessionId;
+    if (!sessionId) return;
+    useChatStore.getState().appendToInputDraft(sessionId, content);
+    setDocQuoteFocusRequest((request) => request + 1);
   };
 
   // URL → new chat: `?agent=<id>` is the deep link used by "DM" entry points
@@ -366,7 +374,7 @@ export function ChatPage() {
       onSquadChange={c.handleSquadChange}
       workspaceScopeAllowed={c.workspaceScopeAllowed}
       isProjectUpdating={c.isProjectUpdating}
-      focusRequest={c.focusInputRequest}
+      focusRequest={c.focusInputRequest + docQuoteFocusRequest}
       autonomyPolicy={autonomyPolicy}
       onAutonomyPolicyChange={setAutonomyPolicy}
       embedded={!!selectedDoc}
@@ -530,7 +538,7 @@ export function ChatPage() {
           )}
           {selectedDoc ? (
             <div className="relative flex-1 min-h-0">
-              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} />
+              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} onAddToChat={handleAddToChat} />
               {docComposer}
             </div>
           ) : conversation}
@@ -578,7 +586,7 @@ export function ChatPage() {
         <div className="flex flex-col min-h-0 h-full">
           {selectedDoc ? (
             <div className="relative flex-1 min-h-0">
-              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} />
+              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} onAddToChat={handleAddToChat} />
               {docComposer}
             </div>
           ) : hasTarget ? (

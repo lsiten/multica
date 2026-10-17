@@ -50,6 +50,10 @@ function textCodeBlock(content: string): string {
   return ["```text", content, "```"].join("\n");
 }
 
+function documentQuote(label: string, content: string): string {
+  return [`> 引用文件：${label}`, "", textCodeBlock(content)].join("\n");
+}
+
 function isOfficePath(path: string): boolean {
   return /\.(docx?|xlsx?|pptx?|odt|ods|odp|pages|numbers|key)$/i.test(path);
 }
@@ -73,7 +77,7 @@ function localFilePath(root: string, relativePath: string): string | null {
  * shows the version history so the user can compare and roll back (D8/D9).
  * Closing (X) is the only way out — an edit completing never auto-closes (D9).
  */
-export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string; sessionId: string; onSendToChat?: (content: string) => Promise<boolean> }) {
+export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: { wsId: string; sessionId: string; onSendToChat?: (content: string) => Promise<boolean>; onAddToChat?: (content: string) => void }) {
   const { t } = useT("chat");
   const doc = useDocModeStore(selectActiveDocument(sessionId));
   const working = useDocModeStore(selectWorking(sessionId));
@@ -272,8 +276,8 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
               {t(($) => $.doc_mode.edit)}
             </Button>
           )}
-          {onSendToChat && workspaceContentText !== null && (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => void onSendToChat(`请查看文件 ${doc.relativePath ?? doc.label}\n\n${textCodeBlock(workspaceContentText)}`)}>
+          {onAddToChat && workspaceContentText !== null && (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat(documentQuote(doc.relativePath ?? doc.label ?? "File", workspaceContentText))}>
               <MessageSquareQuote className="h-4 w-4" />
               {t(($) => $.doc_mode.add_to_chat)}
             </Button>
@@ -311,7 +315,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
           total={fileContent?.size ?? 0}
           label={doc.relativePath ?? doc.label ?? "File"}
           path={doc.relativePath ?? doc.label ?? "File"}
-          onAddToChat={onSendToChat ? (selection) => void onSendToChat(`请查看文件 ${doc.relativePath ?? doc.label} 的以下内容：\n\n${textCodeBlock(selection)}`) : undefined}
+          onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(`${doc.relativePath ?? doc.label ?? "File"} 的选区`, selection)) : undefined}
           onAskAgent={onSendToChat ? (selection) => void onSendToChat(`请修改文件 ${doc.relativePath ?? doc.label} 中选中的内容。先基于以下选区给出修改方案和预期 diff，完成修改后等待用户确认，不要扩展到其它文件。\n\n选区：\n${textCodeBlock(selection)}`) : undefined}
         />
       )}
