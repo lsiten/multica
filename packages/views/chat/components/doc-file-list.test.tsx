@@ -25,6 +25,7 @@ const session = vi.hoisted(() => ({
     hasProject: false,
     entries: [] as Array<{ path: string; size: number; directory: boolean }>,
     entriesByPath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
+    workspaceErrorByPath: {} as Record<string, Error>,
     workspaceError: null as Error | null,
     error: null as Error | null,
   },
@@ -59,8 +60,8 @@ vi.mock("../../platform/local-review-pages", async () => {
   const actual = await vi.importActual<typeof import("../../platform/local-review-pages")>("../../platform/local-review-pages");
   return {
     ...actual,
-    requestReviewPage: (request: { path?: string }) => session.current.workspaceError
-      ? Promise.reject(session.current.workspaceError)
+    requestReviewPage: (request: { path?: string }) => session.current.workspaceErrorByPath[request.path ?? ""] ?? session.current.workspaceError
+      ? Promise.reject(session.current.workspaceErrorByPath[request.path ?? ""] ?? session.current.workspaceError)
       : Promise.resolve({ path: ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries }),
   };
 });
@@ -106,6 +107,7 @@ beforeEach(() => {
     hasProject: true,
     entries: [{ path: "src/app.ts", size: 10, directory: false }],
     entriesByPath: {},
+    workspaceErrorByPath: {},
     workspaceError: null,
     error: null,
   };
@@ -256,6 +258,31 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(useDocModeStore.getState().activeBySession["session-1"]).toMatchObject({
       kind: "workspace_file",
       workDir: "/lead",
+    });
+  });
+
+  it("skips a stale lead binding and uses the next live checkout", async () => {
+    session.current.files = {
+      ...session.current.files,
+      tasks: [
+        { id: "stale", runtime_id: "rt-old", work_dir: "/stale", created_at: "2026-01-01" } as never,
+        { id: "live", runtime_id: "rt-live", work_dir: "/live", created_at: "2026-01-02" } as never,
+      ],
+    };
+    session.current.entries = [];
+    session.current.entriesByPath = {
+      "/live": [{ path: "src/live.ts", size: 20, directory: false }],
+    };
+    session.current.workspaceErrorByPath = {
+      "/stale": new Error("directory has no matching runtime task binding"),
+    };
+    renderList(newClient());
+
+    fireEvent.click(await screen.findByText("src"));
+    fireEvent.click(await screen.findByText("live.ts"));
+    expect(useDocModeStore.getState().activeBySession["session-1"]).toMatchObject({
+      kind: "workspace_file",
+      workDir: "/live",
     });
   });
 

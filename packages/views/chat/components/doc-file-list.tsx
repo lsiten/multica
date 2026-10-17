@@ -177,27 +177,76 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // a directory opened from another chat can still be the current Git scope.
   // These task workdirs populate the project file tree. They do not select a
   // Git scope; Source Control follows the current local directory below.
-  const workspaceTasks = useMemo(() => fileTasks.slice(0, 1), [fileTasks]);
-  // Source Control is deliberately directory-scoped like VS Code. A chat or
-  // project may provide file candidates for the tree, but it must not silently
-  // become the Git scope before the user opens a directory/file or restores a
-  // previously selected local directory.
-  const gitTask = useMemo(
-    () =>
-      currentDirectory?.taskId
-        ? fileTasks.find((task) => task.id === currentDirectory.taskId)
-        : activeDoc?.taskId
-        ? fileTasks.find((task) => task.id === activeDoc.taskId)
-        : undefined,
-    [activeDoc?.taskId, currentDirectory?.taskId, fileTasks],
-  );
-  const gitRequest: LocalReviewRequest | null = currentDirectory?.path
+  // Keep every candidate here: the first task can be a historical or stale
+  // daemon binding while a later task still owns the live checkout.
+  const workspaceTasks = fileTasks;
+  // A single cached query replaces useQueries: useQueries returns a fresh array
+  // on every render, which defeated the allDocuments memo below. Try candidates
+  // in server order and stop at the first non-empty checkout. A stale lead task
+  // therefore cannot mask a later live worktree, and we avoid hammering the
+  // daemon with every historical task once a usable tree is found.
+  const workspaceFiles = useQuery({
+    queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
+    queryFn: async ({ signal }) => {
+      let emptyResult: { task: typeof workspaceTasks[number]; files: Extract<Awaited<ReturnType<typeof requestReviewPage>>, { entries: unknown[] }> } | null = null;
+      for (const task of workspaceTasks) {
+        try {
+          const files = await requestReviewPage({
+            task_id: task.id,
+            workspace_id: wsId,
+            runtime_id: task.runtime_id,
+            path: task.work_dir!,
+            action: "workspace_files",
+            relative_path: ".",
+          }, signal);
+          if (!("entries" in files)) throw new Error("Workspace file list response expected");
+          const result = { task, files };
+          if (files.entries.length > 0) return [result];
+          emptyResult ??= result;
+        } catch (error) {
+          if (signal.aborted) throw error;
+        }
+      }
+      return emptyResult ? [emptyResult] : [];
+    },
+    enabled: !!sessionId && workspaceTasks.length > 0 && activeTab === "files",
+    staleTime: 60_000,
+  });
+  const workspaceFileResults = workspaceFiles.data;
+  const workspaceFilesFailed = workspaceTasks.length > 0 && !!workspaceFileResults && workspaceFileResults.length === 0;
+  const selectedWorkspaceResult = workspaceFileResults?.[0];
+  const storedDirectoryTask = currentDirectory?.taskId
+    ? fileTasks.find((task) => task.id === currentDirectory.taskId)
+    : undefined;
+  const currentDirectoryTask = storedDirectoryTask &&
+    storedDirectoryTask.work_dir === currentDirectory?.path &&
+    storedDirectoryTask.runtime_id === currentDirectory?.runtimeId
+    ? storedDirectoryTask
+    : undefined;
+  const currentDirectoryResult = currentDirectoryTask
+    ? workspaceFileResults?.find((result) => result?.task.id === currentDirectoryTask.id)
+    : undefined;
+  // A directory selected from another chat has no task in this chat and must
+  // remain usable. If it does belong to this chat, discard it after its
+  // workspace_files request fails so a stale task cannot poison Git for the
+  // whole panel.
+  const useStoredDirectory = !!currentDirectory &&
+    (!storedDirectoryTask || !!currentDirectoryTask && (workspaceFiles.isPending || !workspaceFileResults || !!currentDirectoryResult));
+  const usableWorkspaceTasks = selectedWorkspaceResult ? [selectedWorkspaceResult.task] : [];
+  const gitTask = useMemo(() => {
+    if (useStoredDirectory) return undefined;
+    const activeTask = activeDoc?.taskId
+      ? usableWorkspaceTasks.find((task) => task.id === activeDoc.taskId)
+      : undefined;
+    return activeTask ?? usableWorkspaceTasks[0];
+  }, [activeDoc?.taskId, usableWorkspaceTasks, useStoredDirectory]);
+  const gitRequest: LocalReviewRequest | null = useStoredDirectory && currentDirectory?.path
     ? {
         task_id: currentDirectory.taskId,
         workspace_id: currentDirectory.workspaceId,
         runtime_id: currentDirectory.runtimeId,
         path: currentDirectory.path,
-        target: gitTask?.branch_name || "HEAD",
+        target: currentDirectoryTask?.branch_name || "HEAD",
       }
     : gitTask?.work_dir
     ? {
@@ -208,33 +257,6 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
         target: gitTask.branch_name || "HEAD",
       }
     : null;
-  // A single cached query (Promise.all) replaces useQueries: useQueries returns
-  // a fresh array on every render, which defeated the allDocuments memo below.
-  // A cached data array is stable across renders, so the memo holds. Per-task
-  // failures are swallowed so one unreachable task neither drops every other
-  // task's files nor triggers the repo-references fallback.
-  const workspaceFiles = useQuery({
-      queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
-    queryFn: ({ signal }) =>
-      Promise.all(
-        workspaceTasks.map((task) =>
-          requestReviewPage({
-            task_id: task.id,
-            workspace_id: wsId,
-            runtime_id: task.runtime_id,
-            path: task.work_dir!,
-            action: "workspace_files",
-            relative_path: ".",
-          }, signal).catch(() => null),
-        ),
-      ),
-    enabled: !!sessionId && workspaceTasks.length > 0 && activeTab === "files",
-    staleTime: 60_000,
-  });
-  const workspaceFileResults = workspaceFiles.data;
-  const workspaceFilesFailed = workspaceTasks.length > 0 &&
-    workspaceFileResults?.length === workspaceTasks.length &&
-    workspaceFileResults.every((files) => files === null);
   const openDoc = useDocModeStore((s) => s.openDoc);
   // Match the VS Code/GitHub tree convention: folders start closed so a large
   // checkout stays scannable. Search is computed from allDocuments (before the
@@ -244,34 +266,31 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // state, so it lives here, not in the persisted doc-mode store.
   const [filter, setFilter] = useState("");
 
-  const hasOpenableWorkspaceFiles = (workspaceFiles.data ?? []).some(
-    (files) => files !== null && "entries" in files && files.entries.length > 0,
-  );
+  const hasOpenableWorkspaceFiles = !!selectedWorkspaceResult && selectedWorkspaceResult.files.entries.length > 0;
 
   // The files tab is source code only: the files the session's tasks checked out
   // of the project's workspace (task work_dirs). Attachments live in their own
   // tab ("当前附件"), so they are excluded here instead of mixing into the tree.
   const allDocuments = useMemo(() => {
-    const workspaceDocuments = (workspaceFiles.data ?? []).flatMap((files, taskIndex) => {
-      if (!files || !("entries" in files)) return [];
-      const task = workspaceTasks[taskIndex];
+    const workspaceDocuments = selectedWorkspaceResult ? (() => {
+      const { task, files } = selectedWorkspaceResult;
       return files.entries
         .filter((entry) => !isInternalWorkspacePath(entry.path))
         .filter((entry) => !entry.directory)
         .map((entry): DocumentListItem => ({
           kind: "workspace_file",
-          id: `${task?.id ?? ""}:${entry.path}`,
+          id: `${task.id}:${entry.path}`,
           label: entry.path,
           sessionId: sessionId ?? undefined,
           projectId: selectedProjectId,
-          taskId: task?.id,
-          runtimeId: task?.runtime_id,
-          workDir: task?.work_dir,
+          taskId: task.id,
+          runtimeId: task.runtime_id,
+          workDir: task.work_dir,
           relativePath: entry.path,
         }));
-    });
+    })() : [];
     return workspaceDocuments;
-  }, [workspaceFiles.data, workspaceTasks, selectedProjectId, sessionId]);
+  }, [selectedProjectId, selectedWorkspaceResult, sessionId]);
 
   // The attachments tab is the union of the session's and the project's
   // attachments, de-duplicated by id so an attachment shared by both is not
