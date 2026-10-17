@@ -25,6 +25,7 @@ const session = vi.hoisted(() => ({
     hasProject: false,
     entries: [] as Array<{ path: string; size: number; directory: boolean }>,
     entriesByPath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
+    workspaceError: null as Error | null,
     error: null as Error | null,
   },
 }));
@@ -58,7 +59,9 @@ vi.mock("../../platform/local-review-pages", async () => {
   const actual = await vi.importActual<typeof import("../../platform/local-review-pages")>("../../platform/local-review-pages");
   return {
     ...actual,
-    requestReviewPage: (request: { path?: string }) => Promise.resolve({ path: ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries }),
+    requestReviewPage: (request: { path?: string }) => session.current.workspaceError
+      ? Promise.reject(session.current.workspaceError)
+      : Promise.resolve({ path: ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries }),
   };
 });
 
@@ -103,6 +106,7 @@ beforeEach(() => {
     hasProject: true,
     entries: [{ path: "src/app.ts", size: 10, directory: false }],
     entriesByPath: {},
+    workspaceError: null,
     error: null,
   };
 });
@@ -203,6 +207,19 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
+  });
+
+  it("falls back to the project repository when a historical worktree is unavailable", async () => {
+    session.current.workspaceError = new Error("directory has no matching runtime task binding");
+    session.current.files = {
+      ...session.current.files,
+      repos: [{ url: "https://github.com/acme/widgets.git", description: "", ref: "main" } as never],
+    };
+    renderList(newClient());
+
+    await screen.findByText("Acme");
+    expect(screen.queryByText(enChat.doc_file_list.load_failed)).not.toBeInTheDocument();
+    expect(screen.getByText("acme/widgets")).toBeInTheDocument();
   });
 
   it("keeps the list after a refresh (server data, not recent context)", async () => {

@@ -492,7 +492,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
               {t(($) => $.doc_file_list.loading)}
             </div>
           )}
-          {activeTab === "files" && workspaceFilesFailed && (
+          {activeTab === "files" && workspaceFilesFailed && repoReferences.length === 0 && (
             <div className="flex items-center justify-between gap-3 border-b px-3 py-3" role="alert">
               <p className="text-body text-destructive">{t(($) => $.doc_file_list.load_failed)}</p>
               <Button type="button" variant="outline" size="sm" onClick={() => void workspaceFiles.refetch()}>
