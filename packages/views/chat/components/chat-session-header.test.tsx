@@ -29,6 +29,10 @@ vi.mock("../../navigation", () => ({
   AppLink: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
 
+vi.mock("./group-chat-participants", () => ({
+  GroupChatParticipants: () => null,
+}));
+
 import { ChatSessionHeader } from "./chat-session-header";
 
 const TEST_RESOURCES = { en: { chat: enChat } };
@@ -178,5 +182,21 @@ describe("ChatSessionHeader rename keyboard behavior", () => {
     expect(updateMutate).not.toHaveBeenCalled();
     expect(screen.queryByRole("textbox", { name: RENAME_LABEL })).not.toBeInTheDocument();
     expect(screen.getByText("Original title")).toBeInTheDocument();
+  });
+});
+
+describe("ChatSessionHeader group presentation", () => {
+  it("uses the group label when a group has no custom title", () => {
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <ChatSessionHeader
+          session={{ ...session, kind: "group", title: "" }}
+          agent={null}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByTitle(enChat.header.rename)).toHaveTextContent(enChat.group.badge);
+    expect(screen.getByLabelText(enChat.group.badge)).toBeInTheDocument();
   });
 });

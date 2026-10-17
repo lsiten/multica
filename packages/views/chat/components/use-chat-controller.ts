@@ -262,11 +262,14 @@ export function useChatController(opts?: { isActive?: boolean }) {
   const messagePages = activeSessionId ? rawMessagePages?.pages ?? [] : [];
   const allMessages = [...messagePages].reverse().flatMap((page) => page.messages);
 
-  const { data: pendingTask, isLoading: pendingTaskLoading } = useQuery(
+  const { data: pendingTask } = useQuery(
     pendingChatTaskOptions(activeSessionId ?? ""),
   );
-  const showSkeleton =
-    !!activeSessionId && (messagesLoading || pendingTaskLoading);
+  // Pending-task state is an auxiliary status signal. It must not hold the
+  // entire transcript behind a skeleton while that small request is slow or
+  // unavailable; the message query is the source of truth for this loading
+  // surface.
+  const showSkeleton = !!activeSessionId && messagesLoading;
   const messages = hideQueuedChatMessages(allMessages, pendingTask);
   const olderMessageCount = messagePages
     .slice(1)

@@ -35,11 +35,18 @@ export function GroupChatParticipants({
   const participantsQuery = useQuery({
     queryKey: ["chat-group-participants", session.id],
     queryFn: () => api.listChatGroupParticipants(session.id),
-    enabled: session.kind === "group" && !session.participants,
+    // The session list does not carry participants. Always refresh the
+    // group-specific projection so an empty/stale inline cache cannot mask
+    // the server's member list.
+    enabled: session.kind === "group",
     staleTime: 30_000,
     retry: 2,
   });
-  const participants = session.participants ?? participantsQuery.data ?? [];
+  const participants = participantsQuery.data ?? session.participants ?? [];
+  const participantsLoaded =
+    participantsQuery.data !== undefined ||
+    (session.participants?.length ?? 0) > 0 ||
+    !participantsQuery.isPending;
   const addParticipant = useAddChatGroupParticipant();
   const participantIds = new Set(participants.filter((p) => p.member_type === "agent").map((p) => p.member_id));
   const availableAgents = agents.filter((candidate) => !participantIds.has(candidate.id) && candidate.id !== session.agent_id);
@@ -59,7 +66,9 @@ export function GroupChatParticipants({
             aria-label={t(($) => $.group.open_members)}
           >
             <Users className="size-3 shrink-0" />
-            <span className="tabular-nums">{participants.length}</span>
+            <span className="tabular-nums" aria-busy={!participantsLoaded}>
+              {participantsLoaded ? participants.length : "…"}
+            </span>
           </button>
         }
       />

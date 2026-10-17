@@ -73,7 +73,9 @@ export function ChatSessionHeader({
   const commitAfterCompositionRef = useRef(false);
   const blurCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const title = session.title?.trim() || t(($) => $.window.untitled);
+  const title = session.title?.trim() || (
+    session.kind === "group" ? t(($) => $.group.badge) : t(($) => $.window.untitled)
+  );
 
   useEffect(() => {
     if (editing) {

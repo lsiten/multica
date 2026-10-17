@@ -252,7 +252,9 @@ export function ChatThreadList({
     const isConfirmingDelete = confirmingDeleteId === session.id;
     const isConfirmingStop = confirmingStopId === session.id && !!pendingTask;
     const isConfirmingAction = isConfirmingDelete || isConfirmingStop;
-    const titleText = session.title?.trim() || t(($) => $.window.untitled);
+    const titleText = session.title?.trim() || (
+      session.kind === "group" ? t(($) => $.group.badge) : t(($) => $.window.untitled)
+    );
     const last = session.last_message ?? null;
     const timeText = last
       ? formatChatTime(last.created_at, locale)

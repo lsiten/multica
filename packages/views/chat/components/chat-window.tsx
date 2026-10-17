@@ -169,11 +169,14 @@ export function ChatWindow() {
   // (chat:message / chat:done / task:*) keep it invalidated in real time.
   //
   // This is the SOLE source for pendingTaskId — no mirror in the store.
-  const { data: pendingTask, isLoading: pendingTaskLoading } = useQuery(
+  const { data: pendingTask } = useQuery(
     pendingChatTaskOptions(activeSessionId ?? ""),
   );
-  const showSkeleton =
-    !!activeSessionId && (messagesLoading || pendingTaskLoading);
+  // Pending-task state is an auxiliary status signal. It must not hold the
+  // entire transcript behind a skeleton while that small request is slow or
+  // unavailable; the message query is the source of truth for this loading
+  // surface.
+  const showSkeleton = !!activeSessionId && messagesLoading;
   const messages = hideQueuedChatMessages(allMessages, pendingTask);
   const olderMessageCount = messagePages.slice(1).reduce(
     (sum, page) => sum + page.messages.length,
