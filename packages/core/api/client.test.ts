@@ -1952,6 +1952,9 @@ describe("ApiClient", () => {
       await new ApiClient("https://api.example.test").listChatSessionFiles("session-1", "project-1");
       const calls = fetchMock.mock.calls;
       expect(calls[1]?.[0]).toBe("https://api.example.test/api/chat/sessions/session-1/files?project_id=project-1");
+      expect(calls[1]?.[1]?.headers).toEqual(expect.objectContaining({
+        "X-Client-Capabilities": "stable_attachment_urls",
+      }));
     });
   });
 

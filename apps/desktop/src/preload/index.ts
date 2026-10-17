@@ -168,6 +168,8 @@ const desktopAPI = {
     subscribeToMainRendererChannel("invite:open", callback),
   /** Open a URL in the default browser */
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
+  /** Open a local file with the operating system's registered application. */
+  openPath: (filePath: string) => ipcRenderer.invoke("shell:openPath", filePath),
   /** Download a file by URL through Electron's native download system.
    *  Shows a save dialog and saves to disk. Unlike openExternal, this
    *  avoids browser rendering of HTML files on Linux.

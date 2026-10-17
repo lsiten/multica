@@ -9,9 +9,16 @@ import { useT } from "../../i18n";
 import { LocalReviewError } from "./local-review-error";
 
 type IndexAction = { readonly action: "stage" | "unstage" | "commit"; readonly paths?: string[] };
-type Props = { readonly request: LocalReviewRequest; readonly onChanged: () => void; readonly onBusyChange: (busy: boolean) => void; readonly disabled?: boolean; readonly compact?: boolean };
+type Props = {
+  readonly request: LocalReviewRequest;
+  readonly onChanged: () => void;
+  readonly onBusyChange: (busy: boolean) => void;
+  readonly onInvalidBinding?: () => void;
+  readonly disabled?: boolean;
+  readonly compact?: boolean;
+};
 
-export function LocalReviewIndex({ request, onChanged, onBusyChange, disabled = false, compact = false }: Props) {
+export function LocalReviewIndex({ request, onChanged, onBusyChange, onInvalidBinding, disabled = false, compact = false }: Props) {
   const { t } = useT("issues");
   const errorId = useId();
   const userId = useAuthStore((state) => state.user?.id);
@@ -22,6 +29,12 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, disabled = 
   const [confirm, setConfirm] = useState(false);
   const [visible, setVisible] = useState(100);
   const query = useQuery({ queryKey: key, queryFn: ({ signal }) => readLocalIndex({ ...request, action: "index" }, signal), networkMode: "always", retry: false, refetchOnWindowFocus: false });
+  useEffect(() => {
+    const message = query.error instanceof Error ? query.error.message : "";
+    if (message.includes("directory has no matching runtime task binding")) {
+      onInvalidBinding?.();
+    }
+  }, [onInvalidBinding, query.error]);
   const operation = useMutation({
     mutationKey: key,
     networkMode: "always",

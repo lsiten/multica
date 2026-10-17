@@ -3,9 +3,9 @@ import { VSCREEN_DESKTOP_CHANNEL, vscreenDesktopActionSchema } from "../shared/v
 import { ownedMirrorWindowIDs } from "./vscreen-exclusions";
 import { RuntimeMirrorWindowManager } from "./runtime-mirror-window-manager";
 import { RUNTIME_MIRROR_CHANNEL } from "../shared/runtime-mirror-window";
-import { app, BrowserWindow, dialog, ipcMain, Notification, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, screen, shell } from "electron";
 import { homedir } from "os";
-import { join } from "path";
+import { isAbsolute, join } from "path";
 import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import fixPath from "fix-path";
@@ -706,6 +706,26 @@ if (!gotTheLock) {
     // (the renderer itself runs sandboxed).
     ipcMain.handle("shell:openExternal", (_event, url: string) => {
       return openExternalSafely(url);
+    });
+
+    // Open a checked local file with the operating system's registered
+    // application. The renderer uses this for Office documents that the
+    // daemon intentionally exposes as binary/read-only content; on systems
+    // where GenOffice is registered for the extension, it is the application
+    // selected by macOS/Windows/Linux here.
+    ipcMain.handle("shell:openPath", async (event, filePath: string) => {
+      if (
+        !BrowserWindow.fromWebContents(event.sender) ||
+        typeof filePath !== "string" ||
+        !isAbsolute(filePath) ||
+        filePath.includes("\0")
+      ) {
+        return { ok: false, reason: "invalid_request" } as const;
+      }
+      const error = await shell.openPath(filePath);
+      return error
+        ? ({ ok: false, reason: "open_failed", error } as const)
+        : ({ ok: true } as const);
     });
 
     // Renderer requests its own window close (e.g. Cmd+W on the last main

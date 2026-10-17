@@ -322,6 +322,15 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     expect(screen.getByText("Edit")).toBeInTheDocument();
   });
 
+  it("offers source and preview editors for Markdown human edits", async () => {
+    openIssueDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByText("Edit"));
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Preview"));
+    await waitFor(() => expect(document.querySelector(".ProseMirror")).not.toBeNull());
+  });
+
   it("never offers Edit for a binary (attachment) document", async () => {
     useDocModeStore.getState().openDoc("session-1", {
       kind: "attachment",

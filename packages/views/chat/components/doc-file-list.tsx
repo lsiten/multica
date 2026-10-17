@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronRight, File, Folder, GitBranch, Loader2, Search } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
@@ -113,6 +113,8 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   const activeDoc = useDocModeStore(selectActiveDocument(sessionId ?? ""));
   const currentDirectory = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
+  const clearDirectory = useLocalDirectoryStore((state) => state.clearCurrentDirectory);
+  const clearCurrentDirectory = useCallback(() => clearDirectory(wsId), [clearDirectory, wsId]);
   useEffect(() => {
     if (!isGroupChat && activeTab === "group") setActiveTab("files");
   }, [activeTab, isGroupChat]);
@@ -534,6 +536,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
                   void workspaceFiles.refetch();
                 }}
                 onBusyChange={() => undefined}
+                onInvalidBinding={clearCurrentDirectory}
               />
             ) : (
               <p className="p-2 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_git_checkout)}</p>

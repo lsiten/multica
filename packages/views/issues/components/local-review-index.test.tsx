@@ -45,3 +45,20 @@ it("stages only the selected file and requires confirmation before commit", asyn
   fireEvent.click(screen.getByRole("button", { name: "确认提交 1 个暂存文件" }));
   await waitFor(() => expect(changeLocalIndex).toHaveBeenLastCalledWith(expect.objectContaining({ action: "commit", message: "selected commit", index_id: index })));
 });
+
+it("reports a stale runtime binding so the caller can clear its persisted directory", async () => {
+  vi.mocked(readLocalIndex).mockRejectedValue(new Error("directory has no matching runtime task binding"));
+  const onInvalidBinding = vi.fn();
+  renderWithI18n(
+    <QueryClientProvider client={new QueryClient()}>
+      <LocalReviewIndex
+        request={{ task_id: "stale-task", workspace_id: "ws", path: "/repo", target: "main" }}
+        onChanged={() => {}}
+        onBusyChange={() => {}}
+        onInvalidBinding={onInvalidBinding}
+      />
+    </QueryClientProvider>,
+    { locale: "zh-Hans" },
+  );
+  await waitFor(() => expect(onInvalidBinding).toHaveBeenCalledTimes(1));
+});

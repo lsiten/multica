@@ -771,6 +771,14 @@ function skillFromImportResult(raw: unknown, endpoint: string): Skill {
 export const CHAT_DRAFT_RESTORE_CAPABILITY = "chat-draft-restore-v1";
 
 /**
+ * Requests stable attachment paths in bulk projections instead of embedding
+ * a fresh signed URL for every attachment. The file browser loads individual
+ * attachments through their authenticated endpoint, so it does not need the
+ * bulk response to carry short-lived credentials.
+ */
+export const STABLE_ATTACHMENT_URLS_CAPABILITY = "stable_attachment_urls";
+
+/**
  * Body shared by both unsubscribe endpoints: an omitted target means "the
  * caller", which the server resolves from the request actor.
  */
@@ -4568,7 +4576,9 @@ export class ApiClient {
 
   async listChatSessionFiles(sessionId: string, projectId?: string | null): Promise<ChatSessionFilesResponse> {
     const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/files${query}`);
+    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/files${query}`, {
+      headers: { "X-Client-Capabilities": STABLE_ATTACHMENT_URLS_CAPABILITY },
+    });
     return parseWithFallback(raw, ChatSessionFilesResponseSchema, EMPTY_CHAT_SESSION_FILES_RESPONSE, {
       endpoint: "GET /api/chat/sessions/:id/files",
     });

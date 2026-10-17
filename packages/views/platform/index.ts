@@ -2,6 +2,7 @@ export { useImmersiveMode } from "./use-immersive-mode";
 export { useDesktopUnreadBadge } from "./use-desktop-unread-badge";
 export { DragStrip } from "./drag-strip";
 export { openExternal } from "./open-external";
+export { canOpenLocalPath, openLocalPath } from "./open-local-path";
 export {
   isDesktopShell,
   pickDirectory,

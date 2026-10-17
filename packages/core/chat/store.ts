@@ -14,6 +14,9 @@ import { createLogger } from "../logger";
 const logger = createLogger("chat.store");
 
 const AGENT_STORAGE_KEY = "multica:chat:selectedAgentId";
+// Project context belongs to a concrete chat session. Keep the new-chat
+// selection in memory only so a fresh conversation never inherits the last
+// project's context after reload or workspace rehydration.
 const PROJECT_STORAGE_KEY = "multica:chat:selectedProjectId";
 const SQUAD_STORAGE_KEY = "multica:chat:selectedSquadId";
 const SESSION_STORAGE_KEY = "multica:chat:activeSessionId";
@@ -390,13 +393,19 @@ export function createChatStore(options: ChatStoreOptions) {
     wsKey(DRAFT_ATTACHMENTS_KEY),
     initialAgentId,
   );
+  // Remove the legacy persisted draft context while the workspace namespace
+  // is available. New chats must never inherit it.
+  storage.removeItem(wsKey(PROJECT_STORAGE_KEY));
 
   const store = create<ChatState>((set, get) => ({
     isOpen: initialIsOpen,
     floatingChatEnabled: initialFloatingEnabled,
     activeSessionId: storage.getItem(wsKey(SESSION_STORAGE_KEY)),
     selectedAgentId: initialAgentId,
-    selectedProjectId: storage.getItem(wsKey(PROJECT_STORAGE_KEY)),
+    // Clear the pre-session project preference written by older clients. A new
+    // chat starts clean; an explicit project choice is held in memory until a
+    // session is created and persisted on the server.
+    selectedProjectId: null,
     selectedSquadId: storage.getItem(wsKey(SQUAD_STORAGE_KEY)),
     inputDrafts: initialDraftSlots.inputDrafts,
     inputDraftAttachments: initialDraftSlots.inputDraftAttachments,
@@ -440,8 +449,6 @@ export function createChatStore(options: ChatStoreOptions) {
     },
     setSelectedProjectId: (id) => {
       logger.info("setSelectedProjectId", { from: get().selectedProjectId, to: id });
-      if (id) storage.setItem(wsKey(PROJECT_STORAGE_KEY), id);
-      else storage.removeItem(wsKey(PROJECT_STORAGE_KEY));
       set({ selectedProjectId: id });
     },
     setSelectedSquadId: (id) => {
@@ -660,7 +667,10 @@ export function createChatStore(options: ChatStoreOptions) {
   registerForWorkspaceRehydration(() => {
     const nextSession = storage.getItem(wsKey(SESSION_STORAGE_KEY));
     const nextAgent = storage.getItem(wsKey(AGENT_STORAGE_KEY));
-    const nextProject = storage.getItem(wsKey(PROJECT_STORAGE_KEY));
+    // Project context is session-scoped. Do not rehydrate the previous
+    // workspace's new-chat selection into a fresh conversation.
+    storage.removeItem(wsKey(PROJECT_STORAGE_KEY));
+    const nextProject = null;
     const nextSquad = storage.getItem(wsKey(SQUAD_STORAGE_KEY));
     // Drafts are namespaced per workspace, so the workspace being switched TO
     // has its own legacy slots to fold — migrate against that workspace's own

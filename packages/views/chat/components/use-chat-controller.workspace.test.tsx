@@ -92,7 +92,6 @@ describe("useChatController workspace rehydration", () => {
     const values = new Map<string, string>([
       ["multica:chat:activeSessionId:source", sourceSession.id],
       ["multica:chat:activeSessionId:target", targetSession.id],
-      ["multica:chat:selectedProjectId:target", targetProject.id],
     ]);
     storage = {
       getItem: (key) => values.get(key) ?? null,
@@ -113,8 +112,8 @@ describe("useChatController workspace rehydration", () => {
   function expectTargetSelection() {
     expect(store.getState().activeSessionId).toBe(targetSession.id);
     expect(storage.getItem("multica:chat:activeSessionId:target")).toBe(targetSession.id);
-    expect(store.getState().selectedProjectId).toBe(targetProject.id);
-    expect(storage.getItem("multica:chat:selectedProjectId:target")).toBe(targetProject.id);
+    expect(store.getState().selectedProjectId).toBeNull();
+    expect(storage.getItem("multica:chat:selectedProjectId:target")).toBeNull();
     expect(storage.getItem("multica:chat:activeSessionId:source")).toBe(sourceSession.id);
   }
 

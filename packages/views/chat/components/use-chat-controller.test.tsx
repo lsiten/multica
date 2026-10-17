@@ -384,7 +384,7 @@ describe("useChatController project context", () => {
     expect(h.store.setActiveSession).not.toHaveBeenCalled();
   });
 
-  it("persists the selected project when lazy-creating a session", async () => {
+  it("uses the selected project when lazy-creating a session", async () => {
     h.store.activeSessionId = null;
     h.store.selectedAgentId = agentA.id;
     h.store.selectedProjectId = project.id;

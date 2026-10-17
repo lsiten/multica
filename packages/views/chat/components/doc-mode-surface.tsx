@@ -1,6 +1,6 @@
 "use client";
 
-import { X, GitCompare, Loader2, Pencil, MessageSquareQuote } from "lucide-react";
+import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
@@ -22,12 +22,14 @@ import { RichContent } from "../../rich-content";
 import { Attachment } from "../../editor/attachment";
 import { useT } from "../../i18n";
 import { applyReviewFileEdit, requestReviewPage } from "../../platform/local-review-pages";
+import { canOpenLocalPath, openLocalPath } from "../../platform";
 import { createSafeId } from "@multica/core/utils";
 import { api, ApiError } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import { FileViewer } from "../../skills/components/file-viewer";
 import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
 import { CodeBlockStatic } from "../../editor/code-block-static";
+import { ContentEditor } from "../../editor";
 import { languageForPath } from "../../common/task-transcript/diff-highlight";
 import type { Attachment as AttachmentRecord } from "@multica/core/types";
 
@@ -46,6 +48,16 @@ function fileContentText(value: unknown): string | null {
 
 function textCodeBlock(content: string): string {
   return ["```text", content, "```"].join("\n");
+}
+
+function isOfficePath(path: string): boolean {
+  return /\.(docx?|xlsx?|pptx?|odt|ods|odp|pages|numbers|key)$/i.test(path);
+}
+
+function localFilePath(root: string, relativePath: string): string | null {
+  const normalized = relativePath.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (!normalized || normalized.startsWith("/") || normalized.split("/").some((part) => part === "..")) return null;
+  return `${root.replace(/[\\/]+$/, "")}/${normalized}`;
 }
 
 /**
@@ -212,11 +224,25 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
       workspaceContent.data && "content" in workspaceContent.data
         ? workspaceContent.data.content
         : null;
+    const officePath = doc.relativePath && workspacePath && isOfficePath(doc.relativePath)
+      ? localFilePath(workspacePath, doc.relativePath)
+      : null;
     return (
       <div className="flex h-full flex-col min-h-0">
         <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
           <h2 className="truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
         <div className="flex items-center gap-1">
+          {officePath && canOpenLocalPath() && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => { void openLocalPath(officePath); }}
+            >
+              <Pencil className="h-4 w-4" />
+              {t(($) => $.doc_mode.open_in_office)}
+            </Button>
+          )}
           {fileContentText(workspaceContent.data) !== null && (
             <Button variant={workspaceEditing ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={openWorkspaceEdit}>
               <Pencil className="h-4 w-4" />
@@ -245,6 +271,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
           onChange={setWorkspaceEdited}
           onSave={() => void saveWorkspaceEdit()}
           onCancel={() => { setWorkspaceEditing(false); setWorkspaceSaveError(null); }}
+          markdown={/\.mdx?$/i.test(doc.relativePath ?? doc.label ?? "")}
           saveLabel={t(($) => $.doc_mode.save)}
           savingLabel={t(($) => $.doc_mode.saving)}
           discardLabel={t(($) => $.doc_mode.discard)}
@@ -332,6 +359,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat }: { wsId: string
               setEditing(false);
               setSaveError(null);
             }}
+            markdown={isText && (doc.contentType?.toLowerCase().split(";", 1)[0] === "text/markdown" || /\.mdx?$/i.test(doc.label ?? ""))}
             saveLabel={t(($) => $.doc_mode.save)}
             savingLabel={t(($) => $.doc_mode.saving)}
             discardLabel={t(($) => $.doc_mode.discard)}
@@ -613,6 +641,7 @@ function DocEdit({
   discardLabel,
   changeLabel,
   failLabel,
+  markdown = false,
 }: {
   label: string;
   content: string;
@@ -627,18 +656,54 @@ function DocEdit({
   discardLabel: string;
   changeLabel: string;
   failLabel: string;
+  markdown?: boolean;
 }) {
+  const { t } = useT("chat");
+  const [mode, setMode] = useState<"source" | "preview">("source");
   return (
     <div className="flex h-full flex-col min-h-0">
+      {markdown && (
+        <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "source" ? "secondary" : "ghost"}
+            className="gap-1.5"
+            onClick={() => setMode("source")}
+          >
+            <Code2 className="h-4 w-4" />
+            {t(($) => $.doc_mode.source)}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "preview" ? "secondary" : "ghost"}
+            className="gap-1.5"
+            onClick={() => setMode("preview")}
+          >
+            <Eye className="h-4 w-4" />
+            {t(($) => $.doc_mode.preview)}
+          </Button>
+        </div>
+      )}
       <div className="min-h-0 flex-1">
-        <FileViewer
-          path={label || "document"}
-          content={content}
-          mode="raw"
-          readOnly={false}
-          autoFocus
-          onChange={onChange}
-        />
+        {markdown && mode === "preview" ? (
+          <ContentEditor
+            value={content}
+            onUpdate={(markdown) => onChange(markdown)}
+            debounceMs={0}
+            showBubbleMenu
+          />
+        ) : (
+          <FileViewer
+            path={label || "document"}
+            content={content}
+            mode="raw"
+            readOnly={false}
+            autoFocus
+            onChange={onChange}
+          />
+        )}
       </div>
       {error ? (
         <div className="shrink-0 border-t px-4 py-2">
