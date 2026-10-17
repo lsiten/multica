@@ -2547,6 +2547,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Patch("/pin", h.SetChatSessionPinned)
 					r.Patch("/archive", h.SetChatSessionArchived)
 					r.Delete("/", h.DeleteChatSession)
+					r.Post("/read", h.MarkChatSessionRead)
 					r.Post("/messages", h.SendChatMessage)
 					r.Post("/tasks/{taskId}/continue", h.ContinueChatTask)
 					r.Post("/onboarding", h.StartMikaOnboarding)
