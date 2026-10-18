@@ -132,6 +132,41 @@ describe("useRealtimeSync — task:message fanout guards (MUL-6396)", () => {
     release();
   });
 
+  it("keeps held chat-task frames when the chat pending-task cache is absent", () => {
+    const handler = mount();
+    const release = holdTimeline(HELD_TASK);
+
+    handler(msg(HELD_TASK, 1, { chat_session_id: "session-1" }));
+
+    expect(cached(qc, HELD_TASK)?.map((m) => m.seq)).toEqual([1]);
+    release();
+  });
+
+  it("keeps held chat-task frames while the matching pending-task query is loading", () => {
+    const handler = mount();
+    const release = holdTimeline(HELD_TASK);
+    qc.getQueryCache().build(qc, {
+      queryKey: chatKeys.pendingTask("session-1"),
+      queryFn: async () => ({}),
+    });
+
+    handler(msg(HELD_TASK, 1, { chat_session_id: "session-1" }));
+
+    expect(cached(qc, HELD_TASK)?.map((m) => m.seq)).toEqual([1]);
+    release();
+  });
+
+  it("ignores pending-task caches for other chat sessions", () => {
+    const handler = mount();
+    const release = holdTimeline(HELD_TASK);
+    qc.setQueryData(chatKeys.pendingTask("other-session"), { task_id: UNHELD_TASK });
+
+    handler(msg(HELD_TASK, 1, { chat_session_id: "session-1" }));
+
+    expect(cached(qc, HELD_TASK)?.map((m) => m.seq)).toEqual([1]);
+    release();
+  });
+
   it("keeps legacy task:message frames without workspace_id for a held timeline", () => {
     const handler = mount();
     const release = holdTimeline(HELD_TASK);

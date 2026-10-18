@@ -135,6 +135,53 @@ func TestListChatSessionFiles_DurableWorkDirFallback(t *testing.T) {
 	}
 }
 
+func TestListChatSessionFiles_SkipsCancelledTransientWorkdir(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "SessionFilesTransientAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	projectID := dbfx.Project(t, "Transient Files Project")
+	dbfx.Exec(t, `UPDATE chat_session SET project_id = $1 WHERE id = $2`, projectID, sessionID)
+	issueID := dbfx.Issue(t, "Retained project worktree")
+
+	// An interrupted chat-only turn leaves a workdir behind, but it is not a
+	// project checkout and its local-review binding is already gone.
+	dbfx.Task(t, agentID, testutil.Cols{
+		"runtime_id":      handlerTestRuntimeID(t),
+		"chat_session_id": sessionID,
+		"work_dir":        "/cancelled/transient",
+		"status":          "cancelled",
+	})
+	dbfx.Task(t, agentID, testutil.Cols{
+		"runtime_id":      handlerTestRuntimeID(t),
+		"chat_session_id": sessionID,
+		"issue_id":        issueID,
+		"work_dir":        "/project/worktree",
+		"status":          "completed",
+	})
+
+	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil)
+	req = withURLParam(req, "sessionId", sessionID)
+	req = withChatTestWorkspaceCtx(t, req)
+	w := httptest.NewRecorder()
+	testHandler.ListChatSessionFiles(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp ChatSessionFilesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v; body: %s", err, w.Body.String())
+	}
+	if len(resp.Tasks) != 1 || resp.Tasks[0].WorkDir != "/project/worktree" {
+		t.Fatalf("transient task leaked into session files: %+v", resp.Tasks)
+	}
+	if len(resp.ProjectTasks) != 1 || resp.ProjectTasks[0].WorkDir != "/project/worktree" {
+		t.Fatalf("transient task leaked into project files: %+v", resp.ProjectTasks)
+	}
+}
+
 // TestListChatSessionFiles_WorkspaceIsolation guards the tenant boundary: a
 // request scoped to a different workspace cannot read the session's files even
 // though it knows the session id — the projection resolves the session through

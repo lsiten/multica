@@ -361,10 +361,19 @@ function isHeldChatTaskMessage(
 ): boolean {
   if (!isTaskMessageTimelineHeld(qc, payload.task_id)) return false;
   if (!payload.chat_session_id) return true;
-  return qc.getQueriesData<ChatPendingTask>({ queryKey: chatKeys.pendingTaskAll() })
-    .some(([key, task]) =>
-      key[key.length - 1] === payload.chat_session_id && task?.task_id === payload.task_id,
-    );
+  const pendingEntries = qc.getQueriesData<ChatPendingTask>({ queryKey: chatKeys.pendingTaskAll() });
+  // Agent activity and issue surfaces can hold a transcript without mounting
+  // the chat session's pending-task query. Once a user has explicitly opened
+  // the timeline, keep its scoped events; the pending-task check still narrows
+  // delivery when chat session state is available.
+  const sessionEntry = pendingEntries.find(
+    ([key]) => key[key.length - 1] === payload.chat_session_id,
+  );
+  return (
+    sessionEntry === undefined
+    || sessionEntry[1]?.task_id === undefined
+    || sessionEntry[1].task_id === payload.task_id
+  );
 }
 
 /**

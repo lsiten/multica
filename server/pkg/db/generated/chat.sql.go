@@ -2490,6 +2490,7 @@ WHERE task_agent.workspace_id = $2
     issue.project_id = $1
     OR task_session.project_id = $1
   )
+  AND (task.issue_id IS NOT NULL OR task.status NOT IN ('failed', 'cancelled'))
   AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) IS NOT NULL
 ORDER BY task.created_at DESC, task.id DESC
 LIMIT $3
@@ -2591,6 +2592,11 @@ FROM agent_task_queue AS task
 JOIN chat_session AS session ON session.id = task.chat_session_id
 WHERE task.chat_session_id = $1
   AND session.workspace_id = $2
+  -- Cancelled/failed turns without an issue are transient chat workdirs (for
+  -- example, an interrupted image-only turn), not project checkouts. They can
+  -- no longer satisfy local-review requests and must not mask a real issue
+  -- worktree that belongs to the same chat.
+  AND (task.issue_id IS NOT NULL OR task.status NOT IN ('failed', 'cancelled'))
 ORDER BY CASE WHEN task.context->'group_collaboration'->>'phase' = 'lead_plan' THEN 0 ELSE 1 END,
          task.created_at DESC, task.id DESC
 LIMIT $3
