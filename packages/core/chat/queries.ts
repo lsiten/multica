@@ -23,6 +23,12 @@ import type {
  */
 export const QUICK_ACTIONS_PENDING_TIMEOUT_MS = 12_000;
 
+// Reconcile pending-task state even when the realtime connection or a daemon
+// terminal report is temporarily unavailable. This is intentionally short
+// because the endpoint is a tiny status projection and the alternative is a
+// stale thinking spinner that survives a completed or failed local run.
+export const PENDING_CHAT_TASK_REFRESH_MS = 15_000;
+
 // NOTE on workspace scoping:
 // `wsId` is used only as part of queryKey for cache isolation per workspace.
 // The actual workspace context comes from ApiClient's X-Workspace-Slug header,
@@ -191,6 +197,7 @@ export function pendingChatTaskOptions(sessionId: string) {
     enabled: !!sessionId,
     staleTime: 10_000,
     refetchOnMount: "always",
+    refetchInterval: PENDING_CHAT_TASK_REFRESH_MS,
     retry: 2,
   });
 }

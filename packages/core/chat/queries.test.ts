@@ -6,6 +6,7 @@ import {
   countUnreadChatSessions,
   isTaskMessageTaskId,
   mergeTaskMessagesBySeq,
+  pendingChatTaskOptions,
   sortChatSessions,
   taskMessagesOptions,
   unionTaskMessagesBySeq,
@@ -32,6 +33,15 @@ describe("taskMessagesOptions", () => {
 
     expect(isTaskMessageTaskId(taskId)).toBe(false);
     expect(taskMessagesOptions(taskId).enabled).toBe(false);
+  });
+});
+
+describe("pendingChatTaskOptions", () => {
+  it("polls for terminal settlement when realtime invalidation is lost", () => {
+    // A daemon can finish locally while its terminal report is queued during a
+    // backend outage. Polling lets the next successful response clear a stale
+    // thinking spinner after the report is accepted.
+    expect(pendingChatTaskOptions("session-1").refetchInterval).toBe(15_000);
   });
 });
 
