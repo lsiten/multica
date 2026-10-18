@@ -123,7 +123,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
   });
   const rollback = useRollbackDocumentContentVersion(wsId);
   const { data: sessionFiles } = useQuery({
-    ...chatSessionFilesOptions(wsId, doc?.sessionId ?? "", doc?.projectId),
+    ...chatSessionFilesOptions(wsId, doc?.sessionId ?? "", doc?.projectId, doc?.kind === "attachment"),
   });
   const attachmentRecord = doc?.kind === "attachment"
     ? [...(sessionFiles?.attachments ?? []), ...(sessionFiles?.project_attachments ?? [])].find(

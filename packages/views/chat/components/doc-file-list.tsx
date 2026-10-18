@@ -97,7 +97,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "group">("files");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const sessionFilesQuery = useQuery({
-    ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId),
+    ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId, activeTab === "attachments"),
   });
   const { data: sessionFiles, isLoading: sessionFilesLoading, isError: sessionFilesError, refetch: refetchSessionFiles } = sessionFilesQuery;
   // A session's project context is its own; switching sessions must not carry the

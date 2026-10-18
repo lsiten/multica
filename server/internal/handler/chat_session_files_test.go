@@ -60,7 +60,7 @@ func TestListChatSessionFiles(t *testing.T) {
 		"work_dir":        "/work",
 	})
 
-	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil)
+	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files?include_attachments=true", nil)
 	req = withURLParam(req, "sessionId", sessionID)
 	req = withChatTestWorkspaceCtx(t, req)
 	w := httptest.NewRecorder()
@@ -258,6 +258,42 @@ func TestListChatSessionFiles_ProjectReposWithoutTask(t *testing.T) {
 	}
 }
 
+// Direct chats can inherit a project from the lead agent's binding without
+// storing project_id on the session or its chat task. The file projection must
+// still surface the durable worktree when the user selects that project tab.
+func TestListChatSessionFiles_ResolvesAgentBoundProjectTask(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "BoundProjectFilesAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	projectID := dbfx.Project(t, "Bound Project Files")
+	dbfx.Exec(t, `INSERT INTO agent_project_binding (agent_id, project_id, created_by, active)
+		VALUES ($1, $2, $3, TRUE)`, agentID, projectID, testUserID)
+	dbfx.Task(t, agentID, testutil.Cols{
+		"runtime_id": handlerTestRuntimeID(t),
+		"work_dir":   "/bound/project/worktree",
+		"status":     "completed",
+	})
+
+	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files?project_id="+projectID, nil)
+	req = withURLParam(req, "sessionId", sessionID)
+	req = withChatTestWorkspaceCtx(t, req)
+	w := httptest.NewRecorder()
+	testHandler.ListChatSessionFiles(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp ChatSessionFilesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v; body: %s", err, w.Body.String())
+	}
+	if len(resp.ProjectTasks) != 1 || resp.ProjectTasks[0].WorkDir != "/bound/project/worktree" {
+		t.Fatalf("agent-bound project task missing: %+v", resp.ProjectTasks)
+	}
+}
+
 // TestListChatSessionFiles_ResolvesExplicitGroupSquadProject verifies that a
 // group chat uses its durable squad context when the canonical squad leader is
 // not duplicated in squad_member. The previous projection only joined through
@@ -276,11 +312,8 @@ func TestListChatSessionFiles_ResolvesExplicitGroupSquadProject(t *testing.T) {
 		"leader_id":    agentID,
 		"creator_id":   testUserID,
 	})
-	dbfx.Insert(t, "squad_project_binding", testutil.Cols{
-		"squad_id":   squadID,
-		"project_id": projectID,
-		"created_by": testUserID,
-	})
+	dbfx.Exec(t, `INSERT INTO squad_project_binding (squad_id, project_id, created_by, active)
+		VALUES ($1, $2, $3, TRUE)`, squadID, projectID, testUserID)
 	dbfx.Exec(t, `UPDATE chat_session SET kind = 'group', squad_id = $1 WHERE id = $2`, squadID, sessionID)
 
 	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil)

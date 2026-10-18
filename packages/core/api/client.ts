@@ -4574,9 +4574,12 @@ export class ApiClient {
     });
   }
 
-  async listChatSessionFiles(sessionId: string, projectId?: string | null): Promise<ChatSessionFilesResponse> {
-    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/files${query}`, {
+  async listChatSessionFiles(sessionId: string, projectId?: string | null, includeAttachments?: boolean): Promise<ChatSessionFilesResponse> {
+    const query = new URLSearchParams();
+    if (projectId) query.set("project_id", projectId);
+    if (includeAttachments !== undefined) query.set("include_attachments", String(includeAttachments));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const raw: unknown = await this.fetch(`/api/chat/sessions/${sessionId}/files${suffix}`, {
       headers: { "X-Client-Capabilities": STABLE_ATTACHMENT_URLS_CAPABILITY },
     });
     return parseWithFallback(raw, ChatSessionFilesResponseSchema, EMPTY_CHAT_SESSION_FILES_RESPONSE, {

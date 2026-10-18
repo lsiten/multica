@@ -449,13 +449,23 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	attachments, err := h.Queries.ListAttachmentsByChatSession(r.Context(), db.ListAttachmentsByChatSessionParams{
-		ChatSessionID: session.ID,
-		WorkspaceID:   workspaceUUID,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list chat attachments")
-		return
+	// The files tab does not need attachment rows. Project attachment history can
+	// be large enough to make the projection look hung, so the desktop sends
+	// include_attachments=false there. Keep the omitted parameter backward
+	// compatible for older clients that expect attachment rows by default.
+	attachmentQuery := strings.TrimSpace(r.URL.Query().Get("include_attachments"))
+	includeAttachments := attachmentQuery == "" || strings.EqualFold(attachmentQuery, "1") || strings.EqualFold(attachmentQuery, "true")
+	attachments := []db.Attachment{}
+	var err error
+	if includeAttachments {
+		attachments, err = h.Queries.ListAttachmentsByChatSession(r.Context(), db.ListAttachmentsByChatSessionParams{
+			ChatSessionID: session.ID,
+			WorkspaceID:   workspaceUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list chat attachments")
+			return
+		}
 	}
 	associatedProjects, err := h.Queries.ListChatSessionProjects(r.Context(), db.ListChatSessionProjectsParams{
 		ID:          session.ID,
@@ -549,17 +559,19 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 				CreatedAt:       timestampToString(task.CreatedAt),
 			})
 		}
-		projectAttachments, projectErr := h.Queries.ListAttachmentsByProject(r.Context(), db.ListAttachmentsByProjectParams{
-			ProjectID:   selectedProjectID,
-			WorkspaceID: workspaceUUID,
-		})
-		if projectErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to list project attachments")
-			return
-		}
-		projectAttachmentResponses = make([]AttachmentResponse, 0, len(projectAttachments))
-		for _, attachment := range projectAttachments {
-			projectAttachmentResponses = append(projectAttachmentResponses, h.attachmentToResponse(attachment, attachmentMode))
+		if includeAttachments {
+			projectAttachments, projectErr := h.Queries.ListAttachmentsByProject(r.Context(), db.ListAttachmentsByProjectParams{
+				ProjectID:   selectedProjectID,
+				WorkspaceID: workspaceUUID,
+			})
+			if projectErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to list project attachments")
+				return
+			}
+			projectAttachmentResponses = make([]AttachmentResponse, 0, len(projectAttachments))
+			for _, attachment := range projectAttachments {
+				projectAttachmentResponses = append(projectAttachmentResponses, h.attachmentToResponse(attachment, attachmentMode))
+			}
 		}
 	}
 	projectResponses := make([]ChatSessionProjectResponse, 0, len(associatedProjects))

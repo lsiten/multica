@@ -975,7 +975,10 @@ LIMIT sqlc.arg(page_limit);
 -- name: ListChatProjectFileTasks :many
 -- Project files are durable across chat turns and are therefore resolved from
 -- the selected project rather than only the currently open session. A task
--- can carry its project through an issue or through its chat session context.
+-- can carry its project through an issue, its chat session/context, or the
+-- agent/squad project binding that made the project available to the chat.
+-- The last case is required for direct chats: the session itself can be
+-- project-less while its lead agent is explicitly bound to the project.
 -- Keep the agent workspace guard because agent_task_queue has no workspace_id.
 SELECT task.*
 FROM agent_task_queue AS task
@@ -986,6 +989,29 @@ WHERE task_agent.workspace_id = $2
   AND (
     issue.project_id = $1
     OR task_session.project_id = $1
+    OR task.context->>'project_id' = $1::text
+    OR EXISTS (
+      SELECT 1
+      FROM project AS lead_project
+      WHERE lead_project.id = $1
+        AND lead_project.workspace_id = $2
+        AND lead_project.lead_type = 'agent'
+        AND lead_project.lead_id = task.agent_id
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM agent_project_binding AS binding
+      WHERE binding.agent_id = task.agent_id
+        AND binding.project_id = $1
+        AND binding.active
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM squad_project_binding AS binding
+      WHERE binding.project_id = $1
+        AND binding.active
+        AND (binding.squad_id = task.squad_id OR binding.squad_id = task_session.squad_id)
+    )
   )
   AND (task.issue_id IS NOT NULL OR task.status NOT IN ('failed', 'cancelled'))
   AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) IS NOT NULL
