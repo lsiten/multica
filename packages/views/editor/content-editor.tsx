@@ -260,6 +260,8 @@ interface ContentEditorRef {
   getMarkdown: () => string;
   clearContent: () => void;
   focus: () => void;
+  /** Focus the editor and place the caret at the end of the document. */
+  focusAtEnd: () => void;
   /**
    * Focus and place the caret at the document position under the given
    * viewport coordinates. Used by readonly-first hosts so the click that
@@ -937,6 +939,10 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       focus: () => {
         if (editor) editor.commands.focus();
         // Editor not mounted yet — defer the focus to `onCreate`.
+        else focusOnReadyRef.current = true;
+      },
+      focusAtEnd: () => {
+        if (editor) editor.commands.focus("end");
         else focusOnReadyRef.current = true;
       },
       focusAtCoords: (coords: { x: number; y: number }) => {

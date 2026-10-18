@@ -34,6 +34,18 @@ import { ClearablePillButton } from "../../common/pill-button";
 import { useT } from "../../i18n";
 import { useHumanReplyBinding } from "../../common/human-reply-binding";
 
+export interface ChatReference {
+  id: string;
+  label: string;
+  content: string;
+}
+
+function composeChatReferences(content: string, references: ChatReference[]): string {
+  if (references.length === 0) return content;
+  const quoted = references.map((reference) => reference.content).join("\n\n---\n\n");
+  return [quoted, content.trim()].filter(Boolean).join("\n\n");
+}
+
 const logger = createLogger("chat.ui");
 const EMPTY_UPLOADS: DraftUpload[] = [];
 const EMPTY_HISTORY: ChatMessage[] = [];
@@ -161,6 +173,10 @@ interface ChatInputProps {
   editorKeyOverride?: string;
   /** Compact sizing for the document-mode floating composer. */
   embedded?: boolean;
+  /** Codex-style document references shown as removable chips above the editor. */
+  references?: ChatReference[];
+  onRemoveReference?: (id: string) => void;
+  onReferencesConsumed?: () => void;
 }
 
 export function ChatInput({
@@ -199,6 +215,9 @@ export function ChatInput({
   draftKeyOverride,
   editorKeyOverride,
   embedded = false,
+  references = [],
+  onRemoveReference,
+  onReferencesConsumed,
 }: ChatInputProps) {
   const { t } = useT("chat");
   const { t: tEditor } = useT("editor");
@@ -271,7 +290,7 @@ export function ChatInput({
   // restored or parked one, or any persisted draft the user typed in another
   // session) still enables the button. A false enable costs nothing: handleSend
   // reads the live editor and bails when it is empty.
-  const hasNothingToSend = isEmpty && !inputDraft.trim();
+  const hasNothingToSend = isEmpty && !inputDraft.trim() && references.length === 0;
   const appliedRestoreIdRef = useRef<string | null>(null);
   const appliedConversationStarterIdRef = useRef<number | null>(null);
   const editorKey = editorKeyOverride ?? CHAT_COMPOSER_EDITOR_KEY;
@@ -428,7 +447,10 @@ export function ChatInput({
   // first render of a freshly-mounted compose box. `0` is inert on purpose.
   useEffect(() => {
     if (!focusRequest) return;
-    editorRef.current?.focus();
+    // External insertions update the draft while the toolbar click has focus.
+    // Put the caret after the inserted reference so the next keystroke does
+    // not land at the old selection/caret position.
+    editorRef.current?.focusAtEnd();
   }, [focusRequest]);
 
   // A conversation-starter click is an explicit replacement, not an ordinary
@@ -534,6 +556,7 @@ export function ChatInput({
     // the same place), except when the commit left the editor alone — see
     // `editorScrubbedRef`.
     afterAccepted: () => (editorScrubbedRef.current ? "refocus" : "none"),
+    normalize: (raw) => composeChatReferences(raw, references).trim(),
     onSubmit: async (content: string): Promise<boolean> => {
       editorScrubbedRef.current = false;
       // These states disable the SubmitButton, but Mod+Enter bypasses it — so a
@@ -628,7 +651,11 @@ export function ChatInput({
       if (uniqueActiveIds.length === 0) {
         const formal = await humanReply.submit(content);
         if (formal === "blocked") return false;
-        if (formal === "accepted") { commitInput(); return true; }
+        if (formal === "accepted") {
+          commitInput();
+          onReferencesConsumed?.();
+          return true;
+        }
       }
       // Forward the fifth slot even when it is null: null explicitly resets
       // autonomy for this message, while undefined means inherit the daemon
@@ -645,6 +672,7 @@ export function ChatInput({
       // retry. Only a commit — here or by the owner — clears it.
       if (accepted === false) return false;
       if (!committed) commitInput();
+      onReferencesConsumed?.();
       return true;
     },
   });
@@ -794,6 +822,30 @@ export function ChatInput({
               )}
               {squads.map((squad) => <option key={squad.id} value={squad.id}>{squad.name}</option>)}
             </select>
+          </div>
+        )}
+        {references.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2" aria-label="文档引用">
+            {references.map((reference, index) => (
+              <div
+                key={reference.id}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-surface-border bg-surface-raised px-2 py-1 text-caption text-foreground hover:bg-accent"
+                title={reference.label}
+              >
+                <span className="shrink-0 text-muted-foreground">{index + 1}</span>
+                <span className="truncate">{reference.label}</span>
+                <button
+                  type="button"
+                  tabIndex={0}
+                  aria-label={`移除引用 ${reference.label}`}
+                  className="ml-0.5 text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemoveReference?.(reference.id);
+                  }}
+                >×</button>
+              </div>
+            ))}
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">

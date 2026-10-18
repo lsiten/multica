@@ -130,14 +130,14 @@ export function ChatSessionHeader({
   const doUnarchive = () => setArchived.mutate({ sessionId: session.id, archived: false });
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
+    <div className="flex min-h-12 shrink-0 items-start gap-3 border-b px-4 py-2">
       {agent ? (
         <ActorAvatar actorType="agent" actorId={agent.id} size="lg" enableHoverCard showStatusDot />
       ) : (
         <span className="size-[30px] shrink-0" />
       )}
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 space-y-0.5">
         {editing ? (
           <input
             ref={inputRef}
@@ -205,7 +205,7 @@ export function ChatSessionHeader({
           </button>
         )}
         {session.kind === "group" && (
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="flex min-h-5 items-center gap-2">
             <span
               title={t(($) => $.group.badge)}
               aria-label={t(($) => $.group.badge)}

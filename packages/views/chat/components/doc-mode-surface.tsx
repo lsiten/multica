@@ -1,7 +1,7 @@
 "use client";
 
 import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -94,6 +94,18 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
   const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
 
+  const documentIdentity = `${doc?.sessionId ?? sessionId}:${doc?.kind ?? "none"}:${doc?.id ?? ""}:${doc?.taskId ?? ""}:${doc?.relativePath ?? ""}`;
+  useEffect(() => {
+    // The surface is reused across file/session switches. Local editor state
+    // must never survive onto the next document while its query is resolving.
+    setEditing(false);
+    setEdited("");
+    setSaveError(null);
+    setWorkspaceEditing(false);
+    setWorkspaceEdited("");
+    setWorkspaceSaveError(null);
+  }, [documentIdentity]);
+
   // Hooks must run unconditionally; the empty id disables the queries below.
   const activeRef = doc ?? EMPTY_DOC;
   const isTextAttachment = doc?.kind === "attachment" && (
@@ -149,6 +161,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
       "chat-workspace-file-content",
       wsId,
       doc?.sessionId,
+      doc?.id,
       doc?.taskId,
       workspaceRuntimeId,
       workspacePath,
@@ -163,6 +176,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
   });
   const workspaceContentText =
     workspaceRequest &&
+    !workspaceContent.isFetching &&
     workspaceContent.data &&
     "path" in workspaceContent.data &&
     workspaceContent.data.path === workspaceRequest.relative_path

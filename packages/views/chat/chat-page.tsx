@@ -24,7 +24,7 @@ import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { ChatMessageList, ChatMessageSkeleton } from "./components/chat-message-list";
-import { ChatInput } from "./components/chat-input";
+import { ChatInput, type ChatReference } from "./components/chat-input";
 import { ChatQueue } from "./components/chat-queue";
 import { ChatThreadList } from "./components/chat-thread-list";
 import { ChatSessionHeader } from "./components/chat-session-header";
@@ -106,6 +106,7 @@ export function ChatPage() {
   // header button when they want the conversation to fill the window.
   const [docFilesOpen, setDocFilesOpen] = useState(true);
   const [docComposerCollapsed, setDocComposerCollapsed] = useState(false);
+  const [docReferences, setDocReferences] = useState<Record<string, ChatReference[]>>({});
   const [docQuoteFocusRequest, setDocQuoteFocusRequest] = useState(0);
   const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
   useEffect(() => {
@@ -117,6 +118,26 @@ export function ChatPage() {
     // input after switching files or leaving/re-entering doc mode.
     setDocComposerCollapsed(false);
   }, [activeDoc?.id]);
+  useEffect(() => {
+    // Migrate the pre-Codex interaction's raw Markdown quote into the
+    // removable reference chip once per session. This keeps drafts created by
+    // older desktop builds from reappearing as a misplaced caret/large block.
+    const sessionId = c.activeSessionId;
+    if (!sessionId || (docReferences[sessionId]?.length ?? 0) > 0) return;
+    const draft = useChatStore.getState().inputDrafts[sessionId] ?? "";
+    const match = draft.match(/^> 引用文件：([^\n]+)\n\n([\s\S]+)$/);
+    if (!match) return;
+    const rawLabel = match[1];
+    const rawContent = match[2];
+    if (!rawLabel || !rawContent) return;
+    const reference: ChatReference = {
+      id: `${sessionId}:legacy:${rawLabel}:${rawContent.length}`,
+      label: rawLabel.trim(),
+      content: draft,
+    };
+    setDocReferences((current) => ({ ...current, [sessionId]: [reference] }));
+    useChatStore.getState().clearInputDraft(sessionId);
+  }, [c.activeSessionId, docReferences]);
   useEffect(() => {
     // Read the LIVE store value for the same reason as the session sync
     // effects below: under StrictMode's double-invoke this effect replays
@@ -234,8 +255,30 @@ export function ChatPage() {
   const handleAddToChat = (content: string) => {
     const sessionId = useChatStore.getState().activeSessionId;
     if (!sessionId) return;
-    useChatStore.getState().appendToInputDraft(sessionId, content);
+    const label = content.match(/^> 引用文件：([^\n]+)/m)?.[1]?.trim() || "文档引用";
+    const reference: ChatReference = {
+      id: `${sessionId}:${label}:${content.length}:${Date.now()}`,
+      label,
+      content,
+    };
+    setDocReferences((current) => ({
+      ...current,
+      [sessionId]: [...(current[sessionId] ?? []), reference],
+    }));
     setDocQuoteFocusRequest((request) => request + 1);
+  };
+
+  const activeReferences = c.activeSessionId ? docReferences[c.activeSessionId] ?? [] : [];
+  const removeReference = (id: string) => {
+    if (!c.activeSessionId) return;
+    setDocReferences((current) => ({
+      ...current,
+      [c.activeSessionId!]: (current[c.activeSessionId!] ?? []).filter((item) => item.id !== id),
+    }));
+  };
+  const consumeReferences = () => {
+    if (!c.activeSessionId) return;
+    setDocReferences((current) => ({ ...current, [c.activeSessionId!]: [] }));
   };
 
   // URL → new chat: `?agent=<id>` is the deep link used by "DM" entry points
@@ -378,6 +421,9 @@ export function ChatPage() {
       autonomyPolicy={autonomyPolicy}
       onAutonomyPolicyChange={setAutonomyPolicy}
       embedded={!!selectedDoc}
+        references={activeReferences}
+        onRemoveReference={removeReference}
+        onReferencesConsumed={consumeReferences}
     />
   );
 
