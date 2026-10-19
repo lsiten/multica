@@ -173,6 +173,12 @@ func Classify(rawError string) Reason {
 			"rate limit",
 			"overloaded",
 			"no capacity available",
+			// Codex reports model-level saturation as "Selected model is at
+			// capacity". This is a transient provider capacity rejection, not
+			// a missing or inaccessible model. Keep this witness before the
+			// generic "selected model" model-availability rule below.
+			"selected model is at capacity",
+			"model is at capacity",
 		):
 		return ReasonAgentProviderCapacityOrRateLimit
 
@@ -520,6 +526,18 @@ var legacyUsageLimit403Reasons = map[string]bool{
 	"agent_error":                           true,
 }
 
+// legacyModelCapacityReasons are the labels emitted by older daemons for
+// Codex's model-level saturation message. The daemon used the broad
+// "selected model" witness before the server learned that
+// "Selected model is at capacity" is transient provider capacity. Upgrade
+// those rows at the server boundary so the persisted reason and recovery copy
+// describe the actual failure without waiting for every daemon to update.
+var legacyModelCapacityReasons = map[string]bool{
+	string(ReasonAgentModelNotFoundOrUnavailable): true,
+	string(ReasonAgentUnknown):                    true,
+	"agent_error":                                 true,
+}
+
 // NormalizeDaemonReason upgrades a failure_reason reported by an older daemon
 // onto the taxonomy this server understands, using the raw error text as the
 // witness. It returns the reason unchanged when nothing applies.
@@ -542,6 +560,10 @@ func NormalizeDaemonReason(reason, rawError string) Reason {
 	}
 	if legacyUsageLimit403Reasons[reason] && isUsageLimit403(strings.ToLower(rawError)) {
 		return ReasonAgentProviderQuotaLimit
+	}
+	if legacyModelCapacityReasons[reason] &&
+		containsAny(strings.ToLower(rawError), "selected model is at capacity", "model is at capacity") {
+		return ReasonAgentProviderCapacityOrRateLimit
 	}
 	if legacySkillBundleReasons[reason] &&
 		strings.HasPrefix(strings.TrimSpace(rawError), legacySkillBundlePrefix) {

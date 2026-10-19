@@ -84,6 +84,7 @@ func TestClassifyRules(t *testing.T) {
 		{"rate limit", "rate limit exceeded for tier 3", ReasonAgentProviderCapacityOrRateLimit},
 		{"overloaded", "overloaded_error: please retry", ReasonAgentProviderCapacityOrRateLimit},
 		{"no capacity available", "no capacity available; try again later", ReasonAgentProviderCapacityOrRateLimit},
+		{"selected model capacity", "Selected model is at capacity. Please try a different model.", ReasonAgentProviderCapacityOrRateLimit},
 
 		// 6. Provider 5xx / server error.
 		{"server had an error", "the server had an error processing your request", ReasonAgentProviderServerError},
@@ -276,6 +277,24 @@ func TestNormalizeDaemonReasonUpgradesConcurrentRequestLimit(t *testing.T) {
 	}
 	if got := NormalizeDaemonReason(string(ReasonAgentContextOverflow), "you exceeded the token limit"); got != ReasonAgentContextOverflow {
 		t.Errorf("ordinary token overflow changed to %q", got)
+	}
+}
+
+func TestNormalizeDaemonReasonUpgradesModelCapacity(t *testing.T) {
+	t.Parallel()
+
+	raw := "Selected model is at capacity. Please try a different model."
+	for _, legacy := range []string{
+		string(ReasonAgentModelNotFoundOrUnavailable),
+		string(ReasonAgentUnknown),
+		"agent_error",
+	} {
+		if got := NormalizeDaemonReason(legacy, raw); got != ReasonAgentProviderCapacityOrRateLimit {
+			t.Errorf("NormalizeDaemonReason(%q, model capacity) = %q, want %q", legacy, got, ReasonAgentProviderCapacityOrRateLimit)
+		}
+	}
+	if got := NormalizeDaemonReason(string(ReasonAgentModelNotFoundOrUnavailable), "the selected model is no longer supported"); got != ReasonAgentModelNotFoundOrUnavailable {
+		t.Errorf("NormalizeDaemonReason(model unavailable) = %q, want model unavailable", got)
 	}
 }
 
