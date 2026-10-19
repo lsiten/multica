@@ -52,6 +52,7 @@
     "tabs_label": "\u804a\u5929\u6587\u4ef6",
     "projects_label": "\u9879\u76ee",
     "project_files": "\u9879\u76ee\u6587\u4ef6",
+    "current_directory": "\u5f53\u524d\u76ee\u5f55",
     "git_repository": "Git \u4ed3\u5e93",
     "git_repositories": "Git \u4ed3\u5e93",
     "attachments": "\u5f53\u524d\u9644\u4ef6",

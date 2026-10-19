@@ -52,6 +52,7 @@
     "tabs_label": "チャットのファイル",
     "projects_label": "プロジェクト",
     "project_files": "プロジェクトファイル",
+    "current_directory": "現在のディレクトリ",
     "git_repository": "Git リポジトリ",
     "git_repositories": "Git リポジトリ",
     "attachments": "添付ファイル",

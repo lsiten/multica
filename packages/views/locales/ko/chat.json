@@ -52,6 +52,7 @@
     "tabs_label": "채팅 파일",
     "projects_label": "프로젝트",
     "project_files": "프로젝트 파일",
+    "current_directory": "현재 디렉터리",
     "git_repository": "Git 저장소",
     "git_repositories": "Git 저장소",
     "attachments": "첨부 파일",

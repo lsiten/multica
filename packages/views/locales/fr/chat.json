@@ -52,6 +52,7 @@
     "tabs_label": "Fichiers de discussion",
     "projects_label": "Projets",
     "project_files": "Fichiers du projet",
+    "current_directory": "Répertoire actuel",
     "git_repository": "Dépôt Git",
     "git_repositories": "Dépôts Git",
     "attachments": "Pièces jointes",

@@ -53,6 +53,7 @@
     "tabs_label": "Chat files",
     "projects_label": "Projects",
     "project_files": "Project files",
+    "current_directory": "Current directory",
     "git_repository": "Git repository",
     "git_repositories": "Git repositories",
     "attachments": "Attachments",

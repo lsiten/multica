@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, File, Folder, GitBranch, Loader2, Search } from "lucide-react";
+import { ChevronRight, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
@@ -72,6 +72,10 @@ function buildFileTree(documents: DocumentListItem[]): FileTreeNode[] {
     return a.name.localeCompare(b.name);
   }).map((node) => ({ ...node, children: sort(node.children) }));
   return sort(roots);
+}
+
+function normalizeWorkspacePath(path: string): string {
+  return path.replaceAll("\\", "/").replace(/^\.\/+/, "").replace(/^\/+|\/+$/g, "");
 }
 
 // A git URL rendered as a short "owner/repo" label; falls back to the raw URL.
@@ -183,11 +187,10 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // daemon binding while a later task still owns the live checkout.
   const workspaceTasks = fileTasks;
   // A single cached query replaces useQueries: useQueries returns a fresh array
-  // on every render, which defeated the allDocuments memo below. Probe all
-  // candidates concurrently and resolve as soon as any non-empty checkout is
-  // available. A stale lead task cannot mask a later live worktree or make the
-  // panel wait for its timeout; empty checkouts are retained only as a final
-  // fallback after every candidate has settled.
+  // on every render, which defeated the allDocuments memo below. Probe every
+  // candidate concurrently and retain each successful result so the selected
+  // task can be matched to the open document instead of whichever daemon reply
+  // happens to arrive first.
   const workspaceFiles = useQuery({
     queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
     queryFn: async ({ signal }) => {
@@ -225,25 +228,14 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
         }
       };
       const attempts = workspaceTasks.map(readTask);
-      try {
-        const nonEmpty = await Promise.any(attempts.map(async (attempt) => {
-          const result = await attempt;
-          if (!result || result.files.entries.length === 0) throw new Error("Empty workspace");
-          return result;
-        }));
-        return [nonEmpty];
-      } catch {
-        const settled = await Promise.all(attempts);
-        const empty = settled.find((result) => result !== null);
-        return empty ? [empty] : [];
-      }
+      const settled = await Promise.all(attempts);
+      return settled.filter((result): result is NonNullable<typeof result> => result !== null);
     },
     enabled: !!sessionId && workspaceTasks.length > 0 && activeTab === "files",
     staleTime: 60_000,
   });
   const workspaceFileResults = workspaceFiles.data;
   const workspaceFilesFailed = workspaceTasks.length > 0 && !!workspaceFileResults && workspaceFileResults.length === 0;
-  const selectedWorkspaceResult = workspaceFileResults?.[0];
   const storedDirectoryTask = currentDirectory?.taskId
     ? fileTasks.find((task) => task.id === currentDirectory.taskId)
     : undefined;
@@ -255,20 +247,24 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   const currentDirectoryResult = currentDirectoryTask
     ? workspaceFileResults?.find((result) => result?.task.id === currentDirectoryTask.id)
     : undefined;
+  const selectedWorkspaceResult = useMemo(() => {
+    if (!workspaceFileResults?.length) return undefined;
+    const preferredTaskId = activeDoc?.taskId ?? currentDirectoryTask?.id;
+    if (preferredTaskId) {
+      return workspaceFileResults.find((result) => result.task.id === preferredTaskId);
+    }
+    return workspaceFileResults.find((result) => result.files.entries.length > 0) ?? workspaceFileResults[0];
+  }, [activeDoc?.taskId, currentDirectoryTask?.id, workspaceFileResults]);
   // A directory selected from another chat has no task in this chat and must
   // remain usable. If it does belong to this chat, discard it after its
   // workspace_files request fails so a stale task cannot poison Git for the
   // whole panel.
   const useStoredDirectory = !!currentDirectory &&
     (!storedDirectoryTask || !!currentDirectoryTask && (workspaceFiles.isPending || !workspaceFileResults || !!currentDirectoryResult));
-  const usableWorkspaceTasks = selectedWorkspaceResult ? [selectedWorkspaceResult.task] : [];
   const gitTask = useMemo(() => {
-    if (useStoredDirectory) return undefined;
-    const activeTask = activeDoc?.taskId
-      ? usableWorkspaceTasks.find((task) => task.id === activeDoc.taskId)
-      : undefined;
-    return activeTask ?? usableWorkspaceTasks[0];
-  }, [activeDoc?.taskId, usableWorkspaceTasks, useStoredDirectory]);
+    if (useStoredDirectory || !activeDoc?.taskId) return undefined;
+    return selectedWorkspaceResult?.task.id === activeDoc.taskId ? selectedWorkspaceResult.task : undefined;
+  }, [activeDoc?.taskId, selectedWorkspaceResult, useStoredDirectory]);
   const gitRequest: LocalReviewRequest | null = useStoredDirectory && currentDirectory?.path
     ? {
         task_id: currentDirectory.taskId,
@@ -306,17 +302,20 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
       return files.entries
         .filter((entry) => !isInternalWorkspacePath(entry.path))
         .filter((entry) => !entry.directory)
-        .map((entry): DocumentListItem => ({
-          kind: "workspace_file",
-          id: `${task.id}:${entry.path}`,
-          label: entry.path,
-          sessionId: sessionId ?? undefined,
-          projectId: selectedProjectId,
-          taskId: task.id,
-          runtimeId: task.runtime_id,
-          workDir: task.work_dir,
-          relativePath: entry.path,
-        }));
+        .map((entry): DocumentListItem => {
+          const relativePath = normalizeWorkspacePath(entry.path);
+          return {
+            kind: "workspace_file",
+            id: `${task.id}:${relativePath}`,
+            label: relativePath,
+            sessionId: sessionId ?? undefined,
+            projectId: selectedProjectId,
+            taskId: task.id,
+            runtimeId: task.runtime_id,
+            workDir: task.work_dir,
+            relativePath,
+          };
+        });
     })() : [];
     return workspaceDocuments;
   }, [selectedProjectId, selectedWorkspaceResult, sessionId]);
@@ -402,6 +401,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // Only surface no-match when the filter actively excludes every openable row;
   // a bare project header (or repo references) with no files is not "no match".
   const showNoMatch = filter.trim().length > 0 && visible.length === 0 && visibleRepoReferences.length === 0;
+  const displayedDirectory = selectedWorkspaceResult?.files.path || selectedWorkspaceResult?.task.work_dir || currentDirectory?.path;
   const renderTree = (nodes: FileTreeNode[], depth = 0): ReactNode[] => nodes.flatMap((node) => {
     if (node.directory) {
       const expanded = filter.trim().length > 0 || expandedDirs.has(node.path);
@@ -539,6 +539,16 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           {project && (
             <div className="px-3 py-2">
               <h3 className="truncate text-body font-semibold">{project.title}</h3>
+            </div>
+          )}
+          {displayedDirectory && (
+            <div
+              className="flex min-w-0 items-center gap-1.5 border-b px-3 pb-2 text-caption text-muted-foreground"
+              title={displayedDirectory}
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="shrink-0">{t(($) => $.doc_file_list.current_directory)}</span>
+              <span className="min-w-0 truncate font-mono" dir="ltr">{displayedDirectory}</span>
             </div>
           )}
           {activeTab === "files" && workspaceFiles.isPending && workspaceTasks.length > 0 && (

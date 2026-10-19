@@ -62,7 +62,7 @@ vi.mock("../../platform/local-review-pages", async () => {
     ...actual,
     requestReviewPage: (request: { path?: string }) => session.current.workspaceErrorByPath[request.path ?? ""] ?? session.current.workspaceError
       ? Promise.reject(session.current.workspaceErrorByPath[request.path ?? ""] ?? session.current.workspaceError)
-      : Promise.resolve({ path: ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries }),
+      : Promise.resolve({ path: request.path ?? ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries }),
   };
 });
 
@@ -119,6 +119,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     // The project is the section header and the task-workdir (source) files are
     // the openable rows in the files tab; attachments are not mixed in.
     await screen.findByText("Acme");
+    expect(screen.getByText("/work")).toBeInTheDocument();
     expect(screen.getByText("src")).toBeInTheDocument();
     expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("src"));
@@ -259,6 +260,37 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
       kind: "workspace_file",
       workDir: "/lead",
     });
+  });
+
+  it("matches the file tree to the task that owns the open document", async () => {
+    session.current.files = {
+      ...session.current.files,
+      tasks: [
+        { id: "lead", runtime_id: "rt-1", work_dir: "/lead", created_at: "2026-01-01" } as never,
+        { id: "sibling", runtime_id: "rt-1", work_dir: "/sibling", created_at: "2026-01-02" } as never,
+      ],
+    };
+    session.current.entries = [];
+    session.current.entriesByPath = {
+      "/lead": [{ path: "src/lead.ts", size: 10, directory: false }],
+      "/sibling": [{ path: "src/sibling.ts", size: 20, directory: false }],
+    };
+    useDocModeStore.getState().openDoc("session-1", {
+      kind: "workspace_file",
+      id: "sibling:src/sibling.ts",
+      label: "src/sibling.ts",
+      sessionId: "session-1",
+      taskId: "sibling",
+      runtimeId: "rt-1",
+      workDir: "/sibling",
+      relativePath: "src/sibling.ts",
+    });
+    renderList(newClient());
+
+    fireEvent.click(await screen.findByText("src"));
+    expect(await screen.findByText("sibling.ts")).toBeInTheDocument();
+    expect(screen.queryByText("lead.ts")).not.toBeInTheDocument();
+    expect(screen.getByText("/sibling")).toBeInTheDocument();
   });
 
   it("skips a stale lead binding and uses the next live checkout", async () => {
