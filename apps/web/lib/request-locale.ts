@@ -7,6 +7,25 @@ import {
   resolveLocaleFromSignals,
 } from "./locale-routing";
 
+export const MULTICA_SURFACE_HEADER = "x-multica-surface";
+
+/** Public marketing routes use their own small dictionary and do not need the
+ * full authenticated application locale catalog in the root layout payload. */
+export function isLandingSurfacePath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname === "/about" ||
+    pathname === "/changelog" ||
+    pathname === "/contact-sales" ||
+    pathname === "/download" ||
+    pathname === "/homepage" ||
+    pathname === "/licensing" ||
+    pathname === "/privacy" ||
+    pathname === "/usecases" ||
+    pathname.startsWith("/usecases/")
+  );
+}
+
 export const getRequestLocale = cache(
   async (): Promise<SupportedLocale> => {
     const headerList = await headers();

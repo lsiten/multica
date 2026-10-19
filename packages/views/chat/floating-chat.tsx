@@ -20,6 +20,7 @@ import { isFloatingChatRouteSuppressed } from "./floating-chat-visibility";
  */
 export function FloatingChat() {
   const enabled = useChatStore((s) => s.floatingChatEnabled);
+  const isOpen = useChatStore((s) => s.isOpen);
   const { pathname } = useNavigation();
   const wsPaths = useWorkspacePaths();
 
@@ -29,7 +30,11 @@ export function FloatingChat() {
 
   return (
     <>
-      <ChatWindow />
+      {/* ChatWindow owns the transcript, agent, project and scope queries.
+          Keep those observers out of every dashboard route until the user
+          opens the floating surface; ChatFab still provides the lightweight
+          launcher and pending-task signal while it is closed. */}
+      {isOpen && <ChatWindow />}
       <ChatFab />
     </>
   );

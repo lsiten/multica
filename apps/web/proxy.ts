@@ -4,6 +4,10 @@ import {
   MULTICA_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
+import {
+  isLandingSurfacePath,
+  MULTICA_SURFACE_HEADER,
+} from "./lib/request-locale";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
 import { isOfficialMarketingHost } from "./lib/public-host";
 
@@ -39,6 +43,10 @@ function resolveLocale(req: NextRequest): string {
 function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
   headers.set(MULTICA_LOCALE_HEADER, resolveLocale(req));
+  headers.set(
+    MULTICA_SURFACE_HEADER,
+    isLandingSurfacePath(req.nextUrl.pathname) ? "landing" : "app",
+  );
   return NextResponse.next({ request: { headers } });
 }
 

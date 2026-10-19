@@ -133,12 +133,15 @@ func RequestLogger(next http.Handler) http.Handler {
 
 		duration := time.Since(start)
 		status := ww.Status()
+		durationMS := duration.Milliseconds()
 
 		attrs := []any{
 			"method", r.Method,
 			"path", redactWebhookPath(r.URL.Path),
 			"status", status,
 			"duration", duration.Round(time.Microsecond).String(),
+			"duration_ms", durationMS,
+			"slow", duration >= time.Second,
 		}
 		if rid := chimw.GetReqID(r.Context()); rid != "" {
 			attrs = append(attrs, "request_id", rid)

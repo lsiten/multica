@@ -591,6 +591,19 @@ export interface ApiClientOptions {
   getToken?: () => string | null;
 }
 
+/**
+ * Read requests that feed the initial dashboard should fail fast when the
+ * backend or an upstream dependency is unhealthy. A stalled list should not
+ * hold the shell behind the platform's 30s gateway timeout.
+ */
+export const FAST_READ_TIMEOUT_MS = 8_000;
+export const STARTUP_READ_TIMEOUT_MS = 10_000;
+
+type ApiRequestInit = RequestInit & {
+  extraHeaders?: Record<string, string>;
+  timeoutMs?: number;
+};
+
 export interface ClientRuntimeSnapshot {
   probe_result: "success" | "error";
   runtime_count?: number;
@@ -1148,13 +1161,14 @@ export class ApiClient {
   // path, plain text for the attachment-preview proxy, etc.
   private async fetchRaw(
     path: string,
-    init?: RequestInit & { extraHeaders?: Record<string, string> },
+    init?: ApiRequestInit,
   ): Promise<Response> {
     const rid = createRequestId();
     const start = Date.now();
     const method = init?.method ?? "GET";
+    const { extraHeaders, timeoutMs, ...requestInit } = init ?? {};
     // The signal remains attached through body consumption, not only until headers arrive.
-    const timeout = AbortSignal.timeout(30_000);
+    const timeout = AbortSignal.timeout(timeoutMs ?? 30_000);
     const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
 
     // Rebuilt per attempt rather than captured once: authHeaders() reads the
@@ -1163,7 +1177,7 @@ export class ApiClient {
     const buildHeaders = (): Record<string, string> => ({
       "X-Request-ID": rid,
       ...this.authHeaders(),
-      ...(init?.extraHeaders ?? {}),
+      ...(extraHeaders ?? {}),
       ...((init?.headers as Record<string, string>) ?? {}),
     });
 
@@ -1175,7 +1189,7 @@ export class ApiClient {
 
     const send = () =>
       fetch(`${this.baseUrl}${path}`, {
-        ...init,
+        ...requestInit,
         signal,
         headers: buildHeaders(),
         credentials: "include",
@@ -1219,7 +1233,7 @@ export class ApiClient {
 
   private async fetch<T>(
     path: string,
-    init?: RequestInit & { extraHeaders?: Record<string, string> },
+    init?: ApiRequestInit,
   ): Promise<T> {
     const res = await this.fetchRaw(path, {
       ...init,
@@ -1393,7 +1407,9 @@ export class ApiClient {
   }
 
   async getMe(): Promise<User> {
-    const raw = await this.fetch<unknown>("/api/me");
+    const raw = await this.fetch<unknown>("/api/me", {
+      timeoutMs: STARTUP_READ_TIMEOUT_MS,
+    });
     return parseWithFallback(raw, UserSchema, EMPTY_USER, {
       endpoint: "GET /api/me",
     });
@@ -1500,13 +1516,16 @@ export class ApiClient {
       const raw = await this.fetch<unknown>("/api/issues/query", {
         method: "POST",
         body: JSON.stringify(Object.fromEntries(search)),
+        timeoutMs: FAST_READ_TIMEOUT_MS,
       });
       return parseWithFallback(raw, ListIssuesResponseSchema, EMPTY_LIST_ISSUES_RESPONSE, {
         endpoint: "POST /api/issues/query",
       });
     }
     const path = `/api/issues?${search}`;
-    const raw = await this.fetch<unknown>(path);
+    const raw = await this.fetch<unknown>(path, {
+      timeoutMs: FAST_READ_TIMEOUT_MS,
+    });
     return parseWithFallback(raw, ListIssuesResponseSchema, EMPTY_LIST_ISSUES_RESPONSE, {
       endpoint: "GET /api/issues",
     });
@@ -1548,7 +1567,9 @@ export class ApiClient {
     if (params.date_end) search.set("date_end", params.date_end);
     if (params.sort_by) search.set("sort", params.sort_by);
     if (params.sort_direction) search.set("direction", params.sort_direction);
-    const raw = await this.fetch<unknown>(`/api/issues/grouped?${search}`);
+    const raw = await this.fetch<unknown>(`/api/issues/grouped?${search}`, {
+      timeoutMs: FAST_READ_TIMEOUT_MS,
+    });
     return parseWithFallback(raw, GroupedIssuesResponseSchema, EMPTY_GROUPED_ISSUES_RESPONSE, {
       endpoint: "GET /api/issues/grouped",
     });
@@ -1558,6 +1579,7 @@ export class ApiClient {
     const raw = await this.fetch<unknown>("/api/issues/table/groups", {
       method: "POST",
       body: JSON.stringify(params),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
     return parseWithFallback(
       raw,
@@ -1571,6 +1593,7 @@ export class ApiClient {
     const raw = await this.fetch<unknown>("/api/issues/table/rows", {
       method: "POST",
       body: JSON.stringify(params),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
     return parseWithFallback(
       raw,
@@ -1584,6 +1607,7 @@ export class ApiClient {
     const raw = await this.fetch<unknown>("/api/issues/table/facets", {
       method: "POST",
       body: JSON.stringify(params),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
     return parseWithFallback(
       raw,
@@ -2375,6 +2399,7 @@ export class ApiClient {
     if (params?.include_archived) search.set("include_archived", "true");
     return this.fetch(`/api/agents?${search}`, {
       headers: workspaceHeader(workspaceSlug),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
   }
 
@@ -2593,6 +2618,7 @@ export class ApiClient {
     // must override the header too.
     return this.fetch(`/api/runtimes?${search}`, {
       headers: workspaceHeader(workspaceSlug),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
   }
 
@@ -3750,7 +3776,9 @@ export class ApiClient {
 
   // App Config
   async getConfig(): Promise<AppConfigResponse> {
-    const raw = await this.fetch<unknown>("/api/config");
+    const raw = await this.fetch<unknown>("/api/config", {
+      timeoutMs: FAST_READ_TIMEOUT_MS,
+    });
     return parseWithFallback<AppConfigResponse>(raw, AppConfigSchema, EMPTY_APP_CONFIG, {
       endpoint: "GET /api/config",
     });
@@ -3758,7 +3786,9 @@ export class ApiClient {
 
   // Workspaces
   async listWorkspaces(): Promise<Workspace[]> {
-    return this.fetch("/api/workspaces");
+    return this.fetch("/api/workspaces", {
+      timeoutMs: STARTUP_READ_TIMEOUT_MS,
+    });
   }
 
   async getWorkspace(id: string): Promise<Workspace> {
@@ -4121,7 +4151,9 @@ export class ApiClient {
 
   // Members
   async listMembers(workspaceId: string): Promise<MemberWithUser[]> {
-    return this.fetch(`/api/workspaces/${workspaceId}/members`);
+    return this.fetch(`/api/workspaces/${workspaceId}/members`, {
+      timeoutMs: FAST_READ_TIMEOUT_MS,
+    });
   }
 
   async createMember(workspaceId: string, data: CreateMemberRequest): Promise<Invitation> {
@@ -4417,6 +4449,7 @@ export class ApiClient {
     const query = params?.status ? `?status=${params.status}` : "";
     const raw: unknown = await this.fetch(`/api/chat/sessions${query}`, {
       headers: workspaceHeader(workspaceSlug),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
     return parseWithFallback(raw, ChatSessionListSchema, EMPTY_CHAT_SESSION_LIST, {
       endpoint: "GET /api/chat/sessions",
@@ -4912,6 +4945,7 @@ export class ApiClient {
     if (params?.status) search.set("status", params.status);
     return this.fetch(`/api/projects?${search}`, {
       headers: workspaceHeader(workspaceSlug),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
   }
 
@@ -5110,7 +5144,9 @@ export class ApiClient {
 
   // Labels
   async listLabels(resourceType: LabelResourceType = "issue"): Promise<ListLabelsResponse> {
-    const raw = await this.fetch<unknown>(`/api/labels?resource_type=${resourceType}`);
+    const raw = await this.fetch<unknown>(`/api/labels?resource_type=${resourceType}`, {
+      timeoutMs: FAST_READ_TIMEOUT_MS,
+    });
     return parseWithFallback(raw, ListLabelsResponseSchema, EMPTY_LIST_LABELS_RESPONSE, {
       endpoint: "GET /api/labels",
     });
@@ -5151,7 +5187,9 @@ export class ApiClient {
   // the mutations below are owner/admin only and return 403 otherwise.
   async listIssueStatuses(includeArchived = false): Promise<ListIssueStatusesResponse> {
     const query = includeArchived ? "?include_archived=true" : "";
-    const raw = await this.fetch<unknown>(`/api/issue-statuses${query}`);
+    const raw = await this.fetch<unknown>(`/api/issue-statuses${query}`, {
+      timeoutMs: FAST_READ_TIMEOUT_MS,
+    });
     return parseWithFallback(raw, ListIssueStatusesResponseSchema, EMPTY_LIST_ISSUE_STATUSES_RESPONSE, {
       endpoint: "GET /api/issue-statuses",
     });
@@ -5214,7 +5252,9 @@ export class ApiClient {
     const suffix = includeArchived ? "?include_archived=true" : "";
     let raw: unknown;
     try {
-      raw = await this.fetch<unknown>(`/api/properties${suffix}`);
+      raw = await this.fetch<unknown>(`/api/properties${suffix}`, {
+        timeoutMs: FAST_READ_TIMEOUT_MS,
+      });
     } catch (error) {
       // A backend predating custom properties 404s here (e.g. after a
       // server-only rollback). Treat it as an empty catalog: the property
@@ -5504,7 +5544,9 @@ export class ApiClient {
   async listPins(): Promise<PinnedItem[]> {
     // The comma-separated include list is the capability opt-in. The server
     // withholds newer pin types from builds that may misclassify them.
-    const res = await this.fetchRaw("/api/pins?include=view,runtime_mirror");
+    const res = await this.fetchRaw("/api/pins?include=view,runtime_mirror", {
+      timeoutMs: FAST_READ_TIMEOUT_MS,
+    });
     return parseWithFallback(
       await res.json() as unknown,
       PinnedItemListSchema,
@@ -5542,6 +5584,7 @@ export class ApiClient {
   async listSquads(workspaceSlug?: string): Promise<Squad[]> {
     const raw = await this.fetch<unknown>(`/api/squads`, {
       headers: workspaceHeader(workspaceSlug),
+      timeoutMs: FAST_READ_TIMEOUT_MS,
     });
     return parseWithFallback(raw, SquadListSchema, EMPTY_SQUAD_LIST, {
       endpoint: "GET /api/squads",

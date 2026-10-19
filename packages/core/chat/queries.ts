@@ -40,6 +40,8 @@ export const chatKeys = {
   all: (wsId: string) => ["chat", wsId] as const,
   /** Full sessions list (active + archived); the dropdown splits locally. */
   sessions: (wsId: string) => [...chatKeys.all(wsId), "sessions"] as const,
+  /** Active-only list used by shell badges and the closed chat launcher. */
+  activeSessions: (wsId: string) => [...chatKeys.all(wsId), "sessions", "active"] as const,
   session: (wsId: string, id: string) => [...chatKeys.all(wsId), "session", id] as const,
   sessionFiles: (wsId: string, id: string, projectId?: string | null, includeAttachments?: boolean) => [...chatKeys.all(wsId), "session-files", id, projectId ?? null, includeAttachments ?? null] as const,
   messagesAll: () => ["chat", "messages"] as const,
@@ -89,7 +91,24 @@ export function chatSessionsOptions(wsId: string) {
     // query data must never make an empty history look authoritative forever.
     staleTime: 30_000,
     refetchOnMount: "always",
-    retry: 2,
+    // This list is auxiliary to the shell. Retrying a stalled upstream keeps
+    // the dashboard in a loading state for another full gateway timeout.
+    retry: false,
+  });
+}
+
+/**
+ * Lightweight session projection for shell badges. Archived sessions are
+ * only needed by the dedicated Chat surface; keeping them out of the shell
+ * request avoids scanning their message history on every dashboard mount.
+ */
+export function chatActiveSessionsOptions(wsId: string) {
+  return queryOptions({
+    queryKey: chatKeys.activeSessions(wsId),
+    queryFn: () => api.listChatSessions({ status: "active" }),
+    staleTime: 30_000,
+    refetchOnMount: "always",
+    retry: false,
   });
 }
 

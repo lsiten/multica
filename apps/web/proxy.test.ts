@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { MULTICA_LOCALE_HEADER } from "./lib/locale-routing";
+import { MULTICA_SURFACE_HEADER } from "./lib/request-locale";
 import { config, proxy } from "./proxy";
 
 function makeRequest(
@@ -147,7 +148,17 @@ describe("proxy runtime upstream rewrites", () => {
       expect(
         res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
       ).toBe("en");
+      expect(
+        res.headers.get(`x-middleware-request-${MULTICA_SURFACE_HEADER}`),
+      ).toBe("app");
     });
+  });
+
+  it("marks public marketing routes for the small landing resource bundle", () => {
+    const res = proxy(makeRequest("/usecases/auto-data-analysis"));
+    expect(
+      res.headers.get(`x-middleware-request-${MULTICA_SURFACE_HEADER}`),
+    ).toBe("landing");
   });
 
   it("does not rewrite Plugin API requests when no runtime API origin is configured", () => {

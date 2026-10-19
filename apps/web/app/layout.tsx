@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { headers } from "next/headers";
 import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@multica/ui/components/ui/sonner";
 import { cn } from "@multica/ui/lib/utils";
 import { WebProviders } from "@/components/web-providers";
 import { RESOURCES } from "@multica/views/locales";
-import { getRequestLocale } from "@/lib/request-locale";
+import { getRequestLocale, MULTICA_SURFACE_HEADER } from "@/lib/request-locale";
 import { HTML_LANG } from "@/lib/html-lang";
 import { SITE_TITLE, TITLE_TEMPLATE } from "@/platform/document-title";
 import {
@@ -125,7 +126,11 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const locale = await getRequestLocale();
-  const resources = { [locale]: RESOURCES[locale] };
+  const requestHeaders = await headers();
+  const resources =
+    requestHeaders.get(MULTICA_SURFACE_HEADER) === "landing"
+      ? { [locale]: {} }
+      : { [locale]: RESOURCES[locale] };
   const apiBaseUrl = resolveBrowserApiBaseUrl(process.env);
   const wsUrl = resolveBrowserWsUrl(process.env);
 

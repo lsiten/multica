@@ -68,7 +68,7 @@ import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@m
 import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inboxUnreadSummaryOptions, useInboxUnreadCount, hasOtherWorkspaceUnread, unreadWorkspaceIds } from "@multica/core/inbox/queries";
-import { chatSessionsOptions } from "@multica/core/chat/queries";
+import { chatActiveSessionsOptions } from "@multica/core/chat/queries";
 import { countUnreadChatMessages } from "@multica/core/chat/unread";
 import { useChatStore } from "@multica/core/chat";
 import { api, ApiError } from "@multica/core/api";
@@ -524,7 +524,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   // threads (countUnreadChatMessages is the shared definition — mobile's tab
   // badge derives from the same function, keeping the platforms in agreement).
   const { data: chatSessions = [] } = useQuery({
-    ...chatSessionsOptions(wsId ?? ""),
+    ...chatActiveSessionsOptions(wsId ?? ""),
     enabled: !!wsId,
   });
   // The session the user is reading right now must not count: the thread list

@@ -17,6 +17,7 @@ export function projectListOptions(wsId: string) {
       return slug ? api.listProjects(undefined, slug) : api.listProjects();
     },
     select: (data) => data.projects.filter((project) => project.workspace_id === wsId),
+    retry: false,
   });
 }
 

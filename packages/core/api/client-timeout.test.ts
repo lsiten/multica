@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ApiClient } from "./client";
+import { ApiClient, FAST_READ_TIMEOUT_MS } from "./client";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -54,5 +54,19 @@ it("preserves caller cancellation", async () => {
   const client = new ApiClient("https://fixture.invalid");
   const rejected = expect(client.listApplications("workspace", undefined, caller.signal)).rejects.toThrow("cancelled by caller");
   caller.abort(new Error("cancelled by caller"));
+  await rejected;
+});
+
+it("uses the fast read deadline for dashboard list endpoints", async () => {
+  const fetch = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+  }));
+  vi.stubGlobal("fetch", fetch);
+  const client = new ApiClient("https://fixture.invalid");
+  const pending = client.listProjects();
+  const rejected = expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+  await vi.advanceTimersByTimeAsync(FAST_READ_TIMEOUT_MS - 1);
+  expect(fetch).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
   await rejected;
 });
