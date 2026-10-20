@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -52,13 +53,21 @@ func newGatewayProcessCallback() (*gatewayProcessCallback, error) {
 // register stores a control-owned handler behind a fresh private path and
 // returns the callback URL the gateway should forward to, plus an exact
 // unregister that only removes this registration.
-func (c *gatewayProcessCallback) register(handler http.Handler) (string, func()) {
+func (c *gatewayProcessCallback) register(taskPath string, handler http.Handler) (string, func()) {
 	pathToken, err := randomBrokerToken()
 	if err != nil {
 		return "", func() {}
 	}
 	c.mu.Lock()
-	c.routes[pathToken] = handler
+	c.routes[pathToken] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Restore the registered task path after resolving the private callback.
+		// Never trust a forwarded header to select another task's handler path.
+		forwarded := r.Clone(r.Context())
+		forwarded.URL.Path = "/" + strings.TrimPrefix(taskPath, "/")
+		forwarded.URL.RawPath = ""
+		forwarded.RequestURI = forwarded.URL.RequestURI()
+		handler.ServeHTTP(w, forwarded)
+	})
 	c.mu.Unlock()
 	path := "/cb/" + pathToken
 	var once sync.Once

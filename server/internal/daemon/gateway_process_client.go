@@ -211,7 +211,7 @@ func (c *gatewayProcessClient) register(path string, handler http.Handler) (stri
 	if handler == nil {
 		return "", func() {}
 	}
-	callbackURL, unregisterCallback := c.callback.register(handler)
+	callbackURL, unregisterCallback := c.callback.register(path, handler)
 	if callbackURL == "" {
 		return "", func() {}
 	}

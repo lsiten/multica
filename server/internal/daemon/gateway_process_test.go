@@ -25,10 +25,13 @@ func TestGatewayProcessCallbackRoutesToControlHandler(t *testing.T) {
 	var calls int
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
+		if r.URL.Path != "/task/mcp" || r.URL.RawPath != "" || r.RequestURI != "/task/mcp" {
+			t.Errorf("task handler received callback path: path=%q raw=%q uri=%q", r.URL.Path, r.URL.RawPath, r.RequestURI)
+		}
 		w.Header().Set("X-Control-Seen", r.Header.Get("X-Agent-Marker"))
 		w.Write([]byte(want))
 	})
-	callbackURL, unregister := c.register(handler)
+	callbackURL, unregister := c.register("/task/mcp", handler)
 	if callbackURL == "" {
 		t.Fatal("expected a callback URL")
 	}

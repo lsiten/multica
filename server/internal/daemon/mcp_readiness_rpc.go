@@ -12,6 +12,14 @@ import (
 	"strings"
 )
 
+type mcpHTTPStatusError struct {
+	StatusCode int
+}
+
+func (e *mcpHTTPStatusError) Error() string {
+	return fmt.Sprintf("mcp status %d", e.StatusCode)
+}
+
 func mcpReadinessRPC(ctx context.Context, client *http.Client, endpoint string, payload any, requireResult bool, sessionID string) (mcpJSONRPCResponse, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -33,7 +41,7 @@ func mcpReadinessRPC(ctx context.Context, client *http.Client, endpoint string, 
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return mcpJSONRPCResponse{}, fmt.Errorf("mcp status %d", res.StatusCode)
+		return mcpJSONRPCResponse{}, &mcpHTTPStatusError{StatusCode: res.StatusCode}
 	}
 	if !requireResult {
 		return mcpJSONRPCResponse{}, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -122,7 +123,8 @@ func registerTaskManagedMCPReadiness(d *Daemon, workspaceID, name, endpoint, sco
 	if endpoint != "" && enabled && isLocalMCPProbeEndpoint(endpoint) {
 		go func() {
 			defer close(entry.done)
-			probeMCPReadiness(ctx, entry)
+			client := &http.Client{Timeout: mcpReadinessProbeTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+			monitorMCPReadiness(ctx, client, entry)
 		}()
 	} else {
 		close(entry.done)

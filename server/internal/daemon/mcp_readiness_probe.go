@@ -10,17 +10,42 @@ import (
 	"time"
 )
 
-const mcpReadinessProbeTimeout = 3 * time.Second
+const (
+	mcpReadinessProbeTimeout  = 3 * time.Second
+	mcpReadinessProbeInterval = 30 * time.Second
+)
 
-func probeMCPReadiness(parent context.Context, entry *mcpReadinessEntry) {
+func monitorMCPReadiness(ctx context.Context, client *http.Client, entry *mcpReadinessEntry) {
+	probeMCPReadiness(ctx, client, entry)
+	// Built-in handshakes are stateless and never spend a tool-call budget.
+	// External MCP initialization may allocate sessions or consume proxy quotas.
+	switch entry.Name {
+	case llm2jevMCPName, identityActionsMCPName, applicationMCPName, emailReceiveMCPName, phoneActionsMCPName:
+	default:
+		return
+	}
+	ticker := time.NewTicker(mcpReadinessProbeInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			probeMCPReadiness(ctx, client, entry)
+		}
+	}
+}
+
+func probeMCPReadiness(parent context.Context, client *http.Client, entry *mcpReadinessEntry) {
 	entry.mu.Lock()
-	entry.State = MCPReadinessProbing
-	entry.Reason = ""
-	entry.Ready = false
+	if entry.CheckedAt == "" {
+		entry.State = MCPReadinessProbing
+		entry.Reason = ""
+		entry.Ready = false
+	}
 	entry.mu.Unlock()
 	ctx, cancel := context.WithTimeout(parent, mcpReadinessProbeTimeout)
 	defer cancel()
-	client := &http.Client{Timeout: mcpReadinessProbeTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	var toolCount int
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -28,11 +53,20 @@ func probeMCPReadiness(parent context.Context, entry *mcpReadinessEntry) {
 		if err == nil || errors.Is(err, errMCPProtocol) || ctx.Err() != nil {
 			break
 		}
+		if attempt == 2 {
+			break
+		}
 		select {
 		case <-ctx.Done():
-			return
+			err = ctx.Err()
 		case <-time.After(50 * time.Millisecond):
 		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	if parent.Err() != nil {
+		return
 	}
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
@@ -43,11 +77,14 @@ func probeMCPReadiness(parent context.Context, entry *mcpReadinessEntry) {
 	}
 	entry.Ready = false
 	entry.ToolCount = 0
+	var httpStatus *mcpHTTPStatusError
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		entry.State, entry.Reason = MCPReadinessTimeout, "probe_timeout"
 	case errors.Is(err, errMCPProtocol):
 		entry.State, entry.Reason = MCPReadinessProtocolError, "invalid_mcp_response"
+	case errors.As(err, &httpStatus):
+		entry.State, entry.Reason = MCPReadinessOffline, fmt.Sprintf("http_status_%d", httpStatus.StatusCode)
 	default:
 		entry.State, entry.Reason = MCPReadinessOffline, "endpoint_unreachable"
 	}
