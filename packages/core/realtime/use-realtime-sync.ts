@@ -377,6 +377,36 @@ function isHeldChatTaskMessage(
 }
 
 /**
+ * Pre-seed a live `task-messages` timeline entry from a dispatch/running event.
+ *
+ * The only thing that registers a live `chatKeys.taskMessages(taskId)` entry is
+ * the chat view's `useQuery(taskMessagesOptions(pendingTaskId))`, and that
+ * registration lags a dispatch/running event while the pending head is still
+ * empty: `promotePendingChatTask` returns EMPTY when there is no head and the
+ * task is not queued, so the head is filled only by the send response or the
+ * 15s poll — never by the lifecycle events themselves. In that window
+ * `isTaskMessageTimelineHeld` is false, so EVERY `task:message` frame for the
+ * task is dropped until `chat:done`, which then inserts the whole assistant
+ * message at once (the reported "streams only at the end" bug).
+ *
+ * Seeding here decouples the live timeline from the pending-head path. It is
+ * gated on a mounted pending-task query (a chat view is open for this session)
+ * so we still do not accumulate transcripts for runs the user never opens
+ * (MUL-6396): an unmounted client keeps dropping the frames it never renders.
+ */
+function ensureChatTaskMessageTimelineHeld(
+  qc: QueryClient,
+  sessionId: string,
+  taskId: string,
+): void {
+  if (isTaskMessageTimelineHeld(qc, taskId)) return;
+  const viewHoldingSession =
+    qc.getQueryCache().find({ queryKey: chatKeys.pendingTask(sessionId) }) !== undefined;
+  if (!viewHoldingSession) return;
+  qc.setQueryData<TaskMessagePayload[]>(chatKeys.taskMessages(taskId), (old = []) => old);
+}
+
+/**
  * Patch the cached sessions row for a `chat:session_updated` event (rename,
  * pin/unpin, archive/unarchive from any tab/device) instead of refetching the
  * whole list. `pinned` is present only on pin/unpin events and `status` only on
@@ -1738,6 +1768,7 @@ export function useRealtimeSync(
     const unsubTaskDispatch = scopedOn("task:dispatch", (p) => {
       const payload = p as TaskDispatchPayload;
       if (!payload.chat_session_id) return;
+      ensureChatTaskMessageTimelineHeld(qc, payload.chat_session_id, payload.task_id);
       qc.setQueryData<ChatPendingTask>(
         chatKeys.pendingTask(payload.chat_session_id),
         (old) => promotePendingChatTask(old, payload.task_id, "running"),
@@ -1755,6 +1786,7 @@ export function useRealtimeSync(
     const unsubTaskRunning = scopedOn("task:running", (p) => {
       const payload = p as TaskRunningPayload;
       if (!payload.chat_session_id) return;
+      ensureChatTaskMessageTimelineHeld(qc, payload.chat_session_id, payload.task_id);
       qc.setQueryData<ChatPendingTask>(
         chatKeys.pendingTask(payload.chat_session_id),
         (old) => promotePendingChatTask(old, payload.task_id, "running"),

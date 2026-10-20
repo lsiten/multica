@@ -107,6 +107,17 @@ describe("useRealtimeSync — task:message fanout guards (MUL-6396)", () => {
     return unsubscribe;
   }
 
+  /** Simulates a mounted view holding the session's pending-task query. */
+  function holdTimelineForPending(sessionId: string) {
+    const observer = new QueryObserver(qc, {
+      queryKey: chatKeys.pendingTask(sessionId),
+      queryFn: async () => ({}),
+      enabled: true,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    return unsubscribe;
+  }
+
   it("drops frames for a task no mounted view is rendering", () => {
     const handler = mount();
 
@@ -256,6 +267,82 @@ describe("useRealtimeSync — task:message fanout guards (MUL-6396)", () => {
     });
     expect(cached(qc, HELD_TASK)?.[1]?.content).toBe("live");
     release();
+  });
+
+  it("keeps live frames once a task:dispatch pre-seeds the timeline while the pending head is still empty", () => {
+    // Regression for the "streams only at the end" bug: a view is open (the
+    // pending-task query is mounted) but the pending head is empty — it is
+    // filled only later by the send response / 15s poll, never by the
+    // lifecycle events themselves. Without pre-seeding, isTaskMessageTimelineHeld
+    // is false for the whole window and every frame is dropped until chat:done.
+    const handler = mount();
+    const release = holdTimelineForPending("session-1");
+    const dispatch = handlers.get("task:dispatch");
+    if (!dispatch) throw new Error("task:dispatch handler was not registered");
+
+    dispatch({
+      task_id: HELD_TASK,
+      agent_id: "a1",
+      issue_id: "issue-1",
+      runtime_id: "r1",
+      chat_session_id: "session-1",
+    });
+
+    // The dispatch pre-seeds the live timeline even though no view has
+    // registered it yet and the pending head is still empty.
+    expect(
+      qc.getQueryCache().find({ queryKey: chatKeys.taskMessages(HELD_TASK) }),
+    ).toBeDefined();
+
+    handler(msg(HELD_TASK, 1, { chat_session_id: "session-1" }));
+    expect(cached(qc, HELD_TASK)?.map((m) => m.seq)).toEqual([1]);
+    release();
+  });
+
+  it("pre-seeds the timeline from task:running as well (parked -> running)", () => {
+    const handler = mount();
+    const release = holdTimelineForPending("session-1");
+    const running = handlers.get("task:running");
+    if (!running) throw new Error("task:running handler was not registered");
+
+    running({
+      task_id: HELD_TASK,
+      agent_id: "a1",
+      issue_id: "issue-1",
+      status: "running",
+      chat_session_id: "session-1",
+    });
+
+    expect(
+      qc.getQueryCache().find({ queryKey: chatKeys.taskMessages(HELD_TASK) }),
+    ).toBeDefined();
+    handler(msg(HELD_TASK, 1, { chat_session_id: "session-1" }));
+    expect(cached(qc, HELD_TASK)?.map((m) => m.seq)).toEqual([1]);
+    release();
+  });
+
+  it("does not pre-seed a timeline for a session no view holds (MUL-6396)", () => {
+    const handler = mount();
+    const dispatch = handlers.get("task:dispatch");
+    if (!dispatch) throw new Error("task:dispatch handler was not registered");
+
+    // No pending-task query is mounted, so no view is holding the session.
+    dispatch({
+      task_id: UNHELD_TASK,
+      agent_id: "a1",
+      issue_id: "issue-1",
+      runtime_id: "r1",
+      chat_session_id: "session-2",
+    });
+
+    // A run the user never opens must not build a cache entry, however long it
+    // streams — the dispatch must not pre-seed without a mounted view.
+    handler(msg(UNHELD_TASK, 1, { chat_session_id: "session-2" }));
+    vi.advanceTimersByTime(FLUSH_MS * 2);
+    expect(
+      qc.getQueryCache().find({ queryKey: chatKeys.taskMessages(UNHELD_TASK) }),
+    ).toBeUndefined();
+    expect(cached(qc, UNHELD_TASK)).toBeUndefined();
   });
 
   it("drops a batch whose timeline was garbage-collected during the flush window", async () => {
