@@ -46,6 +46,13 @@
     "retry": "Retry"
   },
   "doc_file_list": {
+    "project_directory": "Project directory",
+    "run_directory": "Run directory",
+    "directory": "Directory",
+    "read_only": "Read-only project directory",
+    "directory_unavailable": "Reconnect the device that owns this directory, then retry.",
+    "directory_empty": "This directory has no files.",
+    "error_details": "Error details",
     "filter_placeholder": "Filter files",
     "no_match": "No matches",
     "toggle": "Files",

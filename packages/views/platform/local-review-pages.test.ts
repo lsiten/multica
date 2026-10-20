@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { readReviewFile } from "./local-review-pages";
+import { readReviewFile, requestReviewPage } from "./local-review-pages";
 
 const api = vi.hoisted(() => ({ supportsPagedLocalMR: vi.fn(), executePagedLocalReview: vi.fn() }));
 vi.mock("@multica/core/api", () => ({ api }));
@@ -8,6 +8,19 @@ afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 const id = "a".repeat(64);
 const request = { task_id: "task", workspace_id: "ws", runtime_id: "runtime", path: "/repo", target: "main", version_id: id, file_path: "file.txt" };
 const response = { version_id: id, path: "file.txt", preview: "text", page: { lines: [], next_line: 0, has_more: false } };
+
+it("authorizes project directory reads through the server even on desktop", async () => {
+  const localRead = vi.fn();
+  vi.stubGlobal("daemonAPI", { readLocalReviewPage: localRead });
+  api.supportsPagedLocalMR.mockResolvedValue(true);
+  const files = { path: "/project", entries: [], truncated: false };
+  api.executePagedLocalReview.mockResolvedValue(files);
+
+  expect(await requestReviewPage({ workspace_id: "ws", project_resource_id: "resource", runtime_id: "runtime", path: "/project", action: "workspace_files" })).toEqual(files);
+
+  expect(localRead).not.toHaveBeenCalled();
+  expect(api.executePagedLocalReview).toHaveBeenCalledWith(expect.objectContaining({ task_id: "", project_resource_id: "resource" }), undefined);
+});
 
 it("keeps owning-runtime file pages local without contacting the server", async () => {
   vi.stubGlobal("daemonAPI", { readLocalReviewPage: vi.fn().mockResolvedValue(response) });

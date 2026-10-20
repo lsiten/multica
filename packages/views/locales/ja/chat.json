@@ -45,6 +45,13 @@
     "retry": "再試行"
   },
   "doc_file_list": {
+    "project_directory": "プロジェクトディレクトリ",
+    "run_directory": "実行ディレクトリ",
+    "directory": "ディレクトリ",
+    "read_only": "プロジェクトディレクトリ（読み取り専用）",
+    "directory_unavailable": "このディレクトリがあるデバイスに接続して、再試行してください。",
+    "directory_empty": "このディレクトリにファイルはありません。",
+    "error_details": "エラーの詳細",
     "filter_placeholder": "\u30d5\u30a1\u30a4\u30eb\u3092\u30d5\u30a3\u30eb\u30bf\u30fc",
     "no_match": "\u4e00\u81f4\u306a\u3057",
     "toggle": "\u30d5\u30a1\u30a4\u30eb",

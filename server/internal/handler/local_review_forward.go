@@ -13,7 +13,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// ForwardLocalReview authorizes from existing task metadata, then relays the
+// ForwardLocalReview authorizes a task or bound project directory, then relays the
 // runtime response without inserting a review, command, event, or snapshot row.
 func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserID(w, r)
@@ -25,30 +25,40 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		IndexID      string   `json:"index_id,omitempty"`
-		Branch       string   `json:"branch,omitempty"`
-		Head         string   `json:"head,omitempty"`
-		Message      string   `json:"message,omitempty"`
-		Paths        []string `json:"paths,omitempty"`
-		TaskID       string   `json:"task_id"`
-		Path         string   `json:"path"`
-		Target       string   `json:"target"`
-		Action       string   `json:"action"`
-		SnapshotID   string   `json:"snapshot_id"`
-		VersionID    string   `json:"version_id,omitempty"`
-		FilePath     string   `json:"file_path,omitempty"`
-		RelativePath string   `json:"relative_path,omitempty"`
-		Side         string   `json:"side,omitempty"`
-		Offset       int      `json:"offset,omitempty"`
-		Limit        int      `json:"limit,omitempty"`
-		Comment      string   `json:"comment"`
-		CommandID    string   `json:"command_id"`
-		EditBase     string   `json:"edit_base,omitempty"`
-		EditNew      string   `json:"edit_new,omitempty"`
-		EditBaseSHA  string   `json:"edit_base_sha,omitempty"`
+		IndexID           string   `json:"index_id,omitempty"`
+		Branch            string   `json:"branch,omitempty"`
+		Head              string   `json:"head,omitempty"`
+		Message           string   `json:"message,omitempty"`
+		Paths             []string `json:"paths,omitempty"`
+		TaskID            string   `json:"task_id"`
+		ProjectResourceID string   `json:"project_resource_id,omitempty"`
+		RuntimeID         string   `json:"runtime_id,omitempty"`
+		Path              string   `json:"path"`
+		Target            string   `json:"target"`
+		Action            string   `json:"action"`
+		SnapshotID        string   `json:"snapshot_id"`
+		VersionID         string   `json:"version_id,omitempty"`
+		FilePath          string   `json:"file_path,omitempty"`
+		RelativePath      string   `json:"relative_path,omitempty"`
+		Side              string   `json:"side,omitempty"`
+		Offset            int      `json:"offset,omitempty"`
+		Limit             int      `json:"limit,omitempty"`
+		Comment           string   `json:"comment"`
+		CommandID         string   `json:"command_id"`
+		EditBase          string   `json:"edit_base,omitempty"`
+		EditNew           string   `json:"edit_new,omitempty"`
+		EditBaseSHA       string   `json:"edit_base_sha,omitempty"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && input.Action != "workspace_files" && input.Action != "file_content" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "lease" && input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && input.Action != "workspace_files" && input.Action != "file_content" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
 		writeError(w, http.StatusBadRequest, "task and target branch required")
+		return
+	}
+	if (input.TaskID == "") == (input.ProjectResourceID == "") {
+		writeError(w, http.StatusBadRequest, "exactly one task or project resource is required")
+		return
+	}
+	if input.ProjectResourceID != "" && !protocol.IsProjectDirectoryRead(input.Action) {
+		writeError(w, http.StatusForbidden, "project directories are read only")
 		return
 	}
 	switch input.Action {
@@ -114,61 +124,73 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "unknown review action")
 		return
 	}
-	id, ok := parseUUIDOrBadRequest(w, input.TaskID, "task_id")
-	if !ok {
-		return
-	}
-	task, err := h.Queries.GetAgentTaskInWorkspace(r.Context(), db.GetAgentTaskInWorkspaceParams{ID: id, WorkspaceID: parseUUID(ctxWorkspaceID(r.Context()))})
-	if err != nil {
-		writeError(w, http.StatusNotFound, "task not found")
-		return
-	}
-	runtime, _, ok := h.requireRuntimeReadAccess(w, r, obsmetrics.RuntimeLookupSourceRuntimeAPI, uuidToString(task.RuntimeID))
-	if !ok {
-		return
-	}
-	if task.IssueID.Valid {
-		if _, ok := h.loadIssueForUser(w, r, uuidToString(task.IssueID)); !ok {
+	var path, runtimeID string
+	if input.ProjectResourceID != "" {
+		var authorized bool
+		path, runtimeID, authorized = h.authorizeProjectDirectoryRead(w, r, user, input.ProjectResourceID, input.RuntimeID, input.Path)
+		if !authorized {
 			return
 		}
-	} else if uuidToString(runtime.OwnerID) != user {
-		writeError(w, http.StatusForbidden, "only the runtime owner can review this run")
-		return
-	}
-	if (input.Action == "merge" || input.Action == "merge_selected" || protocol.IsLocalIndexMutation(input.Action)) && uuidToString(runtime.OwnerID) != user {
-		writeError(w, http.StatusForbidden, "only the runtime owner can modify Git")
-		return
-	}
-	if (input.Action == "edit" || input.Action == "merge_edit") && uuidToString(runtime.OwnerID) != user {
-		writeError(w, http.StatusForbidden, "only the runtime owner can edit files")
-		return
-	}
-	path := task.WorkDir.String
-	if path == "" {
-		writeError(w, http.StatusConflict, "task has not reported a worktree")
-		return
-	}
-	if input.Path != "" {
-		base := strings.TrimRight(strings.ReplaceAll(path, "\\", "/"), "/")
-		selected := strings.ReplaceAll(input.Path, "\\", "/")
-		if selected != base && !strings.HasPrefix(selected, base+"/") {
-			writeError(w, http.StatusBadRequest, "repository is outside task worktree")
+	} else {
+		id, ok := parseUUIDOrBadRequest(w, input.TaskID, "task_id")
+		if !ok {
 			return
 		}
-		path = input.Path
+		task, err := h.Queries.GetAgentTaskInWorkspace(r.Context(), db.GetAgentTaskInWorkspaceParams{ID: id, WorkspaceID: parseUUID(ctxWorkspaceID(r.Context()))})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "task not found")
+			return
+		}
+		runtime, _, ok := h.requireRuntimeReadAccess(w, r, obsmetrics.RuntimeLookupSourceRuntimeAPI, uuidToString(task.RuntimeID))
+		if !ok {
+			return
+		}
+		if task.IssueID.Valid {
+			if _, ok := h.loadIssueForUser(w, r, uuidToString(task.IssueID)); !ok {
+				return
+			}
+		} else if uuidToString(runtime.OwnerID) != user {
+			writeError(w, http.StatusForbidden, "only the runtime owner can review this run")
+			return
+		}
+		if (input.Action == "merge" || input.Action == "merge_selected" || protocol.IsLocalIndexMutation(input.Action)) && uuidToString(runtime.OwnerID) != user {
+			writeError(w, http.StatusForbidden, "only the runtime owner can modify Git")
+			return
+		}
+		if (input.Action == "edit" || input.Action == "merge_edit") && uuidToString(runtime.OwnerID) != user {
+			writeError(w, http.StatusForbidden, "only the runtime owner can edit files")
+			return
+		}
+		path = task.WorkDir.String
+		if path == "" {
+			writeError(w, http.StatusConflict, "task has not reported a worktree")
+			return
+		}
+		if input.Path != "" {
+			base := strings.TrimRight(strings.ReplaceAll(path, "\\", "/"), "/")
+			selected := strings.ReplaceAll(input.Path, "\\", "/")
+			if selected != base && !strings.HasPrefix(selected, base+"/") {
+				writeError(w, http.StatusBadRequest, "repository is outside task worktree")
+				return
+			}
+			path = input.Path
+		}
+
+		runtimeID = uuidToString(task.RuntimeID)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	exchange, err := h.localReviewRelay.enqueue(protocol.LocalReviewCommand{
-		WorkspaceID: ctxWorkspaceID(r.Context()), RuntimeID: uuidToString(task.RuntimeID),
-		TaskID: input.TaskID, Path: path, Target: input.Target, Action: input.Action,
+		WorkspaceID: ctxWorkspaceID(r.Context()), RuntimeID: runtimeID,
+		ProjectResourceID: input.ProjectResourceID,
+		TaskID:            input.TaskID, Path: path, Target: input.Target, Action: input.Action,
 		SnapshotID: input.SnapshotID, Comment: input.Comment, ActorID: user,
 		CommandID: input.CommandID,
 		VersionID: input.VersionID, FilePath: input.FilePath, Offset: input.Offset, Limit: input.Limit,
 		RelativePath: input.RelativePath,
 		Side:         input.Side,
 		IndexID:      input.IndexID, Branch: input.Branch, Head: input.Head, Message: input.Message, Paths: input.Paths,
-		EditBase:     input.EditBase, EditNew: input.EditNew, EditBaseSHA: input.EditBaseSHA,
+		EditBase: input.EditBase, EditNew: input.EditNew, EditBaseSHA: input.EditBaseSHA,
 	})
 	if err != nil {
 		writeError(w, http.StatusTooManyRequests, "local review relay busy")

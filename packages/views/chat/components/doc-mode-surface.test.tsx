@@ -148,6 +148,23 @@ function openWorkspaceDoc() {
   });
 }
 
+it("previews a project directory file without a run and keeps it read-only", async () => {
+  session.current.files = {
+    ...session.current.files,
+    tasks: [],
+    directories: [{ project_resource_id: "resource-1", daemon_id: "daemon-1", runtime_id: "rt-1", path: "/project" }],
+  };
+  useDocModeStore.getState().openDoc("session-1", {
+    kind: "workspace_file", id: "resource:resource-1:README.md", sessionId: "session-1",
+    projectResourceId: "resource-1", relativePath: "README.md",
+  });
+
+  renderSurface();
+
+  expect(await screen.findByText("hello")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: enChat.doc_mode.edit })).not.toBeInTheDocument();
+});
+
 function renderSurface() {
   return render(
     <QueryClientProvider client={newClient()}>

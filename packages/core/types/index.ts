@@ -219,6 +219,7 @@ export type {
   ChatDraftRestore,
   ChatDraftRestoresResponse,
   ChatSessionFileTask,
+  ChatSessionDirectory,
   ChatSessionProject,
   ChatSessionFilesResponse,
   ChatSessionRepo,

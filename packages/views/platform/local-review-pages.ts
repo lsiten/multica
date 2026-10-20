@@ -9,7 +9,9 @@ export async function requestReviewPage(input: PagedReviewInput, signal?: AbortS
   signal?.throwIfAborted();
   const request = pagedReviewRequestSchema.parse(isPagedReviewDecision(input.action ?? "manifest")
     ? { ...input, command_id: input.command_id ?? createSafeId() } : input);
-  if (typeof window !== "undefined") {
+  // Project directory reads are authorized from the current server resource,
+  // rather than a run's local provenance marker.
+  if (!request.project_resource_id && typeof window !== "undefined") {
     const daemon: unknown = Reflect.get(window, "daemonAPI");
     if (daemon && typeof daemon === "object" && "readLocalReviewPage" in daemon && typeof daemon.readLocalReviewPage === "function") {
       const read = daemon.readLocalReviewPage.bind(daemon);

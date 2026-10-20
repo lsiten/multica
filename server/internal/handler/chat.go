@@ -387,6 +387,7 @@ func (h *Handler) GetChatSession(w http.ResponseWriter, r *http.Request) {
 
 type ChatSessionFileTaskResponse struct {
 	ID              string `json:"id"`
+	ProjectID       string `json:"project_id,omitempty"`
 	RuntimeID       string `json:"runtime_id"`
 	IssueID         string `json:"issue_id,omitempty"`
 	IssueKind       string `json:"issue_kind,omitempty"`
@@ -411,11 +412,12 @@ type ChatSessionProjectResponse struct {
 }
 
 type ChatSessionFilesResponse struct {
-	WorkspaceID string                        `json:"workspace_id"`
-	ProjectID   *string                       `json:"project_id,omitempty"`
-	Projects    []ChatSessionProjectResponse  `json:"projects,omitempty"`
-	Attachments []AttachmentResponse          `json:"attachments"`
-	Tasks       []ChatSessionFileTaskResponse `json:"tasks"`
+	Directories []ChatProjectDirectoryResponse `json:"directories,omitempty"`
+	WorkspaceID string                         `json:"workspace_id"`
+	ProjectID   *string                        `json:"project_id,omitempty"`
+	Projects    []ChatSessionProjectResponse   `json:"projects,omitempty"`
+	Attachments []AttachmentResponse           `json:"attachments"`
+	Tasks       []ChatSessionFileTaskResponse  `json:"tasks"`
 	// ProjectAttachments and ProjectTasks are additive projections for the
 	// selected project's durable file browser. The existing attachments/tasks
 	// fields remain scoped to the current chat for older clients.
@@ -495,12 +497,9 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		selectedProjectID = projectID
 	}
-	// The file browser browses at most five task workdirs, so cap the query to
-	// that many instead of over-fetching rows the client discards.
 	tasks, err := h.Queries.ListChatSessionFileTasks(r.Context(), db.ListChatSessionFileTasksParams{
 		ChatSessionID: session.ID,
 		WorkspaceID:   workspaceUUID,
-		PageLimit:     5,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list chat worktrees")
@@ -511,23 +510,38 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	for _, attachment := range attachments {
 		attachmentResponses = append(attachmentResponses, h.attachmentToResponse(attachment, attachmentMode))
 	}
+	issueKinds := make(map[string]string)
+	projectedTasks := make(map[string]ChatSessionFileTaskResponse)
+	projectTask := func(task db.AgentTaskQueue) ChatSessionFileTaskResponse {
+		id := uuidToString(task.ID)
+		if cached, ok := projectedTasks[id]; ok {
+			return cached
+		}
+		workDir := h.resolveChatSessionTaskWorkDir(r.Context(), task, map[string]struct{}{})
+		issueID := uuidToString(task.IssueID)
+		kind := ""
+		if workDir != "" && issueID != "" {
+			var cached bool
+			kind, cached = issueKinds[issueID]
+			if !cached {
+				kind = h.chatTaskIssueKind(r.Context(), task, workspaceUUID)
+				issueKinds[issueID] = kind
+			}
+		}
+		response := ChatSessionFileTaskResponse{
+			ID: id, RuntimeID: uuidToString(task.RuntimeID), IssueID: issueID, IssueKind: kind,
+			ParentTaskID: uuidToString(task.ParentTaskID), BranchName: task.BranchName.String,
+			WorkDir: workDir, RelativeWorkDir: relativeWorkDir(workDir, workspaceID, id), CreatedAt: timestampToString(task.CreatedAt),
+		}
+		projectedTasks[id] = response
+		return response
+	}
 	taskResponses := make([]ChatSessionFileTaskResponse, 0, len(tasks))
 	for _, task := range tasks {
-		workDir := h.resolveChatSessionTaskWorkDir(r.Context(), task, map[string]struct{}{})
-		if workDir == "" {
-			continue
+		response := projectTask(task)
+		if response.WorkDir != "" {
+			taskResponses = append(taskResponses, response)
 		}
-		taskResponses = append(taskResponses, ChatSessionFileTaskResponse{
-			ID:              uuidToString(task.ID),
-			RuntimeID:       uuidToString(task.RuntimeID),
-			IssueID:         uuidToString(task.IssueID),
-			IssueKind:       h.chatTaskIssueKind(r.Context(), task, workspaceUUID),
-			ParentTaskID:    uuidToString(task.ParentTaskID),
-			BranchName:      task.BranchName.String,
-			WorkDir:         workDir,
-			RelativeWorkDir: relativeWorkDir(workDir, workspaceID, uuidToString(task.ID)),
-			CreatedAt:       timestampToString(task.CreatedAt),
-		})
 	}
 	projectTaskResponses := make([]ChatSessionFileTaskResponse, 0)
 	projectAttachmentResponses := make([]AttachmentResponse, 0)
@@ -535,7 +549,6 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		projectTasks, projectErr := h.Queries.ListChatProjectFileTasks(r.Context(), db.ListChatProjectFileTasksParams{
 			ProjectID:   selectedProjectID,
 			WorkspaceID: workspaceUUID,
-			PageLimit:   25,
 		})
 		if projectErr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list project worktrees")
@@ -543,21 +556,12 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		}
 		projectTaskResponses = make([]ChatSessionFileTaskResponse, 0, len(projectTasks))
 		for _, task := range projectTasks {
-			workDir := h.resolveChatSessionTaskWorkDir(r.Context(), task, map[string]struct{}{})
-			if workDir == "" {
+			response := projectTask(task)
+			if response.WorkDir == "" {
 				continue
 			}
-			projectTaskResponses = append(projectTaskResponses, ChatSessionFileTaskResponse{
-				ID:              uuidToString(task.ID),
-				RuntimeID:       uuidToString(task.RuntimeID),
-				IssueID:         uuidToString(task.IssueID),
-				IssueKind:       h.chatTaskIssueKind(r.Context(), task, workspaceUUID),
-				ParentTaskID:    uuidToString(task.ParentTaskID),
-				BranchName:      task.BranchName.String,
-				WorkDir:         workDir,
-				RelativeWorkDir: relativeWorkDir(workDir, workspaceID, uuidToString(task.ID)),
-				CreatedAt:       timestampToString(task.CreatedAt),
-			})
+			response.ProjectID = uuidToString(selectedProjectID)
+			projectTaskResponses = append(projectTaskResponses, response)
 		}
 		if includeAttachments {
 			projectAttachments, projectErr := h.Queries.ListAttachmentsByProject(r.Context(), db.ListAttachmentsByProjectParams{
@@ -574,6 +578,20 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if selectedProjectID.Valid {
+		projectTaskIDs := make(map[string]struct{}, len(projectTaskResponses))
+		for _, task := range projectTaskResponses {
+			projectTaskIDs[task.ID] = struct{}{}
+		}
+		scopedTasks := make([]ChatSessionFileTaskResponse, 0)
+		for _, task := range taskResponses {
+			if _, belongs := projectTaskIDs[task.ID]; belongs {
+				task.ProjectID = uuidToString(selectedProjectID)
+				scopedTasks = append(scopedTasks, task)
+			}
+		}
+		taskResponses = scopedTasks
+	}
 	projectResponses := make([]ChatSessionProjectResponse, 0, len(associatedProjects))
 	for _, project := range associatedProjects {
 		projectResponses = append(projectResponses, ChatSessionProjectResponse{
@@ -586,6 +604,14 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 			Priority:    project.Priority,
 		})
 	}
+	var directories []ChatProjectDirectoryResponse
+	if selectedProjectID.Valid {
+		directories, err = h.projectFileDirectories(r.Context(), workspaceUUID, selectedProjectID, userID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list project directories")
+			return
+		}
+	}
 	// Resolve the project's configured repos (project resource -> workspace
 	// repos fallback) so the file browser can list them even when the session
 	// has no task worktree. A read failure degrades to no repos rather than
@@ -597,6 +623,7 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, ChatSessionFilesResponse{
+		Directories:        directories,
 		WorkspaceID:        workspaceID,
 		ProjectID:          uuidToPtr(selectedProjectID),
 		Projects:           projectResponses,

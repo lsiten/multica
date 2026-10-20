@@ -2462,6 +2462,16 @@ describe("AgentActivityBucketListSchema duration", () => {
 });
 
 describe("ChatSessionFilesResponseSchema", () => {
+  it("keeps valid project directories when a peer has a malformed path", () => {
+    const parsed = ChatSessionFilesResponseSchema.parse({
+      directories: [
+        { project_resource_id: "resource", daemon_id: "daemon", path: "/project", runtime_id: null },
+        { project_resource_id: "broken", daemon_id: "daemon", path: 123 },
+      ],
+    });
+    expect(parsed.directories).toEqual([{ project_resource_id: "resource", daemon_id: "daemon", path: "/project" }]);
+    expect(ChatSessionFilesResponseSchema.parse({}).directories).toEqual([]);
+  });
   // A single malformed repo must not fail the whole response: that would drop
   // the session's attachments and task files too (the file list's real
   // source of truth), not just the broken repo row.

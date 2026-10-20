@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
@@ -114,6 +115,59 @@ beforeEach(() => {
 });
 
 describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
+  it("keeps an unavailable project's directory visible and offers reconnect recovery", async () => {
+    session.current.files = {
+      ...session.current.files,
+      tasks: [],
+      directories: [{ project_resource_id: "resource-1", daemon_id: "daemon-1", path: "/offline-project" }],
+      repos: [{ url: "https://github.com/other/repository" }],
+    };
+    renderList(newClient());
+
+    expect(await screen.findByText("/offline-project")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(enChat.doc_file_list.directory_unavailable);
+    expect(screen.getByRole("button", { name: enChat.doc_file_list.retry })).toBeEnabled();
+    expect(screen.queryByText("other/repository")).not.toBeInTheDocument();
+  });
+
+  it("opens a project-bound local directory before any run exists", async () => {
+    session.current.files = {
+      ...session.current.files,
+      tasks: [],
+      directories: [{ project_resource_id: "resource-1", daemon_id: "daemon-1", runtime_id: "rt-1", path: "/project", label: "Project directory" }],
+    };
+    renderList(newClient());
+
+    fireEvent.click(await screen.findByText("src"));
+    fireEvent.click(screen.getByText("app.ts"));
+
+    expect(useDocModeStore.getState().activeBySession["session-1"]).toMatchObject({
+      kind: "workspace_file", projectResourceId: "resource-1", workDir: "/project", relativePath: "src/app.ts",
+    });
+  });
+
+  it("offers both project directories and chat/project worktrees for selection", async () => {
+    session.current.files = {
+      ...session.current.files,
+      directories: [{ project_resource_id: "resource-1", daemon_id: "daemon-1", runtime_id: "rt-1", path: "/project" }],
+      project_tasks: [{ id: "project-task", runtime_id: "rt-1", work_dir: "/project-worktree", created_at: "2026-01-01" }],
+    };
+    session.current.entriesByPath = {
+      "/project": [{ path: "local.md", size: 5, directory: false }],
+      "/project-worktree": [{ path: "worktree.md", size: 5, directory: false }],
+    };
+    const user = userEvent.setup();
+    renderList(newClient());
+    await screen.findByText("local.md");
+    await user.click(screen.getByRole("combobox", { name: "Directory" }));
+    expect(await screen.findByRole("option", { name: /\/work$/ })).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: /\/project-worktree$/ }));
+
+    expect(await screen.findByText("worktree.md")).toBeInTheDocument();
+    expect(screen.queryByText("local.md")).not.toBeInTheDocument();
+    expect(useLocalDirectoryStore.getState().currentByWorkspace["ws-1"]?.path).toBe("/project-worktree");
+  });
+
   it("lists workspace files in the files tab and attachments in their own tab", async () => {
     renderList(newClient());
     // The project is the section header and the task-workdir (source) files are
@@ -212,7 +266,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
   });
 
-  it("falls back to the project repository when a historical worktree is unavailable", async () => {
+  it("keeps an unavailable directory selected with retry instead of masking its error with repository links", async () => {
     session.current.workspaceError = new Error("directory has no matching runtime task binding");
     session.current.files = {
       ...session.current.files,
@@ -221,8 +275,11 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     renderList(newClient());
 
     await screen.findByText("Acme");
-    expect(screen.queryByText(enChat.doc_file_list.load_failed)).not.toBeInTheDocument();
-    expect(screen.getByText("acme/widgets")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(enChat.doc_file_list.load_failed);
+    expect(screen.queryByText("acme/widgets")).not.toBeInTheDocument();
+    session.current.workspaceError = null;
+    fireEvent.click(screen.getByRole("button", { name: enChat.doc_file_list.retry }));
+    expect(await screen.findByText("src")).toBeInTheDocument();
   });
 
   it("keeps the list after a refresh (server data, not recent context)", async () => {
@@ -293,7 +350,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(screen.getByText("/sibling")).toBeInTheDocument();
   });
 
-  it("skips a stale lead binding and uses the next live checkout", async () => {
+  it("lets the user switch from an unavailable worktree to another project directory", async () => {
     session.current.files = {
       ...session.current.files,
       tasks: [
@@ -310,6 +367,10 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     };
     renderList(newClient());
 
+    expect(await screen.findByRole("alert")).toHaveTextContent(enChat.doc_file_list.load_failed);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "Directory" }));
+    await user.click(await screen.findByRole("option", { name: /\/live$/ }));
     fireEvent.click(await screen.findByText("src"));
     fireEvent.click(await screen.findByText("live.ts"));
     expect(useDocModeStore.getState().activeBySession["session-1"]).toMatchObject({

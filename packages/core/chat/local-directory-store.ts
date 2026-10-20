@@ -5,7 +5,8 @@ import { defaultStorage } from "../platform/storage";
 /** The directory currently selected by the desktop file surface. */
 export interface CurrentLocalDirectory {
   path: string;
-  taskId: string;
+  taskId?: string;
+  projectResourceId?: string;
   runtimeId: string;
   workspaceId: string;
   label?: string;
@@ -20,7 +21,8 @@ interface LocalDirectoryState {
 /**
  * Client-owned directory selection. It intentionally has no chat or project
  * key: Source Control follows the directory the user last opened, like VS
- * Code, while the task/runtime ids remain the daemon's security binding.
+ * Code. Run/runtime ids keep the daemon binding; a project resource id uses
+ * the server-authorized, read-only directory transport.
  */
 export const useLocalDirectoryStore = create<LocalDirectoryState>()(
   persist(

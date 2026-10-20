@@ -45,6 +45,13 @@
     "retry": "Réessayer"
   },
   "doc_file_list": {
+    "project_directory": "Dossier du projet",
+    "run_directory": "Dossier d’exécution",
+    "directory": "Dossier",
+    "read_only": "Dossier du projet en lecture seule",
+    "directory_unavailable": "Reconnectez l’appareil contenant ce dossier, puis réessayez.",
+    "directory_empty": "Ce dossier ne contient aucun fichier.",
+    "error_details": "Détails de l’erreur",
     "filter_placeholder": "Filtrer les fichiers",
     "no_match": "Aucun r\u00e9sultat",
     "toggle": "Fichiers",

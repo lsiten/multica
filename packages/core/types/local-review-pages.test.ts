@@ -6,6 +6,13 @@ const id = "a".repeat(64);
 const request = { task_id: "task", workspace_id: "ws", path: "/repo", target: "main", action: "file", version_id: id, file_path: "file.txt", offset: 0, limit: 20 } as const;
 const response = { version_id: id, path: "file.txt", preview: "text", page: { lines: [{ text: "+change", kind: "add", new_line: 1 }], next_line: 1, has_more: true } };
 
+it("accepts one project directory scope and rejects ambiguous scopes or writes", () => {
+  const directory = { workspace_id: "ws", project_resource_id: "resource", path: "/project", action: "workspace_files" } as const;
+  expect(pagedReviewRequestSchema.parse(directory)).toMatchObject({ task_id: "", project_resource_id: "resource" });
+  expect(pagedReviewRequestSchema.safeParse({ ...directory, task_id: "task" }).success).toBe(false);
+  expect(pagedReviewRequestSchema.safeParse({ ...request, project_resource_id: "resource", task_id: "", action: "stage" }).success).toBe(false);
+});
+
 it("parses bounded patch pages", () => {
   expect(parsePagedReviewResponse(pagedReviewRequestSchema.parse(request), response)).toMatchObject(response);
 });

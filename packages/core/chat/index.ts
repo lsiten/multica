@@ -5,6 +5,8 @@ export { useDocModeStore, selectActiveDocument, selectWorking, selectDiffView } 
 export type { DocumentRef, DocumentKind } from "./doc-mode-store";
 export { useLocalDirectoryStore, selectCurrentLocalDirectory } from "./local-directory-store";
 export type { CurrentLocalDirectory } from "./local-directory-store";
+export { chatFileDirectories } from "./file-directories";
+export type { ChatFileDirectory } from "./file-directories";
 export type { RecentContextEntry, RecentContextType } from "./recent-context-store";
 export { canContinueChatFailure } from "./failure-recovery";
 

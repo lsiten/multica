@@ -127,6 +127,7 @@ export interface ChatSession {
 /** Files that can be opened from the selected chat's project/workspace. */
 export interface ChatSessionFileTask {
   id: string;
+  project_id?: string;
   runtime_id: string;
   issue_id?: string;
   issue_kind?: string;
@@ -155,6 +156,15 @@ export interface ChatSessionRepo {
   ref?: string;
 }
 
+/** A project-bound directory, available before the project's first run. */
+export interface ChatSessionDirectory {
+  readonly project_resource_id: string;
+  readonly daemon_id: string;
+  readonly runtime_id?: string;
+  readonly path: string;
+  readonly label?: string;
+}
+
 export interface ChatSessionFilesResponse {
   workspace_id: string;
   project_id?: string | null;
@@ -164,6 +174,7 @@ export interface ChatSessionFilesResponse {
   /** Attachments and worktrees resolved from the selected project. */
   project_attachments?: import("./attachment").Attachment[];
   project_tasks?: ChatSessionFileTask[];
+  directories?: ChatSessionDirectory[];
   /** Project's configured repos, resolved server-side (no task worktree). */
   repos: ChatSessionRepo[];
 }

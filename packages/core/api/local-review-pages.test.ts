@@ -7,6 +7,19 @@ const id = "a".repeat(64);
 const request = { task_id: "task", workspace_id: "ws", path: "/repo", target: "main", action: "file", version_id: id, file_path: "file.txt" } as const;
 const page = { version_id: id, path: "file.txt", preview: "text", page: { lines: [], next_line: 0, has_more: false } };
 
+it("forwards the project resource and relative file path for taskless directory previews", async () => {
+  let body: unknown;
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+    if (typeof init?.body !== "string") throw new Error("Missing JSON request");
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ page: { path: "src/app.ts", content: { text: "hello", encoding: "utf8", offset: 0, next_offset: 5, size: 5, has_more: false } } }), { status: 200 });
+  }));
+
+  await new ApiClient("https://api.example.test").executePagedLocalReview({ workspace_id: "ws", project_resource_id: "resource", runtime_id: "runtime", path: "/project", action: "file_content", relative_path: "src/app.ts" });
+
+  expect(body).toMatchObject({ task_id: "", project_resource_id: "resource", runtime_id: "runtime", relative_path: "src/app.ts", action: "file_content" });
+});
+
 it("requests one pinned file page through the relay", async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ page }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);

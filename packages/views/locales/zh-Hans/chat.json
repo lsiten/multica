@@ -45,6 +45,13 @@
     "retry": "重试"
   },
   "doc_file_list": {
+    "project_directory": "项目目录",
+    "run_directory": "运行目录",
+    "directory": "目录",
+    "read_only": "项目目录（只读）",
+    "directory_unavailable": "请连接此目录所在的设备后重试。",
+    "directory_empty": "此目录暂无文件",
+    "error_details": "错误详情",
     "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",
     "no_match": "\u65e0\u5339\u914d",
     "toggle": "\u6587\u4ef6",

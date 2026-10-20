@@ -57,6 +57,9 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		}
 		return routed
 	}
+	if command.ProjectResourceID != "" {
+		return d.runProjectDirectoryRead(ctx, command)
+	}
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
 	input.VersionID, input.FilePath, input.RelativePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.RelativePath, command.Offset, command.Limit
 	input.Side = command.Side

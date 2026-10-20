@@ -3,38 +3,33 @@
 import { ChevronRight, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
-import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
+import { useLocalDirectoryStore } from "@multica/core/chat/local-directory-store";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import { api } from "@multica/core/api";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import { useQuery } from "@tanstack/react-query";
-import { requestReviewPage } from "../../platform/local-review-pages";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import type { Agent, ChatSession, ChatSessionRepo, Issue } from "@multica/core/types";
-import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { isInternalWorkspacePath } from "@multica/core/types/local-review";
 import { fileIcon } from "../../editor/utils/file-icon";
 import { LocalReviewIndex } from "../../issues/components/local-review-index";
 import { GroupChatManagement } from "./group-chat-management";
 import { Button } from "@multica/ui/components/ui/button";
+import { useChatFileDirectory } from "./use-chat-file-directory";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
 
-const WORKSPACE_FILES_TIMEOUT_MS = 5_000;
-
-// The files tab is the chat's server-side projection of openable source code:
-// the files the session's tasks checked out of the project's workspace (task
-// work_dirs). Attachments have their own tab. It reads the chat session, not
-// client recent context, so the same list survives a refresh, another device,
-// and stays isolated to the session's own workspace. The project has no
-// document body of its own, so it renders as a section header rather than an
-// openable row.
+// Files come from the selected project's bound directories and run worktrees.
+// The server projects their identities; the owning runtime reads the chosen
+// directory. Attachments remain separate from these filesystem entries.
 export interface DocumentListItem {
   kind: "attachment" | "workspace_file";
   id: string;
   label: string;
   sessionId?: string;
   taskId?: string;
+  projectResourceId?: string;
   projectId?: string;
   runtimeId?: string;
   workDir?: string;
@@ -118,7 +113,6 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   }, [selectedProjectId, sessionFiles]);
   const projectID = selectedProjectId ?? sessionFiles?.project_id ?? "";
   const activeDoc = useDocModeStore(selectActiveDocument(sessionId ?? ""));
-  const currentDirectory = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
   const clearDirectory = useLocalDirectoryStore((state) => state.clearCurrentDirectory);
   const clearCurrentDirectory = useCallback(() => clearDirectory(wsId), [clearDirectory, wsId]);
@@ -126,15 +120,16 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     if (!isGroupChat && activeTab === "group") setActiveTab("files");
   }, [activeTab, isGroupChat]);
   useEffect(() => {
-    if (!activeDoc?.workDir || !activeDoc.taskId || !activeDoc.runtimeId) return;
+    if (!activeDoc?.workDir || (!activeDoc.taskId && !activeDoc.projectResourceId) || !activeDoc.runtimeId) return;
     setCurrentDirectory({
       path: activeDoc.workDir,
       taskId: activeDoc.taskId,
+      projectResourceId: activeDoc.projectResourceId,
       runtimeId: activeDoc.runtimeId,
       workspaceId: wsId,
       label: activeDoc.relativePath,
     });
-  }, [activeDoc?.relativePath, activeDoc?.runtimeId, activeDoc?.taskId, activeDoc?.workDir, setCurrentDirectory, wsId]);
+  }, [activeDoc?.projectResourceId, activeDoc?.relativePath, activeDoc?.runtimeId, activeDoc?.taskId, activeDoc?.workDir, setCurrentDirectory, wsId]);
   // The project is the header for its files; it has no document body of its
   // own, so it is shown but not opened through the doc-mode surface.
   const { data: project } = useQuery({
@@ -149,139 +144,9 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     enabled: !!projectID && activeTab === "issues",
     staleTime: 15_000,
   });
-  // Stable across renders (keyed on sessionFiles) so the derived document memo
-  // below is not recomputed on every render.
-  const fileTasks = useMemo(
-    () => {
-      const sessionTasks = (sessionFiles?.tasks ?? []).filter((task) => task.work_dir);
-      const projectTasks = selectedProjectId
-        ? (sessionFiles?.project_tasks ?? []).filter((task) => task.work_dir)
-        : [];
-      // A chat session can contain several specialist worktrees and a project
-      // can contain many historical runs. The server orders the session list
-      // with the lead/requirement checkout first; keep that scope intact and
-      // only use project history when the chat has no checkout of its own.
-      // Sessions can also contain informational tasks without a worktree; they
-      // must not mask the project checkout that supplies the file tree and Git
-      // scope.
-      const tasks = sessionTasks.length > 0 ? sessionTasks : projectTasks;
-      const ordered = sessionTasks.length > 0
-        ? tasks
-        : [...tasks].sort((a, b) => {
-            const aRequirement = a.issue_kind === "requirement" ? 1 : 0;
-            const bRequirement = b.issue_kind === "requirement" ? 1 : 0;
-            if (aRequirement !== bRequirement) return bRequirement - aRequirement;
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-          });
-      return ordered.slice(0, 25);
-    },
-    [selectedProjectId, sessionFiles],
+  const { directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest } = useChatFileDirectory(
+    wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files",
   );
-  // Source Control follows the directory currently open in the document
-  // surface, just like VS Code. It must not be resolved through the active
-  // chat's task list: switching chats does not switch the local directory, and
-  // a directory opened from another chat can still be the current Git scope.
-  // These task workdirs populate the project file tree. They do not select a
-  // Git scope; Source Control follows the current local directory below.
-  // Keep every candidate here: the first task can be a historical or stale
-  // daemon binding while a later task still owns the live checkout.
-  const workspaceTasks = fileTasks;
-  // A single cached query replaces useQueries: useQueries returns a fresh array
-  // on every render, which defeated the allDocuments memo below. Probe every
-  // candidate concurrently and retain each successful result so the selected
-  // task can be matched to the open document instead of whichever daemon reply
-  // happens to arrive first.
-  const workspaceFiles = useQuery({
-    queryKey: ["chat-workspace-files", wsId, workspaceTasks.map((task) => task.id).join("|")],
-    queryFn: async ({ signal }) => {
-      const readTask = async (task: typeof workspaceTasks[number]) => {
-        const requestController = new AbortController();
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        const timeout = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            requestController.abort();
-            reject(new Error("workspace_files_timeout"));
-          }, WORKSPACE_FILES_TIMEOUT_MS);
-        });
-        const abortRequest = () => requestController.abort();
-        signal.addEventListener("abort", abortRequest, { once: true });
-        try {
-          const files = await Promise.race([
-            requestReviewPage({
-              task_id: task.id,
-              workspace_id: wsId,
-              runtime_id: task.runtime_id,
-              path: task.work_dir!,
-              action: "workspace_files",
-              relative_path: ".",
-            }, requestController.signal),
-            timeout,
-          ]);
-          if (!("entries" in files)) throw new Error("Workspace file list response expected");
-          return { task, files };
-        } catch (error) {
-          if (signal.aborted) throw error;
-          return null;
-        } finally {
-          if (timeoutId !== undefined) clearTimeout(timeoutId);
-          signal.removeEventListener("abort", abortRequest);
-        }
-      };
-      const attempts = workspaceTasks.map(readTask);
-      const settled = await Promise.all(attempts);
-      return settled.filter((result): result is NonNullable<typeof result> => result !== null);
-    },
-    enabled: !!sessionId && workspaceTasks.length > 0 && activeTab === "files",
-    staleTime: 60_000,
-  });
-  const workspaceFileResults = workspaceFiles.data;
-  const workspaceFilesFailed = workspaceTasks.length > 0 && !!workspaceFileResults && workspaceFileResults.length === 0;
-  const storedDirectoryTask = currentDirectory?.taskId
-    ? fileTasks.find((task) => task.id === currentDirectory.taskId)
-    : undefined;
-  const currentDirectoryTask = storedDirectoryTask &&
-    storedDirectoryTask.work_dir === currentDirectory?.path &&
-    storedDirectoryTask.runtime_id === currentDirectory?.runtimeId
-    ? storedDirectoryTask
-    : undefined;
-  const currentDirectoryResult = currentDirectoryTask
-    ? workspaceFileResults?.find((result) => result?.task.id === currentDirectoryTask.id)
-    : undefined;
-  const selectedWorkspaceResult = useMemo(() => {
-    if (!workspaceFileResults?.length) return undefined;
-    const preferredTaskId = activeDoc?.taskId ?? currentDirectoryTask?.id;
-    if (preferredTaskId) {
-      return workspaceFileResults.find((result) => result.task.id === preferredTaskId);
-    }
-    return workspaceFileResults.find((result) => result.files.entries.length > 0) ?? workspaceFileResults[0];
-  }, [activeDoc?.taskId, currentDirectoryTask?.id, workspaceFileResults]);
-  // A directory selected from another chat has no task in this chat and must
-  // remain usable. If it does belong to this chat, discard it after its
-  // workspace_files request fails so a stale task cannot poison Git for the
-  // whole panel.
-  const useStoredDirectory = !!currentDirectory &&
-    (!storedDirectoryTask || !!currentDirectoryTask && (workspaceFiles.isPending || !workspaceFileResults || !!currentDirectoryResult));
-  const gitTask = useMemo(() => {
-    if (useStoredDirectory || !activeDoc?.taskId) return undefined;
-    return selectedWorkspaceResult?.task.id === activeDoc.taskId ? selectedWorkspaceResult.task : undefined;
-  }, [activeDoc?.taskId, selectedWorkspaceResult, useStoredDirectory]);
-  const gitRequest: LocalReviewRequest | null = useStoredDirectory && currentDirectory?.path
-    ? {
-        task_id: currentDirectory.taskId,
-        workspace_id: currentDirectory.workspaceId,
-        runtime_id: currentDirectory.runtimeId,
-        path: currentDirectory.path,
-        target: currentDirectoryTask?.branch_name || "HEAD",
-      }
-    : gitTask?.work_dir
-    ? {
-        task_id: gitTask.id,
-        workspace_id: wsId,
-        runtime_id: gitTask.runtime_id,
-        path: gitTask.work_dir,
-        target: gitTask.branch_name || "HEAD",
-      }
-    : null;
   const openDoc = useDocModeStore((s) => s.openDoc);
   // Match the VS Code/GitHub tree convention: folders start closed so a large
   // checkout stays scannable. Search is computed from allDocuments (before the
@@ -291,34 +156,26 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // state, so it lives here, not in the persisted doc-mode store.
   const [filter, setFilter] = useState("");
 
-  const hasOpenableWorkspaceFiles = !!selectedWorkspaceResult && selectedWorkspaceResult.files.entries.length > 0;
-
-  // The files tab is source code only: the files the session's tasks checked out
-  // of the project's workspace (task work_dirs). Attachments live in their own
-  // tab ("当前附件"), so they are excluded here instead of mixing into the tree.
-  const allDocuments = useMemo(() => {
-    const workspaceDocuments = selectedWorkspaceResult ? (() => {
-      const { task, files } = selectedWorkspaceResult;
-      return files.entries
-        .filter((entry) => !isInternalWorkspacePath(entry.path))
-        .filter((entry) => !entry.directory)
-        .map((entry): DocumentListItem => {
-          const relativePath = normalizeWorkspacePath(entry.path);
-          return {
-            kind: "workspace_file",
-            id: `${task.id}:${relativePath}`,
-            label: relativePath,
-            sessionId: sessionId ?? undefined,
-            projectId: selectedProjectId,
-            taskId: task.id,
-            runtimeId: task.runtime_id,
-            workDir: task.work_dir,
-            relativePath,
-          };
-        });
-    })() : [];
-    return workspaceDocuments;
-  }, [selectedProjectId, selectedWorkspaceResult, sessionId]);
+  const allDocuments = useMemo((): DocumentListItem[] => {
+    if (!selectedDirectory || !workspaceFiles.data) return [];
+    return workspaceFiles.data.entries
+      .filter((entry) => !isInternalWorkspacePath(entry.path) && !entry.directory)
+      .map((entry) => {
+        const relativePath = normalizeWorkspacePath(entry.path);
+        return {
+          kind: "workspace_file",
+          id: `${selectedDirectory.taskId ?? selectedDirectory.key}:${relativePath}`,
+          label: relativePath,
+          sessionId: sessionId ?? undefined,
+          projectId: projectID || undefined,
+          taskId: selectedDirectory.taskId,
+          projectResourceId: selectedDirectory.projectResourceId,
+          runtimeId: selectedDirectory.runtimeId,
+          workDir: selectedDirectory.path,
+          relativePath,
+        };
+      });
+  }, [projectID, selectedDirectory, sessionId, workspaceFiles.data]);
 
   // The attachments tab is the union of the session's and the project's
   // attachments, de-duplicated by id so an attachment shared by both is not
@@ -333,13 +190,12 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     });
   }, [sessionFiles]);
 
-  // When the session has no task worktree to browse, the project's configured
-  // repos stand in for its files. They are not openable in doc mode (there is
-  // no worktree to read from), so they link out to the repository.
+  // Repository links are references only when no filesystem roots are bound.
+  // They must never hide an unavailable or empty selected directory.
   const repoReferences = useMemo(() => {
-    if (hasOpenableWorkspaceFiles) return [];
+    if (directories.length > 0) return [];
     return (sessionFiles?.repos ?? []).filter((repo) => repo.url);
-  }, [sessionFiles, hasOpenableWorkspaceFiles]);
+  }, [sessionFiles, directories.length]);
 
   const visible = useMemo(() => {
     const query = filter.trim().toLowerCase();
@@ -357,7 +213,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     return repoReferences.filter((repo) => repoLabel(repo).toLowerCase().includes(query));
   }, [repoReferences, filter]);
 
-  const hasContent = isGroupChat || !!project || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || sessionAttachments.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
+  const hasContent = isGroupChat || !!project || directories.length > 0 || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || sessionAttachments.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
 
   // A failed projection used to fall through to the empty state, which made a
   // network/daemon failure look like a chat with no files. Keep this state
@@ -401,7 +257,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // Only surface no-match when the filter actively excludes every openable row;
   // a bare project header (or repo references) with no files is not "no match".
   const showNoMatch = filter.trim().length > 0 && visible.length === 0 && visibleRepoReferences.length === 0;
-  const displayedDirectory = selectedWorkspaceResult?.files.path || selectedWorkspaceResult?.task.work_dir || currentDirectory?.path;
+  const displayedDirectory = selectedDirectory?.path;
   const renderTree = (nodes: FileTreeNode[], depth = 0): ReactNode[] => nodes.flatMap((node) => {
     if (node.directory) {
       const expanded = filter.trim().length > 0 || expandedDirs.has(node.path);
@@ -541,29 +397,60 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
               <h3 className="truncate text-body font-semibold">{project.title}</h3>
             </div>
           )}
-          {displayedDirectory && (
-            <div
-              className="flex min-w-0 items-center gap-1.5 border-b px-3 pb-2 text-caption text-muted-foreground"
-              title={displayedDirectory}
-            >
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="shrink-0">{t(($) => $.doc_file_list.current_directory)}</span>
-              <span className="min-w-0 truncate font-mono" dir="ltr">{displayedDirectory}</span>
+          {selectedDirectory && (
+            <div className="space-y-2 px-3 pb-2">
+              {directories.length > 1 ? (
+                <Select items={directories.map((directory) => ({ value: directory.key, label: directory.label || directory.path }))} value={selectedDirectory.key} onValueChange={selectDirectory}>
+                  <SelectTrigger className="w-full min-w-0" aria-label={t(($) => $.doc_file_list.directory)} title={displayedDirectory}>
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <SelectValue className="min-w-0 truncate" />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false} align="start">
+                    {directories.map((directory) => (
+                      <SelectItem key={directory.key} value={directory.key} className="[&_[data-slot]]:min-w-0">
+                        <span className="flex min-w-0 flex-col items-start whitespace-normal text-left">
+                          <span className="max-w-full break-words font-medium">{directory.label || directory.branchName || t(($) => directory.projectResourceId ? $.doc_file_list.project_directory : $.doc_file_list.run_directory)}</span>
+                          <span className="max-w-full break-all font-mono text-caption text-muted-foreground" dir="ltr">{directory.path}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground" title={displayedDirectory}>
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="shrink-0">{t(($) => $.doc_file_list.current_directory)}</span>
+                  <span className="min-w-0 truncate font-mono" dir="ltr">{displayedDirectory}</span>
+                </div>
+              )}
+              {selectedDirectory.projectResourceId && <p className="text-caption text-muted-foreground">{t(($) => $.doc_file_list.read_only)}</p>}
             </div>
           )}
-          {activeTab === "files" && workspaceFiles.isPending && workspaceTasks.length > 0 && (
+          {activeTab === "files" && workspaceFiles.isPending && selectedDirectory?.runtimeId && (
             <div className="flex items-center gap-2 px-3 py-3 text-body text-muted-foreground" role="status">
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
               {t(($) => $.doc_file_list.loading)}
             </div>
           )}
-          {activeTab === "files" && workspaceFilesFailed && repoReferences.length === 0 && (
-            <div className="flex items-center justify-between gap-3 border-b px-3 py-3" role="alert">
-              <p className="text-body text-destructive">{t(($) => $.doc_file_list.load_failed)}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => void workspaceFiles.refetch()}>
+          {activeTab === "files" && selectedDirectory && (workspaceFiles.isError || !selectedDirectory.runtimeId) && (
+            <div className="space-y-2 px-3 py-3" role="alert">
+              <p className="text-body text-destructive">{t(($) => !selectedDirectory.runtimeId ? $.doc_file_list.directory_unavailable : $.doc_file_list.load_failed)}</p>
+              {workspaceFiles.error instanceof Error && (
+                <details className="text-caption text-muted-foreground">
+                  <summary className="cursor-pointer">{t(($) => $.doc_file_list.error_details)}</summary>
+                  <p className="mt-1 break-words">{workspaceFiles.error.message}</p>
+                </details>
+              )}
+              <Button type="button" variant="outline" size="sm" onClick={() => {
+                void refetchSessionFiles();
+                if (selectedDirectory.runtimeId) void workspaceFiles.refetch();
+              }}>
                 {t(($) => $.doc_file_list.retry)}
               </Button>
             </div>
+          )}
+          {activeTab === "files" && selectedDirectory && workspaceFiles.isSuccess && allDocuments.length === 0 && (
+            <p className="px-3 py-3 text-body text-muted-foreground">{t(($) => $.doc_file_list.directory_empty)}</p>
           )}
           {visibleRepoReferences.length > 0 && (
             <ul className="divide-y" aria-label={t(($) => $.doc_file_list.git_repositories)}>
@@ -596,6 +483,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             </div>
             {gitRequest ? (
               <LocalReviewIndex
+                key={`${gitRequest.task_id || gitRequest.project_resource_id}:${gitRequest.path}`}
                 request={gitRequest}
                 onChanged={() => {
                   void workspaceFiles.refetch();

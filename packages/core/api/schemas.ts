@@ -2474,6 +2474,7 @@ export const EMPTY_CHAT_SESSION_LIST: ChatSession[] = [];
 
 const ChatSessionFileTaskSchema = z.object({
   id: z.string(),
+  project_id: z.string().optional().catch(undefined),
   runtime_id: z.string().default(""),
   issue_id: z.string().optional().catch(undefined),
   issue_kind: z.string().optional().catch(undefined),
@@ -2503,6 +2504,14 @@ const ChatSessionRepoSchema = z.object({
   ref: z.string().optional().catch(undefined),
 });
 
+const ChatSessionDirectorySchema = z.object({
+  project_resource_id: z.string().default(""),
+  daemon_id: z.string().default(""),
+  runtime_id: z.string().optional().catch(undefined),
+  path: z.string().default(""),
+  label: z.string().optional().catch(undefined),
+});
+
 export const ChatSessionFilesResponseSchema = z.object({
   workspace_id: z.string().default(""),
   project_id: z.string().nullable().optional(),
@@ -2511,6 +2520,8 @@ export const ChatSessionFilesResponseSchema = z.object({
   tasks: z.array(ChatSessionFileTaskSchema).default([]),
   project_attachments: z.array(AttachmentSchema).default([]),
   project_tasks: z.array(ChatSessionFileTaskSchema).default([]),
+  directories: z.array(ChatSessionDirectorySchema.catch({ project_resource_id: "", daemon_id: "", path: "" }))
+    .nullish().catch([]).transform((items) => (items ?? []).filter((item) => item.project_resource_id && item.daemon_id && item.path)),
   repos: z.array(ChatSessionRepoSchema).default([]),
 }).loose();
 
@@ -2522,6 +2533,7 @@ export const EMPTY_CHAT_SESSION_FILES_RESPONSE: ChatSessionFilesResponse = {
   tasks: [],
   project_attachments: [],
   project_tasks: [],
+  directories: [],
   repos: [],
 };
 

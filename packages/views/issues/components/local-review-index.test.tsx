@@ -11,6 +11,18 @@ vi.mock("@multica/core/auth", () => { const state = { user: { id: "viewer" } }; 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers(); });
 beforeEach(() => { vi.mocked(renewReviewLease).mockResolvedValue({ version_id: "a".repeat(64), expires_at: "2100-01-01T00:00:00Z" }); });
 
+it("shows project directory Git state without run-only mutation controls", async () => {
+  vi.mocked(readLocalIndex).mockResolvedValue({ kind: "index", version_id: "a".repeat(64), status: { branch: "main", head: "c".repeat(40), index_id: "b".repeat(64), files: [
+    { path: "working.ts", index_code: " ", working_code: "M", staged: false, unstaged: true, untracked: false, conflicted: false, unsupported: false },
+  ] } });
+  renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalReviewIndex request={{ project_resource_id: "resource", workspace_id: "ws", path: "/repo" }} onChanged={() => {}} onBusyChange={() => {}} /></QueryClientProvider>, { locale: "zh-Hans" });
+
+  expect(await screen.findByText("working.ts")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "暂存 working.ts" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "提交说明" })).not.toBeInTheDocument();
+  expect(changeLocalIndex).not.toHaveBeenCalled();
+});
+
 it("renews the independent staging snapshot while mounted and stops afterward", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
   const version = "a".repeat(64);

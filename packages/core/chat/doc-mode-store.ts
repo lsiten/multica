@@ -22,6 +22,7 @@ export interface DocumentRef {
   sessionId?: string;
   projectId?: string;
   taskId?: string;
+  projectResourceId?: string;
   runtimeId?: string;
   workDir?: string;
   relativePath?: string;

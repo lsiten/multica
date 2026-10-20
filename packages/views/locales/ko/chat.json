@@ -45,6 +45,13 @@
     "retry": "다시 시도"
   },
   "doc_file_list": {
+    "project_directory": "프로젝트 디렉터리",
+    "run_directory": "실행 디렉터리",
+    "directory": "디렉터리",
+    "read_only": "프로젝트 디렉터리(읽기 전용)",
+    "directory_unavailable": "이 디렉터리가 있는 기기를 연결한 후 다시 시도하세요.",
+    "directory_empty": "이 디렉터리에 파일이 없습니다.",
+    "error_details": "오류 세부 정보",
     "filter_placeholder": "\ud30c\uc77c \ud544\ud130",
     "no_match": "\uc77c\uce58 \uc5c6\uc74c",
     "toggle": "\ud30c\uc77c",

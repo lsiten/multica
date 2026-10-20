@@ -1,7 +1,7 @@
 "use client";
 
 import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -133,16 +133,20 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
   const workspaceTask = doc?.kind === "workspace_file"
     ? [...(sessionFiles?.project_tasks ?? []), ...(sessionFiles?.tasks ?? [])].find((task) => task.id === doc.taskId && task.work_dir)
     : undefined;
-  const workspacePath = workspaceTask?.work_dir ?? doc?.workDir;
-  const workspaceRuntimeId = workspaceTask?.runtime_id ?? doc?.runtimeId;
-  const workspaceRequest =
+  const projectDirectory = doc?.kind === "workspace_file" && doc.projectResourceId
+    ? sessionFiles?.directories?.find((directory) => directory.project_resource_id === doc.projectResourceId)
+    : undefined;
+  const workspacePath = projectDirectory?.path ?? workspaceTask?.work_dir ?? doc?.workDir;
+  const workspaceRuntimeId = projectDirectory?.runtime_id ?? workspaceTask?.runtime_id ?? doc?.runtimeId;
+  const workspaceRequest = useMemo(() =>
     doc?.kind === "workspace_file" &&
     workspacePath &&
     workspaceRuntimeId &&
-    doc.taskId &&
+    (doc.taskId || doc.projectResourceId) &&
     doc.relativePath
       ? {
-          task_id: doc.taskId,
+          task_id: doc.taskId ?? "",
+          project_resource_id: doc.projectResourceId,
           workspace_id: wsId,
           runtime_id: workspaceRuntimeId,
           path: workspacePath,
@@ -155,7 +159,9 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
           // contract caps file_content pages at 64 KiB.
           limit: 64 * 1024,
         }
-      : null;
+      : null,
+    [doc?.kind, doc?.taskId, doc?.projectResourceId, doc?.relativePath, workspacePath, workspaceRuntimeId, wsId],
+  );
   const workspaceContent = useQuery({
     queryKey: [
       "chat-workspace-file-content",
@@ -163,6 +169,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
       doc?.sessionId,
       doc?.id,
       doc?.taskId,
+      doc?.projectResourceId,
       workspaceRuntimeId,
       workspacePath,
       doc?.relativePath,
@@ -284,7 +291,7 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
               {t(($) => $.doc_mode.open_in_office)}
             </Button>
           )}
-          {workspaceContentText !== null && (
+          {workspaceContentText !== null && !doc.projectResourceId && (
             <Button variant={workspaceEditing ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={openWorkspaceEdit}>
               <Pencil className="h-4 w-4" />
               {t(($) => $.doc_mode.edit)}

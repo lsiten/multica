@@ -2485,44 +2485,49 @@ FROM agent_task_queue AS task
 JOIN agent AS task_agent ON task_agent.id = task.agent_id
 LEFT JOIN issue AS issue ON issue.id = task.issue_id
 LEFT JOIN chat_session AS task_session ON task_session.id = task.chat_session_id
-WHERE task_agent.workspace_id = $2
+LEFT JOIN autopilot_run AS task_autopilot_run ON task_autopilot_run.id = task.autopilot_run_id
+LEFT JOIN autopilot AS task_autopilot ON task_autopilot.id = task_autopilot_run.autopilot_id
+CROSS JOIN LATERAL (
+  SELECT COALESCE(issue.project_id::text, task_session.project_id::text,
+                  task_autopilot.project_id::text, NULLIF(task.context->>'project_id', '')) AS project_id
+) AS explicit_project
+WHERE task_agent.workspace_id = $1::uuid
   AND (
-    issue.project_id = $1
-    OR task_session.project_id = $1
-    OR task.context->>'project_id' = $1::text
-    OR EXISTS (
-      SELECT 1
-      FROM project AS lead_project
-      WHERE lead_project.id = $1
-        AND lead_project.workspace_id = $2
-        AND lead_project.lead_type = 'agent'
-        AND lead_project.lead_id = task.agent_id
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM agent_project_binding AS binding
-      WHERE binding.agent_id = task.agent_id
-        AND binding.project_id = $1
-        AND binding.active
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM squad_project_binding AS binding
-      WHERE binding.project_id = $1
-        AND binding.active
-        AND (binding.squad_id = task.squad_id OR binding.squad_id = task_session.squad_id)
-    )
+    explicit_project.project_id = $2::uuid::text
+    OR (explicit_project.project_id IS NULL AND (
+      EXISTS (
+        SELECT 1
+        FROM project AS lead_project
+        WHERE lead_project.id = $2::uuid
+          AND lead_project.workspace_id = $1::uuid
+          AND lead_project.lead_type = 'agent'
+          AND lead_project.lead_id = task.agent_id
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM agent_project_binding AS binding
+        WHERE binding.agent_id = task.agent_id
+          AND binding.project_id = $2::uuid
+          AND binding.active
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM squad_project_binding AS binding
+        WHERE binding.project_id = $2::uuid
+          AND binding.active
+          AND (binding.squad_id = task.squad_id OR binding.squad_id = task_session.squad_id)
+      )
+    ))
   )
   AND (task.issue_id IS NOT NULL OR task.status NOT IN ('failed', 'cancelled'))
-  AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) IS NOT NULL
+  AND (COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) IS NOT NULL
+       OR task.parent_task_id IS NOT NULL)
 ORDER BY task.created_at DESC, task.id DESC
-LIMIT $3
 `
 
 type ListChatProjectFileTasksParams struct {
-	ProjectID   pgtype.UUID `json:"project_id"`
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	PageLimit   int32       `json:"page_limit"`
+	ProjectID   pgtype.UUID `json:"project_id"`
 }
 
 // Project files are durable across chat turns and are therefore resolved from
@@ -2531,9 +2536,11 @@ type ListChatProjectFileTasksParams struct {
 // agent/squad project binding that made the project available to the chat.
 // The last case is required for direct chats: the session itself can be
 // project-less while its lead agent is explicitly bound to the project.
+// Prefer explicit source projects in claim source order: issue, chat, autopilot,
+// then JSON context. Infer agent/squad bindings only for unscoped tasks.
 // Keep the agent workspace guard because agent_task_queue has no workspace_id.
 func (q *Queries) ListChatProjectFileTasks(ctx context.Context, arg ListChatProjectFileTasksParams) ([]AgentTaskQueue, error) {
-	rows, err := q.db.Query(ctx, listChatProjectFileTasks, arg.ProjectID, arg.WorkspaceID, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listChatProjectFileTasks, arg.WorkspaceID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -2625,13 +2632,11 @@ WHERE task.chat_session_id = $1
   AND (task.issue_id IS NOT NULL OR task.status NOT IN ('failed', 'cancelled'))
 ORDER BY CASE WHEN task.context->'group_collaboration'->>'phase' = 'lead_plan' THEN 0 ELSE 1 END,
          task.created_at DESC, task.id DESC
-LIMIT $3
 `
 
 type ListChatSessionFileTasksParams struct {
 	ChatSessionID pgtype.UUID `json:"chat_session_id"`
 	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	PageLimit     int32       `json:"page_limit"`
 }
 
 // Task rows do not carry workspace_id themselves, so keep the chat-session
@@ -2640,7 +2645,7 @@ type ListChatSessionFileTasksParams struct {
 // lead checkout first so the file browser and Source Control never select a
 // specialist worktree with the same relative paths.
 func (q *Queries) ListChatSessionFileTasks(ctx context.Context, arg ListChatSessionFileTasksParams) ([]AgentTaskQueue, error) {
-	rows, err := q.db.Query(ctx, listChatSessionFileTasks, arg.ChatSessionID, arg.WorkspaceID, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listChatSessionFileTasks, arg.ChatSessionID, arg.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}

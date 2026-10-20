@@ -10,6 +10,7 @@ type LocalReviewRuntimeBinding struct {
 }
 
 type LocalReviewCommand struct {
+	ProjectResourceID     string              `json:"project_resource_id,omitempty"`
 	Environment           *EnvironmentCommand `json:"environment,omitempty"`
 	IndexID               string              `json:"index_id,omitempty"`
 	Branch                string              `json:"branch,omitempty"`
@@ -35,10 +36,10 @@ type LocalReviewCommand struct {
 	Offset                int                 `json:"offset,omitempty"`
 	Limit                 int                 `json:"limit,omitempty"`
 	ActorID               string              `json:"actor_id,omitempty"`
-	Comment      string  `json:"comment,omitempty"`
-	EditBase     string  `json:"edit_base,omitempty"`
-	EditNew      string  `json:"edit_new,omitempty"`
-	EditBaseSHA  string  `json:"edit_base_sha,omitempty"`
+	Comment               string              `json:"comment,omitempty"`
+	EditBase              string              `json:"edit_base,omitempty"`
+	EditNew               string              `json:"edit_new,omitempty"`
+	EditBaseSHA           string              `json:"edit_base_sha,omitempty"`
 }
 
 func IsLocalIndexMutation(action string) bool {
@@ -71,4 +72,13 @@ type LocalReviewResult struct {
 	MergedCommit string          `json:"merged_commit"`
 	Error        string          `json:"error"`
 	Edit         json.RawMessage `json:"edit,omitempty"`
+}
+
+func IsProjectDirectoryRead(action string) bool {
+	switch action {
+	case "workspace_files", "file_content", "index", "lease":
+		return true
+	default:
+		return false
+	}
 }

@@ -14,7 +14,8 @@ export function isPagedReviewDecision(action: string): boolean {
 }
 
 export const pagedReviewRequestSchema = z.object({
-  task_id: z.string().min(1), workspace_id: z.string().min(1), runtime_id: z.string().optional(),
+  task_id: z.string().default(""), project_resource_id: z.string().min(1).optional(),
+  workspace_id: z.string().min(1), runtime_id: z.string().optional(),
   path: z.string().min(1).max(4096), target: z.string().max(250).default(""),
   action: z.enum(["merge_selected", "index", "stage", "unstage", "commit", "repositories", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
   index_id: digest.optional(), head: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(), branch: z.string().max(250).optional(),
@@ -25,6 +26,8 @@ export const pagedReviewRequestSchema = z.object({
   snapshot_id: digest.optional(), command_id: z.string().min(1).max(128).optional(),
   comment: z.string().max(8000).optional(),
 }).superRefine((request, context) => {
+  if (!!request.task_id === !!request.project_resource_id) context.addIssue({ code: "custom", message: "Exactly one run or project directory is required" });
+  if (request.project_resource_id && !["workspace_files", "file_content", "index", "lease"].includes(request.action)) context.addIssue({ code: "custom", message: "Project directory browsing is read-only" });
   if (!["index", "repositories", "workspace_files", "file_content"].includes(request.action) && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
   if (!["index", "manifest", "repositories", "workspace_files", "file_content"].includes(request.action) && !request.version_id) context.addIssue({ code: "custom", message: "Review version required" });
   if ((request.action === "file" || request.action === "context" || request.action === "content") && !request.file_path) context.addIssue({ code: "custom", message: "Review file required" });
