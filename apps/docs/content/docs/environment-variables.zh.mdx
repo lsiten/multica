@@ -143,6 +143,21 @@ MULTICA_PUBLIC_URL=https://api.multica.example.com
 | `LOCAL_UPLOAD_DIR` | `./data/uploads` | 文件与 metadata 的保存目录，需要持久化卷 |
 | `LOCAL_UPLOAD_BASE_URL` | 空 | 可选的公开 base URL；留空时返回站内相对地址 |
 
+### 上传文件清理
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `UPLOAD_CLEANUP_ENABLED` | `true` | 启用上传文件回收 |
+| `UPLOAD_CLEANUP_RETENTION` | `168h` | 未绑定上传、已取消任务和归档聊天附件的保留期，最短 `24h` |
+| `UPLOAD_CLEANUP_INTERVAL` | `1h` | 扫描间隔，最短 `1m`；每轮最多尝试删除 100 个对象 |
+| `UPLOAD_CLEANUP_DRY_RUN` | `false` | 仅在日志中记录待清理数量和容量，不删除文件 |
+
+其他保留附件、头像、仍在运行的智能体、正文引用、待恢复草稿和来源快照引用的文件会继续保留。收件箱通知归档不触发任务附件清理；任务或聊天后续更新会延后清理。本地磁盘还会回收超过保留期的无引用文件、metadata 和中断上传残留；S3 仅清理有附件记录的对象。备份文件不在清理范围内。
+
+清理保留任务和聊天正文，但会永久删除符合条件的附件记录和文件内容。之后恢复任务或聊天不会恢复已删除的文件。未发送且没有保留引用的上传文件也按相同保留期过期。
+
+自托管部署可运行 `docker compose -f docker-compose.selfhost.yml exec backend ./cleanup-uploads` 预览待清理文件和容量。添加 `--workspace <uuid>` 可限定工作区；添加 `--apply --limit 100` 执行一批删除。命令使用容器内的数据库和存储配置，默认只预览。数据库繁忙时本轮跳过，删除失败时保留附件记录，后续重试。
+
 ### CloudFront
 
 | 变量 | 说明 |

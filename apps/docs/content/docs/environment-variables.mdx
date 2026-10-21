@@ -143,6 +143,21 @@ Use `ATTACHMENT_DOWNLOAD_MODE=proxy` when the endpoint — an internal MinIO, fo
 | `LOCAL_UPLOAD_DIR` | `./data/uploads` | Directory for files and metadata; needs a persistent volume |
 | `LOCAL_UPLOAD_BASE_URL` | empty | Optional public base URL; when empty, in-app relative URLs are returned |
 
+### Upload cleanup
+
+| Variable | Default | Description |
+|---|---|---|
+| `UPLOAD_CLEANUP_ENABLED` | `true` | Enable the upload collector |
+| `UPLOAD_CLEANUP_RETENTION` | `168h` | Retention for unbound uploads and files owned by cancelled issues or archived chats; minimum `24h` |
+| `UPLOAD_CLEANUP_INTERVAL` | `1h` | Scan interval; minimum `1m`, up to 100 delete attempts per round |
+| `UPLOAD_CLEANUP_DRY_RUN` | `false` | Log candidate counts and bytes without deleting |
+
+Other retained attachments, avatars, live runs, text references, draft restores and source snapshots protect shared files. Inbox notification archival does not make an issue eligible. A later owner update postpones cleanup. Local disk also collects unreferenced objects, metadata and interrupted writes older than the retention period; S3 cleanup covers tracked attachments only. Backups are outside this collector.
+
+Cleanup keeps issue/chat text, but removes eligible attachment records and file contents permanently. Restoring an owner afterwards does not restore its deleted files. Unsent uploads without a retained reference expire after the same retention period.
+
+Preview a self-hosted deployment with `docker compose -f docker-compose.selfhost.yml exec backend ./cleanup-uploads`. Add `--workspace <uuid>` to narrow candidates, or `--apply --limit 100` to delete a batch. The command uses the container's database and storage configuration and defaults to preview. Busy rounds skip after a short lock timeout; failed deletions retain their attachment records for retry.
+
 ### CloudFront
 
 | Variable | Description |
