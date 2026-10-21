@@ -1175,6 +1175,11 @@ export function useRealtimeSync(
 
     const unsubAny = ws.onAny((msg) => {
       if (!belongsToCurrentWorkspace(msg.payload)) return;
+      if (msg.type === "runtime:work_directories_updated") {
+        const wsId = getCurrentWsId();
+        if (wsId) void qc.invalidateQueries({ queryKey: [...chatKeys.all(wsId), "session-files"] });
+        return;
+      }
       if (isProgressInvalidationEvent(msg.type)) {
         const workspaceId = getCurrentWsId();
         if (workspaceId) debouncedRefresh("issue-progress", () => { void qc.invalidateQueries({ queryKey: issueProgressKeys.all(workspaceId) }); });

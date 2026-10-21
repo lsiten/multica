@@ -1653,6 +1653,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/chat-sessions/{sessionId}/gc-check", h.GetChatSessionGCCheck)
 		r.Get("/autopilot-runs/{runId}/gc-check", h.GetAutopilotRunGCCheck)
 		r.Get("/tasks/{taskId}/gc-check", h.GetTaskGCCheck)
+		r.Get("/runtimes/{runtimeId}/work-directories", h.ListRuntimeWorkDirectories)
+		r.Post("/runtimes/{runtimeId}/work-directories", h.UpdateRuntimeWorkDirectories)
 		r.Post("/workspaces/{workspaceId}/runtimes/{runtimeId}/tasks/gc-check", h.BatchTaskGCCheck)
 		r.Post("/workspaces/{workspaceId}/tasks/gc-check", h.BatchTaskGCCheck)
 

@@ -20,6 +20,7 @@ JOIN agent ON agent.id = task.agent_id
 JOIN agent_runtime runtime ON runtime.id = task.runtime_id AND runtime.workspace_id = agent.workspace_id
 LEFT JOIN issue ON issue.id = task.issue_id AND issue.workspace_id = agent.workspace_id
 WHERE agent.workspace_id = $1
+AND NOT task.work_dir_missing
 AND task.work_dir IS NOT NULL AND task.work_dir <> ''
 AND (task.status NOT IN ('completed', 'failed', 'cancelled') OR COALESCE(task.durable_work_dir, '') = '')
 AND (runtime.owner_id = $2 OR runtime.visibility = 'public')

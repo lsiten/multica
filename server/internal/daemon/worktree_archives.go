@@ -205,6 +205,7 @@ func (d *Daemon) archiveEnvironmentOperation(ctx context.Context, path, revision
 		return result
 	}
 	result.Reclaimed = true
+	d.reportTaskWorkDirectoryState(ctx, status)
 	return result
 }
 
@@ -250,6 +251,7 @@ func (d *Daemon) restoreEnvironmentOperation(ctx context.Context, id, workspaceI
 		return result
 	}
 	result.Restored = true
+	d.reportTaskWorkDirectoryState(ctx, status)
 	return result
 }
 

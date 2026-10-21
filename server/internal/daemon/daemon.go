@@ -2494,6 +2494,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	taskWakeups := make(chan taskWakeup, 256)
 	go d.taskWakeupLoop(ctx, taskWakeups)
 	go d.heartbeatLoop(ctx)
+	go d.workDirectoryStateLoop(ctx)
 	if d.environmentProcessMode() {
 		environmentCtx, stop := context.WithTimeout(ctx, 30*time.Second)
 		environment, err := d.ensureEnvironmentProcess(environmentCtx)

@@ -132,6 +132,7 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 	if _, removed := d.removeTaskDir(path); !removed {
 		return "unavailable"
 	}
+	d.reportTaskWorkDirectoryState(ctx, status)
 	return ""
 }
 

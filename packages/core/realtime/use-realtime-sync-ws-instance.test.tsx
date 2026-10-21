@@ -284,6 +284,22 @@ describe("useRealtimeSync — ws instance change", () => {
     unmount();
   });
 
+  it("refreshes chat directory projections after persisted work directory changes", () => {
+    const ws = createMockWs();
+    renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+    const receive = vi.mocked(ws.onAny).mock.calls[0]?.[0];
+    if (!receive) throw new Error("Missing event listener");
+    const files = chatKeys.sessionFiles("ws-1", "session", "project", false);
+    const other = chatKeys.sessionFiles("ws-other", "session", "project", false);
+    qc.setQueryData(files, { tasks: [] });
+    qc.setQueryData(other, { tasks: [] });
+    receive({ type: "runtime:work_directories_updated", payload: { workspace_id: "ws-other" } });
+    expect(qc.getQueryState(files)?.isInvalidated).toBe(false);
+    receive({ type: "runtime:work_directories_updated", payload: { workspace_id: "ws-1" } });
+    expect(qc.getQueryState(files)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(other)?.isInvalidated).toBe(false);
+  });
+
   it("refreshes inactive application caches only for events in the current workspace", async () => {
     const ws = createMockWs();
     const { unmount } = renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });

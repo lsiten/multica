@@ -960,6 +960,7 @@ FROM agent_task_queue AS task
 JOIN chat_session AS session ON session.id = task.chat_session_id
 WHERE task.chat_session_id = $1
   AND session.workspace_id = $2
+  AND NOT task.work_dir_missing
   -- Cancelled/failed turns without an issue are transient chat workdirs (for
   -- example, an interrupted image-only turn), not project checkouts. They can
   -- no longer satisfy local-review requests and must not mask a real issue
@@ -994,6 +995,7 @@ CROSS JOIN LATERAL (
                   task_autopilot.project_id::text, NULLIF(task.context->>'project_id', '')) AS project_id
 ) AS explicit_project
 WHERE task_agent.workspace_id = sqlc.arg(workspace_id)::uuid
+  AND NOT task.work_dir_missing
   AND (
     explicit_project.project_id = sqlc.arg(project_id)::uuid::text
     OR (explicit_project.project_id IS NULL AND (

@@ -1,0 +1,2 @@
+ALTER TABLE agent_task_queue
+ADD COLUMN IF NOT EXISTS work_dir_missing BOOLEAN NOT NULL DEFAULT FALSE;

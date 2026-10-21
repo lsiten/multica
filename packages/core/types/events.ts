@@ -67,6 +67,7 @@ export type WSEventType =
   | "chat:session_read"
   | "chat:session_deleted"
   | "chat:session_updated"
+  | "runtime:work_directories_updated"
   | "project:created"
   | "project:updated"
   | "project_supervision:updated"
@@ -654,6 +655,7 @@ export interface WSEventPayloadMap {
   "chat:session_read": ChatSessionReadPayload;
   "chat:session_deleted": ChatSessionDeletedPayload;
   "chat:session_updated": unknown;
+  "runtime:work_directories_updated": unknown;
   "project:created": ProjectCreatedPayload;
   "project:updated": ProjectUpdatedPayload;
   "project_supervision:updated": {project_id:string};

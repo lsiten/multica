@@ -75,6 +75,7 @@ func (d *Daemon) cleanupUnreferencedEnvironment(ctx context.Context, path, revis
 		return result
 	}
 	result.Reclaimed = true
+	d.reportTaskWorkDirectoryState(ctx, status)
 	result.RemovedBytes = result.OriginalBytes
 	return result
 }

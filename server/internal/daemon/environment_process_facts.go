@@ -20,14 +20,15 @@ import (
 type environmentFactOwnerKey struct{}
 
 type environmentFact struct {
-	RepoURL     string   `json:"repo_url,omitempty"`
-	OwnerTaskID string   `json:"owner_task_id,omitempty"`
-	Kind        string   `json:"kind"`
-	WorkspaceID string   `json:"workspace_id,omitempty"`
-	RuntimeID   string   `json:"runtime_id,omitempty"`
-	ID          string   `json:"id,omitempty"`
-	IDs         []string `json:"ids,omitempty"`
-	ClaimToken  string   `json:"claim_token,omitempty"`
+	DirectoryStates []protocol.WorkDirectoryState `json:"directory_states,omitempty"`
+	RepoURL         string                        `json:"repo_url,omitempty"`
+	OwnerTaskID     string                        `json:"owner_task_id,omitempty"`
+	Kind            string                        `json:"kind"`
+	WorkspaceID     string                        `json:"workspace_id,omitempty"`
+	RuntimeID       string                        `json:"runtime_id,omitempty"`
+	ID              string                        `json:"id,omitempty"`
+	IDs             []string                      `json:"ids,omitempty"`
+	ClaimToken      string                        `json:"claim_token,omitempty"`
 }
 type environmentFactEnvelope struct {
 	InstanceID string          `json:"instance_id"`
@@ -138,6 +139,8 @@ func (c *environmentFactCallback) fetch(ctx context.Context, fact environmentFac
 		}
 	}
 	switch fact.Kind {
+	case "work_directory_state":
+		return c.reportDirectoryStates(ctx, fact)
 	case "git_auth":
 		return c.gitAuth(ctx, fact.WorkspaceID, fact.RepoURL)
 	case "task":
@@ -311,6 +314,9 @@ func environmentFactFromRequest(request *http.Request) (environmentFact, error) 
 	parts := strings.Split(strings.Trim(request.URL.Path, "/"), "/")
 	if len(parts) < 4 || parts[0] != "api" || parts[1] != "daemon" {
 		return environmentFact{}, invalid
+	}
+	if request.Method == http.MethodPost && len(parts) == 5 && parts[2] == "runtimes" && parts[4] == "work-directories" {
+		return environmentDirectoryStateFact(request, parts[3])
 	}
 	if request.Method == http.MethodGet && len(parts) == 5 && parts[4] == "gc-check" {
 		kinds := map[string]string{"tasks": "task", "issues": "issue", "chat-sessions": "chat", "autopilot-runs": "autopilot"}

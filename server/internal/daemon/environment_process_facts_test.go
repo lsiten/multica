@@ -6,15 +6,31 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func TestEnvironmentFactsUseFreshTypedCallbacks(t *testing.T) {
 	var calls atomic.Int32
+	removedDirectory := filepath.Join(t.TempDir(), "removed")
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/daemon/runtimes/runtime/work-directories" {
+			if r.Header.Get("Authorization") != "Bearer parent-only" {
+				t.Error("parent authentication missing from directory report")
+			}
+			var states []protocol.WorkDirectoryState
+			if err := json.NewDecoder(r.Body).Decode(&states); err != nil || len(states) != 1 || states[0].Path != removedDirectory || !states[0].Missing {
+				t.Errorf("directory state lost through callback: %+v, %v", states, err)
+			}
+			calls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.URL.Path != "/api/daemon/tasks/task/gc-check" || r.Method != http.MethodGet {
 			t.Errorf("unexpected backend operation %s %s", r.Method, r.URL.Path)
 			http.Error(w, "unexpected", 400)
@@ -54,6 +70,12 @@ func TestEnvironmentFactsUseFreshTypedCallbacks(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Fatal("unrelated request reached backend")
+	}
+	if err := client.postJSON(context.Background(), "/api/daemon/runtimes/runtime/work-directories", []protocol.WorkDirectoryState{{Path: removedDirectory, Missing: true}}, nil); err != nil {
+		t.Fatalf("physical owner could not report a removed directory through the parent: %v", err)
+	}
+	if calls.Load() != 3 {
+		t.Fatal("directory report did not reach backend")
 	}
 }
 

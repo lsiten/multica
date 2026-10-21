@@ -659,7 +659,7 @@ func (h *Handler) resolveChatSessionTaskWorkDir(ctx context.Context, task db.Age
 		return ""
 	}
 	seen[id] = struct{}{}
-	parent, err := h.Queries.GetAgentTask(ctx, task.ParentTaskID)
+	parent, err := h.Queries.GetChatFileParentTask(ctx, task.ParentTaskID)
 	if err != nil {
 		return ""
 	}

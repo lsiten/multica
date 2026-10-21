@@ -2876,6 +2876,7 @@ SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, ''))::text AS wor
 FROM agent_task_queue
 WHERE issue_id = $1
   AND COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) IS NOT NULL
+  AND NOT work_dir_missing
 ORDER BY created_at DESC, id DESC
 LIMIT 1;
 

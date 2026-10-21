@@ -28,6 +28,8 @@ func (d *Daemon) resumeInterruptedEnvironmentRemovals(ctx context.Context) {
 		}
 		if err := execenv.FinishEnvironmentRemoval(ctx, d.cfg.WorkspacesRoot, id, receipt); err != nil {
 			d.logger.Warn("environment deletion resume failed", "task_id", receipt.Owner.TaskID, "error", err)
+		} else {
+			d.reportTaskWorkDirectoryState(ctx, status)
 		}
 		release()
 	}
