@@ -60,17 +60,14 @@ func (h *Handler) UpdateRuntimeWorkDirectories(w http.ResponseWriter, r *http.Re
 	}
 	defer tx.Rollback(r.Context())
 	queries := h.Queries.WithTx(tx)
-	var changed int64
-	for _, state := range states {
-		var count int64
-		count, err = queries.UpdateRuntimeWorkDirectoryState(r.Context(), db.UpdateRuntimeWorkDirectoryStateParams{
-			RuntimeID: runtime.ID, WorkspaceID: runtime.WorkspaceID, Path: state.Path, Missing: *state.Missing,
-		})
-		if err != nil {
-			break
-		}
-		changed += count
+	paths := make([]string, len(states))
+	missing := make([]bool, len(states))
+	for i, state := range states {
+		paths[i], missing[i] = state.Path, *state.Missing
 	}
+	changed, err := queries.UpdateRuntimeWorkDirectoryStates(r.Context(), db.UpdateRuntimeWorkDirectoryStatesParams{
+		RuntimeID: runtime.ID, WorkspaceID: runtime.WorkspaceID, Paths: paths, MissingStates: missing,
+	})
 	if err == nil {
 		err = tx.Commit(r.Context())
 	}

@@ -122,37 +122,43 @@ func (q *Queries) ListRuntimeWorkDirectories(ctx context.Context, arg ListRuntim
 	return items, nil
 }
 
-const updateRuntimeWorkDirectoryState = `-- name: UpdateRuntimeWorkDirectoryState :execrows
+const updateRuntimeWorkDirectoryStates = `-- name: UpdateRuntimeWorkDirectoryStates :execrows
+WITH reported AS MATERIALIZED (
+  SELECT unnest($3::text[]) AS path,
+         unnest($4::boolean[]) AS missing
+), active_paths AS MATERIALIZED (
+  SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) AS path
+  FROM agent_task_queue
+  WHERE runtime_id = $2
+    AND status NOT IN ('completed', 'failed', 'cancelled')
+)
 UPDATE agent_task_queue task
-SET work_dir_missing = $1::boolean
-FROM agent
+SET work_dir_missing = reported.missing
+FROM agent, reported
 WHERE agent.id = task.agent_id
-  AND agent.workspace_id = $2
-  AND task.runtime_id = $3
-  AND (NOT $1::boolean OR task.status IN ('completed', 'failed', 'cancelled'))
-  AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) = $4::text
-  AND task.work_dir_missing IS DISTINCT FROM $1::boolean
-  AND (NOT $1::boolean OR NOT EXISTS (
-    SELECT 1 FROM agent_task_queue active
-    WHERE active.runtime_id = task.runtime_id
-      AND active.status NOT IN ('completed', 'failed', 'cancelled')
-      AND COALESCE(NULLIF(active.work_dir, ''), NULLIF(active.durable_work_dir, '')) = $4::text
+  AND agent.workspace_id = $1
+  AND task.runtime_id = $2
+  AND (NOT reported.missing OR task.status IN ('completed', 'failed', 'cancelled'))
+  AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) = reported.path
+  AND task.work_dir_missing IS DISTINCT FROM reported.missing
+  AND (NOT reported.missing OR NOT EXISTS (
+    SELECT 1 FROM active_paths WHERE active_paths.path = reported.path
   ))
 `
 
-type UpdateRuntimeWorkDirectoryStateParams struct {
-	Missing     bool        `json:"missing"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	RuntimeID   pgtype.UUID `json:"runtime_id"`
-	Path        string      `json:"path"`
+type UpdateRuntimeWorkDirectoryStatesParams struct {
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	RuntimeID     pgtype.UUID `json:"runtime_id"`
+	Paths         []string    `json:"paths"`
+	MissingStates []bool      `json:"missing_states"`
 }
 
-func (q *Queries) UpdateRuntimeWorkDirectoryState(ctx context.Context, arg UpdateRuntimeWorkDirectoryStateParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateRuntimeWorkDirectoryState,
-		arg.Missing,
+func (q *Queries) UpdateRuntimeWorkDirectoryStates(ctx context.Context, arg UpdateRuntimeWorkDirectoryStatesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateRuntimeWorkDirectoryStates,
 		arg.WorkspaceID,
 		arg.RuntimeID,
-		arg.Path,
+		arg.Paths,
+		arg.MissingStates,
 	)
 	if err != nil {
 		return 0, err

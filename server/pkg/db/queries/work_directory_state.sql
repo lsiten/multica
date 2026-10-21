@@ -10,21 +10,27 @@ WHERE task.runtime_id = sqlc.arg(runtime_id)
 ORDER BY path
 LIMIT 500;
 
--- name: UpdateRuntimeWorkDirectoryState :execrows
+-- name: UpdateRuntimeWorkDirectoryStates :execrows
+WITH reported AS MATERIALIZED (
+  SELECT unnest(sqlc.arg(paths)::text[]) AS path,
+         unnest(sqlc.arg(missing_states)::boolean[]) AS missing
+), active_paths AS MATERIALIZED (
+  SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) AS path
+  FROM agent_task_queue
+  WHERE runtime_id = sqlc.arg(runtime_id)
+    AND status NOT IN ('completed', 'failed', 'cancelled')
+)
 UPDATE agent_task_queue task
-SET work_dir_missing = sqlc.arg(missing)::boolean
-FROM agent
+SET work_dir_missing = reported.missing
+FROM agent, reported
 WHERE agent.id = task.agent_id
   AND agent.workspace_id = sqlc.arg(workspace_id)
   AND task.runtime_id = sqlc.arg(runtime_id)
-  AND (NOT sqlc.arg(missing)::boolean OR task.status IN ('completed', 'failed', 'cancelled'))
-  AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) = sqlc.arg(path)::text
-  AND task.work_dir_missing IS DISTINCT FROM sqlc.arg(missing)::boolean
-  AND (NOT sqlc.arg(missing)::boolean OR NOT EXISTS (
-    SELECT 1 FROM agent_task_queue active
-    WHERE active.runtime_id = task.runtime_id
-      AND active.status NOT IN ('completed', 'failed', 'cancelled')
-      AND COALESCE(NULLIF(active.work_dir, ''), NULLIF(active.durable_work_dir, '')) = sqlc.arg(path)::text
+  AND (NOT reported.missing OR task.status IN ('completed', 'failed', 'cancelled'))
+  AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) = reported.path
+  AND task.work_dir_missing IS DISTINCT FROM reported.missing
+  AND (NOT reported.missing OR NOT EXISTS (
+    SELECT 1 FROM active_paths WHERE active_paths.path = reported.path
   ));
 
 -- name: GetChatFileParentTask :one
