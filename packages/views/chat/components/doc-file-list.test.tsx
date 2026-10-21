@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,10 +9,18 @@ import enCommon from "../../locales/en/common.json";
 import enChat from "../../locales/en/chat.json";
 import { useDocModeStore } from "@multica/core/chat";
 import { useLocalDirectoryStore } from "@multica/core/chat/local-directory-store";
-import type { ChatSessionFilesResponse } from "@multica/core/types";
+import type { ChatSessionFilesResponse, Issue } from "@multica/core/types";
+import { onIssueUpdated } from "@multica/core/issues/ws-updaters";
+import { NavigationProvider } from "../../navigation";
 import { DocModeFileList } from "./doc-file-list";
 
 const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
+const listIssues = vi.hoisted(() => vi.fn<typeof import("@multica/core/api").api.listIssues>());
+
+vi.mock("@multica/core/api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@multica/core/api")>(),
+  api: { listIssues },
+}));
 
 // The file list reads the chat session's server projection (not client recent
 // context). A hoisted mutable mock steers the session files, the project
@@ -79,13 +87,19 @@ function renderList(queryClient: QueryClient) {
   return render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <DocModeFileList wsId="ws-1" sessionId="session-1" />
+        <NavigationProvider value={{
+          push: vi.fn(), replace: vi.fn(), back: vi.fn(), pathname: "/chat",
+          searchParams: new URLSearchParams(), hash: "", getShareableUrl: (path) => path,
+        }}>
+          <DocModeFileList wsId="ws-1" sessionId="session-1" />
+        </NavigationProvider>
       </I18nProvider>
     </QueryClientProvider>,
   );
 }
 
 beforeEach(() => {
+  listIssues.mockReset().mockResolvedValue({ issues: [], total: 0 });
   useDocModeStore.setState({
     activeBySession: {},
     workingBySession: {},
@@ -115,6 +129,40 @@ beforeEach(() => {
 });
 
 describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
+  it("requests open project issues and removes a blocked issue when it completes", async () => {
+    // Given a completed issue and a blocked issue in the selected project.
+    const blocked: Issue = {
+      id: "blocked", workspace_id: "ws-1", project_id: "proj-1", number: 1,
+      identifier: "TEST-1", title: "Awaiting input", description: null,
+      status: "blocked", status_category: "started", priority: "none",
+      assignee_type: null, assignee_id: null, creator_type: "member", creator_id: "member-1",
+      parent_issue_id: null, position: 1, stage: null, start_date: null, due_date: null,
+      metadata: {}, properties: {}, created_at: "2026-01-01", updated_at: "2026-01-01",
+    };
+    const completed: Issue = { ...blocked, id: "done", identifier: "TEST-2", title: "Finished work", status: "done", status_category: "done" };
+    let openIssues = [blocked];
+    listIssues.mockImplementation(async (params) => {
+      const issues = params?.open_only ? openIssues : [completed, blocked];
+      return { issues, total: issues.length };
+    });
+    const client = newClient();
+    renderList(client);
+    await screen.findByText("Acme");
+    expect(listIssues).not.toHaveBeenCalled();
+
+    // When the issues tab opens, filtering happens on the server before paging.
+    fireEvent.click(screen.getByRole("tab", { name: enChat.doc_file_list.issues }));
+    expect(await screen.findByText(blocked.title)).toBeInTheDocument();
+    expect(listIssues).toHaveBeenCalledWith(expect.objectContaining({ project_id: "proj-1", open_only: true }));
+    expect(screen.queryByText(completed.title)).not.toBeInTheDocument();
+
+    // Then an authoritative completion event refreshes this project projection.
+    openIssues = [];
+    act(() => onIssueUpdated(client, "ws-1", { ...blocked, status: "done", status_category: "done" }));
+    await waitFor(() => expect(screen.queryByText(blocked.title)).not.toBeInTheDocument());
+    expect(screen.getByText(enChat.doc_file_list.no_issues)).toBeInTheDocument();
+  });
+
   it("keeps an unavailable project's directory visible and offers reconnect recovery", async () => {
     session.current.files = {
       ...session.current.files,

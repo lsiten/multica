@@ -6,7 +6,7 @@ import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { useLocalDirectoryStore } from "@multica/core/chat/local-directory-store";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import { api } from "@multica/core/api";
-import { projectDetailOptions } from "@multica/core/projects/queries";
+import { projectDetailOptions, projectKeys } from "@multica/core/projects/queries";
 import { useQuery } from "@tanstack/react-query";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
@@ -137,8 +137,8 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     enabled: !!projectID,
   });
   const { data: projectIssues } = useQuery({
-    queryKey: ["chat-project-issues", wsId, projectID],
-    queryFn: () => api.listIssues({ project_id: projectID, limit: 100, offset: 0 }),
+    queryKey: [...projectKeys.all(wsId), "chat-open-issues", projectID],
+    queryFn: () => api.listIssues({ project_id: projectID, open_only: true }),
     // The file list is the default tab; do not block its first paint on the
     // issues projection. Fetch the heavier issue window only when requested.
     enabled: !!projectID && activeTab === "issues",
