@@ -78,7 +78,7 @@ func TestHandleTaskReportsWindowsCodexProcessStartFailure(t *testing.T) {
 	// start the daemon lifecycle replay loop. Drain one replay pass explicitly
 	// so the assertion observes the same queued report the running daemon would
 	// deliver through its background uploader.
-	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 0 || delivered != 1 {
+	if pending, delivered := d.replayPendingTerminalReports(context.Background(), nil); pending != 0 || delivered != 1 {
 		t.Fatalf("terminal report replay = pending %d, delivered %d; want pending 0 and delivered 1", pending, delivered)
 	}
 

@@ -9356,7 +9356,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			if outcome.DeliveryPending {
 				taskResult.Comment += "\n\nChanges remain in the shared worktree. Branch delivery will be recorded after the other active runs finish."
 			} else if finalizeErr == nil {
-				if pending, _ := d.replayPendingWorktreeDeliveries(ctx); pending > 0 {
+				if pending, _ := d.replayPendingWorktreeDeliveries(ctx, nil); pending > 0 {
 					d.signalTerminalReportReplay()
 				}
 			}

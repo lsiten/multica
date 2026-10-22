@@ -16,7 +16,7 @@ func (d *Daemon) sharedWorktreeReportNamespace() string {
 	return d.terminalReports.dir
 }
 
-func (d *Daemon) replayPendingWorktreeDeliveries(parent context.Context) (pending, delivered int) {
+func (d *Daemon) replayPendingWorktreeDeliveries(parent context.Context, retry *reportRetrySchedule) (pending, delivered int) {
 	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 	namespace := d.sharedWorktreeReportNamespace()
@@ -32,9 +32,26 @@ func (d *Daemon) replayPendingWorktreeDeliveries(parent context.Context) (pendin
 		d.logger.Warn("read shared worktree delivery receipts", "error", err)
 		return 1, 0
 	}
+	keys := make(map[string]struct{}, len(receipts))
+	for _, receipt := range receipts {
+		keys["worktree/"+receipt.TaskID] = struct{}{}
+	}
+	retry.retain("worktree/", keys)
 	for _, receipt := range receipts {
 		body := map[string]any{"branch_name": receipt.Branch, "worktree_commit": receipt.Commit, "work_dir": receipt.WorkDir, "no_work": receipt.NoWork}
+		key := "worktree/" + receipt.TaskID
+		payload, err := json.Marshal(body)
+		if err != nil {
+			pending++
+			d.logger.Warn("encode shared worktree delivery", "task", receipt.TaskID, "error", err)
+			continue
+		}
+		if !retry.ready(key, payload) {
+			pending++
+			continue
+		}
 		if err := d.client.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/worktree-delivery", receipt.TaskID), body, nil, skillBundleResolveRetrySchedule); err != nil {
+			retry.record(key, payload, true)
 			pending++
 			d.logger.Warn("shared worktree delivery remains queued", "task", receipt.TaskID, "error", err)
 			continue
@@ -46,9 +63,11 @@ func (d *Daemon) replayPendingWorktreeDeliveries(parent context.Context) (pendin
 			ackErr = execenv.AcknowledgeSharedWorktreeDelivery(ctx, receipt)
 		}
 		if ackErr != nil {
+			retry.record(key, payload, true)
 			pending++
 			d.logger.Warn("acknowledge shared worktree delivery", "task", receipt.TaskID, "error", ackErr)
 		} else {
+			retry.record(key, payload, false)
 			delivered++
 		}
 	}

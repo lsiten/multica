@@ -55,7 +55,7 @@ func TestApplicationStepFinishesOfflineReclaimsSlotAndRecoversWithoutRestart(t *
 	if err != nil || len(items) != 1 || items[0].report.applicationStep.Result.State != "completed" {
 		t.Fatalf("local result was not durable: %+v %v", items, err)
 	}
-	if pending, delivered := d.replayPendingTerminalReports(ctx); pending != 1 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(ctx, nil); pending != 1 || delivered != 0 {
 		t.Fatalf("outage dropped result: %d/%d", pending, delivered)
 	}
 	restarted := &Daemon{cfg: d.cfg, client: NewClient(backend.URL), logger: d.logger, workspaces: d.workspaces, runtimeIndex: d.runtimeIndex, accountID: d.accountID, terminalReports: newTerminalReportStore(d.cfg), applicationHostLauncher: d.applicationHostLauncher}
@@ -67,7 +67,7 @@ func TestApplicationStepFinishesOfflineReclaimsSlotAndRecoversWithoutRestart(t *
 		t.Fatalf("reclaimed receipt repeated restart: %q %v", starts, err)
 	}
 	offline.Store(false)
-	if pending, delivered := restarted.replayPendingTerminalReports(ctx); pending != 0 || delivered != 1 {
+	if pending, delivered := restarted.replayPendingTerminalReports(ctx, nil); pending != 0 || delivered != 1 {
 		t.Fatalf("recovered results not uploaded: %d/%d", pending, delivered)
 	}
 }

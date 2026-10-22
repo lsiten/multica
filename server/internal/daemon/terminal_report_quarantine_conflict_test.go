@@ -49,10 +49,10 @@ func TestTerminalReportQuarantinePreservesConflictingPayloads(t *testing.T) {
 			if err := d.reportTerminalTask(context.Background(), current); err != nil {
 				t.Fatalf("local queue rejected valid report: %v", err)
 			}
-			d.replayPendingTerminalReports(t.Context())
+			d.replayPendingTerminalReports(t.Context(), nil)
 			for _, age := range []time.Duration{5 * time.Minute, terminalReportPermanentRejectionAge} {
 				now = base.Add(age)
-				d.replayPendingTerminalReports(context.Background())
+				d.replayPendingTerminalReports(context.Background(), nil)
 			}
 			stats, err := d.terminalReports.stats()
 			if err != nil || stats.PendingCount != 0 || stats.FailedCount != 2 {
@@ -82,17 +82,17 @@ func TestTerminalReportQuarantinePreservesConflictingPayloads(t *testing.T) {
 			if err := d.reportTerminalTask(context.Background(), current); err != nil {
 				t.Fatalf("local queue rejected repeated report: %v", err)
 			}
-			d.replayPendingTerminalReports(t.Context())
+			d.replayPendingTerminalReports(t.Context(), nil)
 			for _, age := range []time.Duration{5 * time.Minute, terminalReportPermanentRejectionAge} {
 				now = base.Add(terminalReportPermanentRejectionAge + age)
-				d.replayPendingTerminalReports(context.Background())
+				d.replayPendingTerminalReports(context.Background(), nil)
 			}
 			stats, err = d.terminalReports.stats()
 			if err != nil || stats.PendingCount != 0 || stats.FailedCount != 2 {
 				t.Fatalf("repeated payload was not deduplicated: %+v %v", stats, err)
 			}
 			for range 3 {
-				d.replayPendingTerminalReports(context.Background())
+				d.replayPendingTerminalReports(context.Background(), nil)
 			}
 			if calls != 2*terminalReportPermanentRejectionLimit {
 				t.Fatalf("delivery attempts = %d, want %d and no post-quarantine replay", calls, 2*terminalReportPermanentRejectionLimit)
@@ -131,7 +131,7 @@ func TestTerminalReportQuarantineMatchesDecodedVerification(t *testing.T) {
 	}
 	for _, age := range []time.Duration{0, 5 * time.Minute, terminalReportPermanentRejectionAge} {
 		now = base.Add(age)
-		d.replayPendingTerminalReports(context.Background())
+		d.replayPendingTerminalReports(context.Background(), nil)
 	}
 	stats, err := d.terminalReports.stats()
 	if err != nil || stats.PendingCount != 0 || stats.FailedCount != 2 {

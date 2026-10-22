@@ -127,7 +127,7 @@ func TestWorkerMessagesPersistForOwnerReplayAfterControllerRestart(t *testing.T)
 	restarted := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	restarted.accountID = s.bootstrap.Identity.Scope.Account
 	restarted.terminalReports.bindAccount(restarted.accountID)
-	if pending, delivered := restarted.replayPendingTerminalReports(t.Context()); pending != 0 || delivered != 1 {
+	if pending, delivered := restarted.replayPendingTerminalReports(t.Context(), nil); pending != 0 || delivered != 1 {
 		t.Fatalf("worker data not recovered by owner: %d/%d", pending, delivered)
 	}
 }

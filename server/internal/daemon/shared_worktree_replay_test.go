@@ -40,7 +40,7 @@ func TestSharedWorktreeDeliveryRemainsDurableUntilServerAccepts(t *testing.T) {
 	if err != nil || outcome.Commit == "" {
 		t.Fatalf("worktree did not finalize: %+v %v", outcome, err)
 	}
-	pending, delivered := d.replayPendingWorktreeDeliveries(context.Background())
+	pending, delivered := d.replayPendingWorktreeDeliveries(context.Background(), nil)
 	if pending != 1 || delivered != 0 {
 		t.Fatalf("failed delivery was dropped: pending=%d delivered=%d", pending, delivered)
 	}
@@ -49,12 +49,12 @@ func TestSharedWorktreeDeliveryRemainsDurableUntilServerAccepts(t *testing.T) {
 		t.Fatalf("retry lost immutable receipt: %+v %v", receipts, err)
 	}
 	recovered.Store(true)
-	pending, delivered = d.replayPendingWorktreeDeliveries(context.Background())
+	pending, delivered = d.replayPendingWorktreeDeliveries(context.Background(), nil)
 	if pending != 0 || delivered != 1 {
 		t.Fatalf("healthy server did not settle receipt: %d/%d", pending, delivered)
 	}
 	before := calls.Load()
-	d.replayPendingWorktreeDeliveries(context.Background())
+	d.replayPendingWorktreeDeliveries(context.Background(), nil)
 	if calls.Load() != before {
 		t.Fatal("accepted delivery was replayed again")
 	}
@@ -86,11 +86,11 @@ func TestSharedWorktreeNoWorkReceiptIsReportedAndRetired(t *testing.T) {
 	if _, err := w.Finalize(d.logger); err != nil {
 		t.Fatal(err)
 	}
-	pending, delivered := d.replayPendingWorktreeDeliveries(t.Context())
+	pending, delivered := d.replayPendingWorktreeDeliveries(t.Context(), nil)
 	if pending != 0 || delivered != 1 || calls.Load() != 1 {
 		t.Fatalf("empty delivery was not accepted: %d/%d calls=%d", pending, delivered, calls.Load())
 	}
-	d.replayPendingWorktreeDeliveries(t.Context())
+	d.replayPendingWorktreeDeliveries(t.Context(), nil)
 	if calls.Load() != 1 {
 		t.Fatal("settled empty delivery repeated")
 	}

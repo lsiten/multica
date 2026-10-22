@@ -33,7 +33,7 @@ func drainApplicationTerminalReports(t *testing.T, d *Daemon, ctx context.Contex
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		pending, _ := d.replayPendingTerminalReports(ctx)
+		pending, _ := d.replayPendingTerminalReports(ctx, nil)
 		if pending == 0 || time.Now().After(deadline) {
 			return
 		}

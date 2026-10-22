@@ -38,7 +38,7 @@ func TestQuarantineCompensationPersistsFailureAndKeepsExecutionFence(t *testing.
 		t.Fatal(err)
 	}
 	for range terminalReportPermanentRejectionLimit {
-		d.replayPendingTerminalReports(t.Context())
+		d.replayPendingTerminalReports(t.Context(), nil)
 		now = now.Add(terminalReportPermanentRejectionAge)
 	}
 	items, err := d.terminalReports.list()
@@ -49,7 +49,7 @@ func TestQuarantineCompensationPersistsFailureAndKeepsExecutionFence(t *testing.
 		t.Fatalf("compensation blocked or retried inline: %d", failCalls)
 	}
 	acceptFailure = true
-	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 0 || delivered != 1 {
+	if pending, delivered := d.replayPendingTerminalReports(t.Context(), nil); pending != 0 || delivered != 1 {
 		t.Fatalf("compensation retry failed: %d/%d", pending, delivered)
 	}
 	stats, err := d.terminalReports.stats()

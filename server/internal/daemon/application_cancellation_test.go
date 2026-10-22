@@ -112,7 +112,7 @@ func TestApplicationExpiredResumeReconcilesExistingProcessWhenRuntimeReconnects(
 	var workers sync.WaitGroup
 	d.pollRuntimeApplications(ctx, make(chan struct{}, 4), &workers, command.RuntimeID)
 	workers.Wait()
-	if pending, delivered := d.replayPendingTerminalReports(ctx); pending != 0 || delivered != 1 {
+	if pending, delivered := d.replayPendingTerminalReports(ctx, nil); pending != 0 || delivered != 1 {
 		t.Fatalf("queued reconnect observation not delivered: %d/%d", pending, delivered)
 	}
 	select {

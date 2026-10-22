@@ -174,7 +174,7 @@ func TestTerminalReportQueuesWithoutForegroundRetries(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatal("foreground terminal reporting waited on the backend")
 	}
-	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(t.Context(), nil); pending != 1 || delivered != 0 {
 		t.Fatalf("offline replay pending/delivered = %d/%d", pending, delivered)
 	}
 	if items, err := d.terminalReports.list(); err != nil || len(items) != 1 {
@@ -182,7 +182,7 @@ func TestTerminalReportQueuesWithoutForegroundRetries(t *testing.T) {
 	}
 
 	online.Store(true)
-	pending, delivered := d.replayPendingTerminalReports(context.Background())
+	pending, delivered := d.replayPendingTerminalReports(context.Background(), nil)
 	if pending != 0 || delivered != 1 {
 		t.Fatalf("replay result pending=%d delivered=%d, want 0/1", pending, delivered)
 	}
@@ -231,7 +231,7 @@ func TestTerminalReportReplaysAfterDaemonRestart(t *testing.T) {
 		replayed = got
 		return nil
 	}
-	pending, delivered := afterRestart.replayPendingTerminalReports(context.Background())
+	pending, delivered := afterRestart.replayPendingTerminalReports(context.Background(), nil)
 	if pending != 0 || delivered != 1 {
 		t.Fatalf("restart replay pending=%d delivered=%d, want 0/1", pending, delivered)
 	}
@@ -306,15 +306,15 @@ func TestTerminalReportPermanentRejectionQuarantinesOriginalAndStopsReplay(t *te
 	if err := d.reportTerminalTask(context.Background(), report); err != nil {
 		t.Fatal(err)
 	}
-	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(t.Context(), nil); pending != 1 || delivered != 0 {
 		t.Fatalf("first rejected replay = %d/%d", pending, delivered)
 	}
 	now = base.Add(5 * time.Minute)
-	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 1 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(context.Background(), nil); pending != 1 || delivered != 0 {
 		t.Fatalf("second rejection replay = pending:%d delivered:%d, want 1/0", pending, delivered)
 	}
 	now = base.Add(terminalReportPermanentRejectionAge)
-	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 0 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(context.Background(), nil); pending != 0 || delivered != 0 {
 		t.Fatalf("quarantine replay = pending:%d delivered:%d, want 0/0", pending, delivered)
 	}
 	if got := completeCalls.Load(); got != terminalReportPermanentRejectionLimit {
@@ -350,7 +350,7 @@ func TestTerminalReportPermanentRejectionQuarantinesOriginalAndStopsReplay(t *te
 		t.Fatalf("quarantine metadata = %+v", record)
 	}
 	// failed/ is not part of list(), so another replay pass cannot hot-loop it.
-	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 0 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(context.Background(), nil); pending != 0 || delivered != 0 {
 		t.Fatalf("post-quarantine replay = pending:%d delivered:%d, want 0/0", pending, delivered)
 	}
 }
@@ -405,7 +405,7 @@ func TestTerminalReportForegroundAndReplayDoNotSendConcurrently(t *testing.T) {
 		return nil
 	}
 	uploadDone := make(chan struct{})
-	go func() { defer close(uploadDone); d.replayPendingTerminalReports(t.Context()) }()
+	go func() { defer close(uploadDone); d.replayPendingTerminalReports(t.Context(), nil) }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -415,7 +415,7 @@ func TestTerminalReportForegroundAndReplayDoNotSendConcurrently(t *testing.T) {
 		t.Fatalf("enqueue while upload was pending: %v", err)
 	}
 
-	if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 1 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(context.Background(), nil); pending != 1 || delivered != 0 {
 		t.Fatalf("racing replay = pending:%d delivered:%d, want 1/0", pending, delivered)
 	}
 	if got := calls.Load(); got != 1 {
@@ -441,7 +441,7 @@ func TestTerminalReportCorruptRecordRemainsVisibleAcrossReplayPasses(t *testing.
 		t.Fatalf("write corrupt record: %v", err)
 	}
 	for pass := 1; pass <= 2; pass++ {
-		if pending, delivered := d.replayPendingTerminalReports(context.Background()); pending != 1 || delivered != 0 {
+		if pending, delivered := d.replayPendingTerminalReports(context.Background(), nil); pending != 1 || delivered != 0 {
 			t.Fatalf("replay pass %d = pending:%d delivered:%d, want 1/0", pass, pending, delivered)
 		}
 	}

@@ -54,12 +54,12 @@ func TestTaskDiagnosticsPersistWithoutWaitingForBackendAndReplayAfterRestart(t *
 	if calls.Load() != 0 {
 		t.Fatal("diagnostic enqueue waited for remote service")
 	}
-	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 2 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(t.Context(), nil); pending != 2 || delivered != 0 {
 		t.Fatalf("offline pending/delivered = %d/%d", pending, delivered)
 	}
 	offline.Store(false)
 	restarted := New(cfg, d.logger)
-	if pending, delivered := restarted.replayPendingTerminalReports(t.Context()); pending != 0 || delivered != 2 {
+	if pending, delivered := restarted.replayPendingTerminalReports(t.Context(), nil); pending != 0 || delivered != 2 {
 		t.Fatalf("recovery pending/delivered = %d/%d", pending, delivered)
 	}
 	mu.Lock()
@@ -67,7 +67,7 @@ func TestTaskDiagnosticsPersistWithoutWaitingForBackendAndReplayAfterRestart(t *
 	if len(messages) != 1 || messages[0].ID == "" || messages[0].Content != rows[0].Content || !reflect.DeepEqual(usage, tokens) {
 		t.Fatalf("diagnostics lost: messages=%+v usage=%+v", messages, usage)
 	}
-	if pending, _ := restarted.replayPendingTerminalReports(t.Context()); pending != 0 {
+	if pending, _ := restarted.replayPendingTerminalReports(t.Context(), nil); pending != 0 {
 		t.Fatal("acknowledged diagnostic retained")
 	}
 }

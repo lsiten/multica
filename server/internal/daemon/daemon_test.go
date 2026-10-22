@@ -5417,10 +5417,10 @@ func TestReportTaskResult_RetriesTransientCompleteThenSucceeds(t *testing.T) {
 	if completeCalls.Load() != 0 {
 		t.Fatal("result handling waited for a remote acknowledgement")
 	}
-	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+	if pending, delivered := d.replayPendingTerminalReports(t.Context(), nil); pending != 1 || delivered != 0 {
 		t.Fatalf("first replay = %d/%d", pending, delivered)
 	}
-	if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 0 || delivered != 1 {
+	if pending, delivered := d.replayPendingTerminalReports(t.Context(), nil); pending != 0 || delivered != 1 {
 		t.Fatalf("recovered replay = %d/%d", pending, delivered)
 	}
 
@@ -5465,7 +5465,7 @@ func TestReportTaskResult_TransientCompleteExhaustedDoesNotFallback(t *testing.T
 		Comment: "ok",
 	}, slog.Default())
 	for range len(defaultTerminalRetrySchedule) + 1 {
-		if pending, delivered := d.replayPendingTerminalReports(t.Context()); pending != 1 || delivered != 0 {
+		if pending, delivered := d.replayPendingTerminalReports(t.Context(), nil); pending != 1 || delivered != 0 {
 			t.Fatalf("outage lost original completion: %d/%d", pending, delivered)
 		}
 	}
