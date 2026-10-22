@@ -73,18 +73,19 @@ func TestClaimTasksForRuntimes_PartialSuccessOnSecondAgentClaimFailure(t *testin
 	if err != nil {
 		t.Fatalf("expected partial success (nil error), got %v", err)
 	}
-	if len(claimed) != 1 {
-		t.Fatalf("claimed %d tasks, want 1 (the first agent's committed task, not dropped)", len(claimed))
+	if len(claimed) != 2 {
+		t.Fatalf("claimed %d tasks, want 2 (the healthy agent's committed tasks, not dropped)", len(claimed))
 	}
 
-	// The one returned task must actually be dispatched in the DB (committed),
-	// proving we returned a real claim rather than a phantom.
-	var status string
-	if err := pool.QueryRow(ctx, `SELECT status FROM agent_task_queue WHERE id = $1`, util.UUIDToString(claimed[0].ID)).Scan(&status); err != nil {
-		t.Fatalf("read status: %v", err)
-	}
-	if status != "dispatched" {
-		t.Fatalf("returned task status = %s, want dispatched", status)
+	// Every returned task must be committed, rather than a phantom claim.
+	for _, task := range claimed {
+		var status string
+		if err := pool.QueryRow(ctx, `SELECT status FROM agent_task_queue WHERE id = $1`, util.UUIDToString(task.ID)).Scan(&status); err != nil {
+			t.Fatalf("read status: %v", err)
+		}
+		if status != "dispatched" {
+			t.Fatalf("returned task status = %s, want dispatched", status)
+		}
 	}
 }
 
