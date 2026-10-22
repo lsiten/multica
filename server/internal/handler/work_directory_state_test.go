@@ -60,11 +60,14 @@ func TestRuntimeWorkDirectoryStatePersistsAndFiltersChatFiles(t *testing.T) {
 	}
 }
 
-func TestRuntimeWorkDirectoryStateGuardsActivePathsAndDaemonOwnership(t *testing.T) {
+func TestRuntimeWorkDirectoryStateRecordsMissingActivePathsAndGuardsDaemonOwnership(t *testing.T) {
 	runtime := dbfx.Runtime(t, "active-directory-state", testutil.Cols{"daemon_id": "directory-daemon", "runtime_mode": "local"})
 	agent := dbfx.Agent(t, "active-directory-agent", runtime)
-	retained := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "status": "completed", "work_dir": "/shared"})
-	dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "status": "running", "work_dir": "/shared"})
+	project := dbfx.Project(t, "Active directory state project")
+	chat := createHandlerTestChatSession(t, agent)
+	dbfx.Exec(t, `UPDATE chat_session SET project_id = $1 WHERE id = $2`, project, chat)
+	retained := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "chat_session_id": chat, "status": "completed", "work_dir": "/shared"})
+	active := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "chat_session_id": chat, "status": "running", "work_dir": "/shared"})
 	for _, tc := range []struct {
 		daemon string
 		status int
@@ -72,9 +75,31 @@ func TestRuntimeWorkDirectoryStateGuardsActivePathsAndDaemonOwnership(t *testing
 		r := withURLParam(newDaemonTokenRequest(http.MethodPost, "/work-directories", []protocol.WorkDirectoryState{{Path: "/shared", Missing: true}}, testWorkspaceID, tc.daemon), "runtimeId", runtime)
 		testutil.Call(t, testHandler.UpdateRuntimeWorkDirectories, r).Want(tc.status)
 	}
-	task, err := testHandler.Queries.GetAgentTask(t.Context(), parseUUID(retained))
-	if err != nil || task.WorkDirMissing {
-		t.Fatalf("active shared directory was hidden: %+v, %v", task, err)
+	for _, id := range []string{retained, active} {
+		task, err := testHandler.Queries.GetAgentTask(t.Context(), parseUUID(id))
+		if err != nil || !task.WorkDirMissing {
+			t.Fatalf("missing directory remained available for task %s: %+v, %v", id, task, err)
+		}
+	}
+	task, err := testHandler.Queries.GetAgentTask(t.Context(), parseUUID(active))
+	if err != nil || task.Status != "running" {
+		t.Fatalf("availability report changed active task lifecycle: %+v, %v", task, err)
+	}
+	filesRequest := withChatTestWorkspaceCtx(t, withURLParam(newRequest(http.MethodGet, "/files", nil), "sessionId", chat))
+	var files ChatSessionFilesResponse
+	testutil.Call(t, testHandler.ListChatSessionFiles, filesRequest).Want(http.StatusOK).JSON(&files)
+	if len(files.Tasks) != 0 || len(files.ProjectTasks) != 0 {
+		t.Fatalf("missing active directory remained in file projection: %+v", files)
+	}
+	r := withURLParam(newDaemonTokenRequest(http.MethodPost, "/work-directories", []protocol.WorkDirectoryState{{Path: "/shared", Missing: false}}, testWorkspaceID, "directory-daemon"), "runtimeId", runtime)
+	testutil.Call(t, testHandler.UpdateRuntimeWorkDirectories, r).Want(http.StatusOK)
+	task, err = testHandler.Queries.GetAgentTask(t.Context(), parseUUID(active))
+	if err != nil || task.WorkDirMissing || task.Status != "running" {
+		t.Fatalf("restored active directory did not recover: %+v, %v", task, err)
+	}
+	testutil.Call(t, testHandler.ListChatSessionFiles, filesRequest).Want(http.StatusOK).JSON(&files)
+	if len(files.Tasks) != 2 || len(files.ProjectTasks) != 2 {
+		t.Fatalf("restored active directory remained hidden: %+v", files)
 	}
 	request := withURLParam(newDaemonTokenRequest(http.MethodGet, "/work-directories?after=/shared", nil, testWorkspaceID, "directory-daemon"), "runtimeId", runtime)
 	var page protocol.RuntimeWorkDirectoryPage

@@ -126,11 +126,6 @@ const updateRuntimeWorkDirectoryStates = `-- name: UpdateRuntimeWorkDirectorySta
 WITH reported AS MATERIALIZED (
   SELECT unnest($3::text[]) AS path,
          unnest($4::boolean[]) AS missing
-), active_paths AS MATERIALIZED (
-  SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) AS path
-  FROM agent_task_queue
-  WHERE runtime_id = $2
-    AND status NOT IN ('completed', 'failed', 'cancelled')
 )
 UPDATE agent_task_queue task
 SET work_dir_missing = reported.missing
@@ -138,12 +133,8 @@ FROM agent, reported
 WHERE agent.id = task.agent_id
   AND agent.workspace_id = $1
   AND task.runtime_id = $2
-  AND (NOT reported.missing OR task.status IN ('completed', 'failed', 'cancelled'))
   AND COALESCE(NULLIF(task.work_dir, ''), NULLIF(task.durable_work_dir, '')) = reported.path
   AND task.work_dir_missing IS DISTINCT FROM reported.missing
-  AND (NOT reported.missing OR NOT EXISTS (
-    SELECT 1 FROM active_paths WHERE active_paths.path = reported.path
-  ))
 `
 
 type UpdateRuntimeWorkDirectoryStatesParams struct {
@@ -153,6 +144,7 @@ type UpdateRuntimeWorkDirectoryStatesParams struct {
 	MissingStates []bool      `json:"missing_states"`
 }
 
+// Filesystem availability is independent of the task lifecycle.
 func (q *Queries) UpdateRuntimeWorkDirectoryStates(ctx context.Context, arg UpdateRuntimeWorkDirectoryStatesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateRuntimeWorkDirectoryStates,
 		arg.WorkspaceID,
