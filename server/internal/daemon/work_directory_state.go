@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -34,7 +35,7 @@ func (d *Daemon) reportWorkDirectoryStates(ctx context.Context, runtimeID string
 	for _, path := range paths {
 		info, err := os.Stat(path)
 		switch {
-		case errors.Is(err, os.ErrNotExist):
+		case errors.Is(err, os.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 			states = append(states, protocol.WorkDirectoryState{Path: path, Missing: true})
 		case err == nil:
 			states = append(states, protocol.WorkDirectoryState{Path: path, Missing: !info.IsDir()})
@@ -54,10 +55,32 @@ func (d *Daemon) reportTaskWorkDirectoryState(ctx context.Context, status *proto
 	if d.client == nil || status == nil || status.RuntimeID == "" || !filepath.IsAbs(status.WorkDir) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// The filesystem change has already happened, even if its operation ended.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := d.reportWorkDirectoryStates(ctx, status.RuntimeID, []string{status.WorkDir}); err != nil {
 		d.logger.Warn("work directory state report failed; periodic reconciliation will retry", "runtime_id", status.RuntimeID, "error", err)
+	}
+}
+
+func (d *Daemon) reconcileRuntimeWorkDirectories(ctx context.Context, runtimeID, after string) (string, error) {
+	for {
+		readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		paths, err := d.client.listRuntimeWorkDirectories(readCtx, runtimeID, after)
+		cancel()
+		if err != nil {
+			return after, err
+		}
+		reportCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		err = d.reportWorkDirectoryStates(reportCtx, runtimeID, paths)
+		cancel()
+		if err != nil {
+			return after, err
+		}
+		if len(paths) < 500 {
+			return "", nil
+		}
+		after = paths[len(paths)-1]
 	}
 }
 
@@ -72,18 +95,12 @@ func (d *Daemon) workDirectoryStateLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			scanCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			paths, err := d.client.listRuntimeWorkDirectories(scanCtx, runtimeID, cursors[runtimeID])
-			if err == nil {
-				err = d.reportWorkDirectoryStates(scanCtx, runtimeID, paths)
-			}
+			scanCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			after, err := d.reconcileRuntimeWorkDirectories(scanCtx, runtimeID, cursors[runtimeID])
 			cancel()
+			cursors[runtimeID] = after
 			if err != nil {
 				d.logger.Debug("work directory reconciliation deferred", "runtime_id", runtimeID, "error", err)
-			} else if len(paths) < 500 {
-				delete(cursors, runtimeID)
-			} else {
-				cursors[runtimeID] = paths[len(paths)-1]
 			}
 		}
 		select {
