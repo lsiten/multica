@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,6 +133,19 @@ func escapeMarkdownLabel(s string) string {
 	).Replace(s)
 }
 
+// isAttachmentNotFound reports whether err is a 404 from the attachment
+// metadata endpoint. The metadata endpoint is workspace-scoped and answers
+// 404 when the request's workspace does not match the attachment's, which is
+// not the same as the attachment genuinely not existing; runAttachmentDownload
+// uses this to fall back to the auth-only download route instead of failing.
+func isAttachmentNotFound(err error) bool {
+	var he *cli.HTTPError
+	if !errors.As(err, &he) {
+		return false
+	}
+	return he.Kind() == cli.KindNotFound
+}
+
 func runAttachmentDownload(cmd *cobra.Command, args []string) error {
 	client, err := newAPIClient(cmd)
 	if err != nil {
@@ -143,13 +157,32 @@ func runAttachmentDownload(cmd *cobra.Command, args []string) error {
 
 	// Fetch attachment metadata (includes signed download_url).
 	var att map[string]any
+	metadataNotFound := false
 	if err := client.GetJSON(ctx, "/api/attachments/"+args[0], &att); err != nil {
-		return fmt.Errorf("get attachment: %w", err)
+		if !isAttachmentNotFound(err) {
+			return fmt.Errorf("get attachment: %w", err)
+		}
+		// The metadata endpoint is workspace-scoped and answers 404 when the
+		// request's workspace does not match the attachment's. That is not the
+		// same as the attachment genuinely not existing, so record it and fall
+		// back to the download endpoint below instead of failing.
+		metadataNotFound = true
 	}
 
 	downloadURL := strVal(att, "download_url")
 	if downloadURL == "" {
-		return fmt.Errorf("attachment has no download URL")
+		if !metadataNotFound {
+			return fmt.Errorf("attachment has no download URL")
+		}
+		// No usable download_url because the workspace-scoped metadata
+		// endpoint 404'd (above). Fall back to the auth-only download
+		// endpoint, which self-resolves the workspace from the attachment row
+		// and enforces membership instead of trusting the request's workspace
+		// context. This keeps a member able to download a file their own
+		// context can't reach by workspace (e.g. an agent that uploaded from
+		// one context and later downloads from another) instead of surfacing
+		// a misleading "not found".
+		downloadURL = "/api/attachments/" + args[0] + "/download"
 	}
 
 	filename := filepath.Base(strVal(att, "filename"))

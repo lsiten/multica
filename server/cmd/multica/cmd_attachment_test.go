@@ -317,3 +317,48 @@ func TestRunAttachmentDownloadRequiresDownloadURL(t *testing.T) {
 		t.Fatalf("runAttachmentDownload error = %v, want missing download URL", err)
 	}
 }
+
+// TestRunAttachmentDownloadFallsBackToDownloadRoute covers the workspace-scoped
+// metadata endpoint 404ing (request workspace != attachment workspace) and the
+// CLI falling back to the auth-only download route, which self-resolves the
+// workspace from the attachment row.
+func TestRunAttachmentDownloadFallsBackToDownloadRoute(t *testing.T) {
+	const attachmentID = "att-mismatch"
+	const fileBody = "fallback body"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/attachments/"+attachmentID:
+			// Workspace-scoped metadata 404s (the request's workspace did not
+			// match the attachment's).
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"attachment not found"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/attachments/"+attachmentID+"/download":
+			if r.Header.Get("Authorization") == "" {
+				t.Fatalf("relative download missing auth header")
+			}
+			_, _ = w.Write([]byte(fileBody))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	setCLITestServerEnv(t, srv.URL)
+	t.Setenv("MULTICA_TOKEN", "mat_test-token")
+
+	outputDir := t.TempDir()
+	cmd := newAttachmentDownloadTestCmd()
+	_ = cmd.Flags().Set("output-dir", outputDir)
+
+	if err := runAttachmentDownload(cmd, []string{attachmentID}); err != nil {
+		t.Fatalf("runAttachmentDownload: %v", err)
+	}
+	dest := filepath.Join(outputDir, attachmentID)
+	data, readErr := os.ReadFile(dest)
+	if readErr != nil {
+		t.Fatalf("read downloaded file: %v", readErr)
+	}
+	if string(data) != fileBody {
+		t.Fatalf("downloaded body = %q, want %q", data, fileBody)
+	}
+}
