@@ -5,7 +5,7 @@ import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/co
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import { useWorkspaceFileSearch } from "./use-workspace-file-search";
-import { readWorkspaceDirectory } from "./workspace-directory-query";
+import { readWorkspaceDirectory, WORKSPACE_DIRECTORY_READ_TIMEOUT_MS } from "./workspace-directory-query";
 
 export function useChatFileDirectory(wsId: string, sessionId: string | null | undefined, projectId: string, files: ChatSessionFilesResponse | undefined, activeDoc: DocumentRef | null, enabled: boolean, expandedDirectories: ReadonlySet<string>, searchTerm: string) {
   const client = useQueryClient();
@@ -37,7 +37,7 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
     getNextPageParam: (page: Awaited<ReturnType<typeof readWorkspaceDirectory>>) => page.has_more ? page.next_offset : undefined,
     queryFn: async ({ signal, pageParam }) => {
       if (!request) throw new Error("workspace directory is unavailable");
-      const timeout = AbortSignal.timeout(15_000);
+      const timeout = AbortSignal.timeout(WORKSPACE_DIRECTORY_READ_TIMEOUT_MS);
       return readWorkspaceDirectory(request, ".", AbortSignal.any([signal, timeout]), pageParam);
     },
     enabled: enabled && !searchTerm && !!sessionId && !!request,
@@ -59,7 +59,7 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
     queryKey: [...directoryKey, path, offset],
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
       if (!request) throw new Error("workspace directory is unavailable");
-      return readWorkspaceDirectory(request, path, AbortSignal.any([signal, AbortSignal.timeout(15_000)]), offset);
+      return readWorkspaceDirectory(request, path, AbortSignal.any([signal, AbortSignal.timeout(WORKSPACE_DIRECTORY_READ_TIMEOUT_MS)]), offset);
     },
     enabled: enabled && !searchTerm && !!sessionId && !!request,
     staleTime: 60_000, retry: false,

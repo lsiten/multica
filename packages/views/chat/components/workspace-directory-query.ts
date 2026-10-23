@@ -2,6 +2,10 @@ import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import { isInternalWorkspacePath } from "@multica/core/types/local-review";
 import { requestReviewPage } from "../../platform/local-review-pages";
 
+// Directory pages may wait behind local review work or slow filesystem metadata.
+// Keep this just above the API client's per-request deadline so its error surfaces.
+export const WORKSPACE_DIRECTORY_READ_TIMEOUT_MS = 60_000;
+
 // A read is one page of immediate children, independent of directory size.
 export async function readWorkspaceDirectory(input: PagedReviewInput, relativePath: string, signal: AbortSignal, offset = 0) {
   const page = await requestReviewPage({ ...input, action: "workspace_files", recursive: false, relative_path: relativePath, limit: 100, offset }, signal);

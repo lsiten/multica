@@ -1253,7 +1253,7 @@ export class ApiClient {
   }
 
   async supportsPagedLocalMR(signal?: AbortSignal): Promise<boolean> {
-    const timeout = AbortSignal.timeout(15000);
+    const timeout = AbortSignal.timeout(55000);
     const result = pagedReviewCapabilitySchema.parse(await this.fetch<unknown>("/api/config", { signal: signal ? AbortSignal.any([signal, timeout]) : timeout }));
     return result.local_review_paging_supported === true;
   }

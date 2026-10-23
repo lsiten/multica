@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useInfiniteQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
-import { readWorkspaceSearchPage, type DirectorySearchCursor } from "./workspace-directory-query";
+import { readWorkspaceSearchPage, type DirectorySearchCursor, WORKSPACE_DIRECTORY_READ_TIMEOUT_MS } from "./workspace-directory-query";
 
 export function useWorkspaceFileSearch(request: PagedReviewInput | null, directoryKey: QueryKey, term: string, enabled: boolean) {
   const client = useQueryClient();
@@ -11,7 +11,7 @@ export function useWorkspaceFileSearch(request: PagedReviewInput | null, directo
     initialPageParam: { path: ".", offset: 0 } as DirectorySearchCursor,
     queryFn: ({ pageParam, signal }) => {
       if (!request) throw new Error("workspace directory is unavailable");
-      return readWorkspaceSearchPage(request, term, pageParam, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+      return readWorkspaceSearchPage(request, term, pageParam, AbortSignal.any([signal, AbortSignal.timeout(WORKSPACE_DIRECTORY_READ_TIMEOUT_MS)]));
     },
     getNextPageParam: (page) => page.next,
     enabled: enabled && !!request && !!term,
