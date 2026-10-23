@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
-import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { chatFileDirectories, type ChatFileDirectory, type DocumentRef } from "@multica/core/chat";
 import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
+import { useWorkspaceFileSearch } from "./use-workspace-file-search";
 import { readWorkspaceDirectory } from "./workspace-directory-query";
 
-export function useChatFileDirectory(wsId: string, sessionId: string | null | undefined, projectId: string, files: ChatSessionFilesResponse | undefined, activeDoc: DocumentRef | null, enabled: boolean, expandedDirectories: ReadonlySet<string>) {
+export function useChatFileDirectory(wsId: string, sessionId: string | null | undefined, projectId: string, files: ChatSessionFilesResponse | undefined, activeDoc: DocumentRef | null, enabled: boolean, expandedDirectories: ReadonlySet<string>, searchTerm: string) {
   const client = useQueryClient();
   const current = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
@@ -30,34 +31,60 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
     target: selected.branchName || "HEAD",
   } : null;
   const directoryKey = ["chat-workspace-files", wsId, sessionId, projectId, selected?.key, selected?.path, selected?.runtimeId];
-  const query = useQuery({
+  const browse = useInfiniteQuery({
     queryKey: directoryKey,
-    queryFn: async ({ signal }) => {
+    initialPageParam: 0,
+    getNextPageParam: (page: Awaited<ReturnType<typeof readWorkspaceDirectory>>) => page.has_more ? page.next_offset : undefined,
+    queryFn: async ({ signal, pageParam }) => {
       if (!request) throw new Error("workspace directory is unavailable");
       const timeout = AbortSignal.timeout(15_000);
-      return readWorkspaceDirectory(request, ".", AbortSignal.any([signal, timeout]));
+      return readWorkspaceDirectory(request, ".", AbortSignal.any([signal, timeout]), pageParam);
     },
-    enabled: enabled && !!sessionId && !!request,
+    enabled: enabled && !searchTerm && !!sessionId && !!request,
     staleTime: 60_000,
     retry: false,
   });
-  const rootEntries = query.data?.entries ?? [];
+  const query = { ...browse, data: browse.data?.pages[0] };
+  const rootEntries = browse.data?.pages.flatMap((page) => page.entries) ?? [];
+  const [paging, setPaging] = useState<{ scope: string; offsets: Record<string, number[]> }>({ scope: "", offsets: {} });
+  const pagingScope = JSON.stringify(directoryKey);
+  const offsets = paging.scope === pagingScope ? paging.offsets : {};
   const openedPaths = query.data?.recursive === false ? [...expandedDirectories].filter((path) => {
     const ancestors = path.split("/").slice(0, -1);
     return ancestors.every((_, index) => expandedDirectories.has(ancestors.slice(0, index + 1).join("/")))
       && rootEntries.some((entry) => entry.directory && (entry.path === path || path.startsWith(`${entry.path}/`)));
   }).sort() : [];
-  const children = useQueries({ queries: openedPaths.map((relativePath) => ({
-    queryKey: [...directoryKey, relativePath],
+  const pageRequests = openedPaths.flatMap((path) => [0, ...(offsets[path] ?? [])].map((offset) => ({path, offset})));
+  const children = useQueries({ queries: pageRequests.map(({path, offset}) => ({
+    queryKey: [...directoryKey, path, offset],
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
       if (!request) throw new Error("workspace directory is unavailable");
-      return readWorkspaceDirectory(request, relativePath, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
+      return readWorkspaceDirectory(request, path, AbortSignal.any([signal, AbortSignal.timeout(15_000)]), offset);
     },
-    enabled: enabled && !!sessionId && !!request,
+    enabled: enabled && !searchTerm && !!sessionId && !!request,
     staleTime: 60_000, retry: false,
   })) });
-  const nestedQueries = new Map(openedPaths.map((path, index) => [path, children[index]]));
-  const entries = [...(query.data?.entries ?? []), ...children.flatMap((child) => child.data?.entries ?? [])];
+  const nestedQueries = new Map(openedPaths.map((path) => {
+    const pages = children.filter((_, index) => pageRequests[index]?.path === path);
+    const last = pages.at(-1);
+    return [path, {
+      isPending: pages.some((page) => page.isPending),
+      isFetching: pages.some((page) => page.isFetching),
+      isError: pages.some((page) => page.isError),
+      hasMore: !!last?.data?.has_more,
+      refetch: () => Promise.all(pages.filter((page) => page.isError).map((page) => page.refetch())),
+      loadMore: () => {
+        const offset = last?.data?.next_offset;
+        if (!last?.data?.has_more || offset === undefined) return;
+        setPaging((previous) => {
+          const current = previous.scope === pagingScope ? previous.offsets : {};
+          return { scope: pagingScope, offsets: { ...current, [path]: [...new Set([...(current[path] ?? []), offset])] } };
+        });
+      },
+    }] as const;
+  }));
+  const search = useWorkspaceFileSearch(request, directoryKey, searchTerm, enabled && !!sessionId);
+  const entries = searchTerm ? search.entries : [...rootEntries, ...children.flatMap((child) => child.data?.entries ?? [])];
   const select = (key: string | null) => {
     const directory = directories.find((candidate) => candidate.key === key);
     if (!directory) return;
@@ -74,5 +101,8 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
     : !selected && current && (current.taskId || current.projectResourceId)
     ? { task_id: current.taskId ?? "", project_resource_id: current.projectResourceId, workspace_id: wsId, runtime_id: current.runtimeId, path: current.path, target: "HEAD" }
     : null;
-  return { directories, selected, select, query, gitRequest, entries, nestedQueries, refresh: () => client.invalidateQueries({ queryKey: directoryKey }) };
+  return { directories, selected, select, query, gitRequest, entries, nestedQueries, search, hasMore: browse.hasNextPage, loadMore: () => browse.fetchNextPage(), refresh: () => Promise.all([
+    client.resetQueries({ queryKey: [...directoryKey, "search"] }),
+    client.invalidateQueries({ queryKey: directoryKey, predicate: (query) => query.queryKey[directoryKey.length] !== "search" }),
+  ]) };
 }

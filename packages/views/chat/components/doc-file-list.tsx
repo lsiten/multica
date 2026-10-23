@@ -145,21 +145,19 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     enabled: !!projectID && activeTab === "issues",
     staleTime: 15_000,
   });
+  const [filter, setFilter] = useState("");
+  const searchTerm = filter.trim().toLowerCase();
+  const [searchCollapsed, setSearchCollapsed] = useState<{scope: string; paths: Set<string>}>({scope:"", paths:new Set()});
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
-  const { entries: workspaceEntries, nestedQueries, directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest, refresh: refreshDirectory } = useChatFileDirectory(
-    wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files", expandedDirs,
+  const { entries: workspaceEntries, nestedQueries, directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest, search, hasMore, loadMore, refresh: refreshDirectory } = useChatFileDirectory(
+    wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files", expandedDirs, searchTerm,
   );
   const openDoc = useDocModeStore((s) => s.openDoc);
-  // Match the VS Code/GitHub tree convention: folders start closed so a large
-  // checkout stays scannable. Search is computed from allDocuments (before the
-  // tree is filtered), then matching ancestor folders are opened automatically.
-
-  // Local-only filter (v12: the sidebar is files + a filter box). Ephemeral UI
-  // state, so it lives here, not in the persisted doc-mode store.
-  const [filter, setFilter] = useState("");
+  const searchScope = JSON.stringify([wsId, sessionId, projectID, selectedDirectory?.key, searchTerm]);
+  const collapsedPaths = searchCollapsed.scope === searchScope ? searchCollapsed.paths : new Set<string>();
 
   const allDocuments = useMemo((): DocumentListItem[] => {
-    if (!selectedDirectory || !workspaceFiles.data) return [];
+    if (!selectedDirectory) return [];
     return workspaceEntries
       .filter((entry) => !isInternalWorkspacePath(entry.path))
       .map((entry) => {
@@ -178,7 +176,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           relativePath,
         };
       });
-  }, [projectID, selectedDirectory, sessionId, workspaceFiles.data, workspaceEntries]);
+  }, [projectID, selectedDirectory, sessionId, workspaceEntries]);
 
   // The attachments tab is the union of the session's and the project's
   // attachments, de-duplicated by id so an attachment shared by both is not
@@ -259,11 +257,11 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
 
   // Only surface no-match when the filter actively excludes every openable row;
   // a bare project header (or repo references) with no files is not "no match".
-  const showNoMatch = filter.trim().length > 0 && visible.length === 0 && visibleRepoReferences.length === 0;
+  const showNoMatch = !!searchTerm && !search.searching && !search.isError && visible.length === 0 && visibleRepoReferences.length === 0;
   const displayedDirectory = selectedDirectory?.path;
   const renderTree = (nodes: FileTreeNode[], depth = 0): ReactNode[] => nodes.flatMap((node) => {
     if (node.directory) {
-      const expanded = expandedDirs.has(node.path) || (filter.trim().length > 0 && node.children.length > 0);
+      const expanded = searchTerm ? !collapsedPaths.has(node.path) && node.children.length > 0 : expandedDirs.has(node.path);
       return [
         <li key={`dir:${node.path}`}>
           <button
@@ -271,20 +269,31 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-body hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{ paddingLeft: `${8 + depth * 14}px` }}
             aria-expanded={expanded}
-            onClick={() => setExpandedDirs((current) => {
-              const next = new Set(current);
-              if (next.has(node.path)) next.delete(node.path); else next.add(node.path);
-              return next;
-            })}
+            onClick={() => {
+              if (searchTerm) {
+                setSearchCollapsed((current) => {
+                  const next = new Set(current.scope === searchScope ? current.paths : []);
+                  if (expanded) next.add(node.path); else next.delete(node.path);
+                  return {scope:searchScope, paths:next};
+                });
+                return;
+              }
+              setExpandedDirs((current) => {
+                const next = new Set(current);
+                if (next.has(node.path)) next.delete(node.path); else next.add(node.path);
+                return next;
+              });
+            }}
           >
             <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
             <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{node.name}</span>
           </button>
         </li>,
-        ...(expanded && nestedQueries.get(node.path)?.isPending ? [<li key={`loading:${node.path}`} role="status" className="px-3 py-1.5 text-body text-muted-foreground">{t(($) => $.doc_file_list.loading)}</li>] : []),
-        ...(expanded && nestedQueries.get(node.path)?.isError ? [<li key={`error:${node.path}`} role="alert" className="px-3 py-1.5 text-body text-destructive">{t(($) => $.doc_file_list.load_failed)} <Button type="button" size="sm" variant="ghost" onClick={() => void nestedQueries.get(node.path)?.refetch()}>{t(($) => $.doc_file_list.retry)}</Button></li>] : []),
+        ...(expanded && !searchTerm && nestedQueries.get(node.path)?.isPending ? [<li key={`loading:${node.path}`} role="status" className="px-3 py-1.5 text-body text-muted-foreground">{t(($) => $.doc_file_list.loading)}</li>] : []),
+        ...(expanded && !searchTerm && nestedQueries.get(node.path)?.isError ? [<li key={`error:${node.path}`} role="alert" className="px-3 py-1.5 text-body text-destructive">{t(($) => $.doc_file_list.load_failed)} <Button type="button" size="sm" variant="ghost" onClick={() => void nestedQueries.get(node.path)?.refetch()}>{t(($) => $.doc_file_list.retry)}</Button></li>] : []),
         ...(expanded ? renderTree(node.children, depth + 1) : []),
+        ...(expanded && !searchTerm && nestedQueries.get(node.path)?.hasMore ? [<li key={`more:${node.path}`} style={{paddingLeft:`${22 + depth * 14}px`}}><Button type="button" variant="ghost" size="sm" disabled={nestedQueries.get(node.path)?.isFetching} onClick={() => nestedQueries.get(node.path)?.loadMore()}>{t(($) => $.doc_file_list.load_more)}</Button></li>] : []),
       ];
     }
     const doc = node.document;
@@ -431,13 +440,13 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
               {selectedDirectory.projectResourceId && <p className="text-caption text-muted-foreground">{t(($) => $.doc_file_list.read_only)}</p>}
             </div>
           )}
-          {activeTab === "files" && workspaceFiles.isPending && selectedDirectory?.runtimeId && (
+          {activeTab === "files" && !searchTerm && workspaceFiles.isPending && selectedDirectory?.runtimeId && (
             <div className="flex items-center gap-2 px-3 py-3 text-body text-muted-foreground" role="status">
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
               {t(($) => $.doc_file_list.loading)}
             </div>
           )}
-          {activeTab === "files" && selectedDirectory && (workspaceFiles.isError || !selectedDirectory.runtimeId) && (
+          {activeTab === "files" && selectedDirectory && ((!searchTerm && workspaceFiles.isError) || !selectedDirectory.runtimeId) && (
             <div className="space-y-2 px-3 py-3" role="alert">
               <p className="text-body text-destructive">{t(($) => !selectedDirectory.runtimeId ? $.doc_file_list.directory_unavailable : $.doc_file_list.load_failed)}</p>
               {workspaceFiles.error instanceof Error && (
@@ -448,13 +457,13 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
               )}
               <Button type="button" variant="outline" size="sm" onClick={() => {
                 void refetchSessionFiles();
-                if (selectedDirectory.runtimeId) void workspaceFiles.refetch();
+                if (selectedDirectory.runtimeId) void (workspaceFiles.isFetchNextPageError ? loadMore() : workspaceFiles.refetch());
               }}>
                 {t(($) => $.doc_file_list.retry)}
               </Button>
             </div>
           )}
-          {activeTab === "files" && selectedDirectory && workspaceFiles.isSuccess && allDocuments.length === 0 && (
+          {activeTab === "files" && !searchTerm && selectedDirectory && workspaceFiles.isSuccess && allDocuments.length === 0 && (
             <p className="px-3 py-3 text-body text-muted-foreground">{t(($) => $.doc_file_list.directory_empty)}</p>
           )}
           {visibleRepoReferences.length > 0 && (
@@ -481,6 +490,9 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           ) : (
             <div className="flex-1" />
           )}
+          {!searchTerm && hasMore && <Button type="button" variant="ghost" size="sm" disabled={workspaceFiles.isFetching} onClick={() => void loadMore()}>{t(($) => $.doc_file_list.load_more)}</Button>}
+          {searchTerm && search.searching && <p role="status" className="flex items-center gap-2 px-3 py-2 text-body text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />{t(($) => $.doc_file_list.searching)}</p>}
+          {searchTerm && search.isError && <div role="alert" className="px-3 py-2 text-body text-destructive">{t(($) => $.doc_file_list.search_failed)} <Button type="button" variant="ghost" size="sm" onClick={() => void (search.data ? search.fetchNextPage() : search.refetch())}>{t(($) => $.doc_file_list.retry)}</Button></div>}
           <section className="mt-2 border-t p-2" aria-label={t(($) => $.doc_file_list.git)}>
             <div className="mb-2 flex items-center gap-2 text-caption font-medium text-muted-foreground">
               <GitBranch className="h-3.5 w-3.5" />

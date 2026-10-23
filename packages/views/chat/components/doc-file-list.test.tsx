@@ -39,6 +39,8 @@ const session = vi.hoisted(() => ({
     errorsByRelativePath: {} as Record<string, Error>,
     entriesByRelativePath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
     directoryRequests: [] as string[],
+    pageEntries: {} as Record<string, {entries: Array<{path:string; size:number; directory:boolean}>; next_offset:number; has_more:boolean}>,
+    pageRequests: [] as string[],
     workspaceErrorByPath: {} as Record<string, Error>,
     workspaceError: null as Error | null,
     error: null as Error | null,
@@ -74,10 +76,14 @@ vi.mock("../../platform/local-review-pages", async () => {
   const actual = await vi.importActual<typeof import("../../platform/local-review-pages")>("../../platform/local-review-pages");
   return {
     ...actual,
-    requestReviewPage: (request: { path?: string; relative_path?: string }) => {
+    requestReviewPage: (request: { path?: string; relative_path?: string; offset?: number }) => {
       if (session.current.shallow) {
         const relative = request.relative_path ?? ".";
         session.current.directoryRequests.push(relative);
+        const key = `${relative}:${request.offset ?? 0}`;
+        session.current.pageRequests.push(key);
+        const page = session.current.pageEntries[key];
+        if(page) return Promise.resolve({path:request.path ?? ".",recursive:false,truncated:false,...page});
         if (session.current.errorsByRelativePath[relative]) return Promise.reject(session.current.errorsByRelativePath[relative]);
         return Promise.resolve({path:request.path ?? ".",recursive:false,entries:session.current.entriesByRelativePath[relative] ?? [],next_offset:2,has_more:false,truncated:false});
       }
@@ -135,7 +141,7 @@ beforeEach(() => {
     hasProject: true,
     entries: [{ path: "src/app.ts", size: 10, directory: false }],
     entriesByPath: {},
-    shallow: false, entriesByRelativePath: {}, directoryRequests: [], errorsByRelativePath: {},
+    pageEntries: {}, pageRequests: [], shallow: false, entriesByRelativePath: {}, directoryRequests: [], errorsByRelativePath: {},
     workspaceErrorByPath: {},
     workspaceError: null,
     error: null,
@@ -144,6 +150,60 @@ beforeEach(() => {
 
 describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
 
+
+  it("loads one page at a time for both the root and expanded folders", async () => {
+    session.current.shallow = true;
+    session.current.pageEntries = {
+      ".:0": {entries:[{path:"docs",directory:true,size:0}],next_offset:100,has_more:true},
+      ".:100": {entries:[{path:"last.txt",directory:false,size:0}],next_offset:101,has_more:false},
+      "docs:0": {entries:[{path:"docs/first.md",directory:false,size:0}],next_offset:100,has_more:true},
+      "docs:100": {entries:[{path:"docs/last.md",directory:false,size:0}],next_offset:101,has_more:false},
+    };
+    renderList(newClient());
+    await screen.findByText("docs");
+    expect(session.current.pageRequests).toEqual([".:0"]);
+    fireEvent.click(screen.getByRole("button",{name:enChat.doc_file_list.load_more}));
+    await screen.findByText("last.txt");
+    fireEvent.click(screen.getByRole("button",{name:"docs"}));
+    await screen.findByText("first.md");
+    expect(session.current.pageRequests).toEqual([".:0", ".:100", "docs:0"]);
+    fireEvent.click(screen.getByRole("button",{name:enChat.doc_file_list.load_more}));
+    await screen.findByText("last.md");
+    expect(session.current.pageRequests).toEqual([".:0", ".:100", "docs:0", "docs:100"]);
+  });
+
+  it("searches unopened folders and later pages progressively until complete", async () => {
+    session.current.shallow = true;
+    session.current.pageEntries = {
+      ".:0": {entries:[{path:"first-needle.md",directory:false,size:0}],next_offset:100,has_more:true},
+      ".:100": {entries:[{path:"docs",directory:true,size:0}],next_offset:101,has_more:false},
+      "docs:0": {entries:[{path:"docs/deep",directory:true,size:0}],next_offset:1,has_more:false},
+      "docs/deep:0": {entries:[{path:"docs/deep/last-needle.md",directory:false,size:0}],next_offset:1,has_more:false},
+    };
+    renderList(newClient());
+    await screen.findByText("first-needle.md");
+    fireEvent.change(screen.getByRole("textbox"),{target:{value:"needle"}});
+    await screen.findByText("first-needle.md");
+    expect(screen.queryByText("last-needle.md")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(enChat.doc_file_list.searching);
+    await screen.findByText("last-needle.md");
+    await waitFor(()=>expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(session.current.pageRequests).toEqual([".:0", ".:0", ".:100", "docs:0", "docs/deep:0"]);
+    fireEvent.click(screen.getByRole("button",{name:"docs"}));
+    expect(screen.queryByText("last-needle.md")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:"docs"}));
+    expect(screen.getByText("last-needle.md")).toBeInTheDocument();
+  });
+
+  it("allows collapsing matching ancestors while a search remains active", async () => {
+    renderList(newClient());
+    await screen.findByText("src");
+    fireEvent.change(screen.getByRole("textbox"), {target:{value:"app"}});
+    expect(await screen.findByText("app.ts")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", {name:"src"}));
+    expect(screen.getByRole("button", {name:"src"})).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("app.ts")).not.toBeInTheDocument();
+  });
 
   it("refreshes an expanded subtree after a Git operation changes its files",async()=>{
     session.current.files.directories=[{project_resource_id:"resource",daemon_id:"daemon",runtime_id:"rt-1",path:"/project",label:"Project directory"}];
@@ -280,7 +340,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(screen.getByText("src")).toBeInTheDocument();
     expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("src"));
-    expect(screen.getByText("app.ts")).toBeInTheDocument();
+    expect(await screen.findByText("app.ts")).toBeInTheDocument();
     // The attachment is only in the "Attachments" tab, not the files tab.
     fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
@@ -303,7 +363,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     fireEvent.change(screen.getByLabelText(enChat.doc_file_list.filter_placeholder), {
       target: { value: "app.ts" },
     });
-    expect(screen.getByText("app.ts")).toBeInTheDocument();
+    expect(await screen.findByText("app.ts")).toBeInTheDocument();
   });
 
   it("opens the clicked attachment (from the attachments tab) through openDoc", async () => {
@@ -325,7 +385,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(active).toMatchObject({ kind: "workspace_file", id: expect.stringContaining("src/app.ts") });
   });
 
-  it("filters documents by the filter box (client-side)", async () => {
+  it("searches workspace files without including attachments", async () => {
     renderList(newClient());
     await screen.findByText("Acme");
     // The files tab is source only, so the attachment is excluded from the tree;
@@ -333,7 +393,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     fireEvent.change(screen.getByLabelText(enChat.doc_file_list.filter_placeholder), {
       target: { value: "app.ts" },
     });
-    expect(screen.getByText("app.ts")).toBeInTheDocument();
+    expect(await screen.findByText("app.ts")).toBeInTheDocument();
     expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
   });
 
@@ -344,7 +404,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     fireEvent.change(screen.getByLabelText(enChat.doc_file_list.filter_placeholder), {
       target: { value: "zzz-nothing" },
     });
-    expect(screen.getByText(enChat.doc_file_list.no_match)).toBeInTheDocument();
+    expect(await screen.findByText(enChat.doc_file_list.no_match)).toBeInTheDocument();
   });
 
   it("lists the project's configured repos when there is no task worktree", async () => {
@@ -394,7 +454,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     renderList(queryClient);
     expect(screen.getByText("Acme")).toBeInTheDocument();
     fireEvent.click(screen.getByText("src"));
-    expect(screen.getByText("app.ts")).toBeInTheDocument();
+    expect(await screen.findByText("app.ts")).toBeInTheDocument();
     // The attachment persists in its own tab across the refresh.
     fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
     expect(screen.getByText("report.pdf")).toBeInTheDocument();

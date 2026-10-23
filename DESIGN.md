@@ -38,6 +38,10 @@ body. Headers and toolbars remain fixed; flex children that scroll always use
   loading, and no match. Read immediate children in pages and fetch child
   directories only when expanded; empty directories remain visible. A failed
   child read exposes its own retry while sibling directories stay usable.
+  Browsing fetches subsequent pages on request. Search scans folders and pages
+  progressively, displays matches as they arrive, and permits collapsing any
+  matching ancestor. Changing the search or root cancels the previous scan;
+  errors retain matches and offer continuation from the failed page.
 - **Accessibility:** buttons expose `aria-expanded`, file rows are keyboard
   reachable, and search has a labelled input.
 - **Directory selection:** include the project's bound local directories and
