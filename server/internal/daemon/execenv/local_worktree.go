@@ -75,6 +75,7 @@ const (
 // LocalWorktreeParams describes the worktree Prepare should build for a
 // local_directory task running in worktree mode.
 type LocalWorktreeParams struct {
+	CodeWorkspaceIssueID string
 	// LocalPath is the user's configured directory. It may be the repo root
 	// or any subdirectory of it; the worktree always covers the whole repo,
 	// and the agent's cwd is the matching subdirectory inside it.
@@ -120,6 +121,9 @@ type LocalWorktreeParams struct {
 
 // owner is the identity a branch created for this task is recorded under.
 func (p LocalWorktreeParams) owner() branchOwner {
+	if p.CodeWorkspaceIssueID != "" {
+		p.AgentID, p.SquadID, p.ConversationID = "issue-tree", "", p.CodeWorkspaceIssueID
+	}
 	return branchOwner{WorkspaceID: p.WorkspaceID, AgentID: p.AgentID, ConversationID: p.ConversationID, ProjectID: p.ProjectID, SquadID: p.SquadID, RuntimeID: p.RuntimeID, RepositoryScope: p.RepositoryScope}
 }
 
@@ -135,6 +139,12 @@ func (p LocalWorktreeParams) owner() branchOwner {
 // Tasks with neither an issue nor a chat session have no conversation to
 // continue and get "", "".
 func localWorktreeConversation(params PrepareParams) (key, id string) {
+	if params.Task.CodeWorkspaceIssueID != "" && params.Task.ChatSessionID == "" {
+		if params.Task.CodeWorkspaceIssueIdentifier != "" {
+			return params.Task.CodeWorkspaceIssueIdentifier, params.Task.CodeWorkspaceIssueID
+		}
+		return taskKey(params.Task.CodeWorkspaceIssueID), params.Task.CodeWorkspaceIssueID
+	}
 	if params.Task.ChatSessionID != "" {
 		return "chat-" + taskKey(params.Task.ChatSessionID), params.Task.ChatSessionID
 	}
@@ -1308,6 +1318,9 @@ func (p taskBranchPlan) altName(taskID string) string {
 // task-scoped branch that continues nothing.
 func resolveTaskBranch(gitRoot string, params LocalWorktreeParams, headSHA string, logger *slog.Logger) taskBranchPlan {
 	agentSegment := sanitizeName(params.AgentName)
+	if params.CodeWorkspaceIssueID != "" {
+		agentSegment = "issue-tree"
+	}
 	taskScoped := taskBranchPlan{name: fmt.Sprintf("agent/%s/%s", agentSegment, taskKey(params.TaskID)), base: headSHA}
 
 	owner := params.owner()

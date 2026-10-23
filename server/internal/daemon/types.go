@@ -69,10 +69,14 @@ type IssueStatusData struct {
 // Task represents a claimed task from the server.
 // Agent data (name, skills) is populated by the claim endpoint.
 type Task struct {
-	physicalRepositoryScope  string // trusted physical DTO fingerprint; never serialized
-	HumanFollowupPrompt      string `json:"human_followup_prompt,omitempty"`
-	HumanResponsePrompt      string `json:"human_response_prompt,omitempty"`
-	ProjectSupervisionPrompt string `json:"project_supervision_prompt,omitempty"`
+	SelectedCodeWorkspace        *protocol.CodeWorkspaceSelection `json:"-"`
+	CodeWorkspaceIssueID         string                           `json:"code_workspace_issue_id,omitempty"`
+	CodeWorkspaceIssueIdentifier string                           `json:"code_workspace_issue_identifier,omitempty"`
+	CodeWorkspaceWorkDir         string                           `json:"code_workspace_work_dir,omitempty"`
+	physicalRepositoryScope      string                           // trusted physical DTO fingerprint; never serialized
+	HumanFollowupPrompt          string                           `json:"human_followup_prompt,omitempty"`
+	HumanResponsePrompt          string                           `json:"human_response_prompt,omitempty"`
+	ProjectSupervisionPrompt     string                           `json:"project_supervision_prompt,omitempty"`
 	// StartClaimSupported gates retries when talking to older servers.
 	StartClaimSupported  bool                                 `json:"start_claim_supported,omitempty"`
 	DispatchedAt         string                               `json:"dispatched_at,omitempty"`

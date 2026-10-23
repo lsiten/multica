@@ -15,12 +15,18 @@ import (
 )
 
 func managedReuseScopeMatches(task Task, scope *execenv.ManagedEnvProvenance) bool {
-	if scope == nil || scope.ManagedBy != execenv.ManagedEnvProvenanceManagedBy || scope.WorkspaceID != task.WorkspaceID || scope.AgentID != task.AgentID ||
-		scope.RuntimeID != task.RuntimeID || scope.ProjectID != task.ProjectID || scope.SquadID != task.SquadID {
+	if scope == nil || scope.PrivateProviderCheckout || scope.ManagedBy != execenv.ManagedEnvProvenanceManagedBy || scope.WorkspaceID != task.WorkspaceID ||
+		scope.RuntimeID != task.RuntimeID || scope.ProjectID != task.ProjectID {
 		return false
 	}
 	fingerprint, err := repositoryScopeForTask(task)
 	if err != nil || scope.RepositoryScope != fingerprint {
+		return false
+	}
+	if task.CodeWorkspaceIssueID != "" && task.ChatSessionID == "" {
+		return scope.CodeWorkspaceIssueID == task.CodeWorkspaceIssueID && scope.ChatSessionID == ""
+	}
+	if scope.AgentID != task.AgentID || scope.SquadID != task.SquadID || scope.CodeWorkspaceIssueID != "" {
 		return false
 	}
 	if task.ChatSessionID != "" {
@@ -35,22 +41,22 @@ func managedReuseScopeMatches(task Task, scope *execenv.ManagedEnvProvenance) bo
 // Restore only the recorded prior code directory. A corrupted matching backup
 // ends preparation instead of silently dropping the work and starting clean.
 func (d *Daemon) restoreArchivedPriorWorkdir(ctx context.Context, task Task, local *localDirectoryAssignment) error {
-	if local != nil && !local.UsesWorktree() || task.PriorWorkDir == "" || !filepath.IsAbs(task.PriorWorkDir) {
+	if local != nil && !local.UsesWorktree() {
 		return nil
 	}
-	targetRoot := d.priorMissingCodeRoot(task.PriorWorkDir)
-	if targetRoot == "" {
+	if task.CodeWorkspaceIssueID == "" && (task.PriorWorkDir == "" || !filepath.IsAbs(task.PriorWorkDir)) {
 		return nil
 	}
-	if _, err := os.Lstat(task.PriorWorkDir); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if _, err := os.Lstat(targetRoot); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	if task.CodeWorkspaceIssueID == "" && task.PriorWorkDir != "" {
+		targetRoot := d.priorMissingCodeRoot(task.PriorWorkDir)
+		if targetRoot == "" {
+			return nil
+		}
+		if _, err := os.Lstat(targetRoot); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	root, err := os.OpenRoot(d.cfg.WorkspacesRoot)
 	if err != nil {
@@ -83,7 +89,7 @@ func (d *Daemon) restoreArchivedPriorWorkdir(ctx context.Context, task Task, loc
 		}
 		path := filepath.Join(d.cfg.WorkspacesRoot, filepath.FromSlash(manifest.RelativeRoot))
 		if manifest.Profile == d.cfg.Profile && manifest.BackendURL == d.cfg.ServerBaseURL && manifest.Owner.WorkspaceID == task.WorkspaceID &&
-			managedReuseScopeMatches(task, manifest.ReuseScope) && environmentContainsWorkdir(path, task.PriorWorkDir) {
+			archivedFamilyScopeMatches(task, manifest.ReuseScope, path) && (task.CodeWorkspaceIssueID != "" || environmentContainsWorkdir(path, task.PriorWorkDir)) {
 			candidates = append(candidates, manifest)
 		}
 	}
@@ -97,7 +103,7 @@ func (d *Daemon) restoreArchivedPriorWorkdir(ctx context.Context, task Task, loc
 	if err != nil {
 		return fmt.Errorf("authorize archived workline: %w", err)
 	}
-	if status.WorkspaceID != task.WorkspaceID || status.RuntimeID != task.RuntimeID || status.AgentID != task.AgentID || !isAgentTaskTerminal(status.Status) {
+	if status.WorkspaceID != task.WorkspaceID || status.RuntimeID != task.RuntimeID || (task.CodeWorkspaceIssueID == "" && status.AgentID != task.AgentID) || (task.CodeWorkspaceIssueID != "" && status.CodeWorkspaceIssueID != task.CodeWorkspaceIssueID) || !isAgentTaskTerminal(status.Status) {
 		return errors.New("archived workline ownership changed")
 	}
 	if _, err := execenv.RestoreEnvironmentArchive(ctx, d.cfg.WorkspacesRoot, manifest.ID, d.cfg.Profile, d.cfg.ServerBaseURL); err != nil {
@@ -128,4 +134,17 @@ func (d *Daemon) priorMissingCodeRoot(workdir string) string {
 		}
 	}
 	return ""
+}
+
+func archivedFamilyScopeMatches(task Task, scope *execenv.ManagedEnvProvenance, path string) bool {
+	if managedReuseScopeMatches(task, scope) {
+		return true
+	}
+	if task.CodeWorkspaceIssueID == "" || scope == nil || scope.CodeWorkspaceIssueID != "" || scope.IssueID != task.CodeWorkspaceIssueID || task.CodeWorkspaceWorkDir == "" || !environmentContainsWorkdir(path, task.CodeWorkspaceWorkDir) {
+		return false
+	}
+	legacy := task
+	legacy.CodeWorkspaceIssueID = ""
+	legacy.IssueID, legacy.AgentID, legacy.SquadID = scope.IssueID, scope.AgentID, scope.SquadID
+	return managedReuseScopeMatches(legacy, scope)
 }

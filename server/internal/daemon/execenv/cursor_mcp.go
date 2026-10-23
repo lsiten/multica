@@ -77,6 +77,85 @@ func prepareCursorMcpConfig(envRoot, workDir string, mcpConfig json.RawMessage, 
 		return "", fmt.Errorf("write .cursor/mcp.json: %w", err)
 	}
 
+	return prepareCursorMcpState(envRoot, projectRoot, servers, mcpAuthSource)
+}
+
+// prepareCursorPrivateMcpPlugin uses Cursor's --plugin-dir contract to keep
+// managed credentials out of a shared checkout without changing HOME or cwd.
+// https://cursor.com/docs/reference/plugins#mcp-servers
+func prepareCursorPrivateMcpPlugin(envRoot, workDir string, raw json.RawMessage, authSource string, manifest *sidecarManifest) (dataDir, pluginDir string, err error) {
+	if !hasManagedCursorMcpConfig(raw) {
+		return "", "", nil
+	}
+	if envRoot == "" {
+		return "", "", errors.New("env root is required for private cursor mcp_config")
+	}
+	servers, err := parseCursorManagedMcpServers(raw)
+	if err != nil {
+		return "", "", err
+	}
+	for name, rawServer := range servers {
+		var server map[string]json.RawMessage
+		if err := json.Unmarshal(rawServer, &server); err != nil {
+			return "", "", err
+		}
+		var command string
+		if value, ok := server["command"]; !ok {
+			continue
+		} else if err := json.Unmarshal(value, &command); err != nil {
+			return "", "", err
+		}
+		cwd := workDir
+		if value, ok := server["cwd"]; ok {
+			if err := json.Unmarshal(value, &cwd); err != nil {
+				return "", "", err
+			}
+			if !filepath.IsAbs(cwd) && !strings.Contains(cwd, "${") {
+				cwd = filepath.Join(workDir, cwd)
+			}
+		}
+		server["cwd"], err = json.Marshal(cwd)
+		if err != nil {
+			return "", "", err
+		}
+		if strings.ContainsAny(command, `/\`) && !filepath.IsAbs(command) && !strings.Contains(command, "${") && !strings.HasPrefix(command, "~") {
+			server["command"], err = json.Marshal(filepath.Join(cwd, command))
+			if err != nil {
+				return "", "", err
+			}
+		}
+		servers[name], err = json.Marshal(server)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	// A fresh generation avoids claiming files from an interrupted attempt that
+	// died before it persisted its ownership manifest.
+	pluginDir, err = os.MkdirTemp(envRoot, "cursor-mcp-plugin-")
+	if err != nil {
+		return "", "", err
+	}
+	if manifest != nil {
+		manifest.Dirs = append(manifest.Dirs, pluginDir)
+	}
+	if err = recordMkdirAll(filepath.Join(pluginDir, ".cursor-plugin"), 0o700, manifest); err != nil {
+		return "", "", err
+	}
+	if err = recordWriteFile(filepath.Join(pluginDir, ".cursor-plugin", "plugin.json"), []byte(`{"name":"multica-managed-mcp","mcpServers":"./mcp.json"}`), 0o600, manifest); err != nil {
+		return "", "", err
+	}
+	config, err := marshalCursorMcpConfig(servers)
+	if err != nil {
+		return "", "", err
+	}
+	if err = recordWriteFile(filepath.Join(pluginDir, "mcp.json"), config, 0o600, manifest); err != nil {
+		return "", "", err
+	}
+	dataDir, err = prepareCursorMcpState(envRoot, cursorProjectRoot(workDir), servers, authSource)
+	return dataDir, pluginDir, err
+}
+
+func prepareCursorMcpState(envRoot, projectRoot string, servers map[string]json.RawMessage, mcpAuthSource string) (string, error) {
 	cursorDataDir := filepath.Join(envRoot, "cursor-data")
 	projectDataDir := filepath.Join(cursorDataDir, "projects", cursorSlugifyPath(projectRoot))
 	if err := os.MkdirAll(projectDataDir, 0o700); err != nil {

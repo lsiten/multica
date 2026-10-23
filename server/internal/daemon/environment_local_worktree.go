@@ -34,11 +34,11 @@ func managedCodeRoot(workspacesRoot, workdir string) string {
 }
 
 func localWorktreeParamsForTask(task Task, local *localDirectoryAssignment, root string) execenv.LocalWorktreeParams {
-	key, id := execenv.LocalWorktreeConversation(execenv.PrepareParams{IssueIdentifier: task.IssueIdentifier, Task: execenv.TaskContextForEnv{IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID}})
+	key, id := execenv.LocalWorktreeConversation(execenv.PrepareParams{IssueIdentifier: task.IssueIdentifier, Task: execenv.TaskContextForEnv{CodeWorkspaceIssueID: task.CodeWorkspaceIssueID, CodeWorkspaceIssueIdentifier: task.CodeWorkspaceIssueIdentifier, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID}})
 	name := "agent"
 	if task.Agent != nil {
 		name = task.Agent.Name
 	}
 	repositoryScope, _ := repositoryScopeForTask(task)
-	return execenv.LocalWorktreeParams{LocalPath: local.AbsPath, EnvRoot: root, AgentName: name, TaskID: task.ID, ConversationKey: key, ConversationID: id, WorkspaceID: task.WorkspaceID, AgentID: task.AgentID, RetainCheckout: true, ProjectID: task.ProjectID, SquadID: task.SquadID, RuntimeID: task.RuntimeID, RepositoryScope: repositoryScope}
+	return execenv.LocalWorktreeParams{CodeWorkspaceIssueID: task.CodeWorkspaceIssueID, LocalPath: local.AbsPath, EnvRoot: root, AgentName: name, TaskID: task.ID, ConversationKey: key, ConversationID: id, WorkspaceID: task.WorkspaceID, AgentID: task.AgentID, RetainCheckout: true, ProjectID: task.ProjectID, SquadID: task.SquadID, RuntimeID: task.RuntimeID, RepositoryScope: repositoryScope}
 }

@@ -958,9 +958,14 @@ ORDER BY message.created_at ASC, message.id ASC;
 SELECT task.*
 FROM agent_task_queue AS task
 JOIN chat_session AS session ON session.id = task.chat_session_id
+LEFT JOIN issue AS issue ON issue.id = task.issue_id
 WHERE task.chat_session_id = $1
   AND session.workspace_id = $2
+  AND session.status <> 'archived'
+  AND (task.issue_id IS NULL OR issue.id IS NOT NULL)
   AND NOT task.work_dir_missing
+  AND (task.result ? 'code_workspace' OR COALESCE((SELECT s.category FROM issue_status s WHERE s.workspace_id = issue.workspace_id AND s.key = issue.status),
+               CASE WHEN issue.status IN ('done', 'cancelled') THEN 'done' ELSE '' END) NOT IN ('done', 'closed'))
   -- Cancelled/failed turns without an issue are transient chat workdirs (for
   -- example, an interrupted image-only turn), not project checkouts. They can
   -- no longer satisfy local-review requests and must not mask a real issue
@@ -995,7 +1000,15 @@ CROSS JOIN LATERAL (
                   task_autopilot.project_id::text, NULLIF(task.context->>'project_id', '')) AS project_id
 ) AS explicit_project
 WHERE task_agent.workspace_id = sqlc.arg(workspace_id)::uuid
+  AND (task.chat_session_id IS NULL OR (task_session.id IS NOT NULL AND task_session.status <> 'archived'))
+  AND (task.autopilot_run_id IS NULL OR (task_autopilot_run.id IS NOT NULL AND task_autopilot.id IS NOT NULL))
+  -- Agent bindings only scope a surviving source, not orphaned run history.
+  AND (issue.id IS NOT NULL OR task_session.id IS NOT NULL OR task_autopilot.id IS NOT NULL
+       OR NULLIF(task.context->>'project_id', '') IS NOT NULL)
+  AND (task.issue_id IS NULL OR issue.id IS NOT NULL)
   AND NOT task.work_dir_missing
+  AND (task.result ? 'code_workspace' OR COALESCE((SELECT s.category FROM issue_status s WHERE s.workspace_id = issue.workspace_id AND s.key = issue.status),
+               CASE WHEN issue.status IN ('done', 'cancelled') THEN 'done' ELSE '' END) NOT IN ('done', 'closed'))
   AND (
     explicit_project.project_id = sqlc.arg(project_id)::uuid::text
     OR (explicit_project.project_id IS NULL AND (

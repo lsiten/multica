@@ -141,6 +141,10 @@ type ExecOptions struct {
 	// through Claude Code's --settings flag. It currently carries restrictive
 	// runtime-skill overrides only; other providers ignore it.
 	ClaudeSettingsPath string
+	// CursorMcpPluginDir is a task-private plugin containing managed MCP config.
+	CursorMcpPluginDir string
+	// OmpMcpExtensionDir is a task-private native MCP capability extension.
+	OmpMcpExtensionDir string
 	// piMcpExtensionPath is set by piBackend.Execute after it writes the
 	// temporary MCP extension. The daemon does not fill it.
 	piMcpExtensionPath string

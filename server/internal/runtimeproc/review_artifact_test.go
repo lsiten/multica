@@ -180,3 +180,46 @@ func TestReviewArtifactRejectsPathTraversalName(t *testing.T) {
 		t.Fatal("expected rejection of a path-traversal name on read")
 	}
 }
+
+func TestReviewArtifactPruneEnforcesEitherLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		count int
+		bytes int64
+		want  int
+	}{
+		{"count only exceeded", 2, 4096, 1},
+		{"bytes only exceeded", 10, 14, 1},
+		{"unrelated entries do not count", 3, 4096, 0},
+		{"unrelated count-only entries do not count", 3, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newTestRoot(t)
+			if err := PrepareReviewArtifactNamespace(root); err != nil {
+				t.Fatal(err)
+			}
+			namespace := ReviewArtifactNamespace(root)
+			for _, id := range []string{"a", "b", "c"} {
+				if err := PublishReviewArtifact(namespace, ReviewArtifactName(id), []byte(`{"x":1}`)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(namespace, "user-note.txt"), []byte("retain"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			removed, err := PruneReviewArtifacts(namespace, map[string]bool{ReviewArtifactName("c"): true}, tc.count, tc.bytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if removed != tc.want {
+				t.Fatalf("removed=%d want=%d", removed, tc.want)
+			}
+			if _, err := os.Stat(filepath.Join(namespace, ReviewArtifactName("c"))); err != nil {
+				t.Fatalf("referenced artifact lost: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(namespace, "user-note.txt")); err != nil {
+				t.Fatalf("unrelated file lost: %v", err)
+			}
+		})
+	}
+}

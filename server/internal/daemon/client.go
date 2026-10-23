@@ -534,11 +534,15 @@ func (c *Client) StartTask(ctx context.Context, task Task, capabilities ...strin
 	}
 	ctx, cancel := context.WithTimeout(ctx, startTaskTimeout)
 	defer cancel()
-	err := c.postJSONWithRetry(ctx, path, map[string]any{
+	body := map[string]any{
 		"runtime_id":    task.RuntimeID,
 		"capabilities":  capabilities,
 		"dispatched_at": task.DispatchedAt,
-	}, decodeResponse, startTaskRetrySchedule)
+	}
+	if task.SelectedCodeWorkspace != nil {
+		body["code_workspace"] = task.SelectedCodeWorkspace
+	}
+	err := c.postJSONWithRetry(ctx, path, body, decodeResponse, startTaskRetrySchedule)
 	var reqErr *requestError
 	if errors.As(err, &reqErr) && reqErr.StatusCode == http.StatusConflict {
 		return false, fmt.Errorf("%w: %w", errStartClaimRejected, err)

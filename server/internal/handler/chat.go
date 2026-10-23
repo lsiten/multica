@@ -386,6 +386,8 @@ func (h *Handler) GetChatSession(w http.ResponseWriter, r *http.Request) {
 }
 
 type ChatSessionFileTaskResponse struct {
+	ChatSessionID   string `json:"chat_session_id,omitempty"`
+	RunKind         string `json:"run_kind,omitempty"`
 	ID              string `json:"id"`
 	ProjectID       string `json:"project_id,omitempty"`
 	RuntimeID       string `json:"runtime_id"`
@@ -505,6 +507,19 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list chat worktrees")
 		return
 	}
+	var projectTasks []db.AgentTaskQueue
+	if selectedProjectID.Valid {
+		projectTasks, err = h.Queries.ListChatProjectFileTasks(r.Context(), db.ListChatProjectFileTasksParams{ProjectID: selectedProjectID, WorkspaceID: workspaceUUID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list project worktrees")
+			return
+		}
+	}
+	workspaceVisibility, err := h.chatFileCodeWorkspaceVisibility(r.Context(), workspaceUUID, tasks, projectTasks)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load code workspace ownership")
+		return
+	}
 	attachmentMode := attachmentURLModeFromRequest(r)
 	attachmentResponses := make([]AttachmentResponse, 0, len(attachments))
 	for _, attachment := range attachments {
@@ -513,6 +528,12 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	issueKinds := make(map[string]string)
 	projectedTasks := make(map[string]ChatSessionFileTaskResponse)
 	projectTask := func(task db.AgentTaskQueue) ChatSessionFileTaskResponse {
+		if visible, exists := workspaceVisibility[task.ID]; exists && !visible {
+			return ChatSessionFileTaskResponse{}
+		}
+		if !chatFileTaskVisible(task) {
+			return ChatSessionFileTaskResponse{}
+		}
 		id := uuidToString(task.ID)
 		if cached, ok := projectedTasks[id]; ok {
 			return cached
@@ -529,6 +550,7 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		response := ChatSessionFileTaskResponse{
+			ChatSessionID: uuidToString(task.ChatSessionID), RunKind: computeTaskKind(task),
 			ID: id, RuntimeID: uuidToString(task.RuntimeID), IssueID: issueID, IssueKind: kind,
 			ParentTaskID: uuidToString(task.ParentTaskID), BranchName: task.BranchName.String,
 			WorkDir: workDir, RelativeWorkDir: relativeWorkDir(workDir, workspaceID, id), CreatedAt: timestampToString(task.CreatedAt),
@@ -546,14 +568,6 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	projectTaskResponses := make([]ChatSessionFileTaskResponse, 0)
 	projectAttachmentResponses := make([]AttachmentResponse, 0)
 	if selectedProjectID.Valid {
-		projectTasks, projectErr := h.Queries.ListChatProjectFileTasks(r.Context(), db.ListChatProjectFileTasksParams{
-			ProjectID:   selectedProjectID,
-			WorkspaceID: workspaceUUID,
-		})
-		if projectErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to list project worktrees")
-			return
-		}
 		projectTaskResponses = make([]ChatSessionFileTaskResponse, 0, len(projectTasks))
 		for _, task := range projectTasks {
 			response := projectTask(task)
@@ -675,31 +689,6 @@ func (h *Handler) chatTaskIssueKind(ctx context.Context, task db.AgentTaskQueue,
 		return ""
 	}
 	return issue.Kind
-}
-
-// inheritParentIssueWorkDir keeps sub-issue runs inside the top-level task's
-// checkout. Work mode is configured at the top-level issue/project boundary;
-// a child that starts before its own task has reported a work directory must
-// not silently create a second checkout just because the parent is nested.
-func (h *Handler) inheritParentIssueWorkDir(ctx context.Context, issue db.Issue, response *AgentTaskResponse) {
-	parentID := issue.ParentIssueID
-	seen := map[string]struct{}{}
-	for hops := 0; parentID.Valid && hops < 64; hops++ {
-		key := uuidToString(parentID)
-		if _, exists := seen[key]; exists {
-			return
-		}
-		seen[key] = struct{}{}
-		if workDir, err := h.Queries.GetLatestTaskWorkDirByIssue(ctx, parentID); err == nil && strings.TrimSpace(workDir) != "" {
-			response.PriorWorkDir = workDir
-			return
-		}
-		parent, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: parentID, WorkspaceID: issue.WorkspaceID})
-		if err != nil {
-			return
-		}
-		parentID = parent.ParentIssueID
-	}
 }
 
 type UpdateChatSessionRequest struct {

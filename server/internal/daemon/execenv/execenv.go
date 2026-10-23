@@ -133,10 +133,14 @@ type PrepareParams struct {
 
 // TaskContextForEnv is the subset of task context used for writing context files.
 type TaskContextForEnv struct {
-	HumanFollowupPrompt string
-	IssueID             string
-	TriggerCommentID    string // comment that triggered this task (empty for on_assign)
-	TriggerThreadID     string // root comment ID for the triggering thread; falls back to TriggerCommentID when empty
+	RetainedIssueWorkDir         string
+	CodeWorkspaceIssueID         string
+	CodeWorkspaceIssueIdentifier string
+	CodeWorkspaceWorkDir         string
+	HumanFollowupPrompt          string
+	IssueID                      string
+	TriggerCommentID             string // comment that triggered this task (empty for on_assign)
+	TriggerThreadID              string // root comment ID for the triggering thread; falls back to TriggerCommentID when empty
 	// CommentReplyTargets is set for a comment run that coalesced comments
 	// spanning MORE THAN ONE root thread (MUL-4348). When it has >=2 entries the
 	// workflow's reply step fans out — one reply per thread — instead of the
@@ -274,6 +278,9 @@ type Environment struct {
 	// ContextDir holds per-run instructions when WorkDir is shared user code.
 	ContextDir              string
 	PrivateProviderCheckout bool
+	OmpMcpExtensionDir      string
+	ReasonixHome            string
+	CursorMcpPluginDir      string
 	// RootDir is the top-level env directory ({workspacesRoot}/{task_id_short}/).
 	RootDir string
 	// CodeRootDir owns a reused working tree when runtime configuration lives
@@ -447,6 +454,11 @@ func PreparePrivate(params PrepareParams, env *Environment, logger *slog.Logger)
 		return nil, errors.New("execenv: missing physical preparation")
 	}
 	envRoot, workDir := env.RootDir, env.WorkDir
+	if params.IsolateLocalContext {
+		if err := cleanupRunPrivateSidecars(envRoot); err != nil {
+			return nil, fmt.Errorf("execenv: reclaim private configuration: %w", err)
+		}
+	}
 	privateProvider := env.PrivateProviderCheckout
 	prepareSucceeded := false
 	if err := os.MkdirAll(env.MulticaConfigRoot, 0700); err != nil {
@@ -469,11 +481,13 @@ func PreparePrivate(params PrepareParams, env *Environment, logger *slog.Logger)
 		}
 	}
 	contextDir := workDir
-	if (env.LocalDirectory || env.LocalWorktree != nil || privateProvider) && params.IsolateLocalContext {
-		contextDir = filepath.Join(envRoot, "task-context")
-		if err := os.MkdirAll(contextDir, 0o700); err != nil {
+	if (env.LocalDirectory || env.LocalWorktree != nil || privateProvider || params.Task.CodeWorkspaceIssueID != "") && params.IsolateLocalContext {
+		var err error
+		contextDir, err = os.MkdirTemp(envRoot, "task-context-")
+		if err != nil {
 			return nil, fmt.Errorf("execenv: create isolated context: %w", err)
 		}
+		manifest.Dirs = append(manifest.Dirs, contextDir)
 		env.ContextDir = contextDir
 	}
 
@@ -491,12 +505,10 @@ func PreparePrivate(params PrepareParams, env *Environment, logger *slog.Logger)
 	// registered. Without this rollback the files stay on disk with no record
 	// of what to remove (MUL-6132).
 	//
-	// In place only. Worktree mode discards the whole worktree on failure just
-	// above, and a cloud envRoot is wiped wholesale by the GC — only the
-	// local_directory flow writes into a directory that outlives the task and
-	// belongs to the user, where a leftover marker disables every multica
-	// command in that directory tree until someone removes it by hand.
-	if env.LocalDirectory {
+	// Isolated run configuration also survives when its root owns shared code.
+	// Roll it back on failure so same-task recovery can recreate it without
+	// deleting the shared checkout or relying on a not-yet-written manifest.
+	if env.LocalDirectory || params.IsolateLocalContext {
 		defer func() {
 			if prepareSucceeded {
 				return
@@ -510,7 +522,13 @@ func PreparePrivate(params PrepareParams, env *Environment, logger *slog.Logger)
 	if err := writeContextFiles(contextDir, params.Provider, params.Task, manifest); err != nil {
 		return nil, fmt.Errorf("execenv: write context files: %w", err)
 	}
-	if err := prepareOmpMcpConfig(workDir, params.Provider, params.McpConfig, manifest); err != nil {
+	if params.Task.CodeWorkspaceIssueID != "" && !env.PrivateProviderCheckout && params.Provider == "omp" {
+		var err error
+		env.OmpMcpExtensionDir, err = prepareFamilyOmpMcpExtension(envRoot, workDir, params.McpConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else if err := prepareOmpMcpConfig(workDir, params.Provider, params.McpConfig, manifest); err != nil {
 		return nil, fmt.Errorf("execenv: prepare omp mcp config: %w", err)
 	}
 
@@ -570,7 +588,13 @@ func PreparePrivate(params PrepareParams, env *Environment, logger *slog.Logger)
 	// reasonix.toml. Degraded, not fatal: without it the task still runs under
 	// the backend's fail-closed question handling.
 	if params.Provider == "reasonix" {
-		if err := writeReasonixProjectConfig(workDir, params.ReasonixEnv, manifest, logger); err != nil {
+		if params.Task.CodeWorkspaceIssueID != "" && !env.PrivateProviderCheckout {
+			var err error
+			env.ReasonixHome, err = prepareFamilyReasonixConfig(envRoot, params.ReasonixEnv)
+			if err != nil {
+				return nil, err
+			}
+		} else if err := writeReasonixProjectConfig(workDir, params.ReasonixEnv, manifest, logger); err != nil {
 			logger.Warn("execenv: write reasonix project config failed", "error", err)
 		}
 	}
@@ -581,7 +605,13 @@ func PreparePrivate(params PrepareParams, env *Environment, logger *slog.Logger)
 	// this per-task data dir can load, so user-global MCP servers do not leak
 	// into managed-MCP runs.
 	if params.Provider == "cursor" {
-		cursorDataDir, err := prepareCursorMcpConfig(envRoot, workDir, params.McpConfig, params.CursorMcpAuthSource, manifest)
+		var cursorDataDir string
+		var err error
+		if params.Task.CodeWorkspaceIssueID != "" && !env.PrivateProviderCheckout {
+			cursorDataDir, env.CursorMcpPluginDir, err = prepareCursorPrivateMcpPlugin(envRoot, workDir, params.McpConfig, params.CursorMcpAuthSource, manifest)
+		} else {
+			cursorDataDir, err = prepareCursorMcpConfig(envRoot, workDir, params.McpConfig, params.CursorMcpAuthSource, manifest)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("execenv: prepare cursor mcp config: %w", err)
 		}
@@ -708,18 +738,38 @@ func ReusePrivate(params ReuseParams, env *Environment, logger *slog.Logger) *En
 	if env == nil || env.WorkDir == "" {
 		return nil
 	}
+	if params.IsolateLocalContext {
+		if err := cleanupRunPrivateSidecars(env.RootDir); err != nil {
+			logger.Warn("execenv: reclaim private configuration failed", "error", err)
+			return nil
+		}
+	}
 	params.WorkDir = env.WorkDir
 	codeRoot := env.RootDir
 	if env.CodeRootDir != "" {
 		codeRoot = env.CodeRootDir
 	}
+	manifest := &sidecarManifest{}
+	refreshSucceeded := false
+	if params.IsolateLocalContext {
+		defer func() {
+			if !refreshSucceeded {
+				if err := rollBackPreparedSidecars(*manifest); err != nil {
+					logger.Warn("execenv: roll back sidecars after failed private refresh", "error", err)
+				}
+			}
+		}()
+	}
 	reusedWorktree := env.LocalWorktree
 	contextDir := params.WorkDir
-	if params.IsolateLocalContext && reusedWorktree != nil {
-		contextDir = filepath.Join(env.RootDir, "task-context")
-		if err := os.MkdirAll(contextDir, 0700); err != nil {
+	if params.IsolateLocalContext && (reusedWorktree != nil || params.Task.CodeWorkspaceIssueID != "") {
+		var err error
+		contextDir, err = os.MkdirTemp(env.RootDir, "task-context-")
+		if err != nil {
+			logger.Warn("execenv: create isolated context failed", "error", err)
 			return nil
 		}
+		manifest.Dirs = append(manifest.Dirs, contextDir)
 		env.ContextDir = contextDir
 	}
 	if env.RootDir != "" {
@@ -785,11 +835,17 @@ func ReusePrivate(params ReuseParams, env *Environment, logger *slog.Logger) *En
 	// manifest being current after either path. RootDir is empty on the
 	// legacy local_directory Reuse fallback — skip the persist in that
 	// case to avoid creating a stray manifest at the filesystem root.
-	manifest := &sidecarManifest{}
 	if err := writeContextFiles(contextDir, params.Provider, params.Task, manifest); err != nil {
 		logger.Warn("execenv: refresh context files failed", "error", err)
 	}
-	if err := prepareOmpMcpConfig(params.WorkDir, params.Provider, params.McpConfig, manifest); err != nil {
+	if params.Task.CodeWorkspaceIssueID != "" && !env.PrivateProviderCheckout && params.Provider == "omp" {
+		var err error
+		env.OmpMcpExtensionDir, err = prepareFamilyOmpMcpExtension(env.RootDir, params.WorkDir, params.McpConfig)
+		if err != nil {
+			logger.Warn("execenv: prepare private OMP config failed", "error", err)
+			return nil
+		}
+	} else if err := prepareOmpMcpConfig(params.WorkDir, params.Provider, params.McpConfig, manifest); err != nil {
 		logger.Warn("execenv: refresh omp mcp config failed; forcing fresh prepare", "error", err)
 		return nil
 	}
@@ -830,7 +886,14 @@ func ReusePrivate(params ReuseParams, env *Environment, logger *slog.Logger) *En
 	// prior run's reasonix.toml, so without this the next turn would run with
 	// the tool available again.
 	if params.Provider == "reasonix" {
-		if err := writeReasonixProjectConfig(params.WorkDir, params.ReasonixEnv, manifest, logger); err != nil {
+		if params.Task.CodeWorkspaceIssueID != "" && !env.PrivateProviderCheckout {
+			var err error
+			env.ReasonixHome, err = prepareFamilyReasonixConfig(env.RootDir, params.ReasonixEnv)
+			if err != nil {
+				logger.Warn("execenv: prepare private Reasonix config failed", "error", err)
+				return nil
+			}
+		} else if err := writeReasonixProjectConfig(params.WorkDir, params.ReasonixEnv, manifest, logger); err != nil {
 			logger.Warn("execenv: refresh reasonix project config failed", "error", err)
 		}
 	}
@@ -885,7 +948,13 @@ func ReusePrivate(params ReuseParams, env *Environment, logger *slog.Logger) *En
 	// mcp_config must replace the prior run's .cursor/mcp.json and isolated
 	// approvals before the next cursor-agent process starts.
 	if params.Provider == "cursor" && env.RootDir != "" {
-		cursorDataDir, err := prepareCursorMcpConfig(env.RootDir, params.WorkDir, params.McpConfig, params.CursorMcpAuthSource, manifest)
+		var cursorDataDir string
+		var err error
+		if params.Task.CodeWorkspaceIssueID != "" && !env.PrivateProviderCheckout {
+			cursorDataDir, env.CursorMcpPluginDir, err = prepareCursorPrivateMcpPlugin(env.RootDir, params.WorkDir, params.McpConfig, params.CursorMcpAuthSource, manifest)
+		} else {
+			cursorDataDir, err = prepareCursorMcpConfig(env.RootDir, params.WorkDir, params.McpConfig, params.CursorMcpAuthSource, manifest)
+		}
 		if err != nil {
 			logger.Warn("execenv: refresh cursor mcp config failed", "error", err)
 			return nil
@@ -928,6 +997,7 @@ func ReusePrivate(params ReuseParams, env *Environment, logger *slog.Logger) *En
 		env.OpenclawIncludeRoot = result.IncludeRoot
 	}
 
+	refreshSucceeded = true
 	logger.Info("execenv: reusing env", "workdir", params.WorkDir)
 	return env
 }
@@ -1092,17 +1162,19 @@ const ManagedEnvProvenanceManagedBy = "multica-daemon-managed-env"
 // chat or automation envs, so its presence is itself the "safe to reuse, not a user
 // local_directory" assertion; see shouldReusePriorWorkdir.
 type ManagedEnvProvenance struct {
-	ManagedBy       string `json:"managed_by"`
-	WorkspaceID     string `json:"workspace_id"`
-	RuntimeID       string `json:"runtime_id,omitempty"`
-	ProjectID       string `json:"project_id,omitempty"`
-	SquadID         string `json:"squad_id,omitempty"`
-	RepositoryScope string `json:"repository_scope"`
-	IssueID         string `json:"issue_id,omitempty"`
-	ChatSessionID   string `json:"chat_session_id,omitempty"`
-	AutopilotID     string `json:"autopilot_id,omitempty"`
-	AgentID         string `json:"agent_id"`
-	AgentName       string `json:"agent_name,omitempty"`
+	PrivateProviderCheckout bool   `json:"private_provider_checkout,omitempty"`
+	CodeWorkspaceIssueID    string `json:"code_workspace_issue_id,omitempty"`
+	ManagedBy               string `json:"managed_by"`
+	WorkspaceID             string `json:"workspace_id"`
+	RuntimeID               string `json:"runtime_id,omitempty"`
+	ProjectID               string `json:"project_id,omitempty"`
+	SquadID                 string `json:"squad_id,omitempty"`
+	RepositoryScope         string `json:"repository_scope"`
+	IssueID                 string `json:"issue_id,omitempty"`
+	ChatSessionID           string `json:"chat_session_id,omitempty"`
+	AutopilotID             string `json:"autopilot_id,omitempty"`
+	AgentID                 string `json:"agent_id"`
+	AgentName               string `json:"agent_name,omitempty"`
 }
 
 // WriteManagedEnvProvenance persists the reuse-eligibility marker at the env
@@ -1118,7 +1190,7 @@ func WriteManagedEnvProvenance(envRoot string, p ManagedEnvProvenance) error {
 	if err != nil {
 		return fmt.Errorf("marshal managed env provenance: %w", err)
 	}
-	return os.WriteFile(filepath.Join(envRoot, managedEnvProvenanceFile), data, 0o644)
+	return writeFileAtomic(filepath.Join(envRoot, managedEnvProvenanceFile), data, 0o644)
 }
 
 // ReadManagedEnvProvenance reads the Prepare-time reuse-eligibility marker from
@@ -1565,6 +1637,16 @@ func resetEnvRootContents(envRoot string) error {
 		return errors.New("physical root has live or undelivered consumers")
 	}
 	defer release()
+	// A task root may now own code used by its entire issue family. Reclaiming
+	// the original task ID must not erase settled descendants' code or history.
+	if scope, err := ReadManagedEnvProvenance(envRoot); err == nil {
+		if scope.CodeWorkspaceIssueID != "" {
+			return nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect existing code workspace before reset: %w", err)
+	}
+
 	entries, err := os.ReadDir(envRoot)
 	if err != nil {
 		return err

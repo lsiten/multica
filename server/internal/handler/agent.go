@@ -372,12 +372,15 @@ type AgentTaskResponse struct {
 	// MirrorSource is an exact, server-validated display target for a mirror
 	// chat task. It is omitted for ordinary tasks; daemons must not infer a
 	// physical target from runtime defaults.
-	MirrorSource         *protocol.MirrorSourceBinding `json:"mirror_source,omitempty"`
-	IssueID              string                        `json:"issue_id"`
-	WorkspaceID          string                        `json:"workspace_id"`
-	WorkspaceSlug        string                        `json:"workspace_slug,omitempty"`
-	IssueIdentifier      string                        `json:"issue_identifier,omitempty"`
-	RemoteMCPConnections []remotemcp.Connection        `json:"remote_mcp_connections,omitempty"`
+	MirrorSource                 *protocol.MirrorSourceBinding `json:"mirror_source,omitempty"`
+	IssueID                      string                        `json:"issue_id"`
+	WorkspaceID                  string                        `json:"workspace_id"`
+	WorkspaceSlug                string                        `json:"workspace_slug,omitempty"`
+	IssueIdentifier              string                        `json:"issue_identifier,omitempty"`
+	CodeWorkspaceIssueID         string                        `json:"code_workspace_issue_id,omitempty"`
+	CodeWorkspaceIssueIdentifier string                        `json:"code_workspace_issue_identifier,omitempty"`
+	CodeWorkspaceWorkDir         string                        `json:"code_workspace_work_dir,omitempty"`
+	RemoteMCPConnections         []remotemcp.Connection        `json:"remote_mcp_connections,omitempty"`
 	// PluginHookTools are the workspace's agent-trigger plugin hooks, which the
 	// daemon renders as MCP tools for this task. Resolved at claim time so
 	// disabling or uninstalling a plugin takes effect on the next task rather

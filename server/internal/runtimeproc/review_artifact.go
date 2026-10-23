@@ -296,6 +296,7 @@ func PruneReviewArtifacts(namespace string, keep map[string]bool, maxCount int, 
 	}
 	var candidates []candidate
 	var total int64
+	count := 0
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -310,6 +311,7 @@ func PruneReviewArtifacts(namespace string, keep map[string]bool, maxCount int, 
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
+		count++
 		total += info.Size()
 		if !keep[entry.Name()] {
 			candidates = append(candidates, candidate{name: entry.Name(), size: info.Size(), mod: info.ModTime()})
@@ -318,10 +320,9 @@ func PruneReviewArtifacts(namespace string, keep map[string]bool, maxCount int, 
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].mod.Before(candidates[j].mod) })
 	removed := 0
 	for _, c := range candidates {
-		if maxCount >= 0 && len(entries)-removed <= maxCount {
-			break
-		}
-		if maxBytes > 0 && total <= maxBytes {
+		countExceeded := maxCount >= 0 && count-removed > maxCount
+		bytesExceeded := maxBytes > 0 && total > maxBytes
+		if !countExceeded && !bytesExceeded {
 			break
 		}
 		if err := removePrivateArtifact(namespace, c.name); err != nil {

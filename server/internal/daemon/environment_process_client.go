@@ -23,25 +23,39 @@ import (
 type environmentUncertainOperation struct {
 	RequestID, Operation string
 	Cause                error
+	Scope                environmentMutationScope
 }
 
 func (e *environmentUncertainOperation) Error() string {
-	return fmt.Sprintf("environment %s outcome unknown (request %s): %v", e.Operation, e.RequestID, e.Cause)
+	message := fmt.Sprintf("environment %s outcome unknown (request %s): %v", e.Operation, e.RequestID, e.Cause)
+	if len(e.Scope.Paths) > 0 {
+		message += "; protected directory=" + e.Scope.Paths[0]
+	}
+	return message + "; awaiting outcome verification"
 }
 func (e *environmentUncertainOperation) Unwrap() error { return e.Cause }
 
 type environmentProcessClient struct {
-	daemon        *Daemon
-	process       *runtimeproc.Process
-	bootstrap     runtimeproc.Bootstrap
-	facts         *environmentFactCallback
-	gate          chan struct{}
-	confirmations chan struct{}
-	mu            sync.Mutex
-	active        int
-	uncertain     error
-	closeOnce     sync.Once
-	closeErr      error
+	daemon          *Daemon
+	process         *runtimeproc.Process
+	bootstrap       runtimeproc.Bootstrap
+	facts           *environmentFactCallback
+	gate            chan struct{}
+	confirmations   chan struct{}
+	mu              sync.Mutex
+	reconciling     sync.Mutex
+	active          int
+	pending         map[string]environmentPendingOperation
+	consumed        map[string]struct{}
+	bindingDigest   string
+	recoveryCancel  context.CancelFunc
+	recoveryDone    chan struct{}
+	recoveryWake    chan struct{}
+	closed          bool
+	acknowledgement *runtimeproc.Request
+	retirementErr   error
+	closeOnce       sync.Once
+	closeErr        error
 }
 
 func (d *Daemon) environmentProcessMode() bool {
@@ -115,6 +129,7 @@ func (d *Daemon) ensureEnvironmentProcess(ctx context.Context) (*environmentProc
 		return nil, err
 	}
 	client := &environmentProcessClient{daemon: d, process: process, bootstrap: bootstrap, facts: facts, gate: make(chan struct{}, 1), confirmations: make(chan struct{}, 4)}
+	client.startRecovery()
 	if err = client.sync(ctx); err != nil {
 		client.close()
 		return nil, err
@@ -135,108 +150,39 @@ func (c *environmentProcessClient) sync(ctx context.Context) error {
 				current.RepoURLs = append(current.RepoURLs, repo)
 			}
 		}
+		slices.Sort(current.RuntimeIDs)
+		slices.Sort(current.RepoURLs)
 		binding.Runtimes = append(binding.Runtimes, current)
 	}
 	c.daemon.mu.Unlock()
+	slices.SortFunc(binding.Runtimes, func(left, right environmentRuntimeBinding) int {
+		return strings.Compare(left.WorkspaceID, right.WorkspaceID)
+	})
+	encoded, err := json.Marshal(binding)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(encoded)
+	c.mu.Lock()
+	bound := c.bindingDigest == hex.EncodeToString(digest[:])
+	c.mu.Unlock()
+	if bound {
+		return nil
+	}
 	return c.mutation(ctx, "environment.bind", binding, nil)
-}
-func (c *environmentProcessClient) mutation(ctx context.Context, operation string, input, output any) error {
-	gate := c.gate
-	concurrent := operation == "physical_finish_confirm"
-	if concurrent {
-		gate = c.confirmations
-	}
-	select {
-	case gate <- struct{}{}:
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	}
-	defer func() { <-gate }()
-	c.mu.Lock()
-	if c.uncertain != nil && !concurrent {
-		err := c.uncertain
-		c.mu.Unlock()
-		return err
-	}
-	c.active++
-	c.mu.Unlock()
-	defer func() { c.mu.Lock(); c.active--; c.mu.Unlock() }()
-	status, err := c.process.Client.Health(ctx)
-	if err != nil {
-		return err
-	}
-	encoded, err := json.Marshal(input)
-	if err != nil {
-		return err
-	}
-	request, err := c.process.Client.Request(operation, status.Fence, encoded)
-	if err != nil {
-		return err
-	}
-	request.Deadline = time.Now().Add(3 * time.Minute)
-	if deadline, ok := ctx.Deadline(); ok && deadline.Before(request.Deadline) {
-		request.Deadline = deadline
-	}
-	response, err := c.process.Client.Call(ctx, request)
-	if err != nil {
-		// A caller-side cancellation or deadline is a clean abort, not an uncertain
-		// outcome: the request may still settle on the service, but the caller has
-		// given up and the transport is not suspect. Return it directly so a slow or
-		// canceled read never fail-closes the client and poisons later mutations. A
-		// genuine transport failure below remains uncertain (fail-closed).
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
-		var rejection *runtimeproc.Error
-		if errors.As(err, &rejection) && slices.Contains([]string{"unauthorized", "identity_mismatch", "stale_fence", "malformed", "unknown_operation", "retired_request", "draining", "stopped", "resource_exhausted", "deadline"}, rejection.Code) {
-			return err
-		}
-		uncertain := &environmentUncertainOperation{RequestID: request.RequestID, Operation: operation, Cause: err}
-		c.mu.Lock()
-		c.uncertain = uncertain
-		c.mu.Unlock()
-		return uncertain
-	}
-	if response.Receipt == nil || response.Receipt.State != "completed" {
-		uncertain := &environmentUncertainOperation{RequestID: request.RequestID, Operation: operation, Cause: errors.New("pending receipt")}
-		c.mu.Lock()
-		c.uncertain = uncertain
-		c.mu.Unlock()
-		return uncertain
-	}
-	if output != nil && len(response.Receipt.Result) > 0 {
-		if err = json.Unmarshal(response.Receipt.Result, output); err != nil {
-			return err
-		}
-	}
-	if response.Receipt.Error != nil {
-		return response.Receipt.Error
-	}
-	// Retire only when this is the sole active caller. A confirmation needed by
-	// an ordinary mutation must never wait for that mutation's client-side gate.
-	c.mu.Lock()
-	alone := c.active == 1 && c.uncertain == nil
-	c.mu.Unlock()
-	if alone {
-		current, healthErr := c.process.Client.Health(ctx)
-		if healthErr == nil {
-			ack, requestErr := c.process.Client.Request("acknowledge", current.Fence, nil)
-			if requestErr == nil {
-				_, _ = c.process.Client.Call(ctx, ack)
-			}
-		}
-	}
-	return nil
 }
 func (c *environmentProcessClient) close() error {
 	c.closeOnce.Do(func() {
+		c.stopRecovery()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		c.closeErr = c.process.Stop(ctx)
 		if c.closeErr != nil {
 			c.closeErr = errors.Join(c.closeErr, c.process.Close())
 		}
-		c.facts.close()
+		if c.facts != nil {
+			c.facts.close()
+		}
 	})
 	return c.closeErr
 }

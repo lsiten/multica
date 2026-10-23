@@ -126,6 +126,8 @@ export interface ChatSession {
 
 /** Files that can be opened from the selected chat's project/workspace. */
 export interface ChatSessionFileTask {
+  chat_session_id?: string;
+  run_kind?: string;
   id: string;
   project_id?: string;
   runtime_id: string;

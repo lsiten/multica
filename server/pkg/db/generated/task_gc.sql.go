@@ -11,6 +11,94 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listCodeWorkspaceRetentions = `-- name: ListCodeWorkspaceRetentions :many
+WITH RECURSIVE ancestry AS (
+    SELECT i.id AS requested_issue_id, i.id, i.parent_issue_id, i.project_id,
+           ARRAY[i.id]::uuid[] AS visited
+    FROM issue i
+    WHERE i.workspace_id = $1
+      AND i.id = ANY($2::uuid[])
+    UNION ALL
+    SELECT ancestry.requested_issue_id, parent.id, parent.parent_issue_id, parent.project_id,
+           ancestry.visited || parent.id
+    FROM ancestry
+    JOIN issue parent ON parent.id = ancestry.parent_issue_id
+      AND parent.workspace_id = $1
+      AND parent.project_id IS NOT DISTINCT FROM ancestry.project_id
+    WHERE cardinality(ancestry.visited) <= 64
+      AND NOT parent.id = ANY(ancestry.visited)
+), roots AS (
+    SELECT requested_issue_id, id AS root_issue_id
+    FROM ancestry WHERE parent_issue_id IS NULL
+), family AS (
+    SELECT DISTINCT root_issue_id, root_issue_id AS issue_id FROM roots
+    UNION
+    SELECT family.root_issue_id, child.id
+    FROM family
+    JOIN issue child ON child.parent_issue_id = family.issue_id
+      AND child.workspace_id = $1
+), retention AS (
+    SELECT family.root_issue_id,
+           bool_or(
+               COALESCE(CASE i.status
+                   WHEN 'done' THEN 'done'
+                   WHEN 'cancelled' THEN 'closed'
+                   ELSE catalog.category
+               END, '') NOT IN ('done', 'closed')
+               OR EXISTS (
+                   SELECT 1 FROM human_request request
+                   WHERE request.workspace_id = $1
+                     AND request.issue_id = i.id
+                     AND request.status = 'pending' AND request.expires_at > now()
+               )
+               OR EXISTS (
+                   SELECT 1 FROM agent_task_queue run
+                   WHERE run.issue_id = i.id
+                     AND run.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+               )
+           )::boolean AS retention_blocked
+    FROM family
+    JOIN issue i ON i.id = family.issue_id AND i.workspace_id = $1
+    LEFT JOIN issue_status catalog ON catalog.workspace_id = i.workspace_id AND catalog.key = i.status
+    GROUP BY family.root_issue_id
+)
+SELECT roots.requested_issue_id AS issue_id, roots.root_issue_id, retention.retention_blocked
+FROM roots JOIN retention ON retention.root_issue_id = roots.root_issue_id
+`
+
+type ListCodeWorkspaceRetentionsParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListCodeWorkspaceRetentionsRow struct {
+	IssueID          pgtype.UUID `json:"issue_id"`
+	RootIssueID      pgtype.UUID `json:"root_issue_id"`
+	RetentionBlocked bool        `json:"retention_blocked"`
+}
+
+// Resolve all requested issue families in one snapshot. Invalid ancestry has
+// no root row, so callers retain the directory instead of authorizing cleanup.
+func (q *Queries) ListCodeWorkspaceRetentions(ctx context.Context, arg ListCodeWorkspaceRetentionsParams) ([]ListCodeWorkspaceRetentionsRow, error) {
+	rows, err := q.db.Query(ctx, listCodeWorkspaceRetentions, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCodeWorkspaceRetentionsRow{}
+	for rows.Next() {
+		var i ListCodeWorkspaceRetentionsRow
+		if err := rows.Scan(&i.IssueID, &i.RootIssueID, &i.RetentionBlocked); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMissingTaskGCIDs = `-- name: ListMissingTaskGCIDs :many
 SELECT requested.id::uuid AS id
 FROM unnest($1::uuid[]) AS requested(id)
@@ -42,7 +130,7 @@ func (q *Queries) ListMissingTaskGCIDs(ctx context.Context, taskIds []pgtype.UUI
 
 const listTaskGCLifecycles = `-- name: ListTaskGCLifecycles :many
 SELECT q.id, q.runtime_id, q.agent_id, q.issue_id, q.chat_session_id,
-       q.autopilot_run_id, ar.autopilot_id, q.status, q.completed_at,
+       q.autopilot_run_id, ar.autopilot_id, q.status, q.completed_at, q.context, project.id AS project_id,
        q.work_dir, q.prepare_lease_expires_at, a.workspace_id,
        i.status AS issue_status, i.revision AS issue_revision,
        chat.status AS chat_status,
@@ -77,6 +165,8 @@ JOIN agent a ON a.id = q.agent_id
 LEFT JOIN issue i ON i.id = q.issue_id AND i.workspace_id = a.workspace_id
 LEFT JOIN chat_session chat ON chat.id = q.chat_session_id AND chat.workspace_id = a.workspace_id
 LEFT JOIN autopilot_run ar ON ar.id = q.autopilot_run_id
+LEFT JOIN autopilot automation ON automation.id = ar.autopilot_id AND automation.workspace_id = a.workspace_id
+LEFT JOIN project ON project.id::text = COALESCE(i.project_id::text, chat.project_id::text, automation.project_id::text, q.context->>'project_id') AND project.workspace_id = a.workspace_id
 LEFT JOIN LATERAL (
     SELECT previous.agent_id, previous.runtime_id
     FROM agent_task_queue previous
@@ -124,6 +214,8 @@ type ListTaskGCLifecyclesRow struct {
 	AutopilotID           pgtype.UUID        `json:"autopilot_id"`
 	Status                string             `json:"status"`
 	CompletedAt           pgtype.Timestamptz `json:"completed_at"`
+	Context               []byte             `json:"context"`
+	ProjectID             pgtype.UUID        `json:"project_id"`
 	WorkDir               pgtype.Text        `json:"work_dir"`
 	PrepareLeaseExpiresAt pgtype.Timestamptz `json:"prepare_lease_expires_at"`
 	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
@@ -158,6 +250,8 @@ func (q *Queries) ListTaskGCLifecycles(ctx context.Context, arg ListTaskGCLifecy
 			&i.AutopilotID,
 			&i.Status,
 			&i.CompletedAt,
+			&i.Context,
+			&i.ProjectID,
 			&i.WorkDir,
 			&i.PrepareLeaseExpiresAt,
 			&i.WorkspaceID,

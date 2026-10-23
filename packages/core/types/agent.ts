@@ -390,6 +390,11 @@ export interface AgentTask {
    * distinguish creation work from later direct runs on that issue.
    */
   kind?: "comment" | "autopilot" | "chat" | "quick_create" | "direct" | "project_supervision";
+  /** Claim-only root issue identity for a shared code directory. */
+  readonly code_workspace_issue_id?: string;
+  readonly code_workspace_issue_identifier?: string;
+  /** Root issue directory candidate; provider resume still belongs to this run's issue. */
+  readonly code_workspace_work_dir?: string;
   /**
    * Local working directory pinned for this task by the daemon. Empty until
    * the daemon reports a work_dir (typically once execution starts). This is

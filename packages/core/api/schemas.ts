@@ -2298,6 +2298,9 @@ export const AgentTaskSchema = z.object({
   can_supplement: z.boolean().optional().catch(undefined),
   trigger_summary: z.string().optional(),
   kind: z.string().optional(),
+  code_workspace_issue_id: z.string().optional().catch(undefined),
+  code_workspace_issue_identifier: z.string().optional().catch(undefined),
+  code_workspace_work_dir: z.string().optional().catch(undefined),
   work_dir: z.string().optional().catch(undefined),
   relative_work_dir: z.string().optional().catch(undefined),
   durable_work_dir: z.string().optional().catch(undefined),
@@ -2473,6 +2476,8 @@ export const ChatSessionListSchema = z
 export const EMPTY_CHAT_SESSION_LIST: ChatSession[] = [];
 
 const ChatSessionFileTaskSchema = z.object({
+  chat_session_id: z.string().optional().catch(undefined),
+  run_kind: z.string().optional().catch(undefined),
   id: z.string(),
   project_id: z.string().optional().catch(undefined),
   runtime_id: z.string().default(""),

@@ -52,7 +52,7 @@ func ReadRetainedLocalWorktree(root string) (*LocalWorktree, error) {
 
 func LocalWorktreeReuseMatches(previous *LocalWorktree, params LocalWorktreeParams) bool {
 	root, err := resolveGitRoot(params.LocalPath)
-	return err == nil && root == previous.GitRoot && previous.owner == params.owner()
+	return err == nil && root == previous.GitRoot && localWorktreeOwnerMatches(previous, params)
 }
 
 // FindRetainedLocalWorktree locates the checkout of this workline's owned branch.
@@ -106,9 +106,11 @@ func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, log
 	if err != nil {
 		return nil, err
 	}
-	if gitRoot != previous.GitRoot || previous.owner != params.owner() {
+	if gitRoot != previous.GitRoot || !localWorktreeOwnerMatches(previous, params) {
 		return nil, errors.New("local worktree scope changed")
 	}
+	family := params.CodeWorkspaceIssueID != ""
+	params = retainedWorktreeOwnerParams(previous, params)
 	common, err := runGitTrimmed(previous.Path, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return nil, err
@@ -130,7 +132,11 @@ func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, log
 		return nil, err
 	}
 	defer unlock()
-	if params.SharedCheckout {
+	dirty, err := worktreeIsDirty(previous.Path)
+	if err != nil {
+		return nil, err
+	}
+	if params.SharedCheckout || family && dirty {
 		// Replaying a user snapshot into an actively edited checkout would
 		// overwrite the other run's work. Continue its current state instead.
 		branch, err := runGitTrimmed(previous.Path, "symbolic-ref", "--short", "HEAD")
@@ -149,7 +155,7 @@ func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, log
 		next.BaseCommit, next.Continued, next.createdBranch = tip, true, false
 		return &next, nil
 	}
-	if dirty, err := worktreeIsDirty(previous.Path); err != nil || dirty {
+	if dirty {
 		return nil, errors.New("retained local worktree has uncommitted changes")
 	}
 	head, err := runGitTrimmed(gitRoot, "rev-parse", "--verify", "HEAD")
@@ -195,4 +201,34 @@ func ReuseLocalWorktree(previous *LocalWorktree, params LocalWorktreeParams, log
 		return nil, fmt.Errorf("record reused local worktree: %w", err)
 	}
 	return next, nil
+}
+
+// Adopted roots retain their original branch identity; the managed code binding
+// proves family ownership without rewriting delivery history or Git refs.
+func localWorktreeOwnerMatches(previous *LocalWorktree, params LocalWorktreeParams) bool {
+	if previous.owner == params.owner() {
+		return true
+	}
+	if params.CodeWorkspaceIssueID == "" {
+		return false
+	}
+	owner := previous.owner
+	if owner.ConversationID != params.CodeWorkspaceIssueID || owner.WorkspaceID != params.WorkspaceID || owner.RuntimeID != params.RuntimeID || owner.ProjectID != params.ProjectID || owner.RepositoryScope != params.RepositoryScope {
+		return false
+	}
+	scope, err := ReadManagedEnvProvenance(filepath.Dir(previous.Path))
+	return err == nil && scope.ManagedBy == ManagedEnvProvenanceManagedBy && scope.CodeWorkspaceIssueID == params.CodeWorkspaceIssueID && scope.WorkspaceID == owner.WorkspaceID && scope.RuntimeID == owner.RuntimeID && scope.ProjectID == owner.ProjectID && scope.RepositoryScope == owner.RepositoryScope && scope.IssueID == owner.ConversationID && scope.AgentID == owner.AgentID && scope.SquadID == owner.SquadID
+}
+
+func retainedWorktreeOwnerParams(previous *LocalWorktree, params LocalWorktreeParams) LocalWorktreeParams {
+	if previous.owner == params.owner() {
+		return params
+	}
+	params.CodeWorkspaceIssueID = ""
+	params.AgentID, params.SquadID, params.ConversationID = previous.owner.AgentID, previous.owner.SquadID, previous.owner.ConversationID
+	parts := strings.SplitN(previous.Branch, "/", 3)
+	if len(parts) == 3 && parts[0] == "agent" {
+		params.AgentName, params.ConversationKey = parts[1], parts[2]
+	}
+	return params
 }

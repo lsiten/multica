@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 )
@@ -14,6 +15,10 @@ import (
 // It is released before agent execution; live checkouts keep their execution claim.
 func LockWorklinePreparation(ctx context.Context, workspacesRoot string, scope ManagedEnvProvenance) (func(), error) {
 	scope.AgentName, scope.ManagedBy = "", ""
+	if scope.CodeWorkspaceIssueID != "" {
+		scope.IssueID = scope.CodeWorkspaceIssueID
+		scope.AgentID, scope.SquadID, scope.ChatSessionID, scope.AutopilotID = "", "", "", ""
+	}
 	data, err := json.Marshal(scope)
 	if err != nil {
 		return nil, err
@@ -36,9 +41,15 @@ func LockWorklinePreparation(ctx context.Context, workspacesRoot string, scope M
 		return nil, err
 	}
 	defer directory.Close()
-	file, err := directory.OpenFile(hex.EncodeToString(digest[:])+".lock", os.O_CREATE|os.O_RDWR, 0600)
+	name := hex.EncodeToString(digest[:]) + ".lock"
+	file, err := directory.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	if errors.Is(err, os.ErrExist) || errors.Is(err, os.ErrNotExist) {
+		// Concurrent O_CREAT opens on macOS may report ENOENT after the other
+		// creator publishes the file. Open that existing inode without creating it.
+		file, err = directory.OpenFile(name, os.O_RDWR, 0600)
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open workline lock: %w", err)
 	}
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()

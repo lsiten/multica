@@ -34,6 +34,20 @@ func (s *environmentProcessService) reviewRunResult(ctx context.Context, request
 	return s.encodeReviewRunResult(request, &result)
 }
 
+func (s *environmentProcessService) reviewRequest(ctx context.Context, request runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
+	var command protocol.LocalReviewCommand
+	if err := decodeEnvironmentPayload(request.Payload, &command); err != nil {
+		return environmentOperationResult(nil, err)
+	}
+	if request.Operation == "review.read" && !localReviewReadOnly(command) {
+		return environmentOperationResult(nil, errors.New("review read requires a read-only action"))
+	}
+	if !s.daemon.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: command.WorkspaceID, RuntimeID: command.RuntimeID}) {
+		return environmentOperationResult(nil, errors.New("review runtime is not owned"))
+	}
+	return s.reviewRunResult(ctx, request, command)
+}
+
 // encodeReviewRunResult splits a review result: small results travel in-band;
 // oversized results are written to the private artifact namespace and
 // referenced. The artifact name is derived only from the request id, so a
@@ -67,12 +81,26 @@ func (s *environmentProcessService) encodeReviewRunResult(request runtimeproc.Re
 
 // routeReviewToChild forwards a review to the owned environment service and
 // returns the exact result, reading a large result from the private artifact
-// namespace. A transport failure is uncertain and is not retried as a local
-// Git operation.
+// namespace. Reads avoid mutation receipts; writes retain their replay fence.
+// Neither path falls back to a local Git operation.
 func (c *environmentProcessClient) routeReviewToChild(ctx context.Context, command protocol.LocalReviewCommand) (protocol.LocalReviewResult, error) {
 	var response reviewRunResponse
-	if err := c.mutation(ctx, "review.run", command, &response); err != nil {
-		return protocol.LocalReviewResult{}, err
+	if localReviewReadOnly(command) {
+		encoded, err := json.Marshal(command)
+		if err != nil {
+			return protocol.LocalReviewResult{}, err
+		}
+		raw, err := c.process.Client.Read(ctx, "review.read", encoded)
+		if err != nil {
+			return protocol.LocalReviewResult{}, err
+		}
+		if err := json.Unmarshal(raw, &response); err != nil {
+			return protocol.LocalReviewResult{}, err
+		}
+	} else {
+		if err := c.mutation(ctx, "review.run", command, &response); err != nil {
+			return protocol.LocalReviewResult{}, err
+		}
 	}
 	if response.Result != nil {
 		return *response.Result, nil

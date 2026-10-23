@@ -286,7 +286,12 @@ func (d *Daemon) runEnvironmentOperation(ctx context.Context, scope environmentO
 		} else {
 			result, err = d.runScopedEnvironmentMutation(ctx, scope, request, selection, path)
 			if err != nil {
-				result = map[string]any{"environment_id": selection.EnvironmentID, "reason": "scope_changed"}
+				if ctx.Err() != nil {
+					complete("cancelled", "operation cancelled")
+				} else {
+					complete("failed", err.Error())
+				}
+				return
 			}
 		}
 		data, err := json.Marshal(result)

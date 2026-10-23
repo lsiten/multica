@@ -55,20 +55,20 @@ func Open(ctx context.Context, root string, expected Identity) (*Client, error) 
 func (c *Client) Call(ctx context.Context, request Request) (Response, error) {
 	var out Response
 	if request.Deadline.IsZero() {
-		return out, errors.New("runtime deadline required")
+		return out, &NotSubmittedError{Cause: errors.New("runtime deadline required")}
 	}
 	callCtx, cancel := context.WithDeadline(ctx, request.Deadline)
 	defer cancel()
 	raw, err := json.Marshal(request)
 	if err != nil {
-		return out, err
+		return out, &NotSubmittedError{Cause: err}
 	}
 	if len(raw) > maxBody {
-		return out, errors.New("runtime request exceeds limit")
+		return out, &NotSubmittedError{Cause: errors.New("runtime request exceeds limit")}
 	}
 	req, err := http.NewRequestWithContext(callCtx, "POST", c.record.Address+"/rpc", bytes.NewReader(raw))
 	if err != nil {
-		return out, err
+		return out, &NotSubmittedError{Cause: err}
 	}
 	req.Header.Set("Authorization", "Bearer "+c.record.Token)
 	req.Header.Set("Content-Type", "application/json")

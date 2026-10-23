@@ -7,12 +7,23 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func (d *Daemon) runClaimedReview(ctx context.Context, command protocol.LocalReviewCommand) (protocol.LocalReviewResult, bool) {
-	read := command.Action == "read" || command.Action == "branches" || isPagedReviewRead(command.Action)
-	if command.Environment != nil && command.Action == "environment" {
-		read = command.Environment.Action == "inventory" || command.Environment.Action == "cache_preview" || command.Environment.Action == "archive_preview" || command.Environment.Action == "archives"
+func localReviewReadOnly(command protocol.LocalReviewCommand) bool {
+	if command.Action == "environment" || command.Environment != nil {
+		if command.Action != "environment" || command.Environment == nil {
+			return false
+		}
+		switch command.Environment.Action {
+		case "inventory", "cache_preview", "cleanup_preview", "archive_preview", "archives":
+			return true
+		default:
+			return false
+		}
 	}
-	if !read || !command.CancellationSupported {
+	return isReadReviewAction(command.Action)
+}
+
+func (d *Daemon) runClaimedReview(ctx context.Context, command protocol.LocalReviewCommand) (protocol.LocalReviewResult, bool) {
+	if !localReviewReadOnly(command) || !command.CancellationSupported {
 		return d.runRemoteReview(ctx, command), true
 	}
 	reading, cancel := context.WithTimeout(ctx, 45*time.Second)

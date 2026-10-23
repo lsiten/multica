@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
@@ -172,35 +171,34 @@ func (c *gatewayProcessClient) mutation(ctx context.Context, operation string, i
 	}
 	response, err := c.process.Client.Call(ctx, request)
 	if err != nil {
-		var reject *runtimeproc.Error
-		if errors.As(err, &reject) && slices.Contains([]string{
-			"unauthorized", "identity_mismatch", "stale_fence", "malformed",
-			"unknown_operation", "retired_request", "draining", "stopped",
-			"resource_exhausted", "deadline",
-		}, reject.Code) {
+		if runtimeproc.RejectedBeforeAdmission(err) {
 			return err
 		}
 		c.uncertain = fmt.Errorf("gateway %s outcome uncertain (request %s): %v", operation, request.RequestID, err)
 		return c.uncertain
 	}
-	if len(response.Receipt.Result) > 0 {
-		if out != nil {
-			if err = json.Unmarshal(response.Receipt.Result, out); err != nil {
-				return err
+	if response.Receipt == nil || response.Receipt.State != "completed" {
+		c.uncertain = fmt.Errorf("gateway %s outcome uncertain (request %s): pending receipt", operation, request.RequestID)
+		return c.uncertain
+	}
+	resultErr := decodeCompletedRuntimeResult(response.Receipt, out)
+	ack, ackErr := c.process.Client.Request("acknowledge", response.Status.Fence, nil)
+	if ackErr == nil {
+		var acknowledged runtimeproc.Response
+		acknowledged, ackErr = c.process.Client.Call(ctx, ack)
+		if ackErr == nil {
+			if acknowledged.Receipt == nil || acknowledged.Receipt.State != "completed" {
+				ackErr = errors.New("pending acknowledgement receipt")
+			} else if acknowledged.Receipt.Error != nil {
+				ackErr = acknowledged.Receipt.Error
 			}
 		}
 	}
-	ack, err := c.process.Client.Request("acknowledge", response.Status.Fence, nil)
-	if err != nil {
-		return err
+	if ackErr != nil {
+		c.uncertain = fmt.Errorf("gateway %s acknowledgement uncertain (request %s): %w", operation, request.RequestID, ackErr)
+		return errors.Join(resultErr, c.uncertain)
 	}
-	if _, err = c.process.Client.Call(ctx, ack); err != nil {
-		// The domain mutation already completed durably; a lost acknowledgement
-		// is an uncertainty, not a reason to re-run a register/revoke.
-		c.uncertain = fmt.Errorf("gateway %s acknowledgement uncertain (request %s): %v", operation, request.RequestID, err)
-		return c.uncertain
-	}
-	return nil
+	return resultErr
 }
 
 // register moves a task route into the gateway process. The control-owned

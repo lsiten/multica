@@ -190,7 +190,8 @@ func (c *workerProcessClient) run(ctx context.Context) (*workerRunResult, error)
 	}
 	if err := c.mutation(ctx, "worker.run", json.RawMessage(`{}`), &accepted); err != nil {
 		var domain *runtimeproc.Error
-		if errors.As(err, &domain) {
+		var consumed *consumedRuntimeResultError
+		if errors.As(err, &domain) || errors.As(err, &consumed) || runtimeproc.RejectedBeforeAdmission(err) {
 			return nil, err
 		}
 	}
@@ -228,35 +229,34 @@ func (c *workerProcessClient) mutation(ctx context.Context, operation string, in
 	}
 	response, err := c.transport.Call(ctx, request)
 	if err != nil {
-		// A domain-level result (a *runtimeproc.Error) is the worker's recorded
-		// decision: return it directly, never as an uncertain transport. Only a
-		// genuine transport failure (no domain error) is uncertain, because the
-		// worker may have processed the request.
-		var domain *runtimeproc.Error
-		if errors.As(err, &domain) {
+		if runtimeproc.RejectedBeforeAdmission(err) {
 			return err
 		}
 		c.uncertain = fmt.Errorf("worker %s outcome uncertain (request %s): %v", operation, request.RequestID, err)
 		return c.uncertain
 	}
-	if len(response.Receipt.Result) > 0 {
-		if out != nil {
-			if err = json.Unmarshal(response.Receipt.Result, out); err != nil {
-				return err
+	if response.Receipt == nil || response.Receipt.State != "completed" {
+		c.uncertain = fmt.Errorf("worker %s outcome uncertain (request %s): pending receipt", operation, request.RequestID)
+		return c.uncertain
+	}
+	resultErr := decodeCompletedRuntimeResult(response.Receipt, out)
+	ack, ackErr := c.transport.Request("acknowledge", response.Status.Fence, nil)
+	if ackErr == nil {
+		var acknowledged runtimeproc.Response
+		acknowledged, ackErr = c.transport.Call(ctx, ack)
+		if ackErr == nil {
+			if acknowledged.Receipt == nil || acknowledged.Receipt.State != "completed" {
+				ackErr = errors.New("pending acknowledgement receipt")
+			} else if acknowledged.Receipt.Error != nil {
+				ackErr = acknowledged.Receipt.Error
 			}
 		}
 	}
-	ack, err := c.transport.Request("acknowledge", response.Status.Fence, nil)
-	if err != nil {
-		return err
+	if ackErr != nil {
+		c.uncertain = fmt.Errorf("worker %s acknowledgement uncertain (request %s): %v", operation, request.RequestID, ackErr)
+		return errors.Join(resultErr, c.uncertain)
 	}
-	if _, err = c.transport.Call(ctx, ack); err != nil {
-		// The domain operation already completed; a lost acknowledgement is an
-		// uncertainty, not a reason to re-run a bind/run.
-		c.uncertain = fmt.Errorf("worker %s acknowledgement uncertain (request %s): %v", operation, request.RequestID, err)
-		return c.uncertain
-	}
-	return nil
+	return resultErr
 }
 
 // ready reports whether the worker is live. A health failure means the owner is
@@ -328,6 +328,8 @@ func buildWorkerContext(cfg Config, task Task, provider string, env *execenv.Env
 		prepared.ClaudeSettingsPath = env.ClaudeSettingsPath
 		prepared.QwenpawWorkspace = env.QwenpawWorkspace
 		prepared.ContextDir = env.ContextDir
+		prepared.CursorMcpPluginDir = env.CursorMcpPluginDir
+		prepared.OmpMcpExtensionDir = env.OmpMcpExtensionDir
 	}
 	return workerContext{
 		Provider: provider,

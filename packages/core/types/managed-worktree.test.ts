@@ -14,7 +14,7 @@ describe("worktree response boundary", () => {
     expect(parseManagedWorktrees([row])[0]).toMatchObject({ workspaceId: "ws", active: true, protectionReason: "unavailable" });
   });
   it("converts the wire contract to camelCase", () => {
-    expect(parseManagedWorktrees([{ ...row, active: false, protection_reason: "", agent_id: "a" }])[0]).toMatchObject({ agentId: "a", active: false, protectionReason: "" });
+    expect(parseManagedWorktrees([{ ...row, active: false, protection_reason: "", agent_id: "a", run_kind: "project_supervision", project_id: "project", chat_session_id: "chat", autopilot_run_id: "auto" }])[0]).toMatchObject({ agentId: "a", active: false, protectionReason: "", runKind: "project_supervision", projectId: "project", chatSessionId: "chat", autopilotRunId: "auto" });
     expect(parseManagedWorktreeCleanup({ removed_paths: [row.path], retained: {} })).toEqual({ removedPaths: [row.path], retained: {} });
   });
   it("does not turn malformed inventories or uncertain deletion responses into success", () => {

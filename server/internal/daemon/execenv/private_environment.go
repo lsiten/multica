@@ -22,6 +22,14 @@ func TaskPrivatePreparationEnvironment(provider string, environ []string, custom
 	if provider == "openclaw" {
 		source = environ
 	}
+	if provider == "reasonix" {
+		for _, entry := range environ {
+			key, _, ok := strings.Cut(entry, "=")
+			if ok && (key == "REASONIX_HOME" || key == "REASONIX_STATE_HOME" || key == "REASONIX_CACHE_HOME") {
+				source = append(source, entry)
+			}
+		}
+	}
 	result := make(map[string]string, len(source)+len(custom))
 	for _, entry := range source {
 		key, value, ok := strings.Cut(entry, "=")

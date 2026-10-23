@@ -125,7 +125,8 @@ func TestChatProjectFilesExplicitProjectOverridesAgentBindings(t *testing.T) {
 	dbfx.Exec(t, `UPDATE chat_session SET project_id=$1 WHERE id=$2`, projectA, selectedSession)
 	dbfx.Task(t, agent, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "status": "completed", "issue_id": issue, "chat_session_id": selectedSession, "work_dir": "/project-b/issue-precedence"})
 	dbfx.Task(t, agent, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "status": "completed", "chat_session_id": otherSession, "context": `{"project_id":"` + projectA + `"}`, "work_dir": "/project-b/chat-precedence"})
-	unscoped := dbfx.Task(t, agent, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "status": "completed", "work_dir": "/unscoped/direct"})
+	// A project-less direct chat can still use the agent binding; a run with no source cannot.
+	unscoped := dbfx.Task(t, agent, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "status": "completed", "chat_session_id": session, "work_dir": "/unscoped/direct"})
 	req := withChatTestWorkspaceCtx(t, withURLParam(newRequest(http.MethodGet, "/files?include_attachments=false&project_id="+projectA, nil), "sessionId", session))
 	var response ChatSessionFilesResponse
 	testutil.Call(t, testHandler.ListChatSessionFiles, req).Want(http.StatusOK).JSON(&response)

@@ -1069,12 +1069,16 @@ RETURNING *;
 -- to retire the transcript it retried away from, or an older completed row
 -- pointing at the same id resurrects it on the next run.
 UPDATE agent_task_queue
-SET status = 'completed', completed_at = now(), result = sqlc.arg('result')::jsonb ||
+SET status = 'completed', completed_at = now(), result = CASE
+      WHEN jsonb_typeof(sqlc.arg('result')::jsonb) = 'object' THEN sqlc.arg('result')::jsonb - 'code_workspace'
+      WHEN result ? 'code_workspace' THEN '{}'::jsonb
+      ELSE sqlc.arg('result')::jsonb END ||
+    CASE WHEN result ? 'code_workspace' THEN jsonb_build_object('code_workspace', result->'code_workspace') ELSE '{}'::jsonb END ||
     CASE WHEN COALESCE(result->>'worktree_commit','')<>'' OR result->>'worktree_delivery_pending'='false' THEN
       jsonb_build_object('worktree_commit',result->>'worktree_commit','worktree_delivery_pending',false)
     ELSE '{}'::jsonb END,
     session_id = CASE WHEN sqlc.arg('session_rollout_missing') THEN NULL ELSE sqlc.narg('session_id')::text END,
-    work_dir = sqlc.narg('work_dir')::text,
+    work_dir = COALESCE(sqlc.narg('work_dir')::text, CASE WHEN result ? 'code_workspace' THEN work_dir END),
     durable_work_dir = COALESCE(sqlc.narg('durable_work_dir'), durable_work_dir),
     branch_name = COALESCE(sqlc.narg('branch_name'), branch_name),
     session_rollout_missing = sqlc.arg('session_rollout_missing'),
@@ -2868,16 +2872,21 @@ SELECT * FROM agent_task_queue
 WHERE issue_id = $1
 ORDER BY created_at DESC;
 
--- name: GetLatestTaskWorkDirByIssue :one
--- Child issues inherit the nearest ancestor's checkout when they do not have
--- their own run directory yet. Prefer the active checkout, then the durable
--- archive path retained after cleanup.
-SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, ''))::text AS work_dir
-FROM agent_task_queue
-WHERE issue_id = $1
-  AND COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) IS NOT NULL
-  AND NOT work_dir_missing
-ORDER BY created_at DESC, id DESC
+-- name: GetCodeWorkspaceWorkDir :one
+-- Only the root issue's checkout on this runtime and in the current project
+-- can seed a family workspace. Provider sessions remain issue/agent scoped.
+SELECT COALESCE(NULLIF(t.work_dir, ''), NULLIF(t.durable_work_dir, ''))::text AS work_dir
+FROM agent_task_queue t
+JOIN issue i ON i.id = t.issue_id AND i.workspace_id = @workspace_id::uuid
+JOIN agent a ON a.id = t.agent_id AND a.workspace_id = @workspace_id::uuid
+WHERE t.issue_id = @issue_id::uuid
+  AND t.runtime_id = @runtime_id::uuid
+  AND t.chat_session_id IS NULL
+  AND t.issue_snapshot->'v' = to_jsonb(@snapshot_version::integer)
+  AND t.issue_snapshot->>'project_id' = @project_id::text
+  AND COALESCE(NULLIF(t.work_dir, ''), NULLIF(t.durable_work_dir, '')) IS NOT NULL
+  AND NOT t.work_dir_missing
+ORDER BY t.created_at DESC, t.id DESC
 LIMIT 1;
 
 -- name: UpdateAgentStatus :one
@@ -2939,3 +2948,10 @@ RETURNING *;
 
 -- name: GetCommentThreadRootID :one
 SELECT comment_thread_root_id(@comment_id::uuid)::uuid AS id;
+
+-- name: RecordCodeWorkspaceSelection :one
+UPDATE agent_task_queue
+SET result = COALESCE(result, '{}'::jsonb) || jsonb_build_object('code_workspace', sqlc.arg(selection)::jsonb),
+    work_dir = sqlc.arg(work_dir)::text, work_dir_missing = FALSE
+WHERE id = sqlc.arg(id) AND status = 'running'
+RETURNING *;

@@ -44,6 +44,13 @@ func (d *Daemon) describeManagedWorktree(ctx context.Context, row *ManagedWorktr
 		return
 	}
 	row.RunStatus = status.Status
+	if status.RunKind != "" && status.RunKind != "unknown" {
+		row.RunKind = status.RunKind
+	}
+	if status.ProjectID != "" {
+		row.ProjectID = status.ProjectID
+	}
+	row.ChatSessionID, row.AutopilotRunID = status.ChatSessionID, status.AutopilotRunID
 	row.IssueID, row.IssueStatus, row.IssueStatusCategory = status.IssueID, status.IssueStatus, status.IssueStatusCategory
 	row.LastActivityAt = status.LastActivityAt
 	row.RetentionReason = d.environmentRetentionReason(ctx, row.Path, status)
@@ -79,6 +86,14 @@ func (d *Daemon) describeManagedWorktree(ctx context.Context, row *ManagedWorktr
 	if status.RetentionSupported {
 		switch row.RetentionReason {
 		case "":
+			automatic := withEnvironmentScope(ctx, environmentOperationScope{WorkspaceID: row.WorkspaceID, RuntimeID: status.RuntimeID, Automatic: true})
+			if reason := d.failedEnvironmentOutputReason(automatic, row.Path, status); reason != "" {
+				row.NextAction, row.ProtectionReason, row.RetentionReason = protocol.WorktreeRetained, reason, reason
+				if reason == "unavailable" {
+					row.NextAction = protocol.WorktreeUnknown
+				}
+				return
+			}
 			row.NextAction, row.ProtectionReason = protocol.WorktreeCleanup, ""
 			return
 		case "active":

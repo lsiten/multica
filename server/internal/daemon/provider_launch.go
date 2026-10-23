@@ -46,6 +46,8 @@ type providerExecOptionsInput struct {
 	ClaudeSettingsPath string
 	QwenpawWorkspace   string
 	ContextDir         string
+	CursorMcpPluginDir string
+	OmpMcpExtensionDir string
 
 	// Model is the resolved provider model ("") lets the CLI pick its default.
 	Model string
@@ -113,6 +115,8 @@ func buildProviderExecOptions(in providerExecOptionsInput) agent.ExecOptions {
 		ServiceTier:            in.ServiceTier,
 		OpenclawMode:           in.OpenclawMode,
 		ClaudeSettingsPath:     in.ClaudeSettingsPath,
+		CursorMcpPluginDir:     in.CursorMcpPluginDir,
+		OmpMcpExtensionDir:     in.OmpMcpExtensionDir,
 		QwenpawWorkspace:       in.QwenpawWorkspace,
 	}
 	// Some providers do not reliably load the per-task runtime config files we
@@ -241,6 +245,8 @@ func buildWorkerProviderRun(in workerContext, provider string, logger *slog.Logg
 		ClaudeSettingsPath:              in.Env.ClaudeSettingsPath,
 		QwenpawWorkspace:                in.Env.QwenpawWorkspace,
 		ContextDir:                      in.Env.ContextDir,
+		CursorMcpPluginDir:              in.Env.CursorMcpPluginDir,
+		OmpMcpExtensionDir:              in.Env.OmpMcpExtensionDir,
 		Model:                           resolveWorkerModel(provider, in.Task, in.Config),
 		ExtraArgs:                       defaultArgsForProvider(in.Config, provider),
 		CustomArgs:                      in.Task.Agent.CustomArgs,

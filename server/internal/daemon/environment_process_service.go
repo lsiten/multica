@@ -126,7 +126,7 @@ func RunEnvironmentService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	defer cancel()
 	owner := &environmentProcessService{bootstrap: b, daemon: d, life: life, cancel: cancel}
 	defer owner.shutdown(context.Background())
-	service, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, Capabilities: []string{"environment.bind", "cache.sync", "cache.coauthor", "cache.checkout", "physical.prepare", "physical.begin_task", "physical.root_confirm", "physical.root_claim", "physical.select", "physical.attach", "physical.abort", "physical.finish_begin", "physical_finish_confirm", "physical.verify_completion", "application.source", "environment.command", "review.run", "environment.gc", "worktree-delivery.ack"}, ConcurrentCapabilities: []string{"physical_finish_confirm"}, ReadCapabilities: []string{"cache.lookup", "environment.inventory", "worktree-delivery.receipts"}, Handler: owner.mutate, ReadHandler: owner.read, Shutdown: owner.shutdown})
+	service, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, DetachMutations: true, ReconcileMutation: owner.reconcileMutation, Capabilities: []string{"environment.bind", "cache.sync", "cache.coauthor", "cache.checkout", "physical.prepare", "physical.recover_handoff", "physical.begin_task", "physical.root_confirm", "physical.root_claim", "physical.select", "physical.attach", "physical.abort", "physical.finish_begin", "physical_finish_confirm", "physical.verify_completion", "application.source", "review.run", "environment.operation", "environment.gc", "worktree-delivery.ack"}, ConcurrentCapabilities: []string{"physical_finish_confirm"}, ReadCapabilities: []string{"cache.lookup", "environment.inventory", "worktree-delivery.receipts", "review.read", "environment.command", "environment.mutation_scope"}, Handler: owner.mutate, ReadHandler: owner.read, Shutdown: owner.shutdown})
 	if err != nil {
 		return err
 	}
@@ -150,6 +150,10 @@ func environmentOperationResult(value any, err error) (json.RawMessage, *runtime
 		return nil, &runtimeproc.Error{Code: "encoding", Message: "environment result could not be encoded"}
 	}
 	if err != nil {
+		var rejected *environmentAllocationRejected
+		if errors.As(err, &rejected) {
+			return encoded, &runtimeproc.Error{Code: "allocation_rejected", Message: rejected.Error()}
+		}
 		return encoded, &runtimeproc.Error{Code: "environment_failed", Message: err.Error()}
 	}
 	return encoded, nil
@@ -265,29 +269,39 @@ func (s *environmentProcessService) mutate(ctx context.Context, request runtimep
 	bound := s.physical != nil
 	s.mu.RUnlock()
 	if !bound {
+		if allocationRequiresHandoff(request.Operation) {
+			return environmentOperationResult(nil, &environmentAllocationRejected{Cause: errors.New("environment service is not bound")})
+		}
 		return environmentOperationResult(nil, errors.New("environment service is not bound"))
 	}
 	switch request.Operation {
+	case "physical.recover_handoff":
+		var input environmentHandoffRecovery
+		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {
+			return environmentOperationResult(nil, err)
+		}
+		result, err := s.physical.recoverUnclaimed(ctx, input)
+		return environmentOperationResult(result, err)
 	case "physical.begin_task":
 		var input struct {
 			Physical execenv.PhysicalPrepareParams `json:"physical"`
 			Metadata *execenv.GCMeta               `json:"metadata,omitempty"`
 		}
 		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {
-			return environmentOperationResult(nil, err)
+			return environmentOperationResult(nil, &environmentAllocationRejected{Cause: err})
 		}
 		if !s.daemon.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: input.Physical.WorkspaceID, RuntimeID: input.Physical.RuntimeID}) {
-			return environmentOperationResult(nil, errors.New("physical runtime is not owned"))
+			return environmentOperationResult(nil, &environmentAllocationRejected{Cause: errors.New("physical runtime is not owned")})
 		}
 		result, err := s.physical.prepare(ctx, input.Physical, input.Metadata)
 		return environmentOperationResult(result, err)
 	case "physical.prepare":
 		var input execenv.PhysicalPrepareParams
 		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {
-			return environmentOperationResult(nil, err)
+			return environmentOperationResult(nil, &environmentAllocationRejected{Cause: err})
 		}
 		if !s.daemon.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: input.WorkspaceID, RuntimeID: input.RuntimeID}) {
-			return environmentOperationResult(nil, errors.New("physical runtime is not owned"))
+			return environmentOperationResult(nil, &environmentAllocationRejected{Cause: errors.New("physical runtime is not owned")})
 		}
 		result, err := s.physical.prepare(ctx, input)
 		return environmentOperationResult(result, err)
@@ -422,17 +436,6 @@ func (s *environmentProcessService) mutate(ctx context.Context, request runtimep
 		var err error
 		result.Root, result.WorkDir, result.Version, result.Dirty, err = s.daemon.applicationSource(ctx, command)
 		return environmentOperationResult(result, err)
-	case "environment.command":
-		var input struct {
-			WorkspaceID string                      `json:"workspace_id"`
-			RuntimeID   string                      `json:"runtime_id"`
-			Command     protocol.EnvironmentCommand `json:"command"`
-		}
-		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {
-			return environmentOperationResult(nil, err)
-		}
-		result, err := s.daemon.executeEnvironmentCommand(ctx, environmentOperationScope{WorkspaceID: input.WorkspaceID, RuntimeID: input.RuntimeID}, input.Command)
-		return environmentOperationResult(result, err)
 	// environment.operation runs the actual physical mutation/restore in the
 	// service child so the control parent holds no Git or worktree writer. The
 	// parent routes here from runScopedEnvironmentMutation / runScopedEnvironmentRestore
@@ -463,17 +466,7 @@ func (s *environmentProcessService) mutate(ctx context.Context, request runtimep
 		result, err := s.daemon.runScopedEnvironmentMutation(ctx, scope, protocol.EnvironmentOperationRequest{ID: input.OperationID, Action: input.Action}, input.Selection, path)
 		return environmentOperationResult(result, err)
 	case "review.run":
-		var input protocol.LocalReviewCommand
-		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {
-			return environmentOperationResult(nil, err)
-		}
-		if !s.daemon.environmentRuntimeOwnedHere(environmentOperationScope{WorkspaceID: input.WorkspaceID, RuntimeID: input.RuntimeID}) {
-			return environmentOperationResult(nil, errors.New("review runtime is not owned"))
-		}
-		// A large review result is written to the private artifact namespace and
-		// referenced instead of exceeding the 256 KiB control channel. The exact
-		// result shape is preserved for both in-band and artifact paths.
-		return s.reviewRunResult(ctx, request, input)
+		return s.reviewRequest(ctx, request)
 	case "environment.gc":
 		var input struct{}
 		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {
@@ -495,10 +488,23 @@ func (s *environmentProcessService) mutate(ctx context.Context, request runtimep
 }
 func (s *environmentProcessService) read(ctx context.Context, request runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	if s.physical == nil {
+		s.mu.RUnlock()
 		return environmentOperationResult(nil, errors.New("environment service is not bound"))
 	}
+	if request.Operation == "review.read" || request.Operation == "environment.command" || request.Operation == "environment.mutation_scope" {
+		s.mu.RUnlock()
+		// Review uses the domain filesystem locks; do not hold the binding lock
+		// across its callbacks or block physical completion confirmations.
+		if request.Operation == "environment.mutation_scope" {
+			return s.mutationScopeRead(ctx, request)
+		}
+		if request.Operation == "environment.command" {
+			return s.environmentCommandRead(ctx, request)
+		}
+		return s.reviewRequest(ctx, request)
+	}
+	defer s.mu.RUnlock()
 	if request.Operation == "environment.inventory" {
 		return environmentOperationResult(struct {
 			PID  int    `json:"pid"`

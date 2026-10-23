@@ -19,6 +19,16 @@ An issue holds the goal, discussion, assignee, and final status of a piece of wo
 
 So the same issue can be handed to different agents in turn, or run again after a failure. Each execution produces a new run record; earlier records are never overwritten.
 
+## Shared code directories
+
+On the same runtime with the same project and repositories, an issue and all its descendants share a managed code directory owned by the top-level issue. A requirement can be that top-level issue. The first run creates the shared directory even if the parent has never run; later runs can use it across agent assignments. Each run still has its own configuration, credentials, and provider session. Local resources using `in_place` keep their configured directory; providers that require a private checkout retain that isolation.
+
+Managed MCP configuration in a shared directory requires Cursor's `--plugin-dir` support or OMP 18.8.3 or later. Its configuration stays in the run's private directory.
+
+Older child directories are preserved when a run switches to the shared directory. The run's brief identifies a previous directory that may contain work to recover; its files are not automatically merged. A changed working directory starts a fresh provider session. Shared code is retained while any issue in the tree is unfinished, a run is active, or a member request is pending. Broken parent links, cycles, and parent/child project mismatches must be corrected before the runtime can prepare the shared directory.
+
+Project supervision uses a separate control directory. It does not create a project checkout. The chat file selector groups project resources, current-chat directories, and other task directories; other task directories start collapsed and appear in batches. Archived chats, settled issues, and cleaned directories are excluded. Failed or cancelled runs with undelivered files or Git history are retained during automatic cleanup.
+
 ## Trigger sources
 
 Any of the following can trigger a run:
@@ -127,7 +137,7 @@ The failure reasons shown in the execution log and usage stats fall into two gro
 
 Clicking the retry button on a row in the execution log invokes **the agent that handled that run at the time**. Even if the issue has since been reassigned, the retry does not switch to the new assignee.
 
-A retry keeps the files the previous run already wrote to the local directory whenever possible. If the original session is still safe and the same runtime claims the retry, it also continues the previous session. Errors that poison the session, such as context overflow or invalid requests, start a new session on top of the original working directory instead. When the original directory no longer exists, a fresh working directory is used.
+A retry reuses the shared code directory when its scope still matches. If the original session is still safe and the working directory has not changed, the same runtime can also continue that session. Errors such as context overflow or invalid requests start a new session. When an older run moves to the shared directory, its previous directory is retained for recovering unfinished work.
 
 You can also rerun the current issue from the CLI:
 
@@ -135,7 +145,7 @@ You can also rerun the current issue from the CLI:
 multica issue rerun <issue-id>
 ```
 
-This form does not point at a specific past run, so it uses the issue's current agent assignee and starts with a fresh session and working directory.
+This form does not point at a specific past run, so it uses the issue's current agent assignee and starts a fresh session. The shared code directory can still be reused.
 
 ## Run completion and issue completion
 

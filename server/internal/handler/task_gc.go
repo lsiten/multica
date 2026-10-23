@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -108,14 +109,42 @@ func (h *Handler) taskGCLifecycles(r *http.Request, workspaceID, runtimeID pgtyp
 		return nil, err
 	}
 	resolver := issuestatus.NewResolver(workspaceID)
+	issueIDs := make([]pgtype.UUID, 0, len(rows))
+	seenIssues := make(map[pgtype.UUID]bool, len(rows))
+	for _, row := range rows {
+		if row.IssueID.Valid && !row.ChatSessionID.Valid && !seenIssues[row.IssueID] {
+			seenIssues[row.IssueID] = true
+			issueIDs = append(issueIDs, row.IssueID)
+		}
+	}
+	families := make(map[pgtype.UUID]db.ListCodeWorkspaceRetentionsRow, len(issueIDs))
+	if len(issueIDs) > 0 {
+		facts, err := h.Queries.ListCodeWorkspaceRetentions(r.Context(), db.ListCodeWorkspaceRetentionsParams{WorkspaceID: workspaceID, IssueIds: issueIDs})
+		if err != nil {
+			return nil, fmt.Errorf("query code workspace retention: %w", err)
+		}
+		for _, fact := range facts {
+			families[fact.IssueID] = fact
+		}
+	}
 	results := make([]protocol.TaskGCStatus, 0, len(rows))
 	for _, row := range rows {
 		result := protocol.TaskGCStatus{
+			RunKind: inventoryRunKind(row.Context, row.IssueID, row.ChatSessionID, row.AutopilotRunID), ProjectID: uuidToString(row.ProjectID),
 			TaskID: uuidToString(row.ID), WorkspaceID: uuidToString(row.WorkspaceID), RuntimeID: uuidToString(row.RuntimeID), AgentID: uuidToString(row.AgentID),
 			WorkDir: row.WorkDir.String, Status: row.Status, CompletedAt: row.CompletedAt.Time, LifecycleSupported: true, RetentionSupported: true,
 			IssueID: uuidToString(row.IssueID), ChatSessionID: uuidToString(row.ChatSessionID), AutopilotRunID: uuidToString(row.AutopilotRunID), AutopilotID: uuidToString(row.AutopilotID),
 			IssueStatus: row.IssueStatus.String, IssueRevision: row.IssueRevision.Int64, CurrentWorkDir: row.CurrentWorkDir, CurrentTaskID: row.CurrentTaskID,
 			WaitingHuman: row.WaitingHuman, CurrentAgent: row.CurrentAgent, ChatStatus: row.ChatStatus.String,
+		}
+		if row.IssueID.Valid && !row.ChatSessionID.Valid {
+			family, known := families[row.IssueID]
+			if known {
+				result.CodeWorkspaceIssueID = uuidToString(family.RootIssueID)
+				result.CodeWorkspaceRetentionBlocked = family.RetentionBlocked
+			} else {
+				result.RetentionSupported = false
+			}
 		}
 		if row.IssueStatus.Valid {
 			result.IssueStatusCategory = resolver.Category(r.Context(), h.issueStatusCatalog(), row.IssueStatus.String)

@@ -2397,6 +2397,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		resp.StartClaimSupported = true
 	}
 	var issueNumber int32
+	var codeWorkspaceIssueNumber int32
 	// Claim-only capability: this server resolves the squad-leader role on the
 	// wire (is_leader_task / squad_id), so the daemon must not re-derive it
 	// from the briefing text. Set unconditionally — on every claim, leader or
@@ -3130,8 +3131,39 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				}
 			}
 		}
-		if resp.PriorWorkDir == "" && issue.ParentIssueID.Valid {
-			h.inheritParentIssueWorkDir(r.Context(), issue, &resp)
+		if !task.ChatSessionID.Valid {
+			root, rootErr := h.resolveCodeWorkspaceRoot(r.Context(), issue)
+			if rootErr != nil {
+				slog.Error("issue claim: cannot resolve code workspace", "task_id", uuidToString(task.ID), "error", rootErr)
+				if _, err := h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task); err != nil {
+					slog.Error("issue claim: failed to requeue invalid code workspace", "task_id", uuidToString(task.ID), "error", err)
+				}
+				status := http.StatusInternalServerError
+				message := "failed to load code workspace ancestry"
+				if errors.Is(rootErr, service.ErrInvalidCodeWorkspaceTree) {
+					status = http.StatusConflict
+					message = rootErr.Error()
+				}
+				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, &claimBuildFailure{
+					outcome: "error_code_workspace", status: status, message: message,
+				}
+			}
+			resp.CodeWorkspaceIssueID = uuidToString(root.ID)
+			codeWorkspaceIssueNumber = root.Number
+			workDir, err := h.Queries.GetCodeWorkspaceWorkDir(r.Context(), db.GetCodeWorkspaceWorkDirParams{
+				IssueID: root.ID, WorkspaceID: root.WorkspaceID, RuntimeID: task.RuntimeID,
+				ProjectID: uuidToString(root.ProjectID), SnapshotVersion: issueSnapshotVersion,
+			})
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				slog.Error("issue claim: cannot load code workspace directory", "task_id", uuidToString(task.ID), "error", err)
+				if _, requeueErr := h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), *task); requeueErr != nil {
+					slog.Error("issue claim: failed to requeue code workspace lookup", "task_id", uuidToString(task.ID), "error", requeueErr)
+				}
+				return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, &claimBuildFailure{
+					outcome: "error_code_workspace", status: http.StatusInternalServerError, message: "failed to load code workspace directory",
+				}
+			}
+			resp.CodeWorkspaceWorkDir = workDir
 		}
 	}
 
@@ -3714,6 +3746,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if issueNumber > 0 {
 			resp.IssueIdentifier = service.IssueIdentifier(ws.IssuePrefix, issueNumber)
 		}
+		if codeWorkspaceIssueNumber > 0 {
+			resp.CodeWorkspaceIssueIdentifier = service.IssueIdentifier(ws.IssuePrefix, codeWorkspaceIssueNumber)
+		}
 		if ws.Context.Valid {
 			resp.WorkspaceContext = ws.Context.String
 		}
@@ -4279,9 +4314,10 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Capabilities []string `json:"capabilities"`
-		RuntimeID    string   `json:"runtime_id"`
-		DispatchedAt string   `json:"dispatched_at"`
+		CodeWorkspace *protocol.CodeWorkspaceSelection `json:"code_workspace,omitempty"`
+		Capabilities  []string                         `json:"capabilities"`
+		RuntimeID     string                           `json:"runtime_id"`
+		DispatchedAt  string                           `json:"dispatched_at"`
 	}
 	if r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -4289,14 +4325,14 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	enableTaskSupplement := slices.Contains(req.Capabilities, protocol.DaemonCapabilityTaskSupplementV1)
+	options := service.TaskStartOptions{EnableTaskSupplement: slices.Contains(req.Capabilities, protocol.DaemonCapabilityTaskSupplementV1), CodeWorkspace: req.CodeWorkspace}
 	var task *db.AgentTaskQueue
 	var err error
 	legacy := req.RuntimeID == "" && req.DispatchedAt == ""
 	if legacy {
 		// Older daemons send {}. Keep their single-winner behavior; in
 		// particular, they cannot acknowledge an already-running task.
-		task, err = h.TaskService.StartTask(r.Context(), parseUUID(taskID), enableTaskSupplement)
+		task, err = h.TaskService.StartTask(r.Context(), parseUUID(taskID), options)
 	} else {
 		runtimeID, ok := parseUUIDOrBadRequest(w, req.RuntimeID, "runtime_id")
 		if !ok {
@@ -4310,9 +4346,13 @@ func (h *Handler) StartTask(w http.ResponseWriter, r *http.Request) {
 		task, err = h.TaskService.StartTaskForClaim(r.Context(), db.LockAgentTaskStartClaimParams{
 			ID: parseUUID(taskID), RuntimeID: runtimeID,
 			DispatchedAt: pgtype.Timestamptz{Time: generation, Valid: true},
-		}, enableTaskSupplement)
+		}, options)
 	}
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidCodeWorkspaceSelection) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if writeExecutionConflict(w, err) {
 			return
 		}

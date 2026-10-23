@@ -71,6 +71,9 @@ func (d *Daemon) cleanupManagedWorktree(ctx context.Context, request worktreeCle
 		return "scope_changed"
 	}
 	if request.automatic {
+		if reason := retainedFamilyWorkspaceReason(path); reason != "" {
+			return reason
+		}
 		meta, err := execenv.ReadGCMeta(path)
 		if err != nil || !meta.AutoCleanup || meta.LocalDirectory {
 			return "retained"

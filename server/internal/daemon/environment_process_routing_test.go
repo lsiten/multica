@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/runtimeproc"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -94,6 +95,23 @@ func TestEnvironmentCommandRoutesPhysicalActionToChild(t *testing.T) {
 	}
 	if strings.TrimSpace(string(raw)) == "" {
 		t.Fatal("child produced an empty inventory result")
+	}
+	client := d.environmentProcess
+	before, err := runtimeproc.ReadRecord(client.bootstrap.Root, client.bootstrap.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := d.executeEnvironmentCommand(ctx, scope, protocol.EnvironmentCommand{Action: "inventory"}); err != nil {
+			t.Fatalf("repeat inventory: %v", err)
+		}
+	}
+	after, err := runtimeproc.ReadRecord(client.bootstrap.Root, client.bootstrap.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Fence != before.Fence || after.ReplayEpoch != before.ReplayEpoch || len(after.Operations) != len(before.Operations) {
+		t.Fatal("workspace inventory consumed mutation receipts")
 	}
 	// The child reports its own PID; a real child differs from the parent.
 	inventory, err := d.environmentProcess.process.Client.Read(ctx, "environment.inventory", json.RawMessage(`{}`))
@@ -181,7 +199,11 @@ func TestEnvironmentOperationRoutesPhysicalMutationToChild(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 	scope := environmentOperationScope{WorkspaceID: "ws-leader", RuntimeID: "rt-leader"}
-	request := protocol.EnvironmentOperationRequest{ID: strings.Repeat("a", 64), Action: "clean_cache", Selections: []protocol.EnvironmentSelection{{EnvironmentID: envID, Revision: strings.Repeat("c", 64)}}}
+	preview := d.worktreeCacheOperation(withEnvironmentScope(ctx, scope), taskRoot, "")
+	if preview.Reason != "" || preview.Revision == "" {
+		t.Fatalf("cache preview: %+v", preview)
+	}
+	request := protocol.EnvironmentOperationRequest{ID: strings.Repeat("a", 64), Action: "clean_cache", Selections: []protocol.EnvironmentSelection{{EnvironmentID: envID, Revision: preview.Revision}}}
 	if _, err := d.startEnvironmentOperation(scope, request); err != nil {
 		t.Fatalf("start operation: %v", err)
 	}
@@ -204,6 +226,19 @@ func TestEnvironmentOperationRoutesPhysicalMutationToChild(t *testing.T) {
 	finalStatus, err := d.environmentOperationStatus(scope, request.ID, false)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if finalStatus.Error != "" {
+		t.Fatalf("delegated physical operation failed: %s", finalStatus.Error)
+	}
+	if finalStatus.Status != "completed" || len(finalStatus.Results) != 1 {
+		t.Fatalf("incomplete operation: %+v", finalStatus)
+	}
+	var result worktreeCacheResult
+	if err := json.Unmarshal(finalStatus.Results[0], &result); err != nil || result.Reason != "" || result.RemovedCount != 1 {
+		t.Fatalf("child did not clean cache: %+v %v", result, err)
+	}
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatalf("cache remains after child operation: %v", err)
 	}
 	t.Logf("OBSERVE clean_cache settled status=%s results=%d", finalStatus.Status, len(finalStatus.Results))
 	if d.environmentProcess == nil {

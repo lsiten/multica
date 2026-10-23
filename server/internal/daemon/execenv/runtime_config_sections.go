@@ -256,7 +256,7 @@ func sanitizeBriefCodeToken(s string) string {
 func writeAvailableCommands(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("## Available Commands\n\n")
 	if ctx.ProjectSupervisionPrompt != "" {
-		b.WriteString("Use `multica project supervision get <project-id> --output json` for classified backlog and the captured checked version. Read task, issue, agent and squad evidence as needed. Writes are restricted to `multica project supervision apply <project-id> --body-file actions.json` and `multica project supervision report <project-id> --body-file report.json`. Run `multica project supervision --help` and load the multica-platform projects reference for JSON contracts. Use the current task ID in your report. Make one bounded batch, report, then end; never poll or sleep.\n\n")
+		b.WriteString("This is a coordination-only run in a daemon-owned scratch directory. Project directories and repository references are context, not an instruction to open, clone, edit, or clean them. Delegate implementation to an issue run through the bounded supervision actions. Use `multica project supervision get <project-id> --output json` for classified backlog and the captured checked version. Read task, issue, agent and squad evidence as needed. Writes are restricted to `multica project supervision apply <project-id> --body-file actions.json` and `multica project supervision report <project-id> --body-file report.json`. Run `multica project supervision --help` and load the multica-platform projects reference for JSON contracts. Use the current task ID in your report. Make one bounded batch, report, then end; never poll or sleep.\n\n")
 		return
 	}
 	b.WriteString("Prefer `--output json` for structured data. The default brief lists only the core agent loop and common issue create/update tasks; for everything else run `multica --help` or `multica <command> --help`.\n\n")
@@ -1060,6 +1060,9 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	// every resume; they now travel in the per-turn user message
 	// (daemon.BuildPrompt) instead. See MUL-5377.
 	writeHeader(&b)
+	if ctx.RetainedIssueWorkDir != "" {
+		fmt.Fprintf(&b, "Previous issue checkout retained at %s. This run uses the shared root issue checkout. Inspect the retained checkout for unfinished work before continuing; files were not merged automatically.\n\n", sanitizeNameForBriefMarkdown(ctx.RetainedIssueWorkDir))
+	}
 	writeBackgroundTaskSafetySlim(&b)
 	writeAgentIdentity(&b, ctx)
 	writeRequestingUser(&b, ctx)

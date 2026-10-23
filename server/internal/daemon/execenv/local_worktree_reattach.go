@@ -18,6 +18,7 @@ func ReattachRestoredLocalWorktree(ctx context.Context, previous *LocalWorktree,
 	if !LocalWorktreeReuseMatches(previous, params) {
 		return errors.New("restored local worktree scope changed")
 	}
+	params = retainedWorktreeOwnerParams(previous, params)
 	gitInfo, err := os.Lstat(filepath.Join(previous.Path, ".git"))
 	if err != nil {
 		return err

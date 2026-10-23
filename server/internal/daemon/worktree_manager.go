@@ -26,6 +26,9 @@ type ManagedWorktree struct {
 	RuntimeID           string                `json:"runtime_id,omitempty"`
 	EnvironmentID       string                `json:"environment_id"`
 	Repositories        []string              `json:"repositories"`
+	RunKind             string                `json:"run_kind,omitempty"`
+	ChatSessionID       string                `json:"chat_session_id,omitempty"`
+	AutopilotRunID      string                `json:"autopilot_run_id,omitempty"`
 	EnvironmentKind     string                `json:"environment_kind"`
 	Storage             *worktreeStorageUsage `json:"storage,omitempty"`
 	ProjectID           string                `json:"project_id,omitempty"`
@@ -186,6 +189,7 @@ func (d *Daemon) managedWorktreesForPaths(ctx context.Context, allowed map[strin
 		}
 		if meta, err := execenv.ReadGCMeta(task.Path); err == nil && meta.WorkspaceID == task.WorkspaceID && meta.TaskID == taskID {
 			row.IssueID = meta.IssueID
+			row.RunKind, row.ChatSessionID, row.AutopilotRunID = string(meta.Kind), meta.ChatSessionID, meta.AutopilotRunID
 			row.ProjectID, row.ProjectName = meta.ProjectID, meta.ProjectName
 			row.SquadID, row.SquadName = meta.SquadID, meta.SquadName
 			if row.RuntimeID == "" {

@@ -133,12 +133,9 @@ func (d *Daemon) executeEnvironmentCommand(ctx context.Context, scope environmen
 	}
 }
 
-// routeEnvironmentCommandToChild forwards a physical environment action to
-// the owned environment service. The child runs the same handler; its
-// result is returned as raw JSON and re-encoded by the callers, preserving
-// the exact wire shape. A transport failure is uncertain and is not
-// retried as a local Git operation, so a child that cannot complete an
-// action is never silently replayed against the control parent.
+// routeEnvironmentCommandToChild forwards physical previews through the child's
+// read capability without retaining mutation receipts. Results preserve the
+// exact wire shape and never fall back to a local Git operation.
 func (d *Daemon) routeEnvironmentCommandToChild(ctx context.Context, scope environmentOperationScope, command protocol.EnvironmentCommand) (any, error) {
 	client, err := d.ensureEnvironmentProcess(ctx)
 	if err != nil {
@@ -150,10 +147,12 @@ func (d *Daemon) routeEnvironmentCommandToChild(ctx context.Context, scope envir
 		Command     protocol.EnvironmentCommand `json:"command"`
 	}{WorkspaceID: scope.WorkspaceID, RuntimeID: scope.RuntimeID, Command: command}
 	var result json.RawMessage
-	if err := client.mutation(ctx, "environment.command", input, &result); err != nil {
+	encoded, err := json.Marshal(input)
+	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	result, err = client.process.Client.Read(ctx, "environment.command", encoded)
+	return result, err
 }
 
 func (d *Daemon) runRemoteEnvironment(ctx context.Context, command protocol.LocalReviewCommand) protocol.LocalReviewResult {

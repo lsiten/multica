@@ -12,15 +12,17 @@ func TestBuildCursorArgs(t *testing.T) {
 	t.Parallel()
 
 	args := buildCursorArgs(ExecOptions{
-		Cwd:   "/tmp/work",
-		Model: "composer-1.5",
+		Cwd:                "/tmp/shared work",
+		CursorMcpPluginDir: "/tmp/private run/cursor-mcp-plugin",
+		Model:              "composer-1.5",
 	}, slog.Default())
 
 	expected := []string{
 		"-p",
 		"--output-format", "stream-json",
 		"--yolo",
-		"--workspace", "/tmp/work",
+		"--workspace", "/tmp/shared work",
+		"--plugin-dir", "/tmp/private run/cursor-mcp-plugin",
 		"--model", "composer-1.5",
 	}
 

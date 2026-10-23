@@ -14,11 +14,9 @@ import (
 )
 
 // newEnvironmentClientForService builds an environmentProcessClient whose control
-// channel talks to a real runtimeproc service, so mutation's call path is
-// exercised without a spawned child process. The review.run handler blocks until
-// the caller cancels, so a caller-side cancellation is observed deterministically
-// on the control channel.
-func newEnvironmentClientForService(t *testing.T) (*environmentProcessClient, *runtimeproc.Service, chan struct{}) {
+// channel talks to a real runtimeproc service without spawning a child process.
+// Review handlers block until cancellation unless the test customizes the config.
+func newEnvironmentClientForService(t *testing.T, customize ...func(*runtimeproc.Config)) (*environmentProcessClient, *runtimeproc.Service, chan struct{}) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -37,27 +35,31 @@ func newEnvironmentClientForService(t *testing.T) (*environmentProcessClient, *r
 		t.Fatal(err)
 	}
 	started := make(chan struct{}, 1)
-	service, err := runtimeproc.NewService(runtimeproc.Config{
-		Bootstrap: bootstrap,
-		Capabilities: []string{"review.run"},
-		Handler: func(ctx context.Context, r runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
-			if r.Operation != "review.run" {
-				return json.RawMessage(`{}`), nil
-			}
-			select {
-			case started <- struct{}{}:
-			default:
-			}
-			// Block the call so a caller-side cancellation is observed on the
-			// control channel, mirroring a slow or aborted local read.
-			select {
-			case <-ctx.Done():
-				return nil, nil
-			case <-time.After(10 * time.Second):
-			}
+	blockingReview := func(ctx context.Context, r runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
+		if r.Operation == "environment.mutation_scope" {
+			return environmentOperationResult(environmentMutationScope{Global: true}, nil)
+		}
+		if r.Operation != "review.run" && r.Operation != "review.read" {
 			return json.RawMessage(`{}`), nil
-		},
-	})
+		}
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return nil, nil
+	}
+	config := runtimeproc.Config{
+		Bootstrap:        bootstrap,
+		Capabilities:     []string{"review.run", "environment.bind"},
+		ReadCapabilities: []string{"review.read", "environment.mutation_scope"},
+		Handler:          blockingReview,
+		ReadHandler:      blockingReview,
+	}
+	for _, change := range customize {
+		change(&config)
+	}
+	service, err := runtimeproc.NewService(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,53 +86,99 @@ func newEnvironmentClientForService(t *testing.T) (*environmentProcessClient, *r
 	if client == nil {
 		t.Fatalf("open client: %v", err)
 	}
-	return &environmentProcessClient{
+	environmentClient := &environmentProcessClient{
 		process:       &runtimeproc.Process{Client: client},
 		bootstrap:     bootstrap,
 		gate:          make(chan struct{}, 1),
 		confirmations: make(chan struct{}, 4),
-	}, service, started
+	}
+	environmentClient.startRecovery()
+	t.Cleanup(environmentClient.stopRecovery)
+	return environmentClient, service, started
 }
 
-// TestEnvironmentReviewCallCancelDoesNotFailClose verifies that a caller-side
-// cancellation on a review call is a clean abort, not an uncertain outcome: the
-// client must not be fail-closed so a later review read still proceeds instead
-// of erroring with "environment review.run outcome unknown ... context canceled".
 func TestEnvironmentReviewCallCancelDoesNotFailClose(t *testing.T) {
+	// Given
 	c, _, started := newEnvironmentClientForService(t)
 
+	// When
+	for range 2 {
+		callCtx, callCancel := context.WithCancel(t.Context())
+		callErr := make(chan error, 1)
+		go func() {
+			_, err := c.routeReviewToChild(callCtx, protocol.LocalReviewCommand{WorkspaceID: "ws", RuntimeID: "rt", Action: "read"})
+			callErr <- err
+		}()
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			callCancel()
+			t.Fatal("review request did not reach the service")
+		}
+		callCancel()
+		if err := <-callErr; !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected caller-side cancellation, got %v", err)
+		}
+	}
+
+	// Then
+	c.mu.Lock()
+	pending := len(c.pending)
+	c.mu.Unlock()
+	if pending != 0 {
+		t.Fatalf("readonly cancellation created %d pending operations", pending)
+	}
+	record, err := runtimeproc.ReadRecord(c.bootstrap.Root, c.bootstrap.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Operations) != 0 {
+		t.Fatalf("readonly cancellation created %d durable receipts", len(record.Operations))
+	}
+	if err := c.mutation(t.Context(), "environment.bind", struct{}{}, nil); err != nil {
+		t.Fatalf("readonly cancellation blocked a later mutation: %v", err)
+	}
+}
+
+func TestEnvironmentMutationCancelRetainsUncertainOutcome(t *testing.T) {
+	// Given
+	c, _, started := newEnvironmentClientForService(t)
 	callCtx, callCancel := context.WithCancel(t.Context())
 	defer callCancel()
 	callErr := make(chan error, 1)
-	go func() { callErr <- c.mutation(callCtx, "review.run", protocol.LocalReviewCommand{WorkspaceID: "ws", RuntimeID: "rt", Action: "read"}, nil) }()
 
+	// When
+	go func() {
+		callErr <- c.mutation(callCtx, "review.run", protocol.LocalReviewCommand{WorkspaceID: "ws", RuntimeID: "rt", Action: "merge"}, nil)
+	}()
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
-		t.Fatal("review request did not reach the service")
+		t.Fatal("mutation did not reach the service")
 	}
 	callCancel()
+
+	// Then
 	if err := <-callErr; !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected caller-side cancellation, got %v", err)
 	}
-	if c.uncertain != nil {
-		t.Fatalf("caller-side cancellation fail-closed the client: %v", c.uncertain)
+	c.mu.Lock()
+	var requestID string
+	for id, pending := range c.pending {
+		if pending.Request.Operation == "review.run" {
+			requestID = id
+		}
 	}
-
-	// A later mutation on the same client must not be blocked by the stale abort:
-	// it proceeds past the uncertain gate (Health + call) rather than returning
-	// the fail-closed outcome immediately.
-	followCtx, followCancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
-	defer followCancel()
-	followErr := c.mutation(followCtx, "review.run", protocol.LocalReviewCommand{WorkspaceID: "ws", RuntimeID: "rt", Action: "read"}, nil)
-	if errors.Is(followErr, context.DeadlineExceeded) {
-		t.Log("follow-up proceeded (Health ok, call timed out) rather than failing-closed")
+	c.mu.Unlock()
+	if requestID == "" {
+		t.Fatal("canceled mutation lost its pending request identity")
 	}
 	var uncertain *environmentUncertainOperation
-	if errors.As(followErr, &uncertain) {
-		t.Fatalf("follow-up mutation failed-closed despite clean abort: %v", followErr)
+	if err := c.mutation(t.Context(), "environment.bind", struct{}{}, nil); !errors.As(err, &uncertain) {
+		t.Fatalf("next ordinary mutation was not blocked: %v", err)
 	}
-	if c.uncertain != nil {
-		t.Fatalf("client remained fail-closed: %v", c.uncertain)
+	receipt, err := c.process.Client.QueryOperation(t.Context(), requestID)
+	if err != nil || receipt.State != "pending" {
+		t.Fatalf("canceled mutation receipt was retired: %+v, %v", receipt, err)
 	}
 }

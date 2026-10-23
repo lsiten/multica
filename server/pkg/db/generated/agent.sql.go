@@ -1959,12 +1959,16 @@ func (q *Queries) ClearAgentThinkingLevel(ctx context.Context, id pgtype.UUID) (
 
 const completeAgentTask = `-- name: CompleteAgentTask :one
 UPDATE agent_task_queue
-SET status = 'completed', completed_at = now(), result = $1::jsonb ||
+SET status = 'completed', completed_at = now(), result = CASE
+      WHEN jsonb_typeof($1::jsonb) = 'object' THEN $1::jsonb - 'code_workspace'
+      WHEN result ? 'code_workspace' THEN '{}'::jsonb
+      ELSE $1::jsonb END ||
+    CASE WHEN result ? 'code_workspace' THEN jsonb_build_object('code_workspace', result->'code_workspace') ELSE '{}'::jsonb END ||
     CASE WHEN COALESCE(result->>'worktree_commit','')<>'' OR result->>'worktree_delivery_pending'='false' THEN
       jsonb_build_object('worktree_commit',result->>'worktree_commit','worktree_delivery_pending',false)
     ELSE '{}'::jsonb END,
     session_id = CASE WHEN $2 THEN NULL ELSE $3::text END,
-    work_dir = $4::text,
+    work_dir = COALESCE($4::text, CASE WHEN result ? 'code_workspace' THEN work_dir END),
     durable_work_dir = COALESCE($5, durable_work_dir),
     branch_name = COALESCE($6, branch_name),
     session_rollout_missing = $2,
@@ -4401,6 +4405,45 @@ func (q *Queries) GetAgentTaskStatus(ctx context.Context, id pgtype.UUID) (GetAg
 	return i, err
 }
 
+const getCodeWorkspaceWorkDir = `-- name: GetCodeWorkspaceWorkDir :one
+SELECT COALESCE(NULLIF(t.work_dir, ''), NULLIF(t.durable_work_dir, ''))::text AS work_dir
+FROM agent_task_queue t
+JOIN issue i ON i.id = t.issue_id AND i.workspace_id = $1::uuid
+JOIN agent a ON a.id = t.agent_id AND a.workspace_id = $1::uuid
+WHERE t.issue_id = $2::uuid
+  AND t.runtime_id = $3::uuid
+  AND t.chat_session_id IS NULL
+  AND t.issue_snapshot->'v' = to_jsonb($4::integer)
+  AND t.issue_snapshot->>'project_id' = $5::text
+  AND COALESCE(NULLIF(t.work_dir, ''), NULLIF(t.durable_work_dir, '')) IS NOT NULL
+  AND NOT t.work_dir_missing
+ORDER BY t.created_at DESC, t.id DESC
+LIMIT 1
+`
+
+type GetCodeWorkspaceWorkDirParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	IssueID         pgtype.UUID `json:"issue_id"`
+	RuntimeID       pgtype.UUID `json:"runtime_id"`
+	SnapshotVersion int32       `json:"snapshot_version"`
+	ProjectID       string      `json:"project_id"`
+}
+
+// Only the root issue's checkout on this runtime and in the current project
+// can seed a family workspace. Provider sessions remain issue/agent scoped.
+func (q *Queries) GetCodeWorkspaceWorkDir(ctx context.Context, arg GetCodeWorkspaceWorkDirParams) (string, error) {
+	row := q.db.QueryRow(ctx, getCodeWorkspaceWorkDir,
+		arg.WorkspaceID,
+		arg.IssueID,
+		arg.RuntimeID,
+		arg.SnapshotVersion,
+		arg.ProjectID,
+	)
+	var work_dir string
+	err := row.Scan(&work_dir)
+	return work_dir, err
+}
+
 const getCommentThreadRootID = `-- name: GetCommentThreadRootID :one
 SELECT comment_thread_root_id($1::uuid)::uuid AS id
 `
@@ -4718,26 +4761,6 @@ func (q *Queries) GetLatestTaskRolloutMissing(ctx context.Context, arg GetLatest
 	var session_rollout_missing bool
 	err := row.Scan(&session_rollout_missing)
 	return session_rollout_missing, err
-}
-
-const getLatestTaskWorkDirByIssue = `-- name: GetLatestTaskWorkDirByIssue :one
-SELECT COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, ''))::text AS work_dir
-FROM agent_task_queue
-WHERE issue_id = $1
-  AND COALESCE(NULLIF(work_dir, ''), NULLIF(durable_work_dir, '')) IS NOT NULL
-  AND NOT work_dir_missing
-ORDER BY created_at DESC, id DESC
-LIMIT 1
-`
-
-// Child issues inherit the nearest ancestor's checkout when they do not have
-// their own run directory yet. Prefer the active checkout, then the durable
-// archive path retained after cleanup.
-func (q *Queries) GetLatestTaskWorkDirByIssue(ctx context.Context, issueID pgtype.UUID) (string, error) {
-	row := q.db.QueryRow(ctx, getLatestTaskWorkDirByIssue, issueID)
-	var work_dir string
-	err := row.Scan(&work_dir)
-	return work_dir, err
 }
 
 const getWorkspaceAgentActivity30d = `-- name: GetWorkspaceAgentActivity30d :many
@@ -8218,6 +8241,88 @@ func (q *Queries) ReclaimStaleDispatchedTasksForRuntimes(ctx context.Context, ar
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordCodeWorkspaceSelection = `-- name: RecordCodeWorkspaceSelection :one
+UPDATE agent_task_queue
+SET result = COALESCE(result, '{}'::jsonb) || jsonb_build_object('code_workspace', $1::jsonb),
+    work_dir = $2::text, work_dir_missing = FALSE
+WHERE id = $3 AND status = 'running'
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot, work_dir_missing
+`
+
+type RecordCodeWorkspaceSelectionParams struct {
+	Selection []byte      `json:"selection"`
+	WorkDir   string      `json:"work_dir"`
+	ID        pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) RecordCodeWorkspaceSelection(ctx context.Context, arg RecordCodeWorkspaceSelectionParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, recordCodeWorkspaceSelection, arg.Selection, arg.WorkDir, arg.ID)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutopilotRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.SquadID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.CommentThreadID,
+		&i.CancelledByType,
+		&i.CancelledByID,
+		&i.CancelledByName,
+		&i.IssueSnapshot,
+		&i.WorkDirMissing,
+	)
+	return i, err
 }
 
 const recordSharedWorktreeDelivery = `-- name: RecordSharedWorktreeDelivery :one

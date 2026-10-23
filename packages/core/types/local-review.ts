@@ -84,11 +84,18 @@ export const localMRSchema = z.object({
 export type LocalMR = z.infer<typeof localMRSchema>;
 
 export const remoteWorktreesSchema = z.array(worktreeLifecycleSchema.extend({
+  run_kind: z.string().optional().catch("unknown").default("unknown"),
+  project_id: z.string().nullish().catch(null),
+  chat_session_id: z.string().nullish().catch(null),
+  autopilot_run_id: z.string().nullish().catch(null),
+  directory_state: z.enum(["unverified", "present", "missing"]).optional().catch("unverified").default("unverified"),
   workspace_id: z.string(), task_id: z.string(), runtime_id: z.string(), agent_id: z.string(),
   work_dir: z.string(), status: z.string(), branch_name: z.string().nullable(),
 }).transform((row) => ({
   ...toWorktreeLifecycle(row),
   runStatus: row.run_status || row.status,
+  runKind: row.run_kind, projectId: row.project_id ?? "", chatSessionId: row.chat_session_id ?? "",
+  autopilotRunId: row.autopilot_run_id ?? "", directoryState: row.directory_state,
   workspaceId: row.workspace_id, taskId: row.task_id, runtimeId: row.runtime_id, agentId: row.agent_id,
   path: row.work_dir, taskName: row.branch_name || row.task_id, repositories: [row.work_dir],
   active: ["queued", "running", "dispatched", "waiting_local_directory"].includes(row.status),

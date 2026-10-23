@@ -148,3 +148,16 @@ func TestCloudWorktreeInventoryDoesNotInferLocalApproval(t *testing.T) {
 		t.Fatalf("cloud guessed local safety or ignored recent business activity: %+v", rows[0])
 	}
 }
+
+func TestTaskGCReportsSystemRunProvenance(t *testing.T) {
+	runtime := dbfx.Runtime(t, "supervision-gc", testutil.Cols{"runtime_mode": "local"})
+	agent := dbfx.Agent(t, "supervision-gc-agent", runtime)
+	project := dbfx.Project(t, "Supervised project")
+	task := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "status": "failed", "completed_at": time.Now(), "context": `{"type":"project_supervision","project_id":"` + project + `"}`})
+	request := withURLParam(newDaemonTokenRequest(http.MethodGet, "/gc-check", nil, testWorkspaceID, "supervision-daemon"), "taskId", task)
+	var response protocol.TaskGCStatus
+	testutil.Call(t, testHandler.GetTaskGCCheck, request).Want(http.StatusOK).JSON(&response)
+	if response.RunKind != "project_supervision" || response.ProjectID != project || response.ChatSessionID != "" || response.IssueID != "" {
+		t.Fatalf("system identity lost: %+v", response)
+	}
+}

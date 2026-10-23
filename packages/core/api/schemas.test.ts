@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
   AppConfigSchema,
@@ -712,6 +713,9 @@ describe("AgentTaskListSchema", () => {
     const parsed = AgentTaskListSchema.parse([task]);
     expect(parsed[0]?.coalesced_comment_ids).toBeUndefined();
     expect(parsed[0]?.delivered_comment_ids).toBeUndefined();
+    expect(parsed[0]?.code_workspace_issue_id).toBeUndefined();
+    expect(parsed[0]?.code_workspace_issue_identifier).toBeUndefined();
+    expect(parsed[0]?.code_workspace_work_dir).toBeUndefined();
   });
 
   it("degrades malformed optional coverage without dropping task rows", () => {
@@ -737,12 +741,15 @@ describe("AgentTaskListSchema", () => {
     ]);
   });
 
-  it("accepts durable workdir metadata from newer backends", () => {
+  it("accepts durable and shared workdir metadata from newer backends", () => {
     const parsed = AgentTaskListSchema.parse([
       {
         ...task,
         status: "completed",
         work_dir: "/managed/task/worktree",
+        code_workspace_issue_id: "root-issue",
+        code_workspace_issue_identifier: "MUL-1",
+        code_workspace_work_dir: "/managed/root/worktree",
         durable_work_dir: "/Users/dev/project",
         relative_durable_work_dir: "project",
         branch_name: "agent/j/abc12345",
@@ -750,6 +757,9 @@ describe("AgentTaskListSchema", () => {
     ]);
 
     expect(parsed[0]).toMatchObject({
+      code_workspace_issue_id: "root-issue",
+      code_workspace_issue_identifier: "MUL-1",
+      code_workspace_work_dir: "/managed/root/worktree",
       durable_work_dir: "/Users/dev/project",
       relative_durable_work_dir: "project",
       branch_name: "agent/j/abc12345",
@@ -761,6 +771,9 @@ describe("AgentTaskListSchema", () => {
       {
         ...task,
         work_dir: 1,
+        code_workspace_issue_id: 1,
+        code_workspace_issue_identifier: { identifier: "MUL-1" },
+        code_workspace_work_dir: ["/managed/root/worktree"],
         durable_work_dir: { path: "/project" },
         relative_durable_work_dir: false,
         branch_name: ["agent/j/abc12345"],
@@ -769,6 +782,9 @@ describe("AgentTaskListSchema", () => {
 
     expect(parsed).toHaveLength(1);
     expect(parsed[0]?.work_dir).toBeUndefined();
+    expect(parsed[0]?.code_workspace_issue_id).toBeUndefined();
+    expect(parsed[0]?.code_workspace_issue_identifier).toBeUndefined();
+    expect(parsed[0]?.code_workspace_work_dir).toBeUndefined();
     expect(parsed[0]?.durable_work_dir).toBeUndefined();
     expect(parsed[0]?.relative_durable_work_dir).toBeUndefined();
     expect(parsed[0]?.branch_name).toBeUndefined();
@@ -2462,6 +2478,15 @@ describe("AgentActivityBucketListSchema duration", () => {
 });
 
 describe("ChatSessionFilesResponseSchema", () => {
+  it("preserves unknown run kinds while dropping malformed ownership metadata", () => {
+    const parsed = ChatSessionFilesResponseSchema.parse({ tasks: [
+      { id: "future", run_kind: "future_run", chat_session_id: "chat" },
+      { id: "broken", run_kind: 42, chat_session_id: [] },
+    ] });
+    expect(parsed.tasks[0]).toMatchObject({ run_kind: "future_run", chat_session_id: "chat" });
+    expect(parsed.tasks[1]?.run_kind).toBeUndefined();
+    expect(parsed.tasks[1]?.chat_session_id).toBeUndefined();
+  });
   it("keeps valid project directories when a peer has a malformed path", () => {
     const parsed = ChatSessionFilesResponseSchema.parse({
       directories: [

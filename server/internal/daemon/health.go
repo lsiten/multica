@@ -157,11 +157,12 @@ type repoCheckoutRequest struct {
 }
 
 type activeRepoCheckoutTask struct {
-	WorkspaceID string
-	TaskID      string
-	AgentID     string
-	AgentName   string
-	WorkDir     string
+	CoordinationOnly bool
+	WorkspaceID      string
+	TaskID           string
+	AgentID          string
+	AgentName        string
+	WorkDir          string
 }
 
 // registerActiveRepoCheckoutTask binds checkout identity to the active task.
@@ -639,6 +640,11 @@ func (d *Daemon) repoCheckoutHandler() http.HandlerFunc {
 		activeTask, authResult := d.activeRepoCheckoutTask(r)
 		if authResult != repoCheckoutAuthOK {
 			d.writeRepoCheckoutAuthError(w, authResult)
+			return
+		}
+
+		if activeTask.CoordinationOnly {
+			http.Error(w, "project supervision cannot create code checkouts; delegate implementation to an issue run", http.StatusForbidden)
 			return
 		}
 

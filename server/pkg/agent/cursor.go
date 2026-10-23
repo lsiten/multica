@@ -1041,6 +1041,9 @@ func buildCursorArgs(opts ExecOptions, logger *slog.Logger) []string {
 	if opts.Cwd != "" {
 		args = append(args, "--workspace", opts.Cwd)
 	}
+	if opts.CursorMcpPluginDir != "" {
+		args = append(args, "--plugin-dir", opts.CursorMcpPluginDir)
+	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
 	}

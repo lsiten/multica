@@ -24,6 +24,10 @@ printf '{"type":"system","session_id":"session-%%s"}\n' "$MULTICA_TASK_ID"
 signals=%s
 pwd > "$signals/$MULTICA_TASK_ID.cwd"
 printf '%%s' "$MULTICA_TASK_CONFIG_ROOT" > "$signals/$MULTICA_TASK_ID.config"
+for context in "$(dirname "$MULTICA_TASK_CONFIG_ROOT")"/task-context-*; do
+  [ -f "$context/CLAUDE.md" ] || continue
+  printf '%%s' "$context" > "$signals/$MULTICA_TASK_ID.context"
+done
 printf '%%s' "$MULTICA_TASK_ID" > "$MULTICA_TASK_ID.txt"
 if [ "$MULTICA_TASK_ID" = "task-first" ]; then
   : > "$signals/started"
@@ -100,7 +104,11 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"sess
 	if err != nil || !sameDir(t, strings.TrimSpace(string(firstCwd)), next.WorkDir) {
 		t.Fatalf("concurrent runs did not share the checkout: %s %+v %v", firstCwd, next, err)
 	}
-	firstContext := filepath.Join(filepath.Dir(strings.TrimSpace(readSharedRunConfig(t, filepath.Join(signals, "task-first.config")))), "task-context")
+	firstContext := readSharedRunConfig(t, filepath.Join(signals, "task-first.context"))
+	secondContext := readSharedRunConfig(t, filepath.Join(signals, "task-second.context"))
+	if firstContext == "" || secondContext == "" || firstContext == secondContext {
+		t.Fatalf("concurrent runs did not use independent contexts: %q %q", firstContext, secondContext)
+	}
 	if _, err := os.Stat(filepath.Join(firstContext, "CLAUDE.md")); err != nil {
 		t.Fatalf("second run cleaned the first run's context: %v", err)
 	}

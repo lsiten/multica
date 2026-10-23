@@ -29,6 +29,14 @@ func TestBuildOmpArgsOwnsSessionSelection(t *testing.T) {
 	}
 }
 
+func TestOmpPrivateMcpExtensionPreservesProfileAndSessionSelection(t *testing.T) {
+	args := buildOmpArgs("", "/private/session", ExecOptions{OmpMcpExtensionDir: "/private/mcp", CustomArgs: []string{"--profile", "owner-profile", "--session-dir", "/foreign/session"}}, slog.Default())
+	want := []string{"-p", "--mode", "json", "--profile", "owner-profile", "--extension", "/private/mcp", "--session-dir", "/private/session"}
+	if !slices.Equal(args, want) {
+		t.Fatalf("OMP launch lost its private config or changed owner profile/session: %q", args)
+	}
+}
+
 func TestFindOmpSessionFile(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

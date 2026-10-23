@@ -31,7 +31,7 @@ func agentBranchPreserved(ctx context.Context, repo, branch string) (bool, error
 		return false, err
 	}
 	for _, ref := range strings.Split(refs, "\n") {
-		if ref != "" && !strings.HasPrefix(ref, "refs/heads/agent/") {
+		if ref != "" && ref != "refs/heads/"+branch && !strings.HasPrefix(ref, "refs/heads/agent/") {
 			return true, nil
 		}
 	}

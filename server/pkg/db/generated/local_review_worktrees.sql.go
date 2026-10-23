@@ -13,12 +13,16 @@ import (
 
 const listLocalReviewWorktrees = `-- name: ListLocalReviewWorktrees :many
 SELECT task.id AS task_id, task.runtime_id, task.agent_id, task.issue_id, task.work_dir, task.status, task.branch_name, agent.workspace_id,
-       task.completed_at, issue.status AS issue_status,
+       task.completed_at, task.context, task.chat_session_id, task.autopilot_run_id, project.id AS project_id, issue.status AS issue_status,
        COALESCE(issue.last_activity_at, issue.updated_at) AS last_activity_at
 FROM agent_task_queue task
 JOIN agent ON agent.id = task.agent_id
 JOIN agent_runtime runtime ON runtime.id = task.runtime_id AND runtime.workspace_id = agent.workspace_id
 LEFT JOIN issue ON issue.id = task.issue_id AND issue.workspace_id = agent.workspace_id
+LEFT JOIN chat_session chat ON chat.id = task.chat_session_id AND chat.workspace_id = agent.workspace_id
+LEFT JOIN autopilot_run ar ON ar.id = task.autopilot_run_id
+LEFT JOIN autopilot automation ON automation.id = ar.autopilot_id AND automation.workspace_id = agent.workspace_id
+LEFT JOIN project ON project.id::text = COALESCE(issue.project_id::text, chat.project_id::text, automation.project_id::text, task.context->>'project_id') AND project.workspace_id = agent.workspace_id
 WHERE agent.workspace_id = $1
 AND NOT task.work_dir_missing
 AND task.work_dir IS NOT NULL AND task.work_dir <> ''
@@ -48,6 +52,10 @@ type ListLocalReviewWorktreesRow struct {
 	BranchName     pgtype.Text        `json:"branch_name"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	Context        []byte             `json:"context"`
+	ChatSessionID  pgtype.UUID        `json:"chat_session_id"`
+	AutopilotRunID pgtype.UUID        `json:"autopilot_run_id"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
 	IssueStatus    pgtype.Text        `json:"issue_status"`
 	LastActivityAt pgtype.Timestamptz `json:"last_activity_at"`
 }
@@ -77,6 +85,10 @@ func (q *Queries) ListLocalReviewWorktrees(ctx context.Context, arg ListLocalRev
 			&i.BranchName,
 			&i.WorkspaceID,
 			&i.CompletedAt,
+			&i.Context,
+			&i.ChatSessionID,
+			&i.AutopilotRunID,
+			&i.ProjectID,
 			&i.IssueStatus,
 			&i.LastActivityAt,
 		); err != nil {

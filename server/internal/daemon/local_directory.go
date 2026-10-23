@@ -108,14 +108,14 @@ func (a *localDirectoryAssignment) ValidateExecutionMode() error {
 }
 
 // localDirectoryAssignmentForTask returns the local_directory assignment a task
-// should execute inside. Squad-leader tasks are coordinators: they may create
+// should execute inside. Squad-leader and project-supervision tasks are coordinators: they may create
 // child issues or comments, but should not bind to the user's repo worktree or
 // hold the path mutex while downstream workers are ready to write.
 //
 // The assignment determines the working directory and GC exemption. Sharing
 // it does not change either: every run still edits the configured user's path.
 func localDirectoryAssignmentForTask(task Task, daemonID string) (*localDirectoryAssignment, error) {
-	if task.IsLeaderTask {
+	if task.IsLeaderTask || task.ProjectSupervisionPrompt != "" {
 		return nil, nil
 	}
 	return findLocalDirectoryAssignment(task.ProjectResources, daemonID)

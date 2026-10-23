@@ -24,12 +24,16 @@ func repositoryScopeForTask(task Task) (string, error) {
 
 func managedScopeForTask(task Task) (execenv.ManagedEnvProvenance, error) {
 	fingerprint, err := repositoryScopeForTask(task)
-	return execenv.ManagedEnvProvenance{WorkspaceID: task.WorkspaceID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID, ProjectID: task.ProjectID, SquadID: task.SquadID, RepositoryScope: fingerprint}, err
+	return execenv.ManagedEnvProvenance{CodeWorkspaceIssueID: task.CodeWorkspaceIssueID, WorkspaceID: task.WorkspaceID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID, ProjectID: task.ProjectID, SquadID: task.SquadID, RepositoryScope: fingerprint}, err
 }
 
 // Directory discovery is a recovery path for absent/stale PriorWorkDir, not an
 // invitation to reuse the newest directory belonging to a different task scope.
 func (d *Daemon) discoverManagedWorkdir(ctx context.Context, task Task) string {
+	return d.discoverManagedWorkdirForLocal(ctx, task, nil)
+}
+
+func (d *Daemon) discoverManagedWorkdirForLocal(ctx context.Context, task Task, local *localDirectoryAssignment) string {
 	paths, err := d.environmentRootPaths(ctx)
 	if err != nil {
 		return ""
@@ -48,13 +52,20 @@ func (d *Daemon) discoverManagedWorkdir(ctx context.Context, task Task) string {
 			continue
 		}
 		workdir := filepath.Join(path, "workdir")
+		if local.UsesWorktree() {
+			previous, err := execenv.ReadRetainedLocalWorktree(path)
+			if err != nil {
+				continue
+			}
+			workdir = previous.WorkDir
+		}
 		info, err := os.Stat(workdir)
 		if err != nil || !info.IsDir() {
 			continue
 		}
 		copy := task
 		copy.PriorWorkDir = workdir
-		if verified, ok := shouldReusePriorWorkdir(copy, nil, d.cfg.WorkspacesRoot); ok {
+		if verified, ok := shouldReusePriorWorkdir(copy, local, d.cfg.WorkspacesRoot); ok {
 			candidates = append(candidates, candidate{verified, info.ModTime().UnixNano()})
 		}
 	}

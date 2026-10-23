@@ -21,3 +21,17 @@ it("keeps quick-create runs without an issue in mixed old and new server invento
   expect(inventory.map((entry) => entry.issueId)).toEqual(["", "issue"]);
   expect(inventory.map((entry) => entry.nextAction)).toEqual(["unknown", "unknown"]);
 });
+
+it("preserves run provenance and treats server inventory paths as unverified", () => {
+  const base = { workspace_id: "ws", task_id: "task", runtime_id: "rt", agent_id: "agent", work_dir: "/root", status: "failed", branch_name: null };
+  const rows = remoteWorktreesSchema.parse([
+    { ...base, run_kind: "project_supervision", project_id: "project", chat_session_id: null },
+    { ...base, run_kind: 17, project_id: {}, directory_state: "future-state" },
+    base,
+  ]);
+  expect(rows.map(({ runKind, projectId, chatSessionId, directoryState }) => ({ runKind, projectId, chatSessionId, directoryState }))).toEqual([
+    { runKind: "project_supervision", projectId: "project", chatSessionId: "", directoryState: "unverified" },
+    { runKind: "unknown", projectId: "", chatSessionId: "", directoryState: "unverified" },
+    { runKind: "unknown", projectId: "", chatSessionId: "", directoryState: "unverified" },
+  ]);
+});

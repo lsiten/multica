@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,14 +16,19 @@ import (
 
 type localReviewWorktreeResponse struct {
 	protocol.WorktreeLifecycle
-	TaskID      pgtype.UUID `json:"task_id"`
-	RuntimeID   pgtype.UUID `json:"runtime_id"`
-	AgentID     pgtype.UUID `json:"agent_id"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	WorkDir     pgtype.Text `json:"work_dir"`
-	Status      string      `json:"status"`
-	BranchName  pgtype.Text `json:"branch_name"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	RunKind        string      `json:"run_kind"`
+	ProjectID      pgtype.UUID `json:"project_id"`
+	ChatSessionID  pgtype.UUID `json:"chat_session_id"`
+	AutopilotRunID pgtype.UUID `json:"autopilot_run_id"`
+	DirectoryState string      `json:"directory_state"`
+	TaskID         pgtype.UUID `json:"task_id"`
+	RuntimeID      pgtype.UUID `json:"runtime_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+	IssueID        pgtype.UUID `json:"issue_id"`
+	WorkDir        pgtype.Text `json:"work_dir"`
+	Status         string      `json:"status"`
+	BranchName     pgtype.Text `json:"branch_name"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
 }
 
 func (h *Handler) localReviewRuntime(w http.ResponseWriter, r *http.Request) (db.AgentRuntime, bool) {
@@ -100,7 +106,28 @@ func (h *Handler) ListLocalReviewWorktrees(w http.ResponseWriter, r *http.Reques
 			lifecycle.LastActivityAt = &row.LastActivityAt.Time
 		}
 		lifecycle.Stale = protocol.WorktreeStale(lifecycle, time.Now(), protocol.DefaultWorktreeStaleTTL)
-		result = append(result, localReviewWorktreeResponse{WorktreeLifecycle: lifecycle, TaskID: row.TaskID, RuntimeID: row.RuntimeID, AgentID: row.AgentID, IssueID: row.IssueID, WorkDir: row.WorkDir, Status: row.Status, BranchName: row.BranchName, WorkspaceID: row.WorkspaceID})
+		result = append(result, localReviewWorktreeResponse{WorktreeLifecycle: lifecycle, RunKind: inventoryRunKind(row.Context, row.IssueID, row.ChatSessionID, row.AutopilotRunID), ProjectID: row.ProjectID, ChatSessionID: row.ChatSessionID, AutopilotRunID: row.AutopilotRunID, DirectoryState: "unverified", TaskID: row.TaskID, RuntimeID: row.RuntimeID, AgentID: row.AgentID, IssueID: row.IssueID, WorkDir: row.WorkDir, Status: row.Status, BranchName: row.BranchName, WorkspaceID: row.WorkspaceID})
 	}
 	writeJSON(w, 200, result)
+}
+
+// Queue associations identify the run. The context type is useful for issue-less
+// system runs, but never grants directory access or proves a checkout exists.
+func inventoryRunKind(raw []byte, issue, chat, autopilot pgtype.UUID) string {
+	if chat.Valid {
+		return "chat"
+	}
+	if issue.Valid {
+		return "issue"
+	}
+	if autopilot.Valid {
+		return "autopilot_run"
+	}
+	var context struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(raw, &context) != nil || context.Type == "" {
+		return "unknown"
+	}
+	return context.Type
 }

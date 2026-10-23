@@ -62,7 +62,7 @@ func (d *Daemon) scheduleAutomaticEnvironmentRecycle(ctx context.Context, path s
 		d.logger.Debug("automatic environment recycling retained root", "directory", filepath.Base(path), "reason", reason)
 		return false
 	}
-	preview := d.cleanupUnreferencedEnvironment(ctx, path, "")
+	preview := d.cleanupUnreferencedEnvironment(withEnvironmentScope(ctx, environmentOperationScope{Automatic: true}), path, "")
 	if preview.Reason != "" || preview.EnvironmentID == "" || preview.Revision == "" {
 		return false
 	}
@@ -167,7 +167,7 @@ func (d *Daemon) scanAutomaticEnvironmentRecycle(ctx context.Context) {
 			reasons["unavailable"]++
 			continue
 		}
-		preview := d.cleanupUnreferencedEnvironment(ctx, path, "")
+		preview := d.cleanupUnreferencedEnvironment(withEnvironmentScope(ctx, environmentOperationScope{Automatic: true}), path, "")
 		if preview.Reason != "" {
 			reasons[preview.Reason]++
 			continue

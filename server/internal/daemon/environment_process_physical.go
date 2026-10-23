@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/runtimeproc"
 )
 
 // Physical results carry facts needed by private preparation, not the service's
@@ -34,20 +35,23 @@ type environmentPhysicalResult struct {
 }
 
 type environmentPhysicalPreparation struct {
-	checkoutIdentity os.FileInfo
-	Attached         bool `json:"attached"`
-	codeIdentity     os.FileInfo
-	Selected         bool                     `json:"selected"`
-	Consumer         execenv.WorktreeConsumer `json:"consumer"`
-	bridge           *execenv.SharedDirectoryLease
-	Result           environmentPhysicalResult     `json:"result"`
-	Physical         *execenv.Environment          `json:"physical"`
-	Participant      *execenv.PhysicalParticipant  `json:"participant,omitempty"`
-	Outcome          *execenv.LocalWorktreeOutcome `json:"outcome,omitempty"`
-	Failure          string                        `json:"failure,omitempty"`
-	RootConfirmed    bool                          `json:"root_confirmed"`
-	identity         os.FileInfo
-	finish           *execenv.PhysicalFinish
+	checkoutIdentity  os.FileInfo
+	Attached          bool `json:"attached"`
+	codeIdentity      os.FileInfo
+	Selected          bool                     `json:"selected"`
+	Consumer          execenv.WorktreeConsumer `json:"consumer"`
+	bridge            *execenv.SharedDirectoryLease
+	Result            environmentPhysicalResult     `json:"result"`
+	Physical          *execenv.Environment          `json:"physical"`
+	Participant       *execenv.PhysicalParticipant  `json:"participant,omitempty"`
+	Permit            *execenv.PhysicalFinishPermit `json:"permit,omitempty"`
+	Aborted           bool                          `json:"aborted,omitempty"`
+	HandoffRecovering bool                          `json:"handoff_recovering,omitempty"`
+	Outcome           *execenv.LocalWorktreeOutcome `json:"outcome,omitempty"`
+	Failure           string                        `json:"failure,omitempty"`
+	RootConfirmed     bool                          `json:"root_confirmed"`
+	identity          os.FileInfo
+	finish            *execenv.PhysicalFinish
 }
 
 type environmentPhysicalOwner struct {
@@ -147,12 +151,24 @@ func (o *environmentPhysicalOwner) persist(preparation *environmentPhysicalPrepa
 	if closeErr != nil {
 		return closeErr
 	}
-	return os.Rename(name, filepath.Join(o.journal, preparation.Result.Reservation.ID+".json"))
+	if err := os.Rename(name, filepath.Join(o.journal, preparation.Result.Reservation.ID+".json")); err != nil {
+		return err
+	}
+	return runtimeproc.SyncPrivateArtifactDirectory(o.journal)
 }
 
 func (o *environmentPhysicalOwner) prepare(ctx context.Context, input execenv.PhysicalPrepareParams, metadata ...*execenv.GCMeta) (environmentPhysicalResult, error) {
 	if err := ctx.Err(); err != nil {
 		return environmentPhysicalResult{}, err
+	}
+	if input.WorkspaceID == "" || input.TaskID == "" {
+		return environmentPhysicalResult{}, &environmentAllocationRejected{Cause: errors.New("physical workspace and task identity required")}
+	}
+	if len(metadata) > 0 && metadata[0] != nil {
+		meta := metadata[0]
+		if meta.TaskID != input.TaskID || meta.WorkspaceID != input.WorkspaceID || meta.RuntimeID != input.RuntimeID {
+			return environmentPhysicalResult{}, &environmentAllocationRejected{Cause: errors.New("physical task metadata scope mismatch")}
+		}
 	}
 	// The root is process configuration, never supplied by an operation payload.
 	input.WorkspacesRoot = o.root
@@ -163,9 +179,6 @@ func (o *environmentPhysicalOwner) prepare(ctx context.Context, input execenv.Ph
 	defer env.ReleaseLock()
 	if len(metadata) > 0 && metadata[0] != nil {
 		meta := metadata[0]
-		if meta.TaskID != input.TaskID || meta.WorkspaceID != input.WorkspaceID || meta.RuntimeID != input.RuntimeID {
-			return environmentPhysicalResult{}, errors.New("physical task metadata scope mismatch")
-		}
 		if err := execenv.SaveGCMeta(env.RootDir, *meta); err != nil {
 			return environmentPhysicalResult{}, err
 		}
@@ -243,7 +256,9 @@ func (o *environmentPhysicalOwner) beginFinish(ctx context.Context, id string, p
 		preparation.Physical.LocalWorktree.AbortWithReason(errors.New("worker private cleanup incomplete"))
 	}
 	preparation.Participant = &participant
+	preparation.Permit = &permit
 	if err = o.persist(preparation); err != nil {
+		preparation.Permit = nil
 		finish.Close()
 		return execenv.PhysicalFinishPermit{}, err
 	}

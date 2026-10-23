@@ -154,6 +154,8 @@ type PreparedEnv struct {
 	ClaudeSettingsPath string            `json:"claude_settings_path,omitempty"`
 	QwenpawWorkspace   string            `json:"qwenpaw_workspace,omitempty"`
 	ContextDir         string            `json:"context_dir,omitempty"`
+	CursorMcpPluginDir string            `json:"cursor_mcp_plugin_dir,omitempty"`
+	OmpMcpExtensionDir string            `json:"omp_mcp_extension_dir,omitempty"`
 	Env                map[string]string `json:"env,omitempty"`
 }
 

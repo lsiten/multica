@@ -154,4 +154,31 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"owne
 		t.Fatal("physical service was not a child")
 	}
 	t.Logf("OBSERVE childPID=%d controllerPID=%d roots=%s,%s sharedCode=%s distinctCommits=true consumers=0", child.PID, os.Getpid(), result.EnvRoot, next.EnvRoot, next.CodeRoot)
+
+	t.Run("project supervision does not inherit a code checkout", func(t *testing.T) {
+		// Given a prior project checkout, dirty user work, and an active environment service.
+		if err := os.WriteFile(filepath.Join(repo, "supervision-user-wip.txt"), []byte("user work"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		branches := worktreeTestGit(t, repo, "for-each-ref", "--format=%(refname):%(objectname)")
+		supervision := second
+		supervision.ID = "owned-supervision"
+		supervision.IssueID = ""
+		supervision.ProjectID = "project"
+		supervision.ProjectSupervisionPrompt = "review project"
+		supervision.PriorWorkDir = next.WorkDir
+		// When the real task pipeline delegates preparation to the child service.
+		neutral, err := d.runTask(ctx, supervision, "claude", 0, d.logger)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Then only a neutral control directory is used, regardless of the prior checkout.
+		if filepath.Base(neutral.WorkDir) != "workdir" || neutral.WorktreeCommit != "" || sameDir(t, neutral.WorkDir, next.WorkDir) {
+			t.Fatalf("supervision inherited project code: %+v", neutral)
+		}
+		if got := worktreeTestGit(t, repo, "for-each-ref", "--format=%(refname):%(objectname)"); got != branches {
+			t.Fatal("supervision created a Git snapshot or branch")
+		}
+		t.Logf("OBSERVE supervision cwd=%s no code checkout or commit", neutral.WorkDir)
+	})
 }

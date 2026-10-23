@@ -272,9 +272,10 @@ func TestListChatSessionFiles_ResolvesAgentBoundProjectTask(t *testing.T) {
 	dbfx.Exec(t, `INSERT INTO agent_project_binding (agent_id, project_id, created_by, active)
 		VALUES ($1, $2, $3, TRUE)`, agentID, projectID, testUserID)
 	dbfx.Task(t, agentID, testutil.Cols{
-		"runtime_id": handlerTestRuntimeID(t),
-		"work_dir":   "/bound/project/worktree",
-		"status":     "completed",
+		"runtime_id":      handlerTestRuntimeID(t),
+		"chat_session_id": sessionID,
+		"work_dir":        "/bound/project/worktree",
+		"status":          "completed",
 	})
 
 	req := newRequest("GET", "/api/chat/sessions/"+sessionID+"/files?project_id="+projectID, nil)
@@ -330,5 +331,105 @@ func TestListChatSessionFiles_ResolvesExplicitGroupSquadProject(t *testing.T) {
 	}
 	if len(resp.Projects) != 1 || resp.Projects[0].ID != projectID {
 		t.Fatalf("projects: want squad project %s, got %+v", projectID, resp.Projects)
+	}
+}
+
+func TestListChatSessionFiles_SeparatesBackgroundAndRetiredDirectories(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+	agentID := createHandlerTestAgent(t, "DirectoryOwnership", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	projectID := dbfx.Project(t, "Directory ownership")
+	dbfx.Exec(t, `UPDATE chat_session SET project_id=$1 WHERE id=$2`, projectID, sessionID)
+	archivedSession := createHandlerTestChatSession(t, agentID)
+	dbfx.Exec(t, `UPDATE chat_session SET project_id=$1, status='archived' WHERE id=$2`, projectID, archivedSession)
+	issueID := dbfx.Issue(t, "Completed work")
+	dbfx.Exec(t, `UPDATE issue SET project_id=$1, status='done' WHERE id=$2`, projectID, issueID)
+	for _, fields := range []testutil.Cols{
+		{"chat_session_id": sessionID, "work_dir": "/current"},
+		{"chat_session_id": archivedSession, "work_dir": "/archived"},
+		{"chat_session_id": sessionID, "issue_id": issueID, "work_dir": "/done"},
+		{"chat_session_id": sessionID, "work_dir": "/missing", "work_dir_missing": true},
+		{"context": map[string]any{"type": "project_supervision", "project_id": projectID}, "work_dir": "/supervision"},
+	} {
+		fields["runtime_id"] = handlerTestRuntimeID(t)
+		dbfx.Task(t, agentID, fields)
+	}
+	req := withChatTestWorkspaceCtx(t, withURLParam(newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil), "sessionId", sessionID))
+	var response ChatSessionFilesResponse
+	testutil.Call(t, testHandler.ListChatSessionFiles, req).Want(http.StatusOK).JSON(&response)
+	for _, tasks := range [][]ChatSessionFileTaskResponse{response.Tasks, response.ProjectTasks} {
+		if len(tasks) != 1 || tasks[0].WorkDir != "/current" {
+			t.Fatalf("expected only current directory, got %+v", tasks)
+		}
+		if tasks[0].ChatSessionID != sessionID || tasks[0].RunKind != "chat" {
+			t.Fatalf("incorrect ownership: %+v", tasks[0])
+		}
+	}
+}
+
+func TestListChatSessionFiles_OpenChildKeepsCompletedParentDirectory(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+	agentID := createHandlerTestAgent(t, "OpenChildDirectory", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	projectID := dbfx.Project(t, "Family directory")
+	dbfx.Exec(t, `UPDATE chat_session SET project_id=$1 WHERE id=$2`, projectID, sessionID)
+	parentIssue := dbfx.Issue(t, "Completed parent")
+	childIssue := dbfx.Issue(t, "Open review")
+	dbfx.Exec(t, `UPDATE issue SET project_id=$1, status='done' WHERE id=$2`, projectID, parentIssue)
+	dbfx.Exec(t, `UPDATE issue SET project_id=$1, parent_issue_id=$2, status='in_review' WHERE id=$3`, projectID, parentIssue, childIssue)
+	parentRun := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "issue_id": parentIssue, "work_dir": "/shared-family", "status": "completed"})
+	childRun := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "issue_id": childIssue, "parent_task_id": parentRun, "chat_session_id": sessionID})
+	req := withChatTestWorkspaceCtx(t, withURLParam(newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil), "sessionId", sessionID))
+	var response ChatSessionFilesResponse
+	testutil.Call(t, testHandler.ListChatSessionFiles, req).Want(http.StatusOK).JSON(&response)
+	for _, tasks := range [][]ChatSessionFileTaskResponse{response.Tasks, response.ProjectTasks} {
+		if len(tasks) != 1 || tasks[0].ID != childRun || tasks[0].WorkDir != "/shared-family" {
+			t.Fatalf("open child must retain its inherited checkout: %+v", tasks)
+		}
+	}
+}
+
+func TestListChatSessionFiles_ExcludesDeletedOwners(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+	agentID := createHandlerTestAgent(t, "DeletedDirectoryOwners", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	projectID := dbfx.Project(t, "Deleted owner projection")
+	dbfx.Exec(t, `UPDATE project SET lead_type='agent', lead_id=$1 WHERE id=$2`, agentID, projectID)
+	dbfx.Exec(t, `UPDATE chat_session SET project_id=$1 WHERE id=$2`, projectID, sessionID)
+	deletedIssue := dbfx.Issue(t, "Deleted issue")
+	deletedSession := createHandlerTestChatSession(t, agentID)
+	for _, fields := range []testutil.Cols{
+		{"chat_session_id": sessionID, "work_dir": "/current"},
+		{"chat_session_id": sessionID, "issue_id": deletedIssue, "work_dir": "/deleted-issue-chat"},
+		{"issue_id": deletedIssue, "work_dir": "/deleted-issue-project"},
+		{"chat_session_id": deletedSession, "work_dir": "/deleted-chat"},
+		{"chat_session_id": deletedSession, "work_dir": "/deleted-mirror", "context": map[string]any{"type": "mirror_source_v1", "project_id": projectID}},
+		{"chat_session_id": deletedSession, "work_dir": "/deleted-group", "context": map[string]any{"project_id": projectID, "group_collaboration": map[string]any{"chat_session_id": deletedSession}}},
+		{"work_dir": "/explicit-project", "context": map[string]any{"type": "future_project_run", "project_id": projectID}},
+	} {
+		fields["runtime_id"] = handlerTestRuntimeID(t)
+		fields["status"] = "completed"
+		dbfx.Task(t, agentID, fields)
+	}
+	dbfx.Exec(t, `DELETE FROM issue WHERE id=$1`, deletedIssue)
+	dbfx.Exec(t, `DELETE FROM chat_session WHERE id=$1`, deletedSession)
+	req := withChatTestWorkspaceCtx(t, withURLParam(newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil), "sessionId", sessionID))
+	var response ChatSessionFilesResponse
+	testutil.Call(t, testHandler.ListChatSessionFiles, req).Want(http.StatusOK).JSON(&response)
+	if len(response.Tasks) != 1 || response.Tasks[0].WorkDir != "/current" {
+		t.Fatalf("deleted owners must not remain in the chat: %+v", response.Tasks)
+	}
+	paths := make(map[string]bool)
+	for _, task := range response.ProjectTasks {
+		paths[task.WorkDir] = true
+	}
+	if len(paths) != 2 || !paths["/current"] || !paths["/explicit-project"] {
+		t.Fatalf("deleted owners must not inherit the agent's project: %+v", response.ProjectTasks)
 	}
 }

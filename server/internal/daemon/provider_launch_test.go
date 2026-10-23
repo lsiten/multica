@@ -30,6 +30,8 @@ func TestBuildProviderExecOptions(t *testing.T) {
 		TaskSupplementNegotiated:        true,
 		WorkDir:                         "/work/dir",
 		ClaudeSettingsPath:              "/work/claude.json",
+		CursorMcpPluginDir:              "/private/cursor-mcp-plugin",
+		OmpMcpExtensionDir:              "/private/omp-mcp-extension",
 		QwenpawWorkspace:                "/work/qwenpaw",
 		ContextDir:                      "",
 		Model:                           "codex-1",
@@ -116,6 +118,12 @@ func TestBuildProviderExecOptions(t *testing.T) {
 	}
 	if opts.ClaudeSettingsPath != "/work/claude.json" {
 		t.Errorf("ClaudeSettingsPath = %q, want /work/claude.json", opts.ClaudeSettingsPath)
+	}
+	if opts.CursorMcpPluginDir != "/private/cursor-mcp-plugin" {
+		t.Errorf("private Cursor MCP plugin was dropped: %q", opts.CursorMcpPluginDir)
+	}
+	if opts.OmpMcpExtensionDir != "/private/omp-mcp-extension" {
+		t.Errorf("private OMP MCP extension was dropped: %q", opts.OmpMcpExtensionDir)
 	}
 	if opts.QwenpawWorkspace != "/work/qwenpaw" {
 		t.Errorf("QwenpawWorkspace = %q, want /work/qwenpaw", opts.QwenpawWorkspace)

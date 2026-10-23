@@ -4217,14 +4217,17 @@ func (s *TaskService) maybeLogClaimSlow(agentID pgtype.UUID, outcome string, sta
 
 // StartTask transitions a dispatched task to running.
 // Issue status is NOT changed here — the agent manages it via the CLI.
-func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID, supplementSupport ...bool) (*db.AgentTaskQueue, error) {
+func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID, options ...TaskStartOptions) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		if err := LockExecutionCallback(ctx, qtx, taskID); err != nil {
 			return err
 		}
 		var err error
-		task, err = qtx.StartAgentTaskWithSupplement(ctx, db.StartAgentTaskWithSupplementParams{TaskID: taskID, EnableTaskSupplement: len(supplementSupport) > 0 && supplementSupport[0]})
+		task, err = qtx.StartAgentTaskWithSupplement(ctx, db.StartAgentTaskWithSupplementParams{TaskID: taskID, EnableTaskSupplement: len(options) > 0 && options[0].EnableTaskSupplement})
+		if err == nil && len(options) > 0 {
+			task, err = recordCodeWorkspaceSelection(ctx, qtx, task, options[0].CodeWorkspace)
+		}
 		return err
 	})
 	if err != nil {
@@ -4237,7 +4240,7 @@ func (s *TaskService) StartTask(ctx context.Context, taskID pgtype.UUID, supplem
 // StartTaskForClaim serializes the ownership check and transition with reclaim,
 // cancellation and other start requests. A replay linearizes at the locked read;
 // a cancellation that commits later can still cancel the acknowledged task.
-func (s *TaskService) StartTaskForClaim(ctx context.Context, claim db.LockAgentTaskStartClaimParams, supplementSupport ...bool) (*db.AgentTaskQueue, error) {
+func (s *TaskService) StartTaskForClaim(ctx context.Context, claim db.LockAgentTaskStartClaimParams, options ...TaskStartOptions) (*db.AgentTaskQueue, error) {
 	if !claim.ID.Valid || !claim.RuntimeID.Valid || !claim.DispatchedAt.Valid {
 		return nil, fmt.Errorf("start task: incomplete claim")
 	}
@@ -4258,10 +4261,16 @@ func (s *TaskService) StartTaskForClaim(ctx context.Context, claim db.LockAgentT
 	if !replay {
 		task, err = qtx.StartAgentTaskWithSupplement(ctx, db.StartAgentTaskWithSupplementParams{
 			TaskID:               task.ID,
-			EnableTaskSupplement: len(supplementSupport) > 0 && supplementSupport[0],
+			EnableTaskSupplement: len(options) > 0 && options[0].EnableTaskSupplement,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("start claimed task: %w", err)
+		}
+	}
+	if len(options) > 0 {
+		task, err = recordCodeWorkspaceSelection(ctx, qtx, task, options[0].CodeWorkspace)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

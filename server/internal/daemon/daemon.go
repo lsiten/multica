@@ -158,6 +158,9 @@ const (
 var errInvalidTaskIdentity = errors.New("invalid task identity")
 
 func validateTaskIdentity(task Task) error {
+	if task.ProjectSupervisionPrompt != "" && (task.CodeWorkspaceIssueID != "" || task.CodeWorkspaceIssueIdentifier != "" || task.CodeWorkspaceWorkDir != "" || task.IssueID != "" || task.ChatSessionID != "" || task.AutopilotID != "" || task.AutopilotRunID != "") {
+		return fmt.Errorf("%w: project supervision task %s cannot carry a code workspace, issue, chat, or automation identity", errInvalidTaskIdentity, task.ID)
+	}
 	if strings.TrimSpace(task.AgentID) == "" {
 		return fmt.Errorf("%w: task %s has no authoritative agent_id", errInvalidTaskIdentity, task.ID)
 	}
@@ -7075,7 +7078,9 @@ func sameExistingDir(a, b string) bool {
 
 func gateResumeToReachableSession(task *Task, taskCtx *execenv.TaskContextForEnv, provider, envWorkDir string, sessionHomeReachable, refusesMissingSessionCwd bool, taskLog *slog.Logger) bool {
 	var reachable bool
-	if providerUsesPiSessionFile(provider) {
+	if task.CodeWorkspaceIssueID != "" && task.PriorWorkDir != "" && !sameExistingDir(envWorkDir, task.PriorWorkDir) {
+		reachable = false
+	} else if providerUsesPiSessionFile(provider) {
 		reachable = piSessionResumable(task.PriorSessionID, refusesMissingSessionCwd)
 	} else if provider == "hermes" {
 		reachable = sessionHomeReachable
@@ -7342,8 +7347,7 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 	physicalRoot := filepath.Join(root, parts[0], parts[1])
 	prov, err := execenv.ReadManagedEnvProvenance(physicalRoot)
 	if err != nil || prov.ManagedBy != execenv.ManagedEnvProvenanceManagedBy ||
-		prov.WorkspaceID != task.WorkspaceID ||
-		prov.AgentID != task.AgentID {
+		prov.WorkspaceID != task.WorkspaceID {
 		return "", false
 	}
 	if !managedReuseScopeMatches(task, prov) {
@@ -7355,6 +7359,10 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 		if err != nil || !execenv.LocalWorktreeReuseMatches(previous, params) {
 			return "", false
 		}
+		return workdir, true
+	}
+
+	if task.CodeWorkspaceIssueID != "" {
 		return workdir, true
 	}
 
@@ -7768,6 +7776,13 @@ func (d *Daemon) startTaskPrepareLeaseExtender(ctx context.Context, task Task, t
 // and it carries the context's cause so the caller can end the task instead of
 // preparing an environment for work that no longer exists.
 func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localAssignment *localDirectoryAssignment, heldRoot string) (*executionEnvClaim, string, os.FileInfo, bool, error) {
+	if task.CodeWorkspaceIssueID != "" {
+		candidate, err := d.familyWorkspaceCandidate(ctx, task, localAssignment, heldRoot)
+		if err != nil {
+			return nil, "", nil, false, err
+		}
+		task.PriorWorkDir = candidate
+	}
 	if localAssignment == nil {
 		if _, usable := shouldReusePriorWorkdir(task, nil, d.cfg.WorkspacesRoot); !usable {
 			if candidate := d.discoverManagedWorkdir(ctx, task); candidate != "" {
@@ -7842,13 +7857,17 @@ func (d *Daemon) lockReusablePriorEnvRoot(ctx context.Context, task Task, localA
 	lockStartedAt := time.Now()
 	var claim *executionEnvClaim
 	var lockedInfo os.FileInfo
-	if localAssignment != nil && localAssignment.UsesWorktree() {
-		if d.environmentServiceOwner {
-			retained, leaseErr := execenv.ReadRetainedLocalWorktree(priorRoot)
-			if leaseErr != nil {
-				return nil, "", nil, false, leaseErr
+	if localAssignment != nil && localAssignment.UsesWorktree() || task.CodeWorkspaceIssueID != "" {
+		if d.environmentServiceOwner || task.CodeWorkspaceIssueID != "" {
+			sharedPath := workDir
+			if localAssignment.UsesWorktree() {
+				retained, leaseErr := execenv.ReadRetainedLocalWorktree(priorRoot)
+				if leaseErr != nil {
+					return nil, "", nil, false, leaseErr
+				}
+				sharedPath = retained.Path
 			}
-			lease, leaseErr := execenv.ReserveSharedDirectoryPreparation(ctx, retained.Path)
+			lease, leaseErr := execenv.ReserveSharedDirectoryPreparation(ctx, sharedPath)
 			if leaseErr != nil {
 				return nil, "", nil, false, leaseErr
 			}
@@ -8452,8 +8471,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// in the per-workspace allowlist and the local cache, otherwise
 	// `multica repo checkout` would reject project-only URLs that aren't also
 	// bound at the workspace level.
-	d.registerTaskRepos(task.WorkspaceID, task.ID, task.Repos)
-	defer d.clearTaskRepoRefs(task.WorkspaceID, task.ID)
+	if task.ProjectSupervisionPrompt == "" {
+		d.registerTaskRepos(task.WorkspaceID, task.ID, task.Repos)
+		defer d.clearTaskRepoRefs(task.WorkspaceID, task.ID)
+	}
 
 	entry, ok := d.agents()[provider]
 	// A custom runtime profile (MUL-3284) overrides the executable path: the
@@ -8531,13 +8552,16 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Repos are passed as metadata only — the agent checks them out on demand
 	// via `multica repo checkout <url>`.
 	taskCtx := execenv.TaskContextForEnv{
-		IssueID:             task.IssueID,
-		TriggerCommentID:    task.TriggerCommentID,
-		TriggerThreadID:     task.TriggerThreadID,
-		CommentReplyTargets: commentReplyThreads(task),
-		NewCommentCount:     task.NewCommentCount,
-		NewCommentsSince:    task.NewCommentsSince,
-		PriorSessionResumed: task.PriorSessionID != "",
+		CodeWorkspaceIssueID:         task.CodeWorkspaceIssueID,
+		CodeWorkspaceIssueIdentifier: task.CodeWorkspaceIssueIdentifier,
+		CodeWorkspaceWorkDir:         task.CodeWorkspaceWorkDir,
+		IssueID:                      task.IssueID,
+		TriggerCommentID:             task.TriggerCommentID,
+		TriggerThreadID:              task.TriggerThreadID,
+		CommentReplyTargets:          commentReplyThreads(task),
+		NewCommentCount:              task.NewCommentCount,
+		NewCommentsSince:             task.NewCommentsSince,
+		PriorSessionResumed:          task.PriorSessionID != "",
 		// MUL-5305: the server sets this when a more recent Codex session was
 		// withheld (rollout missing) and PriorSessionID is an older fallback (or
 		// absent). Seed the brief's continuity disclosure from it; the local
@@ -8627,6 +8651,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 	}
 	defer d.registerExecutionEnvClaim(envClaim, nil).Release()
+	if scope, readErr := execenv.ReadManagedEnvProvenance(envClaim.RootDir()); readErr == nil && scope.CodeWorkspaceIssueID != "" && !managedReuseScopeMatches(task, scope) {
+		return TaskResult{}, fmt.Errorf("existing family code workspace scope changed; retained at %s", envClaim.RootDir())
+	}
 	if physicalTask != nil {
 		defer func() {
 			if !physicalTask.attached {
@@ -8954,6 +8981,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		extraArgs := append(append([]string{}, profileFixedArgs...), defaultArgsForProvider(d.cfg, provider)...)
 		codexSandboxArgs = agent.NormalizeCodexLaunchArgs(extraArgs, agentCustomArgs, effectiveMcpConfig, d.logger)
 	}
+	privatePreparationEnv := execenv.TaskPrivatePreparationEnvironment(provider, os.Environ(), agentEnvOverrides)
 	// Hermes: resolve the overlay source home through one resolver contract —
 	// the selection parsed from custom_args (agent.ParseHermesProfileArgs) plus
 	// the agent's custom_env HERMES_HOME feed execenv.ResolveHermesProfile, which
@@ -9052,8 +9080,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 	}
 	envReused := false
+	var releaseWorkline func()
 	if physicalTask != nil {
-		params := execenv.PrepareParams{WorkspacesRoot: d.cfg.WorkspacesRoot, Profile: d.cfg.Profile, WorkspaceID: task.WorkspaceID, WorkspaceSlug: task.WorkspaceSlug, TaskID: task.ID, RuntimeID: task.RuntimeID, IssueIdentifier: task.IssueIdentifier, AgentName: agentName, IsolateLocalContext: true, Provider: provider, CodexVersion: codexVersion, OpenclawBin: openclawBin, McpConfig: effectiveMcpConfig, CursorMcpAuthSource: cursorMcpAuthSource, OpenclawGateway: openclawGateway, HermesSourceHome: hermesSourceHome, HermesSourceMustExist: hermesSourceMustExist, HermesEnv: hermesEnv, HermesMemoryStore: hermesMemoryStore, HermesSessionStore: hermesSessionStore, ReasonixEnv: reasonixEnv, CodexCustomArgs: codexSandboxArgs, Task: taskCtx, PrivateEnvironment: execenv.TaskPrivatePreparationEnvironment(provider, os.Environ(), agentEnvOverrides)}
+		params := execenv.PrepareParams{WorkspacesRoot: d.cfg.WorkspacesRoot, Profile: d.cfg.Profile, WorkspaceID: task.WorkspaceID, WorkspaceSlug: task.WorkspaceSlug, TaskID: task.ID, RuntimeID: task.RuntimeID, IssueIdentifier: task.IssueIdentifier, AgentName: agentName, IsolateLocalContext: true, Provider: provider, CodexVersion: codexVersion, OpenclawBin: openclawBin, McpConfig: effectiveMcpConfig, CursorMcpAuthSource: cursorMcpAuthSource, OpenclawGateway: openclawGateway, HermesSourceHome: hermesSourceHome, HermesSourceMustExist: hermesSourceMustExist, HermesEnv: hermesEnv, HermesMemoryStore: hermesMemoryStore, HermesSessionStore: hermesSessionStore, ReasonixEnv: reasonixEnv, CodexCustomArgs: codexSandboxArgs, Task: taskCtx, PrivateEnvironment: privatePreparationEnv}
 		if localAssignment.UsesWorktree() {
 			params.LocalWorktree = &execenv.LocalWorktreeParams{LocalPath: localAssignment.AbsPath, RetainCheckout: true}
 		} else if localAssignment != nil {
@@ -9105,7 +9134,6 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		phaseRecorder.Mark(taskPhaseEnvironmentReady)
 		defer func() { taskResult.CodeRoot = env.CodeRootDir }()
 	} else {
-		var releaseWorkline func()
 		if (localAssignment == nil || localAssignment.UsesWorktree()) && task.AgentID != "" && task.RuntimeID != "" && (task.IssueID != "" || task.ChatSessionID != "" || task.AutopilotID != "") && !(localAssignment != nil && execenv.NeedsPrivateProviderCheckout(provider, effectiveMcpConfig)) {
 			scope, err := managedScopeForTask(task)
 			if err != nil {
@@ -9203,6 +9231,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 					HermesMemoryStore:     hermesMemoryStore,
 					HermesSessionStore:    hermesSessionStore,
 					ReasonixEnv:           reasonixEnv,
+					PrivateEnvironment:    privatePreparationEnv,
 					CodexCustomArgs:       codexSandboxArgs,
 					Task:                  taskCtx,
 				})
@@ -9269,6 +9298,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				HermesMemoryStore:     hermesMemoryStore,
 				HermesSessionStore:    hermesSessionStore,
 				ReasonixEnv:           reasonixEnv,
+				PrivateEnvironment:    privatePreparationEnv,
 				CodexCustomArgs:       codexSandboxArgs,
 				Task:                  taskCtx,
 			}
@@ -9318,16 +9348,22 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			}()
 		}
 		defer func() { taskResult.CodeRoot = env.CodeRootDir }()
-		if releaseWorkline != nil {
-			releaseWorkline()
-			releaseWorkline = nil
-		}
 	}
+	retained, err := d.preserveReplacedFamilyWorkspace(task, env.WorkDir)
+	if err != nil {
+		return TaskResult{}, asEnvironmentSetupFailure(err)
+	}
+	taskCtx.RetainedIssueWorkDir = retained
+
 	// Belt-and-suspenders: also mark whatever root we ended up with, in case
 	// future changes diverge from ResolveRootDir.
 	if env.RootDir != resolvedRoot && env.RootDir != "" {
 		d.markActiveEnvRoot(env.RootDir)
 		defer d.unmarkActiveEnvRoot(env.RootDir)
+	}
+	if env.LocalWorktree == nil && releaseWorkline != nil {
+		releaseWorkline()
+		releaseWorkline = nil
 	}
 	// Finalize the worktree on EVERY exit path, success or failure: commit
 	// whatever the agent left uncommitted, then unregister the worktree from
@@ -9342,6 +9378,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if env.LocalWorktree != nil {
 		if err := env.LocalWorktree.BeginSharedExecution(prepareCtx, execenv.SharedWorktreeDelivery{TaskID: task.ID, Namespace: d.sharedWorktreeReportNamespace()}); err != nil {
 			return TaskResult{}, asEnvironmentSetupFailure(err)
+		}
+		if releaseWorkline != nil {
+			releaseWorkline()
+			releaseWorkline = nil
 		}
 		defer func() {
 			if taskResult.WorkDir == "" {
@@ -9500,6 +9540,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if agent.SupportsTaskSupplement(provider, resolvedVersion) && task.IssueID != "" {
 		taskCapabilities = append(taskCapabilities, protocol.DaemonCapabilityTaskSupplementV1)
 	}
+	task.SelectedCodeWorkspace = d.selectedCodeWorkspace(task, env)
 	taskSupplementNegotiated, err := d.client.StartTask(prepareCtx, task, taskCapabilities...)
 	if err != nil {
 		stopPrepareLease()
@@ -9537,6 +9578,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		gateCodexResumeToRolloutPresence(&task, &taskCtx, provider, env.CodexHome, taskLog)
 	}
 
+	if retained := taskCtx.RetainedIssueWorkDir; retained != "" {
+		taskLog.Warn("previous issue code directory retained after family workspace selection", "prior_workdir", retained, "workdir", env.WorkDir, "code_workspace_issue_id", task.CodeWorkspaceIssueID)
+		taskCtx.RetainedIssueWorkDir = retained
+	}
+
 	// Inject runtime-specific config (meta skill) so the agent discovers .agent_context/.
 	var runtimeBrief string
 	if env.ContextDir != "" {
@@ -9550,7 +9596,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Shared local checkouts may have concurrent writers; make that visible in
 	// the per-turn prompt while private provider fallbacks keep their isolation.
 	var promptOptions []PromptOption
-	if env.LocalDirectory || (env.LocalWorktree != nil && !env.PrivateProviderCheckout) {
+	if env.LocalDirectory || task.CodeWorkspaceIssueID != "" && !env.PrivateProviderCheckout || (env.LocalWorktree != nil && !env.PrivateProviderCheckout) {
 		promptOptions = append(promptOptions, WithSharedLocalDirectory())
 	}
 	// Worktree mode hands this turn a tree that is mid-merge when the user's
@@ -9656,6 +9702,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		agentCustomEnv = task.Agent.CustomEnv
 	}
 	layerCustomEnvAndHermesHome(agentEnv, agentCustomEnv, env.HermesHome, d.logger)
+	if env.ReasonixHome != "" {
+		agentEnv["REASONIX_HOME"] = env.ReasonixHome
+	}
 	if provider == "reasonix" {
 		reasonixStateHome, err := prepareReasonixTaskStateHome(d.cfg.Profile, task.RuntimeID, task.AgentID)
 		if err != nil {
@@ -9798,6 +9847,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		ClaudeSettingsPath:              env.ClaudeSettingsPath,
 		QwenpawWorkspace:                env.QwenpawWorkspace,
 		ContextDir:                      env.ContextDir,
+		CursorMcpPluginDir:              env.CursorMcpPluginDir,
+		OmpMcpExtensionDir:              env.OmpMcpExtensionDir,
 		Model:                           model,
 		IdleWatchdogTimeout:             idleWatchdogTimeout,
 		ExtraArgs:                       extraArgs,
@@ -9836,11 +9887,12 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// fields or ambient process environment. Register only for the provider
 	// execution window and always remove the credential afterwards.
 	d.registerActiveRepoCheckoutTask(agentToken, activeRepoCheckoutTask{
-		WorkspaceID: task.WorkspaceID,
-		TaskID:      task.ID,
-		AgentID:     task.AgentID,
-		AgentName:   task.Agent.Name,
-		WorkDir:     env.WorkDir,
+		CoordinationOnly: task.ProjectSupervisionPrompt != "",
+		WorkspaceID:      task.WorkspaceID,
+		TaskID:           task.ID,
+		AgentID:          task.AgentID,
+		AgentName:        task.Agent.Name,
+		WorkDir:          env.WorkDir,
 	})
 	defer d.clearActiveRepoCheckoutTask(agentToken)
 

@@ -47,6 +47,10 @@ func (d *Daemon) cleanupUnreferencedEnvironment(ctx context.Context, path, revis
 		result.Reason = reason
 		return result
 	}
+	if reason := d.failedEnvironmentOutputReason(ctx, path, status); reason != "" {
+		result.Reason = reason
+		return result
+	}
 	result.OriginalBytes = dirSize(path)
 	result.Revision, err = execenv.EnvironmentArchiveRevision(ctx, path)
 	if err != nil {
@@ -66,6 +70,10 @@ func (d *Daemon) cleanupUnreferencedEnvironment(ctx context.Context, path, revis
 		return result
 	}
 	if reason := d.environmentRetentionReason(freshEnvironmentLifecycle(ctx), path, status); reason != "" {
+		result.Reason = reason
+		return result
+	}
+	if reason := d.failedEnvironmentOutputReason(ctx, path, status); reason != "" {
 		result.Reason = reason
 		return result
 	}

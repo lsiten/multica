@@ -103,3 +103,83 @@ func TestDeletedTaskEnvironmentDeletesOutputsWithoutCreatingArchive(t *testing.T
 	}
 
 }
+
+func TestReconciliationRestoresFailedSupervisionIdentityWithoutDeletingFiles(t *testing.T) {
+	// Given a terminal system run whose local completion receipt was lost.
+	completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(string) protocol.TaskGCStatus {
+		return protocol.TaskGCStatus{WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", Status: "failed", CompletedAt: completed, LifecycleSupported: true, RetentionSupported: true, RunKind: "project_supervision", ProjectID: "project"}
+	}))
+	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", nil)
+	file := filepath.Join(root, "output", "important.txt")
+	writeLifecycleFile(t, file, "retained")
+	// When the daemon reconciles authenticated completion metadata.
+	meta, err := d.reconcileEnvironmentMetadata(t.Context(), root)
+	// Then provenance and completion are restored without granting automatic deletion.
+	if err != nil || meta.Kind != execenv.GCKindProjectSupervision || meta.ProjectID != "project" || !meta.CompletedAt.Equal(completed) || meta.AutoCleanup {
+		t.Fatalf("incorrect recovered metadata: %+v %v", meta, err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil || string(data) != "retained" {
+		t.Fatalf("reconciliation altered output: %q %v", data, err)
+	}
+}
+
+func TestReconciliationCorrectsCompletedRunProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		kind                        string
+		issue, chat, run, autopilot string
+		want                        execenv.GCMetaKind
+	}{
+		{"issue", "current-issue", "", "", "", execenv.GCKindIssue},
+		{"chat", "", "current-chat", "", "", execenv.GCKindChat},
+		{"autopilot_run", "", "", "current-run", "current-auto", execenv.GCKindAutopilotRun},
+		{"quick_create", "", "", "", "", execenv.GCKindQuickCreate},
+		{"project_supervision", "", "", "", "", execenv.GCKindProjectSupervision},
+		{"future_kind", "", "", "", "", execenv.GCKindChat},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			// Given a complete but stale source record, including an unrelated project label.
+			completed := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+			status := protocol.TaskGCStatus{WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", Status: "failed", CompletedAt: completed, LifecycleSupported: true, RetentionSupported: true, RunKind: tc.kind, IssueID: tc.issue, ChatSessionID: tc.chat, AutopilotRunID: tc.run, AutopilotID: tc.autopilot}
+			d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(string) protocol.TaskGCStatus { return status }))
+			root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", &execenv.GCMeta{WorkspaceID: "ws1", TaskID: "task", RuntimeID: "runtime", AgentID: "agent", CompletedAt: completed, Kind: execenv.GCKindChat, ChatSessionID: "old-chat", IssueID: "old-issue", AutopilotRunID: "old-run", AutopilotID: "old-auto", ProjectID: "old-project", ProjectName: "Stale title", AutoCleanup: true})
+			// When authenticated facts are reconciled despite the existing completion receipt.
+			_, err := d.reconcileEnvironmentMetadata(t.Context(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			meta, err := execenv.ReadGCMeta(root)
+			// Then every association reflects this run; unknown future kind preserves known kind.
+			if err != nil || meta.Kind != tc.want || meta.IssueID != tc.issue || meta.ChatSessionID != tc.chat || meta.AutopilotRunID != tc.run || meta.AutopilotID != tc.autopilot || meta.ProjectID != "" || meta.ProjectName != "" || meta.AutoCleanup {
+				t.Fatalf("stale provenance survived: %+v %v", meta, err)
+			}
+		})
+	}
+}
+
+func TestReconciliationDoesNotInventUnknownRunKind(t *testing.T) {
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(string) protocol.TaskGCStatus {
+		return protocol.TaskGCStatus{WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", Status: "failed", CompletedAt: time.Now(), LifecycleSupported: true, RetentionSupported: true, RunKind: "future_kind"}
+	}))
+	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", nil)
+	_, err := d.reconcileEnvironmentMetadata(t.Context(), root)
+	if err == nil {
+		t.Fatal("unknown run acquired invented kind")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".gc_meta.json")); !os.IsNotExist(err) {
+		t.Fatalf("unknown run wrote metadata: %v", err)
+	}
+}
+
+func TestReconciliationCorrectsStaleCompletionTime(t *testing.T) {
+	completed := time.Now().UTC().Truncate(time.Microsecond)
+	d := newGCTestDaemon(t, taskLifecycleTestHandler(t, func(string) protocol.TaskGCStatus {
+		return protocol.TaskGCStatus{WorkspaceID: "ws1", RuntimeID: "runtime", AgentID: "agent", Status: "failed", CompletedAt: completed, LifecycleSupported: true, RetentionSupported: true, RunKind: "issue", IssueID: "issue"}
+	}))
+	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task", &execenv.GCMeta{WorkspaceID: "ws1", TaskID: "task", RuntimeID: "runtime", AgentID: "agent", Kind: execenv.GCKindIssue, IssueID: "issue", CompletedAt: completed.Add(-time.Hour)})
+	meta, err := d.reconcileEnvironmentMetadata(t.Context(), root)
+	if err != nil || !meta.CompletedAt.Equal(completed) {
+		t.Fatalf("stale completion survived: %+v %v", meta, err)
+	}
+}

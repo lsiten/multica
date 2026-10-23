@@ -82,15 +82,31 @@ func (d *Daemon) environmentRetentionReason(ctx context.Context, path string, st
 			return "task_review"
 		}
 	}
-	if status.Missing {
-		return ""
-	}
-
 	code, err := environmentHasCode(path)
 	if err != nil {
 		return "unavailable"
 	}
 	if !code {
+		return ""
+	}
+
+	if reason := retainedFamilyWorkspaceReason(path); reason != "" {
+		return reason
+	}
+	if scope, err := execenv.ReadManagedEnvProvenance(path); err == nil {
+		if scope.CodeWorkspaceIssueID == "" && status.CodeWorkspaceIssueID != "" && scope.WorkspaceID == status.WorkspaceID && scope.RuntimeID == status.RuntimeID && scope.IssueID == status.IssueID {
+			return "retained"
+		}
+		if scope.CodeWorkspaceIssueID != "" {
+			if status.Missing || status.CodeWorkspaceIssueID != scope.CodeWorkspaceIssueID || status.WorkspaceID != scope.WorkspaceID || status.RuntimeID != scope.RuntimeID {
+				return "unavailable"
+			}
+			if status.CodeWorkspaceRetentionBlocked {
+				return "task_in_progress"
+			}
+		}
+	}
+	if status.Missing {
 		return ""
 	}
 

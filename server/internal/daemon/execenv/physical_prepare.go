@@ -10,25 +10,29 @@ import (
 // PhysicalPrepareParams contains only checkout identity and physical policy.
 // Provider configuration, task text, MCP credentials and environment values do not belong here.
 type PhysicalPrepareParams struct {
-	WorkspacesRoot          string               `json:"-"`
-	WorkspaceID             string               `json:"workspace_id"`
-	WorkspaceSlug           string               `json:"workspace_slug"`
-	TaskID                  string               `json:"task_id"`
-	RuntimeID               string               `json:"runtime_id"`
-	IssueIdentifier         string               `json:"issue_identifier"`
-	AgentID                 string               `json:"agent_id"`
-	AgentName               string               `json:"agent_name"`
-	ProjectID               string               `json:"project_id"`
-	SquadID                 string               `json:"squad_id"`
-	IssueID                 string               `json:"issue_id"`
-	ChatSessionID           string               `json:"chat_session_id"`
-	AutopilotID             string               `json:"autopilot_id"`
-	RepositoryScope         string               `json:"repository_scope"`
-	ConversationKey         string               `json:"conversation_key"`
-	ConversationID          string               `json:"conversation_id"`
-	LocalWorkDir            string               `json:"local_work_dir"`
-	LocalWorktree           *LocalWorktreeParams `json:"local_worktree,omitempty"`
-	PrivateCheckoutRequired bool                 `json:"private_checkout_required"`
+	ReserveOnly                  bool                 `json:"reserve_only,omitempty"`
+	CodeWorkspaceIssueID         string               `json:"code_workspace_issue_id,omitempty"`
+	CodeWorkspaceIssueIdentifier string               `json:"code_workspace_issue_identifier,omitempty"`
+	CodeWorkspaceWorkDir         string               `json:"code_workspace_work_dir,omitempty"`
+	WorkspacesRoot               string               `json:"-"`
+	WorkspaceID                  string               `json:"workspace_id"`
+	WorkspaceSlug                string               `json:"workspace_slug"`
+	TaskID                       string               `json:"task_id"`
+	RuntimeID                    string               `json:"runtime_id"`
+	IssueIdentifier              string               `json:"issue_identifier"`
+	AgentID                      string               `json:"agent_id"`
+	AgentName                    string               `json:"agent_name"`
+	ProjectID                    string               `json:"project_id"`
+	SquadID                      string               `json:"squad_id"`
+	IssueID                      string               `json:"issue_id"`
+	ChatSessionID                string               `json:"chat_session_id"`
+	AutopilotID                  string               `json:"autopilot_id"`
+	RepositoryScope              string               `json:"repository_scope"`
+	ConversationKey              string               `json:"conversation_key"`
+	ConversationID               string               `json:"conversation_id"`
+	LocalWorkDir                 string               `json:"local_work_dir"`
+	LocalWorktree                *LocalWorktreeParams `json:"local_worktree,omitempty"`
+	PrivateCheckoutRequired      bool                 `json:"private_checkout_required"`
 }
 
 // PhysicalPreparationInput derives public physical facts inside the trusted task owner.
@@ -38,7 +42,7 @@ func PhysicalPreparationInput(params PrepareParams) (PhysicalPrepareParams, erro
 		return PhysicalPrepareParams{}, err
 	}
 	key, id := localWorktreeConversation(params)
-	return PhysicalPrepareParams{WorkspacesRoot: params.WorkspacesRoot, WorkspaceID: params.WorkspaceID, WorkspaceSlug: params.WorkspaceSlug, TaskID: params.TaskID, RuntimeID: params.RuntimeID, IssueIdentifier: params.IssueIdentifier, AgentID: params.Task.AgentID, AgentName: params.AgentName, ProjectID: params.Task.ProjectID, SquadID: params.Task.SquadID, IssueID: params.Task.IssueID, ChatSessionID: params.Task.ChatSessionID, AutopilotID: params.Task.AutopilotID, RepositoryScope: fingerprint, ConversationKey: key, ConversationID: id, LocalWorkDir: params.LocalWorkDir, LocalWorktree: params.LocalWorktree, PrivateCheckoutRequired: params.IsolateLocalContext && NeedsPrivateProviderCheckout(params.Provider, params.McpConfig) && (params.LocalWorkDir != "" || params.LocalWorktree != nil)}, nil
+	return PhysicalPrepareParams{CodeWorkspaceIssueID: params.Task.CodeWorkspaceIssueID, CodeWorkspaceIssueIdentifier: params.Task.CodeWorkspaceIssueIdentifier, CodeWorkspaceWorkDir: params.Task.CodeWorkspaceWorkDir, WorkspacesRoot: params.WorkspacesRoot, WorkspaceID: params.WorkspaceID, WorkspaceSlug: params.WorkspaceSlug, TaskID: params.TaskID, RuntimeID: params.RuntimeID, IssueIdentifier: params.IssueIdentifier, AgentID: params.Task.AgentID, AgentName: params.AgentName, ProjectID: params.Task.ProjectID, SquadID: params.Task.SquadID, IssueID: params.Task.IssueID, ChatSessionID: params.Task.ChatSessionID, AutopilotID: params.Task.AutopilotID, RepositoryScope: fingerprint, ConversationKey: key, ConversationID: id, LocalWorkDir: params.LocalWorkDir, LocalWorktree: params.LocalWorktree, PrivateCheckoutRequired: params.IsolateLocalContext && NeedsPrivateProviderCheckout(params.Provider, params.McpConfig) && (params.LocalWorkDir != "" || params.LocalWorktree != nil)}, nil
 }
 
 // PreparePhysical acquires the root and prepares only physical checkout state.
@@ -81,6 +85,12 @@ func preparePhysical(params PhysicalPrepareParams, preclaimed bool, logger *slog
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if scope, readErr := ReadManagedEnvProvenance(envRoot); readErr == nil && scope.CodeWorkspaceIssueID != "" {
+		if scope.CodeWorkspaceIssueID != params.CodeWorkspaceIssueID || scope.WorkspaceID != params.WorkspaceID || scope.RuntimeID != params.RuntimeID || scope.ProjectID != params.ProjectID || scope.RepositoryScope != params.RepositoryScope {
+			return nil, fmt.Errorf("existing family code workspace scope changed; retained at %s", envRoot)
+		}
 	}
 
 	// Self-heal the root-level daemon marker on every task start so a marker
@@ -146,7 +156,9 @@ func preparePhysical(params PhysicalPrepareParams, preclaimed bool, logger *slog
 	// envRoot.
 	workDir := filepath.Join(envRoot, "workdir")
 	scratchDirs := []string{filepath.Join(envRoot, "output"), filepath.Join(envRoot, "logs")}
-	if params.LocalWorkDir == "" && params.LocalWorktree == nil {
+	if params.ReserveOnly {
+		workDir = envRoot
+	} else if params.LocalWorkDir == "" && params.LocalWorktree == nil {
 		scratchDirs = append(scratchDirs, workDir)
 	} else if params.LocalWorkDir != "" {
 		workDir = params.LocalWorkDir
@@ -181,6 +193,7 @@ func preparePhysical(params PhysicalPrepareParams, preclaimed bool, logger *slog
 		wtParams.ConversationKey, wtParams.ConversationID = params.ConversationKey, params.ConversationID
 		wtParams.WorkspaceID = params.WorkspaceID
 		wtParams.AgentID = params.AgentID
+		wtParams.CodeWorkspaceIssueID = params.CodeWorkspaceIssueID
 		wtParams.ProjectID, wtParams.SquadID, wtParams.RuntimeID = params.ProjectID, params.SquadID, params.RuntimeID
 		wtParams.RepositoryScope = params.RepositoryScope
 		var err error
@@ -229,21 +242,28 @@ func preparePhysical(params PhysicalPrepareParams, preclaimed bool, logger *slog
 	// each has a durable workline identity. Non-fatal: a write failure
 	// only costs the next follow-up its session reuse (it falls back to a fresh
 	// session), which must never block dispatching this task.
-	if params.LocalWorkDir == "" && (params.IssueID != "" || params.ChatSessionID != "" || params.AutopilotID != "") {
+	if !params.ReserveOnly && params.LocalWorkDir == "" && (params.IssueID != "" || params.ChatSessionID != "" || params.AutopilotID != "") {
 		repositoryScope := params.RepositoryScope
 		if err := WriteManagedEnvProvenance(envRoot, ManagedEnvProvenance{
-			WorkspaceID:     params.WorkspaceID,
-			RuntimeID:       params.RuntimeID,
-			ProjectID:       params.ProjectID,
-			SquadID:         params.SquadID,
-			RepositoryScope: repositoryScope,
-			IssueID:         params.IssueID,
-			ChatSessionID:   params.ChatSessionID,
-			AutopilotID:     params.AutopilotID,
-			AgentID:         params.AgentID,
-			AgentName:       params.AgentName,
-		}); err != nil && logger != nil {
-			logger.Warn("execenv: write managed env provenance failed (non-fatal); a follow-up may start a fresh session", "error", err)
+			PrivateProviderCheckout: privateProvider,
+			CodeWorkspaceIssueID:    params.CodeWorkspaceIssueID,
+			WorkspaceID:             params.WorkspaceID,
+			RuntimeID:               params.RuntimeID,
+			ProjectID:               params.ProjectID,
+			SquadID:                 params.SquadID,
+			RepositoryScope:         repositoryScope,
+			IssueID:                 params.IssueID,
+			ChatSessionID:           params.ChatSessionID,
+			AutopilotID:             params.AutopilotID,
+			AgentID:                 params.AgentID,
+			AgentName:               params.AgentName,
+		}); err != nil {
+			if params.CodeWorkspaceIssueID != "" {
+				return nil, fmt.Errorf("record family code owner: %w", err)
+			}
+			if logger != nil {
+				logger.Warn("execenv: write managed env provenance failed (non-fatal); a follow-up may start a fresh session", "error", err)
+			}
 		}
 	}
 

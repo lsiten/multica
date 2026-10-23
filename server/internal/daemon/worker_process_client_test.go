@@ -190,6 +190,8 @@ func TestBuildWorkerContextProjectsRunTaskLocals(t *testing.T) {
 		ClaudeSettingsPath: "/work/claude.json",
 		QwenpawWorkspace:   "/work/qwenpaw",
 		ContextDir:         "/work/context",
+		CursorMcpPluginDir: "/private/cursor-mcp-plugin",
+		OmpMcpExtensionDir: "/private/omp-mcp-extension",
 	}
 	agentEnv := map[string]string{"CODEX_HOME": "/work/codex", "MULTICA_WORKSPACE_ID": "ws-1"}
 
@@ -207,7 +209,7 @@ func TestBuildWorkerContextProjectsRunTaskLocals(t *testing.T) {
 	if wc.Task.ID != "task-1" || wc.Task.RuntimeID != "runtime-1" || wc.Task.PriorSessionID != "sess-1" || wc.Task.Agent != agent {
 		t.Fatalf("task not carried: %+v", wc.Task)
 	}
-	if got := wc.Env; got.WorkDir != "/work/dir" || got.CodexHome != "/work/codex" || got.ClaudeSettingsPath != "/work/claude.json" || got.QwenpawWorkspace != "/work/qwenpaw" || got.ContextDir != "/work/context" {
+	if got := wc.Env; got.WorkDir != "/work/dir" || got.CodexHome != "/work/codex" || got.ClaudeSettingsPath != "/work/claude.json" || got.QwenpawWorkspace != "/work/qwenpaw" || got.ContextDir != "/work/context" || got.CursorMcpPluginDir != "/private/cursor-mcp-plugin" || got.OmpMcpExtensionDir != "/private/omp-mcp-extension" {
 		t.Fatalf("prepared env projection = %+v", got)
 	}
 	if got := wc.Env.Env; got["CODEX_HOME"] != "/work/codex" || got["MULTICA_WORKSPACE_ID"] != "ws-1" {

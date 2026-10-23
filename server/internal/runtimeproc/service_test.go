@@ -205,8 +205,10 @@ func TestCanceledHandlerRemainsUncertainAndDoesNotReplay(t *testing.T) {
 		return nil, nil
 	}})
 	r := request(t, c, "wait", "{}")
-	r.Deadline = time.Now().Add(50 * time.Millisecond)
-	if _, err := c.Call(context.Background(), r); !errors.Is(err, context.DeadlineExceeded) {
+	r.Deadline = time.Now().Add(time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := c.Call(ctx, r); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("cancelled client deadline lost: %v", err)
 	}
 	receipt, err := c.QueryOperation(context.Background(), r.RequestID)

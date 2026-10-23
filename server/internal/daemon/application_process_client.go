@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
@@ -177,8 +176,7 @@ func (c *applicationProcessClient) mutation(ctx context.Context, operation strin
 	}
 	response, err := c.process.Client.Call(ctx, request)
 	if err != nil {
-		var reject *runtimeproc.Error
-		if errors.As(err, &reject) && slices.Contains([]string{"unauthorized", "identity_mismatch", "stale_fence", "malformed", "unknown_operation", "retired_request", "draining", "stopped", "resource_exhausted", "deadline"}, reject.Code) {
+		if runtimeproc.RejectedBeforeAdmission(err) {
 			return err
 		}
 		c.uncertain = &applicationUncertainOperation{RequestID: request.RequestID, Operation: operation, Cause: err}
@@ -188,26 +186,25 @@ func (c *applicationProcessClient) mutation(ctx context.Context, operation strin
 		c.uncertain = &applicationUncertainOperation{RequestID: request.RequestID, Operation: operation, Cause: errors.New("pending receipt")}
 		return c.uncertain
 	}
-	if out != nil && len(response.Receipt.Result) > 0 {
-		if err := json.Unmarshal(response.Receipt.Result, out); err != nil {
-			return err
-		}
-	}
-	domainErr := response.Receipt.Error
+	resultErr := decodeCompletedRuntimeResult(response.Receipt, out)
 	ack, err := c.process.Client.Request("acknowledge", response.Status.Fence, nil)
 	if err == nil {
 		result, callErr := c.process.Client.Call(ctx, ack)
-		if callErr != nil || result.Receipt == nil || result.Receipt.State != "completed" {
+		if callErr == nil {
+			if result.Receipt == nil || result.Receipt.State != "completed" {
+				callErr = errors.New("pending acknowledgement receipt")
+			} else if result.Receipt.Error != nil {
+				callErr = result.Receipt.Error
+			}
+		}
+		if callErr != nil {
 			c.uncertain = &applicationUncertainOperation{RequestID: ack.RequestID, Operation: "acknowledge", Cause: callErr}
 		}
 	} else {
 		c.uncertain = err
 	}
 	// A lost housekeeping ACK cannot turn a consumed durable result into failure.
-	if domainErr != nil {
-		return domainErr
-	}
-	return nil
+	return resultErr
 }
 func (c *applicationProcessClient) grantSnapshot() map[string]protocol.ApplicationServiceGrantResponse {
 	c.mu.Lock()

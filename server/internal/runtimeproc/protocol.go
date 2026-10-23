@@ -67,23 +67,39 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
 
+// ReceiptUsage describes retained operation outcomes and the admission bound.
+type ReceiptUsage struct {
+	Total     int `json:"total"`
+	Pending   int `json:"pending"`
+	Completed int `json:"completed"`
+	Limit     int `json:"limit"`
+}
+
+// AcknowledgePayload retires only the named completed receipts.
+type AcknowledgePayload struct {
+	RequestIDs []string `json:"request_ids"`
+}
+
 // Status describes authenticated readiness, not merely a live PID.
 type Status struct {
-	ReplayEpoch  uint64   `json:"replay_epoch"`
-	Identity     Identity `json:"identity"`
-	State        string   `json:"state"`
-	Fence        Fence    `json:"fence"`
-	Capabilities []string `json:"capabilities"`
+	Receipts     ReceiptUsage `json:"receipts"`
+	ReplayEpoch  uint64       `json:"replay_epoch"`
+	Identity     Identity     `json:"identity"`
+	State        string       `json:"state"`
+	Fence        Fence        `json:"fence"`
+	Capabilities []string     `json:"capabilities"`
 }
 
 // Receipt records an operation before execution; pending means the result is uncertain.
 type Receipt struct {
-	RequestID string          `json:"request_id"`
-	Digest    string          `json:"digest"`
-	State     string          `json:"state"`
-	Result    json.RawMessage `json:"result,omitempty"`
-	Error     *Error          `json:"error,omitempty"`
-	Fence     Fence           `json:"fence"`
+	Operation  string          `json:"operation,omitempty"`
+	AcceptedAt time.Time       `json:"accepted_at,omitempty"`
+	RequestID  string          `json:"request_id"`
+	Digest     string          `json:"digest"`
+	State      string          `json:"state"`
+	Result     json.RawMessage `json:"result,omitempty"`
+	Error      *Error          `json:"error,omitempty"`
+	Fence      Fence           `json:"fence"`
 }
 
 // Response always binds data to the authenticated process identity.
@@ -91,6 +107,12 @@ type Response struct {
 	Status  Status   `json:"status"`
 	Receipt *Receipt `json:"receipt,omitempty"`
 	Error   *Error   `json:"error,omitempty"`
+}
+
+// Outcome is a domain result whose terminal state may require physical reconciliation.
+type Outcome struct {
+	Result json.RawMessage
+	Error  *Error
 }
 
 // Handler executes a serialized domain mutation. It must honor cancellation and

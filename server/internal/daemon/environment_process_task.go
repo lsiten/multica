@@ -21,8 +21,8 @@ func physicalInputForTask(task Task, agentName string) (execenv.PhysicalPrepareP
 	if err != nil {
 		return execenv.PhysicalPrepareParams{}, err
 	}
-	key, id := execenv.LocalWorktreeConversation(execenv.PrepareParams{IssueIdentifier: task.IssueIdentifier, Task: execenv.TaskContextForEnv{IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID}})
-	return execenv.PhysicalPrepareParams{WorkspaceID: task.WorkspaceID, WorkspaceSlug: task.WorkspaceSlug, TaskID: task.ID, RuntimeID: task.RuntimeID, IssueIdentifier: task.IssueIdentifier, AgentID: task.AgentID, AgentName: agentName, ProjectID: task.ProjectID, SquadID: task.SquadID, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID, RepositoryScope: scope.RepositoryScope, ConversationKey: key, ConversationID: id}, nil
+	key, id := execenv.LocalWorktreeConversation(execenv.PrepareParams{IssueIdentifier: task.IssueIdentifier, Task: execenv.TaskContextForEnv{CodeWorkspaceIssueID: task.CodeWorkspaceIssueID, CodeWorkspaceIssueIdentifier: task.CodeWorkspaceIssueIdentifier, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID}})
+	return execenv.PhysicalPrepareParams{CodeWorkspaceIssueID: task.CodeWorkspaceIssueID, CodeWorkspaceIssueIdentifier: task.CodeWorkspaceIssueIdentifier, CodeWorkspaceWorkDir: task.CodeWorkspaceWorkDir, WorkspaceID: task.WorkspaceID, WorkspaceSlug: task.WorkspaceSlug, TaskID: task.ID, RuntimeID: task.RuntimeID, IssueIdentifier: task.IssueIdentifier, AgentID: task.AgentID, AgentName: agentName, ProjectID: task.ProjectID, SquadID: task.SquadID, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID, AutopilotID: task.AutopilotID, RepositoryScope: scope.RepositoryScope, ConversationKey: key, ConversationID: id}, nil
 }
 
 func (d *Daemon) beginEnvironmentTask(ctx context.Context, task Task, agentName string) (*environmentTaskHandle, *execenv.EnvRootClaim, error) {
@@ -37,6 +37,7 @@ func (d *Daemon) beginEnvironmentTask(ctx context.Context, task Task, agentName 
 	if err != nil {
 		return nil, nil, err
 	}
+	input.ReserveOnly = task.CodeWorkspaceIssueID != ""
 	var metadata *execenv.GCMeta
 	if meta, ok := gcMetaForTask(task); ok {
 		metadata = &meta

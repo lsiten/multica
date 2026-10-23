@@ -50,7 +50,7 @@ func TestDirectCleanupUnregistersOnlyItsOwnLinkedWorktree(t *testing.T) {
 	other := filepath.Join(t.TempDir(), "another")
 	worktreeTestGit(t, repo, "worktree", "add", "-b", "user/keep", other)
 	writeLifecycleFile(t, filepath.Join(checkout, "dirty.txt"), "delete unused dirty checkout")
-	ctx := withEnvironmentScope(t.Context(), environmentOperationScope{WorkspaceID: "ws1", RuntimeID: "runtime", Automatic: true})
+	ctx := withEnvironmentScope(t.Context(), environmentOperationScope{WorkspaceID: "ws1", RuntimeID: "runtime", Automatic: false})
 	preview := d.cleanupUnreferencedEnvironment(ctx, root, "")
 	result := d.cleanupUnreferencedEnvironment(ctx, root, preview.Revision)
 	if !result.Reclaimed {

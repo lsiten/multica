@@ -2494,7 +2494,15 @@ CROSS JOIN LATERAL (
                   task_autopilot.project_id::text, NULLIF(task.context->>'project_id', '')) AS project_id
 ) AS explicit_project
 WHERE task_agent.workspace_id = $1::uuid
+  AND (task.chat_session_id IS NULL OR (task_session.id IS NOT NULL AND task_session.status <> 'archived'))
+  AND (task.autopilot_run_id IS NULL OR (task_autopilot_run.id IS NOT NULL AND task_autopilot.id IS NOT NULL))
+  -- Agent bindings only scope a surviving source, not orphaned run history.
+  AND (issue.id IS NOT NULL OR task_session.id IS NOT NULL OR task_autopilot.id IS NOT NULL
+       OR NULLIF(task.context->>'project_id', '') IS NOT NULL)
+  AND (task.issue_id IS NULL OR issue.id IS NOT NULL)
   AND NOT task.work_dir_missing
+  AND (task.result ? 'code_workspace' OR COALESCE((SELECT s.category FROM issue_status s WHERE s.workspace_id = issue.workspace_id AND s.key = issue.status),
+               CASE WHEN issue.status IN ('done', 'cancelled') THEN 'done' ELSE '' END) NOT IN ('done', 'closed'))
   AND (
     explicit_project.project_id = $2::uuid::text
     OR (explicit_project.project_id IS NULL AND (
@@ -2627,9 +2635,14 @@ const listChatSessionFileTasks = `-- name: ListChatSessionFileTasks :many
 SELECT task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir, task.channel_context_revision, task.comment_thread_id, task.cancelled_by_type, task.cancelled_by_id, task.cancelled_by_name, task.issue_snapshot, task.work_dir_missing
 FROM agent_task_queue AS task
 JOIN chat_session AS session ON session.id = task.chat_session_id
+LEFT JOIN issue AS issue ON issue.id = task.issue_id
 WHERE task.chat_session_id = $1
   AND session.workspace_id = $2
+  AND session.status <> 'archived'
+  AND (task.issue_id IS NULL OR issue.id IS NOT NULL)
   AND NOT task.work_dir_missing
+  AND (task.result ? 'code_workspace' OR COALESCE((SELECT s.category FROM issue_status s WHERE s.workspace_id = issue.workspace_id AND s.key = issue.status),
+               CASE WHEN issue.status IN ('done', 'cancelled') THEN 'done' ELSE '' END) NOT IN ('done', 'closed'))
   -- Cancelled/failed turns without an issue are transient chat workdirs (for
   -- example, an interrupted image-only turn), not project checkouts. They can
   -- no longer satisfy local-review requests and must not mask a real issue

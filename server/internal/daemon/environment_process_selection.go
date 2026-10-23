@@ -22,7 +22,7 @@ type environmentPhysicalSelection struct {
 
 func physicalTaskForSelection(input environmentPhysicalSelection) Task {
 	p := input.Physical
-	return Task{ID: p.TaskID, WorkspaceID: p.WorkspaceID, WorkspaceSlug: p.WorkspaceSlug, RuntimeID: p.RuntimeID, AgentID: p.AgentID, IssueID: p.IssueID, IssueIdentifier: p.IssueIdentifier, ChatSessionID: p.ChatSessionID, AutopilotID: p.AutopilotID, ProjectID: p.ProjectID, SquadID: p.SquadID, Agent: &AgentData{Name: p.AgentName}, PriorWorkDir: input.PriorWorkDir, DispatchedAt: input.Consumer.DispatchedAt, physicalRepositoryScope: p.RepositoryScope}
+	return Task{CodeWorkspaceIssueID: p.CodeWorkspaceIssueID, CodeWorkspaceIssueIdentifier: p.CodeWorkspaceIssueIdentifier, CodeWorkspaceWorkDir: p.CodeWorkspaceWorkDir, ID: p.TaskID, WorkspaceID: p.WorkspaceID, WorkspaceSlug: p.WorkspaceSlug, RuntimeID: p.RuntimeID, AgentID: p.AgentID, IssueID: p.IssueID, IssueIdentifier: p.IssueIdentifier, ChatSessionID: p.ChatSessionID, AutopilotID: p.AutopilotID, ProjectID: p.ProjectID, SquadID: p.SquadID, Agent: &AgentData{Name: p.AgentName}, PriorWorkDir: input.PriorWorkDir, DispatchedAt: input.Consumer.DispatchedAt, physicalRepositoryScope: p.RepositoryScope}
 }
 
 func (o *environmentPhysicalOwner) claimRoot(reservation execenv.PhysicalRootReservation) error {
@@ -63,6 +63,7 @@ func (s *environmentProcessService) selectPhysical(ctx context.Context, input en
 	if err != nil {
 		return environmentPhysicalResult{}, err
 	}
+	input.Physical.ReserveOnly = false
 	input.Physical.WorkspacesRoot = s.daemon.cfg.WorkspacesRoot
 	var local *localDirectoryAssignment
 	if input.Physical.LocalWorktree != nil || input.Physical.LocalWorkDir != "" {
@@ -351,5 +352,6 @@ func (s *environmentProcessService) abortPhysical(ctx context.Context, id string
 	defer o.mu.Unlock()
 	preparation.bridge = nil
 	preparation.Outcome = &execenv.LocalWorktreeOutcome{}
+	preparation.Aborted = true
 	return o.persist(preparation)
 }
