@@ -30,7 +30,7 @@ export function parseDaemonJevModel(value: unknown): DaemonJevModel {
 
 const BuiltinMcpServicesSchema = z.object({
   services: z.array(z.object({name:z.string(),transport:z.string(),requires_capability:z.boolean().default(false),tools:z.array(z.object({name:z.string(),description:z.string().default(""),inputSchema:z.record(z.string(),z.unknown()).default({})}).loose()).default([])})),
-  instances: z.array(z.object({name:z.string(),instance_id:z.string().optional(),workspace_id:z.string().optional(),enabled:z.boolean(),scope:z.string(),ready:z.boolean(),state:z.string(),reason:z.string().optional(),tool_count:z.number().optional(),checked_at:z.string().optional()})).default([]),
+  instances: z.array(z.object({name:z.string(),instance_id:z.string().optional(),task_id:z.string().optional(),agent_id:z.string().optional(),issue_id:z.string().optional(),chat_session_id:z.string().optional(),workspace_id:z.string().optional(),enabled:z.boolean(),scope:z.string(),ready:z.boolean(),state:z.string(),reason:z.string().optional(),tool_count:z.number().optional(),checked_at:z.string().optional()})).default([]),
 });
 export type BuiltinMcpServices = z.infer<typeof BuiltinMcpServicesSchema>;
 export function parseBuiltinMcpServices(value:unknown):BuiltinMcpServices{

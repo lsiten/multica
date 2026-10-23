@@ -8734,7 +8734,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	if len(applicationConfig) > 0 {
 		if endpoint := taskMCPReadinessEndpoint(applicationConfig, applicationMCPName); endpoint != "" {
-			cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, applicationMCPName, endpoint, "task", true)
+			cleanup := registerTaskManagedMCPReadiness(d, task, applicationMCPName, endpoint, "task", true)
 			defer cleanup()
 		}
 		merged, mergeErr := mergeTaskRemoteMCPConfig(remoteMCPConfig, applicationConfig)
@@ -8808,7 +8808,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	if len(identityMCPConfig) > 0 {
 		if endpoint := taskMCPReadinessEndpoint(identityMCPConfig, identityActionsMCPName); endpoint != "" {
-			cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, identityActionsMCPName, endpoint, "task", true)
+			cleanup := registerTaskManagedMCPReadiness(d, task, identityActionsMCPName, endpoint, "task", true)
 			defer cleanup()
 		}
 		merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, identityMCPConfig)
@@ -8829,7 +8829,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	if len(emailReceiveMCPConfig) > 0 {
 		if endpoint := taskMCPReadinessEndpoint(emailReceiveMCPConfig, emailReceiveMCPName); endpoint != "" {
-			cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, emailReceiveMCPName, endpoint, "task", true)
+			cleanup := registerTaskManagedMCPReadiness(d, task, emailReceiveMCPName, endpoint, "task", true)
 			defer cleanup()
 		}
 		merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, emailReceiveMCPConfig)
@@ -8853,7 +8853,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	if len(phoneMCPConfig) > 0 {
 		if endpoint := taskMCPReadinessEndpoint(phoneMCPConfig, phoneActionsMCPName); endpoint != "" {
-			cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, phoneActionsMCPName, endpoint, "task", true)
+			cleanup := registerTaskManagedMCPReadiness(d, task, phoneActionsMCPName, endpoint, "task", true)
 			defer cleanup()
 		}
 		merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, phoneMCPConfig)
@@ -8904,7 +8904,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			}
 			defer llm2jevServer.Close()
 			if endpoint := taskMCPReadinessEndpoint(llm2jevConfig, llm2jevMCPName); endpoint != "" {
-				cleanup := registerTaskManagedMCPReadiness(d, task.WorkspaceID, llm2jevMCPName, endpoint, "task", true)
+				cleanup := registerTaskManagedMCPReadiness(d, task, llm2jevMCPName, endpoint, "task", true)
 				defer cleanup()
 			}
 		}
@@ -8920,7 +8920,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Probe every URL-based MCP server actually handed to the task after all
 	// managed overlays are merged. The probe only performs initialize/tools/list
 	// and never starts stdio commands or calls a tool.
-	cleanupMCPReadiness := registerTaskMCPReadinessFromConfig(d, task.WorkspaceID, effectiveMcpConfig, "task")
+	cleanupMCPReadiness := registerTaskMCPReadinessFromConfig(d, task, effectiveMcpConfig, "task")
 	defer cleanupMCPReadiness()
 	// Decode openclaw-specific runtime_config knobs once so reuse / prepare /
 	// ExecOptions all see the same mode + gateway pin (issue #3260). Parse

@@ -37,13 +37,13 @@ func TestMCPReadinessSharesDuplicateEndpointUntilLastCleanup(t *testing.T) {
 	}))
 	defer server.Close()
 	d := &Daemon{}
-	first := registerTaskManagedMCPReadiness(d, "workspace", llm2jevMCPName, server.URL, "task", true)
+	first := registerTaskManagedMCPReadiness(d, Task{WorkspaceID: "workspace"}, llm2jevMCPName, server.URL, "task", true)
 	defer first()
 	config, err := json.Marshal(map[string]any{"mcpServers": map[string]any{llm2jevMCPName: map[string]any{"url": server.URL, "type": "http"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := registerTaskMCPReadinessFromConfig(d, "workspace", config, "task")
+	second := registerTaskMCPReadinessFromConfig(d, Task{WorkspaceID: "workspace"}, config, "task")
 	defer second()
 	connections := func() []MCPReadinessSnapshot {
 		var out []MCPReadinessSnapshot
@@ -86,9 +86,9 @@ func TestMCPReadinessSharesDuplicateEndpointUntilLastCleanup(t *testing.T) {
 
 func TestMCPReadinessRetainsConcurrentTaskInstances(t *testing.T) {
 	d := &Daemon{}
-	first := registerTaskManagedMCPReadiness(d, "workspace", "same-name", "", "task", false)
+	first := registerTaskManagedMCPReadiness(d, Task{WorkspaceID: "workspace"}, "same-name", "", "task", false)
 	defer first()
-	second := registerTaskManagedMCPReadiness(d, "workspace", "same-name", "", "task", false)
+	second := registerTaskManagedMCPReadiness(d, Task{WorkspaceID: "workspace"}, "same-name", "", "task", false)
 	defer second()
 	snapshots := d.mcpReadinessSnapshot()
 	var sameName int
@@ -120,7 +120,7 @@ func TestMCPReadinessDoesNotMergeDistinctEndpointsOrWorkspaces(t *testing.T) {
 		{"workspace-a", "http://127.0.0.1:1234/task-b"},
 		{"workspace-b", "http://127.0.0.1:1234/task-a"},
 	} {
-		defer registerTaskManagedMCPReadiness(d, registration.workspace, "custom", registration.endpoint, "task", false)()
+		defer registerTaskManagedMCPReadiness(d, Task{WorkspaceID: registration.workspace}, "custom", registration.endpoint, "task", false)()
 	}
 	var count int
 	for _, snapshot := range d.mcpReadinessSnapshot() {
@@ -149,7 +149,7 @@ func TestMCPReadinessCleanupCancelsInflightProbe(t *testing.T) {
 	}))
 	defer server.Close()
 	defer close(release)
-	cleanup := registerTaskManagedMCPReadiness(&Daemon{}, "workspace", "slow", server.URL, "task", true)
+	cleanup := registerTaskManagedMCPReadiness(&Daemon{}, Task{WorkspaceID: "workspace"}, "slow", server.URL, "task", true)
 	defer cleanup()
 	select {
 	case <-started:

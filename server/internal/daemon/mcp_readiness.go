@@ -30,7 +30,13 @@ const (
 
 // MCPReadinessSnapshot is intentionally diagnostic only. It omits endpoint,
 // path tokens, bearer tokens, environment variables and tool schemas.
+// InstanceID identifies one registration only; TaskID identifies its owning run.
 type MCPReadinessSnapshot struct {
+	TaskID        string `json:"task_id,omitempty"`
+	AgentID       string `json:"agent_id,omitempty"`
+	IssueID       string `json:"issue_id,omitempty"`
+	ChatSessionID string `json:"chat_session_id,omitempty"`
+
 	InstanceID  string            `json:"instance_id,omitempty"`
 	Name        string            `json:"name"`
 	WorkspaceID string            `json:"workspace_id,omitempty"`
@@ -76,7 +82,7 @@ func (d *Daemon) mcpReadinessRegistry() *mcpReadinessRegistry {
 // for one task. The endpoint is kept process-local and never returned in a
 // health response. The probe only sends initialize/tools/list; it never calls
 // an MCP tool or executes a command.
-func registerTaskManagedMCPReadiness(d *Daemon, workspaceID, name, endpoint, scope string, enabled bool) func() {
+func registerTaskManagedMCPReadiness(d *Daemon, task Task, name, endpoint, scope string, enabled bool) func() {
 	name = strings.TrimSpace(name)
 	endpoint = strings.TrimSpace(endpoint)
 	if d == nil || name == "" {
@@ -86,7 +92,8 @@ func registerTaskManagedMCPReadiness(d *Daemon, workspaceID, name, endpoint, sco
 		scope = "task"
 	}
 	entry := &mcpReadinessEntry{MCPReadinessSnapshot: MCPReadinessSnapshot{
-		Name: name, WorkspaceID: strings.TrimSpace(workspaceID), Enabled: enabled, Scope: scope,
+		TaskID: task.ID, AgentID: task.AgentID, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID,
+		Name: name, WorkspaceID: strings.TrimSpace(task.WorkspaceID), Enabled: enabled, Scope: scope,
 		Ready: false, State: MCPReadinessNotConfigured,
 	}, endpoint: endpoint}
 	if endpoint != "" && enabled && !isLocalMCPProbeEndpoint(endpoint) {
@@ -108,7 +115,7 @@ func registerTaskManagedMCPReadiness(d *Daemon, workspaceID, name, endpoint, sco
 	// route. Share its probe while retaining each caller's cleanup ownership.
 	if endpoint != "" {
 		for _, registered := range registry.entries {
-			if registered.Name == name && registered.WorkspaceID == entry.WorkspaceID && registered.Scope == scope && registered.Enabled == enabled && registered.endpoint == endpoint {
+			if registered.TaskID == task.ID && registered.Name == name && registered.WorkspaceID == entry.WorkspaceID && registered.Scope == scope && registered.Enabled == enabled && registered.endpoint == endpoint {
 				registered.owners++
 				registry.mu.Unlock()
 				cancel()
@@ -200,7 +207,7 @@ func (d *Daemon) mcpReadinessSnapshot() []MCPReadinessSnapshot {
 // task overlay. STDIO entries are intentionally reported as not configured
 // until their owning runtime performs its own handshake; this daemon health
 // probe never launches arbitrary commands.
-func registerTaskMCPReadinessFromConfig(d *Daemon, workspaceID string, config json.RawMessage, scope string) func() {
+func registerTaskMCPReadinessFromConfig(d *Daemon, task Task, config json.RawMessage, scope string) func() {
 	var document struct {
 		MCPServers map[string]struct {
 			Type string `json:"type"`
@@ -217,7 +224,7 @@ func registerTaskMCPReadinessFromConfig(d *Daemon, workspaceID string, config js
 			continue
 		}
 
-		cleanups = append(cleanups, registerTaskManagedMCPReadiness(d, workspaceID, name, endpoint, scope, true))
+		cleanups = append(cleanups, registerTaskManagedMCPReadiness(d, task, name, endpoint, scope, true))
 	}
 	return func() {
 		for _, cleanup := range cleanups {

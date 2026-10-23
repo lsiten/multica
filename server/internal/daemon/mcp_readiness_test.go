@@ -44,7 +44,7 @@ func TestMCPReadinessProbesInitializeAndToolsList(t *testing.T) {
 	defer server.Close()
 
 	d := &Daemon{cfg: Config{Profile: "profile-a"}}
-	cleanup := registerTaskManagedMCPReadiness(d, "workspace-a", "managed", server.URL, "task", true)
+	cleanup := registerTaskManagedMCPReadiness(d, Task{WorkspaceID: "workspace-a"}, "managed", server.URL, "task", true)
 	defer cleanup()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
@@ -101,7 +101,7 @@ func TestMCPReadinessClassifiesMalformedResponse(t *testing.T) {
 	}))
 	defer server.Close()
 	d := &Daemon{cfg: Config{Profile: "profile-a"}}
-	cleanup := registerTaskManagedMCPReadiness(d, "workspace-a", "broken", server.URL, "task", true)
+	cleanup := registerTaskManagedMCPReadiness(d, Task{WorkspaceID: "workspace-a"}, "broken", server.URL, "task", true)
 	defer cleanup()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
@@ -134,7 +134,7 @@ func TestMCPReadinessDefaultsAreNotReady(t *testing.T) {
 
 func TestMCPReadinessDefaultsRemainVisibleWithCustomEntries(t *testing.T) {
 	d := &Daemon{cfg: Config{LLM2JevEnabled: true}}
-	cleanup := registerTaskManagedMCPReadiness(d, "workspace-a", "custom", "", "task", false)
+	cleanup := registerTaskManagedMCPReadiness(d, Task{WorkspaceID: "workspace-a"}, "custom", "", "task", false)
 	defer cleanup()
 	statuses := healthMCPStatuses(d.mcpReadinessSnapshot())
 	seen := make(map[string]HealthMCPStatus, len(statuses))
@@ -155,7 +155,7 @@ func TestMCPReadinessDefaultsRemainVisibleWithCustomEntries(t *testing.T) {
 func TestMCPReadinessDoesNotProbeExternalEndpoint(t *testing.T) {
 	d := &Daemon{cfg: Config{Profile: "profile-a"}}
 	config := json.RawMessage(`{"mcpServers":{"external":{"type":"http","url":"https://example.invalid/mcp"}}}`)
-	cleanup := registerTaskMCPReadinessFromConfig(d, "workspace-a", config, "task")
+	cleanup := registerTaskMCPReadinessFromConfig(d, Task{WorkspaceID: "workspace-a"}, config, "task")
 	defer cleanup()
 	statuses := d.mcpReadinessSnapshot()
 	var external *MCPReadinessSnapshot

@@ -104,6 +104,11 @@ type HealthResponse struct {
 }
 
 type HealthMCPStatus struct {
+	TaskID        string `json:"task_id,omitempty"`
+	AgentID       string `json:"agent_id,omitempty"`
+	IssueID       string `json:"issue_id,omitempty"`
+	ChatSessionID string `json:"chat_session_id,omitempty"`
+
 	Name        string            `json:"name"`
 	InstanceID  string            `json:"instance_id,omitempty"`
 	WorkspaceID string            `json:"workspace_id,omitempty"`
@@ -412,6 +417,7 @@ func healthMCPStatuses(snapshots []MCPReadinessSnapshot) []HealthMCPStatus {
 	out := make([]HealthMCPStatus, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		out = append(out, HealthMCPStatus{
+			TaskID: snapshot.TaskID, AgentID: snapshot.AgentID, IssueID: snapshot.IssueID, ChatSessionID: snapshot.ChatSessionID,
 			Name: snapshot.Name, InstanceID: snapshot.InstanceID, WorkspaceID: snapshot.WorkspaceID, Enabled: snapshot.Enabled,
 			Scope: snapshot.Scope, Ready: snapshot.Ready, State: snapshot.State,
 			Reason: snapshot.Reason, ToolCount: snapshot.ToolCount, CheckedAt: snapshot.CheckedAt,

@@ -26,6 +26,10 @@ export type DaemonMcpReadinessState =
   | "protocol_error";
 
 export interface DaemonMcpReadiness {
+  task_id?: string;
+  agent_id?: string;
+  issue_id?: string;
+  chat_session_id?: string;
   name: string;
   instance_id?: string;
   workspace_id?: string;
