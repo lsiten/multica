@@ -335,6 +335,19 @@ gets an isolated route and context at claim time:
   matching explicit capability. Its task id and daemon callback remain bound to
   that task and are removed when the task ends.
 
+Task routes and diagnostic `instance_id` values such as `mcp-358` are ephemeral.
+They change across runs and daemon restarts, and are removed when the owning run
+ends. Never require an old instance ID to reappear as a recovery condition.
+Match the current run UUID against `task_id` in daemon MCP diagnostics;
+`agent_id`, `issue_id`, and `chat_session_id` provide additional context when
+present. Separate runs of the same issue or agent remain distinct. With an
+older daemon that omits these fields, call `multica_llm2jev_capabilities` through
+the current run's configured MCP connection to confirm its task binding. Another
+run's ready instance, or the daemon broker alone, proves neither this run's route
+nor provider availability. Recheck current technical conditions with permitted
+read-only tools even when an old maintenance request is pending; this does not
+consume the request or grant new authority.
+
 The settings readiness card therefore reports two layers: daemon broker
 availability and task/provider readiness. `provider_unavailable` means the
 broker started but the configured Jev endpoint, credential, or local model
@@ -348,6 +361,16 @@ a repository resolves its branch/tag to a fixed commit and records file hashes;
 weights and dependencies download only after confirmation. The workspace stores
 the selected model ID, commit and device, while the host profile owns the cache.
 Different commits stay isolated, and running tasks keep their captured selection.
+
+Before declaring work blocked, freshly verify the concrete prerequisite for the
+remaining action using permitted read-only checks. Historical errors, transient
+instance IDs and an unanswered request do not establish a current failure.
+Continue independent authorized work. If a technical condition is already
+resolved, do not turn its old repair request into a new authorization requirement
+for previously authorized work. Preserve the unanswered request and genuine
+permission or manual-verification boundaries; never fabricate a response.
+Reference requests from earlier runs in handoff evidence rather than fields
+reserved for the current issue run's own request.
 
 ## Skill binding
 

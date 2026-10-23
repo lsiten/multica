@@ -1064,7 +1064,7 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	writeAgentIdentity(&b, ctx)
 	writeRequestingUser(&b, ctx)
 	writeWorkspaceContext(&b, ctx)
-	writeHumanActionPolicy(&b)
+	writeHumanActionPolicy(&b, kind.hasIssueContext() && ctx.IssueID != "")
 
 	switch kind {
 	case kindQuickCreate:
