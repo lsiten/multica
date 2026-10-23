@@ -6,7 +6,7 @@ const api = vi.hoisted(() => ({ listReviewWorktrees: vi.fn() }));
 vi.mock("@multica/core/api", () => ({ api }));
 afterEach(() => vi.unstubAllGlobals());
 
-it("clears missing and context-only local repositories without truncating the page or filtering foreign runtimes", async () => {
+it("removes missing and context-only local repositories while keeping foreign runtimes", async () => {
   const row = { workspaceId: "ws", taskId: "task", runtimeId: "local", agentId: "agent", path: "/root/gone", taskName: "task", repositories: ["/root/gone"], active: false };
   api.listReviewWorktrees.mockResolvedValue([row, { ...row, path: "/root/context", repositories: ["/root/context"] }, { ...row, path: "/root/live", repositories: ["/root/live/repo"] }, { ...row, runtimeId: "remote" }]);
   vi.stubGlobal("daemonAPI", { reviewInventory: async () => ({
@@ -17,7 +17,7 @@ it("clears missing and context-only local repositories without truncating the pa
     ],
   }) });
   const result = await localReviewInventoryPage(0);
-  expect(result.map((entry) => entry.repositories)).toEqual([[], [], ["/root/live/repo"], ["/root/gone"]]);
+  expect(result.map((entry) => entry.repositories)).toEqual([["/root/live/repo"], ["/root/gone"]]);
 });
 
 it("surfaces unavailable local inventory instead of reporting deletion", async () => {
@@ -39,7 +39,7 @@ it("does not use a foreign runtime repository to revive a missing local worktree
     worktrees: [{ workspace_id: "ws", runtime_id: "foreign", task_short: "task", path: "/root/gone", kind: "task", size_bytes: 1, repositories: ["/root/gone"] }],
   }) });
   const result = await localReviewInventoryPage(0);
-  expect(result[0]?.repositories).toEqual([]);
+  expect(result).toEqual([]);
 });
 
 it("uses local lifecycle evidence only for the exact runtime and run", async () => {

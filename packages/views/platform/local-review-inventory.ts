@@ -17,21 +17,25 @@ export async function reconcileLocalReviewInventory(rows: ReturnType<typeof remo
   if (typeof response !== "object" || response === null || !("health" in response) || !("worktrees" in response)) throw new Error("Invalid local worktree inventory response");
   const health = localReviewRuntimeHealthSchema.parse(response.health);
   const inventory = parseManagedWorktrees(response.worktrees);
-  return rows.map((row) => {
+  return rows.flatMap((row) => {
     const owned = health.workspaces.some((workspace) => workspace.id === row.workspaceId && workspace.runtimes.includes(row.runtimeId));
-    if (!owned) return row;
+    if (!owned) return [row];
     const local = inventory.filter((entry) => entry.workspaceId === row.workspaceId &&
       (!entry.runtimeId || entry.runtimeId === row.runtimeId) &&
       (entry.path === row.path || entry.repositories.some((repository) => repository === row.path || repository.startsWith(`${row.path}/`))));
-    const repositories = local
+    const repositories = [...new Set(local
       .flatMap((entry) => entry.repositories.filter((repository) =>
-        entry.path === row.path || repository === row.path || repository.startsWith(`${row.path}/`)));
+        entry.path === row.path || repository === row.path || repository.startsWith(`${row.path}/`))))];
+    // A successful inventory is authoritative for runtimes owned by this
+    // desktop. If the directory is gone, or no repository remains in it, the
+    // server row is stale and must not leak into any worktree presentation.
+    if (local.length === 0 || repositories.length === 0) return [];
     const entry = local.find((entry) => entry.taskId === row.taskId);
-    return { ...row, ...(entry?.runStatus ? {
+    return [{ ...row, ...(entry?.runStatus ? {
       runStatus: entry.runStatus, issueId: entry.issueId, issueStatus: entry.issueStatus,
       issueStatusCategory: entry.issueStatusCategory, completedAt: entry.completedAt,
       lastActivityAt: entry.lastActivityAt, stale: entry.stale, nextAction: entry.nextAction,
       repositoryDetails: entry.repositoryDetails,
-    } : entry ? { nextAction: "unknown" as const, repositoryDetails: [] } : {}), repositories: [...new Set(repositories)] };
+    } : entry ? { nextAction: "unknown" as const, repositoryDetails: [] } : {}), repositories }];
   });
 }
