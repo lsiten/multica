@@ -46,6 +46,8 @@
   },
   "doc_file_list": {
     "project_directory": "Dossier du projet",
+    "chat_directories": "Conversation actuelle",
+    "other_directories": "Répertoires des autres tâches du projet",
     "run_directory": "Dossier d’exécution",
     "directory": "Dossier",
     "read_only": "Dossier du projet en lecture seule",

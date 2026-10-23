@@ -46,6 +46,8 @@
   },
   "doc_file_list": {
     "project_directory": "项目目录",
+    "chat_directories": "当前对话目录",
+    "other_directories": "项目其他任务目录",
     "run_directory": "运行目录",
     "directory": "目录",
     "read_only": "项目目录（只读）",

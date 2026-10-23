@@ -1,6 +1,7 @@
 import type { ChatSessionFilesResponse } from "../types/chat";
 
 export interface ChatFileDirectory {
+  readonly scope: "project" | "current_chat" | "project_task";
   readonly key: string;
   readonly path: string;
   readonly runtimeId?: string;
@@ -21,9 +22,11 @@ export function chatFileDirectories(files: ChatSessionFilesResponse | undefined,
     seen.add(identity);
     directories.push(directory);
   };
+  const currentTaskIds = new Set(files.tasks.map((task) => task.id));
   const tasks = [...files.tasks, ...(files.project_tasks ?? [])];
   for (const directory of files.directories ?? []) {
     append({
+      scope: "project",
       key: `resource:${directory.project_resource_id}`,
       path: directory.path,
       runtimeId: directory.runtime_id,
@@ -33,7 +36,7 @@ export function chatFileDirectories(files: ChatSessionFilesResponse | undefined,
   }
   for (const task of tasks) {
     if (!task.work_dir || (projectId && task.project_id && task.project_id !== projectId)) continue;
-    append({ key: `task:${task.id}`, path: task.work_dir, runtimeId: task.runtime_id, taskId: task.id, branchName: task.branch_name });
+    append({ scope: currentTaskIds.has(task.id) ? "current_chat" : "project_task", key: `task:${task.id}`, path: task.work_dir, runtimeId: task.runtime_id, taskId: task.id, branchName: task.branch_name });
   }
   return directories;
 }

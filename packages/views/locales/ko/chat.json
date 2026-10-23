@@ -46,6 +46,8 @@
   },
   "doc_file_list": {
     "project_directory": "프로젝트 디렉터리",
+    "chat_directories": "현재 채팅",
+    "other_directories": "프로젝트 내 다른 태스크 디렉터리",
     "run_directory": "실행 디렉터리",
     "directory": "디렉터리",
     "read_only": "프로젝트 디렉터리(읽기 전용)",

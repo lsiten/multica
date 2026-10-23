@@ -21,3 +21,9 @@ it("merges session and project worktrees while excluding another project's run",
   }, "project");
   expect(directories.map((directory) => directory.path)).toEqual(["/current", "/historical"]);
 });
+
+it("keeps current chat ownership when a run also appears in the project projection", () => {
+  const task = { id: "run", runtime_id: "rt", work_dir: "/run", created_at: "" };
+  const directories = chatFileDirectories({ workspace_id: "ws", attachments: [], repos: [], tasks: [task], project_tasks: [task, { ...task, id: "peer", work_dir: "/peer" }] });
+  expect(directories.map((directory) => directory.scope)).toEqual(["current_chat", "project_task"]);
+});

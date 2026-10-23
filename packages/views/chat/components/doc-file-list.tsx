@@ -18,7 +18,7 @@ import { LocalReviewIndex } from "../../issues/components/local-review-index";
 import { GroupChatManagement } from "./group-chat-management";
 import { Button } from "@multica/ui/components/ui/button";
 import { useChatFileDirectory } from "./use-chat-file-directory";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
+import { ChatDirectorySelector } from "./chat-directory-selector";
 
 // Files come from the selected project's bound directories and run worktrees.
 // The server projects their identities; the owning runtime reads the chosen
@@ -413,23 +413,8 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           )}
           {selectedDirectory && (
             <div className="space-y-2 px-3 pb-2">
-              {directories.length > 1 ? (
-                <Select items={directories.map((directory) => ({ value: directory.key, label: directory.label || directory.path }))} value={selectedDirectory.key} onValueChange={selectDirectory}>
-                  <SelectTrigger className="w-full min-w-0" aria-label={t(($) => $.doc_file_list.directory)} title={displayedDirectory}>
-                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <SelectValue className="min-w-0 truncate" />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false} align="start">
-                    {directories.map((directory) => (
-                      <SelectItem key={directory.key} value={directory.key} className="[&_[data-slot]]:min-w-0">
-                        <span className="flex min-w-0 flex-col items-start whitespace-normal text-left">
-                          <span className="max-w-full break-words font-medium">{directory.label || directory.branchName || t(($) => directory.projectResourceId ? $.doc_file_list.project_directory : $.doc_file_list.run_directory)}</span>
-                          <span className="max-w-full break-all font-mono text-caption text-muted-foreground" dir="ltr">{directory.path}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {directories.length > 1 || selectedDirectory.scope === "project_task" ? (
+                <ChatDirectorySelector key={JSON.stringify([wsId, sessionId, selectedProjectId])} directories={directories} selected={selectedDirectory} onSelect={selectDirectory} />
               ) : (
                 <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground" title={displayedDirectory}>
                   <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

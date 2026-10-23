@@ -322,6 +322,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     const user = userEvent.setup();
     renderList(newClient());
     await screen.findByText("local.md");
+    await user.click(screen.getByRole("button", { name: /Other task directories/ }));
     await user.click(screen.getByRole("combobox", { name: "Directory" }));
     expect(await screen.findByRole("option", { name: /\/work$/ })).toBeInTheDocument();
     await user.click(screen.getByRole("option", { name: /\/project-worktree$/ }));

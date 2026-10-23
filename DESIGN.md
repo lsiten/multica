@@ -45,7 +45,11 @@ body. Headers and toolbars remain fixed; flex children that scroll always use
 - **Accessibility:** buttons expose `aria-expanded`, file rows are keyboard
   reachable, and search has a labelled input.
 - **Directory selection:** include the project's bound local directories and
-  distinct run worktrees. Use the shared Select when multiple roots exist;
+  distinct run worktrees, grouped as project resources, current-chat directories,
+  and other task directories. Other task directories start collapsed and expand
+  in batches of 20; the selected directory remains available when folded.
+  Archived chats, settled issues, cleaned directories, and project supervision
+  control directories do not populate this list. Use the shared Select when multiple roots exist;
   show full paths in its scrollable options and truncate the closed trigger.
   A failed or offline root stays selected with a retry action. Bound directories
   without a run are read-only; run worktrees retain editing and Git actions.

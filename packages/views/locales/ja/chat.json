@@ -46,6 +46,8 @@
   },
   "doc_file_list": {
     "project_directory": "プロジェクトディレクトリ",
+    "chat_directories": "現在のチャット",
+    "other_directories": "プロジェクト内の他のタスクのディレクトリ",
     "run_directory": "実行ディレクトリ",
     "directory": "ディレクトリ",
     "read_only": "プロジェクトディレクトリ（読み取り専用）",
