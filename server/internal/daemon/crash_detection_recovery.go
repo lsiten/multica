@@ -10,7 +10,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
 )
 
-// crashDetectAndReconcile retires a non-stopped prior owner that is provably
+// crashDetectAndReconcile retires a prior owner with unresolved state that is provably
 // dead, so a crashed service's record does not permanently block the split
 // process (which would otherwise stay failed-closed to in-process forever).
 //
@@ -32,13 +32,13 @@ func (d *Daemon) crashDetectAndReconcile(ctx context.Context, root string, scope
 	if err != nil {
 		return err
 	}
-	// A clean stopped record with all operations completed is already
-	// replaceable: runtimeproc.Start would have succeeded, so this is not the
-	// crash case and there is nothing to reconcile.
-	if previous.State == "stopped" {
+	// A stopped owner is replaceable only if every receipt completed. Shutdown
+	// can persist stopped while an interrupted operation still has no result.
+	// Preserve those uncertain receipts through the same recovery as a crash.
+	if !previous.NeedsReconciliation() {
 		return nil
 	}
-	// The prior owner is non-stopped. Never retire it while it is reachable:
+	// Never retire a prior owner while it is reachable:
 	// a reachable prior owner is live (or was just confirmed live) and must
 	// keep its record. Only an unreachable prior owner may be retired.
 	if alive, aerr := runtimeprocLive(ctx, root, previous.Identity); aerr == nil && alive {

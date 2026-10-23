@@ -34,7 +34,7 @@ func prepareRuntimeRoot(t *testing.T) string {
 // writeRuntimeRecord publishes a private owner record the same way the runtime
 // process writes one, using only exported helpers, so the daemon test can stage
 // a prior owner without spawning a real child.
-func writeRuntimeRecord(t *testing.T, root string, identity runtimeproc.Identity, address, state string) {
+func writeRuntimeRecord(t *testing.T, root string, identity runtimeproc.Identity, address, state string, receipts ...runtimeproc.Receipt) {
 	t.Helper()
 	bootstrap, err := runtimeproc.NewBootstrap(root, identity)
 	if err != nil {
@@ -48,6 +48,9 @@ func writeRuntimeRecord(t *testing.T, root string, identity runtimeproc.Identity
 		Fence:       bootstrap.Fence,
 		ReplayEpoch: 1,
 		Operations:  map[string]runtimeproc.Receipt{},
+	}
+	for _, receipt := range receipts {
+		record.Operations[receipt.RequestID] = receipt
 	}
 	raw, err := json.Marshal(record)
 	if err != nil {
@@ -185,5 +188,62 @@ func TestCrashDetectAndReconcileSkipsStoppedAndMissingRecord(t *testing.T) {
 	}
 	if after.State != "stopped" {
 		t.Fatalf("stopped record must be untouched, got %q", after.State)
+	}
+}
+
+func TestCrashDetectAndReconcileRetiresStoppedOwnerWithUncertainReceipts(t *testing.T) {
+	// Given a stopped owner whose final operation never received a completion receipt.
+	root := prepareRuntimeRoot(t)
+	identity, err := runtimeproc.NewIdentity(runtimeproc.Scope{Backend: "http://test.invalid", Account: "fixture", Profile: "test", DaemonID: "daemon", Service: "probe"}, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := runtimeproc.Receipt{RequestID: "1:uncertain", State: "pending", Digest: "fixture"}
+	writeRuntimeRecord(t, root, identity, "http://127.0.0.1:1", "stopped", receipt, runtimeproc.Receipt{RequestID: "1:complete", State: "completed", Result: json.RawMessage(`{"kept":true}`)})
+	// When crash recovery examines the exited owner.
+	if err := crashDetectDaemon().crashDetectAndReconcile(t.Context(), root, identity.Scope, "probe"); err != nil {
+		t.Fatal(err)
+	}
+	// Then uncertain receipts are archived, never replayed or silently discarded.
+	archive, err := runtimeproc.ReadReconciledRecord(root, identity)
+	if err != nil {
+		t.Fatalf("uncertain stopped owner was skipped: %v", err)
+	}
+	if len(archive.Operations) != 2 || string(archive.Operations["1:complete"].Result) != `{"kept":true}` || archive.Operations[receipt.RequestID].State != "pending" {
+		t.Fatalf("receipt lost: %+v", archive.Operations)
+	}
+	current, err := runtimeproc.ReadRecord(root, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.State != "stopped" || len(current.Operations) != 0 {
+		t.Fatalf("old owner still blocks replacement: %+v", current.Operations)
+	}
+}
+
+func TestCrashDetectAndReconcileProtectsLockedStoppedOwner(t *testing.T) {
+	root := prepareRuntimeRoot(t)
+	identity, err := runtimeproc.NewIdentity(runtimeproc.Scope{Backend: "http://test.invalid", Account: "fixture", Profile: "test", DaemonID: "daemon", Service: "probe"}, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRuntimeRecord(t, root, identity, "http://127.0.0.1:1", "stopped", runtimeproc.Receipt{RequestID: "uncertain", State: "pending"})
+	lock, err := lockMirrorProcessDomain(filepath.Join(filepath.Dir(runtimeproc.RecordPath(root, identity.Scope)), "owner.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := crashDetectDaemon().crashDetectAndReconcile(t.Context(), root, identity.Scope, "probe"); err == nil {
+		t.Fatal("locked owner was retired")
+	}
+	record, err := runtimeproc.ReadRecord(root, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Operations["uncertain"].State != "pending" {
+		t.Fatal("locked owner's receipts changed")
+	}
+	if _, err := runtimeproc.ReadReconciledRecord(root, identity); !os.IsNotExist(err) {
+		t.Fatalf("locked owner archived: %v", err)
 	}
 }

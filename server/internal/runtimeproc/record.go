@@ -337,13 +337,8 @@ func validateStorage(root string, scope Scope) error {
 }
 func replaceableRecord(raw []byte, identity Identity) bool {
 	var previous Record
-	if json.Unmarshal(raw, &previous) != nil || previous.Identity.Scope != identity.Scope || previous.Identity.InstanceID == identity.InstanceID || previous.Identity.Validate() != nil || previous.State != "stopped" {
+	if json.Unmarshal(raw, &previous) != nil || previous.Identity.Scope != identity.Scope || previous.Identity.InstanceID == identity.InstanceID || previous.Identity.Validate() != nil {
 		return false
 	}
-	for _, receipt := range previous.Operations {
-		if receipt.State != "completed" {
-			return false
-		}
-	}
-	return true
+	return !previous.NeedsReconciliation()
 }
