@@ -36,3 +36,14 @@ it("validates UTF8 content ranges without splitting code points", () => {
   expect(() => parsePagedReviewResponse(input, { ...page, side: "old" })).toThrow();
   expect(() => parsePagedReviewResponse(input, { ...page, content: { ...page.content, next_offset: 5 } })).toThrow();
 });
+
+it("validates shallow directory pagination and preserves older response compatibility",()=>{
+ const input=pagedReviewRequestSchema.parse({task_id:"task",workspace_id:"ws",path:"/repo",action:"workspace_files",recursive:false,offset:500,limit:500});
+ const page={path:"/repo",recursive:false,entries:[{path:"00-项目管理",size:0,directory:true}],next_offset:501,has_more:false};
+ expect(parsePagedReviewResponse(input,page)).toMatchObject(page);
+ expect(()=>parsePagedReviewResponse(input,{...page,next_offset:500,has_more:true})).toThrow(/pagination/);
+ expect(()=>parsePagedReviewResponse(input,{...page,next_offset:undefined})).toThrow(/pagination/);
+ expect(()=>parsePagedReviewResponse(input,{...page,next_offset:499})).toThrow(/pagination/);
+ expect(()=>parsePagedReviewResponse(input,{...page,entries:[],has_more:true})).toThrow(/pagination/);
+ expect(parsePagedReviewResponse(input,{path:"/repo",entries:[]})).toMatchObject({truncated:false});
+});

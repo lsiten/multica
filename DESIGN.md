@@ -35,7 +35,9 @@ body. Headers and toolbars remain fixed; flex children that scroll always use
 - **Structure:** search field, tab strip, project root, recursive directory rows,
   file rows, and an empty state.
 - **States:** collapsed/expanded directories, filtered results, selected file,
-  loading, and no match.
+  loading, and no match. Read immediate children in pages and fetch child
+  directories only when expanded; empty directories remain visible. A failed
+  child read exposes its own retry while sibling directories stay usable.
 - **Accessibility:** buttons expose `aria-expanded`, file rows are keyboard
   reachable, and search has a labelled input.
 - **Directory selection:** include the project's bound local directories and

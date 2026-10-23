@@ -45,7 +45,7 @@ func (d *Daemon) runProjectDirectoryRead(ctx context.Context, command protocol.L
 			return result
 		}
 	}
-	request := worktreeReviewRequest{Action: command.Action, Path: command.Path, Target: command.Target, WorkspaceID: command.WorkspaceID, RuntimeID: command.RuntimeID, RelativePath: command.RelativePath, VersionID: command.VersionID, Offset: command.Offset, Limit: command.Limit}
+	request := worktreeReviewRequest{Action: command.Action, Path: command.Path, Target: command.Target, WorkspaceID: command.WorkspaceID, RuntimeID: command.RuntimeID, RelativePath: command.RelativePath, Recursive: command.Recursive, VersionID: command.VersionID, Offset: command.Offset, Limit: command.Limit}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/project-directory/read", nil)
 	if err != nil {
 		result.Error = err.Error()

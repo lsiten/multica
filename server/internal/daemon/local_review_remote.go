@@ -62,6 +62,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	}
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
 	input.VersionID, input.FilePath, input.RelativePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.RelativePath, command.Offset, command.Limit
+	input.Recursive = command.Recursive
 	input.Side = command.Side
 	input.IndexID, input.Branch, input.Head, input.Message, input.Paths = command.IndexID, command.Branch, command.Head, command.Message, command.Paths
 	input.CommandID = command.ID

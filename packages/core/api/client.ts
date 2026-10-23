@@ -1265,7 +1265,7 @@ export class ApiClient {
       method: "POST", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       body: JSON.stringify({
         task_id: request.task_id, project_resource_id: request.project_resource_id, runtime_id: request.runtime_id,
-        path: request.path, target: request.target, action: request.action, relative_path: request.relative_path,
+        path: request.path, target: request.target, action: request.action, relative_path: request.relative_path, recursive: request.recursive,
         version_id: request.version_id, file_path: request.file_path, offset: request.offset, limit: request.limit,
         side: request.action === "content" ? request.side : undefined,
         snapshot_id: request.snapshot_id, command_id: request.command_id, comment: request.comment,

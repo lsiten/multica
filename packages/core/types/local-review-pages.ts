@@ -21,6 +21,7 @@ export const pagedReviewRequestSchema = z.object({
   index_id: digest.optional(), head: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(), branch: z.string().max(250).optional(),
   paths: z.array(z.string().min(1).max(4096)).max(10000).optional(), message: z.string().max(8000).optional(),
   version_id: digest.optional(), file_path: z.string().min(1).max(4096).optional(), relative_path: z.string().max(4096).optional(),
+  recursive: z.boolean().optional(),
   side: z.enum(["old", "new"]).default("new"),
   offset: count.default(0), limit: count.min(1).max(65536).default(100),
   snapshot_id: digest.optional(), command_id: z.string().min(1).max(128).optional(),
@@ -87,6 +88,7 @@ export const workspaceFileListSchema = z.object({
   path: z.string(),
   entries: z.array(z.object({ path: z.string(), size: count, directory: z.boolean() })).max(5000),
   truncated: z.boolean().default(false),
+  recursive: z.boolean().optional(), next_offset: count.optional(), has_more: z.boolean().optional(),
 });
 export const workspaceFileContentSchema = z.object({
   path: z.string(),
@@ -123,6 +125,7 @@ export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unkno
   if (request.action === "workspace_files") {
     const result = workspaceFileListSchema.parse(raw);
     if (result.path !== request.path) throw new Error("Workspace file list identity mismatch");
+    if (result.recursive === false && (result.entries.length > request.limit || result.next_offset === undefined || result.has_more === undefined || result.next_offset - request.offset < result.entries.length || (result.has_more && (result.entries.length === 0 || result.next_offset <= request.offset)))) throw new Error("Invalid workspace directory pagination");
     return result;
   }
   if (request.action === "file_content") {

@@ -34,6 +34,10 @@ const session = vi.hoisted(() => ({
     hasProject: false,
     entries: [] as Array<{ path: string; size: number; directory: boolean }>,
     entriesByPath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
+    shallow: false,
+    errorsByRelativePath: {} as Record<string, Error>,
+    entriesByRelativePath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
+    directoryRequests: [] as string[],
     workspaceErrorByPath: {} as Record<string, Error>,
     workspaceError: null as Error | null,
     error: null as Error | null,
@@ -69,9 +73,17 @@ vi.mock("../../platform/local-review-pages", async () => {
   const actual = await vi.importActual<typeof import("../../platform/local-review-pages")>("../../platform/local-review-pages");
   return {
     ...actual,
-    requestReviewPage: (request: { path?: string }) => session.current.workspaceErrorByPath[request.path ?? ""] ?? session.current.workspaceError
+    requestReviewPage: (request: { path?: string; relative_path?: string }) => {
+      if (session.current.shallow) {
+        const relative = request.relative_path ?? ".";
+        session.current.directoryRequests.push(relative);
+        if (session.current.errorsByRelativePath[relative]) return Promise.reject(session.current.errorsByRelativePath[relative]);
+        return Promise.resolve({path:request.path ?? ".",recursive:false,entries:session.current.entriesByRelativePath[relative] ?? [],next_offset:2,has_more:false,truncated:false});
+      }
+      return session.current.workspaceErrorByPath[request.path ?? ""] ?? session.current.workspaceError
       ? Promise.reject(session.current.workspaceErrorByPath[request.path ?? ""] ?? session.current.workspaceError)
-      : Promise.resolve({ path: request.path ?? ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries }),
+      : Promise.resolve({ path: request.path ?? ".", entries: session.current.entriesByPath[request.path ?? ""] ?? session.current.entries });
+    },
   };
 });
 
@@ -122,6 +134,7 @@ beforeEach(() => {
     hasProject: true,
     entries: [{ path: "src/app.ts", size: 10, directory: false }],
     entriesByPath: {},
+    shallow: false, entriesByRelativePath: {}, directoryRequests: [], errorsByRelativePath: {},
     workspaceErrorByPath: {},
     workspaceError: null,
     error: null,
@@ -129,6 +142,34 @@ beforeEach(() => {
 });
 
 describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
+
+  it("keeps sibling folders usable when a child listing fails and retries in place",async()=>{
+    session.current.shallow=true;
+    session.current.entriesByRelativePath={".":[{path:"broken",size:0,directory:true},{path:"sibling",size:0,directory:true}],"broken":[{path:"broken/fixed.md",size:1,directory:false}]};
+    session.current.errorsByRelativePath={broken:new Error("temporary failure")};
+    renderList(newClient());
+    await userEvent.click(await screen.findByRole("button",{name:"broken"}));
+    expect(await screen.findByRole("alert")).toHaveTextContent(enChat.doc_file_list.load_failed);
+    expect(screen.getByRole("button",{name:"sibling"})).toBeInTheDocument();
+    session.current.errorsByRelativePath={};
+    await userEvent.click(screen.getByRole("button",{name:enChat.doc_file_list.retry}));
+    expect(await screen.findByRole("button",{name:"fixed.md"})).toBeInTheDocument();
+  });
+  it("shows empty folders and reads only the folder the user expands",async()=>{
+    session.current.shallow=true;
+    session.current.entriesByRelativePath={
+      ".":[{path:"00-项目管理",size:0,directory:true},{path:"空目录",size:0,directory:true}],
+      "00-项目管理":[{path:"00-项目管理/计划.md",size:1,directory:false}],
+    };
+    renderList(newClient());
+    const folder=await screen.findByRole("button",{name:"00-项目管理"});
+    expect(screen.getByRole("button",{name:"空目录"})).toBeInTheDocument();
+    expect(session.current.directoryRequests).toEqual(["."]);
+    await userEvent.click(folder);
+    expect(await screen.findByRole("button",{name:"计划.md"})).toBeInTheDocument();
+    expect(session.current.directoryRequests).toEqual([".","00-项目管理"]);
+  });
+
   it("requests open project issues and removes a blocked issue when it completes", async () => {
     // Given a completed issue and a blocked issue in the selected project.
     const blocked: Issue = {

@@ -40,6 +40,7 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		VersionID         string   `json:"version_id,omitempty"`
 		FilePath          string   `json:"file_path,omitempty"`
 		RelativePath      string   `json:"relative_path,omitempty"`
+		Recursive         *bool    `json:"recursive,omitempty"`
 		Side              string   `json:"side,omitempty"`
 		Offset            int      `json:"offset,omitempty"`
 		Limit             int      `json:"limit,omitempty"`
@@ -187,9 +188,9 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		SnapshotID: input.SnapshotID, Comment: input.Comment, ActorID: user,
 		CommandID: input.CommandID,
 		VersionID: input.VersionID, FilePath: input.FilePath, Offset: input.Offset, Limit: input.Limit,
-		RelativePath: input.RelativePath,
-		Side:         input.Side,
-		IndexID:      input.IndexID, Branch: input.Branch, Head: input.Head, Message: input.Message, Paths: input.Paths,
+		RelativePath: input.RelativePath, Recursive: input.Recursive,
+		Side:    input.Side,
+		IndexID: input.IndexID, Branch: input.Branch, Head: input.Head, Message: input.Message, Paths: input.Paths,
 		EditBase: input.EditBase, EditNew: input.EditNew, EditBaseSHA: input.EditBaseSHA,
 	})
 	if err != nil {

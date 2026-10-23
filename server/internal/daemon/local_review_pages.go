@@ -297,6 +297,18 @@ func (d *Daemon) workspaceFileRead(w http.ResponseWriter, r *http.Request, scope
 		return
 	}
 	if scope.request.Action == "workspace_files" {
+		if scope.request.Recursive != nil && !*scope.request.Recursive {
+			page, err := readWorkspaceDirectoryPage(r.Context(), root, resolved, scope.request.Offset, scope.request.Limit)
+			if err != nil {
+				http.Error(w, "cannot list workspace directory", http.StatusConflict)
+				return
+			}
+			page.Path = scope.request.Path
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(w).Encode(page)
+			return
+		}
 		type entry struct {
 			Path      string `json:"path"`
 			Size      int64  `json:"size"`

@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"context"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/testutil"
 )
@@ -128,5 +131,43 @@ func TestChatProjectFilesExplicitProjectOverridesAgentBindings(t *testing.T) {
 	testutil.Call(t, testHandler.ListChatSessionFiles, req).Want(http.StatusOK).JSON(&response)
 	if len(response.ProjectTasks) != 1 || response.ProjectTasks[0].ID != unscoped {
 		t.Fatalf("explicit project leaked through agent bindings: %+v", response.ProjectTasks)
+	}
+}
+
+func TestProjectDirectoryRelayPreservesShallowPaging(t *testing.T) {
+	project := dbfx.Project(t, "paged directory")
+	runtime := dbfx.Runtime(t, "paged directory runtime", testutil.Cols{"daemon_id": "paged-daemon", "runtime_mode": "local", "status": "online"})
+	resource := dbfx.Insert(t, "project_resource", testutil.Cols{"workspace_id": testWorkspaceID, "project_id": project, "resource_type": "local_directory", "resource_ref": `{"local_path":"/bound","daemon_id":"paged-daemon"}`, "created_by": testUserID})
+	request := withChatTestWorkspaceCtx(t, newRequest(http.MethodPost, "/execute", map[string]any{"project_resource_id": resource, "runtime_id": runtime, "path": "/bound", "action": "workspace_files", "relative_path": "docs", "recursive": false, "offset": 500, "limit": 500}))
+	ctx, cancel := context.WithTimeout(request.Context(), 5*time.Second)
+	defer cancel()
+	request = request.WithContext(ctx)
+	commands := make(chan protocol.LocalReviewCommand, 1)
+	go func() {
+		ticker := time.NewTicker(time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			command := testHandler.localReviewRelay.claim(testWorkspaceID, runtime)
+			if command == nil {
+				continue
+			}
+			commands <- *command
+			testHandler.localReviewRelay.complete(testWorkspaceID, runtime, command.ID, protocol.LocalReviewResult{ClaimToken: command.ClaimToken, Page: []byte(`{"path":"/bound","entries":[],"recursive":false,"next_offset":500,"has_more":false}`)})
+			return
+		}
+	}()
+	testutil.Call(t, testHandler.ForwardLocalReview, request).Want(http.StatusOK)
+	select {
+	case command := <-commands:
+		if command.Recursive == nil || *command.Recursive || command.RelativePath != "docs" || command.Offset != 500 || command.Limit != 500 {
+			t.Fatal("directory mode or cursor lost in relay")
+		}
+	case <-ctx.Done():
+		t.Fatal("request did not reach runtime")
 	}
 }

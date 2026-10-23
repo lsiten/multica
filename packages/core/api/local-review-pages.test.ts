@@ -78,3 +78,13 @@ it("sends the selected index identity and file set through the relay", async () 
   await new ApiClient("https://api.example.test").executePagedLocalReview({ ...request, action: "stage", version_id: id, snapshot_id: id, index_id: "b".repeat(64), head: "c".repeat(40), branch: "feature", paths: ["selected.ts"], command_id: "stage-once" });
   expect(body).toMatchObject({ action: "stage", command_id: "stage-once", index_id: "b".repeat(64), head: "c".repeat(40), branch: "feature", paths: ["selected.ts"] });
 });
+
+it("preserves shallow directory mode and its cursor through the relay",async()=>{
+ let body:unknown;
+ vi.stubGlobal("fetch",vi.fn(async(_url:unknown,init?:RequestInit)=>{
+  body=JSON.parse(String(init?.body));
+  return new Response(JSON.stringify({page:{path:"/project",recursive:false,entries:[],next_offset:500,has_more:false}}),{status:200});
+ }));
+ await new ApiClient("https://api.example.test").executePagedLocalReview({workspace_id:"ws",project_resource_id:"resource",path:"/project",action:"workspace_files",recursive:false,relative_path:".",offset:500,limit:500});
+ expect(body).toMatchObject({recursive:false,relative_path:".",offset:500,limit:500});
+});

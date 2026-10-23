@@ -23,3 +23,8 @@ func TestLocalReviewForwardRequiresOperationID(t *testing.T) {
 		})
 	}
 }
+
+func TestLocalReviewForwardRejectsMalformedDirectoryMode(t *testing.T) {
+	request := newRequestAsUser("11111111-1111-4111-8111-111111111111", http.MethodPost, "/api/local-reviews/execute", map[string]any{"project_resource_id": "resource", "path": "/bound", "action": "workspace_files", "recursive": "false"})
+	testutil.Call(t, (&Handler{}).ForwardLocalReview, request).Want(http.StatusBadRequest)
+}

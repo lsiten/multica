@@ -35,6 +35,7 @@ export interface DocumentListItem {
   workDir?: string;
   relativePath?: string;
   contentType?: string;
+  directory?: boolean;
 }
 
 interface FileTreeNode {
@@ -55,7 +56,7 @@ function buildFileTree(documents: DocumentListItem[]): FileTreeNode[] {
       path = path ? `${path}/${part}` : part;
       let node = siblings.find((candidate) => candidate.name === part);
       if (!node) {
-        node = { path, name: part, directory: index < parts.length - 1, children: [] };
+        node = { path, name: part, directory: index < parts.length - 1 || !!document.directory, children: [] };
         siblings.push(node);
       }
       if (index === parts.length - 1) node.document = document;
@@ -144,26 +145,28 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     enabled: !!projectID && activeTab === "issues",
     staleTime: 15_000,
   });
-  const { directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest } = useChatFileDirectory(
-    wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files",
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
+  const { entries: workspaceEntries, nestedQueries, directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest } = useChatFileDirectory(
+    wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files", expandedDirs,
   );
   const openDoc = useDocModeStore((s) => s.openDoc);
   // Match the VS Code/GitHub tree convention: folders start closed so a large
   // checkout stays scannable. Search is computed from allDocuments (before the
   // tree is filtered), then matching ancestor folders are opened automatically.
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
+
   // Local-only filter (v12: the sidebar is files + a filter box). Ephemeral UI
   // state, so it lives here, not in the persisted doc-mode store.
   const [filter, setFilter] = useState("");
 
   const allDocuments = useMemo((): DocumentListItem[] => {
     if (!selectedDirectory || !workspaceFiles.data) return [];
-    return workspaceFiles.data.entries
-      .filter((entry) => !isInternalWorkspacePath(entry.path) && !entry.directory)
+    return workspaceEntries
+      .filter((entry) => !isInternalWorkspacePath(entry.path))
       .map((entry) => {
         const relativePath = normalizeWorkspacePath(entry.path);
         return {
           kind: "workspace_file",
+          directory: entry.directory,
           id: `${selectedDirectory.taskId ?? selectedDirectory.key}:${relativePath}`,
           label: relativePath,
           sessionId: sessionId ?? undefined,
@@ -175,7 +178,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           relativePath,
         };
       });
-  }, [projectID, selectedDirectory, sessionId, workspaceFiles.data]);
+  }, [projectID, selectedDirectory, sessionId, workspaceFiles.data, workspaceEntries]);
 
   // The attachments tab is the union of the session's and the project's
   // attachments, de-duplicated by id so an attachment shared by both is not
@@ -260,7 +263,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   const displayedDirectory = selectedDirectory?.path;
   const renderTree = (nodes: FileTreeNode[], depth = 0): ReactNode[] => nodes.flatMap((node) => {
     if (node.directory) {
-      const expanded = filter.trim().length > 0 || expandedDirs.has(node.path);
+      const expanded = expandedDirs.has(node.path) || (filter.trim().length > 0 && node.children.length > 0);
       return [
         <li key={`dir:${node.path}`}>
           <button
@@ -279,6 +282,8 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             <span className="min-w-0 truncate">{node.name}</span>
           </button>
         </li>,
+        ...(expanded && nestedQueries.get(node.path)?.isPending ? [<li key={`loading:${node.path}`} role="status" className="px-3 py-1.5 text-body text-muted-foreground">{t(($) => $.doc_file_list.loading)}</li>] : []),
+        ...(expanded && nestedQueries.get(node.path)?.isError ? [<li key={`error:${node.path}`} role="alert" className="px-3 py-1.5 text-body text-destructive">{t(($) => $.doc_file_list.load_failed)} <Button type="button" size="sm" variant="ghost" onClick={() => void nestedQueries.get(node.path)?.refetch()}>{t(($) => $.doc_file_list.retry)}</Button></li>] : []),
         ...(expanded ? renderTree(node.children, depth + 1) : []),
       ];
     }
