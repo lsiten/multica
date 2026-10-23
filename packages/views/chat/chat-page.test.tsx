@@ -101,7 +101,11 @@ vi.mock("@multica/core/platform", async (importOriginal) => ({
 // DOM frozen on the first commit — which silently hides exactly the class of
 // bug the StrictMode regression below exists to catch.
 const storeRef = vi.hoisted(() => ({
-  current: { activeSessionId: null as string | null },
+  current: {
+    activeSessionId: null as string | null,
+    inputDrafts: {} as Record<string, string>,
+    clearInputDraft: vi.fn(),
+  },
 }));
 const storeListeners = vi.hoisted(() => new Set<() => void>());
 const availableAgentsRef = vi.hoisted(() => ({ current: [] as Agent[] }));
@@ -264,7 +268,7 @@ function renderPage(search: string, { strict = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  storeRef.current = { activeSessionId: null };
+  storeRef.current = { ...storeRef.current, activeSessionId: null, inputDrafts: {} };
   storeListeners.clear();
   availableAgentsRef.current = [agent];
   agentsSettledRef.current = true;
@@ -453,7 +457,7 @@ describe("ChatPage ?agent= deep link", () => {
     // P2): the composingNew reset must read the LIVE store value, or the
     // stale persisted session re-closes the pane the intent just opened —
     // while the consumed-intent guard rightly refuses to fire again.
-    storeRef.current = { activeSessionId: "old-session" };
+    storeRef.current = { ...storeRef.current, activeSessionId: "old-session" };
     const { replace } = renderPage("agent=agent-1", { strict: true });
     expect(mockStartNewChat).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith("/acme/chat");
@@ -483,7 +487,7 @@ describe("ChatPage responsive layout", () => {
     layout.width = FOLD_INNER;
     // The page reconciles the store against `?session=`, so the open thread has
     // to be in the URL too — otherwise the sync effect closes it.
-    storeRef.current = { activeSessionId: "session-1" };
+    storeRef.current = { ...storeRef.current, activeSessionId: "session-1" };
     renderPage("session=session-1");
 
     expect(
@@ -498,7 +502,7 @@ describe("ChatPage responsive layout", () => {
     // there instead (see the sidebar), so the thread list stays on screen next
     // to an open conversation.
     layout.width = TABLET;
-    storeRef.current = { activeSessionId: "session-1" };
+    storeRef.current = { ...storeRef.current, activeSessionId: "session-1" };
     renderPage("session=session-1");
 
     expect(

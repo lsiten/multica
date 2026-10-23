@@ -80,6 +80,7 @@ const editorState = vi.hoisted(() => ({
   cleared: 0,
   blurred: 0,
   focused: 0,
+  focusedAtEnd: 0,
   adopted: [] as string[],
 }));
 
@@ -148,6 +149,10 @@ vi.mock("../../editor", async () => ({
       },
       focus: () => {
         editorState.focused += 1;
+      },
+      focusAtEnd: () => {
+        editorState.focused += 1;
+        editorState.focusedAtEnd += 1;
       },
       uploadFile: async (file: File) => {
         uploadingRef.current += 1;
@@ -283,6 +288,7 @@ beforeEach(() => {
   editorState.cleared = 0;
   editorState.blurred = 0;
   editorState.focused = 0;
+  editorState.focusedAtEnd = 0;
   editorState.adopted = [];
   const state = useChatStore.getState() as unknown as {
     activeSessionId: string | null;
@@ -605,6 +611,7 @@ describe("ChatInput focusRequest", () => {
       </I18nProvider>,
     );
     expect(editorState.focused).toBe(1);
+    expect(editorState.focusedAtEnd).toBe(1);
 
     // Each subsequent new chat re-focuses.
     rerender(
@@ -613,6 +620,7 @@ describe("ChatInput focusRequest", () => {
       </I18nProvider>,
     );
     expect(editorState.focused).toBe(2);
+    expect(editorState.focusedAtEnd).toBe(2);
   });
 
   it("does not focus on mount when focusRequest is undefined or 0", () => {
