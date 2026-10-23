@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { chatFileDirectories, type ChatFileDirectory, type DocumentRef } from "@multica/core/chat";
 import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
@@ -7,6 +7,7 @@ import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import { readWorkspaceDirectory } from "./workspace-directory-query";
 
 export function useChatFileDirectory(wsId: string, sessionId: string | null | undefined, projectId: string, files: ChatSessionFilesResponse | undefined, activeDoc: DocumentRef | null, enabled: boolean, expandedDirectories: ReadonlySet<string>) {
+  const client = useQueryClient();
   const current = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
   const directories = useMemo(() => chatFileDirectories(files, projectId), [files, projectId]);
@@ -28,8 +29,9 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
     path: selected.path,
     target: selected.branchName || "HEAD",
   } : null;
+  const directoryKey = ["chat-workspace-files", wsId, sessionId, projectId, selected?.key, selected?.path, selected?.runtimeId];
   const query = useQuery({
-    queryKey: ["chat-workspace-files", wsId, sessionId, projectId, selected?.key, selected?.path, selected?.runtimeId],
+    queryKey: directoryKey,
     queryFn: async ({ signal }) => {
       if (!request) throw new Error("workspace directory is unavailable");
       const timeout = AbortSignal.timeout(15_000);
@@ -46,7 +48,7 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
       && rootEntries.some((entry) => entry.directory && (entry.path === path || path.startsWith(`${entry.path}/`)));
   }).sort() : [];
   const children = useQueries({ queries: openedPaths.map((relativePath) => ({
-    queryKey: ["chat-workspace-files", wsId, sessionId, projectId, selected?.key, selected?.path, selected?.runtimeId, relativePath],
+    queryKey: [...directoryKey, relativePath],
     queryFn: async ({ signal }: { signal: AbortSignal }) => {
       if (!request) throw new Error("workspace directory is unavailable");
       return readWorkspaceDirectory(request, relativePath, AbortSignal.any([signal, AbortSignal.timeout(15_000)]));
@@ -72,5 +74,5 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
     : !selected && current && (current.taskId || current.projectResourceId)
     ? { task_id: current.taskId ?? "", project_resource_id: current.projectResourceId, workspace_id: wsId, runtime_id: current.runtimeId, path: current.path, target: "HEAD" }
     : null;
-  return { directories, selected, select, query, gitRequest, entries, nestedQueries };
+  return { directories, selected, select, query, gitRequest, entries, nestedQueries, refresh: () => client.invalidateQueries({ queryKey: directoryKey }) };
 }

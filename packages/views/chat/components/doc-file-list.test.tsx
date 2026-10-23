@@ -15,6 +15,7 @@ import { NavigationProvider } from "../../navigation";
 import { DocModeFileList } from "./doc-file-list";
 
 const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
+const indexEvents = vi.hoisted(() => ({ onChanged: () => {} }));
 const listIssues = vi.hoisted(() => vi.fn<typeof import("@multica/core/api").api.listIssues>());
 
 vi.mock("@multica/core/api", async (importOriginal) => ({
@@ -88,7 +89,7 @@ vi.mock("../../platform/local-review-pages", async () => {
 });
 
 vi.mock("../../issues/components/local-review-index", () => ({
-  LocalReviewIndex: () => <div data-testid="local-review-index">Source control</div>,
+  LocalReviewIndex: ({onChanged}:{onChanged:()=>void}) => {indexEvents.onChanged=onChanged;return <div data-testid="local-review-index">Source control</div>;},
 }));
 
 function newClient() {
@@ -143,6 +144,19 @@ beforeEach(() => {
 
 describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
 
+
+  it("refreshes an expanded subtree after a Git operation changes its files",async()=>{
+    session.current.files.directories=[{project_resource_id:"resource",runtime_id:"rt-1",path:"/project",label:"Project directory"}];
+    session.current.shallow=true;
+    session.current.entriesByRelativePath={".":[{path:"docs",size:0,directory:true}],"docs":[{path:"docs/old.md",size:1,directory:false}]};
+    renderList(newClient());
+    await userEvent.click(await screen.findByRole("button",{name:"docs"}));
+    await screen.findByRole("button",{name:"old.md"});
+    session.current.entriesByRelativePath.docs=[{path:"docs/new.md",size:1,directory:false}];
+    act(()=>indexEvents.onChanged());
+    expect(await screen.findByRole("button",{name:"new.md"})).toBeInTheDocument();
+    expect(screen.queryByRole("button",{name:"old.md"})).not.toBeInTheDocument();
+  });
   it("keeps sibling folders usable when a child listing fails and retries in place",async()=>{
     session.current.shallow=true;
     session.current.entriesByRelativePath={".":[{path:"broken",size:0,directory:true},{path:"sibling",size:0,directory:true}],"broken":[{path:"broken/fixed.md",size:1,directory:false}]};

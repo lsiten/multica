@@ -146,7 +146,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     staleTime: 15_000,
   });
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
-  const { entries: workspaceEntries, nestedQueries, directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest } = useChatFileDirectory(
+  const { entries: workspaceEntries, nestedQueries, directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest, refresh: refreshDirectory } = useChatFileDirectory(
     wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files", expandedDirs,
   );
   const openDoc = useDocModeStore((s) => s.openDoc);
@@ -491,7 +491,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
                 key={`${gitRequest.task_id || gitRequest.project_resource_id}:${gitRequest.path}`}
                 request={gitRequest}
                 onChanged={() => {
-                  void workspaceFiles.refetch();
+                  void refreshDirectory();
                 }}
                 onBusyChange={() => undefined}
                 onInvalidBinding={clearCurrentDirectory}
