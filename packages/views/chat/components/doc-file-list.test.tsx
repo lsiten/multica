@@ -146,7 +146,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
 
 
   it("refreshes an expanded subtree after a Git operation changes its files",async()=>{
-    session.current.files.directories=[{project_resource_id:"resource",runtime_id:"rt-1",path:"/project",label:"Project directory"}];
+    session.current.files.directories=[{project_resource_id:"resource",daemon_id:"daemon",runtime_id:"rt-1",path:"/project",label:"Project directory"}];
     session.current.shallow=true;
     session.current.entriesByRelativePath={".":[{path:"docs",size:0,directory:true}],"docs":[{path:"docs/old.md",size:1,directory:false}]};
     renderList(newClient());
