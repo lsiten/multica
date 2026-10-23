@@ -178,8 +178,10 @@ var concurrentIndexCleanups = map[string]string{
 	"900548_task_actor_claim_task":                  "task_actor_claim_task",
 	"900550_document_content_version_index":         "document_content_version_owner_revision_idx",
 	"900553_requirement_issue_idx":                  "idx_requirement_issue",
-	"900556_chat_participant_session_idx":         "idx_chat_participant_session",
-	"900558_chat_participant_unique_idx":          "idx_chat_participant_session_member",
+	"900556_chat_participant_session_idx":           "idx_chat_participant_session",
+	"900558_chat_participant_unique_idx":            "idx_chat_participant_session_member",
+	"900559_chat_session_list_idx":                  "idx_chat_session_creator_active_list",
+	"900560_chat_message_unread_latest_idx":         "idx_chat_message_session_unread",
 
 	"900498_human_request_key_index":                            "human_request_source_key",
 	"900499_human_request_recipient_index":                      "human_request_recipient_pending",
