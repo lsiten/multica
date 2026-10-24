@@ -1,7 +1,9 @@
 "use client";
 
-import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye, FilePlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { autoUpdate, computePosition, flip, hide, offset, shift } from "@floating-ui/dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -26,6 +28,8 @@ import { canOpenLocalPath, openLocalPath } from "../../platform";
 import { createSafeId } from "@multica/core/utils";
 import { api, ApiError } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
+import { useCreateIssue } from "@multica/core/issues/mutations";
+import { toast } from "sonner";
 import { FileViewer } from "../../skills/components/file-viewer";
 import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
 import { CodeBlockStatic } from "../../editor/code-block-static";
@@ -65,6 +69,215 @@ function localFilePath(root: string, relativePath: string): string | null {
 }
 
 /**
+ * useDocSelectionBubble — a floating selection toolbar for the read-only
+ * document surfaces (DocBody / WorkspaceFileBody).
+ *
+ * It mirrors issue-detail's EditorBubbleMenu behaviour for the read-only
+ * RichContent / CodeBlock renderers (which have no Tiptap Editor to couple to):
+ * a selection inside the container raises a floating toolbar above it,
+ * positioned with @floating-ui/dom + a portal to document.body so it escapes
+ * the scroll container. The actions reuse issue-detail's intent:
+ *   - "Add sub-issue" -> useCreateIssue({ title, parent_issue_id }). Read-only:
+ *     the selection is never rewritten, only a sub-issue is created under the
+ *     in-scope parent issue (the same CreateSubIssueButton action as issue-detail).
+ *   - "Add to chat"   -> the existing onAddToChat reference flow. The composer
+ *     then shows the quoted selection, which can be commented on / changed — the
+ *     "add to conversation" flow that replaces issue-detail's "add comment".
+ */
+export function useDocSelectionBubble({
+  containerRef,
+  parentIssueId,
+  onAddToChat,
+}: {
+  containerRef: RefObject<HTMLDivElement | null>;
+  parentIssueId?: string;
+  onAddToChat?: (content: string) => void;
+}) {
+  const { t } = useT("chat");
+  const [range, setRange] = useState<Range | null>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const hasActions = !!parentIssueId || !!onAddToChat;
+
+  // Read a live, meaningful text selection that lives inside our container.
+  const detect = useCallback(() => {
+    if (!hasActions) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      setRange(null);
+      return;
+    }
+    const candidate = selection.getRangeAt(0);
+    const inside =
+      candidate.startContainer instanceof Node &&
+      candidate.endContainer instanceof Node &&
+      container.contains(candidate.startContainer) &&
+      container.contains(candidate.endContainer);
+    // A selection outside this container belongs to another surface; leave ours
+    // untouched instead of clearing it.
+    if (!inside) return;
+    if (selection.isCollapsed || !selection.toString().trim()) {
+      setRange(null);
+      return;
+    }
+    setRange(candidate);
+  }, [containerRef, hasActions]);
+
+  // Re-detect on pointer/keyboard selection anywhere in the document.
+  useEffect(() => {
+    document.addEventListener("mouseup", detect);
+    document.addEventListener("keyup", detect);
+    return () => {
+      document.removeEventListener("mouseup", detect);
+      document.removeEventListener("keyup", detect);
+    };
+  }, [detect]);
+
+  // Close when the user clicks anywhere outside the toolbar and the content.
+  useEffect(() => {
+    if (!range) return;
+    const handle = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (bubbleRef.current?.contains(target)) return;
+      if (containerRef.current?.contains(target)) return;
+      setRange(null);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [range, containerRef]);
+
+  // Anchor the portal above the selection; autoUpdate keeps it pinned while the
+  // content scrolls (mirrors EditorBubbleMenu / CommentSelectionBubble).
+  useEffect(() => {
+    if (!range) return;
+    const element = bubbleRef.current;
+    const container = containerRef.current;
+    if (!element || !container) return;
+    let active = true;
+    const anchor = {
+      contextElement: container,
+      getBoundingClientRect: () => range.getBoundingClientRect(),
+    };
+    const update = () => {
+      computePosition(anchor, element, {
+        strategy: "fixed",
+        placement: "top",
+        middleware: [
+          offset(8),
+          flip({ padding: 8, altBoundary: true }),
+          shift({ padding: 8, altBoundary: true }),
+          hide(),
+        ],
+      }).then(({ x, y, middlewareData }) => {
+        if (!active || !element.isConnected) return;
+        const rect = range.getBoundingClientRect();
+        const hidden =
+          !range.startContainer.isConnected ||
+          !container.isConnected ||
+          (rect.width === 0 && rect.height === 0) ||
+          middlewareData.hide?.referenceHidden;
+        element.style.visibility = hidden ? "hidden" : "visible";
+        element.style.left = `${x}px`;
+        element.style.top = `${y}px`;
+      });
+    };
+    const cleanup = autoUpdate(anchor, element, update);
+    update();
+    return () => {
+      active = false;
+      cleanup();
+    };
+  }, [range, containerRef]);
+
+  // Drop the native selection so a later mouseup cannot re-open the toolbar.
+  const clear = useCallback(() => {
+    window.getSelection()?.removeAllRanges();
+    setRange(null);
+  }, []);
+
+  const onAddToConversation = useCallback(() => {
+    if (!range) return;
+    const text = range.toString();
+    onAddToChat?.(text);
+    clear();
+  }, [range, onAddToChat, clear]);
+
+  if (!range) return { bubble: null };
+
+  return {
+    bubble: createPortal(
+      <div
+        ref={bubbleRef}
+        onMouseDown={(e) => e.preventDefault()}
+        className="doc-selection-bubble"
+        style={{ position: "fixed", zIndex: 50, width: "max-content", visibility: "hidden" }}
+      >
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md">
+          {parentIssueId && (
+            <DocSubIssueButton range={range} parentIssueId={parentIssueId} clear={clear} />
+          )}
+          {onAddToChat && (
+            <Button size="sm" variant="ghost" className="gap-1.5" onClick={onAddToConversation}>
+              <MessageSquareQuote className="h-3.5 w-3.5" />
+              {t(($) => $.doc_mode.add_to_chat)}
+            </Button>
+          )}
+        </div>
+      </div>,
+      document.body,
+    ),
+  };
+}
+
+/**
+ * DocSubIssueButton — the "add sub-issue" action of the selection toolbar.
+ *
+ * Only mounts when a parent issue is in scope, so useCreateIssue() (which
+ * resolves the workspace id via useWorkspaceId) is never called for surfaces
+ * without a parent — e.g. workspace files — or in a workspace-less test
+ * tree. Kept out of useDocSelectionBubble so that hook can run anywhere.
+ */
+function DocSubIssueButton({
+  range,
+  parentIssueId,
+  clear,
+}: {
+  range: Range;
+  parentIssueId: string;
+  clear: () => void;
+}) {
+  const { t } = useT("chat");
+  const createIssue = useCreateIssue();
+  const [pending, setPending] = useState(false);
+  const handleClick = async () => {
+    if (pending) return;
+    // Title from the selection: collapse whitespace, cap length (issue-detail's
+    // CreateSubIssueButton caps the same way). Read-only, so we never rewrite it.
+    const title = range.toString().replace(/\s+/g, " ").trim().slice(0, 200);
+    if (!title) return;
+    setPending(true);
+    try {
+      const created = await createIssue.mutateAsync({ title, parent_issue_id: parentIssueId });
+      toast.success(t(($) => $.doc_mode.sub_issue_created, { identifier: created.identifier }));
+      clear();
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message ? err.message : t(($) => $.doc_mode.sub_issue_failed),
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <Button size="sm" variant="ghost" className="gap-1.5" onClick={handleClick} disabled={pending}>
+      {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-3.5 w-3.5" />}
+      {t(($) => $.doc_mode.add_sub_issue)}
+    </Button>
+  );
+}
+
+/**
  * DocModeSurface — the confirmed v12 "based-on-document" surface.
  *
  * When a document is open (doc-mode) it fills the chat detail pane (C): the
@@ -77,7 +290,7 @@ function localFilePath(root: string, relativePath: string): string | null {
  * shows the version history so the user can compare and roll back (D8/D9).
  * Closing (X) is the only way out — an edit completing never auto-closes (D9).
  */
-export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: { wsId: string; sessionId: string; onSendToChat?: (content: string) => Promise<boolean>; onAddToChat?: (content: string) => void }) {
+export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string; sessionId: string; onAddToChat?: (content: string) => void }) {
   const { t } = useT("chat");
   const doc = useDocModeStore(selectActiveDocument(sessionId));
   const working = useDocModeStore(selectWorking(sessionId));
@@ -337,7 +550,6 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
           label={doc.relativePath ?? doc.label ?? "File"}
           path={doc.relativePath ?? doc.label ?? "File"}
           onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(`${doc.relativePath ?? doc.label ?? "File"} 的选区`, selection)) : undefined}
-          onAskAgent={onSendToChat ? (selection) => void onSendToChat(`请修改文件 ${doc.relativePath ?? doc.label} 中选中的内容。先基于以下选区给出修改方案和预期 diff，完成修改后等待用户确认，不要扩展到其它文件。\n\n选区：\n${textCodeBlock(selection)}`) : undefined}
         />
       )}
       </div>
@@ -432,6 +644,8 @@ export function DocModeSurface({ wsId, sessionId, onSendToChat, onAddToChat }: {
             contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
             isText={isText}
             label={doc.label ?? "Document"}
+            onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(`${doc.label ?? "Document"} 的选区`, selection)) : undefined}
+            parentIssueId={doc.kind === "issue" ? doc.id : undefined}
           />
         )}
       </div>
@@ -455,6 +669,8 @@ function DocBody({
   contentType,
   isText,
   label,
+  onAddToChat,
+  parentIssueId,
 }: {
   loading: boolean;
   error: boolean;
@@ -465,8 +681,15 @@ function DocBody({
   contentType: string;
   isText: boolean;
   label: string;
+  onAddToChat?: (content: string) => void;
+  parentIssueId?: string;
 }) {
   const { t } = useT("chat");
+  // The selection toolbar anchors to this content container. It only raises for
+  // the read-only text (RichContent) branch; the binary/attachment branches
+  // have nothing selectable, so the container ref is never attached there.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { bubble } = useDocSelectionBubble({ containerRef, parentIssueId, onAddToChat });
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -506,8 +729,9 @@ function DocBody({
     );
   }
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div ref={containerRef} className="mx-auto max-w-3xl p-6">
       <RichContent content={content ?? ""} className="doc-mode-body" />
+      {bubble}
     </div>
   );
 }
@@ -528,7 +752,6 @@ function WorkspaceFileBody({
   total,
   label,
   onAddToChat,
-  onAskAgent,
   path,
 }: {
   loading: boolean;
@@ -539,11 +762,14 @@ function WorkspaceFileBody({
   total: number;
   label: string;
   onAddToChat?: (selection: string) => void;
-  onAskAgent?: (selection: string) => void;
   path: string;
 }) {
   const { t } = useT("chat");
-  const [selection, setSelection] = useState<string | null>(null);
+  // A selected passage raises a floating toolbar above it (mirroring
+  // issue-detail) instead of a fixed bottom bar. The container ref is the
+  // scrollable content area the selection is detected within.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { bubble } = useDocSelectionBubble({ containerRef, onAddToChat });
   const markdown = /\.mdx?$/i.test(path);
   const language = languageForPath(path);
   if (loading) {
@@ -554,13 +780,7 @@ function WorkspaceFileBody({
   }
   return (
     <div className="flex h-full flex-col min-h-0">
-      <div
-        className="min-h-0 flex-1 overflow-auto p-6"
-        onMouseUp={() => {
-          const selected = window.getSelection()?.toString().trim() ?? "";
-          setSelection(selected || null);
-        }}
-      >
+      <div ref={containerRef} className="min-h-0 flex-1 overflow-auto p-6">
         {markdown ? (
           <div className="mx-auto max-w-3xl">
             <RichContent content={content} className="doc-mode-body" />
@@ -577,22 +797,7 @@ function WorkspaceFileBody({
           <pre className="m-0 whitespace-pre-wrap font-mono text-caption">{content}</pre>
         )}
       </div>
-      {selection && (onAddToChat || onAskAgent) && (
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
-          {onAddToChat && (
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => { onAddToChat(selection); setSelection(null); }}>
-              <MessageSquareQuote className="h-4 w-4" />
-              {t(($) => $.doc_mode.add_selection_to_chat)}
-            </Button>
-          )}
-          {onAskAgent && (
-            <Button size="sm" className="gap-1.5" onClick={() => { onAskAgent(selection); setSelection(null); }}>
-              <Pencil className="h-4 w-4" />
-              {t(($) => $.doc_mode.ask_agent_to_edit)}
-            </Button>
-          )}
-        </div>
-      )}
+      {bubble}
       {truncated && (
         <p className="border-t px-6 py-2 text-caption text-muted-foreground">
           {t(($) => $.doc_mode.truncated, { total: formatBytes(total) })}
