@@ -77,6 +77,31 @@ export interface DaemonProcessOverviewEntry {
   memory_bytes?: number;
   cpu_time_ms?: number;
   stoppable?: boolean;
+  /** Aggregate of this pid AND its whole descendant tree; shown as "含子进程". */
+  tree_memory_bytes?: number;
+  /** Aggregate of this pid AND its whole descendant tree; shown as "含子进程". */
+  tree_cpu_time_ms?: number;
+  /** Number of processes summed into the tree aggregate. */
+  process_count?: number;
+}
+
+// DaemonProcessOverviewTotal is the deduped aggregate across the whole Multica
+// footprint: the desktop app's process tree (desktop main + renderer + GPU
+// helpers + the daemon + every child the daemon runs), else the daemon's own
+// tree. It is the number compared against an activity monitor; it is NOT a sum
+// of the per-row tree aggregates (those overlap, so summing would double-count).
+export interface DaemonProcessOverviewTotal {
+  available?: boolean;
+  process_count?: number;
+  memory_bytes?: number;
+  cpu_time_ms?: number;
+}
+
+// DaemonProcessOverviewResult is the wrapper the daemon's /runtimes/processes/overview
+// returns: the per-category rows plus the deduped whole-footprint total.
+export interface DaemonProcessOverviewResult {
+  processes: DaemonProcessOverviewEntry[];
+  total: DaemonProcessOverviewTotal;
 }
 
 export interface DaemonStatus {

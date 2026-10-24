@@ -1318,7 +1318,8 @@
       "usage": {
         "title": "リソース使用状況",
         "total_memory": "メモリ",
-        "total_cpu": "CPU 時間"
+        "total_cpu": "CPU 時間",
+        "with_children": "{{count}} プロセス"
       },
       "service": {
         "ai": "AI サービス",

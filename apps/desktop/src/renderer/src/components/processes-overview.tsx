@@ -20,7 +20,7 @@ import { Switch } from "@multica/ui/components/ui/switch";
 import { SettingsCard, SettingsSection } from "@multica/views/settings";
 import { useT } from "@multica/views/i18n";
 import { toast } from "sonner";
-import type { DaemonStatus } from "../../../shared/daemon-types";
+import type { DaemonStatus, DaemonProcessOverviewTotal } from "../../../shared/daemon-types";
 
 // Unified process overview: the daemon supervises several long-lived child
 // processes (application, gateway, environment, mirror) plus per-execution task
@@ -53,6 +53,9 @@ type UnifiedProcess = {
   pid?: number;
   memoryBytes?: number;
   cpuTimeMS?: number;
+  treeMemoryBytes?: number;
+  treeCpuTimeMS?: number;
+  processCount?: number;
 };
 
 function formatBytes(bytes: number | undefined): string {
@@ -128,6 +131,9 @@ function normalizeOverview(raw: unknown): UnifiedProcess[] {
       pid: typeof item.pid === "number" ? item.pid : undefined,
       memoryBytes: typeof item.memory_bytes === "number" ? item.memory_bytes : undefined,
       cpuTimeMS: typeof item.cpu_time_ms === "number" ? item.cpu_time_ms : undefined,
+      treeMemoryBytes: typeof item.tree_memory_bytes === "number" ? item.tree_memory_bytes : undefined,
+      treeCpuTimeMS: typeof item.tree_cpu_time_ms === "number" ? item.tree_cpu_time_ms : undefined,
+      processCount: typeof item.process_count === "number" ? item.process_count : undefined,
     });
   }
   return out;
@@ -253,8 +259,11 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
     },
   });
 
+  // overview.data is the daemon's { processes, total } wrapper: processes are the
+  // per-category rows and total is the deduped whole-footprint aggregate.
+  const total = overview.data?.total;
   const rows = [
-    ...normalizeOverview(overview.data),
+    ...normalizeOverview(overview.data?.processes),
     ...normalizeMcp(mcp.data),
     ...normalizeJev(jev.data),
   ];
@@ -305,8 +314,14 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
           </p>
         )}
         <p className="mt-1 text-caption text-muted-foreground">
-          {t(($) => $.desktop.processes.memory)} {formatBytes(row.memoryBytes)} ·{" "}
-          {t(($) => $.desktop.processes.cpu)} {formatCpu(row.cpuTimeMS)}
+          {t(($) => $.desktop.processes.memory)} {formatBytes(row.treeMemoryBytes ?? row.memoryBytes)}
+          {(row.processCount ?? 0) > 1 && (
+            <>{" · "}
+              {t(($) => $.desktop.processes.usage.with_children, { count: row.processCount })}
+            </>
+          )}
+          {" · "}
+          {t(($) => $.desktop.processes.cpu)} {formatCpu(row.treeCpuTimeMS ?? row.cpuTimeMS)}
         </p>
       </div>
       {row.stoppable && (
@@ -362,7 +377,7 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
         )}
         {enabled && !failed && rows.length > 0 && (
           <div className="flex flex-col">
-            <ResourceUsageChart rows={rows} />
+            <ResourceUsageChart rows={rows} total={total} />
           <Tabs defaultValue="all" className="w-full">
             <TabsList variant="line" className="border-b border-border/60 px-3">
               <TabsTrigger value="all">
@@ -427,12 +442,20 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
   );
 }
 
-// Overall resource-usage chart: a compact summary (total memory / total CPU
-// time across every row) plus a per-category memory bar chart. Memory is the
-// live occupancy so it drives the bar widths; CPU time is cumulative and is
-// shown only as a value. A category with no readable memory contributes 0, and
-// the whole chart is hidden when nothing can be sampled (all readings "—").
-function ResourceUsageChart({ rows }: { rows: UnifiedProcess[] }) {
+// Overall resource-usage chart. The headline total is the daemon's deduped
+// whole-Multica-footprint aggregate (the number an activity monitor shows),
+// NOT a sum of the per-category bars: the per-row tree aggregates overlap
+// (a parent row already counts its children), so summing them would double-count.
+// The per-category bars use each row's own single-pid reading, which stay
+// additive and never double-count; the total is a separate, larger figure
+// because it also includes the desktop app wrapper (main + renderer + GPU).
+function ResourceUsageChart({
+  rows,
+  total,
+}: {
+  rows: UnifiedProcess[];
+  total?: DaemonProcessOverviewTotal;
+}) {
   const { t } = useT("settings");
   const byCategory = new Map<ProcessCategory, { memory: number; cpu: number }>();
   for (const row of rows) {
@@ -444,39 +467,43 @@ function ResourceUsageChart({ rows }: { rows: UnifiedProcess[] }) {
   const bars = [...byCategory.entries()]
     .map(([category, agg]) => ({ category, ...agg }))
     .sort((a, b) => b.memory - a.memory);
-  const totalMemory = bars.reduce((sum, bar) => sum + bar.memory, 0);
-  const totalCpu = bars.reduce((sum, bar) => sum + bar.cpu, 0);
   const maxMemory = bars.reduce((max, bar) => Math.max(max, bar.memory), 0);
-  if (totalMemory <= 0) return null;
+  const hasBars = maxMemory > 0;
+  const totalAvailable = total?.available === true;
+  if (!hasBars && !totalAvailable) return null;
   return (
     <div className="px-4 pt-3 pb-1">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
           {t(($) => $.desktop.processes.usage.title)}
         </span>
-        <span className="text-caption text-muted-foreground">
-          {t(($) => $.desktop.processes.usage.total_memory)} {formatBytes(totalMemory)} ·{" "}
-          {t(($) => $.desktop.processes.usage.total_cpu)} {formatCpu(totalCpu)}
-        </span>
+        {totalAvailable && (
+          <span className="text-caption text-muted-foreground">
+            {t(($) => $.desktop.processes.usage.total_memory)} {formatBytes(total?.memory_bytes)} ·{" "}
+            {t(($) => $.desktop.processes.usage.total_cpu)} {formatCpu(total?.cpu_time_ms)}
+          </span>
+        )}
       </div>
-      <div className="mt-3 flex flex-col gap-2">
-        {bars.map((bar) => (
-          <div key={bar.category} className="flex items-center gap-3">
-            <span className="w-16 shrink-0 truncate text-caption text-muted-foreground">
-              {t(($) => $.desktop.processes.category[bar.category])}
-            </span>
-            <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary/80"
-                style={{ width: `${maxMemory > 0 ? (bar.memory / maxMemory) * 100 : 0}%` }}
-              />
+      {hasBars && (
+        <div className="mt-3 flex flex-col gap-2">
+          {bars.map((bar) => (
+            <div key={bar.category} className="flex items-center gap-3">
+              <span className="w-16 shrink-0 truncate text-caption text-muted-foreground">
+                {t(($) => $.desktop.processes.category[bar.category])}
+              </span>
+              <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary/80"
+                  style={{ width: `${maxMemory > 0 ? (bar.memory / maxMemory) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="w-16 shrink-0 text-right text-caption text-muted-foreground">
+                {formatBytes(bar.memory)}
+              </span>
             </div>
-            <span className="w-16 shrink-0 text-right text-caption text-muted-foreground">
-              {formatBytes(bar.memory)}
-            </span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

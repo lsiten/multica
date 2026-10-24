@@ -31,7 +31,12 @@ import type {
   DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
-import type { DaemonWorkerProcess, DaemonProcessOverviewEntry } from "../shared/daemon-types";
+import type {
+  DaemonWorkerProcess,
+  DaemonProcessOverviewEntry,
+  DaemonProcessOverviewResult,
+  DaemonProcessOverviewTotal,
+} from "../shared/daemon-types";
 import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, requestLocalReviewFileEdit, type LocalReviewTransport } from "./local-review-request";
 import { LocalReviewCancellation } from "./local-review-cancellation";
 import { isPagedReviewDecision, pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
@@ -1606,25 +1611,49 @@ export function setupDaemonManager(
       body: JSON.stringify({ exec_id: execId }),
     });
   });
-  ipcMain.handle("daemon:processes-overview", async (): Promise<DaemonProcessOverviewEntry[]> => {
-    const response = await fetchWorktreeManager("/runtimes/processes/overview");
-    if (!response || typeof response !== "object") return [];
-    const value = (response as { processes?: unknown }).processes;
-    if (!Array.isArray(value)) return [];
-    return value.filter((entry): entry is DaemonProcessOverviewEntry => {
-      if (!entry || typeof entry !== "object") return false;
-      const item = entry as Partial<DaemonProcessOverviewEntry>;
-      return (
-        typeof item.category === "string" &&
-        typeof item.id === "string" &&
-        typeof item.name === "string" &&
-        typeof item.state === "string" &&
-        typeof item.ready === "boolean"
-      );
-      // pid/memory_bytes/cpu_time_ms are optional numeric resource readings;
-      // the DaemonProcessOverviewEntry type marks them optional, so no guard is needed.
-    });
-  });
+  ipcMain.handle(
+    "daemon:processes-overview",
+    async (): Promise<DaemonProcessOverviewResult> => {
+      const response = await fetchWorktreeManager("/runtimes/processes/overview");
+      const result: DaemonProcessOverviewResult = {
+        processes: [],
+        total: { available: false },
+      };
+      if (!response || typeof response !== "object") return result;
+      const value = (response as { processes?: unknown }).processes;
+      if (Array.isArray(value)) {
+        result.processes = value.filter((entry): entry is DaemonProcessOverviewEntry => {
+          if (!entry || typeof entry !== "object") return false;
+          const item = entry as Partial<DaemonProcessOverviewEntry>;
+          return (
+            typeof item.category === "string" &&
+            typeof item.id === "string" &&
+            typeof item.name === "string" &&
+            typeof item.state === "string" &&
+            typeof item.ready === "boolean"
+          );
+          // pid/memory_bytes/cpu_time_ms and the tree_* readings are optional
+          // numeric resource readings; the type marks them optional, so no guard is needed.
+        });
+      }
+      const total = (response as { total?: unknown }).total;
+      if (total && typeof total === "object") {
+        result.total = sanitizeOverviewTotal(total as Partial<DaemonProcessOverviewTotal>);
+      }
+      return result;
+    },
+  );
+
+  // sanitizeOverviewTotal copies only the numeric/boolean fields the
+  // panel consumes, so a malformed daemon response degrades to an unavailable
+  // total rather than leaking a wrong zero.
+  const sanitizeOverviewTotal = (total: Partial<DaemonProcessOverviewTotal>): DaemonProcessOverviewTotal => {
+    const out: DaemonProcessOverviewTotal = { available: total.available === true };
+    if (typeof total.process_count === "number") out.process_count = total.process_count;
+    if (typeof total.memory_bytes === "number") out.memory_bytes = total.memory_bytes;
+    if (typeof total.cpu_time_ms === "number") out.cpu_time_ms = total.cpu_time_ms;
+    return out;
+  };
   ipcMain.handle("daemon:local-application-operation",async (_event,request:unknown):Promise<unknown|null>=>{
     const input=localApplicationRequestSchema.parse(request);
     const active=await ensureActiveProfile();

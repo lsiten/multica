@@ -1058,7 +1058,8 @@
       "usage": {
         "title": "리소스 사용량",
         "total_memory": "메모리",
-        "total_cpu": "CPU 시간"
+        "total_cpu": "CPU 시간",
+        "with_children": "{{count}} 프로세스"
       },
       "service": {
         "ai": "AI 서비스",

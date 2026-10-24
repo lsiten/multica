@@ -1323,7 +1323,8 @@
       "usage": {
         "title": "Utilisation des ressources",
         "total_memory": "Mémoire",
-        "total_cpu": "Temps CPU"
+        "total_cpu": "Temps CPU",
+        "with_children": "incl. {{count}} proc."
       },
       "service": {
         "ai": "Service IA",

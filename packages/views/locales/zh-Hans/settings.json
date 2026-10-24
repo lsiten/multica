@@ -1318,7 +1318,8 @@
       "usage": {
         "title": "资源占用",
         "total_memory": "内存",
-        "total_cpu": "CPU 时间"
+        "total_cpu": "CPU 时间",
+        "with_children": "含 {{count}} 个进程"
       },
       "service": {
         "ai": "AI 服务",
