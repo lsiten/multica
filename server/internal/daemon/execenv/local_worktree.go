@@ -436,6 +436,16 @@ func PrepareLocalWorktree(params LocalWorktreeParams, logger *slog.Logger) (*Loc
 		tracksState: plan.tracksState && actualBranch == plan.name,
 	}
 
+	// A branch this Prepare is not standing on that the user has fully merged
+	// into HEAD is delivery that already landed: its work is in the user's main
+	// line, so the branch and its recorded snapshot are safe to drop. This runs
+	// AFTER addLocalWorktree (unlike pruneOrphanedStateRefs, which sits before
+	// it) so the worktree we just created is already registered — a branch this
+	// very turn is continuing is therefore seen as in use and left for the
+	// reset path above, and never pruned out from under the task. Best-effort
+	// like pruneOrphanedStateRefs: it never blocks the task.
+	pruneMergedBranches(gitRoot, logger)
+
 	// Tear the worktree back down on every failure below. A half-replayed tree
 	// is the worst outcome available: it looks like a working checkout, so
 	// nothing downstream questions it, while the agent silently reads different
@@ -1730,6 +1740,94 @@ func pruneOrphanedStateRefs(gitRoot string, logger *slog.Logger) {
 				"git_root", gitRoot, "branch", branch)
 		}
 	}
+}
+
+// pruneMergedBranches drops a Multica-owned branch once the user has merged it
+// into HEAD. A branch whose tip is an ancestor of HEAD carries nothing HEAD
+// does not — its work is already in the user's main line — so keeping the
+// branch ref is the accumulation this pass retires, not a delivery. The
+// recorded snapshot goes with the branch: it is meaningless without it.
+//
+// A branch is dropped only when all three hold: it still exists, its tip is
+// fully merged into HEAD, and no worktree checks it out. The third guard
+// covers every case where the branch is still in use — a retained checkout and
+// a sibling task's live worktree alike — and, because it reads the worktree
+// list after addLocalWorktree, the branch this very Prepare is continuing.
+//
+// Best-effort and non-fatal: this is housekeeping in the user's repository,
+// not a precondition for the task, exactly like pruneOrphanedStateRefs.
+func pruneMergedBranches(gitRoot string, logger *slog.Logger) {
+	out, err := runGitTrimmed(gitRoot, "for-each-ref", "--format=%(refname)", localStateRefPrefix)
+	if err != nil {
+		if logger != nil {
+			logger.Debug("execenv: could not list local-directory snapshots", "git_root", gitRoot, "error", err)
+		}
+		return
+	}
+	// Read the worktree list once rather than per candidate: a branch any
+	// worktree holds must never be dropped, and a read that fails means we
+	// cannot prove a branch is unused, so drop nothing at all rather than guess.
+	checkedOut, reliable := checkedOutBranches(gitRoot)
+	if !reliable {
+		if logger != nil {
+			logger.Debug("execenv: could not list worktrees; skipping merged-branch prune", "git_root", gitRoot)
+		}
+		return
+	}
+	for _, ref := range strings.Split(out, "\n") {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		branch := strings.TrimPrefix(ref, localStateRefPrefix)
+		if branch == ref {
+			continue
+		}
+		// The branch must still exist. A branch the user deleted is handled by
+		// pruneOrphanedStateRefs, which drops the dangling snapshot instead.
+		if _, headErr := runGit(gitRoot, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); headErr != nil {
+			continue
+		}
+		// Only fully merged work is safe to retire: the branch tip must be an
+		// ancestor of HEAD, so nothing in the branch is missing from the user's
+		// main line. The same idiom the reset path uses to detect a merge.
+		if _, err := runGit(gitRoot, "merge-base", "--is-ancestor", "refs/heads/"+branch, "HEAD"); err != nil {
+			continue
+		}
+		// Never drop a branch a worktree still holds: that is in use, whether
+		// it is a retained checkout or a sibling task's live worktree.
+		if checkedOut[branch] {
+			continue
+		}
+		dropBranch(gitRoot, branch, logger)
+		if logger != nil {
+			logger.Info("execenv: dropped a fully-merged local-directory branch",
+				"git_root", gitRoot, "branch", branch)
+		}
+	}
+}
+
+// checkedOutBranches reads the repository's worktrees once and returns the set
+// of branch names any of them holds. The second result is false when the list
+// could not be read, so the caller can refuse to drop rather than assume a
+// branch is unused.
+func checkedOutBranches(gitRoot string) (map[string]bool, bool) {
+	out, err := runGitStdout(gitRoot, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return nil, false
+	}
+	branches := map[string]bool{}
+	for _, field := range strings.Split(out, "\x00") {
+		if !strings.HasPrefix(field, "branch ") {
+			continue
+		}
+		name := strings.TrimPrefix(field, "branch ")
+		if !strings.HasPrefix(name, "refs/heads/") {
+			continue
+		}
+		branches[strings.TrimPrefix(name, "refs/heads/")] = true
+	}
+	return branches, true
 }
 
 // checkUntrackedReplayable refuses a directory whose untracked content is too

@@ -1310,6 +1310,96 @@ func TestPrepareLocalWorktreePrunesSnapshotsOfDeletedBranches(t *testing.T) {
 	}
 }
 
+// The branch a task delivers is the delivery: a branch the user has fully
+// merged into HEAD carries nothing HEAD does not, so keeping it is
+// accumulation, not a delivery. The next task on the repo retires it — the
+// branch and its recorded snapshot go together — because the work is already in
+// the user's main line. This is what keeps a long-lived repo from piling up one
+// empty ref per finished, merged conversation.
+func TestPrepareLocalWorktreeDropsAMergedBranch(t *testing.T) {
+	t.Parallel()
+	repo := newTestRepo(t)
+
+	first := prepareTurn(t, repo, "MUL-6881", turnOneTask)
+	writeFile(t, filepath.Join(first.WorkDir, "agent.txt"), "turn one\n")
+	finalizeOK(t, first)
+	ref := userStateRef("agent/j/mul-6881")
+	if _, err := gitTry(t, repo, "rev-parse", "--verify", ref); err != nil {
+		t.Fatal("turn one recorded no snapshot")
+	}
+
+	// The user takes the work into their main line. Once the branch tip is an
+	// ancestor of HEAD nothing in it is missing from HEAD, so it is safe to drop.
+	gitRun(t, repo, "merge", "--no-edit", "agent/j/mul-6881")
+
+	// A later task on the repo is the one that has to notice. It runs a
+	// different conversation, so the merged branch is not the one it continues
+	// and is not checked out — the only case in which dropping is safe.
+	elsewhere, err := prepareTurnAs(t, repo, "MUL-7000", turnTwoTask, branchOwner{
+		WorkspaceID:    testBranchOwner.WorkspaceID,
+		AgentID:        testBranchOwner.AgentID,
+		ConversationID: "11112222-3333-4444-5555-000000000009",
+	})
+	if err != nil {
+		t.Fatalf("PrepareLocalWorktree on another conversation: %v", err)
+	}
+	if _, err := gitTry(t, repo, "rev-parse", "--verify", "refs/heads/agent/j/mul-6881"); err == nil {
+		t.Error("a fully-merged branch was left behind")
+	}
+	if _, err := gitTry(t, repo, "rev-parse", "--verify", ref); err == nil {
+		t.Error("the snapshot of a fully-merged branch was left behind")
+	}
+	writeFile(t, filepath.Join(elsewhere.WorkDir, "other.txt"), "other work\n")
+	finalizeOK(t, elsewhere)
+}
+
+// A branch the user has merged into HEAD but is still standing on — a retained
+// checkout, or a sibling task's live worktree — must not be dropped out from
+// under it. The worktree list is the one thing that decides: if any worktree
+// holds the branch, it is in use, however fully merged.
+func TestPrepareLocalWorktreeKeepsAMergedBranchStillCheckedOut(t *testing.T) {
+	t.Parallel()
+	repo := newTestRepo(t)
+
+	first := prepareTurn(t, repo, "MUL-6881", turnOneTask)
+	writeFile(t, filepath.Join(first.WorkDir, "agent.txt"), "turn one\n")
+	finalizeOK(t, first)
+	ref := userStateRef("agent/j/mul-6881")
+	if _, err := gitTry(t, repo, "rev-parse", "--verify", ref); err != nil {
+		t.Fatal("turn one recorded no snapshot")
+	}
+
+	// The user takes the work into their main line ...
+	gitRun(t, repo, "merge", "--no-edit", "agent/j/mul-6881")
+	// ... but a worktree still checks the branch out. That is the case in which
+	// dropping would pull the branch from under a live checkout.
+	live := filepath.Join(t.TempDir(), "live-worktree")
+	gitRun(t, repo, "worktree", "add", "-f", live, "agent/j/mul-6881")
+	t.Cleanup(func() {
+		if _, err := exec.Command("git", "-C", repo, "worktree", "remove", "--force", live).CombinedOutput(); err != nil {
+			t.Logf("could not remove the live worktree (non-fatal): %v", err)
+		}
+	})
+
+	// A later task on a different conversation must leave the branch be: it is
+	// merged, but it is checked out.
+	elsewhere, err := prepareTurnAs(t, repo, "MUL-7000", turnTwoTask, branchOwner{
+		WorkspaceID:    testBranchOwner.WorkspaceID,
+		AgentID:        testBranchOwner.AgentID,
+		ConversationID: "11112222-3333-4444-5555-000000000009",
+	})
+	if err != nil {
+		t.Fatalf("PrepareLocalWorktree on another conversation: %v", err)
+	}
+	if _, err := gitTry(t, repo, "rev-parse", "--verify", "refs/heads/agent/j/mul-6881"); err != nil {
+		t.Error("a checked-out branch was dropped despite being fully merged")
+	}
+	if _, err := gitTry(t, repo, "rev-parse", "--verify", ref); err != nil {
+		t.Error("the snapshot of a checked-out branch was dropped")
+	}
+	finalizeOK(t, elsewhere)
+}
+
 // The snapshot is the user's directory, not the daemon's view of it: a sidecar
 // left in their tree by a concurrent in_place task must never reach the branch.
 func TestCaptureUserSnapshotExcludesMulticaSidecars(t *testing.T) {
