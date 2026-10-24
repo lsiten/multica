@@ -44,6 +44,7 @@ export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: strin
     const exact = snapshot && raw === snapshot.text && snapshot.scopeId === scopeId ? matchHumanTextAnswer(snapshot.request, raw, selectedId === snapshot.request.id) : null;
     if (!exact || !snapshot) {
       if (available.some(request => !!matchHumanTextAnswer(request, raw, selectedId === request.id))) { setError(t($ => $.human_request.reply_choose_target)); return "blocked"; }
+      if (available.length > 0) { setError(t($ => $.human_request.reply_no_match)); return "blocked"; }
       return "ordinary";
     }
     if (stale || !scopeId) { setError(t($ => $.human_request.reply_stale)); return "blocked"; }

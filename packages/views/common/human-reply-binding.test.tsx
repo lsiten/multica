@@ -58,4 +58,9 @@ describe("human reply binding",()=>{
   vi.mocked(api.listHumanRequests).mockResolvedValue([request,{...request,id:"other",payload:{...request.payload,title:"Another choice"}}]);renderBinding();await screen.findByLabelText("Reply to request");await userEvent.type(screen.getByLabelText("Message"),"A");await userEvent.click(screen.getByRole("button",{name:"Send"}));await screen.findByText("blocked");expect(api.replyHumanRequest).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button",{name:"Send as ordinary message"}));await userEvent.click(screen.getByRole("button",{name:"Send"}));await waitFor(()=>expect(screen.getByText("ordinary")).toBeVisible());
  });
+ it("blocks a message that matches no pending request instead of sending it as ordinary text",async()=>{
+  renderBinding();await screen.findByLabelText("Reply to request");await userEvent.type(screen.getByLabelText("Message"),"hello");await userEvent.click(screen.getByRole("button",{name:"Send"}));await screen.findByText("blocked");
+  expect(api.replyHumanRequest).not.toHaveBeenCalled();expect(screen.getByLabelText("Message")).toHaveValue("hello");expect(screen.getByRole("alert")).toHaveTextContent(/doesn.?t match the request/);
+  await userEvent.click(screen.getByRole("button",{name:"Send as ordinary message"}));await userEvent.click(screen.getByRole("button",{name:"Send"}));await screen.findByText("ordinary");
+ });
 });
