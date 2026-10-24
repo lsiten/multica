@@ -94,7 +94,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   const { t } = useT("chat");
   const workspaceSlug = useWorkspaceSlug();
   const isGroupChat = session?.kind === "group";
-  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "group">("files");
+  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "group">(isGroupChat ? "group" : "files");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const sessionFilesQuery = useQuery({
     ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId, activeTab === "attachments"),
@@ -120,6 +120,13 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   useEffect(() => {
     if (!isGroupChat && activeTab === "group") setActiveTab("files");
   }, [activeTab, isGroupChat]);
+  // A group chat opens on its management tab; a normal chat on its files.
+  // Reset the sticky selection whenever the session changes so a group chat
+  // never inherits a previous session's tab (the panel may stay mounted
+  // across sessions while it is open).
+  useEffect(() => {
+    setActiveTab(isGroupChat ? "group" : "files");
+  }, [sessionId, isGroupChat]);
   useEffect(() => {
     if (!activeDoc?.workDir || (!activeDoc.taskId && !activeDoc.projectResourceId) || !activeDoc.runtimeId) return;
     setCurrentDirectory({

@@ -100,11 +100,11 @@ export function ChatPage() {
   // conversation pane is always mounted so it only needs to reset itself once a
   // real session takes over.
   const [composingNew, setComposingNew] = useState(false);
-  // Keep the Codex-style file manager visible when a chat is selected. The
-  // panel is the durable entry point for project files, project issues, and
-  // this conversation's attachments; users can still collapse it with the
-  // header button when they want the conversation to fill the window.
-  const [docFilesOpen, setDocFilesOpen] = useState(true);
+  // Collapse the file manager by default. Opening a chat must not fetch its
+  // project directory, attachments, or issues until the user expands the
+  // panel; the header toggle opens it on demand, and each tab loads only
+  // its own content once it is selected.
+  const [docFilesOpen, setDocFilesOpen] = useState(false);
   const [docComposerCollapsed, setDocComposerCollapsed] = useState(false);
   const [docReferences, setDocReferences] = useState<Record<string, ChatReference[]>>({});
   const [docQuoteFocusRequest, setDocQuoteFocusRequest] = useState(0);
@@ -584,7 +584,7 @@ export function ChatPage() {
           )}
           {selectedDoc ? (
             <div className="relative flex-1 min-h-0">
-              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} onAddToChat={handleAddToChat} />
+              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onAddToChat={handleAddToChat} />
               {docComposer}
             </div>
           ) : conversation}
@@ -632,7 +632,7 @@ export function ChatPage() {
         <div className="flex flex-col min-h-0 h-full">
           {selectedDoc ? (
             <div className="relative flex-1 min-h-0">
-              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onSendToChat={handleSend} onAddToChat={handleAddToChat} />
+              <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} onAddToChat={handleAddToChat} />
               {docComposer}
             </div>
           ) : hasTarget ? (
