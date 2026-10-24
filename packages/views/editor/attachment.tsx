@@ -368,43 +368,45 @@ export function Attachment({
   const sequenceKey =
     state.attachmentId ?? (attachment.kind === "url" ? attachment.url : "");
 
-  const openPreview = () => {
-    // Inside an issue / chat, a file opens the surface's shared viewer at its
-    // real position so the reader can page through the rest. Anything the
-    // sequence doesn't know — a composer's in-flight upload, a surface with no
-    // provider — falls through to the single-file preview below.
-    if (kind && sequence.openAt(sequenceKey)) return;
-    if (state.record) {
-      preview.tryOpen({
-        kind: "full",
-        attachment: {
-          ...state.record,
-          download_url: mediaUrl || state.record.download_url,
-        },
-      });
-      return;
-    }
-    if (mediaUrl) {
-      preview.tryOpen({
-        kind: "url",
-        url: mediaUrl,
-        filename: state.filename,
-        // This dispatcher has already decided what the slot is — from the
-        // call site's `forceKind`, or from a content-type the modal's
-        // URL-only source doesn't carry. Hand that answer over instead of
-        // letting the modal re-guess from `filename`, which for a body image
-        // is the markdown caption (MUL-7518).
-        forceKind: kind ?? undefined,
-      });
-    }
-  };
-
   const handleDownload = () => {
     if (state.attachmentId) {
       download(state.attachmentId);
       return;
     }
     if (shareUrl) openByUrl(shareUrl);
+  };
+
+  const openPreview = () => {
+    // Inside an issue / chat, a file opens the surface's shared viewer at its
+    // real position so the reader can page through the rest. Anything the
+    // sequence doesn't know — a composer's in-flight upload, a surface with no
+    // provider — falls through to the single-file preview below.
+    if (kind && sequence.openAt(sequenceKey)) return;
+    // Only return when the viewer actually opened; a source the modal can't
+    // preview (an unknown kind, or a broken/empty URL) would otherwise be a
+    // silent no-op, leaving the click without any effect.
+    if (state.record && preview.tryOpen({
+      kind: "full",
+      attachment: {
+        ...state.record,
+        download_url: mediaUrl || state.record.download_url,
+      },
+    })) return;
+    if (mediaUrl && preview.tryOpen({
+      kind: "url",
+      url: mediaUrl,
+      filename: state.filename,
+      // This dispatcher has already decided what the slot is — from the
+      // call site's `forceKind`, or from a content-type the modal's
+      // URL-only source doesn't carry. Hand that answer over instead of
+      // letting the modal re-guess from `filename`, which for a body image
+      // is the markdown caption (MUL-7518).
+      forceKind: kind ?? undefined,
+    })) return;
+    // The preview modal could not open the source. Never leave a click with no
+    // effect: open the raw URL or download the record so the user gets
+    // somewhere instead of a silent no-op.
+    handleDownload();
   };
 
   if (kind === "image") {
