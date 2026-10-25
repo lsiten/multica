@@ -156,6 +156,12 @@ func (c *Client) Remove(ctx context.Context, id, revision string) error {
 	return c.mutate(ctx, "model.remove", modelRequest{ModelID: id, Revision: revision}, nil)
 }
 func (c *Client) Acquire(ctx context.Context, selection jevmodels.Selection, execution Execution) (*Lease, error) {
+	// A nil *Client can reach here only via a non-nil Backend interface that
+	// wraps a nil pointer (e.g. a failed/restarted ai process). Fail closed
+	// with a clean error instead of dereferencing a nil receiver below.
+	if c == nil {
+		return nil, errors.New("model service client is not available")
+	}
 	c.leaseMu.Lock()
 	closing := c.closing
 	c.leaseMu.Unlock()

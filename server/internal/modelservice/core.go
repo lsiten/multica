@@ -187,6 +187,12 @@ func (l *Local) Remove(ctx context.Context, id, revision string) error {
 }
 
 func (l *Local) Acquire(ctx context.Context, s jevmodels.Selection, e Execution) (*Lease, error) {
+	// The daemon-facing Backend cannot tell a *Local apart from a *Client, so a
+	// *Local whose Manager is nil slips past the backendUsable guard. Fail
+	// closed here rather than dereferencing a nil Manager below.
+	if l == nil || l.Manager == nil {
+		return nil, errors.New("model service manager is not available")
+	}
 	if err := e.validate(); err != nil {
 		return nil, err
 	}
