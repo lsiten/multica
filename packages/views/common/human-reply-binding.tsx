@@ -8,15 +8,16 @@ import { humanRequestsOptions, humanRequestKeys, matchHumanTextAnswer, humanText
 import { issueProgressKeys } from "@multica/core/issue-progress";
 import { issueKeys } from "@multica/core/issues/queries";
 import { chatKeys } from "@multica/core/chat/queries";
-import type { HumanRequest } from "@multica/core/types/human-request";
+import type { HumanRequest, HumanTextReplyResult } from "@multica/core/types/human-request";
 import { Button } from "@multica/ui/components/ui/button";
 import { useT } from "../i18n";
 
-export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: string | null, text: string, eligible: boolean, initialRequestId = "") {
+export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: string | null, text: string, eligible: boolean, initialRequestId = "", onAnswered?: () => void) {
   const workspaceId = useWorkspaceId();
   const { t } = useT("common");
   const client = useQueryClient();
   const acceptedReplyId = useRef<string | null>(null);
+  const [picking, setPicking] = useState(false);
   const filter = channel === "chat" ? { chat_session_id: scopeId ?? "" } : { issue_id: scopeId ?? "" };
   const query = useQuery({ ...humanRequestsOptions(workspaceId, filter), enabled: !!workspaceId && !!scopeId });
   useHumanRequestRealtime(workspaceId);
@@ -29,6 +30,10 @@ export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: strin
   const available = scopedRequests.filter(request => request.status === "pending" && request.can_respond && request.payload.response_mode === "chat_or_card" && Date.parse(request.expires_at) > Date.now());
   const candidates = eligible && !plain ? available.filter(request => (!selectedId || selectedId === request.id) && !!matchHumanTextAnswer(request, text, selectedId === request.id)) : [];
   const candidate = candidates.length === 1 ? candidates[0] : undefined;
+  // The request whose choices the member may pick: the explicit pick, else the
+  // only pending request, else the single text-matched candidate.
+  const selectedRequest = selectedId ? available.find(request => request.id === selectedId) : undefined;
+  const focusRequest = selectedRequest ?? (available.length === 1 ? available[0] : candidate);
   useEffect(() => { setSnapshot(null); setSelectedId(initialRequestId); setPlain(false); setError(""); }, [scopeId, initialRequestId]);
   useEffect(() => {
     if (!eligible || plain || !scopeId || candidates.length > 1) { setSnapshot(null); return; }
@@ -37,6 +42,19 @@ export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: strin
   const current = snapshot && scopedRequests.find(request => request.id === snapshot.request.id);
   const stale = !!snapshot && (!current || current.revision !== snapshot.request.revision || current.status !== "pending" || Date.parse(current.expires_at) <= Date.now());
   const answer = snapshot && matchHumanTextAnswer(snapshot.request, text, selectedId === snapshot.request.id);
+  // Apply a validated text reply: record it and refresh every view that reads
+  // the request. Shared by the typed `submit` and the clicked-choice `pick`.
+  const applyAccepted = (result: HumanTextReplyResult) => {
+    acceptedReplyId.current = result.reply?.reply_id ?? null;
+    client.setQueryData(humanRequestKeys.detail(workspaceId, result.request.id), result.request);
+    if (scopeId) void Promise.all([
+      client.invalidateQueries({ queryKey: humanRequestKeys.all(workspaceId) }),
+      client.invalidateQueries({ queryKey: issueProgressKeys.all(workspaceId) }),
+      client.invalidateQueries({ queryKey: channel === "chat" ? chatKeys.messages(scopeId) : issueKeys.timeline(scopeId) }),
+      client.invalidateQueries({ queryKey: channel === "chat" ? chatKeys.messagesPage(scopeId) : issueKeys.tasks(scopeId) }),
+      ...(channel === "chat" ? [client.invalidateQueries({ queryKey: chatKeys.pendingTask(scopeId) })] : []),
+    ]);
+  };
   const submit = async (raw: string): Promise<"ordinary" | "accepted" | "blocked"> => {
     if (!eligible || plain) return "ordinary";
     if (!selectedId && candidates.length > 1) { setError(t($ => $.human_request.reply_choose_target)); return "blocked"; }
@@ -50,15 +68,7 @@ export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: strin
     if (stale || !scopeId) { setError(t($ => $.human_request.reply_stale)); return "blocked"; }
     try {
       const result = await api.replyHumanRequest(snapshot.request.id, { revision: exact.revision, text: raw, channel, scope_id: scopeId });
-      acceptedReplyId.current = result.reply?.reply_id ?? null;
-      client.setQueryData(humanRequestKeys.detail(workspaceId, result.request.id), result.request);
-      void Promise.all([
-        client.invalidateQueries({ queryKey: humanRequestKeys.all(workspaceId) }),
-        client.invalidateQueries({ queryKey: issueProgressKeys.all(workspaceId) }),
-        client.invalidateQueries({ queryKey: channel === "chat" ? chatKeys.messages(scopeId) : issueKeys.timeline(scopeId) }),
-        client.invalidateQueries({ queryKey: channel === "chat" ? chatKeys.messagesPage(scopeId) : issueKeys.tasks(scopeId) }),
-        ...(channel === "chat" ? [client.invalidateQueries({ queryKey: chatKeys.pendingTask(scopeId) })] : []),
-      ]);
+      applyAccepted(result);
       setError("");
       return "accepted";
     } catch (failure) {
@@ -67,12 +77,40 @@ export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: strin
       return "blocked";
     }
   };
+  // Answer directly from a rendered choice instead of the exact-text match: send
+  // the choice's own label so the server's exact match accepts it, and clear the
+  // composer draft so the member does not have to retype to confirm.
+  const pick = async (requestId: string, choiceId: string): Promise<"accepted" | "blocked"> => {
+    if (!scopeId) { setError(t($ => $.human_request.reply_stale)); return "blocked"; }
+    const request = available.find(item => item.id === requestId);
+    const choice = request && request.payload.kind === "choice" ? request.payload.choices.find(item => item.id === choiceId) : undefined;
+    if (!request || !choice) return "blocked";
+    if (Date.parse(request.expires_at) <= Date.now()) { setError(t($ => $.human_request.reply_stale)); return "blocked"; }
+    setPicking(true);
+    try {
+      const result = await api.replyHumanRequest(request.id, { revision: request.revision, text: choice.label, channel, scope_id: scopeId });
+      applyAccepted(result);
+      onAnswered?.();
+      setError("");
+      return "accepted";
+    } catch (failure) {
+      if (failure instanceof ApiError && failure.status === 409) void client.invalidateQueries({ queryKey: humanRequestKeys.all(workspaceId) });
+      setError(failure instanceof ApiError && failure.status === 409 ? t($ => $.human_request.reply_stale) : failure instanceof ApiError && failure.status === 404 ? t($ => $.human_request.reply_unsupported) : t($ => $.human_request.submit_failed));
+      return "blocked";
+    } finally {
+      setPicking(false);
+    }
+  };
   const preview = available.length > 0 || snapshot ? <div className="space-y-2 px-3 py-2 text-caption" data-human-reply-binding>
     <label className="flex flex-wrap items-center gap-2"><span>{t($ => $.human_request.reply_target)}</span><select aria-label={t($ => $.human_request.reply_target)} className="min-w-0 max-w-full rounded-md border bg-background px-2 py-1 text-caption" value={selectedId} onChange={event => { setSelectedId(event.target.value); setPlain(false); setSnapshot(null); }}><option value="">{t($ => $.human_request.reply_auto)}</option>{available.map(request => <option key={request.id} value={request.id}>{request.payload.title}</option>)}</select></label>
+    {!plain && focusRequest && focusRequest.payload.kind === "choice" && <div className="space-y-1" data-human-reply-choices>
+      <span className="text-muted-foreground">{t($ => $.human_request.reply_options)}</span>
+      <div className="flex flex-wrap gap-2">{focusRequest.payload.choices.map((choice, index) => <Button key={choice.id} size="sm" variant={choice.recommended ? "default" : "outline"} disabled={picking} aria-busy={picking || undefined} onClick={() => void pick(focusRequest.id, choice.id)} className="h-auto whitespace-normal text-left"><span aria-hidden="true">{String.fromCharCode(65 + index)} / {index + 1}. </span>{choice.label}{choice.recommended && <span className="text-caption"> · {t($ => $.human_request.recommended)}</span>}</Button>)}</div>
+    </div>}
     {snapshot && answer && <p className="break-words">{t($ => $.human_request.reply_preview, { title: snapshot.request.payload.title, answer: humanTextAnswerLabel(snapshot.request, answer) })}</p>}
     {stale && <p role="alert" className="text-destructive">{t($ => $.human_request.reply_stale)}</p>}
     {error && <p role="alert" className="text-destructive">{error}</p>}
     <div className="flex flex-wrap gap-2"><Button size="sm" variant={plain ? "secondary" : "ghost"} aria-pressed={plain} onClick={() => { setPlain(!plain); setError(""); }}>{t($ => $.human_request.reply_plain)}</Button>{(stale || error) && <Button size="sm" variant="outline" onClick={() => { setError(""); void query.refetch().then(result => { const refreshed = result.data?.filter(request => !!matchHumanTextAnswer(request, text, selectedId === request.id) && (!selectedId || selectedId === request.id)) ?? []; setSnapshot(refreshed.length === 1 && scopeId ? { scopeId, text, request: refreshed[0]! } : null); }); }}>{t($ => $.human_request.refresh)}</Button>}</div>
   </div> : error ? <p role="alert" className="px-3 py-2 text-caption text-destructive">{error}</p> : null;
-  return { submit, preview, acceptedReplyId, bound: !!snapshot && !!answer && !plain && candidates.length <= 1, stale };
+  return { submit, pick, preview, acceptedReplyId, bound: !!snapshot && !!answer && !plain && candidates.length <= 1, stale };
 }

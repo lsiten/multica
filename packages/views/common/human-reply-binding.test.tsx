@@ -63,4 +63,14 @@ describe("human reply binding",()=>{
   expect(api.replyHumanRequest).not.toHaveBeenCalled();expect(screen.getByLabelText("Message")).toHaveValue("hello");expect(screen.getByRole("alert")).toHaveTextContent(/doesn.?t match the request/);
   await userEvent.click(screen.getByRole("button",{name:"Send as ordinary message"}));await userEvent.click(screen.getByRole("button",{name:"Send"}));await screen.findByText("ordinary");
  });
+ it("answers a choice directly by clicking its option without typing",async()=>{
+  renderBinding();await screen.findByLabelText("Reply to request");await screen.findByRole("button",{name:"Accept native size"});
+  await userEvent.click(screen.getByRole("button",{name:"Accept native size"}));
+  await waitFor(()=>expect(api.replyHumanRequest).toHaveBeenCalledWith("request",{revision:3,text:"Accept native size",channel:"comment",scope_id:"issue"}));
+ });
+ it("sends the exact choice label when clicking and shows its stale notice on a 409",async()=>{
+  vi.mocked(api.replyHumanRequest).mockRejectedValue(new ApiError("changed",409,"Conflict"));renderBinding();await screen.findByLabelText("Reply to request");
+  await userEvent.click(screen.getByRole("button",{name:"Resize"}));await screen.findByText(/latest version/);
+  expect(api.replyHumanRequest).toHaveBeenCalledWith("request",{revision:3,text:"Resize",channel:"comment",scope_id:"issue"});
+ });
 });

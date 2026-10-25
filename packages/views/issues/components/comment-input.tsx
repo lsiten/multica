@@ -155,7 +155,9 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
   // leave a mid-flight draft in place: dropping the caret then would yank it
   // out of the sentence the user is still typing.
   const editorScrubbedRef = useRef(false);
-  const humanReply = useHumanReplyBinding("comment", issueId, content, pendingAttachments.length === 0 && annotations.length === 0);
+  // A clicked choice answers the request directly; clear the uncontrolled
+  // editor and content so the box stops reading as "still writing".
+  const humanReply = useHumanReplyBinding("comment", issueId, content, pendingAttachments.length === 0 && annotations.length === 0, "", () => { editorRef.current?.clearContent(); setContent(""); setIsEmpty(true); });
   const { t: tHuman } = useT("common");
   const acceptedCommentIdRef = useRef<string | null>(null);
 

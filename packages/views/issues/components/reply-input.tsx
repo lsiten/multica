@@ -164,7 +164,9 @@ function ReplyInput({
   const acceptedCommentIdRef = useRef<string | null>(null);
 
   const { t: tHuman } = useT("common");
-  const humanReply = useHumanReplyBinding("comment", issueId, content, pendingAttachments.length === 0 && annotations.length === 0 && !targetMissing, parentId);
+  // A clicked choice answers the request directly; clear the uncontrolled
+  // editor and content so the box stops reading as "still writing".
+  const humanReply = useHumanReplyBinding("comment", issueId, content, pendingAttachments.length === 0 && annotations.length === 0 && !targetMissing, parentId, () => { editorRef.current?.clearContent(); setContent(""); setIsEmpty(true); });
 
   const { submitting, submit } = useComposerSubmit({
     editorRef,

@@ -275,7 +275,9 @@ export function ChatInput({
   const storeUploads = useChatStore(
     (s) => s.inputDraftAttachments[draftKey] ?? EMPTY_UPLOADS,
   );
-  const humanReply = useHumanReplyBinding("chat", draftKeyOverride || editorKeyOverride ? null : activeSessionId, inputDraft, storeUploads.length === 0);
+  // A clicked choice answers the request directly; clearing the store draft
+  // lets the editor resync to empty (the send path clears it itself).
+  const humanReply = useHumanReplyBinding("chat", draftKeyOverride || editorKeyOverride ? null : activeSessionId, inputDraft, storeUploads.length === 0, "", () => { clearInputDraft(draftKey); setIsEmpty(true); });
   const { t: tHuman } = useT("common");
   const setInputDraft = useChatStore((s) => s.setInputDraft);
   const setInputDraftAttachments = useChatStore((s) => s.setInputDraftAttachments);
