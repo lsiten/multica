@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Edit3, Loader2, Play, RefreshCw, Server, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
-import { applicationBoardOptions, applicationDetailOptions, applicationServiceIds, useDeleteApplication, useLaunchApplication, type Application, type ApplicationBoard, type ApplicationInstance } from "@multica/core/applications";
+import { applicationBoardOptions, applicationDetailOptions, applicationServiceIds, useApplicationOperation, useDeleteApplication, useLaunchApplication, type Application, type ApplicationBoard, type ApplicationInstance } from "@multica/core/applications";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
@@ -50,8 +50,21 @@ function InstanceCard({ instance, application, board, workspaceId, runtimeLabel 
       {instance.desired_state === "stopped" ? <ApplicationOperationDialog workspaceId={workspaceId} application={child} board={board} action="start" initialRuntimeId={instance.runtime_id} trigger={<Button size="sm" variant="outline"><Play />{external ? t(($) => $.check_service) : labels.start}</Button>} /> : <ApplicationOperationDialog workspaceId={workspaceId} application={child} board={board} action="stop" initialRuntimeId={instance.runtime_id} trigger={<Button size="sm" variant="outline">{external ? t(($) => $.stop_monitor) : labels.stop}</Button>} />}
       {!external && <ApplicationOperationDialog workspaceId={workspaceId} application={child} board={board} action="restart" initialRuntimeId={instance.runtime_id} trigger={<Button size="sm" variant="outline"><RefreshCw />{labels.restart}</Button>} />}
       {child.config.port > 0 && instance.desired_state === "running" && <ApplicationOperationDialog workspaceId={workspaceId} application={child} board={board} action="publish" initialRuntimeId={instance.runtime_id} trigger={<Button size="sm" variant="outline"><Upload />{labels.publish}</Button>} />}
+      <DeleteInstance workspaceId={workspaceId} instance={instance} application={child} />
     </div>}
   </div>;
+}
+
+function DeleteInstance({ workspaceId, instance, application }: { workspaceId: string; instance: ApplicationInstance; application: Application }) {
+  const { t } = useT("applications");
+  const operation = useApplicationOperation(workspaceId, application.id);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const confirm = async () => {
+    try { setError(""); await operation.mutateAsync({ action: "delete", revision: application.revision, runtime_id: instance.runtime_id, idempotency_key: crypto.randomUUID() }); toast.success(t(($) => $.accepted)); setOpen(false); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t(($) => $.invalid_config)); }
+  };
+  return <AlertDialog open={open} onOpenChange={setOpen}><AlertDialogTrigger render={<Button variant="outline" size="sm" aria-label={t(($) => $.delete_instance)}><Trash2 />{t(($) => $.delete_instance)}</Button>} /><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t(($) => $.delete_instance)}</AlertDialogTitle><AlertDialogDescription>{t(($) => $.delete_instance_help)}</AlertDialogDescription></AlertDialogHeader>{error && <p role="alert" className="break-words text-caption text-destructive">{error}</p>}<AlertDialogFooter><AlertDialogCancel disabled={operation.isPending}>{t(($) => $.cancel)}</AlertDialogCancel><Button variant="destructive" disabled={operation.isPending} aria-busy={operation.isPending} onClick={() => void confirm()}>{t(($) => $.delete_instance)}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }
 
 function DeleteApplication({ workspaceId, application }: { workspaceId: string; application: Application }) {

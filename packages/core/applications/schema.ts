@@ -98,7 +98,7 @@ export type ApplicationLog = z.infer<typeof applicationLogSchema>;
 export const applicationOperationSchema = z.object({
   local:z.boolean().optional().default(false),sync_pending:z.boolean().optional().default(false),
   id: identifier, workspace_id: identifier, application_id: identifier,
-  action: z.enum(["start", "stop", "restart", "publish", "unpublish", "unknown"]).catch("unknown"),
+  action: z.enum(["start", "stop", "restart", "publish", "unpublish", "delete", "unknown"]).catch("unknown"),
   actor_type: z.enum(["member", "agent", "unknown"]).catch("unknown"), actor_id: identifier,
   state: z.enum(["queued", "running", "cancelling", "completed", "partial", "failed", "cancelled", "unknown"]).catch("unknown"),
   error: z.string().default(""), created_at: z.string(), completed_at: z.string().nullable().default(null),
@@ -128,7 +128,7 @@ export type ApplicationOperation = z.infer<typeof applicationOperationSchema>;
 export type ApplicationBoard = z.infer<typeof applicationBoardSchema>;
 
 export interface ApplicationOperationRequest {
-  action: "start" | "stop" | "restart" | "publish" | "unpublish";
+  action: "start" | "stop" | "restart" | "publish" | "unpublish" | "delete";
   revision: number;
   runtime_id: string;
   placements?: Record<string, string>;

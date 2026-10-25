@@ -566,6 +566,34 @@ func (q *Queries) DeleteApplicationEndpoints(ctx context.Context, arg DeleteAppl
 	return err
 }
 
+const deleteApplicationEndpointsByInstance = `-- name: DeleteApplicationEndpointsByInstance :exec
+DELETE FROM application_endpoint WHERE instance_id=$1 AND workspace_id=$2
+`
+
+type DeleteApplicationEndpointsByInstanceParams struct {
+	InstanceID  pgtype.UUID `json:"instance_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteApplicationEndpointsByInstance(ctx context.Context, arg DeleteApplicationEndpointsByInstanceParams) error {
+	_, err := q.db.Exec(ctx, deleteApplicationEndpointsByInstance, arg.InstanceID, arg.WorkspaceID)
+	return err
+}
+
+const deleteApplicationInstance = `-- name: DeleteApplicationInstance :exec
+DELETE FROM application_instance WHERE id=$1 AND workspace_id=$2
+`
+
+type DeleteApplicationInstanceParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteApplicationInstance(ctx context.Context, arg DeleteApplicationInstanceParams) error {
+	_, err := q.db.Exec(ctx, deleteApplicationInstance, arg.ID, arg.WorkspaceID)
+	return err
+}
+
 const deleteApplicationInstanceConsumers = `-- name: DeleteApplicationInstanceConsumers :exec
 DELETE FROM application_instance_consumer c WHERE c.workspace_id=$1 AND (c.root_application_id=$2 OR c.instance_id IN (SELECT i.id FROM application_instance i WHERE i.application_id=$2 AND i.workspace_id=$1))
 `
@@ -577,6 +605,20 @@ type DeleteApplicationInstanceConsumersParams struct {
 
 func (q *Queries) DeleteApplicationInstanceConsumers(ctx context.Context, arg DeleteApplicationInstanceConsumersParams) error {
 	_, err := q.db.Exec(ctx, deleteApplicationInstanceConsumers, arg.WorkspaceID, arg.RootApplicationID)
+	return err
+}
+
+const deleteApplicationInstanceConsumersByInstance = `-- name: DeleteApplicationInstanceConsumersByInstance :exec
+DELETE FROM application_instance_consumer WHERE workspace_id=$1 AND instance_id=$2
+`
+
+type DeleteApplicationInstanceConsumersByInstanceParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	InstanceID  pgtype.UUID `json:"instance_id"`
+}
+
+func (q *Queries) DeleteApplicationInstanceConsumersByInstance(ctx context.Context, arg DeleteApplicationInstanceConsumersByInstanceParams) error {
+	_, err := q.db.Exec(ctx, deleteApplicationInstanceConsumersByInstance, arg.WorkspaceID, arg.InstanceID)
 	return err
 }
 
@@ -661,6 +703,21 @@ type DeleteApplicationTicketsParams struct {
 
 func (q *Queries) DeleteApplicationTickets(ctx context.Context, arg DeleteApplicationTicketsParams) error {
 	_, err := q.db.Exec(ctx, deleteApplicationTickets, arg.WorkspaceID, arg.ApplicationID)
+	return err
+}
+
+const deleteApplicationTicketsByInstance = `-- name: DeleteApplicationTicketsByInstance :exec
+DELETE FROM application_access_ticket t WHERE t.workspace_id=$1 AND t.endpoint_id IN(
+ SELECT e.id FROM application_endpoint e WHERE e.instance_id=$2 AND e.workspace_id=$1)
+`
+
+type DeleteApplicationTicketsByInstanceParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	InstanceID  pgtype.UUID `json:"instance_id"`
+}
+
+func (q *Queries) DeleteApplicationTicketsByInstance(ctx context.Context, arg DeleteApplicationTicketsByInstanceParams) error {
+	_, err := q.db.Exec(ctx, deleteApplicationTicketsByInstance, arg.WorkspaceID, arg.InstanceID)
 	return err
 }
 

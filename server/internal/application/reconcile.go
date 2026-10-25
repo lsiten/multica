@@ -348,6 +348,11 @@ func (s *Service) Complete(ctx context.Context, workspaceID, runtimeID, stepID p
 				return pgtype.UUID{}, err
 			}
 		}
+		if step.Action == "delete" {
+			if err = deleteApplicationInstance(ctx, q, workspaceID, step.InstanceID); err != nil {
+				return pgtype.UUID{}, err
+			}
+		}
 		if command.Action == "publish" || ((command.Action == "start" || command.Action == "restart") && command.Config.AutoPublish) {
 			operation, getErr := q.GetApplicationOperation(ctx, db.GetApplicationOperationParams{ID: step.OperationID, WorkspaceID: workspaceID})
 			if getErr != nil {
@@ -373,6 +378,24 @@ func (s *Service) Complete(ctx context.Context, workspaceID, runtimeID, stepID p
 		return pgtype.UUID{}, err
 	}
 	return step.OperationID, nil
+}
+
+// deleteApplicationInstance removes a confirmed-stopped instance and its runtime footprint.
+// Operation history is preserved; only the live instance, endpoints, tickets and consumers are removed.
+func deleteApplicationInstance(ctx context.Context, q *db.Queries, workspaceID, instanceID pgtype.UUID) error {
+	if err := q.DeleteApplicationInstanceConsumersByInstance(ctx, db.DeleteApplicationInstanceConsumersByInstanceParams{WorkspaceID: workspaceID, InstanceID: instanceID}); err != nil {
+		return fmt.Errorf("release instance consumers before deletion: %w", err)
+	}
+	if err := q.DeleteApplicationTicketsByInstance(ctx, db.DeleteApplicationTicketsByInstanceParams{WorkspaceID: workspaceID, InstanceID: instanceID}); err != nil {
+		return fmt.Errorf("delete instance tickets before deletion: %w", err)
+	}
+	if err := q.DeleteApplicationEndpointsByInstance(ctx, db.DeleteApplicationEndpointsByInstanceParams{InstanceID: instanceID, WorkspaceID: workspaceID}); err != nil {
+		return fmt.Errorf("delete instance endpoints before deletion: %w", err)
+	}
+	if err := q.DeleteApplicationInstance(ctx, db.DeleteApplicationInstanceParams{ID: instanceID, WorkspaceID: workspaceID}); err != nil {
+		return fmt.Errorf("delete application instance: %w", err)
+	}
+	return nil
 }
 
 func releaseFailedConsumers(ctx context.Context, q *db.Queries, step db.ApplicationOperationStep, command protocol.ApplicationControlCommand) error {

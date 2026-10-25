@@ -104,7 +104,9 @@
   "open": "Ouvrir",
   "delete": "Supprimer l’application",
   "delete_help": "Arrêtez les instances et retirez les relations entrantes au préalable.",
-  "deleted": "Application supprimée",
+  "deleted": "Application supprimée",  "delete_instance": "Supprimer l’instance",
+  "delete_instance_help": "Arrête l’instance et la supprime. La définition de l’application est conservée.",
+
   "relation": "Relation",
   "contains": "Contient",
   "depends_on": "Dépend de",

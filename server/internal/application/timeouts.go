@@ -125,21 +125,21 @@ func (s *Service) expireOperation(ctx context.Context, candidate db.ApplicationO
 }
 
 func expireApplicationStep(ctx context.Context, q *db.Queries, step db.ApplicationOperationStep, rootID, rootRuntimeID pgtype.UUID) error {
-	if step.Action != "start" && step.Action != "restart" && step.Action != "stop" {
+	if step.Action != "start" && step.Action != "restart" && step.Action != "stop" && step.Action != "delete" {
 		return nil
 	}
 	instance, err := q.GetApplicationInstance(ctx, db.GetApplicationInstanceParams{ID: step.InstanceID, WorkspaceID: step.WorkspaceID})
 	if err != nil || instance.Generation != step.Generation {
 		return err
 	}
-	if step.Action == "stop" && instance.DesiredState == "stopped" && instance.ProcessState == "stopped" && instance.ObservedGeneration == instance.Generation {
+	if (step.Action == "stop" || step.Action == "delete") && instance.DesiredState == "stopped" && instance.ProcessState == "stopped" && instance.ObservedGeneration == instance.Generation {
 		return nil
 	}
 	var command protocol.ApplicationControlCommand
 	if err := json.Unmarshal(step.Command, &command); err != nil {
 		return err
 	}
-	if step.Action != "stop" {
+	if step.Action != "stop" && step.Action != "delete" {
 		ready := instance.ProcessState == "running" && instance.ObservedGeneration == instance.Generation && instance.ObservedRevision == instance.Revision && (command.Config.Health.Kind == "none" || instance.HealthState == "healthy")
 		if ready {
 			return nil

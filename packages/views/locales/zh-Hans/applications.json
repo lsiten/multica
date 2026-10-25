@@ -104,7 +104,9 @@
   "open": "打开",
   "delete": "删除应用",
   "delete_help": "请先停止实例并移除指向此应用的关系。",
-  "deleted": "应用已删除",
+  "deleted": "应用已删除",  "delete_instance": "删除实例",
+  "delete_instance_help": "停止并删除该实例；应用定义会保留，之后可再次启动。",
+
   "relation": "关系",
   "contains": "组合成员",
   "depends_on": "依赖",

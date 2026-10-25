@@ -104,7 +104,9 @@
   "open": "Open",
   "delete": "Delete application",
   "delete_help": "Stop instances and remove incoming relationships first.",
-  "deleted": "Application deleted",
+  "deleted": "Application deleted",  "delete_instance": "Delete instance",
+  "delete_instance_help": "Stops the instance and removes it. The application definition stays, so you can start a new instance later.",
+
   "relation": "Relationship",
   "contains": "Contains",
   "depends_on": "Depends on",

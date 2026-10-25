@@ -19,7 +19,7 @@ type Action = ApplicationOperationRequest["action"];
 
 export function useApplicationActionLabels() {
   const { t } = useT("applications");
-  return { start: t(($) => $.start), stop: t(($) => $.stop), restart: t(($) => $.restart), publish: t(($) => $.publish), unpublish: t(($) => $.unpublish) };
+  return { start: t(($) => $.start), stop: t(($) => $.stop), restart: t(($) => $.restart), publish: t(($) => $.publish), unpublish: t(($) => $.unpublish), delete: t(($) => $.delete_instance) };
 }
 
 function OperationForm({ workspaceId, application, board, action, initialRuntimeId, onAccepted }: { workspaceId: string; application: Application; board: ApplicationBoard; action: Action; initialRuntimeId?: string; onAccepted: () => void }) {

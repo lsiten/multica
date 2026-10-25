@@ -124,7 +124,7 @@ func (s *Service) ListOperations(ctx context.Context, workspaceID, applicationID
 }
 
 func validateOperationInput(input OperationInput) error {
-	if !slices.Contains([]string{"start", "stop", "restart", "publish", "unpublish"}, input.Action) {
+	if !slices.Contains([]string{"start", "stop", "restart", "publish", "unpublish", "delete"}, input.Action) {
 		return fmt.Errorf("%w: invalid operation action", ErrInvalid)
 	}
 	if input.Revision < 1 || len(input.IdempotencyKey) < 1 || len(input.IdempotencyKey) > 128 || strings.ContainsAny(input.IdempotencyKey, "\x00\r\n") {
@@ -293,7 +293,7 @@ func (s *Service) Enqueue(ctx context.Context, workspaceID, id pgtype.UUID, inpu
 	if err != nil {
 		return OperationView{}, err
 	}
-	if input.Action == "stop" || input.Action == "unpublish" {
+	if input.Action == "stop" || input.Action == "unpublish" || input.Action == "delete" {
 		err = enqueueRelease(ctx, q, workspaceID, id, rootRuntimeID, input, actor, operation)
 	} else {
 		err = enqueuePlan(ctx, q, workspaceID, projectID, id, rootRuntimeID, input, actor, operation, snapshot)
@@ -538,7 +538,7 @@ func enqueueRelease(ctx context.Context, q *db.Queries, workspaceID, rootID, roo
 			}
 			continue
 		}
-		if input.Action == "stop" && shared && !input.Force {
+		if (input.Action == "stop" || input.Action == "delete") && shared && !input.Force {
 			if instance.ApplicationID == rootID {
 				return fmt.Errorf("%w: service is still used by another application", ErrConflict)
 			}
@@ -555,7 +555,7 @@ func enqueueRelease(ctx context.Context, q *db.Queries, workspaceID, rootID, roo
 		if err = json.Unmarshal(revision.Config, &config); err != nil {
 			return err
 		}
-		if input.Action == "stop" {
+		if input.Action == "stop" || input.Action == "delete" {
 			instance, err = q.SetApplicationInstanceDesiredState(ctx, db.SetApplicationInstanceDesiredStateParams{ID: instance.ID, WorkspaceID: workspaceID, DesiredState: "stopped"})
 			if err != nil {
 				return err
@@ -566,7 +566,11 @@ func enqueueRelease(ctx context.Context, q *db.Queries, workspaceID, rootID, roo
 				return err
 			}
 		}
-		command := protocol.ApplicationControlCommand{InstanceID: util.UUIDToString(instance.ID), ApplicationID: util.UUIDToString(instance.ApplicationID), WorkspaceID: util.UUIDToString(workspaceID), RuntimeID: util.UUIDToString(instance.RuntimeID), RootApplicationID: util.UUIDToString(rootID), RootRuntimeID: util.UUIDToString(rootRuntimeID), Revision: instance.Revision, Generation: instance.Generation, Action: input.Action, Config: config, Dependencies: []protocol.ApplicationInstanceDependency{}}
+		commandAction := input.Action
+		if input.Action == "delete" {
+			commandAction = "stop"
+		}
+		command := protocol.ApplicationControlCommand{InstanceID: util.UUIDToString(instance.ID), ApplicationID: util.UUIDToString(instance.ApplicationID), WorkspaceID: util.UUIDToString(workspaceID), RuntimeID: util.UUIDToString(instance.RuntimeID), RootApplicationID: util.UUIDToString(rootID), RootRuntimeID: util.UUIDToString(rootRuntimeID), Revision: instance.Revision, Generation: instance.Generation, Action: commandAction, Config: config, Dependencies: []protocol.ApplicationInstanceDependency{}}
 		raw, marshalErr := json.Marshal(command)
 		if marshalErr != nil {
 			return marshalErr

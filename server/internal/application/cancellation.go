@@ -144,7 +144,7 @@ func cancelApplicationStep(ctx context.Context, q *db.Queries, step db.Applicati
 			return err
 		}
 		command.Action = "stop"
-	} else if step.Action == "stop" {
+	} else if step.Action == "stop" || step.Action == "delete" {
 		if !step.ClaimedAt.Valid {
 			raw, err := q.GetApplicationInstanceStartCommand(ctx, db.GetApplicationInstanceStartCommandParams{InstanceID: instance.ID, WorkspaceID: step.WorkspaceID})
 			if err != nil {

@@ -403,3 +403,16 @@ DELETE FROM application_operation_step s WHERE s.workspace_id=$1 AND s.operation
 
 -- name: DeleteApplicationOperations :exec
 DELETE FROM application_operation WHERE workspace_id=$1 AND application_id=$2;
+
+-- name: DeleteApplicationInstance :exec
+DELETE FROM application_instance WHERE id=$1 AND workspace_id=$2;
+
+-- name: DeleteApplicationEndpointsByInstance :exec
+DELETE FROM application_endpoint WHERE instance_id=$1 AND workspace_id=$2;
+
+-- name: DeleteApplicationInstanceConsumersByInstance :exec
+DELETE FROM application_instance_consumer WHERE workspace_id=$1 AND instance_id=$2;
+
+-- name: DeleteApplicationTicketsByInstance :exec
+DELETE FROM application_access_ticket t WHERE t.workspace_id=$1 AND t.endpoint_id IN(
+ SELECT e.id FROM application_endpoint e WHERE e.instance_id=$2 AND e.workspace_id=$1);
