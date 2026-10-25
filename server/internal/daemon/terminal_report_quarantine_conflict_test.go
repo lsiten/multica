@@ -138,3 +138,48 @@ func TestTerminalReportQuarantineMatchesDecodedVerification(t *testing.T) {
 		t.Fatalf("verification report not quarantined: %+v %v", stats, err)
 	}
 }
+
+func TestQuarantineCompensationOnConflict(t *testing.T) {
+	d := New(Config{WorkspacesRoot: t.TempDir(), ServerBaseURL: "https://owned.invalid", DaemonID: "conflict-compensation"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	now := time.Now()
+	d.reportNow = func() time.Time { return now }
+	failCalls := 0
+	d.terminalReportSend = func(_ context.Context, report terminalTaskReport, schedule []time.Duration) error {
+		if len(schedule) != 0 {
+			t.Error("background compensation used an inline network retry window")
+		}
+		if report.kind == terminalTaskReportComplete {
+			// A 409 on /complete is an ErrExecutionStale fence: permanent and
+			// unrecoverable for this payload, so it must be quarantined rather
+			// than replayed forever.
+			return &requestError{StatusCode: http.StatusConflict}
+		}
+		failCalls++
+		// The Fail compensation is a distinct transient request; keep it pending
+		// so the quarantined completion stays preserved in failed/.
+		return &requestError{StatusCode: http.StatusServiceUnavailable}
+	}
+	if err := d.reportTerminalTask(t.Context(), terminalTaskReport{kind: terminalTaskReportComplete, taskID: "conflict-task", output: "real output"}); err != nil {
+		t.Fatalf("local queue rejected valid report: %v", err)
+	}
+	for range terminalReportPermanentRejectionLimit {
+		d.replayPendingTerminalReports(t.Context(), nil)
+		now = now.Add(terminalReportPermanentRejectionAge)
+	}
+	if failCalls != 1 {
+		t.Fatalf("conflict did not trigger the fail compensation exactly once: %d", failCalls)
+	}
+	stats, err := d.terminalReports.stats()
+	if err != nil {
+		t.Fatalf("queue stats: %v", err)
+	}
+	if stats.FailedCount != 1 {
+		t.Fatalf("conflict-quarantined completion was not retained: %+v", stats)
+	}
+	// The fail compensation is the only surviving pending record; the original
+	// completion is preserved in failed/ and never overwrites it.
+	items, err := d.terminalReports.list()
+	if err != nil || len(items) != 1 || items[0].report.kind != terminalTaskReportFail || items[0].report.taskID != "conflict-task" {
+		t.Fatalf("fail compensation dropped or completion lost: %+v %v", items, err)
+	}
+}

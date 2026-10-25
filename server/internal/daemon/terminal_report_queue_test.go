@@ -359,23 +359,28 @@ func TestTerminalReportPermanentRejectionClassification(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
+		kind terminalTaskReportKind
 		err  error
 		want bool
 	}{
-		{"bad request", &requestError{StatusCode: http.StatusBadRequest}, true},
-		{"forbidden", &requestError{StatusCode: http.StatusForbidden}, true},
-		{"semantic missing task", &requestError{StatusCode: http.StatusNotFound, Body: "task not found"}, true},
-		{"generic missing route", &requestError{StatusCode: http.StatusNotFound, Body: "not found"}, false},
-		{"expired auth", &requestError{StatusCode: http.StatusUnauthorized}, false},
-		{"rate limited", &requestError{StatusCode: http.StatusTooManyRequests}, false},
-		{"conflict", &requestError{StatusCode: http.StatusConflict}, false},
-		{"server failure", &requestError{StatusCode: http.StatusBadGateway}, false},
-		{"transport", errors.New("connection reset"), false},
+		{"bad request", terminalTaskReportComplete, &requestError{StatusCode: http.StatusBadRequest}, true},
+		{"forbidden", terminalTaskReportComplete, &requestError{StatusCode: http.StatusForbidden}, true},
+		{"semantic missing task", terminalTaskReportComplete, &requestError{StatusCode: http.StatusNotFound, Body: "task not found"}, true},
+		{"generic missing route", terminalTaskReportComplete, &requestError{StatusCode: http.StatusNotFound, Body: "not found"}, false},
+		{"expired auth", terminalTaskReportComplete, &requestError{StatusCode: http.StatusUnauthorized}, false},
+		{"rate limited", terminalTaskReportComplete, &requestError{StatusCode: http.StatusTooManyRequests}, false},
+		{"conflict on complete", terminalTaskReportComplete, &requestError{StatusCode: http.StatusConflict}, true},
+		{"conflict on fail", terminalTaskReportFail, &requestError{StatusCode: http.StatusConflict}, true},
+		{"conflict on application observation", applicationObservationReport, &requestError{StatusCode: http.StatusConflict}, false},
+		{"conflict on application step", applicationStepReport, &requestError{StatusCode: http.StatusConflict}, false},
+		{"conflict on task messages", taskMessagesReport, &requestError{StatusCode: http.StatusConflict}, false},
+		{"server failure", terminalTaskReportComplete, &requestError{StatusCode: http.StatusBadGateway}, false},
+		{"transport", terminalTaskReportComplete, errors.New("connection reset"), false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, got := terminalReportPermanentRejection(tc.err)
+			_, got := terminalReportPermanentRejection(tc.kind, tc.err)
 			if got != tc.want {
 				t.Fatalf("classification = %t, want %t", got, tc.want)
 			}

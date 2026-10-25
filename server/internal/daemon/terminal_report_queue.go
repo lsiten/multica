@@ -574,9 +574,16 @@ func (s *terminalReportStore) acknowledge(item pendingTerminalTaskReport) error 
 
 // terminalReportPermanentRejection classifies only response semantics that are
 // stable for an unchanged terminal request. Authentication expiry (401), rate
-// limiting (429), timeout (408), conflicts, and generic/missing-route 404s stay
-// pending because credentials, deployment version, or server state can recover.
-func terminalReportPermanentRejection(err error) (int, bool) {
+// limiting (429), and timeout (408) stay pending because credentials or
+// deployment version can recover, as do generic and missing-route 404s.
+//
+// A conflict (409) is permanent only for a terminal task result: /complete and
+// /fail return 409 solely for service.ErrExecutionStale (a revoked or mismatched
+// execution fence). That state can never recover for an unchanged payload and
+// credential, so such a result is quarantined instead of replayed forever.
+// Other 409s are transient (for example a shared application instance still in
+// use) and stay pending.
+func terminalReportPermanentRejection(kind terminalTaskReportKind, err error) (int, bool) {
 	var reqErr *requestError
 	if !errors.As(err, &reqErr) {
 		return 0, false
@@ -586,9 +593,14 @@ func terminalReportPermanentRejection(err error) (int, bool) {
 		return reqErr.StatusCode, true
 	case http.StatusNotFound:
 		return reqErr.StatusCode, isTaskNotFoundError(err)
-	default:
-		return 0, false
+	case http.StatusConflict:
+		// Only a terminal task result's 409 (an ErrExecutionStale fence) is
+		// permanent; a shared application instance can still be in use.
+		if kind == terminalTaskReportComplete || kind == terminalTaskReportFail {
+			return reqErr.StatusCode, true
+		}
 	}
+	return 0, false
 }
 
 // recordPermanentRejection durably counts explicit server rejections and moves
@@ -796,7 +808,7 @@ func (d *Daemon) signalTerminalReportReplay() {
 // remain pending; a post-rename sync error is logged while compensation still
 // runs because there is no pending path left for a later pass to discover.
 func (d *Daemon) handleTerminalReportDeliveryError(ctx context.Context, item pendingTerminalTaskReport, deliveryErr error) bool {
-	status, permanent := terminalReportPermanentRejection(deliveryErr)
+	status, permanent := terminalReportPermanentRejection(item.report.kind, deliveryErr)
 	if !permanent || d.terminalReports == nil {
 		return false
 	}
