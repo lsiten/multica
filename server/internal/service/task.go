@@ -4841,16 +4841,11 @@ func (s *TaskService) writeChatCompletionOutcome(ctx context.Context, qtx *db.Qu
 //  2. No path, no body text, and no fragment of either may reach the metric or
 //     the log — only the classification and the task id.
 func (s *TaskService) observeChatOutputLocalPath(task db.AgentTaskQueue, body string) {
-	if s.Metrics == nil || strings.TrimSpace(body) == "" {
+	if s.Metrics == nil {
 		return
 	}
-	kind := ""
-	switch {
-	case strings.Contains(strings.ToLower(body), "file://"):
-		kind = "file_url"
-	case task.WorkDir.Valid && task.WorkDir.String != "" && strings.Contains(body, task.WorkDir.String):
-		kind = "workdir_path"
-	default:
+	kind, _ := runtimeLocalPathRef(task, body)
+	if kind == "" {
 		return
 	}
 	s.Metrics.RecordChatOutputLocalPath(kind)
@@ -4858,6 +4853,62 @@ func (s *TaskService) observeChatOutputLocalPath(task db.AgentTaskQueue, body st
 		"task_id", util.UUIDToString(task.ID),
 		"kind", kind,
 	)
+}
+
+// runtimeLocalPathRef classifies a chat reply body that references a
+// runtime-local path and returns both the classification and the concrete local
+// path, so a same-daemon consumer can read the file directly instead of
+// round-tripping it through server storage (MUL-4899, extended for the P1
+// same-runtime local-file fast path).
+//
+// Lexical only: the path lives on the daemon's machine, so the server cannot
+// os.Stat it. That leaves a few signals it can be confident about without
+// guessing:
+//
+//   - a file:// URL, whose absolute form is returned as the path;
+//   - the task's own recorded work_dir appearing verbatim in the body;
+//   - the task's daemon-confirmed durable_work_dir appearing verbatim in the
+//     body.
+//
+// For a work_dir / durable_work_dir signal the returned path is the concrete
+// file: the matched directory plus the text that follows it in the body up to
+// the first path delimiter (extractFileURL). That full path is what a same-
+// daemon consumer fetches; the directory alone would not name the file. The
+// durable_work_dir is the directory that remains usable across turns, so it is
+// a superset of the transient work_dir signal, and both fold into the
+// "workdir_path" metric kind. durable_work_dir is checked after work_dir so the
+// transient path wins when both match. Returns ("","") when no signal is present,
+// which the caller treats as "no local reference".
+func runtimeLocalPathRef(task db.AgentTaskQueue, body string) (kind, localPath string) {
+	if strings.TrimSpace(body) == "" {
+		return "", ""
+	}
+	if i := strings.Index(strings.ToLower(body), "file://"); i >= 0 {
+		return "file_url", extractFileURL(body, i)
+	}
+	for _, dir := range []pgtype.Text{task.WorkDir, task.DurableWorkDir} {
+		if dir.Valid && dir.String != "" {
+			if i := strings.Index(body, dir.String); i >= 0 {
+				return "workdir_path", extractFileURL(body, i)
+			}
+		}
+	}
+	return "", ""
+}
+
+// extractFileURL returns the file:// URL that begins at start (the index of a
+// lower-cased "file://" match in body) up to the first delimiter that ends a
+// bare URL in prose: whitespace, a quote, or a closing bracket. It is best
+// effort — the fast-path only needs the reference to exist, not a perfect parse
+// — so it never panics on a trailing URL with no delimiter.
+func extractFileURL(body string, start int) string {
+	for j := start; j < len(body); j++ {
+		switch body[j] {
+		case ' ', '\t', '\n', '\r', '"', ')', ']', '}':
+			return body[start:j]
+		}
+	}
+	return body[start:]
 }
 
 // FailTask marks a task as failed.

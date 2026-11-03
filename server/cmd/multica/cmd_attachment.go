@@ -146,6 +146,26 @@ func isAttachmentNotFound(err error) bool {
 	return he.Kind() == cli.KindNotFound
 }
 
+// localAttachmentBytes is the P1 same-runtime fast-path: read an attachment's
+// content straight from the local_ref the server handed back (the producer's
+// file on our own daemon's disk) instead of round-tripping it through server
+// storage. It returns ok=false on any miss — the ref is absent, the file lives
+// where the work_dir alone cannot name it, or the read fails — so the caller
+// falls back to the signed download exactly as before. A successful read of a
+// zero-byte file is still ok=true; only a read error (or absent ref) misses,
+// so a genuinely empty local file is never mistaken for a miss.
+func localAttachmentBytes(att map[string]any) ([]byte, bool) {
+	localRef := strVal(att, "local_ref")
+	if localRef == "" {
+		return nil, false
+	}
+	data, err := os.ReadFile(localRef)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
 func runAttachmentDownload(cmd *cobra.Command, args []string) error {
 	client, err := newAPIClient(cmd)
 	if err != nil {
@@ -190,10 +210,19 @@ func runAttachmentDownload(cmd *cobra.Command, args []string) error {
 		filename = args[0]
 	}
 
-	// Download the file content.
-	data, err := client.DownloadFile(ctx, downloadURL)
-	if err != nil {
-		return fmt.Errorf("download file: %w", err)
+	// Download the file content. P1 same-runtime fast-path: when the server
+	// handed back a local_ref (the producer's file on our own daemon's disk,
+	// same runtime), read it straight from disk instead of round-tripping it
+	// through server storage. Any miss — the ref is absent, the file lives
+	// where the work_dir alone cannot name it, or the read fails — falls
+	// back to the signed download below, exactly as before.
+	data, readLocalOK := localAttachmentBytes(att)
+	if !readLocalOK {
+		var derr error
+		data, derr = client.DownloadFile(ctx, downloadURL)
+		if derr != nil {
+			return fmt.Errorf("download file: %w", derr)
+		}
 	}
 
 	// Write to the output directory, creating it if needed so `-o` works

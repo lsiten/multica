@@ -362,3 +362,39 @@ func TestRunAttachmentDownloadFallsBackToDownloadRoute(t *testing.T) {
 		t.Fatalf("downloaded body = %q, want %q", data, fileBody)
 	}
 }
+
+func TestLocalAttachmentBytes(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "chart.png")
+	if err := os.WriteFile(filePath, []byte("local-bytes"), 0o644); err != nil {
+		t.Fatalf("write local file: %v", err)
+	}
+	emptyPath := filepath.Join(dir, "empty")
+	if err := os.WriteFile(emptyPath, []byte{}, 0o644); err != nil {
+		t.Fatalf("write empty file: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		att     map[string]any
+		wantOK  bool
+		wantLen int
+	}{
+		{name: "local_ref present, file exists", att: map[string]any{"local_ref": filePath}, wantOK: true, wantLen: 11},
+		{name: "local_ref present, file missing", att: map[string]any{"local_ref": filepath.Join(dir, "missing.png")}, wantOK: false},
+		{name: "no local_ref", att: map[string]any{"download_url": "/api/x"}, wantOK: false},
+		{name: "empty local_ref", att: map[string]any{"local_ref": ""}, wantOK: false},
+		{name: "zero-byte local file still ok", att: map[string]any{"local_ref": emptyPath}, wantOK: true, wantLen: 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			data, ok := localAttachmentBytes(c.att)
+			if ok != c.wantOK {
+				t.Fatalf("localAttachmentBytes ok = %v, want %v", ok, c.wantOK)
+			}
+			if ok && len(data) != c.wantLen {
+				t.Fatalf("len(data) = %d, want %d", len(data), c.wantLen)
+			}
+		})
+	}
+}

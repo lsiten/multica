@@ -106,6 +106,15 @@ type AttachmentResponse struct {
 	// previous site-relative `/api/attachments/<id>/download` link only
 	// resolved when the document origin proxied /api to the API host.
 	MarkdownURL string `json:"markdown_url"`
+	// LocalRef is the P1 same-runtime fast-path hint: a local file path a
+	// same-runtime consumer can read directly from its own daemon's disk
+	// instead of downloading from server storage. Emitted only by the
+	// single-attachment endpoint (GetAttachmentByID) and only for an agent
+	// requester that shares the producer's runtime; omitted otherwise. The
+	// download endpoint is left unchanged, so a consumer that cannot read the
+	// path (cross-runtime, or the file lives where the work_dir alone cannot
+	// name it) falls back to DownloadURL. (MUL-4899 / P1)
+	LocalRef    string `json:"local_ref,omitempty"`
 	ContentType string `json:"content_type"`
 	SizeBytes   int64  `json:"size_bytes"`
 	CreatedAt   string `json:"created_at"`
@@ -742,6 +751,16 @@ func (h *Handler) GetAttachmentByID(w http.ResponseWriter, r *http.Request) {
 		// Download-intent sibling capability (dl=1): the redemption route turns
 		// it into a Content-Disposition: attachment, for the download button.
 		resp.AttachmentDownloadURL = attachmentDownloadCapabilityPath(resp.ID, time.Now())
+	}
+
+	// P1 same-runtime fast-path: when an agent requester (X-Task-ID) shares
+	// the producer task's runtime, hand it a local path it can read from its
+	// own daemon disk instead of the server download. Omitted on any
+	// uncertainty; the download endpoint stays the guaranteed fallback.
+	if taskUUID, err := util.ParseUUID(r.Header.Get("X-Task-ID")); err == nil {
+		if ref := h.localRefForAttachment(r.Context(), taskUUID, att); ref != "" {
+			resp.LocalRef = ref
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
