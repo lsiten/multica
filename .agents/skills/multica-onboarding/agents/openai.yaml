@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multica Onboarding"
+  short_description: "接入任意自部署/私有 Multica、Cloud Machine、仓库与渠道"
+  default_prompt: "Use $multica-onboarding to inspect my current state and guide me through the smallest safe Multica onboarding path for my deployment."
