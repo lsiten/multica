@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Trash2, UserRound } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Settings2, Trash2 } from "@multica/ui/icons";
+import { IconButton } from "@multica/ui/components/common/icon-button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -30,32 +30,38 @@ import { useChatStore } from "@multica/core/chat";
 import type { Agent, ChatSession } from "@multica/core/types";
 import { isImeComposing } from "@multica/core/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { AppLink } from "../../navigation";
+import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
+import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
-import { GroupChatParticipants } from "./group-chat-participants";
+import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 
 /**
- * Per-session header for the conversation pane: agent avatar + editable chat
- * title + agent subtitle, with a ⋯ menu (rename / view agent profile / delete).
- * The avatar's hover card is the lightweight "view profile" affordance; the
- * menu item navigates to the full agent page.
+ * Per-session header for the conversation pane, read as a breadcrumb: the
+ * agent the chat belongs to (a link to its page), then the chat's own title,
+ * which renames in place. The ⋯ menu holds the session actions.
  */
 export function ChatSessionHeader({
   session,
   agent,
-  agents,
   onArchive,
+  leading,
 }: {
   session: ChatSession;
   agent: Agent | null;
-  agents?: Agent[];
   // Archiving the open conversation must move the pane off it (advance to the
   // next chat on desktop, back to the list on mobile), so the parent owns it —
   // see ChatPage.handleArchive. Falls back to a plain status flip if unwired.
   onArchive?: (session: ChatSession) => void;
+  /**
+   * Far-left control: the nav toggle while the list is collapsed, or the way
+   * back to the list at compact widths. Nothing renders there without one.
+   */
+  leading?: ReactNode;
 }) {
   const { t } = useT("chat");
+  const { t: tCommon } = useT("common");
   const wsPaths = useWorkspacePaths();
+  const { push } = useNavigation();
   const updateSession = useUpdateChatSession();
   const deleteSession = useDeleteChatSession();
   const setArchived = useSetChatSessionArchived();
@@ -73,9 +79,7 @@ export function ChatSessionHeader({
   const commitAfterCompositionRef = useRef(false);
   const blurCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const title = session.title?.trim() || (
-    session.kind === "group" ? t(($) => $.group.badge) : t(($) => $.window.untitled)
-  );
+  const title = session.title?.trim() || t(($) => $.window.untitled);
 
   useEffect(() => {
     if (editing) {
@@ -129,122 +133,127 @@ export function ChatSessionHeader({
       : setArchived.mutate({ sessionId: session.id, archived: true });
   const doUnarchive = () => setArchived.mutate({ sessionId: session.id, archived: false });
 
-  return (
-    <div className="flex min-h-12 shrink-0 items-start gap-3 border-b px-4 py-2">
-      {agent ? (
-        <ActorAvatar actorType="agent" actorId={agent.id} size="lg" enableHoverCard showStatusDot />
-      ) : (
-        <span className="size-[30px] shrink-0" />
-      )}
-
-      <div className="min-w-0 flex-1 space-y-0.5">
-        {editing ? (
-          <input
-            ref={inputRef}
-            value={draft}
-            maxLength={200}
-            aria-label={t(($) => $.header.rename)}
-            onChange={(e) => setDraft(e.target.value)}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={(e) => {
+  const leaf = editing ? (
+    <input
+      ref={inputRef}
+      value={draft}
+      maxLength={200}
+      aria-label={t(($) => $.header.rename)}
+      onChange={(e) => setDraft(e.target.value)}
+      onCompositionStart={() => {
+        isComposingRef.current = true;
+      }}
+      onCompositionEnd={(e) => {
+        isComposingRef.current = false;
+        if (!commitAfterCompositionRef.current) return;
+        commitRename(e.currentTarget.value);
+      }}
+      onBlur={(e) => {
+        if (isComposingRef.current) {
+          commitAfterCompositionRef.current = true;
+          const input = e.currentTarget;
+          // Let a compositionend queued by the same focus change win.
+          // If it never arrives, commit on the next task instead of
+          // leaving an unfocused editor open indefinitely.
+          clearPendingBlurCommit();
+          blurCommitTimeoutRef.current = setTimeout(() => {
+            if (!commitAfterCompositionRef.current) return;
+            // Without compositionend, the current DOM value is not
+            // known to be final. Close without persisting a partial
+            // composition instead of recreating the original bug.
+            if (isComposingRef.current) {
+              clearPendingBlurCommit();
               isComposingRef.current = false;
-              if (!commitAfterCompositionRef.current) return;
-              commitRename(e.currentTarget.value);
-            }}
-            onBlur={(e) => {
-              if (isComposingRef.current) {
-                commitAfterCompositionRef.current = true;
-                const input = e.currentTarget;
-                // Let a compositionend queued by the same focus change win.
-                // If it never arrives, commit on the next task instead of
-                // leaving an unfocused editor open indefinitely.
-                clearPendingBlurCommit();
-                blurCommitTimeoutRef.current = setTimeout(() => {
-                  if (!commitAfterCompositionRef.current) return;
-                  // Without compositionend, the current DOM value is not
-                  // known to be final. Close without persisting a partial
-                  // composition instead of recreating the original bug.
-                  if (isComposingRef.current) {
-                    clearPendingBlurCommit();
-                    isComposingRef.current = false;
-                    commitAfterCompositionRef.current = false;
-                    setEditing(false);
-                    return;
-                  }
-                  commitRename(input.value);
-                }, 0);
-                return;
-              }
-              commitRename(e.currentTarget.value);
-            }}
-            onKeyDown={(e) => {
-              if (isImeComposing(e)) return;
-              if (e.key === "Enter") {
-                e.preventDefault();
-                commitRename();
-              } else if (e.key === "Escape") {
-                e.preventDefault();
-                clearPendingBlurCommit();
-                isComposingRef.current = false;
-                commitAfterCompositionRef.current = false;
-                setEditing(false);
-              }
-            }}
-            className="w-full rounded-sm bg-background px-1 py-0.5 text-body font-semibold outline-none ring-1 ring-border focus-visible:ring-brand"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={startRename}
-            title={t(($) => $.header.rename)}
-            className="block max-w-full truncate text-left text-body font-semibold text-foreground outline-none hover:text-foreground/80 focus-visible:text-foreground/80"
-          >
-            {title}
-          </button>
-        )}
-        {session.kind === "group" && (
-          <div className="flex min-h-5 items-center gap-2">
-            <span
-              title={t(($) => $.group.badge)}
-              aria-label={t(($) => $.group.badge)}
-              className="inline-flex shrink-0 items-center rounded-xs bg-accent px-1.5 py-0.5 text-[0.6rem] font-semibold text-accent-foreground"
-            >
-              {t(($) => $.group.badge)}
-            </span>
-            <GroupChatParticipants session={session} agents={agents ?? []} />
-          </div>
-        )}
-        {agent && (
-          <div className="truncate text-caption text-muted-foreground">
-            {agent.name}
-            {agent.description ? ` · ${agent.description}` : ""}
-          </div>
-        )}
-      </div>
+              commitAfterCompositionRef.current = false;
+              setEditing(false);
+              return;
+            }
+            commitRename(input.value);
+          }, 0);
+          return;
+        }
+        commitRename(e.currentTarget.value);
+      }}
+      onKeyDown={(e) => {
+        if (isImeComposing(e)) return;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commitRename();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          clearPendingBlurCommit();
+          isComposingRef.current = false;
+          commitAfterCompositionRef.current = false;
+          setEditing(false);
+        }
+      }}
+      className="min-w-0 max-w-96 flex-1 rounded-sm bg-background px-1 py-0.5 text-body font-medium outline-none ring-1 ring-border focus-visible:ring-brand"
+    />
+  ) : (
+    <TooltipHint label={t(($) => $.header.rename)}>
+      <button
+        type="button"
+        onClick={startRename}
+        className="min-w-0 truncate text-left text-body font-medium text-foreground outline-none hover:text-foreground/80 focus-visible:text-foreground/80"
+      >
+        {title}
+      </button>
+    </TooltipHint>
+  );
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" />}
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-auto">
-          <DropdownMenuItem onClick={startRename}>
-            <Pencil className="h-4 w-4" />
-            {t(($) => $.header.rename)}
-          </DropdownMenuItem>
-          {agent && (
-            <DropdownMenuItem
-              render={<AppLink href={wsPaths.agentDetail(agent.id)} />}
+  return (
+    <>
+      <BreadcrumbHeader
+        leading={leading ?? false}
+        segments={
+          agent
+            ? [
+                {
+                  href: wsPaths.agentDetail(agent.id),
+                  label: (
+                    <>
+                      <ActorAvatar
+                        actorType="agent"
+                        actorId={agent.id}
+                        size="sm"
+                        profileLink={false}
+                        showStatusDot
+                      />
+                      <span className="truncate">{agent.name}</span>
+                    </>
+                  ),
+                  className: "flex min-w-0 max-w-48 shrink items-center gap-1.5",
+                },
+              ]
+            : []
+        }
+        leaf={leaf}
+        actions={
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <IconButton
+                  label={tCommon(($) => $.more_actions)}
+                  tooltipSide="bottom"
+                  className="text-muted-foreground"
+                />
+              }
             >
-              <UserRound className="h-4 w-4" />
-              {t(($) => $.header.view_profile)}
-            </DropdownMenuItem>
-          )}
-          {session.kind !== "group" && (
-            <>
+              <MoreHorizontal className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-auto">
+              <DropdownMenuItem onClick={startRename}>
+                <Pencil className="h-4 w-4" />
+                {t(($) => $.header.rename)}
+              </DropdownMenuItem>
+              {agent && (
+                <DropdownMenuItem
+                  onClick={() => push(`${wsPaths.agentDetail(agent.id)}?view=general`)}
+                >
+                  <Settings2 className="h-4 w-4" />
+                  {t(($) => $.header.agent_settings)}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               {isArchived ? (
                 <>
@@ -264,10 +273,10 @@ export function ChatSessionHeader({
                   {t(($) => $.header.archive)}
                 </DropdownMenuItem>
               )}
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
@@ -286,6 +295,6 @@ export function ChatSessionHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

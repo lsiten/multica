@@ -1,52 +1,61 @@
 // @vitest-environment node
-import { afterEach, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDaemonQuitHandler } from "./daemon-quit";
 
-afterEach(() => { vi.useRealTimers(); });
+function setup() {
+  const deps = {
+    loadPrefs: vi.fn(async () => ({ autoStop: true })), pause: vi.fn(), resume: vi.fn(),
+    stop: vi.fn(async () => true), confirmIgnore: vi.fn(async () => false), quit: vi.fn(),
+  };
+  const handler = createDaemonQuitHandler(deps);
+  const request = () => { const event = { preventDefault: vi.fn() }; handler(event); return event; };
+  return { deps, request };
+}
 
-it("blocks exit synchronously until local stop confirms, including duplicate exit events", async () => {
-  let loaded!: (value: boolean) => void;
-  let stopped!: () => void;
-  const quit = vi.fn();
-  const stop = vi.fn(() => new Promise<void>((resolve) => { stopped = resolve; }));
-  const handler = createDaemonQuitHandler({ prepare: vi.fn(), autoStop: () => new Promise((resolve) => { loaded = resolve; }), stop, quit });
-  const event = { preventDefault: vi.fn() };
-  handler(event);
-  handler(event);
-  expect(event.preventDefault).toHaveBeenCalledTimes(2);
-  expect(quit).not.toHaveBeenCalled();
-  loaded(true);
-  await Promise.resolve();
-  expect(stop).toHaveBeenCalledOnce();
-  expect(quit).not.toHaveBeenCalled();
-  stopped();
-  await Promise.resolve();
-  expect(quit).toHaveBeenCalledOnce();
-  handler(event);
-  expect(event.preventDefault).toHaveBeenCalledTimes(2);
-});
+describe("quit with daemon auto-stop", () => {
+  it("synchronously blocks repeated quits until stopping finishes", async () => {
+    const { deps, request } = setup();
+    let finish!: (result: boolean) => void;
+    deps.stop.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    expect(request().preventDefault).toHaveBeenCalledOnce();
+    request();
+    await vi.waitFor(() => expect(deps.stop).toHaveBeenCalledOnce());
+    expect(deps.quit).not.toHaveBeenCalled();
+    finish(true);
+    await vi.waitFor(() => expect(deps.quit).toHaveBeenCalledOnce());
+    expect(request().preventDefault).not.toHaveBeenCalled();
+  });
 
-it("leaves the local runtime running when auto-stop is disabled", async () => {
-  const quit = vi.fn(), stop = vi.fn();
-  const handler = createDaemonQuitHandler({ prepare: vi.fn(), autoStop: async () => false, stop, quit });
-  handler({ preventDefault: vi.fn() });
-  await Promise.resolve();
-  expect(stop).not.toHaveBeenCalled();
-  expect(quit).toHaveBeenCalledOnce();
-});
+  it("preserves the daemon when auto-stop is disabled", async () => {
+    const { deps, request } = setup();
+    deps.loadPrefs.mockResolvedValue({ autoStop: false });
+    request();
+    await vi.waitFor(() => expect(deps.quit).toHaveBeenCalledOnce());
+    expect(deps.pause).not.toHaveBeenCalled();
+    expect(deps.stop).not.toHaveBeenCalled();
+  });
 
-it("bounds a stalled local stop without waiting for remote synchronization", async () => {
-  vi.useFakeTimers();
-  const quit = vi.fn();
-  const handler = createDaemonQuitHandler({ prepare: vi.fn(), autoStop: async () => true, stop: () => new Promise(() => {}), quit });
-  handler({ preventDefault: vi.fn() });
-  await vi.advanceTimersByTimeAsync(15_000);
-  expect(quit).toHaveBeenCalledOnce();
-});
+  it("resumes normal use when the task warning is cancelled", async () => {
+    const { deps, request } = setup();
+    deps.stop.mockResolvedValue(false);
+    request();
+    await vi.waitFor(() => expect(deps.resume).toHaveBeenCalledWith(true));
+    expect(deps.quit).not.toHaveBeenCalled();
+    expect(deps.confirmIgnore).not.toHaveBeenCalled();
+  });
 
-it("releases exit when preferences or local stop fail", async () => {
-  const quit = vi.fn();
-  createDaemonQuitHandler({ prepare: vi.fn(), autoStop: async () => { throw new Error("unreadable preferences"); }, stop: vi.fn(), quit })({ preventDefault: vi.fn() });
-  await Promise.resolve();
-  expect(quit).toHaveBeenCalledOnce();
+  it.each([false, true])("only quits after a stop failure when ignore is %s", async (ignore) => {
+    const { deps, request } = setup();
+    const error = new Error("OS refused termination");
+    deps.stop.mockRejectedValue(error);
+    deps.confirmIgnore.mockResolvedValue(ignore);
+    request();
+    await vi.waitFor(() => expect(deps.confirmIgnore).toHaveBeenCalledWith(error));
+    await vi.waitFor(() => expect(ignore ? deps.quit : deps.resume).toHaveBeenCalledOnce());
+    if (ignore) expect(deps.resume).not.toHaveBeenCalled();
+    else {
+      expect(deps.resume).toHaveBeenCalledWith(false);
+      expect(deps.quit).not.toHaveBeenCalled();
+    }
+  });
 });

@@ -1,13 +1,10 @@
 {
   "page": {
     "title": "Skills",
-    "tagline": "Instructions any agent in this workspace can use.",
-    "learn_more": "Learn more →",
     "new_skill": "New skill",
-    "search_placeholder": "Search skills…",
     "scopes": {
       "all": {
-        "label": "All",
+        "label": "All skills",
         "description": "All skills in this workspace"
       },
       "used": {
@@ -19,13 +16,13 @@
         "description": "Skills not assigned to any agent"
       },
       "mine": {
-        "label": "Created by me",
+        "label": "My skills",
         "description": "Skills you created"
       }
     },
     "empty": {
       "title": "No skills yet",
-      "description": "Create or import a skill."
+      "description": "A skill is a reusable way of working for your agents. Create one, or import it from a runtime."
     },
     "no_matches": {
       "title": "No matches",
@@ -44,7 +41,10 @@
       "fallback": "Something went wrong fetching the skill list.",
       "retry": "Try again"
     },
-    "supporting_data_warning": "Some workspace data failed to load. Creator attribution, runtime names, or edit permissions may appear incomplete."
+    "supporting_data_warning": "Some workspace data failed to load. Creator attribution, runtime names, or edit permissions may appear incomplete.",
+    "tagline": "Instructions any agent in this workspace can use.",
+    "learn_more": "Learn more →",
+    "search_placeholder": "Search skills…"
   },
   "table": {
     "name": "Name",
@@ -77,8 +77,6 @@
     "added_toast": "Added to {{name}}",
     "add_failed_toast": "Failed to add skill",
     "delete": "Delete",
-    "selected": "{{count}} selected",
-    "clear_selection": "Clear selection",
     "delete_no_permission": "Selection includes skills only their creator or an admin can delete",
     "delete_dialog_title_one": "Delete {{count}} skill?",
     "delete_dialog_title_other": "Delete {{count}} skills?",
@@ -103,32 +101,31 @@
     "add_confirm": "Add ({{num}})",
     "adding": "Adding...",
     "added_multi_toast_one": "Added to {{count}} agent",
-    "added_multi_toast_other": "Added to {{count}} agents"
+    "added_multi_toast_other": "Added to {{count}} agents",
+    "selected": "{{count}} selected",
+    "clear_selection": "Clear selection"
   },
   "toolbar": {
-    "result_count_title": "Matching skills / all skills",
-    "filter_label": "Filter",
-    "filter_active_count_one": "{{count}} filter",
-    "filter_active_count_other": "{{count}} filters",
-    "clear_filters": "Clear filters",
     "section_usage": "Usage",
     "section_labels": "Labels",
     "filter_search_placeholder": "Filter...",
     "no_labels": "No labels yet",
     "no_results": "No results",
+    "manage_labels": "Manage labels...",
+    "manage_labels_title": "Skill labels",
+    "result_count_title": "Matching skills / all skills",
+    "filter_label": "Filter",
+    "filter_active_count_one": "{{count}} filter",
+    "filter_active_count_other": "{{count}} filters",
+    "clear_filters": "Clear filters",
     "display": "Display",
     "sort_by": "Sort by",
     "direction_asc": "Ascending",
     "direction_desc": "Descending",
-    "section_columns": "Columns",
-    "manage_labels": "Manage labels...",
-    "manage_labels_title": "Skill labels"
+    "section_columns": "Columns"
   },
   "detail": {
-    "all_skills": "All skills",
     "read_only": "Read-only",
-    "delete_aria": "Delete skill",
-    "delete_tooltip": "Delete skill",
     "supporting_data_warning": "Some workspace data failed to load. Creator attribution, runtime names, or edit permissions may appear incomplete until the next refresh.",
     "delete_file": "Delete file",
     "name_placeholder": "skill-name",
@@ -164,8 +161,6 @@
     "toast_deleted": "Skill deleted",
     "toast_delete_failed": "Failed to delete skill",
     "refresh": {
-      "button": "Update",
-      "tooltip": "Re-download this skill from its source",
       "source_github": "GitHub",
       "source_skills_sh": "Skills.sh",
       "source_clawhub": "ClawHub",
@@ -178,7 +173,9 @@
         "cancel": "Cancel",
         "confirm": "Update",
         "refreshing": "Updating…"
-      }
+      },
+      "button": "Update",
+      "tooltip": "Re-download this skill from its source"
     },
     "delete_dialog": {
       "title": "Delete skill?",
@@ -212,27 +209,21 @@
       "updated": "Updated {{when}}",
       "updated_by": "Updated {{when}} by {{name}}"
     },
-    "tabs": {
-      "aria": "Skill sections",
-      "overview": "Overview",
-      "files_one": "Files {{count}}",
-      "files_other": "Files {{count}}"
-    },
     "overview": {
       "properties": "Properties",
-      "properties_hint": "These fields stay in sync with the SKILL.md frontmatter.",
       "name": "Name",
       "description": "Description",
       "description_hint": "Agents use this to decide when to load the skill.",
       "labels": "Labels",
-      "used_by_one": "Used by {{count}} agent",
-      "used_by_other": "Used by {{count}} agents",
       "used_by_empty": "Not assigned to any agent yet. Open an agent's Skills tab to assign.",
       "permissions_owner": "You can edit and delete this skill. Changes take effect on the next agent run.",
       "permissions_locked_creator": "Only the creator ({{name}}) or a workspace admin can edit this skill.",
       "permissions_locked": "Only the creator or a workspace admin can edit this skill.",
-      "properties_help": "About skill properties",
-      "character_count": "{{count}} characters"
+      "character_count": "{{count}} characters",
+      "properties_hint": "These fields stay in sync with the SKILL.md frontmatter.",
+      "used_by_one": "Used by {{count}} agent",
+      "used_by_other": "Used by {{count}} agents",
+      "properties_help": "About skill properties"
     },
     "files": {
       "list_aria": "Skill files",
@@ -245,6 +236,30 @@
       "mode_preview": "Preview",
       "mode_edit": "Edit",
       "mode_raw": "Plain text"
+    },
+    "sections": {
+      "content": "Content",
+      "files": "Files",
+      "edit": "Edit",
+      "open": "Open",
+      "add": "Add"
+    },
+    "menu": {
+      "copy_link": "Copy link",
+      "link_copied": "Link copied",
+      "delete": "Delete skill"
+    },
+    "panel": {
+      "add_description": "Add description"
+    },
+    "all_skills": "All skills",
+    "delete_aria": "Delete skill",
+    "delete_tooltip": "Delete skill",
+    "tabs": {
+      "aria": "Skill sections",
+      "overview": "Overview",
+      "files_one": "Files {{count}}",
+      "files_other": "Files {{count}}"
     }
   },
   "create": {

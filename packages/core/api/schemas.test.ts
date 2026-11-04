@@ -1,6 +1,6 @@
-// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
+  AgentTaskSchema,
   AppConfigSchema,
   WecomInstallationSchema,
   ListWecomInstallationsResponseSchema,
@@ -30,9 +30,7 @@ import {
   ChatDraftRestoresResponseSchema,
   ChatPendingTaskSchema,
   ChatSessionListSchema,
-  ChatSessionFilesResponseSchema,
   ChatSessionSchema,
-  ChatMessageSchema,
   PrioritizeQueuedChatTaskResponseSchema,
   CreateFeedbackResponseSchema,
   DuplicateIssueErrorBodySchema,
@@ -49,11 +47,7 @@ import {
   InboxUnreadSummarySchema,
   IssueTriggerPreviewSchema,
   ListIssuesResponseSchema,
-  IssueSchema,
-  RequirementSchema,
   ListPropertiesResponseSchema,
-  MirrorSessionResponseSchema,
-  PinnedItemListSchema,
   MALFORMED_RUNTIME_MODEL_LIST_REQUEST,
   RuntimeModelListRequestSchema,
   SearchProjectsResponseSchema,
@@ -74,14 +68,48 @@ import {
   EMPTY_PLUGIN_INSTALLATION_LIST,
   EMPTY_PLUGIN_PREVIEW,
 } from "./schemas";
-import { IssueViewSchema, IssueViewListSchema } from "./schemas";
+import { IssueViewSchema, IssueViewListSchema, SidebarProjectPrefsDocSchema } from "./schemas";
+import type { SidebarIssueAssignee } from "../issues/stores/sidebar-tree-store";
 import {
   ListIssueStatusesResponseSchema,
   IssueStatusEntrySchema,
   EMPTY_LIST_ISSUE_STATUSES_RESPONSE,
   EMPTY_ISSUE_STATUS_ENTRY,
 } from "./schemas";
+import { IssueUnreadPageSchema, EMPTY_ISSUE_UNREAD_PAGE } from "./schemas";
 import { parseWithFallback } from "./schema";
+
+describe("IssueUnreadPageSchema", () => {
+  const endpoint = "GET /api/issues/unread";
+
+  it("defaults a missing agent_id and next_cursor to null", () => {
+    const parsed = parseWithFallback(
+      {
+        items: [
+          { issue_id: "i-1", outcome: "completed", agent_id: "a-1", created_at: "2026-01-01T00:00:00Z" },
+          { issue_id: "i-2", outcome: "manual", created_at: "2026-01-01T00:00:00Z", extra: true },
+        ],
+      },
+      IssueUnreadPageSchema,
+      EMPTY_ISSUE_UNREAD_PAGE,
+      { endpoint },
+    );
+    expect(parsed.items.map((u) => [u.issue_id, u.agent_id])).toEqual([
+      ["i-1", "a-1"],
+      ["i-2", null],
+    ]);
+    expect(parsed.next_cursor).toBeNull();
+  });
+
+  it("falls back to an empty last page for a malformed body", () => {
+    expect(parseWithFallback({ items: "nope" }, IssueUnreadPageSchema, EMPTY_ISSUE_UNREAD_PAGE, { endpoint })).toEqual(
+      EMPTY_ISSUE_UNREAD_PAGE,
+    );
+    expect(parseWithFallback(null, IssueUnreadPageSchema, EMPTY_ISSUE_UNREAD_PAGE, { endpoint })).toEqual(
+      EMPTY_ISSUE_UNREAD_PAGE,
+    );
+  });
+});
 
 const baseIssue = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -713,9 +741,6 @@ describe("AgentTaskListSchema", () => {
     const parsed = AgentTaskListSchema.parse([task]);
     expect(parsed[0]?.coalesced_comment_ids).toBeUndefined();
     expect(parsed[0]?.delivered_comment_ids).toBeUndefined();
-    expect(parsed[0]?.code_workspace_issue_id).toBeUndefined();
-    expect(parsed[0]?.code_workspace_issue_identifier).toBeUndefined();
-    expect(parsed[0]?.code_workspace_work_dir).toBeUndefined();
   });
 
   it("degrades malformed optional coverage without dropping task rows", () => {
@@ -741,15 +766,12 @@ describe("AgentTaskListSchema", () => {
     ]);
   });
 
-  it("accepts durable and shared workdir metadata from newer backends", () => {
+  it("accepts durable workdir metadata from newer backends", () => {
     const parsed = AgentTaskListSchema.parse([
       {
         ...task,
         status: "completed",
         work_dir: "/managed/task/worktree",
-        code_workspace_issue_id: "root-issue",
-        code_workspace_issue_identifier: "MUL-1",
-        code_workspace_work_dir: "/managed/root/worktree",
         durable_work_dir: "/Users/dev/project",
         relative_durable_work_dir: "project",
         branch_name: "agent/j/abc12345",
@@ -757,9 +779,6 @@ describe("AgentTaskListSchema", () => {
     ]);
 
     expect(parsed[0]).toMatchObject({
-      code_workspace_issue_id: "root-issue",
-      code_workspace_issue_identifier: "MUL-1",
-      code_workspace_work_dir: "/managed/root/worktree",
       durable_work_dir: "/Users/dev/project",
       relative_durable_work_dir: "project",
       branch_name: "agent/j/abc12345",
@@ -771,9 +790,6 @@ describe("AgentTaskListSchema", () => {
       {
         ...task,
         work_dir: 1,
-        code_workspace_issue_id: 1,
-        code_workspace_issue_identifier: { identifier: "MUL-1" },
-        code_workspace_work_dir: ["/managed/root/worktree"],
         durable_work_dir: { path: "/project" },
         relative_durable_work_dir: false,
         branch_name: ["agent/j/abc12345"],
@@ -782,9 +798,6 @@ describe("AgentTaskListSchema", () => {
 
     expect(parsed).toHaveLength(1);
     expect(parsed[0]?.work_dir).toBeUndefined();
-    expect(parsed[0]?.code_workspace_issue_id).toBeUndefined();
-    expect(parsed[0]?.code_workspace_issue_identifier).toBeUndefined();
-    expect(parsed[0]?.code_workspace_work_dir).toBeUndefined();
     expect(parsed[0]?.durable_work_dir).toBeUndefined();
     expect(parsed[0]?.relative_durable_work_dir).toBeUndefined();
     expect(parsed[0]?.branch_name).toBeUndefined();
@@ -1956,6 +1969,48 @@ describe("IssueViewSchema", () => {
   });
 });
 
+describe("SidebarProjectPrefsDocSchema", () => {
+  it("keeps every setting this client knows", () => {
+    const doc = {
+      projects: { ordering: "name", statuses: ["planned"], onlyMine: true, showCount: false },
+      issues: { sortBy: "priority", sortDirection: "asc", hiddenStatuses: ["done"], assignee: "me", showSubIssues: false },
+      order: ["p2", "p1"],
+    };
+    expect(SidebarProjectPrefsDocSchema.parse(doc)).toEqual(doc);
+  });
+
+  it.each(["anyone", "me", "my_agents", "me_and_my_agents"] satisfies SidebarIssueAssignee[])(
+    "keeps the %s assignee setting",
+    (assignee) => {
+      expect(SidebarProjectPrefsDocSchema.parse({ issues: { assignee } }).issues.assignee).toBe(assignee);
+    },
+  );
+
+  it("drops settings saved by another client version instead of failing the document", () => {
+    const parsed = SidebarProjectPrefsDocSchema.parse({
+      projects: { ordering: "future-order", statuses: "planned", onlyMine: "no", showCount: true },
+      issues: { sortBy: "magic", sortDirection: "up", hiddenStatuses: null, assignee: 1, showSubIssues: "yes" },
+      order: ["p1", 2, null],
+    });
+    expect(parsed.projects).toEqual({ ordering: undefined, statuses: undefined, onlyMine: undefined, showCount: true });
+    expect(parsed.issues).toEqual({
+      sortBy: undefined,
+      sortDirection: undefined,
+      hiddenStatuses: null,
+      assignee: undefined,
+      showSubIssues: undefined,
+    });
+    expect(parsed.order).toEqual(["p1"]);
+  });
+
+  it.each([{}, { projects: null, issues: "x", order: {} }])("parses an empty or malformed document %j", (doc) => {
+    const parsed = SidebarProjectPrefsDocSchema.parse(doc);
+    expect(parsed.order).toEqual([]);
+    expect(Object.values(parsed.projects).every((v) => v === undefined)).toBe(true);
+    expect(Object.values(parsed.issues).every((v) => v === undefined)).toBe(true);
+  });
+});
+
 // WeCom smart-bot installation schemas. These gate UI affordances (the Connect
 // dialog, the "ask your operator" state, the revoked-vs-active badge), so a
 // malformed response must degrade to the safe state rather than a broken one.
@@ -2362,105 +2417,6 @@ describe("TaskMessageListSchema", () => {
   });
 });
 
-describe("runtime mirror session schema", () => {
-  const baseSession = {
-    id: "session-1",
-    workspace_id: "ws-1",
-    runtime_id: "runtime-1",
-    user_id: "user-1",
-    daemon_id: "daemon-1",
-    viewer_id: "viewer-1",
-    created_at: "2026-09-12T00:00:00Z",
-    expires_at: "2026-09-12T00:00:30Z",
-    state: "offered",
-  };
-
-  it("parses a complete session", () => {
-    const parsed = MirrorSessionResponseSchema.parse({
-      ...baseSession,
-      answer: { type: "answer", sdp: "answer-sdp" },
-      ice_config: {
-        ice_servers: [{ urls: "stun:stun.example" }],
-        turn_configured: true,
-      },
-    });
-
-    expect(parsed.answer).toEqual({ type: "answer", sdp: "answer-sdp" });
-    expect(parsed.ice_config.turn_configured).toBe(true);
-    expect(parsed.ice_config.ice_servers[0]?.urls).toBe("stun:stun.example");
-  });
-
-  it("drops a malformed answer or ICE server without dropping the session", () => {
-    const parsed = MirrorSessionResponseSchema.parse({
-      ...baseSession,
-      answer: { type: "offer", sdp: "answer-sdp" },
-      ice_config: {
-        ice_servers: [
-          { urls: ["stun:valid.example"] },
-          { urls: 42 },
-        ],
-        turn_configured: false,
-      },
-    });
-
-    expect(parsed.answer).toBeUndefined();
-    expect(parsed.ice_config.ice_servers).toEqual([
-      { urls: ["stun:valid.example"] },
-    ]);
-  });
-
-  it("parses a failed session and drops a malformed failure reason", () => {
-    const failed = MirrorSessionResponseSchema.parse({
-      ...baseSession,
-      state: "failed",
-      failure_reason: "permission-denied",
-    });
-    const malformedReason = MirrorSessionResponseSchema.parse({
-      ...baseSession,
-      state: "failed",
-      failure_reason: 42,
-    });
-
-    expect(failed.state).toBe("failed");
-    expect(failed.failure_reason).toBe("permission-denied");
-    expect(malformedReason.state).toBe("failed");
-    expect(malformedReason.failure_reason).toBeUndefined();
-  });
-
-  it("defaults missing ICE configuration", () => {
-    const parsed = MirrorSessionResponseSchema.parse(baseSession);
-
-    expect(parsed.ice_config).toEqual({
-      ice_servers: [],
-      turn_configured: false,
-    });
-  });
-});
-
-describe("pin schemas", () => {
-  it("keeps valid pins and drops malformed rows", () => {
-    const parsed = PinnedItemListSchema.parse([
-      {
-        id: "pin-1",
-        workspace_id: "ws-1",
-        user_id: "user-1",
-        item_type: "runtime_mirror",
-        item_id: "runtime-1",
-        position: 1,
-        created_at: "2026-09-12T00:00:00Z",
-      },
-      { id: "broken-pin", item_type: "runtime_mirror" },
-    ]);
-
-    expect(parsed).toEqual([
-      expect.objectContaining({
-        id: "pin-1",
-        item_type: "runtime_mirror",
-        item_id: "runtime-1",
-      }),
-    ]);
-  });
-});
 
 describe("AgentActivityBucketListSchema duration", () => {
   const bucket = { agent_id: "a", bucket_at: "2026-09-24T00:00:00Z", task_count: 201,
@@ -2477,137 +2433,31 @@ describe("AgentActivityBucketListSchema duration", () => {
   });
 });
 
-describe("ChatSessionFilesResponseSchema", () => {
-  it("preserves unknown run kinds while dropping malformed ownership metadata", () => {
-    const parsed = ChatSessionFilesResponseSchema.parse({ tasks: [
-      { id: "future", run_kind: "future_run", chat_session_id: "chat" },
-      { id: "broken", run_kind: 42, chat_session_id: [] },
-    ] });
-    expect(parsed.tasks[0]).toMatchObject({ run_kind: "future_run", chat_session_id: "chat" });
-    expect(parsed.tasks[1]?.run_kind).toBeUndefined();
-    expect(parsed.tasks[1]?.chat_session_id).toBeUndefined();
-  });
-  it("keeps valid project directories when a peer has a malformed path", () => {
-    const parsed = ChatSessionFilesResponseSchema.parse({
-      directories: [
-        { project_resource_id: "resource", daemon_id: "daemon", path: "/project", runtime_id: null },
-        { project_resource_id: "broken", daemon_id: "daemon", path: 123 },
-      ],
-    });
-    expect(parsed.directories).toEqual([{ project_resource_id: "resource", daemon_id: "daemon", path: "/project" }]);
-    expect(ChatSessionFilesResponseSchema.parse({}).directories).toEqual([]);
-  });
-  // A single malformed repo must not fail the whole response: that would drop
-  // the session's attachments and task files too (the file list's real
-  // source of truth), not just the broken repo row.
-  it("keeps attachments and tasks when a repo has a malformed url", () => {
-    const parsed = ChatSessionFilesResponseSchema.parse({
-      workspace_id: "ws-1",
-      project_id: "proj-1",
-      attachments: [
-        { id: "att-1", filename: "report.pdf", url: "", content_type: "application/pdf" },
-      ],
-      tasks: [
-        { id: "task-1", runtime_id: "rt-1", work_dir: "/work", created_at: "2026-01-01" },
-      ],
-      repos: [
-        { url: "https://github.com/acme/widgets.git", description: "", ref: "main" },
-        { url: 123, description: "broken" },
-      ],
-    });
-
-    expect(parsed.attachments).toHaveLength(1);
-    expect(parsed.attachments[0]?.filename).toBe("report.pdf");
-    expect(parsed.tasks).toHaveLength(1);
-    expect(parsed.project_id).toBe("proj-1");
-    expect(parsed.projects).toEqual([]);
-    expect(parsed.project_attachments).toEqual([]);
-    expect(parsed.project_tasks).toEqual([]);
-    // The valid repo survives; the malformed url degrades to "" so the
-    // display layer's `repo.url` filter hides only that row.
-    expect(parsed.repos[0]).toEqual(
-      expect.objectContaining({ url: "https://github.com/acme/widgets.git" }),
-    );
-    expect(parsed.repos[1]?.url).toBe("");
-  });
-});
-describe("requirement + group chat schema fields", () => {
-  const baseSession = {
-    id: "chat-1",
-    workspace_id: "ws-1",
-    agent_id: "agent-1",
-    creator_id: "user-1",
-    title: "Channel chat",
-    status: "active",
-    has_unread: false,
-    created_at: "2026-08-18T00:00:00Z",
-    updated_at: "2026-08-18T00:00:00Z",
+describe("task usage credits", () => {
+  const slice = {
+    provider: "qoder_cloud",
+    model: "",
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
   };
-  it("parses a requirement issue kind and a malformed kind falls back", () => {
-    expect(IssueSchema.parse({ ...baseIssue, kind: "requirement" }).kind).toBe("requirement");
-    expect(IssueSchema.parse({ ...baseIssue, kind: 42 }).kind).toBeUndefined();
-  });
 
-  it("parses a Requirement lifecycle with fallbacks", () => {
-    const parsed = RequirementSchema.parse({
-      issue_id: "issue-1",
-      lifecycle_status: "confirmed",
-      confirmed_revision: 5,
-      confirmed_by: "user-1",
-      confirmed_at: "2026-08-18T00:00:00Z",
-      unconfirmed_change: false,
+  it("keeps credits and treats a missing field as token-only usage", () => {
+    const parsed = AgentTaskSchema.parse({
+      id: "run",
+      usage: [{ ...slice, credits_micros: 1_250_000 }, { ...slice, provider: "anthropic" }],
     });
-    expect(parsed.unconfirmed_change).toBe(false);
-    // A malformed revision degrades without failing the whole requirement.
-    expect(RequirementSchema.parse({ ...parsed, confirmed_revision: "abc" }).confirmed_revision).toBeUndefined();
+    expect(parsed.usage?.[0]?.credits_micros).toBe(1_250_000);
+    expect(parsed.usage?.[1]?.credits_micros).toBeUndefined();
   });
 
-  it("parses group chat metadata and degrades a malformed participant list", () => {
-    const parsed = ChatSessionSchema.parse({
-      ...baseSession,
-      kind: "group",
-      is_project_default: true,
-      participants: [
-        { member_type: "member", member_id: "user-1", joined_at: "2026-08-18T00:00:00Z" },
-        { member_type: "agent", member_id: "agent-1", joined_at: "2026-08-18T00:00:00Z" },
-      ],
+  it("drops malformed credits without losing the usage row", () => {
+    const parsed = AgentTaskSchema.parse({
+      id: "run",
+      usage: [{ ...slice, credits_micros: "lots" }],
     });
-    expect(parsed.kind).toBe("group");
-    expect(parsed.is_project_default).toBe(true);
-    expect(parsed.participants?.length).toBe(2);
-    expect(parsed.participants?.[0]?.member_id).toBe("user-1");
-
-    // A malformed participant array degrades to undefined without dropping the session.
-    const bad = ChatSessionSchema.parse({ ...baseSession, participants: "not-an-array" });
-    expect(bad.participants).toBeUndefined();
-    expect(bad.id).toBe("chat-1");
-  });
-
-  it("keeps a malformed group-chat field from failing the whole session", () => {
-    expect(parseWithFallback({ id: 42 }, ChatSessionSchema, EMPTY_CHAT_SESSION, {
-      endpoint: "GET /api/chat/sessions/:id",
-    })).toEqual(EMPTY_CHAT_SESSION);
-  });
-
-  it("parses a group-chat message author and degrades a malformed one", () => {
-    const baseMsg = {
-      id: "msg-1",
-      chat_session_id: "chat-1",
-      role: "user",
-      content: "hi",
-      task_id: null,
-      created_at: "2026-08-18T00:00:00Z",
-    };
-    const parsed = ChatMessageSchema.parse({
-      ...baseMsg,
-      author_type: "member",
-      author_id: "user-1",
-    });
-    expect(parsed.author_type).toBe("member");
-    expect(parsed.author_id).toBe("user-1");
-    // A malformed author degrades independently without dropping the message.
-    expect(ChatMessageSchema.parse({ ...baseMsg, author_type: 42 }).author_type).toBeUndefined();
-    expect(ChatMessageSchema.parse(baseMsg).author_type).toBeUndefined();
+    expect(parsed.usage).toHaveLength(1);
+    expect(parsed.usage?.[0]?.credits_micros).toBeUndefined();
   });
 });
-

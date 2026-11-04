@@ -1,35 +1,40 @@
-export interface DaemonQuitEvent {
-  preventDefault(): void;
+interface QuitDependencies {
+  loadPrefs: () => Promise<{ autoStop: boolean }>;
+  pause: () => void;
+  resume: (restoreDesired: boolean) => void;
+  stop: () => Promise<boolean>;
+  confirmIgnore: (error: unknown) => Promise<boolean>;
+  quit: () => void;
 }
 
-export function createDaemonQuitHandler(options: {
-  prepare: () => void;
-  autoStop: () => Promise<boolean>;
-  stop: () => Promise<unknown>;
-  quit: () => void;
-  timeoutMs?: number;
-}): (event: DaemonQuitEvent) => void {
-  let quitting = false;
-  let released = false;
-  return (event) => {
-    if (released) return;
+export function createDaemonQuitHandler(deps: QuitDependencies) {
+  let busy = false;
+  let ready = false;
+  return (event: { preventDefault: () => void }) => {
+    if (ready) return;
     event.preventDefault();
-    if (quitting) return;
-    quitting = true;
-    options.prepare();
-    const finish = () => {
-      if (released) return;
-      released = true;
-      clearTimeout(deadline);
-      options.quit();
-    };
-    const deadline = setTimeout(finish, options.timeoutMs ?? 15_000);
+    if (busy) return;
+    busy = true;
     void (async () => {
+      let paused = false;
+      let restoreDesired = true;
       try {
-        if (await options.autoStop()) await options.stop();
+        if ((await deps.loadPrefs()).autoStop) {
+          deps.pause();
+          paused = true;
+          try {
+            if (!await deps.stop()) return;
+          } catch (error) {
+            restoreDesired = false;
+            if (!await deps.confirmIgnore(error)) return;
+          }
+        }
+        ready = true;
+        deps.quit();
       } finally {
-        finish();
+        if (paused && !ready) deps.resume(restoreDesired);
+        busy = false;
       }
-    })().catch(() => { console.warn("Local runtime shutdown did not complete before desktop exit"); });
+    })().catch((error) => console.warn("[daemon] quit interrupted:", error));
   };
 }

@@ -1,10 +1,4 @@
-import { openVscreenPermissionSettings } from "./external-url";
-import { createDaemonQuitHandler } from "./daemon-quit";
-import { localApplicationRequestSchema, localApplicationInventorySchema, localApplicationResultSchema } from "@multica/core/applications/local-runtime";
-import { requestVscreenDesktop } from "./vscreen-desktop-request";
-import type { VscreenScope } from "@multica/core/types";
-import type { VscreenDesktopAction, VscreenDesktopResult } from "../shared/vscreen-desktop";
-import { app, ipcMain, BrowserWindow, shell } from "electron";
+import { app, ipcMain, BrowserWindow, shell, dialog, type MessageBoxOptions } from "electron";
 import { execFile } from "child_process";
 import {
   readFile,
@@ -26,31 +20,18 @@ import type {
   DaemonStatus,
   DaemonPrefs,
   LocalRuntimeProbe,
-  ManagedWorktree,
-  ManagedWorktreeCleanupResult,
-  DaemonMcpReadiness,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
-import type {
-  DaemonWorkerProcess,
-  DaemonProcessOverviewEntry,
-  DaemonProcessOverviewResult,
-  DaemonProcessOverviewTotal,
-} from "../shared/daemon-types";
-import { requestLocalReview, requestLocalReviewBranches, requestLocalReviewPage, requestLocalReviewFileEdit, type LocalReviewTransport } from "./local-review-request";
-import { LocalReviewCancellation } from "./local-review-cancellation";
-import { isPagedReviewDecision, pagedReviewRequestSchema } from "@multica/core/types/local-review-pages";
-import { requestReviewInventory } from "./local-review-inventory";
-import { parseManagedWorktrees, parseManagedWorktreeCleanup, parseWorktreeCacheResults } from "@multica/core/types/managed-worktree";
-import { requestWorktreeCaches } from "./worktree-cache-request";
-import { requestWorktreeArchive } from "./worktree-archive-request";
-import { parseWorktreeArchiveResults, parseWorktreeArchiveSummaries } from "@multica/core/types/worktree-archives";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
-import { readDaemonParentPid, startMacDaemon } from "./daemon-launch";
+import { createDaemonQuitHandler } from "./daemon-quit";
+import { quitConfirmationOptions, quitFailureOptions } from "./daemon-quit-dialogs";
+import {
+  prepareDaemonForInstall,
+  type DaemonInstallPrep,
+} from "./update-install-gate";
 import {
   deriveProfileName,
-  healthPortForProfile,
   profileArgs,
   profileConfigPath,
   profileDir,
@@ -58,6 +39,7 @@ import {
   profilePidPath,
   profileUserIdPath,
 } from "./daemon-profile";
+import { probeProfileHealth, readDaemonPortRecord } from "./daemon-port";
 import {
   DaemonOperationGate,
   DaemonRecoveryPolicy,
@@ -104,13 +86,14 @@ const DEFAULT_PREFS: DaemonPrefs = { autoStart: true, autoStop: false };
 // `null` at every call site, never by an empty name — see daemon-profile.ts.
 interface ActiveProfile {
   name: string;
-  port: number;
 }
 
 let statusPollTimer: ReturnType<typeof setInterval> | null = null;
 let logTailWatcher: { path: string; listener: StatsListener } | null = null;
+let logTailOwner: Electron.WebContents | null = null;
 let currentState: DaemonStatus["state"] = "installing_cli";
 let getMainWindow: () => BrowserWindow | null = () => null;
+let getStatusWindows: () => readonly BrowserWindow[] = () => [];
 let statusPollInProgress = false;
 let cachedCliBinary: string | null | undefined = undefined;
 let cliResolvePromise: Promise<string | null> | null = null;
@@ -124,6 +107,13 @@ let activeProfile: ActiveProfile | null = null;
 // Recovery is intentionally process-local: it keeps a daemon alive while the
 // Desktop main process is running, but is not an OS service/watchdog.
 let desiredDaemonRunning = false;
+// Non-null while the Windows updater owns daemon shutdown and installation.
+let desiredRunningBeforeUpdateStop: boolean | null = null;
+const UPDATE_IN_PROGRESS = { success: false, error: "An update is being installed. Try again shortly." };
+let quitting = false;
+// Renderer recreation must not undo a failed-quit cancellation. Keep this
+// process-local until an explicit start/restart, without changing preferences.
+let autoStartSuppressedAfterQuit = false;
 // Once a foreign-OS daemon (for example WSL2) is observed on this profile, do
 // not replace it with a native daemon if its forwarded health endpoint drops.
 let externalDaemonObserved = false;
@@ -188,13 +178,16 @@ function urlsMatch(a: string, b: string): boolean {
 }
 
 function sendStatus(status: DaemonStatus): void {
-  const win = getMainWindow();
-  win?.webContents.send("daemon:status", status);
+  // One daemon serves every main window, and each shows its status.
+  for (const win of getStatusWindows()) {
+    if (!win.isDestroyed()) win.webContents.send("daemon:status", status);
+  }
 }
 
 interface HealthPayload {
   status?: string;
   pid?: number;
+  profile?: string;
   /** Daemon's runtime.GOOS. Absent on daemons older than the #3916 fix. */
   os?: string;
   uptime?: string;
@@ -204,22 +197,18 @@ interface HealthPayload {
   cli_version?: string;
   active_task_count?: number;
   agents?: string[];
-	workspaces?: unknown[];
-	mcp?: DaemonMcpReadiness[];
-	/** Profile's opt-in process ownership roles; empty omits the field pre-#xxx. */
-	process_services?: string[];
+  workspaces?: unknown[];
 }
 
 async function fetchHealthAtPort(
   port: number,
   timeoutMs = HEALTH_PROBE_TIMEOUT_MS,
-  signal?: AbortSignal,
 ): Promise<HealthPayload | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+      signal: controller.signal,
     });
     if (!res.ok) return null;
     return (await res.json()) as HealthPayload;
@@ -230,37 +219,13 @@ async function fetchHealthAtPort(
   }
 }
 
-async function fetchWorktreeManager(
-  path: string,
-  init?: RequestInit,
-  selectedProfile?: ActiveProfile,
-  timeoutMs = 120_000,
-): Promise<unknown> {
-  const active = selectedProfile ?? await ensureActiveProfile();
-  if (!active) throw new Error("The daemon profile is not ready yet.");
-  const config = await readProfileConfig(active.name);
-  if (typeof config.token !== "string" || !config.token) {
-    throw new Error("Sign in before managing worktrees.");
-  }
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(`http://127.0.0.1:${active.port}${path}`, {
-      ...init,
-      headers: { ...init?.headers, Authorization: `Bearer ${config.token}`, "X-Multica-Profile": active.name },
-      signal: init?.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
-    });
-    if (response.status === 404) {
-      if (path.startsWith("/jev/")) throw new Error("Update and restart the daemon to manage Jev models.");
-      if (path.startsWith("/mcp/")) throw new Error("Update and restart the daemon to view MCP services.");
-      throw new Error("Update and restart the daemon to manage worktrees.");
-    }
-    if (!response.ok) throw new Error(await response.text());
-    if (response.status === 204) return null;
-    return response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
+async function fetchProfileHealth(
+  active: ActiveProfile,
+  timeoutMs = HEALTH_PROBE_TIMEOUT_MS,
+): Promise<HealthPayload | null> {
+  return probeProfileHealth(active.name, (port) =>
+    fetchHealthAtPort(port, timeoutMs),
+  );
 }
 
 /**
@@ -344,7 +309,7 @@ async function resolveActiveProfile(): Promise<ActiveProfile | null> {
     console.log(`[daemon] initialized profile "${name}" → ${target}`);
   }
 
-  return { name, port: healthPortForProfile(name) };
+  return { name };
 }
 
 async function ensureActiveProfile(): Promise<ActiveProfile | null> {
@@ -363,6 +328,8 @@ function invalidateActiveProfile(): void {
 }
 
 function setDesiredDaemonRunning(desired: boolean, explicit = false): void {
+  if (desired && desiredRunningBeforeUpdateStop !== null) return;
+  if (desired && explicit) autoStartSuppressedAfterQuit = false;
   if (desiredDaemonRunning === desired && !explicit) return;
   desiredDaemonRunning = desired;
   recoveryPolicy.reset();
@@ -389,7 +356,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
   // honest answer; probing the default port would surface the user's own CLI
   // daemon as if it were Desktop's.
   if (!active) return { state: "stopped" };
-  const data = await fetchHealthAtPort(active.port);
+  const data = await fetchProfileHealth(active);
 
   if (!data || data.status !== "running") {
     // A start that never reaches "running" is the symptom; an expired/invalid
@@ -475,8 +442,6 @@ async function fetchHealth(): Promise<DaemonStatus> {
     profile: active.name,
     serverUrl: data.server_url,
     externallyManaged,
-    mcp: data.mcp ?? [],
-    processServices: data.process_services ?? [],
   };
 }
 
@@ -509,25 +474,10 @@ function findCliOnPath(): string | null {
  */
 function bundledCliPath(): string {
   const binName = process.platform === "win32" ? "multica.exe" : "multica";
-  const resourcesRoot = join(app.getAppPath(), "resources").replace(
+  return join(app.getAppPath(), "resources", "bin", binName).replace(
     "app.asar",
     "app.asar.unpacked",
   );
-  // TCC attributes Screen Recording and Accessibility to the code it actually
-  // checks. On macOS launch the binary inside MulticaDaemon.app so grants have
-  // stable bundle metadata and remain visible after updates. Keep the bare
-  // binary as a fallback for older packaged layouts.
-  if (process.platform === "darwin") {
-    const daemonBinary = join(
-      resourcesRoot,
-      "MulticaDaemon.app",
-      "Contents",
-      "MacOS",
-      binName,
-    );
-    if (existsSync(daemonBinary)) return daemonBinary;
-  }
-  return join(resourcesRoot, "bin", binName);
 }
 
 async function probeCliBinary(
@@ -577,6 +527,7 @@ async function probeCliBinary(
  * installs are de-duplicated via `cliResolvePromise`.
  */
 async function resolveCliBinary(): Promise<string | null> {
+  if (quitting) return cachedCliBinary ?? null;
   if (cachedCliBinary !== undefined) return cachedCliBinary;
   if (cliResolvePromise) return cliResolvePromise;
 
@@ -666,7 +617,7 @@ async function getCliBinaryVersion(): Promise<string | null> {
  *
  * Restart is only fired when ALL of:
  *   - a daemon is actually running on the active profile's port
- *   - versions differ, or a macOS helper outlived its launching Desktop
+ *   - both sides report a version and the strings differ
  *   - `active_task_count` is 0 (no in-flight agent work would be killed)
  *
  * On a confirmed mismatch while the daemon is busy, `pendingVersionRestart`
@@ -676,9 +627,10 @@ async function getCliBinaryVersion(): Promise<string | null> {
 async function ensureRunningDaemonVersionMatches(): Promise<
   "restarted" | "deferred" | "ok" | "not_running"
 > {
+  if (quitting || autoStartSuppressedAfterQuit) return "deferred";
   const active = await ensureActiveProfile();
   if (!active) return "not_running";
-  const running = await fetchHealthAtPort(active.port);
+  const running = await fetchProfileHealth(active);
 
   // Don't try to version-match a daemon we can't restart (e.g. WSL2). Treat it
   // as up-to-date — restartDaemon would no-op anyway, and skipping here avoids
@@ -689,16 +641,15 @@ async function ensureRunningDaemonVersionMatches(): Promise<
   }
 
   const bundled = await getCliBinaryVersion();
-  // New helpers remain direct children. PPID 1 identifies a daemon left by
-  // an earlier Desktop launch (including the old background-start path).
-  // Do not take over a helper still owned by another live Desktop instance.
-  const refreshPermissionContext = process.platform === "darwin"
-    && running?.status === "running"
-    && await readDaemonParentPid(running.pid) === 1;
-  const action = decideVersionAction(bundled, running, refreshPermissionContext);
-  const restartReason = refreshPermissionContext
-    ? "refreshing macOS recording permission context after Desktop relaunch"
-    : `CLI version mismatch (bundled=${bundled} running=${running?.cli_version})`;
+  if (
+    quitting ||
+    autoStartSuppressedAfterQuit ||
+    desiredRunningBeforeUpdateStop !== null
+  ) {
+    pendingVersionRestart = true;
+    return "deferred";
+  }
+  const action = decideVersionAction(bundled, running);
 
   switch (action) {
     case "not_running":
@@ -711,7 +662,7 @@ async function ensureRunningDaemonVersionMatches(): Promise<
       if (!pendingVersionRestart) {
         const activeTasks = running?.active_task_count ?? 0;
         console.log(
-          `[daemon] ${restartReason}; deferring restart until the daemon is idle (active tasks=${activeTasks})`,
+          `[daemon] CLI version mismatch (bundled=${bundled} running=${running?.cli_version}); deferring restart until ${activeTasks} active task(s) finish`,
         );
       }
       pendingVersionRestart = true;
@@ -719,7 +670,7 @@ async function ensureRunningDaemonVersionMatches(): Promise<
     }
     case "restart":
       console.log(
-        `[daemon] ${restartReason} — restarting daemon`,
+        `[daemon] CLI version mismatch (bundled=${bundled} running=${running?.cli_version}) — restarting daemon`,
       );
       pendingVersionRestart = false;
       await restartDaemon();
@@ -828,7 +779,7 @@ async function restartDaemonAfterUserSwitch(
 ): Promise<void> {
   // If we just rotated credentials onto a running daemon, restart it so the
   // in-memory token in the Go process matches the new config.
-  const existing = await fetchHealthAtPort(active.port);
+  const existing = await fetchProfileHealth(active);
   if (daemonStatusAlive(existing?.status)) {
     // Restart whether it's "running" or still "starting" — a booting daemon
     // already loaded the old token at startup, so it must be restarted to
@@ -963,12 +914,7 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
     execFile(
       bin,
       ["daemon", "probe-runtimes", ...profileArgs(active.name)],
-      {
-        cwd: profileDir(active.name),
-        timeout: 15_000,
-        env: desktopSpawnEnv(),
-        maxBuffer: 64 * 1024,
-      },
+      { timeout: 15_000, env: desktopSpawnEnv(), maxBuffer: 64 * 1024 },
       (error, stdout) => {
         if (error) {
           resolve({ probeResult: "error" });
@@ -1024,30 +970,7 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
 // applied by fix-path in main/index.ts — as a top-level const it would
 // snapshot process.env at import time, before that block runs.
 function desktopSpawnEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env, MULTICA_LAUNCHED_BY: "desktop" };
-
-  // A Desktop process can be opened from a Multica agent task (for example,
-  // while developing the app inside this repository). Never pass the task's
-  // identity, token, config root, or daemon endpoint to the host daemon: the
-  // CLI would treat the lifecycle child as another task process and refuse
-  // `daemon start`, or worse, connect it to the task's remote daemon.
-  const taskEnvKeys = [
-    "MULTICA_AGENT_ID",
-    "MULTICA_AGENT_NAME",
-    "MULTICA_DAEMON_PORT",
-    "MULTICA_SERVER_URL",
-    "MULTICA_TASK_CONFIG_ROOT",
-    "MULTICA_TASK_ID",
-    "MULTICA_TASK_SLOT",
-    "MULTICA_TASK_WORKSPACES_ROOT",
-    "MULTICA_TOKEN",
-    "MULTICA_WORKSPACE_ID",
-  ] as const;
-  if (taskEnvKeys.some((key) => env[key])) {
-    for (const key of taskEnvKeys) delete env[key];
-  }
-
-  return env;
+  return { ...process.env, MULTICA_LAUNCHED_BY: "desktop" };
 }
 
 function scheduleStatusRefresh(): void {
@@ -1057,6 +980,8 @@ function scheduleStatusRefresh(): void {
 async function startDaemon(
   recoveryProfile?: ActiveProfile,
 ): Promise<{ success: boolean; error?: string }> {
+  if (desiredRunningBeforeUpdateStop !== null) return UPDATE_IN_PROGRESS;
+  if (quitting) return { success: false, error: "Application is quitting" };
   const bin = await resolveCliBinary();
   if (!bin) return { success: false, error: "multica CLI is not installed" };
 
@@ -1075,7 +1000,7 @@ async function startDaemon(
   ) {
     return { success: false, error: "Daemon recovery was superseded" };
   }
-  const existing = await fetchHealthAtPort(active.port);
+  const existing = await fetchProfileHealth(active);
   if (daemonStatusAlive(existing?.status)) {
     // A daemon is already up ("running") or booting ("starting") on this port —
     // don't spawn a second one (the CLI rejects that as "already running").
@@ -1084,7 +1009,6 @@ async function startDaemon(
       existing?.os,
       normalizeHostOS(process.platform),
     );
-    if (process.platform === "darwin") pendingVersionRestart = true;
     scheduleStatusRefresh();
     return { success: true };
   }
@@ -1100,6 +1024,8 @@ async function startDaemon(
     return { success: false, error: "Daemon recovery was superseded" };
   }
 
+  if (desiredRunningBeforeUpdateStop !== null) return UPDATE_IN_PROGRESS;
+  if (quitting) return { success: false, error: "Application is quitting" };
   if (recoveryProfile) recoveryPolicy.recordRecoveryAttempt(Date.now());
   currentState = "starting";
   // Begin a fresh auth-probe window for this attempt.
@@ -1108,38 +1034,13 @@ async function startDaemon(
   authExpired = false;
   sendStatus({ state: "starting" });
 
-  if (process.platform === "darwin") {
-    try {
-      await startMacDaemon({
-        binary: bin,
-        profile: active.name,
-        directory: profileDir(active.name),
-        env: desktopSpawnEnv(),
-        isReady: async (pid, signal) => {
-          const health = await fetchHealthAtPort(active.port, HEALTH_PROBE_TIMEOUT_MS, signal);
-          return health?.pid === pid && health.status === "running";
-        },
-      });
-      scheduleStatusRefresh();
-      return { success: true };
-    } catch (error) {
-      currentState = "stopped";
-      sendStatus({ state: "stopped" });
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  }
-
   const args = ["daemon", "start", ...profileArgs(active.name)];
 
   return new Promise((resolve) => {
     execFile(
       bin,
       args,
-      {
-        cwd: profileDir(active.name),
-        timeout: DAEMON_START_EXEC_TIMEOUT_MS,
-        env: desktopSpawnEnv(),
-      },
+      { timeout: DAEMON_START_EXEC_TIMEOUT_MS, env: desktopSpawnEnv() },
       (err) => {
         if (err) {
           currentState = "stopped";
@@ -1169,12 +1070,16 @@ async function lifecycleBlockedByForeignDaemon(): Promise<boolean> {
   const active = await ensureActiveProfile();
   if (!active) return false;
   return daemonLifecycleUnreachable(
-    async () => (await fetchHealthAtPort(active.port))?.os,
+    async () => (await fetchProfileHealth(active))?.os,
     normalizeHostOS(process.platform),
   );
 }
 
-async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
+async function stopDaemon(
+  options: { force?: boolean; signal?: AbortSignal } = {},
+): Promise<{ success: boolean; error?: string }> {
+  const { signal } = options;
+  if (signal?.aborted) return { success: true };
   // Central lifecycle guard: a daemon running in an environment we can't drive
   // (e.g. Linux in WSL2 behind a Windows desktop) can't be stopped by the
   // native CLI — it would act on the host process namespace and no-op, while
@@ -1189,33 +1094,33 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
 
   const active = await ensureActiveProfile();
   if (!active) return { success: true };
+  // A queued update stop can expire while resolving the CLI/profile/preflight.
+  if (signal?.aborted) return { success: true };
   currentState = "stopping";
   // An explicit stop is a clean reset — drop any pending auth-failure verdict.
   authExpired = false;
   startingSince = null;
   sendStatus({ state: "stopping" });
 
-  const args = ["daemon", "stop", ...profileArgs(active.name)];
+  const args = ["daemon", "stop", ...(options.force ? ["--force"] : []), ...profileArgs(active.name)];
 
   return new Promise((resolve) => {
-    execFile(
-      bin,
-      args,
-      { cwd: profileDir(active.name), timeout: 15_000, env: desktopSpawnEnv() },
-      (err) => {
-        if (err) {
-          resolve({ success: false, error: err.message });
-        } else {
-          resolve({ success: true });
-        }
-        currentState = "stopped";
-        sendStatus({ state: "stopped" });
-      },
-    );
+    // The CLI's forced stop includes the existing 40s shutdown budget.
+    execFile(bin, args, { timeout: options.force ? 55_000 : 15_000 }, (err) => {
+      if (err) {
+        resolve({ success: false, error: err.message });
+      } else {
+        resolve({ success: true });
+      }
+      currentState = "stopped";
+      sendStatus({ state: "stopped" });
+    });
   });
 }
 
 async function restartDaemon(): Promise<{ success: boolean; error?: string }> {
+  if (desiredRunningBeforeUpdateStop !== null) return UPDATE_IN_PROGRESS;
+  if (quitting) return { success: false, error: "Application is quitting" };
   // Same central, live-preflighted guard as stopDaemon: we can neither stop nor
   // start a daemon we don't manage, so don't try (user-switch, reauth,
   // first-workspace, and any future restart caller all route through here).
@@ -1224,34 +1129,6 @@ async function restartDaemon(): Promise<{ success: boolean; error?: string }> {
   const stopResult = await stopDaemon();
   if (!stopResult.success) return stopResult;
   return startDaemon();
-}
-
-/**
- * Sets the profile's opt-in process ownership roles and restarts the daemon so
- * the new config takes effect. The write goes through `multica config set
- * process_services`, which validates the role set via ValidateProcessServices,
- * so an unsupported role is rejected before anything is persisted — the same
- * gate the CLI enforces. The restart is the deliberate, user-confirmed side
- * effect of changing the set; it is not fired on a failed write.
- */
-async function setProcessServices(
-  services: string[],
-  active?: ActiveProfile,
-): Promise<{ success: boolean; error?: string }> {
-  const bin = await resolveCliBinary();
-  if (!bin) return { success: false, error: "multica CLI is not available." };
-  const profile = active ?? (await ensureActiveProfile());
-  if (!profile) return { success: false, error: "No active daemon profile." };
-  const wrote = await new Promise<boolean>((resolve) => {
-    execFile(
-      bin,
-      ["config", "set", "process_services", services.join(","), ...profileArgs(profile.name)],
-      { cwd: profileDir(profile.name), timeout: 15_000, env: desktopSpawnEnv() },
-      (err) => resolve(!err),
-    );
-  });
-  if (!wrote) return { success: false, error: "Failed to update process_services config." };
-  return restartDaemon();
 }
 
 async function daemonPidIsConfirmedAbsent(profile: string): Promise<boolean> {
@@ -1279,6 +1156,12 @@ async function daemonPidIsConfirmedAbsent(profile: string): Promise<boolean> {
   }
 }
 
+async function daemonProcessIsConfirmedAbsent(profile: string): Promise<boolean> {
+  const record = await readDaemonPortRecord(profile);
+  return await daemonPidIsConfirmedAbsent(profile)
+    && !(record && daemonProcessExists(record.pid));
+}
+
 async function attemptDaemonRecovery(active: ActiveProfile): Promise<void> {
   const startAllowed = () =>
     recoveryStartAllowed({
@@ -1293,10 +1176,7 @@ async function attemptDaemonRecovery(active: ActiveProfile): Promise<void> {
     // as process death, use an independent longer probe so a busy daemon is
     // not restarted merely because one health request was slow.
     confirmAlive: async () => {
-      const health = await fetchHealthAtPort(
-        active.port,
-        RECOVERY_HEALTH_PROBE_TIMEOUT_MS,
-      );
+      const health = await fetchProfileHealth(active, RECOVERY_HEALTH_PROBE_TIMEOUT_MS);
       if (!daemonStatusAlive(health?.status)) return false;
       externalDaemonObserved = isDaemonExternallyManaged(
         health?.os,
@@ -1355,14 +1235,12 @@ function recoveryDecision(status: DaemonStatus) {
 }
 
 async function pollOnce(): Promise<void> {
-  if (statusPollInProgress) return;
+  if (quitting || statusPollInProgress) return;
   statusPollInProgress = true;
   try {
     const status = await fetchHealth();
+    if (quitting) return;
     currentState = status.state;
-    if (status.state === "running" && desiredVscreenExclusions) {
-      await flushVscreenWindowExclusions().catch(() => { console.warn("Runtime mirror exclusion synchronization failed"); });
-    }
     observeDaemonBoundary(status);
     const decision = recoveryDecision(status);
     sendStatus(
@@ -1396,7 +1274,7 @@ async function pollOnce(): Promise<void> {
 }
 
 function startPolling(): void {
-  if (statusPollTimer) return;
+  if (quitting || statusPollTimer || desiredRunningBeforeUpdateStop !== null) return;
   void pollOnce();
   statusPollTimer = setInterval(() => void pollOnce(), POLL_INTERVAL_MS);
 }
@@ -1445,6 +1323,7 @@ async function readLogRange(
 }
 
 function sendLines(win: BrowserWindow, text: string): void {
+  if (win.isDestroyed()) return;
   const lines = text.split("\n").filter((line) => line.length > 0);
   for (const line of lines) {
     win.webContents.send("daemon:log-line", line);
@@ -1480,6 +1359,7 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
       const startAt = initialStats.size - windowBytes;
       if (windowBytes > 0) {
         const text = await readLogRange(logPath, startAt, windowBytes);
+        if (win.isDestroyed()) return;
         const lines = text
           .split("\n")
           .filter((line) => line.length > 0)
@@ -1495,8 +1375,10 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
     }
 
     const listener: StatsListener = (curr) => {
-      const target = getMainWindow();
-      if (!target) return;
+      if (win.isDestroyed()) {
+        stopLogTail();
+        return;
+      }
       // File rotated/truncated — restart from the new beginning.
       if (curr.size < position) position = 0;
       if (curr.size === position) return;
@@ -1504,7 +1386,7 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
       const length = curr.size - from;
       position = curr.size;
       readLogRange(logPath, from, length)
-        .then((text) => sendLines(target, text))
+        .then((text) => sendLines(win, text))
         .catch((err) => {
           console.warn("[daemon] log tail read failed:", err);
         });
@@ -1522,10 +1404,54 @@ function stopLogTail(): void {
   }
 }
 
+export function prepareDaemonForUpdateInstall(options: {
+  interruptActiveTasks: boolean;
+}): Promise<DaemonInstallPrep> {
+  desiredRunningBeforeUpdateStop ??= desiredDaemonRunning;
+  setDesiredDaemonRunning(false);
+  stopPolling();
+  return prepareDaemonForInstall({
+    probe: async () => {
+      const active = await ensureActiveProfile();
+      if (!active) return null;
+      const health = await fetchProfileHealth(active);
+      return {
+        alive: daemonStatusAlive(health?.status),
+        pid: health?.pid,
+        activeTasks: health?.active_task_count ?? 0,
+        externallyManaged: isDaemonExternallyManaged(health?.os, normalizeHostOS(process.platform)),
+      };
+    },
+    stop: async (signal) => {
+      const result = await lifecycleOperations.runForeground(() => stopDaemon({ signal }));
+      if (!result.success) throw new Error(result.error ?? "daemon stop failed");
+    },
+    processExists: daemonProcessExists,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  }, options);
+}
+
+export function resumeDaemonAfterAbortedUpdateInstall(): void {
+  if (desiredRunningBeforeUpdateStop === null) return;
+  const desired = desiredRunningBeforeUpdateStop;
+  desiredRunningBeforeUpdateStop = null;
+  setDesiredDaemonRunning(desired, true);
+  startPolling();
+}
+
+/**
+ * `windowGetter` is the main window that hosts dialogs and progress;
+ * `statusWindowsGetter` lists every main window that shows daemon status.
+ */
 export function setupDaemonManager(
   windowGetter: () => BrowserWindow | null,
+  statusWindowsGetter: () => readonly BrowserWindow[] = () => {
+    const window = windowGetter();
+    return window ? [window] : [];
+  },
 ): void {
   getMainWindow = windowGetter;
+  getStatusWindows = statusWindowsGetter;
 
   ipcMain.handle("daemon:set-target-api-url", async (_e, url: string) => {
     const normalized = url || null;
@@ -1538,242 +1464,27 @@ export function setupDaemonManager(
     }
   });
   ipcMain.handle("daemon:start", () => {
+    if (desiredRunningBeforeUpdateStop !== null) return UPDATE_IN_PROGRESS;
     externalDaemonObserved = false;
     setDesiredDaemonRunning(true, true);
     return lifecycleOperations.runForeground(() => startDaemon());
   });
   ipcMain.handle("daemon:stop", () => {
+    if (desiredRunningBeforeUpdateStop !== null) {
+      desiredRunningBeforeUpdateStop = false;
+      return { success: true };
+    }
     setDesiredDaemonRunning(false, true);
     return lifecycleOperations.runForeground(() => stopDaemon());
   });
   ipcMain.handle("daemon:restart", () => {
+    if (desiredRunningBeforeUpdateStop !== null) return UPDATE_IN_PROGRESS;
     externalDaemonObserved = false;
     setDesiredDaemonRunning(true, true);
     return lifecycleOperations.runForeground(() => restartDaemon());
   });
-  // Route the config-write + restart through the same singleflight gate as
-  // daemon:restart. The set-process-services intent stops and starts the
-  // daemon; running it ungated let it race a concurrent poll/recovery
-  // operation, leaving the IPC (and the confirm dialog) pending forever.
-  ipcMain.handle(
-    "daemon:set-process-services",
-    (_event, services: unknown) =>
-      lifecycleOperations.runForeground(() =>
-        setProcessServices(
-          Array.isArray(services)
-            ? services.filter((service): service is string => typeof service === "string")
-            : [],
-        ),
-      ),
-  );
   ipcMain.handle("daemon:get-status", () => fetchHealth());
-  ipcMain.handle("daemon:mcp-readiness", async (): Promise<DaemonMcpReadiness[]> => {
-    const response = await fetchWorktreeManager("/mcp/readiness");
-    if (!response || typeof response !== "object") return [];
-    const value = (response as { mcp?: unknown }).mcp;
-    if (!Array.isArray(value)) return [];
-    return value.filter((entry): entry is DaemonMcpReadiness => {
-      if (!entry || typeof entry !== "object") return false;
-      const item = entry as Partial<DaemonMcpReadiness>;
-      return typeof item.name === "string" && typeof item.enabled === "boolean" && typeof item.scope === "string" && typeof item.ready === "boolean" && typeof item.state === "string";
-    });
-  });
-  ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
-    parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
-  );
-  ipcMain.handle("daemon:mcp-services", () => fetchWorktreeManager("/mcp/services"));
-  ipcMain.handle("daemon:jev-models", () => fetchWorktreeManager("/jev/models"));
-  ipcMain.handle("daemon:worker-processes", async (): Promise<DaemonWorkerProcess[]> => {
-    const response = await fetchWorktreeManager("/runtimes/processes");
-    if (!response || typeof response !== "object") return [];
-    const value = (response as { processes?: unknown }).processes;
-    if (!Array.isArray(value)) return [];
-    return value.filter((entry): entry is DaemonWorkerProcess => {
-      if (!entry || typeof entry !== "object") return false;
-      const item = entry as Partial<DaemonWorkerProcess>;
-      return (
-        typeof item.exec_id === "string" &&
-        typeof item.instance_id === "string" &&
-        typeof item.task_id === "string" &&
-        typeof item.provider === "string" &&
-        typeof item.state === "string" &&
-        typeof item.ready === "boolean"
-      );
-      // pid/memory_bytes/cpu_time_ms are optional numeric resource readings;
-      // the DaemonWorkerProcess type marks them optional, so no guard is needed.
-    });
-  });
-  ipcMain.handle("daemon:worker-process-stop", (_event, execId: unknown) => {
-    if (typeof execId !== "string" || !execId.trim()) throw new Error("exec id is required");
-    return fetchWorktreeManager("/runtimes/processes/stop", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ exec_id: execId }),
-    });
-  });
-  ipcMain.handle(
-    "daemon:processes-overview",
-    async (): Promise<DaemonProcessOverviewResult> => {
-      const response = await fetchWorktreeManager("/runtimes/processes/overview");
-      const result: DaemonProcessOverviewResult = {
-        processes: [],
-        total: { available: false },
-      };
-      if (!response || typeof response !== "object") return result;
-      const value = (response as { processes?: unknown }).processes;
-      if (Array.isArray(value)) {
-        result.processes = value.filter((entry): entry is DaemonProcessOverviewEntry => {
-          if (!entry || typeof entry !== "object") return false;
-          const item = entry as Partial<DaemonProcessOverviewEntry>;
-          return (
-            typeof item.category === "string" &&
-            typeof item.id === "string" &&
-            typeof item.name === "string" &&
-            typeof item.state === "string" &&
-            typeof item.ready === "boolean"
-          );
-          // pid/memory_bytes/cpu_time_ms and the tree_* readings are optional
-          // numeric resource readings; the type marks them optional, so no guard is needed.
-        });
-      }
-      const total = (response as { total?: unknown }).total;
-      if (total && typeof total === "object") {
-        result.total = sanitizeOverviewTotal(total as Partial<DaemonProcessOverviewTotal>);
-      }
-      return result;
-    },
-  );
-
-  // sanitizeOverviewTotal copies only the numeric/boolean fields the
-  // panel consumes, so a malformed daemon response degrades to an unavailable
-  // total rather than leaking a wrong zero.
-  const sanitizeOverviewTotal = (total: Partial<DaemonProcessOverviewTotal>): DaemonProcessOverviewTotal => {
-    const out: DaemonProcessOverviewTotal = { available: total.available === true };
-    if (typeof total.process_count === "number") out.process_count = total.process_count;
-    if (typeof total.memory_bytes === "number") out.memory_bytes = total.memory_bytes;
-    if (typeof total.cpu_time_ms === "number") out.cpu_time_ms = total.cpu_time_ms;
-    return out;
-  };
-  ipcMain.handle("daemon:local-application-operation",async (_event,request:unknown):Promise<unknown|null>=>{
-    const input=localApplicationRequestSchema.parse(request);
-    const active=await ensureActiveProfile();
-    if(!active)throw new Error("Local daemon profile is not ready; retry local application operation");
-    const inventory=localApplicationInventorySchema.parse(await fetchWorktreeManager("/applications/local",undefined,active,5_000));
-    const local=inventory.applications.find((entry)=>entry.workspace_id===input.workspace_id&&entry.runtime_id===input.runtime_id&&entry.application_id===input.application_id&&entry.revision===input.revision);
-    if(!local)return null;
-    const raw=await fetchWorktreeManager("/applications/local",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)},active,10_000);
-    const result=localApplicationResultSchema.parse(raw);
-    if(result.command_id!==input.command_id)throw new Error("Local application command identity changed");
-    if(result.observation.instance_id!==local.instance_id || result.observation.revision!==input.revision)throw new Error("Local application observation scope changed");
-    const actor=await readProfileUserId(active.name);
-    if(!actor)throw new Error("Local account identity unavailable");
-    const now=new Date().toISOString();
-    return {id:input.command_id,workspace_id:input.workspace_id,application_id:input.application_id,action:input.action,actor_type:"member",actor_id:actor,state:"completed",created_at:now,completed_at:now,error:"",snapshot:{root_runtime_id:input.runtime_id,root_revision:input.revision,placements:{},plan:{root_id:input.application_id,nodes:[],waves:[]}},steps:[],local:true,sync_pending:result.sync_pending};
-  });
-  ipcMain.handle("daemon:list-local-applications",async ():Promise<unknown[]>=>{
-    const active=await ensureActiveProfile();if(!active)return [];
-    const inventory=localApplicationInventorySchema.parse(await fetchWorktreeManager("/applications/local",undefined,active,5_000));
-    return inventory.applications;
-  });
-  ipcMain.handle("daemon:local-application-supported",async (_event,request:unknown):Promise<boolean>=>{
-    const input=localApplicationRequestSchema.parse(request);
-    const active=await ensureActiveProfile();if(!active)throw new Error("Local daemon profile is not ready; retry local application support check");
-    const inventory=localApplicationInventorySchema.parse(await fetchWorktreeManager("/applications/local",undefined,active,5_000));
-    return inventory.applications.some((entry)=>entry.workspace_id===input.workspace_id&&entry.runtime_id===input.runtime_id&&entry.application_id===input.application_id&&entry.revision===input.revision);
-  });
-  ipcMain.handle("daemon:jev-model-register", (_event, modelId: unknown, revision: unknown) => {
-    if (typeof modelId !== "string" || !modelId.trim() || typeof revision !== "string") throw new Error("model ID and revision are required");
-    return fetchWorktreeManager("/jev/models/register", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model_id: modelId, revision }),
-    });
-  });
-  ipcMain.handle("daemon:jev-model-install", (_event, modelId: unknown, revision?: unknown) => {
-    if (typeof modelId !== "string" || !modelId.trim()) throw new Error("model id is required");
-    if (revision !== undefined && typeof revision !== "string") throw new Error("invalid model revision");
-    return fetchWorktreeManager("/jev/models/install", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model_id: modelId, revision }),
-    });
-  });
-  ipcMain.handle("daemon:jev-model-cancel", (_event, modelId: unknown, revision?: unknown) => {
-    if (typeof modelId !== "string" || !modelId.trim()) throw new Error("model id is required");
-    if (revision !== undefined && typeof revision !== "string") throw new Error("invalid model revision");
-    return fetchWorktreeManager("/jev/models/cancel", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model_id: modelId, revision }),
-    });
-  });
-  ipcMain.handle("daemon:review-inventory", () => requestReviewInventory({
-    resolveProfile: ensureActiveProfile,
-    health: (profile) => fetchHealthAtPort(profile.port),
-    inventory: (profile) => fetchWorktreeManager("/worktrees", undefined, profile),
-  }));
-  const reviewTransport: LocalReviewTransport = {
-    resolveProfile: ensureActiveProfile,
-    discoverRuntime: async (profile, request, signal) => {
-      const config = await readProfileConfig(profile.name);
-      if (typeof config.token !== "string" || !config.token || typeof config.server_url !== "string" || !config.server_url) throw new Error("Sign in to discover this legacy worktree runtime.");
-      const response = await fetch(`${config.server_url.replace(/\/+$/, "")}/api/daemon/tasks/${encodeURIComponent(request.task_id)}/review-binding`, {
-        headers: { Authorization: `Bearer ${config.token}` }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
-      });
-      if (!response.ok) throw new Error("Legacy worktree runtime discovery unavailable; check server connection and ownership.");
-      return response.json();
-    },
-    health: (profile, signal) => fetchHealthAtPort(profile.port, HEALTH_PROBE_TIMEOUT_MS, signal),
-    review: (profile, request, signal) => fetchWorktreeManager("/worktrees/review", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request), signal,
-    }, profile),
-  };
-  ipcMain.handle("daemon:read-local-review", (_event, input: unknown) => requestLocalReview(input, reviewTransport));
-  ipcMain.handle("daemon:apply-file-edit", (_event, input: unknown) => requestLocalReviewFileEdit(input, reviewTransport));
-  const reviewReads = new LocalReviewCancellation();
-  ipcMain.handle("daemon:read-local-review-branches", (event, input: unknown, readID: unknown) => {
-    if (typeof readID !== "string") return requestLocalReviewBranches(input, reviewTransport);
-    return reviewReads.run(event.sender, readID, (signal) => requestLocalReviewBranches(input, reviewTransport, signal));
-  });
-  ipcMain.handle("daemon:read-local-review-page", (event, input: unknown, readID: unknown) => {
-    const request = pagedReviewRequestSchema.parse(input);
-    if (typeof readID !== "string" || isPagedReviewDecision(request.action)) return requestLocalReviewPage(request, reviewTransport);
-    return reviewReads.run(event.sender, readID, (signal) => requestLocalReviewPage(request, reviewTransport, signal));
-  });
-  ipcMain.on("daemon:cancel-local-review-read", (event, readID: unknown) => {
-    if (typeof readID === "string") reviewReads.cancel(event.sender, readID);
-  });
-  ipcMain.handle("daemon:cleanup-worktrees", async (_event, paths: unknown, discardChanges: unknown = false): Promise<ManagedWorktreeCleanupResult> => {
-    if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((path) => typeof path !== "string" || !path) || typeof discardChanges !== "boolean") {
-      throw new Error("Select between 1 and 1000 worktrees to clean.");
-    }
-    return parseManagedWorktreeCleanup(await fetchWorktreeManager("/worktrees", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paths, discard_changes: discardChanges }),
-    }));
-  });
   ipcMain.handle("daemon:probe-runtimes", () => probeLocalRuntimes());
-  ipcMain.handle("daemon:list-environment-archives", async (_event, workspaceId: unknown) => {
-    if (workspaceId !== undefined && (typeof workspaceId !== "string" || !workspaceId)) throw new Error("Invalid workspace id");
-    const query = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
-    return parseWorktreeArchiveSummaries(await fetchWorktreeManager(`/worktrees/archives${query}`));
-  });
-  ipcMain.handle("daemon:environment-archive-operation", (_event, request: unknown) => requestWorktreeArchive(request, async (body) =>
-    parseWorktreeArchiveResults(await fetchWorktreeManager("/worktrees/archives", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    })),
-  ));
-  ipcMain.handle("daemon:preview-worktree-caches", (_event, workspaceId: unknown) =>
-    requestWorktreeCaches({ action: "preview_cache", workspace_id: workspaceId }, async (request) =>
-      parseWorktreeCacheResults(await fetchWorktreeManager("/worktrees", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request),
-      }))),
-  );
-  ipcMain.handle("daemon:clean-worktree-caches", (_event, selections: unknown, workspaceId: unknown) => {
-    return requestWorktreeCaches({ action: "clean_cache", workspace_id: workspaceId, selections }, async (body) => parseWorktreeCacheResults(await fetchWorktreeManager("/worktrees", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    })));
-  });
   // The host's OS name, available regardless of daemon state. The Runtimes
   // page uses it as a fallback identity for "this machine" when no
   // app-managed daemon is reporting a device name (e.g. the daemon runs
@@ -1827,14 +1538,17 @@ export function setupDaemonManager(
   );
   ipcMain.handle("daemon:auto-start", async () => {
     const prefs = await loadPrefs();
+    if (quitting || autoStartSuppressedAfterQuit) return;
     setDesiredDaemonRunning(prefs.autoStart);
     if (!prefs.autoStart) return;
     // Login auto-start is emitted once per session. Queue it behind bootstrap
     // instead of dropping it like a retryable poll operation.
     await lifecycleOperations.runForeground(async () => {
+      if (quitting || autoStartSuppressedAfterQuit) return;
       const bin = await resolveCliBinary();
       if (!bin) return;
       const health = await fetchHealth();
+      if (quitting || autoStartSuppressedAfterQuit) return;
       observeDaemonBoundary(health);
       if (health.state === "running") {
         // Daemon is up but may be running an older CLI than the one we just
@@ -1846,12 +1560,18 @@ export function setupDaemonManager(
     });
   });
 
-  ipcMain.on("daemon:start-log-stream", () => {
-    const win = getMainWindow();
-    if (win) startLogTail(win);
+  // One tail at a time, streamed to the window that opened the log view
+  // last; a window closing its view does not stop another window's stream.
+  ipcMain.on("daemon:start-log-stream", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    logTailOwner = event.sender;
+    startLogTail(win);
   });
 
-  ipcMain.on("daemon:stop-log-stream", () => {
+  ipcMain.on("daemon:stop-log-stream", (event) => {
+    if (logTailOwner && logTailOwner !== event.sender) return;
+    logTailOwner = null;
     stopLogTail();
   });
 
@@ -1875,49 +1595,96 @@ export function setupDaemonManager(
   sendStatus({ state: "installing_cli" });
   void lifecycleOperations.runBackground(() => bootstrapCli());
 
-  app.on("before-quit", createDaemonQuitHandler({
-    prepare: () => {
+  let desiredBeforeQuit = false;
+  const language = app.getPreferredSystemLanguages()[0] ?? "en";
+  let hiddenQuitWindows: BrowserWindow[] = [];
+  const hideQuitWindows = () => {
+    hiddenQuitWindows = BrowserWindow.getAllWindows().filter((window) =>
+      !window.isDestroyed() && window.isVisible(),
+    );
+    for (const window of hiddenQuitWindows) window.hide();
+  };
+  const restoreQuitWindows = () => {
+    for (const window of hiddenQuitWindows) {
+      if (!window.isDestroyed()) window.show();
+    }
+    hiddenQuitWindows = [];
+  };
+  const show = (options: MessageBoxOptions) => {
+    const window = getMainWindow();
+    return window && !window.isDestroyed() && window.isVisible()
+      ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options);
+  };
+  const handleQuit = createDaemonQuitHandler({
+    loadPrefs,
+    pause: () => {
+      desiredBeforeQuit = desiredDaemonRunning;
+      quitting = true;
+      setDesiredDaemonRunning(false);
+      stopPolling();
+    },
+    resume: (restoreDesired) => {
+      restoreQuitWindows();
+      if (!restoreDesired) autoStartSuppressedAfterQuit = true;
+      quitting = false;
+      setDesiredDaemonRunning(restoreDesired && desiredBeforeQuit);
+      startPolling();
+      if (!getMainWindow()) app.emit("activate");
+    },
+    stop: async () => {
+      const active = await ensureActiveProfile();
+      if (!active) return true;
+      const health = await fetchProfileHealth(active);
+      if (isDaemonExternallyManaged(health?.os, normalizeHostOS(process.platform))) return true;
+      const healthy = daemonStatusAlive(health?.status);
+      const reportedRuns = health?.active_task_count;
+      const activeRuns = healthy && typeof reportedRuns === "number"
+        && Number.isSafeInteger(reportedRuns) && reportedRuns >= 0 ? reportedRuns : null;
+      let busy = healthy
+        ? activeRuns !== 0
+        : currentState === "running" || currentState === "starting";
+      if (!healthy && !busy) {
+        busy = !await daemonProcessIsConfirmedAbsent(active.name);
+      }
+      if (busy && (await show(quitConfirmationOptions(language, activeRuns))).response !== 1) return false;
+      // Reuse the lifecycle queue: an earlier start must finish before stop.
+      // Do not queue behind an unresolved CLI installation during quit.
+      if (!cachedCliBinary) {
+        if (!healthy && await daemonProcessIsConfirmedAbsent(active.name)) return true;
+        throw new Error("Multica CLI is not available");
+      }
+      const window = getMainWindow();
+      window?.setProgressBar(2);
+      // Make the accepted quit visible even while a prior start or cleanup drains.
+      hideQuitWindows();
+      try {
+        const result = await lifecycleOperations.runForeground(() => stopDaemon({ force: true }));
+        if (!result.success) throw new Error(result.error ?? "Could not stop the daemon");
+      } finally {
+        if (window && !window.isDestroyed()) window.setProgressBar(-1);
+      }
+      return true;
+    },
+    confirmIgnore: async (error) => {
+      console.warn("[daemon] could not stop on quit:", error);
+      restoreQuitWindows();
+      const active = await ensureActiveProfile();
+      const health = active ? await fetchProfileHealth(active) : null;
+      const daemonStopped = Boolean(active && !daemonStatusAlive(health?.status)
+        && await daemonProcessIsConfirmedAbsent(active.name));
+      return (await show(quitFailureOptions(language, daemonStopped))).response === 1;
+    },
+    quit: () => { stopLogTail(); app.quit(); },
+  });
+  app.on("before-quit", (event) => {
+    // The Windows updater registers first and owns its pending or approved quit.
+    if (event.defaultPrevented) return;
+    if (desiredRunningBeforeUpdateStop !== null) {
       setDesiredDaemonRunning(false);
       stopPolling();
       stopLogTail();
-    },
-    autoStop: async () => (await loadPrefs()).autoStop,
-    stop: stopDaemon,
-    quit: () => app.quit(),
-  }));
-}
-
-export async function performVscreenDesktop(scope: VscreenScope, operation: VscreenDesktopAction, isCurrent: () => boolean): Promise<VscreenDesktopResult> {
-  const active = await ensureActiveProfile();
-  if (!active || targetApiBaseUrl?.replace(/\/$/, "") !== scope.backendIdentity || process.platform !== "darwin") return { ok: false, local: false, reason: "local_owner_required" };
-  const current = () => isCurrent() && activeProfile?.name === active.name && targetApiBaseUrl?.replace(/\/$/, "") === scope.backendIdentity;
-  if (operation.action === "settings") {
-    const isCurrentScope = current();
-    if (isCurrentScope) await openVscreenPermissionSettings(operation.permission);
-    return { ok: isCurrentScope, local: true, reason: isCurrentScope ? undefined : "local_owner_required" };
-  }
-  const body = operation.action === "takeover" ? { action: operation.action, intervention_id: operation.interventionId, destination_source_id: operation.destinationSourceId } : operation.action === "return" ? { action: operation.action, intervention_id: operation.interventionId, summary: operation.summary } : operation.action === "list_windows" ? { action: operation.action, intervention_id: operation.interventionId } : operation.action === "adopt_window" ? { action: operation.action, intervention_id: operation.interventionId, window_handle: operation.windowHandle } : { action: "status" };
-  try {
-    return await requestVscreenDesktop({ directory: profileDir(active.name), port: active.port, profile: active.name, backend: scope.backendIdentity, accountId: scope.accountId, workspaceId: scope.workspaceId, runtimeId: scope.runtimeId, body, isCurrent: current, profileAccount: () => readProfileUserId(active.name) });
-  } catch { return { ok: false, local: false, reason: "local_owner_required" }; }
-}
-let desiredVscreenExclusions: { ids: readonly number[]; accountId: string; isCurrent: () => boolean } | null = null;
-let vscreenExclusionWork: Promise<void> = Promise.resolve();
-export function updateVscreenWindowExclusions(ids: readonly number[], accountId: string, isCurrent: () => boolean): Promise<void> {
-  desiredVscreenExclusions = { ids: [...ids], accountId, isCurrent };
-  return flushVscreenWindowExclusions();
-}
-function flushVscreenWindowExclusions(): Promise<void> {
-  const operation = vscreenExclusionWork.catch(() => undefined).then(async () => {
-    const entry = desiredVscreenExclusions;
-    if (!entry || !entry.isCurrent()) return;
-    const { ids, accountId } = entry;
-    const isCurrent = () => entry === desiredVscreenExclusions && entry.isCurrent();
-  const active = await ensureActiveProfile(); const backend = targetApiBaseUrl?.replace(/\/$/, "");
-  if (!active || !backend || process.platform !== "darwin") return;
-  const result = await requestVscreenDesktop({ directory: profileDir(active.name), port: active.port, profile: active.name, backend, accountId, body: { action: "exclusions", excluded_window_ids: ids }, isCurrent: () => isCurrent() && activeProfile?.name === active.name, profileAccount: () => readProfileUserId(active.name) });
-  if (!result.ok) throw new Error(result.reason ?? "capture_update_failed");
+      return;
+    }
+    handleQuit(event);
   });
-  vscreenExclusionWork = operation;
-  return operation;
 }

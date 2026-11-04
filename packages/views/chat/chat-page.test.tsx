@@ -49,7 +49,6 @@ vi.mock("./components/chat-empty-state", () => ({
 }));
 vi.mock("./components/new-chat-button", () => ({
   NewChatButton: () => <div>new-chat-button</div>,
-  AgentPicker: () => <div>agent-picker</div>,
 }));
 vi.mock("./components/offline-banner", () => ({
   OfflineBanner: () => null,
@@ -60,32 +59,21 @@ vi.mock("./components/no-agent-banner", () => ({
 vi.mock("./components/archived-agent-banner", () => ({
   ArchivedAgentBanner: () => null,
 }));
-vi.mock("react-resizable-panels", () => ({
-  useDefaultLayout: () => ({ defaultLayout: undefined, onLayoutChanged: vi.fn() }),
-}));
-vi.mock("@multica/ui/components/ui/resizable", () => ({
-  ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ResizablePanel: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ResizableHandle: () => null,
-}));
 // Same width-driven layout mock the inbox page tests use: the deep-link tests
 // all want the desktop two-pane layout, the breakpoint tests at the bottom set
 // their own width.
-const FOLD_INNER = 851;
-const TABLET = 1024;
+// iPhone Duo's inner screen: 669px wide held upright, 951px held sideways.
+const FOLD_INNER_PORTRAIT = 669;
+const FOLD_INNER_LANDSCAPE = 951;
+const TABLET = 768;
 const DESKTOP = 1440;
 const layout = vi.hoisted(() => ({ width: 1440 }));
 vi.mock("@multica/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.width < 768,
-  useIsCompact: () => layout.width < 1024,
+  useIsCompact: () => layout.width < 768,
 }));
 vi.mock("@multica/core/paths", () => ({
   useRequiredWorkspaceSlug: () => "acme",
-  useWorkspaceSlug: () => "acme",
   useWorkspacePaths: () => ({ chat: () => "/acme/chat" }),
 }));
 const platformWorkspace = vi.hoisted(() => ({ slug: "acme" }));
@@ -101,11 +89,7 @@ vi.mock("@multica/core/platform", async (importOriginal) => ({
 // DOM frozen on the first commit — which silently hides exactly the class of
 // bug the StrictMode regression below exists to catch.
 const storeRef = vi.hoisted(() => ({
-  current: {
-    activeSessionId: null as string | null,
-    inputDrafts: {} as Record<string, string>,
-    clearInputDraft: vi.fn(),
-  },
+  current: { activeSessionId: null as string | null },
 }));
 const storeListeners = vi.hoisted(() => new Set<() => void>());
 const availableAgentsRef = vi.hoisted(() => ({ current: [] as Agent[] }));
@@ -133,15 +117,6 @@ vi.mock("@multica/core/chat", () => ({
       selector ? selector(storeRef.current) : storeRef.current,
     { getState: () => storeRef.current },
   ),
-  // Doc mode is not exercised here: no document is open, so the surface never
-  // mounts. A null active document keeps the chat page's existing layout. The
-  // working-indicator hook still runs, so it gets a no-op setWorking that
-  // mutates nothing (an open document is required before it could set working).
-  useDocModeStore: (
-    selector?: (s: { setWorking: () => void }) => unknown,
-  ) =>
-    selector ? selector({ setWorking: () => {} }) : { setWorking: () => {} },
-  selectActiveDocument: () => () => null,
 }));
 
 vi.mock("./components/use-chat-controller", async () => {
@@ -268,7 +243,7 @@ function renderPage(search: string, { strict = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  storeRef.current = { ...storeRef.current, activeSessionId: null, inputDrafts: {} };
+  storeRef.current = { activeSessionId: null };
   storeListeners.clear();
   availableAgentsRef.current = [agent];
   agentsSettledRef.current = true;
@@ -457,7 +432,7 @@ describe("ChatPage ?agent= deep link", () => {
     // P2): the composingNew reset must read the LIVE store value, or the
     // stale persisted session re-closes the pane the intent just opened —
     // while the consumed-intent guard rightly refuses to fire again.
-    storeRef.current = { ...storeRef.current, activeSessionId: "old-session" };
+    storeRef.current = { activeSessionId: "old-session" };
     const { replace } = renderPage("agent=agent-1", { strict: true });
     expect(mockStartNewChat).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith("/acme/chat");
@@ -468,11 +443,10 @@ describe("ChatPage ?agent= deep link", () => {
 describe("ChatPage responsive layout", () => {
   const SELECT_PROMPT = "Pick a conversation, or start a new one with +";
 
-  it("folds to a single column on a folded inner screen", () => {
-    // 851px — the reported Pixel Fold inner screen. Too narrow for nav + thread
-    // list + conversation, so with nothing open it spends the whole width on
-    // the list instead of an empty conversation pane.
-    layout.width = FOLD_INNER;
+  it("folds to a single column on a foldable's inner screen held upright", () => {
+    // Below the compact breakpoint, with nothing open, the page spends the
+    // whole width on the thread list instead of an empty conversation pane.
+    layout.width = FOLD_INNER_PORTRAIT;
     renderPage("");
 
     expect(
@@ -481,13 +455,13 @@ describe("ChatPage responsive layout", () => {
     expect(screen.queryByText(SELECT_PROMPT)).not.toBeInTheDocument();
   });
 
-  it("gives the open conversation the whole folded inner screen", () => {
+  it("gives the open conversation the whole upright inner screen", () => {
     // Opening a thread replaces the list, so the way back has to travel with
     // the conversation — same trip the phone layout already had.
-    layout.width = FOLD_INNER;
+    layout.width = FOLD_INNER_PORTRAIT;
     // The page reconciles the store against `?session=`, so the open thread has
     // to be in the URL too — otherwise the sync effect closes it.
-    storeRef.current = { ...storeRef.current, activeSessionId: "session-1" };
+    storeRef.current = { activeSessionId: "session-1" };
     renderPage("session=session-1");
 
     expect(
@@ -497,12 +471,12 @@ describe("ChatPage responsive layout", () => {
     expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
   });
 
-  it("keeps both panes at the compact breakpoint", () => {
-    // 1024px is the first width that keeps two panes. The nav auto-collapses
+  it.each([TABLET, FOLD_INNER_LANDSCAPE])("keeps both panes at %spx", (width) => {
+    // 768px is the first width that keeps two panes. The nav auto-collapses
     // there instead (see the sidebar), so the thread list stays on screen next
     // to an open conversation.
-    layout.width = TABLET;
-    storeRef.current = { ...storeRef.current, activeSessionId: "session-1" };
+    layout.width = width;
+    storeRef.current = { activeSessionId: "session-1" };
     renderPage("session=session-1");
 
     expect(

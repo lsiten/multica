@@ -16,3 +16,5 @@ export * from "./mirror";
 
 export * from "./vscreen";
 export * from "./vscreen-queries";
+export * from "./commands";
+export * from "./use-daemon-setup-commands";

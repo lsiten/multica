@@ -66,7 +66,7 @@ export function ApplicationsPage({ projectId: presetProjectId, runtimeId: preset
   const viewOptions = [{ value: "projects", label: t(($) => $.projects), icon: FolderKanban }, { value: "runtimes", label: t(($) => $.runtimes), icon: Server }, { value: "board", label: t(($) => $.board), icon: Activity }] as const;
 
   return <div className={cn("flex min-h-0 flex-1 flex-col", embedded && "rounded-xl border")}>
-    <CollectionPageHeader icon={Server} title={t(($) => $.title)} count={board?.summary.services} actions={<>
+    <CollectionPageHeader icon={Server} title={t(($) => $.title)} actions={<>
       <Button variant="ghost" size="icon-sm" aria-label={t(($) => $.refresh)} disabled={boardQuery.isFetching} onClick={() => void boardQuery.refetch()}><RefreshCw className={cn("size-4", boardQuery.isFetching && "animate-spin")} /></Button>
       <ApplicationEditor workspaceId={workspaceId} projectId={presetProjectId} trigger={<Button size="sm"><Plus />{t(($) => $.new)}</Button>} />
     </>} />

@@ -1,5 +1,4 @@
 {
-
   "group": {
     "badge": "Groupe",
     "participants_other": "{{count}} membres",
@@ -19,7 +18,8 @@
     "select_agents": "Sélectionnez un ou plusieurs agents à ajouter au groupe.",
     "add_selected": "Ajouter la sélection",
     "no_available_agents": "Aucun agent disponible"
-  },  "doc_mode": {
+  },
+  "doc_mode": {
     "issue": "Ticket",
     "attachment": "Pièce jointe",
     "diff": "Diff",
@@ -38,9 +38,9 @@
     "save_failed": "Impossible d'enregistrer les modifications.",
     "add_to_chat": "Ajouter au chat",
     "add_selection_to_chat": "Ajouter la sélection",
-    "add_sub_issue": "Ajouter une sous-t\u00e2che",
-    "sub_issue_created": "{{identifier}} a \u00e9t\u00e9 cr\u00e9\u00e9(e)",
-    "sub_issue_failed": "\u00c9chec de la cr\u00e9ation de la sous-t\u00e2che",
+    "add_sub_issue": "Ajouter une sous-tâche",
+    "sub_issue_created": "{{identifier}} a été créé(e)",
+    "sub_issue_failed": "Échec de la création de la sous-tâche",
     "ask_agent_to_edit": "Demander une modification",
     "chat_input": "Conversation du document",
     "collapse_chat": "Réduire la saisie de chat",
@@ -61,7 +61,7 @@
     "load_more": "Charger plus",
     "searching": "Recherche dans tous les dossiers…",
     "search_failed": "Recherche incomplète. Réessayez pour continuer.",
-    "no_match": "Aucun r\u00e9sultat",
+    "no_match": "Aucun résultat",
     "toggle": "Fichiers",
     "empty": "Aucun document",
     "tabs_label": "Fichiers de discussion",
@@ -82,6 +82,9 @@
   },
   "page": {
     "title": "Discussion",
+    "no_agent_title": "Aucun agent avec qui discuter pour l'instant",
+    "no_agent_description": "Créez un agent, puis décrivez-lui une demande ici pour qu'il la transforme en tâches.",
+    "no_agent_action": "Nouvel agent",
     "select_prompt": "Choisissez une conversation, ou démarrez-en une nouvelle avec +",
     "agent_link_no_access": "Vous n'avez pas accès à la discussion avec cet agent."
   },
@@ -171,6 +174,7 @@
       "runtime_offline": "L'agent est actuellement hors ligne et n'a donc pas pu répondre. Veuillez réessayer dès son retour en ligne.",
       "runtime_access_denied": "Cet agent ne peut pas s'exécuter sur son runtime privé et n'a donc pas pu répondre. Passez le runtime en public, ou réassociez/copiez l'agent vers un runtime que son propriétaire peut utiliser.",
       "runtime_recovery": "L'agent a redémarré avant d'avoir pu terminer. Veuillez réessayer.",
+      "runtime_access_revoked": "L'accès au runtime a été révoqué. Associez l'agent à un runtime accessible avant de lancer une nouvelle exécution.",
       "manual": "Cette réponse a été annulée.",
       "skill_bundle_unavailable": "Les skills de l'agent n'ont pas pu être téléchargés : il n'a donc jamais démarré. C'est généralement un problème de connexion — veuillez réessayer.",
       "runtime_cli_timeout": "L'outil OpenClaw local n'a pas répondu à temps, l'exécution n'a donc jamais démarré. C'est un délai de démarrage local, pas un problème de réseau — réessayer ne servira à rien tant que l'outil ne démarrera pas plus vite ou que le délai ne sera pas allongé (MULTICA_OPENCLAW_CLI_TIMEOUT).",
@@ -287,7 +291,9 @@
       "label": "Recommander une action",
       "prompt": "Examinez ce que vous savez de mon espace de travail et recommandez une première action utile."
     },
-    "customize": "Personnaliser les amorces"
+    "customize": "Personnaliser les amorces",
+    "uploading": "Attendez la fin des téléversements avant d’utiliser une amorce.",
+    "draft_in_progress": "Envoyez ou effacez votre brouillon avant d’utiliser une amorce."
   },
   "onboarding_cards": {
     "aria_label": "Façons de démarrer",
@@ -366,10 +372,11 @@
     "retry": "Réessayer"
   },
   "header": {
-    "view_profile": "Voir le profil de l'agent",
+    "agent_settings": "Paramètres de l'agent",
     "rename": "Renommer la discussion",
     "archive": "Archiver la discussion",
     "unarchive": "Désarchiver la discussion",
-    "delete": "Supprimer la discussion"
+    "delete": "Supprimer la discussion",
+    "view_profile": "Voir le profil de l'agent"
   }
 }

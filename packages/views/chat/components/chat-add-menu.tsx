@@ -6,6 +6,7 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
+import { IconButton } from "@multica/ui/components/common/icon-button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -71,17 +72,16 @@ export function ChatAddMenu({
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
-            <Button
+            <IconButton
               type="button"
               variant="ghost"
               size="icon-sm"
               disabled={disabled}
-              aria-label={t(($) => $.input.add_tooltip)}
-              title={t(($) => $.input.add_tooltip)}
+              label={t(($) => $.input.add_tooltip)}
               className="rounded-full text-muted-foreground"
             >
               <Plus />
-            </Button>
+            </IconButton>
           }
         />
         <DropdownMenuContent align="start" side="top" sideOffset={6}>

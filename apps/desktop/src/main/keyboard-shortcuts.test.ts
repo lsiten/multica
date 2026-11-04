@@ -34,26 +34,22 @@ function key(
   };
 }
 
-describe("handleAppShortcut — safe tab refresh", () => {
-  it("requests a tab refresh for Cmd+R on macOS", () => {
+describe("handleAppShortcut — reload blocking", () => {
+  it("swallows Cmd+R on macOS", () => {
     const wc = makeWc();
-    expect(handleAppShortcut(key("r", { meta: true }), wc, "darwin")).toBe("reload-tab");
+    expect(handleAppShortcut(key("r", { meta: true }), wc, "darwin")).toBe(true);
     expect(wc.setZoomLevel).not.toHaveBeenCalled();
   });
 
   it("swallows Ctrl+R on Linux/Windows", () => {
     const wc = makeWc();
-    expect(handleAppShortcut(key("r", { control: true }), wc, "linux")).toBe("reload-tab");
-    expect(handleAppShortcut(key("R", { control: true }), wc, "win32")).toBe("reload-tab");
+    expect(handleAppShortcut(key("r", { control: true }), wc, "linux")).toBe(true);
+    expect(handleAppShortcut(key("R", { control: true }), wc, "win32")).toBe(true);
   });
 
   it("swallows F5 regardless of modifier", () => {
     const wc = makeWc();
-    expect(handleAppShortcut(key("F5"), wc, "darwin")).toBe("reload-tab");
-  });
-
-  it("does not repeatedly refresh while the shortcut is held", () => {
-    expect(handleAppShortcut({ ...key("r", { meta: true }), isAutoRepeat: true }, makeWc(), "darwin")).toBe(true);
+    expect(handleAppShortcut(key("F5"), wc, "darwin")).toBe(true);
   });
 
   it("ignores non-keyDown events", () => {
@@ -355,6 +351,34 @@ describe("handleAppShortcut — open settings (Cmd/Ctrl+,)", () => {
     expect(
       handleAppShortcut(
         { ...key(",", { meta: true }), isAutoRepeat: true },
+        wc,
+        "darwin",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("handleAppShortcut — new window (Cmd/Ctrl+Shift+N)", () => {
+  it('returns "new-window" on Cmd+Shift+N (macOS) and Ctrl+Shift+N elsewhere', () => {
+    const wc = makeWc();
+    expect(
+      handleAppShortcut(key("N", { meta: true, shift: true }), wc, "darwin"),
+    ).toBe("new-window");
+    expect(
+      handleAppShortcut(key("N", { control: true, shift: true }), wc, "win32"),
+    ).toBe("new-window");
+  });
+
+  it("leaves the bare Cmd/Ctrl+N chord to the renderer", () => {
+    const wc = makeWc();
+    expect(handleAppShortcut(key("n", { meta: true }), wc, "darwin")).toBe(false);
+  });
+
+  it("swallows auto-repeat without opening a window per repeat", () => {
+    const wc = makeWc();
+    expect(
+      handleAppShortcut(
+        { ...key("N", { meta: true, shift: true }), isAutoRepeat: true },
         wc,
         "darwin",
       ),

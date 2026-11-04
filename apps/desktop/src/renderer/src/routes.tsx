@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { createMemoryRouter, Outlet, useMatches } from "react-router-dom";
+import { useEffect, useLayoutEffect } from "react";
+import { createMemoryRouter, Outlet, useLocation, useMatches } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
@@ -11,13 +11,10 @@ import { MemberDetailPage } from "./pages/member-detail-page";
 import {
   RuntimeDetailPage,
   RuntimeSettingsPage,
-  RuntimeMirrorPage,
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@multica/views/issues/components";
 import { ProjectsPage } from "@multica/views/projects/components";
-import { ApplicationsPage } from "@multica/views/applications";
-import { ApplicationDetailPage } from "./pages/application-detail-page";
 import { DashboardPage } from "@multica/views/dashboard";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
@@ -26,20 +23,26 @@ import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
   AiCreateAgentPage,
-  ChooseCreateMethodPage,
   ManualCreateAgentPage,
 } from "@multica/views/agents";
+import { DesktopChooseRuntimePage } from "./components/desktop-choose-runtime-page";
+import { AgentCreatedPage } from "./pages/agent-created-page";
 import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@multica/views/squads/components";
+import { AllViewsPage } from "@multica/views/issue-views";
 import { InboxPage } from "@multica/views/inbox";
 import { ChatPage } from "@multica/views/chat";
 import { SettingsPage } from "@multica/views/settings";
 import { useT } from "@multica/views/i18n";
-import { Download, Server, Monitor } from "lucide-react";
-import { AppSettingsTab } from "./components/app-settings-tab";
+import { Download, Server } from "@multica/ui/icons";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
 import { UpdatesSettingsTab } from "./components/updates-settings-tab";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 import { DesktopRouteErrorPage } from "./components/route-error-page";
+import { IssueViewUrlSync } from "./platform/issue-view-tabs";
+import { useRenderedRouteStore } from "./stores/rendered-route-store";
+
+const WORKSPACE_VIEW_SCOPE = { scope_type: "workspace" } as const;
+const MY_VIEW_SCOPE = { scope_type: "my" } as const;
 
 /**
  * Wraps `SettingsPage` so the desktop-only extra tabs can pull their labels
@@ -51,12 +54,6 @@ function DesktopSettingsRoute() {
   return (
     <SettingsPage
       extraDeviceTabs={[
-        {
-          value: "application",
-          label: t(($) => $.desktop.application.title),
-          icon: Monitor,
-          content: <AppSettingsTab />,
-        },
         {
           value: "daemon",
           label: t(($) => $.desktop.daemon.title),
@@ -94,11 +91,25 @@ function TitleSync() {
   return null;
 }
 
+/**
+ * Publishes the committed pathname. A layout effect, so the shell's update
+ * lands in the same frame as the page it describes.
+ */
+function RenderedPathnameSync() {
+  const { pathname } = useLocation();
+  const setPathname = useRenderedRouteStore((s) => s.setPathname);
+  useLayoutEffect(() => {
+    setPathname(pathname);
+  }, [pathname, setPathname]);
+  return null;
+}
+
 /** Wrapper that renders route children + TitleSync */
 function PageShell() {
   return (
     <>
       <TitleSync />
+      <RenderedPathnameSync />
       <Outlet />
     </>
   );
@@ -139,7 +150,11 @@ export const appRoutes: RouteObject[] = [
           { index: true, element: null },
           {
             path: "issues",
-            element: <IssuesPage />,
+            element: (
+              <IssueViewUrlSync scope={WORKSPACE_VIEW_SCOPE}>
+                <IssuesPage />
+              </IssueViewUrlSync>
+            ),
             handle: { title: "Issues" },
           },
           {
@@ -152,8 +167,6 @@ export const appRoutes: RouteObject[] = [
             element: <ProjectsPage />,
             handle: { title: "Projects" },
           },
-          { path: "applications", element: <ApplicationsPage />, handle: { title: "Applications" } },
-          { path: "applications/:id", element: <ApplicationDetailPage />, handle: { title: "Application" } },
           {
             path: "projects/:id",
             element: <ProjectDetailPage />,
@@ -171,7 +184,11 @@ export const appRoutes: RouteObject[] = [
           },
           {
             path: "my-issues",
-            element: <MyIssuesPage />,
+            element: (
+              <IssueViewUrlSync scope={MY_VIEW_SCOPE}>
+                <MyIssuesPage />
+              </IssueViewUrlSync>
+            ),
             handle: { title: "My Issues" },
           },
           {
@@ -189,11 +206,6 @@ export const appRoutes: RouteObject[] = [
             element: <RuntimeSettingsPage />,
             handle: { title: "Runtime" },
           },
-          {
-            path: "runtimes/:id/mirror",
-            element: <RuntimeMirrorPage />,
-            handle: { title: "Runtime mirror" },
-          },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
           {
             path: "skills/:id",
@@ -203,7 +215,12 @@ export const appRoutes: RouteObject[] = [
           { path: "agents", element: <DesktopAgentsPage />, handle: { title: "Agents" } },
           {
             path: "agents/new",
-            element: <ChooseCreateMethodPage />,
+            element: <DesktopChooseRuntimePage />,
+            handle: { title: "Create Agent" },
+          },
+          {
+            path: "agents/new/done/:agentId",
+            element: <AgentCreatedPage />,
             handle: { title: "Create Agent" },
           },
           {
@@ -232,6 +249,7 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Member" },
           },
           { path: "squads", element: <SquadsPage />, handle: { title: "Squads" } },
+          { path: "views", element: <AllViewsPage />, handle: { title: "Views" } },
           {
             path: "squads/:id",
             element: <SquadDetailPageView />,

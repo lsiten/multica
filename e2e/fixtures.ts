@@ -84,25 +84,18 @@ export class TestApiClient {
     }
     return { ...source, token, userId: (await this.fixtureUserId()) };
   }
-
   async createHumanRequestFixture(issueId: string | null, payload: Record<string, unknown>, chatSessionId: string | null = null) {
     const { token } = await this.createRunFixture(issueId, chatSessionId);
     const response = await fetch(`${API_BASE}/api/human-requests/`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Workspace-ID": this.workspaceId }, body: JSON.stringify(payload) });
     if (!response.ok) throw new Error(`Request fixture failed: ${response.status} ${await response.text()}`);
     const request = await response.json() as { id: string; revision: number };
     return request;
-  }
-
   private async fixtureUserId() {
     const client = new pg.Client(DATABASE_URL); await client.connect();
     try { const result = await client.query<{id:string}>('SELECT id FROM "user" WHERE email=$1',[this.email]); return result.rows[0]!.id; }
     finally { await client.end(); }
-  }
-
   async createProgressFixture(issueId: string, status: "completed" | "failed", step?: { kind: string; summary: string; missing?: string[]; evidence?: string[] }) {
     const source = await this.createRunFixture(issueId);
-    const client = new pg.Client(DATABASE_URL); await client.connect();
-    try {
       const current = await client.query<{revision:string}>("UPDATE issue SET assignee_type='agent',assignee_id=$2,revision=revision+1 WHERE id=$1 RETURNING revision",[issueId,source.agentId]);
       const revision = Number(current.rows[0]!.revision);
       if (step) {
@@ -112,33 +105,22 @@ export class TestApiClient {
       await client.query("UPDATE agent_task_queue SET status=$2,completed_at=now(),result=$3::jsonb WHERE id=$1",[source.taskId,status,JSON.stringify({summary:"Focused checks passed; delivery available for inspection."})]);
       return {...source,revision};
     } finally { await client.end(); }
-  }
-
   async createChatChoiceFixture(payload: Record<string, unknown>) {
     const source = await this.createRunFixture(null);
     const chatId=randomUUID(); const client = new pg.Client(DATABASE_URL); await client.connect();
-    try {
       await client.query("INSERT INTO chat_session(id,workspace_id,creator_id,agent_id,title,status) VALUES($1,$2,$3,$4,'E2E bound choice','active')",[chatId,this.workspaceId,source.userId,source.agentId]);
       await client.query("UPDATE agent_task_queue SET chat_session_id=$2 WHERE id=$1",[source.taskId,chatId]);
-    } finally { await client.end(); }
     const response=await fetch(`${API_BASE}/api/human-requests/`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${source.token}`,"X-Workspace-ID":this.workspaceId!},body:JSON.stringify(payload)});
     if (!response.ok) throw new Error(`Chat request fixture failed: ${response.status} ${await response.text()}`);
     return {chatId, request: await response.json() as {id:string; revision:number}};
-  }
-
   async reviseHumanRequestFixture(id: string, expired = false) {
-    const client = new pg.Client(DATABASE_URL); await client.connect();
-    try {
       const result = await client.query("UPDATE human_request SET revision=revision+1,expires_at=CASE WHEN $4 THEN now()-interval '1 second' ELSE expires_at END WHERE id=$1 AND workspace_id=$2 AND source_task_id=ANY($3::uuid[])",[id,this.workspaceId,this.humanRequestSources.map(source=>source.taskId),expired]);
       if (result.rowCount!==1) throw new Error("Request is not owned by this fixture");
     } finally {await client.end();}
-  }
-
   async fixtureRuns(issueId: string) {
     const client=new pg.Client(DATABASE_URL);await client.connect();
     try { return (await client.query<{id:string;force_fresh_session:boolean;rerun_of_task_id:string|null;context:Record<string,unknown>}>("SELECT id,force_fresh_session,rerun_of_task_id,context FROM agent_task_queue WHERE issue_id=$1 ORDER BY created_at,id",[issueId])).rows; }
-    finally { await client.end(); }
-  }
+  private createdPropertyIds: string[] = [];
 
   async login(email: string, name: string) {
     const client = new pg.Client(DATABASE_URL);
@@ -308,6 +290,20 @@ export class TestApiClient {
     return project as { id: string; title: string; status: string };
   }
 
+  /** Create a workspace custom property definition; archived on cleanup. */
+  async createProperty(name: string, type = "text", config?: { options: { name: string; color: string }[] }) {
+    const res = await this.authedFetch("/api/properties", {
+      method: "POST",
+      body: JSON.stringify({ name, type, config }),
+    });
+    if (!res.ok) {
+      throw new Error(`create property failed: ${res.status} ${await res.text()}`);
+    }
+    const property = await res.json();
+    this.createdPropertyIds.push(property.id);
+    return property as { id: string; name: string; config: { options?: { id: string; name: string; color: string }[] } };
+  }
+
   async updateProject(id: string, updates: Record<string, unknown>) {
     const res = await this.authedFetch(`/api/projects/${id}`, {
       method: "PUT",
@@ -455,6 +451,23 @@ export class TestApiClient {
     return (await res.json()) as { id: string };
   }
 
+  /** Seed an owned runtime without launching an actual agent tool. */
+  async seedRuntime(name: string): Promise<string> {
+    if (!this.workspaceId || !this.email) throw new Error("Select a workspace before seeding a runtime");
+    const client = new pg.Client(DATABASE_URL);
+    await client.connect();
+    try {
+      const result = await client.query(
+        `INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, status, owner_id, last_seen_at)
+         SELECT $1, $2, 'local', 'claude', 'online', id, now() FROM "user" WHERE email = $3 RETURNING id`,
+        [this.workspaceId, name, this.email],
+      );
+      return result.rows[0].id as string;
+    } finally {
+      await client.end();
+    }
+  }
+
   /** Adds an existing user to this client's workspace and returns the member id. */
   async addMemberByEmail(email: string, role: "admin" | "member" = "member"): Promise<string> {
     if (!this.workspaceId) throw new Error("Cannot add a member before a workspace is selected");
@@ -600,6 +613,19 @@ export class TestApiClient {
       }
     }
     this.createdProjectIds = [];
+    // Definitions cannot be deleted, only archived; archiving takes them out
+    // of every picker so later tests see the catalog they expect.
+    for (const id of this.createdPropertyIds) {
+      try {
+        await this.authedFetch(`/api/properties/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ archived: true }),
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+    this.createdPropertyIds = [];
   }
 
   getToken() {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban } from "@multica/ui/icons";
 import { useQuery } from "@tanstack/react-query";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -20,6 +20,7 @@ export function ProjectPicker({
   projectId,
   onUpdate,
   triggerRender,
+  tooltip,
   align = "start",
   defaultOpen = false,
   open: controlledOpen,
@@ -30,6 +31,8 @@ export function ProjectPicker({
   projectId: string | null;
   onUpdate: (updates: Partial<UpdateIssueRequest>) => void;
   triggerRender?: React.ReactElement;
+  /** Hover tooltip naming the property; hidden while the picker is open. */
+  tooltip?: React.ReactNode;
   align?: "start" | "center" | "end";
   /** Open the dropdown on first mount. Used by progressive-disclosure
    *  sidebars so a newly-added field immediately enters edit state. */
@@ -88,6 +91,7 @@ export function ProjectPicker({
         searchPlaceholder={t(($) => $.picker.search_placeholder)}
         onSearchChange={setFilter}
         triggerRender={resolvedTriggerRender}
+        tooltip={tooltip}
         trigger={
           current ? (
             <>
@@ -121,6 +125,7 @@ export function ProjectPicker({
           <PickerItem
             key={p.id}
             selected={p.id === projectId}
+            truncationTooltip={p.title}
             onClick={() => {
               onUpdate({ project_id: p.id });
               setOpen(false);

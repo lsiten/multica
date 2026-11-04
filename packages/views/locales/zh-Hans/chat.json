@@ -1,5 +1,4 @@
 {
-
   "group": {
     "badge": "群聊",
     "participants_other": "{{count}} 位成员",
@@ -19,7 +18,8 @@
     "select_agents": "选择要加入群聊的一个或多个智能体。",
     "add_selected": "添加选中智能体",
     "no_available_agents": "暂无可添加的智能体"
-  },  "doc_mode": {
+  },
+  "doc_mode": {
     "issue": "议题",
     "attachment": "附件",
     "diff": "差异",
@@ -28,9 +28,9 @@
     "working": "编辑中…",
     "truncated": "预览已截断，完整文件 {{total}}",
     "edit": "编辑",
-  "source": "源码",
-  "preview": "预览",
-  "open_in_office": "用 Office 打开",
+    "source": "源码",
+    "preview": "预览",
+    "open_in_office": "用 Office 打开",
     "save": "保存",
     "saving": "保存中…",
     "discard": "放弃",
@@ -38,9 +38,9 @@
     "save_failed": "保存失败。",
     "add_to_chat": "添加到对话",
     "add_selection_to_chat": "添加选中内容",
-    "add_sub_issue": "\u52a0\u5165\u5b50\u4efb\u52a1",
-    "sub_issue_created": "\u5df2\u521b\u5efa {{identifier}}",
-    "sub_issue_failed": "\u521b\u5efa\u5b50\u4efb\u52a1\u5931\u8d25",
+    "add_sub_issue": "加入子任务",
+    "sub_issue_created": "已创建 {{identifier}}",
+    "sub_issue_failed": "创建子任务失败",
     "ask_agent_to_edit": "让 Agent 修改",
     "chat_input": "文档对话",
     "collapse_chat": "收起聊天输入框",
@@ -57,23 +57,23 @@
     "directory_unavailable": "请连接此目录所在的设备后重试。",
     "directory_empty": "此目录暂无文件",
     "error_details": "错误详情",
-    "filter_placeholder": "\u7b5b\u9009\u6587\u4ef6",
+    "filter_placeholder": "筛选文件",
     "load_more": "加载更多",
     "searching": "正在搜索所有文件夹…",
     "search_failed": "搜索未完成，请重试以继续。",
-    "no_match": "\u65e0\u5339\u914d",
-    "toggle": "\u6587\u4ef6",
-    "empty": "\u6682\u65e0\u6587\u6863",
-    "tabs_label": "\u804a\u5929\u6587\u4ef6",
-    "projects_label": "\u9879\u76ee",
-    "project_files": "\u9879\u76ee\u6587\u4ef6",
-    "current_directory": "\u5f53\u524d\u76ee\u5f55",
-    "git_repository": "Git \u4ed3\u5e93",
-    "git_repositories": "Git \u4ed3\u5e93",
-    "attachments": "\u5f53\u524d\u9644\u4ef6",
-    "issues": "\u9879\u76ee\u95ee\u9898",
-    "no_attachments": "\u5f53\u524d\u804a\u5929\u6682\u65e0\u9644\u4ef6",
-    "no_issues": "\u8be5\u9879\u76ee\u6682\u65e0\u95ee\u9898",
+    "no_match": "无匹配",
+    "toggle": "文件",
+    "empty": "暂无文档",
+    "tabs_label": "聊天文件",
+    "projects_label": "项目",
+    "project_files": "项目文件",
+    "current_directory": "当前目录",
+    "git_repository": "Git 仓库",
+    "git_repositories": "Git 仓库",
+    "attachments": "当前附件",
+    "issues": "项目问题",
+    "no_attachments": "当前聊天暂无附件",
+    "no_issues": "该项目暂无问题",
     "loading": "正在加载项目文件…",
     "load_failed": "项目文件加载失败",
     "retry": "重试",
@@ -82,6 +82,9 @@
   },
   "page": {
     "title": "聊天",
+    "no_agent_title": "还没有可以对话的智能体",
+    "no_agent_description": "创建一个智能体后，就能在这里和它聊需求，让它拆成任务。",
+    "no_agent_action": "新建智能体",
     "select_prompt": "选择一个对话，或点 + 新建",
     "agent_link_no_access": "你没有权限与该智能体聊天。"
   },
@@ -169,6 +172,7 @@
       "runtime_offline": "智能体当前离线，暂时无法回复。等它恢复在线后再试。",
       "runtime_access_denied": "该智能体无法在其私有运行时上运行，暂时无法回复。请将该运行时设为公开，或将智能体重新绑定/复制到其所有者可用的运行时。",
       "runtime_recovery": "智能体在完成前重启了。请重试。",
+      "runtime_access_revoked": "运行时访问已撤销。请先将智能体绑定到可用的运行时，再开始新的运行。",
       "manual": "这次回复已取消。",
       "skill_bundle_unavailable": "没能下载到智能体的 skill，这次回复没有启动。通常是网络连接问题，请重试。",
       "runtime_cli_timeout": "本机 OpenClaw CLI 没能在超时时间内响应，这次运行没有启动。这是本地启动超时，不是网络问题——除非 CLI 变快或调大超时（MULTICA_OPENCLAW_CLI_TIMEOUT），否则重试也不会成功。",
@@ -283,7 +287,9 @@
       "label": "推荐一个操作",
       "prompt": "根据你对我的工作区的了解，推荐一个有用的初始操作。"
     },
-    "customize": "自定义开场建议"
+    "customize": "自定义开场建议",
+    "uploading": "请等待附件上传完成后再使用开场建议。",
+    "draft_in_progress": "请先发送或清空草稿，再使用开场建议。"
   },
   "onboarding_cards": {
     "aria_label": "开始方式",
@@ -362,10 +368,11 @@
     "retry": "重试"
   },
   "header": {
-    "view_profile": "查看智能体资料",
+    "agent_settings": "智能体设置",
     "rename": "重命名会话",
     "delete": "删除会话",
     "archive": "归档会话",
-    "unarchive": "取消归档"
+    "unarchive": "取消归档",
+    "view_profile": "查看智能体资料"
   }
 }

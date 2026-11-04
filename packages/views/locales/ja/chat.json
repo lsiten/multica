@@ -1,5 +1,4 @@
 {
-
   "group": {
     "badge": "グループ",
     "participants_other": "{{count}} 人のメンバー",
@@ -19,7 +18,8 @@
     "select_agents": "グループに追加する Agent を選択してください。",
     "add_selected": "選択を追加",
     "no_available_agents": "追加できる Agent はありません"
-  },  "doc_mode": {
+  },
+  "doc_mode": {
     "issue": "課題",
     "attachment": "添付ファイル",
     "diff": "差分",
@@ -38,9 +38,9 @@
     "save_failed": "変更を保存できませんでした。",
     "add_to_chat": "チャットに追加",
     "add_selection_to_chat": "選択範囲を追加",
-    "add_sub_issue": "\u30b5\u30d6\u30bf\u30b9\u30af\u3092\u8ffd\u52a0",
-    "sub_issue_created": "{{identifier}} \u3092\u4f5c\u6210\u3057\u307e\u3057\u305f",
-    "sub_issue_failed": "\u30b5\u30d6\u30bf\u30b9\u30af\u3092\u4f5c\u6210\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f",
+    "add_sub_issue": "サブタスクを追加",
+    "sub_issue_created": "{{identifier}} を作成しました",
+    "sub_issue_failed": "サブタスクを作成できませんでした",
     "ask_agent_to_edit": "エージェントに編集を依頼",
     "chat_input": "ドキュメントチャット",
     "collapse_chat": "チャット入力を折りたたむ",
@@ -57,13 +57,13 @@
     "directory_unavailable": "このディレクトリがあるデバイスに接続して、再試行してください。",
     "directory_empty": "このディレクトリにファイルはありません。",
     "error_details": "エラーの詳細",
-    "filter_placeholder": "\u30d5\u30a1\u30a4\u30eb\u3092\u30d5\u30a3\u30eb\u30bf\u30fc",
+    "filter_placeholder": "ファイルをフィルター",
     "load_more": "さらに読み込む",
     "searching": "すべてのフォルダーを検索中…",
     "search_failed": "検索が完了していません。再試行して続けてください。",
-    "no_match": "\u4e00\u81f4\u306a\u3057",
-    "toggle": "\u30d5\u30a1\u30a4\u30eb",
-    "empty": "\u30c9\u30ad\u30e5\u30e1\u30f3\u30c8\u304c\u3042\u308a\u307e\u305b\u3093",
+    "no_match": "一致なし",
+    "toggle": "ファイル",
+    "empty": "ドキュメントがありません",
     "tabs_label": "チャットのファイル",
     "projects_label": "プロジェクト",
     "project_files": "プロジェクトファイル",
@@ -82,6 +82,9 @@
   },
   "page": {
     "title": "チャット",
+    "no_agent_title": "チャットできるエージェントはまだいません",
+    "no_agent_description": "エージェントを作成すると、ここで要望を話し合い、タスクに分解してもらえます。",
+    "no_agent_action": "新規エージェント",
     "select_prompt": "会話を選ぶか、＋ で新規作成してください",
     "agent_link_no_access": "このエージェントとチャットする権限がありません。"
   },
@@ -169,6 +172,7 @@
       "runtime_offline": "エージェントは現在オフラインのため、返信できませんでした。オンラインに戻ってから再度お試しください。",
       "runtime_access_denied": "このエージェントはプライベートランタイムで実行できないため、返信できませんでした。ランタイムを公開にするか、所有者が利用できるランタイムへエージェントを再設定/コピーしてください。",
       "runtime_recovery": "完了する前にエージェントが再起動しました。もう一度お試しください。",
+      "runtime_access_revoked": "ランタイムへのアクセスが取り消されました。新しい実行を開始する前に、エージェントを利用可能なランタイムに接続してください。",
       "manual": "この返信はキャンセルされました。",
       "skill_bundle_unavailable": "エージェントの skill をダウンロードできず、返信を開始できませんでした。多くの場合はネットワークの問題です。もう一度お試しください。",
       "runtime_cli_timeout": "ローカルの OpenClaw CLI が時間内に応答せず、この実行は開始されませんでした。ネットワークではなくローカルの起動タイムアウトです。CLI が速くなるか、タイムアウト（MULTICA_OPENCLAW_CLI_TIMEOUT）を延ばすまで再試行しても成功しません。",
@@ -283,7 +287,9 @@
       "label": "アクションを提案",
       "prompt": "私のワークスペースについて知っていることを踏まえ、最初に役立つアクションを提案してください。"
     },
-    "customize": "開始例をカスタマイズ"
+    "customize": "開始例をカスタマイズ",
+    "uploading": "アップロードが完了してから開始例を使用してください。",
+    "draft_in_progress": "開始例を使う前に、下書きを送信するか消去してください。"
   },
   "onboarding_cards": {
     "aria_label": "はじめ方",
@@ -362,10 +368,11 @@
     "retry": "再試行"
   },
   "header": {
-    "view_profile": "Agent のプロフィール",
+    "agent_settings": "エージェント設定",
     "rename": "名前を変更",
     "delete": "チャットを削除",
     "archive": "チャットをアーカイブ",
-    "unarchive": "アーカイブを解除"
+    "unarchive": "アーカイブを解除",
+    "view_profile": "Agent のプロフィール"
   }
 }

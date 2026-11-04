@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
+import { IconButton } from "@multica/ui/components/common/icon-button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
@@ -42,6 +43,7 @@ export function AgentPicker({
   multiSelect = false,
   trigger,
   triggerRender,
+  tooltip,
   side = "bottom",
   align = "start",
 }: {
@@ -53,6 +55,7 @@ export function AgentPicker({
   multiSelect?: boolean;
   trigger: React.ReactNode;
   triggerRender: React.ReactElement;
+  tooltip?: React.ReactNode;
   side?: "top" | "bottom";
   align?: "start" | "center" | "end";
 }) {
@@ -156,6 +159,7 @@ export function AgentPicker({
       onSearchChange={setFilter}
       triggerRender={triggerRender}
       trigger={trigger}
+      tooltip={tooltip}
     >
       {filteredMine.length === 0 && filteredOthers.length === 0 ? (
         <PickerEmpty />
@@ -294,11 +298,12 @@ export function NewChatButton({
       side={side}
       align="start"
       triggerRender={
-        <Button
+        <IconButton
           variant="ghost"
           size="icon-sm"
           className="rounded-full text-muted-foreground"
-          aria-label={label}
+          label={label}
+          tooltipSide={side === "top" ? "top" : "bottom"}
         />
       }
       trigger={<Plus />}

@@ -97,8 +97,8 @@
     "@types/react": "~19.0.0",
     "cross-env": "^7.0.3",
     "dotenv-cli": "^7.4.4",
-    "eslint-config-expo": "~55.0.0",
-    "typescript": "~5.9.0",
+    "eslint-config-expo": "~57.0.2",
+    "typescript": "~6.0.3",
     "vitest": "catalog:"
   }
 }
