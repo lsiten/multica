@@ -163,7 +163,32 @@ const squadOperatingProtocolHardRules = `Hard rules:
   work, the agent runs twice in parallel (once from the mention, once
   from the assignment). Pick exactly one path: either delegate by
   @mention on this issue, or create a ` + "`" + `todo` + "`" + ` child issue assigned to
-  them. Never both for the same work.`
+  them. Never both for the same work.
+- Close the delivery chain, not just a test. A delegated item is done only
+  when its evidence reaches the entry the user runs — a built dist/entry that
+  serves the feature end to end — not merely an isolated test or an isolated API
+  that passed while the shared/entry path 404s or 503s. If the only evidence is
+  isolated, keep the item open or delegate the missing link (build → entry →
+  joint debug → independent acceptance).
+- Anchor the version. Record the concrete version the work targets — a git
+  HEAD/commit, a build number, or an entry hash — never "current source" or a
+  zip/increment with no anchor. If the code has no HEAD, say so; never claim
+  the user runs a known version.
+- Track on the board, not only in comments. Reflect progress on the issue
+  (status, metadata, or a per-item checklist: owner, version, page, API,
+  joint debug, acceptance, next). The board is the source of truth; a long
+  comment chain with no board state is not progress.
+- State what a check covers. When delegated work reports "N checks passed,"
+  require it to name the scenarios those N cover. "All passed" never closes a
+  specific defect unless the check list explicitly includes that scenario.
+- One writer per shared path. When you delegate overlapping work to multiple
+  members on a shared directory, assign one writer per path or an explicit
+  freeze scope; register any out-of-scope edit as pending re-check. Never let
+  two members write the same file.
+- Verify the precondition before re-dispatching after a stall. When you are
+  re-triggered to resume a stopped run, confirm the runtime or dependency is
+  actually available first; do not re-dispatch the same failing path expecting
+  a different result.`
 
 // squadOperatingProtocolFor assembles the protocol, selecting the parent-status
 // responsibility that matches this leader's actual authority over the issue.
