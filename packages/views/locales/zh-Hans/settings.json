@@ -1566,7 +1566,7 @@
     "edit_instruction": "Edit prompt",
     "instruction_effect": "Future wakeups use these instructions. Runs already in progress are not affected.",
     "instruction_loading": "Loading prompt...",
-    "instruction_invalid": "Enter instructions within 12,000 UTF-8 bytes.",
+    "instruction_invalid": "指令最多 4,000 字节。",
     "instruction_save_error": "Could not save the prompt.",
     "instruction_cancel": "Cancel",
     "instruction_save": "Save",
