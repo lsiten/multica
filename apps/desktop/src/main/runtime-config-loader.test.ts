@@ -31,6 +31,7 @@ describe("loadRuntimeConfig", () => {
         apiUrl: "http://localhost:8080",
         wsUrl: "ws://localhost:8080/ws",
         appUrl: "http://localhost:3000",
+        appName: "Multica",
       },
     });
   });
@@ -47,9 +48,10 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://api.multica.ai",
-        wsUrl: "wss://api.multica.ai/ws",
-        appUrl: "https://multica.ai",
+        apiUrl: "https://multica.lene.fun",
+        wsUrl: "wss://multica.lene.fun/ws",
+        appUrl: "https://multica.lene.fun",
+        appName: "Multica",
       },
     });
   });
@@ -71,6 +73,7 @@ describe("loadRuntimeConfig", () => {
         apiUrl: "https://api.example.com",
         wsUrl: "wss://api.example.com/ws",
         appUrl: "https://example.com",
+        appName: "Multica",
       },
     });
   });
