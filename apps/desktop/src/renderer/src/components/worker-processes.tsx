@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, RefreshCw, Square } from "lucide-react";
+import { Loader2, RefreshCw, Square } from "@multica/ui/icons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
 import {

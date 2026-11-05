@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FolderX, Loader2, RefreshCw } from "lucide-react";
+import { FolderX, Loader2, RefreshCw } from "@multica/ui/icons";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { agentListOptions } from "@multica/core/workspace/queries";

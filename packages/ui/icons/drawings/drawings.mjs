@@ -58,6 +58,8 @@ export const DRAWINGS = {
   SquarePen: `<path d="${shape([[11, 3.25], [3.25, 3.25, 7], [3.25, 20.75, 7], [20.75, 20.75, 7], [20.75, 13]], false)}"/>
     <path class="b" d="M17.9 3.6a2.05 2.05 0 0 1 2.9 2.9l-7.35 7.35-3.7.85.85-3.7Z"/>`,
   Search: `<circle class="b" cx="11" cy="11" r="7.75"/><path d="m16.75 16.75 4.5 4.5"/>`,
+  ScanLine: `<path class="b" d="${rect(2.75, 3.5, 18.5, 17, 6)}"/>
+    <path class="k" d="M6 12h12"/>`,
 
   Plus: `<path d="M12 4.5v15M4.5 12h15"/>`,
   Check: tick([4.75, 12.5], [9.5, 17.25], [19.25, 7.5]),
@@ -348,6 +350,7 @@ Object.assign(DRAWINGS, {
   FileSpreadsheet: file(`<path d="M8.25 13.25h7.5M8.25 17h7.5M12 11.5v7"/>`),
   FolderGit: `<path class="b" d="${folderBody}"/><circle class="k" cx="12" cy="13.25" r="2.25"/><path class="k" d="M6.75 13.25h3M14.25 13.25h3"/>`,
   FolderMinus: `<path class="b" d="${folderBody}"/><path class="k" d="M9 13.25h6"/>`,
+  FolderX: `<path class="b" d="${folderBody}"/><path class="k" d="M9.5 10.75 14.5 15.75M14.5 10.75 9.5 15.75"/>`,
   ScrollText: `<path class="b" d="M9.75 3.25h9a2.25 2.25 0 0 1 0 4.5H16.5V18a2.75 2.75 0 0 1-2.75 2.75H5.5a2.25 2.25 0 0 1 0-4.5h1.75V5.75a2.5 2.5 0 0 1 2.5-2.5Z"/>
     <path d="M7.25 16.25h3.5c.97 0 1.75.78 1.75 1.75v.25"/><path class="k" d="M10.5 8.5h2.75M10.5 12.25h2.75"/>`,
   BookOpen: `<path class="b" d="M12 6.75C10.4 5.4 8.3 4.75 3.75 4.75c-.55 0-1 .45-1 1V17.5c0 .55.45 1 1 1 4.55 0 6.65.65 8.25 2 1.6-1.35 3.7-2 8.25-2 .55 0 1-.45 1-1V5.75c0-.55-.45-1-1-1-4.55 0-6.65.65-8.25 2Z"/>

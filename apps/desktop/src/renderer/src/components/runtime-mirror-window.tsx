@@ -15,7 +15,7 @@ import { RESOURCES } from "@multica/views/locales";
 import { useT } from "@multica/views/i18n";
 import { ThemeProvider } from "@multica/ui/components/common/theme-provider";
 import { Button } from "@multica/ui/components/ui/button";
-import { X } from "lucide-react";
+import { X } from "@multica/ui/icons";
 import { createDesktopLocaleAdapter } from "../platform/i18n-adapter";
 import type { RuntimeMirrorPreloadAPI } from "../../../preload/runtime-mirror";
 
