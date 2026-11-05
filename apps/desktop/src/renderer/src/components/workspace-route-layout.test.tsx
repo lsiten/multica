@@ -93,8 +93,10 @@ vi.mock("@multica/views/layout", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
 
-// Keep a marker for the retired source survey so accidentally restoring
-// its layout entry point fails the regression checks below.
+// The point of this whole test: assert the desktop layout mounts the
+// SourceBackfillModal. We stub the real component with a marker that
+// renders only when the layout actually rendered it (and not e.g.
+// suppressed by overlayActive).
 vi.mock("@multica/views/onboarding", () => ({
   SourceBackfillModal: () => {
     state.modalRenders += 1;
@@ -155,11 +157,10 @@ beforeEach(() => {
 });
 
 describe("WorkspaceRouteLayout", () => {
-  it("renders workspace content without the source survey", () => {
+  it("mounts SourceBackfillModal when no WindowOverlay is active", () => {
     const { queryByTestId } = renderLayout();
-    expect(queryByTestId("outlet")).not.toBeNull();
-    expect(queryByTestId(state.modalAriaLabel)).toBeNull();
-    expect(state.modalRenders).toBe(0);
+    expect(queryByTestId(state.modalAriaLabel)).not.toBeNull();
+    expect(state.modalRenders).toBeGreaterThan(0);
   });
 
   it("suppresses SourceBackfillModal while a WindowOverlay is active", () => {

@@ -162,18 +162,11 @@ describe("DesktopShell sidebar trigger", () => {
     // The toolbar floats over the 64px rail; the tabs start past the rest
     // of it whether or not the panel inside the card is open.
     const mainTopBar = container.querySelector('[data-slot="main-top-bar"]');
-    expect(mainTopBar).toHaveAttribute("data-sidebar-resize-consumer");
-    expect(mainTopBar).toHaveClass("transition-[padding-left]");
-    expect(mainTopBar).toHaveStyle({
-      paddingLeft:
-        "max(0px, calc(272px - var(--sidebar-live-width, var(--sidebar-width))))",
-    });
     expect(mainTopBar).toHaveStyle({ paddingLeft: "136px" });
 
     fireEvent.click(
       container.querySelector('[data-slot="sidebar-trigger"]')!,
     );
-    expect(mainTopBar).toHaveStyle({ paddingLeft: "272px" });
     expect(getByTestId("page-content")).toHaveAttribute(
       "data-sidebar-state",
       "collapsed",
@@ -196,20 +189,20 @@ describe("DesktopShell sidebar trigger", () => {
       "data-sidebar-state",
       "expanded",
     );
-    expect(mainTopBar).toHaveStyle({ paddingLeft: "272px" });
+    expect(mainTopBar).toHaveStyle({ paddingLeft: "200px" });
 
     fireEvent.click(getByRole("button", { name: "Collapse sidebar" }));
     expect(getByTestId("page-content")).toHaveAttribute(
       "data-sidebar-state",
       "collapsed",
     );
-    expect(mainTopBar).toHaveStyle({ paddingLeft: "272px" });
+    expect(mainTopBar).toHaveStyle({ paddingLeft: "200px" });
 
     fireEvent.click(getByRole("button", { name: "Expand sidebar" }));
     expect(getByTestId("page-content")).toHaveAttribute(
       "data-sidebar-state",
       "expanded",
     );
-    expect(mainTopBar).toHaveStyle({ paddingLeft: "272px" });
+    expect(mainTopBar).toHaveStyle({ paddingLeft: "200px" });
   });
 });

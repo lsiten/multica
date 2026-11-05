@@ -182,7 +182,7 @@ describe("DesktopShell workspace gating", () => {
     ).toHaveLength(0);
     expect(
       container.querySelector('[data-slot="main-top-bar"]'),
-    ).toHaveStyle({ paddingLeft: "272px" });
+    ).toHaveStyle({ paddingLeft: "200px" });
     expect(
       getByRole("status", { name: /loading workspace/i }),
     ).toBeVisible();
