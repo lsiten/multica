@@ -188,7 +188,16 @@ const squadOperatingProtocolHardRules = `Hard rules:
 - Verify the precondition before re-dispatching after a stall. When you are
   re-triggered to resume a stopped run, confirm the runtime or dependency is
   actually available first; do not re-dispatch the same failing path expecting
-  a different result.`
+  a different result.
+- Close the review loop, not just the work. When a delegated item is in
+  review, your job is to close it, not to let it sit. On each trigger, check
+  whether the review has a pending decision or an idle handoff or verification
+  gate. If a gate is idle — a handoff to a reviewer or a verification step
+  nobody is taking — re-dispatch it to the correct agent or escalate to the
+  human with a named next receiver; do not leave a review open with no owner.
+  An item in review that has not moved is a stalled loop, not a completed one:
+  move it forward, or suspend it explicitly with a reason and a next receiver,
+  and re-trigger it when it goes stale.`
 
 // squadOperatingProtocolFor assembles the protocol, selecting the parent-status
 // responsibility that matches this leader's actual authority over the issue.
