@@ -33,6 +33,7 @@
     },
     "empty": "還沒有固定項。",
     "unavailable_issue": "該固定任務不可用。",
-    "unavailable_project": "該固定專案不可用。"
+    "unavailable_project": "該固定專案不可用。",
+    "unavailable_runtime_mirror": "螢幕鏡像釘選目前不可用——點按以取消釘選"
   }
 }

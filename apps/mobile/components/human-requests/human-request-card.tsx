@@ -32,7 +32,9 @@ function HumanRequestContent({ request }: { request: HumanRequest }) {
  const client = useQueryClient();
  const workspaceId = useWorkspaceStore(s => s.currentWorkspaceId);
   const payload = request.payload;
-  const pending = request.status === "pending" && Date.parse(request.expires_at) > Date.now();
+  // Capture once per mount; expiry is advisory (the server re-checks on answer).
+  const [now] = useState(Date.now);
+  const pending = request.status === "pending" && Date.parse(request.expires_at) > now;
   const actionable = pending && request.can_respond && payload.kind !== "unknown";
   const send = (decision: HumanRequestAnswer["decision"], value?: string) => submit.mutate({ revision: request.revision, decision, ...(value ? { answer: value } : {}) });
   const primary = () => {

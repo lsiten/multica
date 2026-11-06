@@ -1,4 +1,21 @@
 {
+  "human_request": {
+    "loading": "正在讀取請求...",
+    "load_failed": "無法讀取請求。請重試，取得目前狀態。",
+    "retry": "重試",
+    "details": "檢視詳情",
+    "recommended": "建議",
+    "received": "已收到回覆，後續執行已排入佇列。",
+    "declined": "已拒絕操作，並通知智能體。",
+    "cancelled": "請求已取消。",
+    "expired": "請求已過期。請讓智能體重新發起。",
+    "unavailable": "目前用戶端無法處理此請求。",
+    "other_member": "等待指定成員處理。",
+    "decline": "暫不執行",
+    "submitting": "正在提交回覆...",
+    "submit_failed": "無法確認回覆是否提交成功。請重新整理此請求後重試。",
+    "refresh": "重新整理請求"
+  },
   "actions": {
     "add": "新增",
     "back": "返回",

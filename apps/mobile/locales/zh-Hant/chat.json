@@ -78,6 +78,10 @@
     "default": "訊息無法傳送，請重試。",
     "runtime_access_recovery": "該 AI 代理無法在其私有執行時上執行。請將該執行時設為公開，或將 AI 代理重新繫結/複製到其所有者可用的執行時。"
   },
+  "failure_actions": {
+    "retry": "重試",
+    "continue": "繼續"
+  },
   "a11y": {
     "suggested_followups": "建議的後續操作",
     "show_error_details": "顯示錯誤詳情",
