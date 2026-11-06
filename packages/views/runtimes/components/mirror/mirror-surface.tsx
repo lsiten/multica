@@ -10,7 +10,7 @@ import {
   Monitor,
   PictureInPicture2,
   RefreshCw,
-} from "lucide-react";
+} from "@multica/ui/icons";
 import type {
   RuntimeDevice,
   VscreenCommandKind,

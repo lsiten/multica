@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Users } from "lucide-react";
+import { Plus, Users } from "@multica/ui/icons";
 import type { Agent, ChatSession } from "@multica/core/types";
 import { useAddChatGroupParticipant } from "@multica/core/chat/mutations";
 import { useQuery } from "@tanstack/react-query";

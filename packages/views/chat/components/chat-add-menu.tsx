@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, Clock3, DollarSign, FolderKanban, Image as ImageIcon, Plus, Settings2, X } from "lucide-react";
+import { Check, Clock3, DollarSign, FolderKanban, Image as ImageIcon, Plus, Settings2, X } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";

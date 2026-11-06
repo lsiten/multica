@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { applicationPlanOptions, useUpdateApplication, type Application, type ApplicationBoard, type ApplicationRelation } from "@multica/core/applications";
 import { useWorkspacePaths } from "@multica/core/paths";

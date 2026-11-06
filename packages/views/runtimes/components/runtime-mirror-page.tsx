@@ -11,7 +11,7 @@ import {
   VSCREEN_CAPABILITIES,
 } from "@multica/core/runtimes";
 import { pinListOptions, useCreatePin, useDeletePin } from "@multica/core/pins";
-import { Pin, PinOff } from "lucide-react";
+import { Pin, PinOff } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PAGE_GUTTER, PAGE_RAIL } from "../../layout/page-header";

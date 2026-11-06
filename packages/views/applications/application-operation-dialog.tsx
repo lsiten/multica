@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { applicationPlanOptions, useApplicationOperation, type Application, type ApplicationBoard, type ApplicationOperationRequest } from "@multica/core/applications";
 import { useAuthStore } from "@multica/core/auth";

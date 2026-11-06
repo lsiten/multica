@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "lucide-react";
+import { ChevronRight, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "@multica/ui/icons";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { useLocalDirectoryStore } from "@multica/core/chat/local-directory-store";

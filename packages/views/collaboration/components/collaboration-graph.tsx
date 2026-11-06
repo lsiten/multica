@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ZoomIn, ZoomOut, Expand, RotateCcw } from "lucide-react";
+import { ZoomIn, ZoomOut, Expand, RotateCcw } from "@multica/ui/icons";
 import { cn } from "@multica/ui/lib/utils";
 import { Button } from "@multica/ui/components/ui/button";
 import type { CollaborationGraphEdge, CollaborationGraphNode } from "@multica/core/types";

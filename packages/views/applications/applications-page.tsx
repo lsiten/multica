@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, FolderKanban, LayoutGrid, Loader2, Plus, RefreshCw, Search, Server } from "lucide-react";
+import { Activity, FolderKanban, LayoutGrid, Loader2, Plus, RefreshCw, Search, Server } from "@multica/ui/icons";
 import { applicationBoardOptions, applicationServiceIds, applicationStatus, topLevelApplications, type Application, type ApplicationBoard } from "@multica/core/applications";
 import { projectListOptions } from "@multica/core/projects";
 import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen } from "@multica/ui/icons";
 import type { ChatFileDirectory } from "@multica/core/chat";
 import { Button } from "@multica/ui/components/ui/button";
 import {

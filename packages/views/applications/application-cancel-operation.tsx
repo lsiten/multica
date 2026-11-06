@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@multica/ui/icons";
 import { useCancelApplicationOperation, type ApplicationOperation } from "@multica/core/applications";
 import { Button } from "@multica/ui/components/ui/button";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@multica/ui/components/ui/alert-dialog";

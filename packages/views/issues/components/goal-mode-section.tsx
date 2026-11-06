@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Target } from "lucide-react";
+import { CheckCircle2, Target } from "@multica/ui/icons";
 import { api, ApiError } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import type { Issue } from "@multica/core/types";

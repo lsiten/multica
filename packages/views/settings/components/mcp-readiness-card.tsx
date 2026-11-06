@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@multica/ui/icons";
 import { McpReadinessBadge } from "./mcp-readiness-status";
 import { SettingsCard } from "./settings-layout";
 import { useT } from "../../i18n";

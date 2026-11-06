@@ -1,7 +1,7 @@
 "use client";
 
 import type { TFunction } from "i18next";
-import { Mic, MousePointer2, OctagonX, SquareMousePointer, Type } from "lucide-react";
+import { Mic, MousePointer2, OctagonX, SquareMousePointer, Type } from "@multica/ui/icons";
 import { useState } from "react";
 import type {
   RuntimeDevice,

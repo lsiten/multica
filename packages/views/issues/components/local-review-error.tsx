@@ -1,4 +1,4 @@
-import { CircleAlert } from "lucide-react";
+import { CircleAlert } from "@multica/ui/icons";
 import { useT } from "../../i18n";
 
 function reviewErrorDetail(error: Error): string {

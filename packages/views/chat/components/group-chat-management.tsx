@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Pencil, Save, UserMinus, Users } from "lucide-react";
+import { Check, Pencil, Save, UserMinus, Users } from "@multica/ui/icons";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, ChatParticipant, ChatSession } from "@multica/core/types";
 import { api } from "@multica/core/api";

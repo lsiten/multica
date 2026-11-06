@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Check, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Plus, Trash2 } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@multica/ui/components/ui/alert";
 import { Badge } from "@multica/ui/components/ui/badge";

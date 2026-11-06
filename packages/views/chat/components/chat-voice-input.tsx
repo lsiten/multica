@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, LoaderCircle, Mic, RotateCcw, Square, X } from "lucide-react";
+import { ArrowUp, LoaderCircle, Mic, RotateCcw, Square, X } from "@multica/ui/icons";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { Button } from "@multica/ui/components/ui/button";
 import { ApiError } from "@multica/core/api";

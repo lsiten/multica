@@ -12,7 +12,7 @@ import { Button } from "@multica/ui/components/ui/button";
 import { emptyWorktreeFilters, filterWorktreeInventory } from "@multica/core/types/worktree-filters";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw } from "@multica/ui/icons";
 import { useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 import { RuntimeEnvironmentResources } from "./runtime-environment-resources";

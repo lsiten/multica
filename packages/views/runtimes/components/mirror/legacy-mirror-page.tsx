@@ -2,7 +2,7 @@
 
 import type { VscreenScope } from "@multica/core/types";
 import { useState } from "react";
-import { Monitor, Pin, PinOff, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { Monitor, Pin, PinOff, RefreshCw, Wifi, WifiOff } from "@multica/ui/icons";
 import { useQuery } from "@tanstack/react-query";
 import {
   isRuntimeUsableForUser,

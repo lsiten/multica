@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Edit3, Loader2, Play, RefreshCw, Server, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Edit3, Loader2, Play, RefreshCw, Server, Trash2, Upload, X } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { applicationBoardOptions, applicationDetailOptions, applicationServiceIds, useApplicationOperation, useDeleteApplication, useLaunchApplication, type Application, type ApplicationBoard, type ApplicationInstance } from "@multica/core/applications";
 import { useWorkspaceId } from "@multica/core/hooks";

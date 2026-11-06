@@ -2,7 +2,7 @@
 
 import { useId, useState, type FormEvent, type ReactNode, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { applicationEnvironmentText, applicationListOptions, defaultApplicationConfig, parseApplicationArguments, parseApplicationEnvironment, useCreateApplication, useUpdateApplication, type Application, type ApplicationConfig } from "@multica/core/applications";
 import { projectListOptions, projectResourcesOptions } from "@multica/core/projects";

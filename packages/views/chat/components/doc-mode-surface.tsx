@@ -1,6 +1,6 @@
 "use client";
 
-import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye, FilePlus } from "lucide-react";
+import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye, FilePlus } from "@multica/ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { autoUpdate, computePosition, flip, hide, offset, shift } from "@floating-ui/dom";

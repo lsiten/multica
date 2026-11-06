@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save } from "@multica/ui/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Agent, AgentIdentity } from "@multica/core/types";
 import { useWorkspaceId } from "@multica/core/hooks";

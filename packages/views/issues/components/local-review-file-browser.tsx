@@ -8,7 +8,7 @@ import { useT } from "../../i18n";
 import { LocalReviewError } from "./local-review-error";
 import { LocalReviewContent } from "./local-review-content";
 import { LocalReviewContext } from "./local-review-context";
-import { Plus, Minus } from "lucide-react";
+import { Plus, Minus } from "@multica/ui/icons";
 import type { LocalIndexView } from "@multica/core/types/local-review-index";
 
 export type LocalReviewRowStaging = {

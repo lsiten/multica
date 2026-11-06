@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Globe } from "lucide-react";
+import { Globe } from "@multica/ui/icons";
 import type { RuntimeDevice } from "@multica/core/types";
 import { useAuthStore } from "@multica/core/auth";
 import {

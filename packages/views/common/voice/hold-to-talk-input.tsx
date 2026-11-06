@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, LoaderCircle, Mic } from "lucide-react";
+import { AudioLines, LoaderCircle, Mic } from "@multica/ui/icons";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";

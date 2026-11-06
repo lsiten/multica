@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Loader2, Pause, Play, RefreshCw } from "lucide-react";
+import { Download, Loader2, Pause, Play, RefreshCw } from "@multica/ui/icons";
 import { applicationLogsOptions, type Application, type ApplicationBoard } from "@multica/core/applications";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
