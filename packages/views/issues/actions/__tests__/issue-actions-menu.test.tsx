@@ -653,7 +653,7 @@ describe("Status in a workflow project (MUL-7420)", () => {
 
   beforeEach(() => {
     apiMocks.listProjects.mockResolvedValue({
-      projects: [{ id: "proj-1", title: "App", workflow_id: "wf-1", lead_type: null, lead_id: null }],
+      projects: [{ id: "proj-1", workspace_id: "ws-1", title: "App", workflow_id: "wf-1", lead_type: null, lead_id: null }],
     });
     apiMocks.listIssueWorkflows.mockResolvedValue({
       workflows: [

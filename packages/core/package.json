@@ -140,6 +140,7 @@
     "./issue-views/view-target": "./issue-views/view-target.ts",
     "./issue-views/definition": "./issue-views/definition.ts",
     "./issue-views/rename-store": "./issue-views/rename-store.ts",
+    "./issue-views/unread-view": "./issue-views/unread-view.ts",
     "./billing": "./billing/index.ts",
     "./billing/recovery": "./billing/recovery.ts",
     "./billing/queries": "./billing/queries.ts",

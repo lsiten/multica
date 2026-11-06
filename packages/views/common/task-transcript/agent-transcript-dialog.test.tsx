@@ -250,9 +250,6 @@ afterEach(() => {
 
 describe("AgentTranscriptDialog", () => {
   it.each([
-    { type: "text", label: "Agent", icon: ".lucide-bot" },
-    { type: "thinking", label: "Thinking", icon: ".lucide-brain" },
-    { type: "error", label: "Error", icon: ".lucide-circle-alert" },
     { type: "text", label: "Agent", icon: ".icon-bot" },
     { type: "thinking", label: "Thinking", icon: ".icon-brain" },
     { type: "error", label: "Error", icon: ".icon-circle-alert" },

@@ -20,6 +20,8 @@ import { runtimeKeys } from "../runtimes/queries";
 import { labelKeys } from "../labels/queries";
 import { propertyKeys } from "../properties/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
+import { issueProgressKeys, isProgressInvalidationEvent } from "../issue-progress";
+import { applicationKeys } from "../applications/queries";
 import { issueWorkflowKeys } from "../issue-workflows/queries";
 import { issueViewKeys } from "../issue-views/queries";
 import { issueViewPrefKeys } from "../issue-views/preferences";
@@ -662,6 +664,11 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: workspaceKeys.skills(wsId) });
     qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+    // The work-progress and application projections are keyed per workspace
+    // and rely on WS events for freshness; a reconnect or workspace switch
+    // must re-pull them like every other workspace-scoped list.
+    qc.invalidateQueries({ queryKey: issueProgressKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: applicationKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });
@@ -708,6 +715,75 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
   // a mounted composer recovers the prompt without a remount.
   qc.invalidateQueries({ queryKey: chatKeys.draftRestoresAll() });
   qc.invalidateQueries({ queryKey: workspaceKeys.list() });
+}
+
+/**
+ * Returns the workspace carried by a realtime payload. Older event versions
+ * put it on the entity (`issue`, `agent`, `project`, ...), while newer events
+ * put it directly on the envelope. When it is present we must route the event
+ * to that workspace; falling back to the active workspace would let a frame
+ * from workspace A invalidate workspace B while the user is switching tabs.
+ */
+function eventWorkspaceId(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const value = payload as Record<string, unknown>;
+  if (typeof value.workspace_id === "string") return value.workspace_id;
+  for (const key of ["issue", "agent", "project", "squad", "member", "task", "item"]) {
+    const entity = value[key];
+    if (entity && typeof entity === "object") {
+      const id = (entity as Record<string, unknown>).workspace_id;
+      if (typeof id === "string") return id;
+    }
+  }
+  return undefined;
+}
+
+function belongsToCurrentWorkspace(payload: unknown): boolean {
+  const source = eventWorkspaceId(payload);
+  const current = getCurrentWsId();
+  if (!source) {
+    // A workspace WebSocket room is already scoped by the server. Older
+    // servers omit workspace_id from several established event payloads
+    // (daemon, task, property and attachment events), so dropping those
+    // frames would silently disable realtime updates for the active room.
+    // When an envelope does carry a workspace_id, the equality check below
+    // still prevents a delayed frame from another workspace mutating caches.
+    return true;
+  }
+  // A scoped frame is actionable only while a concrete workspace is active.
+  // If the identity store is between workspaces (or has not hydrated yet),
+  // fail closed instead of allowing a delayed frame to mutate global caches.
+  return current !== null && current !== "" && source === current;
+}
+
+/**
+ * Pre-seed a live `task-messages` timeline entry from a dispatch/running event.
+ *
+ * The only thing that registers a live `chatKeys.taskMessages(taskId)` entry is
+ * the chat view's `useQuery(taskMessagesOptions(pendingTaskId))`, and that
+ * registration lags a dispatch/running event while the pending head is still
+ * empty: `promotePendingChatTask` returns EMPTY when there is no head and the
+ * task is not queued, so the head is filled only by the send response or the
+ * 15s poll — never by the lifecycle events themselves. In that window
+ * `isTaskMessageTimelineHeld` is false, so EVERY `task:message` frame for the
+ * task is dropped until `chat:done`, which then inserts the whole assistant
+ * message at once (the reported "streams only at the end" bug).
+ *
+ * Seeding here decouples the live timeline from the pending-head path. It is
+ * gated on a mounted pending-task query (a chat view is open for this session)
+ * so we still do not accumulate transcripts for runs the user never opens
+ * (MUL-6396): an unmounted client keeps dropping the frames it never renders.
+ */
+function ensureChatTaskMessageTimelineHeld(
+  qc: QueryClient,
+  sessionId: string,
+  taskId: string,
+): void {
+  if (isTaskMessageTimelineHeld(qc, taskId)) return;
+  const viewHoldingSession =
+    qc.getQueryCache().find({ queryKey: chatKeys.pendingTask(sessionId) }) !== undefined;
+  if (!viewHoldingSession) return;
+  qc.setQueryData<TaskMessagePayload[]>(chatKeys.taskMessages(taskId), (old = []) => old);
 }
 
 async function refreshWorkingAgentQueries(qc: QueryClient, wsId: string): Promise<void> {
@@ -835,6 +911,11 @@ export function useRealtimeSync(
       // events without dedicated handlers.
       workspace: () => {
         qc.invalidateQueries({ queryKey: workspaceKeys.list() });
+      },
+      // Supervision runs refresh their projection on any supervision write.
+      project_supervision: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) void qc.invalidateQueries({ queryKey: ["project_supervision", wsId] });
       },
       skill: () => {
         const wsId = getCurrentWsId();
@@ -1105,6 +1186,33 @@ export function useRealtimeSync(
     ]);
 
     const unsubAny = ws.onAny((msg) => {
+      // A delayed frame from another workspace must not mutate the active
+      // workspace's caches while the user is switching tabs. Frames without a
+      // workspace identity (established event payloads) still pass through.
+      if (!belongsToCurrentWorkspace(msg.payload)) return;
+      // Work directories were persisted or cleaned up server-side; the chat
+      // session file projections are keyed under the chat prefix and rely
+      // entirely on WS events for freshness.
+      if (msg.type === "runtime:work_directories_updated") {
+        const wsId = getCurrentWsId();
+        if (wsId) void qc.invalidateQueries({ queryKey: [...chatKeys.all(wsId), "session-files"] });
+        return;
+      }
+      // Committed task lifecycle events change work progress; streamed
+      // task:message frames do not (they fire per token, per run).
+      if (isProgressInvalidationEvent(msg.type)) {
+        const workspaceId = getCurrentWsId();
+        if (workspaceId) debouncedRefresh("issue-progress", () => { void qc.invalidateQueries({ queryKey: issueProgressKeys.all(workspaceId) }); });
+      }
+      if (msg.type === "application:changed") {
+        const wsId = getCurrentWsId();
+        if (wsId) void qc.invalidateQueries({ queryKey: applicationKeys.all(wsId) });
+        return;
+      }
+      if (["task:completed", "task:failed", "task:cancelled", "task:dispatch"].includes(msg.type)) {
+        const wsId = getCurrentWsId();
+        if (wsId) void qc.invalidateQueries({ queryKey: ["project_supervision", wsId] });
+      }
       if (specificEvents.has(msg.type)) return;
       const prefix = msg.type.split(":")[0] ?? "";
       if (prefix === "agent" || (prefix === "task" && msg.type !== "task:progress")) {
@@ -1692,6 +1800,7 @@ export function useRealtimeSync(
     const unsubTaskDispatch = ws.on("task:dispatch", (p) => {
       const payload = p as TaskDispatchPayload;
       if (!payload.chat_session_id) return;
+      ensureChatTaskMessageTimelineHeld(qc, payload.chat_session_id, payload.task_id);
       qc.setQueryData<ChatPendingTask>(
         chatKeys.pendingTask(payload.chat_session_id),
         (old) => promotePendingChatTask(old, payload.task_id, "running"),
@@ -1709,6 +1818,7 @@ export function useRealtimeSync(
     const unsubTaskRunning = ws.on("task:running", (p) => {
       const payload = p as TaskRunningPayload;
       if (!payload.chat_session_id) return;
+      ensureChatTaskMessageTimelineHeld(qc, payload.chat_session_id, payload.task_id);
       qc.setQueryData<ChatPendingTask>(
         chatKeys.pendingTask(payload.chat_session_id),
         (old) => promotePendingChatTask(old, payload.task_id, "running"),

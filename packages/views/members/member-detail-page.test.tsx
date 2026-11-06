@@ -79,8 +79,8 @@ function renderPage(userId = "user-1", members: MemberWithUser[] | null = [MEMBE
   });
   if (members) qc.setQueryData(memberListOptions(WS).queryKey, members);
   qc.setQueryData(agentListOptions(WS).queryKey, [
-    { id: "agent-1", name: "Babbage", owner_id: "user-1", archived_at: null },
-    { id: "agent-2", name: "Retired", owner_id: "user-1", archived_at: "2026-01-01" },
+    { id: "agent-1", workspace_id: WS, name: "Babbage", owner_id: "user-1", archived_at: null },
+    { id: "agent-2", workspace_id: WS, name: "Retired", owner_id: "user-1", archived_at: "2026-01-01" },
   ] as Agent[]);
   return renderWithI18n(
     <QueryClientProvider client={qc}>

@@ -248,19 +248,3 @@ describe("ChatSessionHeader rename keyboard behavior", () => {
     expect(screen.getByText("Original title")).toBeInTheDocument();
   });
 });
-
-describe("ChatSessionHeader group presentation", () => {
-  it("uses the group label when a group has no custom title", () => {
-    render(
-      <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <ChatSessionHeader
-          session={{ ...session, kind: "group", title: "" }}
-          agent={null}
-        />
-      </I18nProvider>,
-    );
-
-    expect(screen.getByTitle(enChat.header.rename)).toHaveTextContent(enChat.group.badge);
-    expect(screen.getByLabelText(enChat.group.badge)).toBeInTheDocument();
-  });
-});

@@ -68,7 +68,6 @@
     "no_matches": "Aucun projet correspondant",
     "create_first": "Créez votre premier projet",
     "search_placeholder": "Rechercher des projets...",
-    "selected_one": "{{count}} sélectionné",
     "selected_other": "{{count}} sélectionnés",
     "clear_selection": "Effacer la sélection"
   },
@@ -256,7 +255,6 @@
     "view": "Vue",
     "result_count_title": "Projets correspondants / tous les projets",
     "filter_label": "Filtrer",
-    "filter_active_count_one": "{{count}} filtre",
     "filter_active_count_other": "{{count}} filtres",
     "clear_filters": "Effacer les filtres",
     "display": "Affichage",

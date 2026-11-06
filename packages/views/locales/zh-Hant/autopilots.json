@@ -20,7 +20,9 @@
       "hint": "為你的 AI 代理安排週期性工作。從模板選一個，或從空白開始。"
     },
     "no_matches": "沒有匹配的自動化",
-    "retry": "重試"
+    "retry": "重試",
+    "title": "自動化",
+    "scope_all": "全部"
   },
   "status": {
     "active": "啟用",
@@ -120,7 +122,9 @@
       "cancel": "取消",
       "confirm": "刪除",
       "deleting": "刪除中..."
-    }
+    },
+    "section_properties": "屬性",
+    "section_danger": "危險操作"
   },
   "access": {
     "title": "管理訪問",
@@ -452,7 +456,16 @@
     "section_assignee": "執行者",
     "section_mode": "模式",
     "section_trigger": "觸發器",
-    "section_creator": "建立者"
+    "section_creator": "建立者",
+    "result_count_title": "當前結果 / 全部自動化",
+    "filter_label": "篩選",
+    "filter_active_count_other": "{{count}} 項篩選",
+    "clear_filters": "清除篩選",
+    "display": "顯示",
+    "sort_by": "排序",
+    "direction_asc": "升序",
+    "direction_desc": "降序",
+    "section_columns": "列"
   },
   "actions": {
     "row_menu": "自動化操作",
@@ -466,7 +479,9 @@
       "cancel": "取消",
       "confirm": "永久刪除",
       "deleting": "刪除中…"
-    }
+    },
+    "selected_other": "已選 {{count}} 項",
+    "clear_selection": "清除選擇"
   },
   "wakeups": {
     "title": "任務喚醒",
@@ -523,6 +538,14 @@
     "banner_view": "檢視",
     "create": "新建喚醒",
     "create_pick_issue": "選擇要新增喚醒的任務",
-    "create_pick_issue_description": "喚醒屬於該任務，並隨任務結束而停止。"
+    "create_pick_issue_description": "喚醒屬於該任務，並隨任務結束而停止。",
+    "scope": "範圍",
+    "search": "搜尋任務或智慧體",
+    "selected": "已選擇 {{count}} 項",
+    "clear": "清除選擇",
+    "results": "第 {{page}} 頁 · 共 {{count}} 項",
+    "previous": "上一頁",
+    "next_page": "下一頁",
+    "clear_filters": "清除篩選"
   }
 }

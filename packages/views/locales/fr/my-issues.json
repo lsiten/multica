@@ -19,7 +19,6 @@
     "filter_button": "Filtrer",
     "filter_status": "Statut",
     "filter_priority": "Priorité",
-    "issue_count_one": "{{count}} tâche",
     "issue_count_other": "{{count}} tâches",
     "reset_filters": "Réinitialiser tous les filtres",
     "display_settings": "Paramètres d'affichage",

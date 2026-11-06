@@ -41,7 +41,10 @@
       "fallback": "拉取 skill 列表時出錯。",
       "retry": "重試"
     },
-    "supporting_data_warning": "部分工作區資料載入失敗。建立者歸屬、執行時名稱、編輯權限可能顯示不完整。"
+    "supporting_data_warning": "部分工作區資料載入失敗。建立者歸屬、執行時名稱、編輯權限可能顯示不完整。",
+    "tagline": "工作區裡任何智慧體都能使用的指令。",
+    "learn_more": "瞭解更多 →",
+    "search_placeholder": "搜尋 skill..."
   },
   "table": {
     "name": "名稱",
@@ -91,7 +94,9 @@
     "cancel": "取消",
     "add_confirm": "新增（{{num}}）",
     "adding": "新增中...",
-    "added_multi_toast_other": "已新增到 {{count}} 個 AI 代理"
+    "added_multi_toast_other": "已新增到 {{count}} 個 AI 代理",
+    "selected": "已選 {{count}} 項",
+    "clear_selection": "清除選擇"
   },
   "toolbar": {
     "section_usage": "使用狀態",
@@ -100,7 +105,16 @@
     "no_labels": "還沒有標籤",
     "no_results": "無結果",
     "manage_labels": "管理標籤...",
-    "manage_labels_title": "Skill 標籤"
+    "manage_labels_title": "Skill 標籤",
+    "result_count_title": "當前結果 / 全部 skill",
+    "filter_label": "篩選",
+    "filter_active_count_other": "{{count}} 項篩選",
+    "clear_filters": "清除篩選",
+    "display": "顯示",
+    "sort_by": "排序",
+    "direction_asc": "升序",
+    "direction_desc": "降序",
+    "section_columns": "顯示列"
   },
   "detail": {
     "read_only": "只讀",
@@ -150,7 +164,9 @@
         "cancel": "取消",
         "confirm": "更新",
         "refreshing": "更新中..."
-      }
+      },
+      "button": "更新",
+      "tooltip": "從來源重新下載這個 skill"
     },
     "delete_dialog": {
       "title": "刪除這個 skill？",
@@ -176,7 +192,10 @@
       }
     },
     "header": {
-      "files_other": "{{count}} 個檔案"
+      "files_other": "{{count}} 個檔案",
+      "used_by_other": "{{count}} 個智慧體在用",
+      "updated": "{{when}}更新",
+      "updated_by": "{{name}} 於{{when}}更新"
     },
     "overview": {
       "properties": "屬性",
@@ -188,7 +207,10 @@
       "permissions_owner": "你可以編輯和刪除該技能。改動將在 AI 代理下次執行時生效。",
       "permissions_locked_creator": "只有建立者（{{name}}）或工作區管理員可以編輯該技能。",
       "permissions_locked": "只有建立者或工作區管理員可以編輯該技能。",
-      "character_count": "{{count}} 個字元"
+      "character_count": "{{count}} 個字元",
+      "properties_hint": "這些欄位與 SKILL.md 的 frontmatter 保持同步。",
+      "used_by_other": "被 {{count}} 個智慧體使用",
+      "properties_help": "關於 skill 屬性"
     },
     "files": {
       "list_aria": "技能檔案",
@@ -215,6 +237,14 @@
     },
     "panel": {
       "add_description": "新增描述"
+    },
+    "all_skills": "全部 skill",
+    "delete_aria": "刪除 skill",
+    "delete_tooltip": "刪除 skill",
+    "tabs": {
+      "aria": "技能分割槽",
+      "overview": "概覽",
+      "files_other": "檔案 {{count}}"
     }
   },
   "create": {

@@ -565,9 +565,9 @@
     "elapsed": "{{duration}} elapsed",
     "latest": "Latest",
     "open_timeline": "Open timeline",
-    "more_runs_one": "{{count}} more",
-    "more_runs_other": "{{count}} more",
-    "strip_aria": "Cumulative cost over time — open the run timeline",
+    "more_runs_one": "Show {{count}} more",
+    "more_runs_other": "Show {{count}} more",
+    "strip_aria": "Cost per run — open the run timeline",
     "strip_no_usage": "No usage recorded",
     "sparkline_now": "Now",
     "jump_to_run": "Go to run",
@@ -681,7 +681,9 @@
     "advanced_group_match_trailing": "of these",
     "advanced_group_hint": "Conditions in this group are joined with “{{word}}”",
     "advanced_add_to_group": "Add to group",
-    "advanced_turn_into_group": "Turn into group"
+    "advanced_turn_into_group": "Turn into group",
+    "section_read_state": "Read state",
+    "read_state_unread": "Unread"
   },
   "gantt": {
     "header_issue": "Issue",
@@ -1344,7 +1346,8 @@
     "builtin": {
       "my_issues": "My Issues",
       "my_agents": "My agents' work",
-      "all_issues": "All issues"
+      "all_issues": "All issues",
+      "unread": "Unread"
     },
     "untitled": "Untitled view",
     "copy_name": "{{name}} (copy)",

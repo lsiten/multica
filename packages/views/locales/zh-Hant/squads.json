@@ -78,7 +78,9 @@
     "status_unstable": "不穩定",
     "status_archived": "已歸檔",
     "issue_status_blocked": "已阻塞",
-    "active_issue_more": "還有 {{count}} 個"
+    "active_issue_more": "還有 {{count}} 個",
+    "section_count_other": "該小隊有 {{count}} 名成員",
+    "last_active_label": "最近活動 {{time}}"
   },
   "detail": {
     "assign_work": "指派工作",
@@ -134,5 +136,30 @@
     "mine": "我的小隊",
     "all": "全部小隊"
   },
-  "toolbar": {}
+  "toolbar": {
+    "display": "顯示",
+    "sort_by": "排序",
+    "direction_asc": "升序",
+    "direction_desc": "降序",
+    "section_columns": "列",
+    "result_count_title": "當前結果 / 全部小隊",
+    "filter_label": "篩選",
+    "filter_active_count_other": "{{count}} 項篩選",
+    "clear_filters": "清除篩選"
+  },
+  "inspector": {
+    "details_section": "詳情",
+    "archive_button": "歸檔"
+  },
+  "discard_changes_dialog": {
+    "title": "放棄未儲存的修改？",
+    "description": "當前標籤頁有未儲存的修改，切換標籤會丟棄這些修改。",
+    "keep_editing": "繼續編輯",
+    "discard_button": "放棄"
+  },
+  "detail_tabs": {
+    "graph": "協作圖譜",
+    "members": "成員",
+    "instructions": "指引"
+  }
 }

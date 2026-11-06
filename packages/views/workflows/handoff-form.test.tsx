@@ -33,7 +33,7 @@ const WORKFLOW = {
 
 function renderFields(step: IssueWorkflowStep, onPatch = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  qc.setQueryData(agentListOptions("ws-1").queryKey, [{ id: "agent-1", name: "Builder", archived_at: null }] as never);
+  qc.setQueryData(agentListOptions("ws-1").queryKey, [{ id: "agent-1", workspace_id: "ws-1", name: "Builder", archived_at: null }] as never);
   qc.setQueryData(memberListOptions("ws-1").queryKey, [{ user_id: "user-1", name: "Ada" }] as never);
   renderWithI18n(
     <QueryClientProvider client={qc}>
@@ -94,8 +94,8 @@ describe("HandoffFields", () => {
 
 describe("WorkflowHandoffForm", () => {
   const PROJECTS = [
-    { id: "p-pay", title: "Payments" },
-    { id: "p-orders", title: "Orders" },
+    { id: "p-pay", workspace_id: "ws-1", title: "Payments" },
+    { id: "p-orders", workspace_id: "ws-1", title: "Orders" },
   ];
   const workflow = (projectIds: string[]): IssueWorkflow =>
     ({
@@ -113,7 +113,7 @@ describe("WorkflowHandoffForm", () => {
   function renderForm(wf: IssueWorkflow, canCopyForProject = true) {
     mutateAsync.mockReset().mockResolvedValue({ ...wf, name: "Delivery (Payments)" });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(agentListOptions("ws-1").queryKey, [{ id: "agent-1", name: "Builder", archived_at: null }] as never);
+    qc.setQueryData(agentListOptions("ws-1").queryKey, [{ id: "agent-1", workspace_id: "ws-1", name: "Builder", archived_at: null }] as never);
     qc.setQueryData(memberListOptions("ws-1").queryKey, [] as never);
     qc.setQueryData(projectListOptions("ws-1").queryKey, { projects: PROJECTS } as never);
     renderWithI18n(

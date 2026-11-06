@@ -11,14 +11,12 @@
   },
   "filters": {
     "tooltip": "Filtrer la boîte de réception",
-    "active_count_one": "{{count}} filtre actif",
     "active_count_other": "{{count}} filtres actifs",
     "status": "Statut",
     "priority": "Priorité",
     "from": "De",
     "unread_only": "Non lues uniquement",
     "no_agents_working": "Aucun agent au travail",
-    "notification_count_one": "{{count}} notification",
     "notification_count_other": "{{count}} notifications",
     "clear": "Effacer les filtres",
     "empty": "Aucune notification ne correspond à vos filtres"

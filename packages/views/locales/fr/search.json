@@ -24,7 +24,6 @@
   },
   "context": {
     "current_issue": "Tâche actuelle",
-    "selected_issues_one": "{{count}} tâche sélectionnée",
     "selected_issues_other": "{{count}} tâches sélectionnées",
     "current_project": "Projet actuel",
     "current_agent": "Agent actuel",
@@ -53,7 +52,6 @@
     "assign_to": "Assigner à...",
     "set_priority": "Définir la priorité...",
     "run_quick_action": "Lancer une action rapide...",
-    "quick_actions_available_one": "{{count}} disponible",
     "quick_actions_available_other": "{{count}} disponibles",
     "add_label": "Ajouter un libellé...",
     "set_due_date": "Définir l'échéance...",
@@ -65,7 +63,6 @@
     "subscribe": "S'abonner",
     "unsubscribe": "Se désabonner",
     "delete": "Supprimer la tâche",
-    "delete_selected_one": "Supprimer {{count}} tâche",
     "delete_selected_other": "Supprimer {{count}} tâches"
   },
   "project": {

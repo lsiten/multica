@@ -5,7 +5,10 @@ import type { ReactNode } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { useWorkspaceFileSearch } from "./use-workspace-file-search";
 const read = vi.hoisted(() => vi.fn());
-vi.mock("./workspace-directory-query", () => ({ readWorkspaceSearchPage: read }));
+vi.mock("./workspace-directory-query", () => ({
+  readWorkspaceSearchPage: read,
+  WORKSPACE_DIRECTORY_READ_TIMEOUT_MS: 60_000,
+}));
 beforeEach(() => { read.mockReset(); });
 const request = { workspace_id:"ws", project_resource_id:"resource", path:"/project", runtime_id:"runtime" };
 function createWrapper() {

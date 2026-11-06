@@ -80,7 +80,12 @@
     "quick_create_unconfirmed": "透過 AI 代理建立結果未確認",
     "autopilot_paused": "自動化已暫停",
     "children_done": "子任務已全部結束",
-    "autopilot_quota_exceeded": "自動化執行次數已用完"
+    "autopilot_quota_exceeded": "自動化執行次數已用完",
+    "runtime_mirror_viewer_started": "螢幕映象已開始",
+    "runtime_mirror_viewer_stopped": "螢幕映象已結束",
+    "runtime_mirror_control_started": "遠端螢幕控制已開始",
+    "runtime_mirror_control_stopped": "遠端螢幕控制已結束",
+    "human_action_requested": "需要你處理"
   },
   "labels": {
     "set_status_to": "狀態設為",
@@ -95,7 +100,11 @@
     "created_with_agent": "透過 AI 代理建立：{{identifier}}",
     "failed_with_detail": "失敗：{{detail}}",
     "autopilot_quota_blocked": "執行已被阻止：額度已用完",
-    "children_done_stage": "第 {{stage}} 階段的子任務已全部結束"
+    "children_done_stage": "第 {{stage}} 階段的子任務已全部結束",
+    "mirror_viewing_started": "正在檢視 {{runtime}} 的螢幕。",
+    "mirror_viewing_stopped": "{{runtime}} 的螢幕映象已結束。",
+    "mirror_control_started": "{{name}} 正在控制 {{runtime}}。",
+    "mirror_control_stopped": "{{runtime}} 的遠端控制已結束。"
   },
   "toasts": {
     "source_context_retry_started": "已使用原始上下文開始重試",

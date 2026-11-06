@@ -459,7 +459,6 @@
     "section_creator": "Créé par",
     "result_count_title": "Automatisations correspondantes / toutes les automatisations",
     "filter_label": "Filtrer",
-    "filter_active_count_one": "{{count}} filtre",
     "filter_active_count_other": "{{count}} filtres",
     "clear_filters": "Effacer les filtres",
     "display": "Affichage",
@@ -475,14 +474,12 @@
     "delete": "Supprimer",
     "delete_dialog": {
       "title": "Supprimer l'automatisation ?",
-      "description_one": "« {{name}} » et son historique d'exécutions seront définitivement supprimés.",
       "description_other": "{{count}} automatisations et leur historique d'exécutions seront définitivement supprimés.",
       "warning": "Cette action est irréversible.",
       "cancel": "Annuler",
       "confirm": "Supprimer définitivement",
       "deleting": "Suppression…"
     },
-    "selected_one": "{{count}} sélectionnée",
     "selected_other": "{{count}} sélectionnées",
     "clear_selection": "Effacer la sélection"
   },
@@ -537,7 +534,6 @@
     "fires_once": "Se déclenche une fois",
     "assignee_target": "Responsable · {{name}}",
     "no_target": "Aucun agent responsable",
-    "banner_one": "{{count}} réveil mis en pause automatiquement : {{issue}} « {{condition}} » — {{reason}}",
     "banner_other": "{{count}} réveils mis en pause automatiquement. Dernier : {{issue}} « {{condition}} » — {{reason}}",
     "banner_view": "Voir",
     "create": "Nouveau réveil",

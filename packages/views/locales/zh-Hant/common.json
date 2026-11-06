@@ -135,5 +135,33 @@
   },
   "navigation": {
     "open_in_new_tab": "在新標籤頁開啟"
+  },
+  "human_request": {
+    "loading": "載入中...",
+    "load_failed": "無法讀取請求。請重試，獲取當前狀態。",
+    "retry": "重試",
+    "details": "檢視詳情",
+    "recommended": "建議",
+    "received": "已收到回覆，後續執行已排隊。",
+    "declined": "已拒絕操作，並通知智慧體。",
+    "cancelled": "請求已取消。",
+    "expired": "請求已過期。請讓智慧體重新發起。",
+    "unavailable": "當前客戶端無法處理此請求。",
+    "other_member": "等待指定成員處理。",
+    "decline": "暫不執行",
+    "submitting": "正在提交回復...",
+    "submit_failed": "無法確認回覆是否提交成功。請重新整理此請求後重試。",
+    "refresh": "重新整理請求",
+    "reply_confirmed": "已確認：{{answer}}",
+    "reply_target": "答覆請求",
+    "reply_auto": "匹配唯一明確選項",
+    "reply_preview": "將確認“{{title}}”：{{answer}}",
+    "reply_plain": "作為普通訊息傳送",
+    "reply_submit": "提交答覆",
+    "reply_choose_target": "請先選擇這條答覆對應的請求。",
+    "reply_stale": "請求已變化或結束，請核對最新版本。",
+    "reply_unsupported": "當前服務端不支援文字提交，請使用原確認卡，草稿已保留。",
+    "reply_no_match": "這條訊息與請求不匹配，無法作為答覆提交。請修改訊息，或作為普通訊息傳送。",
+    "reply_options": "選項"
   }
 }

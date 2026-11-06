@@ -90,7 +90,6 @@
   },
   "fab": {
     "running": "Multica travaille...",
-    "unread_one": "{{count}} discussion non lue",
     "unread_other": "{{count}} discussions non lues",
     "default": "Demander à Multica"
   },
@@ -148,7 +147,6 @@
     "autonomy_invalid": "Saisissez 0 ou un entier positif ; la durée est limitée à 86400 secondes."
   },
   "queue": {
-    "title_one": "{{count}} message en file d'attente",
     "title_other": "{{count}} messages en file d'attente",
     "clear": "Tout effacer",
     "steer": "Réorienter",
@@ -194,11 +192,9 @@
       "continuing": "Continuation…",
       "continue_aria": "Continuer ce message"
     },
-    "tools_one": "{{count}} outil",
     "tools_other": "{{count}} outils",
     "tool_result_named": "Résultat de {{tool}} : ",
     "tool_result_unnamed": "résultat : ",
-    "process_steps_one": "{{count}} étape",
     "process_steps_other": "{{count}} étapes",
     "copy_action": "Copier",
     "copied_toast": "Copié",

@@ -39,6 +39,7 @@ vi.mock("./workflow-editor-page", () => ({ WorkflowEditorPage: () => null }));
 function project(id: string, title: string, workflowId: string | null = null): Project {
   return {
     id,
+    workspace_id: "ws-1",
     title,
     icon: null,
     workflow_id: workflowId,

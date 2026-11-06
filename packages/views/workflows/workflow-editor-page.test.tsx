@@ -30,7 +30,7 @@ vi.mock("../common/actor-avatar", () => ({
 function renderEditor(props: { template?: "content"; canCreateStatus?: boolean } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(projectListOptions("ws-1").queryKey, [] as never);
-  qc.setQueryData(agentListOptions("ws-1").queryKey, [{ id: "agent-1", name: "Builder", archived_at: null }] as never);
+  qc.setQueryData(agentListOptions("ws-1").queryKey, [{ id: "agent-1", workspace_id: "ws-1", name: "Builder", archived_at: null }] as never);
   qc.setQueryData(memberListOptions("ws-1").queryKey, [] as never);
   renderWithI18n(
     <QueryClientProvider client={qc}>

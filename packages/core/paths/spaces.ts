@@ -28,6 +28,9 @@ export const RAIL_SPACES: readonly RailSpaceId[] = [
 
 const SPACE_BY_SEGMENT: Record<string, AppSpaceId> = {
   inbox: "inbox",
+  // Applications sits in the sidebar's personal group next to Inbox, so it
+  // shares the Inbox space (no shell panel of its own).
+  applications: "inbox",
   "my-issues": "work",
   issues: "work",
   projects: "work",

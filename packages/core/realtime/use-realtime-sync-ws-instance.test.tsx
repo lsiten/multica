@@ -131,24 +131,17 @@ describe("useRealtimeSync — ws instance change", () => {
     const ws2 = createMockWs();
     rerender({ ws: ws2 });
 
-    // Should have called invalidateQueries for all workspace-scoped keys
-    // (16 workspace-scoped [incl. property definitions] + 6 per-issue
-    // prefixes + the workspace working-agents projection + 5 per-chat
-    // prefixes + 1 workspaceKeys.list() + 1 cross-workspace inbox unread
-    // summary + the progress and application projections = 33 calls).
-    // (19 workspace-scoped [incl. property definitions, workflows, saved views
-    // and view preferences] + 6 per-issue prefixes + the workspace
-    // working-agents projection + 5 per-chat prefixes + 1 workspaceKeys.list()
-    // + 1 cross-workspace inbox unread summary + 1 issue unread marks = 35
-    // calls).
-    //
-    // Awaited rather than counted synchronously: the inbox unread summary
-    // refresh cancels any in-flight request before invalidating (see
-    // onInboxSummaryInvalidate), so that one lands after the synchronous ones.
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(33));
+    // Should have called invalidateQueries for all workspace-scoped keys.
+    // The bulk recovery covers: 22 workspace-scoped keys (incl. the issue
+    // progress and application projections, workflows, saved views and view
+    // preferences) + 6 per-issue prefixes + 5 per-chat prefixes +
+    // workspaceKeys.list() = 34 synchronous calls, then 3 async refreshes
+    // (the ws-scoped inbox list, the cross-workspace inbox unread summary
+    // and the issue unread marks) land once their cancel-then-invalidate
+    // chains resolve — 37 in total.
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(37));
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: applicationKeys.all("ws-1") });
     expect(invalidateSpy.mock.calls.filter((call: [InvalidateQueryFilters, ...unknown[]]) => JSON.stringify(call[0].queryKey) === JSON.stringify(issueProgressKeys.all("ws-1")))).toHaveLength(1);
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(35));
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {

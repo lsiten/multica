@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-query", () => ({
+  queryOptions: (options: Record<string, unknown>) => options,
   useQuery: (options: { queryKey?: readonly unknown[] }) => ({
     isError: false,
     isPending: false,

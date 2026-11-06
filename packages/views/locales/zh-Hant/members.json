@@ -18,6 +18,7 @@
     "relation": "關係",
     "breadcrumb_fallback": "成員",
     "not_found_title": "未找到該成員",
-    "not_found_description": "該成員可能已經離開工作區。"
+    "not_found_description": "該成員可能已經離開工作區。",
+    "workspace_fallback": "工作區"
   }
 }

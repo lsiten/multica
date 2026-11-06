@@ -12,11 +12,15 @@
       "mine": "我的 AI 代理",
       "all": "全部 AI 代理",
       "archived": "已歸檔 AI 代理"
-    }
+    },
+    "tagline": "能領取任務、留下評論、推進狀態的 AI 隊友。",
+    "learn_more": "瞭解更多 →",
+    "search_placeholder": "搜尋智慧體..."
   },
   "scope": {
     "mine": "我的",
-    "all": "全部"
+    "all": "全部",
+    "archived": "已歸檔"
   },
   "sort": {
     "label_recent": "最近活躍",
@@ -162,6 +166,7 @@
     "agent_restored_toast": "已恢復 AI 代理",
     "restore_failed_toast": "恢復 AI 代理失敗",
     "dm": "私信",
+    "open_runtime_mirror": "開啟執行時映象",
     "dm_no_permission_toast": "你沒有權限與該 AI 代理聊天。",
     "runtime_required_toast": "請先繫結執行時，再執行該 AI 代理。",
     "assign_work": "分配工作",
@@ -170,7 +175,9 @@
     "copy_link": "複製連結",
     "copy_id": "複製 AI 代理 ID",
     "link_copied_toast": "連結已複製",
-    "id_copied_toast": "AI 代理 ID 已複製"
+    "id_copied_toast": "AI 代理 ID 已複製",
+    "back_to_agents": "智慧體",
+    "updated": "{{when}}更新"
   },
   "inspector": {
     "section_profile": "資料",
@@ -202,11 +209,15 @@
     "edit_description_title": "編輯描述",
     "description_placeholder": "這個 AI 代理做什麼？",
     "save": "儲存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "section_skills": "Skills",
+    "no_description_placeholder": "暫無描述"
   },
   "overview": {
     "attention_title": "需要處理的執行",
-    "attention_queued_other": "執行時不可用，當前有 {{count}} 次執行正在排隊。"
+    "attention_queued_other": "執行時不可用，當前有 {{count}} 次執行正在排隊。",
+    "agent_context": "智慧體",
+    "access": "訪問許可權"
   },
   "sections": {
     "runs_count_other": "{{count}} 次執行",
@@ -297,7 +308,10 @@
     "discard_dialog_title": "放棄未儲存的修改？",
     "discard_dialog_description": "當前 tab 有未儲存的修改，離開會丟棄這些修改。",
     "discard_keep": "繼續編輯",
-    "discard_confirm": "放棄修改"
+    "discard_confirm": "放棄修改",
+    "identity": "身份",
+    "overview": "概覽",
+    "page_navigation_aria": "智慧體頁面"
   },
   "creation_studio": {
     "title": "建立 AI 代理",
@@ -312,6 +326,10 @@
       "ai": {
         "title": "透過 AI 建立",
         "description": "透過對話生成可編輯的配置草稿。"
+      },
+      "blank": {
+        "title": "從空白開始",
+        "description": "手動填寫名稱、指令和執行時。"
       }
     },
     "sections": {
@@ -447,7 +465,16 @@
       "footer_selected": "已選：",
       "cancel": "取消",
       "next": "下一步"
-    }
+    },
+    "back": "返回",
+    "eyebrow": "建立智慧體",
+    "choose_title": "你想從哪裡開始？",
+    "recommended": "推薦",
+    "continue": "繼續",
+    "step_choose": "選擇起點",
+    "step_configure": "檢查並配置",
+    "create_and_open": "建立並開啟",
+    "created": "已建立 {{name}}"
   },
   "create_dialog": {
     "title_create": "建立 AI 代理",
@@ -832,7 +859,27 @@
       "cancel_failed_toast": "取消執行失敗",
       "started_prefix": "{{when}}啟動",
       "dispatched_prefix": "{{when}}派發",
-      "queued_prefix": "{{when}}排隊"
+      "queued_prefix": "{{when}}排隊",
+      "subtitle_no_active": "無進行中的工作",
+      "subtitle_active_other": "{{count}} 次執行進行中",
+      "subtitle_performance": "表現",
+      "subtitle_no_recent": "還沒有完成的執行",
+      "subtitle_recent_progress": "顯示 {{shown}} / {{total}} 次執行",
+      "subtitle_recent_latest": "最近 {{count}} 次執行",
+      "avg_duration": "平均 {{value}}",
+      "failed_count": "{{count}} 次失敗"
+    },
+    "identity": {
+      "description": "為需要代表你執行任務的智慧體配置穩定身份。這裡只儲存標識資訊，不儲存支付憑據。",
+      "email_label": "郵箱地址",
+      "phone_label": "電話號碼",
+      "save": "儲存身份",
+      "saved_toast": "智慧體身份已儲存。",
+      "save_failed_toast": "儲存智慧體身份失敗。",
+      "email_placeholder": "agent@example.com",
+      "phone_placeholder": "+8613800138000",
+      "load_failed": "無法載入此智慧體身份。",
+      "retry": "重試"
     }
   },
   "char_counter": {
@@ -1021,6 +1068,7 @@
       "agent_fallback_message": "AI 代理返回了兜底訊息",
       "codex_resume_oversized": "會話過大，無法恢復",
       "idle_watchdog": "AI 代理長時間無活動，執行已停止",
+      "startup_timeout": "智慧體啟動後長時間無輸出，執行已停止（可能未登入或網路不通）",
       "local_directory_error": "本地目錄出錯",
       "cancelled": "系統已取消",
       "agent_error": "AI 代理執行出錯",
@@ -1039,7 +1087,19 @@
     "section_access": "訪問權限",
     "section_runtime": "執行時",
     "section_owner": "owner",
-    "section_model": "模型"
+    "section_model": "模型",
+    "result_count_title": "當前結果 / 範圍內全部",
+    "filter_label": "篩選",
+    "filter_active_count_other": "{{count}} 項篩選",
+    "clear_filters": "清除篩選",
+    "display": "顯示",
+    "sort_by": "排序",
+    "direction_asc": "升序",
+    "direction_desc": "降序",
+    "section_columns": "列"
   },
-  "actions": {}
+  "actions": {
+    "selected_other": "已選 {{count}} 項",
+    "clear_selection": "清除選擇"
+  }
 }

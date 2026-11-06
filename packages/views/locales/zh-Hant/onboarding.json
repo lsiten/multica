@@ -165,7 +165,11 @@
     "creation_disabled_lede": "該 Multica 例項不允許建立新的工作區。等管理員把你邀請到某個工作區後，接受邀請並重新整理即可繼續。",
     "creation_disabled_logout": "退出登入",
     "creation_disabled_headline_resume": "繼續使用 {{name}}。",
-    "creation_disabled_lede_resume": "該例項已禁用建立工作區，繼續進入你已有的工作區即可。"
+    "creation_disabled_lede_resume": "該例項已禁用建立工作區，繼續進入你已有的工作區即可。",
+    "eyebrow_first": "你的第一個工作區",
+    "eyebrow_resume": "繼續，或重新開始",
+    "creation_disabled_eyebrow": "工作區建立已停用",
+    "creation_disabled_eyebrow_resume": "你的工作區"
   },
   "step_runtime": {
     "scanning_headline": "正在連線這臺電腦...",
@@ -191,7 +195,9 @@
     "hint_selected": "已選擇：{{name}}",
     "hint_pick": "在上方選擇一個 AI 代理執行時，就可以開始使用 Mika。",
     "hint_waiting": "等待第一個結果...",
-    "continue": "開始使用 Mika"
+    "continue": "開始使用 Mika",
+    "online_label": "線上",
+    "offline_label": "離線"
   },
   "step_platform": {
     "headline": "連線一臺電腦來執行你的 AI 代理。",
@@ -218,7 +224,9 @@
     "stage_slow_suffix": " 的終端是否有錯誤。",
     "stage_stalled_prefix": "目前還沒有收到連線。如果你不太習慣終端，",
     "stage_stalled_term": "桌面端",
-    "stage_stalled_suffix": " 更順手——一鍵搞定，這臺電腦就連線好了。關閉這個對話方塊選擇桌面端，或點跳過繼續。"
+    "stage_stalled_suffix": " 更順手——一鍵搞定，這臺電腦就連線好了。關閉這個對話方塊選擇桌面端，或點跳過繼續。",
+    "eyebrow": "連線一臺電腦",
+    "cli_dialog_connect": "連線並繼續"
   },
   "errors": {
     "skip_failed": "完成上手引導失敗",
@@ -230,5 +238,28 @@
     "name": "Mika",
     "role": "參謀長",
     "blurb": "把你想做的事告訴 Mika，它會變成一個任務，並交給合適的 AI 代理處理。"
+  },
+  "option_card": {
+    "other_label": "其他",
+    "other_aria": "描述其他選項"
+  },
+  "welcome_after_onboarding": {
+    "skip": {
+      "loading": "正在為你準備工作區...",
+      "title": "歡迎來到 Multica！",
+      "subtitle": "我們建了一個任務幫你連線執行時。準備好後，在 \"執行時\" 頁面就能開始使用 Mika。",
+      "got_it": "知道了",
+      "status_in_progress": "進行中",
+      "error_title": "沒能幫你準備好",
+      "error_body": "執行時引導任務沒有建立成功。可以重試，也可以隨時在\"執行時\"頁面自己連線。",
+      "retry": "重試",
+      "dismiss": "暫不",
+      "cards": {
+        "install_runtime": {
+          "title": "連線一個執行時",
+          "subtitle": "安裝 Codex 或 Kimi，然後從 \"執行時\" 頁面進入 Mika 的引導對話。"
+        }
+      }
+    }
   }
 }

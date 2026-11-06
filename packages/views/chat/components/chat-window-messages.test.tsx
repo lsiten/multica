@@ -168,10 +168,14 @@ describe("floating chat message lifetime", () => {
   });
 
   it("fetches the full message window when its inactive cache was collected", async () => {
+    // The fork refetches on mount even with cached data (desktop restart must
+    // reconcile with the server), so serve that initial refetch first.
+    fetchMessages.mockResolvedValue({ messages: [message("initial message")], limit: 50, has_more: false });
     const { qc, key, setOpen } = renderWindow(true);
     setOpen(false);
     await waitFor(() => expect(screen.queryByTestId("messages")).not.toBeInTheDocument());
     qc.removeQueries({ queryKey: key });
+    fetchMessages.mockClear();
     fetchMessages.mockResolvedValue({ messages: [message("refetched after collection")], limit: 50, has_more: false });
 
     setOpen(true);

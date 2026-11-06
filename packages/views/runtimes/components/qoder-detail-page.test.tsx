@@ -109,8 +109,8 @@ beforeEach(() => {
     { id: "rt_qoder", provider: "qoder_cloud", status: "online", visibility: "public" },
   ]);
   mocks.listAgents.mockResolvedValue([
-    { id: "a1", name: "Reviewer", runtime_id: "rt_qoder", archived_at: null },
-    { id: "a2", name: "Local helper", runtime_id: "rt_local", archived_at: null },
+    { id: "a1", workspace_id: "ws-test", name: "Reviewer", runtime_id: "rt_qoder", archived_at: null },
+    { id: "a2", workspace_id: "ws-test", name: "Local helper", runtime_id: "rt_local", archived_at: null },
   ]);
   mocks.listQoderEnvironments.mockResolvedValue([
     { id: "env_one", name: "Web environment" },

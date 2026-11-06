@@ -79,7 +79,6 @@
     "status_archived": "Archivé",
     "issue_status_blocked": "bloqué",
     "active_issue_more": "et {{count}} de plus",
-    "section_count_one": "{{count}} membre dans ce squad",
     "section_count_other": "{{count}} membres dans ce squad",
     "last_active_label": "dernière activité {{time}}"
   },
@@ -123,10 +122,8 @@
     "unavailable": "Squad indisponible",
     "detail_link": "Détail →",
     "archived": "Archivé",
-    "member_count_one": "{{count}} membre",
     "member_count_other": "{{count}} membres",
     "members_section": "Membres",
-    "more_members_one": "+{{count}} de plus",
     "more_members_other": "+{{count}} de plus"
   },
   "instructions_tab": {
@@ -147,7 +144,6 @@
     "section_columns": "Colonnes",
     "result_count_title": "Squads correspondants / tous les squads",
     "filter_label": "Filtrer",
-    "filter_active_count_one": "{{count}} filtre",
     "filter_active_count_other": "{{count}} filtres",
     "clear_filters": "Effacer les filtres"
   },
