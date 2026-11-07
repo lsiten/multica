@@ -186,10 +186,15 @@ func (c *Client) setIdentityHeaders(req *http.Request) {
 		req.Header.Set("X-Client-OS", c.os)
 	}
 	capabilities := daemonHTTPClientCapabilities()
+	// The virtual-screen capabilities need the native host; the control
+	// capability is independent of it, so advertise the two separately.
 	if c.managedVscreen {
 		if managed := managedVscreenCapabilities(); len(managed) > 0 {
 			capabilities += "," + strings.Join(managed, ",")
 		}
+	}
+	if control := managedScreenControlCapabilities(); len(control) > 0 {
+		capabilities += "," + strings.Join(control, ",")
 	}
 	req.Header.Set("X-Client-Capabilities", capabilities)
 }

@@ -155,5 +155,9 @@
     "cancelled": "Annulé",
     "blocked": "Bloqué",
     "preparing": "Préparation"
+  },
+  "status_hint": {
+    "partial": "Certaines parties ont réussi alors que d'autres non. Consultez les détails et résolvez les éléments non terminés.",
+    "blocked": "Bloqué car une dépendance ou un prérequis n'est pas satisfait. Résolvez-le, puis réessayez."
   }
 }

@@ -29,7 +29,7 @@ import { installNavigationGuard } from "./navigation-guard";
 import { createRendererWebPreferences } from "./renderer-web-preferences";
 import { getAppVersion } from "./app-version";
 import { loadRuntimeConfig } from "./runtime-config-loader";
-import type { RuntimeConfigResult } from "../shared/runtime-config";
+import type { RuntimeConfig, RuntimeConfigResult } from "../shared/runtime-config";
 import {
   RENDERER_ROUTE_CONTEXT_CHANNEL,
   sanitizeRendererRouteContext,
@@ -187,6 +187,37 @@ let runtimeConfigResult: RuntimeConfigResult = {
   ok: false,
   error: { message: "Runtime config has not loaded yet" },
 };
+
+// The branding icon the main process applies to windows and the macOS dock.
+// Defaults to the bundled icon; a whitelabel `iconPath` from the runtime config
+// overwrites it once the config loads in app.whenReady — before any window is
+// realized — so a self-hosted build shows its own icon. On macOS the name and
+// dock icon take effect live; on Windows/Linux the taskbar / WM_CLASS name is
+// fixed at build time and needs a restart (the documented FR-DSK-07 behavior).
+let runtimeIconPath = BUNDLED_ICON_PATH;
+
+// Apply the whitelabel app name + icon from the loaded runtime config. Only
+// outside dev: dev keeps the "Multica Canary" worktree-isolation name and the
+// bundled dock icon. `app.setName` updates app.getName() live on macOS (the app
+// menu + dock); on Windows/Linux the name is baked into the build, so a name
+// change needs a restart. The icon is applied to any already-created windows
+// and the macOS dock, and runtimeIconPath is updated so windows created
+// afterwards pick up the whitelabel icon from their `icon` option.
+function applyRuntimeConfigBranding(config: RuntimeConfig): void {
+  if (is.dev) return;
+  app.setName(config.appName);
+  if (config.iconPath) {
+    runtimeIconPath = config.iconPath;
+  }
+  const icon = nativeImage.createFromPath(runtimeIconPath);
+  if (icon.isEmpty()) return;
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(icon);
+  }
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.setIcon(icon);
+  }
+}
 
 // --- Deep link helpers ---------------------------------------------------
 
@@ -456,7 +487,7 @@ function createMainWindow(saved: WindowState = {}): BrowserWindow {
     // does not install a .desktop entry, so the WM has no other path to
     // the bundled icon; without it Ubuntu falls back to the theme default.
     ...(is.dev || process.platform === "linux"
-      ? { icon: BUNDLED_ICON_PATH }
+      ? { icon: runtimeIconPath }
       : {}),
     webPreferences: createRendererWebPreferences(
       join(__dirname, "../preload/index.js"),
@@ -608,7 +639,7 @@ function createIssueWindow(context: IssueWindowContext): void {
     show: false,
     autoHideMenuBar: true,
     ...(is.dev || process.platform === "linux"
-      ? { icon: BUNDLED_ICON_PATH }
+      ? { icon: runtimeIconPath }
       : {}),
     webPreferences: createRendererWebPreferences(
       join(__dirname, "../preload/index.js"),
@@ -777,6 +808,13 @@ if (!gotTheLock) {
     if (is.dev && process.platform === "darwin" && app.dock) {
       const icon = nativeImage.createFromPath(BUNDLED_ICON_PATH);
       if (!icon.isEmpty()) app.dock.setIcon(icon);
+    }
+
+    // Whitelabel branding (name + icon) is applied outside dev, right after the
+    // runtime config loads and before any window is realized, so a
+    // self-hosted build shows its configured name/icon.
+    if (runtimeConfigResult.ok) {
+      applyRuntimeConfigBranding(runtimeConfigResult.config);
     }
 
     app.on("browser-window-created", (_, window) => {

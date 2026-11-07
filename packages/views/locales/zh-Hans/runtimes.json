@@ -2612,6 +2612,7 @@
     "eyebrow": "运行时镜像",
     "connection_label": "连接",
     "description": "直接查看运行时主机。屏幕像素不会经过 Multica API。",
+    "main_display_only": "此视图仅显示主显示器。要查看其他显示器，请使用支持源选择的 v2 视频镜像。",
     "frame_label": "运行时屏幕",
     "frame_alt": "{{runtime}} 的实时屏幕",
     "back_to_runtime": "返回设备",

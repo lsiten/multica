@@ -103,6 +103,38 @@ func quarantineJevDecisionReport(dir, name string) error {
 	return errors.Join(syncTerminalReportDir(dir), syncTerminalReportDir(failed))
 }
 
+// jevDecisionReportQueueStats counts the on-disk Jev decision report backlog.
+// The pending directory holds records still being retried; the failed
+// subdirectory holds non-retryable (400/403/404/409) records quarantined by
+// flushJevDecisionReports. Neither is otherwise surfaced, so the diagnostic
+// endpoint exposes the counts and byte sizes, never the record payloads.
+type jevDecisionReportQueueStats struct {
+	PendingCount int
+	PendingBytes int64
+	FailedCount  int
+	FailedBytes  int64
+}
+
+func (d *Daemon) jevDecisionReportStats() (jevDecisionReportQueueStats, error) {
+	if d.cfg.WorkspacesRoot == "" {
+		return jevDecisionReportQueueStats{}, nil
+	}
+	dir := d.jevDecisionReportDir()
+	var stats jevDecisionReportQueueStats
+	var errs []error
+	if count, bytes, err := terminalReportDirectoryStats(dir); err != nil {
+		errs = append(errs, fmt.Errorf("scan pending Jev decision reports: %w", err))
+	} else {
+		stats.PendingCount, stats.PendingBytes = count, bytes
+	}
+	if count, bytes, err := terminalReportDirectoryStats(filepath.Join(dir, "failed")); err != nil {
+		errs = append(errs, fmt.Errorf("scan failed Jev decision reports: %w", err))
+	} else {
+		stats.FailedCount, stats.FailedBytes = count, bytes
+	}
+	return stats, errors.Join(errs...)
+}
+
 func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
 	if d.cfg.WorkspacesRoot == "" {
 		return nil

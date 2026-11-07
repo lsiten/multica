@@ -79,6 +79,13 @@ type HealthResponse struct {
 	PendingTerminalReportBytes int64    `json:"pending_terminal_report_bytes"`
 	FailedTerminalReportCount  int      `json:"failed_terminal_report_count"`
 	FailedTerminalReportBytes  int64    `json:"failed_terminal_report_bytes"`
+	// Jev decision reports mirror the terminal report queue: a non-retryable
+	// record (400/403/404/409) is quarantined on disk with no other surface, so
+	// the failed count lets an operator see the backlog without logging in.
+	PendingJevDecisionReportCount int   `json:"pending_jev_decision_report_count"`
+	PendingJevDecisionReportBytes int64 `json:"pending_jev_decision_report_bytes"`
+	FailedJevDecisionReportCount  int   `json:"failed_jev_decision_report_count"`
+	FailedJevDecisionReportBytes  int64 `json:"failed_jev_decision_report_bytes"`
 	Agents                     []string `json:"agents"`
 	// ProcessServices is the profile's opt-in process ownership list (the roles
 	// this daemon extracted into separate child processes: ai/mirror/application/
@@ -407,6 +414,15 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 			resp.PendingTerminalReportBytes = stats.PendingBytes
 			resp.FailedTerminalReportCount = stats.FailedCount
 			resp.FailedTerminalReportBytes = stats.FailedBytes
+		}
+
+		if stats, err := d.jevDecisionReportStats(); err != nil {
+			d.logger.Warn("health: scan Jev decision report queue", "error", err)
+		} else {
+			resp.PendingJevDecisionReportCount = stats.PendingCount
+			resp.PendingJevDecisionReportBytes = stats.PendingBytes
+			resp.FailedJevDecisionReportCount = stats.FailedCount
+			resp.FailedJevDecisionReportBytes = stats.FailedBytes
 		}
 
 		w.Header().Set("Content-Type", "application/json")

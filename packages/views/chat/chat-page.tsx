@@ -36,6 +36,10 @@ import { ArchivedAgentBanner } from "./components/archived-agent-banner";
 import { AgentAccessRevokedBanner } from "./components/agent-access-revoked-banner";
 import { RuntimeRequiredBanner } from "./components/runtime-required-banner";
 import { useRegisterCommandBarContext } from "../search/register-context";
+import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
+import { DocModeSurface } from "./components/doc-mode-surface";
+import { DocModeFileList } from "./components/doc-file-list";
+import { useDocWorkingIndicator } from "./components/use-doc-working-indicator";
 
 /**
  * Chat tab — the first-class two-pane surface (thread list on the left,
@@ -296,6 +300,12 @@ export function ChatPage() {
   // `@container`: the conversation column's gutter (CHAT_GUTTER) widens with
   // THIS pane, which the user resizes independently of the browser window.
   const queuedTasks = c.pendingTask?.queued_tasks ?? [];
+  // Doc mode (FR-CHAT-02): when a document is open for this session, the detail
+  // area shows the document full-area and hides the message body; a generic
+  // agent-working indicator floats over it (D7). The store is session-keyed and
+  // persisted, so switching sessions restores each session's open document.
+  const activeDoc = useDocModeStore(selectActiveDocument(c.activeSessionId));
+  useDocWorkingIndicator(c.activeSessionId ?? "", !!c.pendingTaskId);
   const conversation = (
     <div className="flex flex-1 flex-col min-h-0 @container">
       {c.currentSession && (
@@ -319,6 +329,21 @@ export function ChatPage() {
           onArchive={handleArchive}
         />
       )}
+      <div className="flex min-h-0 flex-1">
+      {c.currentSession && (
+        <div className="w-72 shrink-0 overflow-hidden border-r">
+          <DocModeFileList
+            wsId={c.wsId}
+            sessionId={c.activeSessionId}
+            session={c.currentSession}
+            agents={c.agents}
+          />
+        </div>
+      )}
+      {activeDoc ? (
+        <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} />
+      ) : (
+      <>
       {c.showSkeleton ? (
         <ChatMessageSkeleton />
       ) : c.hasMessages ? (
@@ -412,6 +437,9 @@ export function ChatPage() {
         isProjectUpdating={c.isProjectUpdating}
         focusRequest={c.focusInputRequest}
       />
+      </>
+      )}
+      </div>
     </div>
   );
 

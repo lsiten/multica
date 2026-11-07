@@ -2612,6 +2612,7 @@
     "eyebrow": "런타임 미러",
     "connection_label": "연결",
     "description": "런타임 호스트를 직접 확인합니다. 화면 픽셀은 Multica API를 통과하지 않습니다.",
+    "main_display_only": "이 뷰는 메인 디스플레이만 표시합니다. 다른 디스플레이를 보려면 소스 선택이 가능한 v2 비디오 미러를 사용하세요.",
     "frame_label": "런타임 화면",
     "frame_alt": "{{runtime}}의 실시간 화면",
     "back_to_runtime": "기기로 돌아가기",

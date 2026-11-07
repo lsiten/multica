@@ -67,3 +67,29 @@ func TestStartTaskConfiguredJevMCPSourceMatrix(t *testing.T) {
 		})
 	}
 }
+
+// TestStartTaskConfiguredJevMCPFailsClosedOnInvalidContext locks GAP-06: a
+// broken F2 boundary must fail closed (error, no started MCP set) instead of
+// only logging a warning and handing the illegal context to the AI service. A
+// zero concurrency/timeout yields MaxConcurrent/MaxCalls/CallTimeout of zero in
+// the derived EvaluationContext, so Validate() rejects it.
+func TestStartTaskConfiguredJevMCPFailsClosedOnInvalidContext(t *testing.T) {
+	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer remote.Close()
+
+	d := &Daemon{cfg: Config{LLM2JevMaxConcurrency: 0, LLM2JevTimeout: 0}}
+	task := Task{
+		ID:        "jev-fail-closed-task",
+		JevConfig: &protocol.WorkspaceJevConfig{Source: "remote", Endpoint: remote.URL, ModelID: "fixture", CredentialEnv: "JEV_API_KEY", TimeoutSeconds: 45},
+		Agent:     &AgentData{Model: "fixture", CustomEnv: map[string]string{"JEV_API_KEY": "secret"}},
+	}
+	_, set, err := d.startTaskConfiguredJevMCP(context.Background(), task, "claude", nil)
+	if err == nil {
+		t.Fatal("invalid Jev evaluation context must fail closed")
+	}
+	if set != nil {
+		t.Fatal("invalid Jev evaluation context must not start an MCP set")
+	}
+}

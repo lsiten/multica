@@ -160,3 +160,50 @@ func TestJevDecisionReportsPersistRetryBackoff(t *testing.T) {
 		t.Fatalf("restart ignored persisted retry schedule: requests = %d", requests)
 	}
 }
+
+func TestJevDecisionReportStatsSurfacesBacklog(t *testing.T) {
+	// No configured root is a safe, empty answer, never an error.
+	empty := &Daemon{cfg: Config{ServerBaseURL: "https://backend.example"}, client: NewClient("https://backend.example")}
+	stats, err := empty.jevDecisionReportStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.PendingCount != 0 || stats.FailedCount != 0 {
+		t.Fatalf("unconfigured root must report an empty queue: %+v", stats)
+	}
+
+	reject := true
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if reject {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer backend.Close()
+	cfg := Config{WorkspacesRoot: t.TempDir(), ServerBaseURL: backend.URL}
+	d := &Daemon{cfg: cfg, client: NewClient(backend.URL), logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	// One record stays pending after a 503, so the diagnostic count shows it is
+	// still being replayed rather than lost.
+	if err := d.enqueueJevDecision("task", mkJevDecisionRecord()); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.flushJevDecisionReports(t.Context()); err == nil {
+		t.Fatal("transient failure was hidden")
+	}
+	if stats, err := d.jevDecisionReportStats(); err != nil || stats.PendingCount != 1 {
+		t.Fatalf("pending backlog not surfaced: %+v, %v", stats, err)
+	}
+	// The 503 set a retry delay into the future; advance the clock so the next
+	// flush actually re-attempts instead of deferring the record.
+	d.reportNow = func() time.Time { return time.Now().Add(10 * time.Minute) }
+	// A non-retryable 403 quarantines the record; the failed count is the
+	// operator-facing hint that something needs attention without logging in.
+	reject = false
+	if err := d.flushJevDecisionReports(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if stats, err := d.jevDecisionReportStats(); err != nil || stats.FailedCount != 1 || stats.PendingCount != 0 {
+		t.Fatalf("quarantined record not surfaced: %+v, %v", stats, err)
+	}
+}

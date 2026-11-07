@@ -83,3 +83,5 @@ perf-report/
 !apps/mobile/.env.production.example
 _attachments
 .omo
+# local agent working artifacts
+.workbuddy/

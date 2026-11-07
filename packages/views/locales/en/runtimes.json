@@ -2702,6 +2702,7 @@
     "eyebrow": "Runtime mirror",
     "connection_label": "Connection",
     "description": "A direct view of the runtime host. Screen pixels never pass through the Multica API.",
+    "main_display_only": "This view shows only the main display. To see other displays, enable v2 video mirroring with source selection.",
     "frame_label": "Runtime screen",
     "frame_alt": "Live screen from {{runtime}}",
     "back_to_runtime": "Back to device",

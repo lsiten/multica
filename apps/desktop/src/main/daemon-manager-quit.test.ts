@@ -16,7 +16,9 @@ const context = vi.hoisted(() => ({
 }));
 vi.mock("electron", () => ({
   app: {
-    getAppPath: () => "/test/desktop", getPreferredSystemLanguages: () => [context.locale],
+    getAppPath: () => "/test/desktop",
+    getPath: () => "/test/desktop",
+    getPreferredSystemLanguages: () => [context.locale],
     on: (_event: string, handler: (event: { preventDefault: () => void }) => void) => { context.beforeQuit = handler; },
     quit: context.quit, emit: context.emit,
   },

@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { DaemonState } from "../shared/daemon-types";
@@ -49,8 +50,44 @@ export class DaemonRecoveryPolicy {
   private attemptTimestamps: number[] = [];
   private paused = false;
 
+  private onChange?: (snapshot: RecoveryBudgetSnapshot) => void;
+
   get isPaused(): boolean {
     return this.paused;
+  }
+
+  /**
+   * Persist the budget after every change. Called from the pure policy so the
+   * class stays free of filesystem concerns; the manager supplies the sink.
+   */
+  setOnChange(
+    callback: (snapshot: RecoveryBudgetSnapshot) => void,
+  ): void {
+    this.onChange = callback;
+  }
+
+  budgetSnapshot(): RecoveryBudgetSnapshot {
+    return {
+      attemptTimestamps: this.attemptTimestamps.slice(),
+      paused: this.paused,
+    };
+  }
+
+  /**
+   * Hydrate the budget from a persisted snapshot (used on startup so a paused
+   * budget survives a restart). Prunes any attempts older than the window.
+   */
+  restoreBudget(
+    snapshot: RecoveryBudgetSnapshot,
+    now: number,
+  ): void {
+    this.attemptTimestamps = snapshot.attemptTimestamps.slice();
+    this.paused = snapshot.paused;
+    this.pruneAttemptBudget(now);
+  }
+
+  private notify(): void {
+    this.onChange?.(this.budgetSnapshot());
   }
 
   observe(observation: RecoveryObservation): RecoveryDecision {
@@ -63,10 +100,15 @@ export class DaemonRecoveryPolicy {
         observation.now - this.runningSince >=
         RECOVERY_STABLE_RUNNING_MS
       ) {
+        const wasPaused = this.paused;
         this.failureCount = 0;
         this.nextAttemptAt = 0;
         this.pidDeferrals = 0;
         this.paused = false;
+        // Clearing a persisted pause is the one running-branch change that
+        // affects the budget, so re-persist it (a fresh running window
+        // invalidates the prior rate-limit pause).
+        if (wasPaused) this.notify();
       }
       return "none";
     }
@@ -90,6 +132,9 @@ export class DaemonRecoveryPolicy {
     if (observation.now < this.nextAttemptAt) return "none";
     if (this.attemptTimestamps.length >= RECOVERY_ATTEMPT_BUDGET) {
       this.paused = true;
+      // First time the budget is exhausted; persist so a restart keeps the
+      // daemon paused until the window ages out or a member starts it.
+      this.notify();
       return "pause";
     }
     return "confirm";
@@ -105,6 +150,8 @@ export class DaemonRecoveryPolicy {
     this.failureCount += 1;
     this.nextAttemptAt = now + delay;
     this.pidDeferrals = 0;
+    // A new attempt changes the persisted budget.
+    this.notify();
   }
 
   /** Returns true once a stale/reused PID must stop blocking recovery. */
@@ -128,6 +175,9 @@ export class DaemonRecoveryPolicy {
     this.pidDeferrals = 0;
     this.attemptTimestamps = [];
     this.paused = false;
+    // A cleared budget is a meaningful change; persist the empty budget so a
+    // restart does not resurrect a stale pause from a superseded profile.
+    this.notify();
   }
 
   private pruneAttemptBudget(now: number): void {
@@ -136,6 +186,66 @@ export class DaemonRecoveryPolicy {
       (attemptedAt) => attemptedAt > cutoff,
     );
   }
+}
+
+export interface RecoveryBudgetSnapshot {
+  attemptTimestamps: number[];
+  paused: boolean;
+}
+
+/**
+ * Persist the recovery budget (attempt timestamps + paused flag) so a
+ * rate-limited "recovery_paused" daemon keeps its budget across a Desktop
+ * restart (FR-DSK-02 / GAP-10). Best-effort: a write failure only loses the
+ * current session's budget, it is never fatal.
+ */
+export function saveRecoveryBudget(
+  filePath: string,
+  snapshot: RecoveryBudgetSnapshot,
+): void {
+  try {
+    writeFileSync(filePath, JSON.stringify(snapshot), "utf8");
+  } catch {
+    // Disk full / permissions — drop silently.
+  }
+}
+
+/**
+ * Load a persisted recovery budget. Returns null when there is none or the
+ * file is corrupt. Attempts older than the 30-minute window are pruned, and a
+ * paused flag with no remaining in-window attempts is cleared — a budget whose
+ * window has fully aged out should not keep gating recovery after a restart.
+ */
+export function loadRecoveryBudget(
+  filePath: string,
+  now: number,
+): RecoveryBudgetSnapshot | null {
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
+  const cutoff = now - RECOVERY_ATTEMPT_WINDOW_MS;
+  const attempts = Array.isArray(obj.attemptTimestamps)
+    ? obj.attemptTimestamps.filter(
+        (value): value is number =>
+          typeof value === "number" &&
+          Number.isFinite(value) &&
+          value > cutoff,
+      )
+    : [];
+  const paused =
+    typeof obj.paused === "boolean" ? obj.paused && attempts.length > 0 : false;
+  return { attemptTimestamps: attempts, paused };
 }
 
 export interface RecoveryProfile {

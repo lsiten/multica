@@ -15,6 +15,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/vscreen"
 	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
+	"github.com/multica-ai/multica/server/internal/vscreen/native/globalinput"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -256,11 +257,47 @@ func (d *Daemon) closeVscreensResult() error {
 	return err
 }
 
+// managedVscreenCapabilities advertises the capabilities that require the
+// native virtual-display selectors: the managed virtual screen itself, its
+// H264 video feed, and the read-only viewer grant. The human input (control)
+// capability is advertised separately (see managedScreenControlCapabilities)
+// because it does not depend on the virtual screen.
 func managedVscreenCapabilities() []string {
 	if !native.Supported() {
 		return nil
 	}
-	return []string{protocol.DaemonCapabilityVirtualScreenV1, protocol.DaemonCapabilityScreenMirrorVideoV2, protocol.DaemonCapabilityMirrorViewerGrantV1, protocol.DaemonCapabilityScreenControlV1}
+	return []string{protocol.DaemonCapabilityVirtualScreenV1, protocol.DaemonCapabilityScreenMirrorVideoV2, protocol.DaemonCapabilityMirrorViewerGrantV1}
+}
+
+// managedScreenControlCapabilities advertises the human input (control)
+// capability, which is independent of the virtual screen. It only needs a
+// global input injector: the macOS Accessibility bridge or the Windows
+// SendInput backend. A Windows host without virtual-screen support can still
+// accept human control on a mirror session, so the control capability must not
+// be gated on native.Supported(); it is gated on the injector being available.
+func managedScreenControlCapabilities() []string {
+	if !globalInputAvailable() {
+		return nil
+	}
+	return []string{protocol.DaemonCapabilityScreenControlV1}
+}
+
+// globalInputAvailable probes the platform global input injector once. The
+// injector is a stateless platform singleton, so a single construction is
+// reused across the per-request capability advertisements. In mirror process
+// mode the daemon does not inject itself (the mirror process does); the runtime
+// control backend denies input there regardless, so an over-eager advertisement
+// degrades to a clean denied rather than a security hole.
+var (
+	globalInputProbeOnce sync.Once
+	globalInputProbeInst globalinput.Injector
+)
+
+func globalInputAvailable() bool {
+	globalInputProbeOnce.Do(func() {
+		globalInputProbeInst = globalinput.New()
+	})
+	return globalInputProbeInst.Available()
 }
 
 func (d *Daemon) suspendVscreens(g mirrorControlGeneration) {

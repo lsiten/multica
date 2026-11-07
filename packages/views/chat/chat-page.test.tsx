@@ -117,6 +117,24 @@ vi.mock("@multica/core/chat", () => ({
       selector ? selector(storeRef.current) : storeRef.current,
     { getState: () => storeRef.current },
   ),
+  useDocModeStore: (selector?: (state: any) => unknown) => {
+    const state: any = {
+      activeBySession: {},
+      workingBySession: {},
+      diffViewBySession: {},
+      openDoc: vi.fn(),
+      closeDoc: vi.fn(),
+      setWorking: vi.fn(),
+      setDiffView: vi.fn(),
+    };
+    return selector ? selector(state) : state;
+  },
+  selectActiveDocument: (sessionId: string | null) => (state: any) =>
+    sessionId ? state.activeBySession[sessionId] ?? null : null,
+  selectWorking: (sessionId: string | null) => (state: any) =>
+    sessionId ? state.workingBySession[sessionId] ?? false : false,
+  selectDiffView: (sessionId: string | null) => (state: any) =>
+    sessionId ? state.diffViewBySession[sessionId] ?? false : false,
 }));
 
 vi.mock("./components/use-chat-controller", async () => {

@@ -1,4 +1,5 @@
 import { MirrorPlatformProvider, type MirrorPlatform } from "@multica/views/runtimes/mirror";
+import { LocalVoiceProvider } from "./platform/local-voice-provider";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CoreProvider } from "@multica/core/platform";
@@ -518,6 +519,7 @@ export default function App() {
           resources={resources}
           localeAdapter={localeAdapter}
         >
+          <LocalVoiceProvider locale={locale}>
           <DesktopAuthSessionBridge />
           {windowContext.kind === "main" && <DiagnosticRouteReporter />}
           {windowContext.kind === "main" && <WorkspaceWindowBridge />}
@@ -531,6 +533,7 @@ export default function App() {
           ) : (
             <AppContent />
           )}</MirrorPlatformProvider>
+          </LocalVoiceProvider>
         </CoreProvider>
       ) : (
         <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />

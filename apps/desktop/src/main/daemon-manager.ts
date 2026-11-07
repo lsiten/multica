@@ -44,9 +44,11 @@ import {
   DaemonOperationGate,
   DaemonRecoveryPolicy,
   daemonProcessExists,
+  loadRecoveryBudget,
   parseDaemonPid,
   recoveryStartAllowed,
   runDaemonRecoveryAttempt,
+  saveRecoveryBudget,
 } from "./daemon-recovery";
 import {
   daemonLifecycleUnreachable,
@@ -118,6 +120,13 @@ let autoStartSuppressedAfterQuit = false;
 // not replace it with a native daemon if its forwarded health endpoint drops.
 let externalDaemonObserved = false;
 const recoveryPolicy = new DaemonRecoveryPolicy();
+
+// Durable recovery-budget slot in userData (FR-DSK-02 / GAP-10): a rate-limited
+// "recovery_paused" daemon keeps its 30-minute attempt budget across a Desktop
+// restart instead of resetting to a fresh budget on boot.
+function recoveryBudgetPath(): string {
+  return join(app.getPath("userData"), "daemon-recovery-budget.json");
+}
 const lifecycleOperations = new DaemonOperationGate();
 
 // Auth-probe state for the current start attempt. When a start fails to reach
@@ -1452,6 +1461,20 @@ export function setupDaemonManager(
 ): void {
   getMainWindow = windowGetter;
   getStatusWindows = statusWindowsGetter;
+
+  // Restore the recovery budget from the previous session so a paused budget
+  // survives a Desktop restart (FR-DSK-02 / GAP-10), then persist on every
+  // later budget-changing mutation.
+  const savedRecoveryBudget = loadRecoveryBudget(
+    recoveryBudgetPath(),
+    Date.now(),
+  );
+  if (savedRecoveryBudget) {
+    recoveryPolicy.restoreBudget(savedRecoveryBudget, Date.now());
+  }
+  recoveryPolicy.setOnChange((budget) =>
+    saveRecoveryBudget(recoveryBudgetPath(), budget),
+  );
 
   ipcMain.handle("daemon:set-target-api-url", async (_e, url: string) => {
     const normalized = url || null;

@@ -155,5 +155,9 @@
     "cancelled": "已取消",
     "blocked": "阻塞",
     "preparing": "准备中"
+  },
+  "status_hint": {
+    "partial": "部分已完成，其余未完成；请查看详情并处理未完成的项。",
+    "blocked": "因依赖或前置条件未满足而被阻塞；解除后重试。"
   }
 }

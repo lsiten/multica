@@ -2612,6 +2612,7 @@
     "eyebrow": "Écran distant",
     "connection_label": "Connexion",
     "description": "Vue directe de l’hôte d’exécution. Les pixels de l’écran ne transitent jamais par l’API Multica.",
+    "main_display_only": "Cette vue affiche l'écran principal uniquement. Pour voir d'autres écrans, activez le miroir vidéo v2 avec la sélection de source.",
     "frame_label": "Écran distant",
     "frame_alt": "Écran en direct de {{runtime}}",
     "back_to_runtime": "Retour à l’appareil",

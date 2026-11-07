@@ -118,10 +118,15 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	// WS claims use the common capabilities plus scheduling hints that only the
 	// healthy-connection poller can consume.
 	capabilities := daemonClientCapabilities()
+	// The virtual-screen capabilities need the native host; the control
+	// capability is independent of it, so advertise the two separately.
 	if d.cfg.NativeHostExecutable != "" {
 		if managed := managedVscreenCapabilities(); len(managed) > 0 {
 			capabilities += "," + strings.Join(managed, ",")
 		}
+	}
+	if control := managedScreenControlCapabilities(); len(control) > 0 {
+		capabilities += "," + strings.Join(control, ",")
 	}
 	headers.Set("X-Client-Capabilities", capabilities)
 

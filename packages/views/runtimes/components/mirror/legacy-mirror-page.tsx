@@ -204,6 +204,12 @@ export function LegacyRuntimeMirrorPage({
               </div>
             </section>
 
+            {state === "streaming" && (
+              <p className="text-caption text-muted-foreground" role="status">
+                {t(($) => $.mirror.main_display_only)}
+              </p>
+            )}
+
             {showNatWarning && (
               <p className="text-caption text-warning" role="status">
                 {t(($) => $.mirror.nat_warning)}

@@ -2612,6 +2612,7 @@
     "eyebrow": "執行時映象",
     "connection_label": "連線",
     "description": "直接檢視執行時主機。螢幕畫素不會經過 Multica API。",
+    "main_display_only": "此視圖僅顯示主顯示器。要查看其他顯示器，請使用支援來源選擇的 v2 影片鏡像。",
     "frame_label": "執行時螢幕",
     "frame_alt": "{{runtime}} 的即時螢幕",
     "back_to_runtime": "返回裝置",

@@ -136,14 +136,25 @@ func (c *EvaluationContext) Validate() error {
 	}
 	// One resolved model credential only for remote/agent_context; local must
 	// carry neither endpoint nor credential because it leases inside AI.
-	if c.isRemote() {
-		if _, err := url.Parse(c.ResolvedEndpoint); err != nil {
-			return fmt.Errorf("evaluation context has an invalid remote endpoint: %w", err)
-		}
+	// remote explicitly configures an endpoint, so it must be present and valid.
+	// agent_context reuses the agent's existing model adapter: its endpoint is
+	// resolved at MCP start and may legitimately be absent (a no-op, not an
+	// illegal context), so only a present endpoint is validated, not its absence.
+	switch c.Source {
+	case "remote":
 		if strings.TrimSpace(c.ResolvedEndpoint) == "" {
 			return fmt.Errorf("evaluation context for source %q has no resolved endpoint", c.Source)
 		}
-	} else {
+		if _, err := url.Parse(c.ResolvedEndpoint); err != nil {
+			return fmt.Errorf("evaluation context has an invalid remote endpoint: %w", err)
+		}
+	case "agent_context":
+		if c.ResolvedEndpoint != "" {
+			if _, err := url.Parse(c.ResolvedEndpoint); err != nil {
+				return fmt.Errorf("evaluation context has an invalid endpoint: %w", err)
+			}
+		}
+	default:
 		if c.ResolvedEndpoint != "" || c.ResolvedCredential != "" {
 			return fmt.Errorf("local evaluation context must not carry a resolved endpoint or credential")
 		}

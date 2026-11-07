@@ -2612,6 +2612,7 @@
     "eyebrow": "ランタイムミラー",
     "connection_label": "接続",
     "description": "ランタイムホストを直接表示します。画面のピクセルは Multica API を経由しません。",
+    "main_display_only": "このビューはメインディスプレイのみを表示します。他のディスプレイを表示するには、ソース選択に対応した v2 のビデオミラーを有効化してください。",
     "frame_label": "ランタイム画面",
     "frame_alt": "{{runtime}} のライブ画面",
     "back_to_runtime": "デバイスに戻る",

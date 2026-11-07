@@ -8935,6 +8935,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				defer cleanup()
 			}
 		}
+		if reason := llm2jevMCPUnavailableReason(task, provider); reason != "" {
+			cleanup := registerTaskMCPReadinessProviderUnavailable(d, task, llm2jevMCPName, "task", reason)
+			defer cleanup()
+		}
 		if len(llm2jevConfig) > 0 {
 			merged, mergeErr := mergeTaskRemoteMCPConfig(effectiveMcpConfig, llm2jevConfig)
 			if mergeErr != nil {

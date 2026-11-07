@@ -155,5 +155,9 @@
     "cancelled": "Cancelled",
     "blocked": "Blocked",
     "preparing": "Preparing"
+  },
+  "status_hint": {
+    "partial": "Some parts completed while others did not. Review the details and address the unfinished items.",
+    "blocked": "Blocked because a dependency or precondition isn't met. Resolve it, then retry."
   }
 }

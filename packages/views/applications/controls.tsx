@@ -3,6 +3,7 @@
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
 import { cn } from "@multica/ui/lib/utils";
+import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 import { useT } from "../i18n";
 
 export function ApplicationSelect({ value, onChange, items, label, disabled }: { value: string; onChange: (value: string) => void; items: { value: string; label: string }[]; label: string; disabled?: boolean }) {
@@ -21,7 +22,12 @@ export function ApplicationStatusBadge({ status }: { status: string }) {
     queued: t(($) => $.status.queued), cancelling: t(($) => $.status.cancelling), completed: t(($) => $.status.completed), partial: t(($) => $.status.partial), cancelled: t(($) => $.status.cancelled), blocked: t(($) => $.status.blocked), preparing: t(($) => $.status.preparing),
   };
   const label = Object.hasOwn(labels, status) ? labels[status as keyof typeof labels] : labels.unknown;
-  return <Badge variant="outline" className={cn("gap-1.5 whitespace-nowrap text-caption", (status === "running" || status === "healthy" || status === "completed") && "border-success/30 text-success", (status === "failed" || status === "unhealthy") && "border-destructive/30 text-destructive", (status === "partial" || status === "offline" || status === "blocked") && "border-warning/30 text-warning")}>
+  // partial and blocked are warning states whose meaning and next step aren't
+  // obvious from the label alone, so a hint explains the outcome and the action
+  // to take. Other statuses render the badge without a wrapper.
+  const hint = (status === "partial" || status === "blocked") ? t(($) => $.status_hint[status as "partial" | "blocked"]) : null;
+  const badge = <Badge variant="outline" className={cn("gap-1.5 whitespace-nowrap text-caption", (status === "running" || status === "healthy" || status === "completed") && "border-success/30 text-success", (status === "failed" || status === "unhealthy") && "border-destructive/30 text-destructive", (status === "partial" || status === "offline" || status === "blocked") && "border-warning/30 text-warning")}>
     <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />{label}
   </Badge>;
+  return <TooltipHint label={hint} side="top">{badge}</TooltipHint>;
 }

@@ -91,12 +91,23 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 	// F2 boundary: build the minimum typed EvaluationContext the task owner
 	// hands to the AI service and validate it. The raw agent environment,
 	// CustomEnv, lease and PAT stay in their own owners; this is only the
-	// narrow evaluation description. Enforcement (failing on an invalid
-	// context) lands with the AI service in F3; until then a broken context
-	// is logged so the boundary is exercised without gating the hot path.
+	// narrow evaluation description. An invalid boundary fails closed: it is
+	// not handed to the AI service, so a broken context cannot run an illegal
+	// evaluation. A local source already leased a model, so release it before
+	// returning the error.
 	evalCtx := d.buildEvaluationContext(effective, provider, &cfg, effective.Agent.CustomEnv["OPENAI_BASE_URL"], effective.Agent.CustomEnv["OPENAI_API_KEY"])
-	if err := evalCtx.Validate(); err != nil && logger != nil {
-		logger.Warn("invalid Jev evaluation context", "task", task.ID, "error", err)
+	if err := evalCtx.Validate(); err != nil {
+		if logger != nil {
+			logger.Warn("invalid Jev evaluation context", "task", task.ID, "error", err)
+		}
+		if lease != nil {
+			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if releaseErr := lease.Release(releaseCtx); releaseErr != nil && logger != nil {
+				logger.Warn("model lease release unconfirmed", "error", releaseErr)
+			}
+			releaseCancel()
+		}
+		return nil, nil, fmt.Errorf("invalid Jev evaluation context: %w", err)
 	}
 
 	config, set, err := startTaskLLM2JevMCPAtWithLimitsAndBroker(ctx, task.ID, provider, effective, logger, "127.0.0.1", "", d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.mcpBroker())

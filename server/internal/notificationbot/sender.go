@@ -20,6 +20,12 @@ import (
 
 var ErrDelivery = errors.New("notification provider rejected the message or is unavailable")
 
+// ErrPermanent is returned only for provider responses that a retry cannot
+// change (an HTTP 4xx: an invalid webhook, token, recipient, or malformed
+// request). The worker must not retry these; transient failures (network,
+// timeout, 5xx) keep returning ErrDelivery so they can be retried.
+var ErrPermanent = errors.New("notification provider rejected the message permanently")
+
 // Sender pins outbound hosts, rejects redirects and bounds calls. Client is an
 // optional test transport; production always uses the public-address guard.
 type Sender struct {
@@ -121,6 +127,9 @@ func (s Sender) Send(ctx context.Context, config Config, message string) error {
 		return ErrDelivery
 	}
 	defer response.Body.Close()
+	if response.StatusCode >= 400 && response.StatusCode < 500 {
+		return ErrPermanent
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return ErrDelivery
 	}

@@ -139,6 +139,50 @@ func registerTaskManagedMCPReadiness(d *Daemon, task Task, name, endpoint, scope
 	return registry.release(entry)
 }
 
+// llm2jevMCPUnavailableReason reports why a task's decision MCP is intentionally
+// absent even though the task is fully configured. It is empty unless the agent
+// has a custom environment and a model but the provider cannot advertise the
+// decision MCP; that is the visibility gap (GAP-05) the task UI must surface
+// instead of the generic not_configured / task_not_started fallback.
+func llm2jevMCPUnavailableReason(task Task, provider string) string {
+	if task.Agent == nil || len(task.Agent.CustomEnv) == 0 || task.Agent.Model == "" {
+		return ""
+	}
+	if !providerSupportsLLM2JevMCP(provider) {
+		return "provider_unavailable"
+	}
+	return ""
+}
+
+// registerTaskMCPReadinessProviderUnavailable records that the decision MCP is
+// not starting because the task's provider cannot advertise it. It is a
+// visibility signal, not readiness: no endpoint is probed and the state stays
+// provider_unavailable. The entry is removed by the returned cleanup when the
+// task exits.
+func registerTaskMCPReadinessProviderUnavailable(d *Daemon, task Task, name, scope, reason string) func() {
+	name = strings.TrimSpace(name)
+	if d == nil || name == "" {
+		return func() {}
+	}
+	if scope == "" {
+		scope = "task"
+	}
+	entry := &mcpReadinessEntry{MCPReadinessSnapshot: MCPReadinessSnapshot{
+		TaskID: task.ID, AgentID: task.AgentID, IssueID: task.IssueID, ChatSessionID: task.ChatSessionID,
+		Name: name, WorkspaceID: strings.TrimSpace(task.WorkspaceID), Enabled: true, Scope: scope,
+		Ready: false, State: MCPReadinessProviderUnavailable, Reason: strings.TrimSpace(reason),
+	}}
+	registry := d.mcpReadinessRegistry()
+	_, cancel := context.WithCancel(context.Background())
+	entry.owners, entry.cancel, entry.done = 1, cancel, make(chan struct{})
+	registry.mu.Lock()
+	registry.nextID++
+	entry.InstanceID = fmt.Sprintf("mcp-%d", registry.nextID)
+	registry.entries[entry.InstanceID] = entry
+	registry.mu.Unlock()
+	close(entry.done)
+	return registry.release(entry)
+}
 func (registry *mcpReadinessRegistry) release(entry *mcpReadinessEntry) func() {
 	var once sync.Once
 	return func() {

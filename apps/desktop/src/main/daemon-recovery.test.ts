@@ -1,4 +1,8 @@
 // @vitest-environment node
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -14,6 +18,9 @@ import {
   parseDaemonPid,
   recoveryStartAllowed,
   runDaemonRecoveryAttempt,
+  saveRecoveryBudget,
+  loadRecoveryBudget,
+  type RecoveryBudgetSnapshot,
 } from "./daemon-recovery";
 
 const eligible = {
@@ -434,5 +441,60 @@ describe("daemon PID checks", () => {
         throw Object.assign(new Error("denied"), { code: "EPERM" });
       }),
     ).toBe(true);
+  });
+});
+describe("recovery budget persistence", () => {
+  function tempBudgetPath(): string {
+    return join(mkdtempSync(join(tmpdir(), "multica-recovery-")), "budget.json");
+  }
+
+  it("round-trips a persisted budget", () => {
+    const path = tempBudgetPath();
+    saveRecoveryBudget(path, { attemptTimestamps: [1_000, 2_000], paused: true });
+
+    expect(loadRecoveryBudget(path, 1_010)).toEqual({
+      attemptTimestamps: [1_000, 2_000],
+      paused: true,
+    });
+  });
+
+  it("keeps a paused budget paused across a fresh policy after restore", () => {
+    const paused = new DaemonRecoveryPolicy();
+    for (let i = 0; i < RECOVERY_ATTEMPT_BUDGET; i += 1) {
+      paused.recordRecoveryAttempt(1_000 + i);
+    }
+    expect(
+      reachDecision(
+        paused,
+        1_000 + RECOVERY_ATTEMPT_BUDGET + RECOVERY_BACKOFF_MS.at(-1)!,
+      ),
+    ).toBe("pause");
+    expect(paused.isPaused).toBe(true);
+
+    const restored = new DaemonRecoveryPolicy();
+    restored.restoreBudget(paused.budgetSnapshot(), 2_000);
+    expect(restored.isPaused).toBe(true);
+    expect(reachDecision(restored, 2_000)).toBe("pause");
+  });
+
+  it("clears a fully aged-out budget", () => {
+    const path = tempBudgetPath();
+    saveRecoveryBudget(path, { attemptTimestamps: [1_000], paused: true });
+
+    expect(
+      loadRecoveryBudget(path, 1_000 + RECOVERY_ATTEMPT_WINDOW_MS + 1),
+    ).toEqual({ attemptTimestamps: [], paused: false });
+  });
+
+  it("persists a budget change through the onChange sink", () => {
+    const policy = new DaemonRecoveryPolicy();
+    const saved: RecoveryBudgetSnapshot[] = [];
+    policy.setOnChange((snapshot) => saved.push(snapshot));
+
+    policy.recordRecoveryAttempt(1_000);
+    expect(saved.at(-1)).toEqual({
+      attemptTimestamps: [1_000],
+      paused: false,
+    });
   });
 });
