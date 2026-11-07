@@ -27,6 +27,13 @@ package wecom
 // Files are created 0600 and removed on every path. They hold decrypted
 // attachment content, so their permissions are part of the feature rather
 // than housekeeping.
+//
+// Where the unlink happens depends on the platform. POSIX lets us unlink a
+// file that is still open, which is the strongest version: the bytes are
+// already unreachable while the upload reads them, even if the process is
+// killed mid-flight. Windows refuses — "The process cannot access the file
+// because it is being used by another process" — so there the file is removed
+// when the handle closes instead. Same end state, one syscall later.
 
 import (
 	"crypto/aes"
@@ -35,6 +42,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 )
 
 // mediaStreamChunk is how much ciphertext is decrypted at a time. Large
@@ -43,6 +51,29 @@ import (
 // is holding.
 const mediaStreamChunk = 256 << 10
 
+// mediaTempFile is the file decryptToFile hands back. Close is the only
+// cleanup the caller owes: it closes the handle and, on platforms that could
+// not unlink an open file, removes the path afterwards. Calling Close twice is
+// harmless.
+type mediaTempFile struct {
+	*os.File
+	removeOnClose bool
+	closeOnce     sync.Once
+	closeErr      error
+}
+
+func (f *mediaTempFile) Close() error {
+	f.closeOnce.Do(func() {
+		f.closeErr = f.File.Close()
+		if f.removeOnClose {
+			if err := os.Remove(f.Name()); err != nil && !errors.Is(err, os.ErrNotExist) && f.closeErr == nil {
+				f.closeErr = err
+			}
+		}
+	})
+	return f.closeErr
+}
+
 // decryptToFile reads ciphertext from src, decrypts it into a new temp file,
 // and returns the file positioned at its start along with the plaintext
 // length. The caller closes and removes it.
@@ -50,7 +81,7 @@ const mediaStreamChunk = 256 << 10
 // CBC needs the tail before the head can be trusted — the pad is on the last
 // block — so the final block is held back until the source is exhausted and
 // unpadded then. Everything before it is written as it goes.
-func decryptToFile(aesKey string, src io.Reader, dir string) (f *os.File, size int64, err error) {
+func decryptToFile(aesKey string, src io.Reader, dir string) (f *mediaTempFile, size int64, err error) {
 	key, err := decodeMediaAESKey(aesKey)
 	if err != nil {
 		return nil, 0, err
@@ -66,21 +97,26 @@ func decryptToFile(aesKey string, src io.Reader, dir string) (f *os.File, size i
 	if err != nil {
 		return nil, 0, fmt.Errorf("wecom: media temp file: %w", err)
 	}
-	// Unlink now: the file stays readable through the handle and disappears
-	// the moment the process lets go of it, including on a crash. Nothing
-	// with decrypted attachment content is left behind for anyone to find.
+	// Unlink eagerly where the platform allows it: the file stays readable
+	// through the handle and disappears the moment the process lets go of it,
+	// including on a crash. Windows cannot unlink a file it still has open, so
+	// there the removal waits for Close — see mediaTempFile.
+	removeOnClose := false
 	if err := os.Remove(out.Name()); err != nil {
-		out.Close()
-		return nil, 0, fmt.Errorf("wecom: media temp file: %w", err)
+		removeOnClose = true
 	}
 	if err := out.Chmod(0o600); err != nil && !errors.Is(err, os.ErrNotExist) {
 		// Best effort: the file is already unlinked, so this is belt as well
 		// as braces.
 		_ = err
 	}
+	temp := &mediaTempFile{File: out, removeOnClose: removeOnClose}
+	f = temp
 	defer func() {
 		if err != nil {
-			out.Close()
+			// The error returns above clear the named result, so clean up
+			// through the local handle rather than through f.
+			temp.Close()
 		}
 	}()
 
@@ -153,12 +189,12 @@ func decryptToFile(aesKey string, src io.Reader, dir string) (f *os.File, size i
 	if _, err = out.Seek(0, io.SeekStart); err != nil {
 		return nil, 0, fmt.Errorf("wecom: media decrypt: rewind: %w", err)
 	}
-	return out, written, nil
+	return f, written, nil
 }
 
 // peekFile reads up to n bytes from the head of f and rewinds it, so a caller
 // that needs to sniff a content type does not have to hold the whole file.
-func peekFile(f *os.File, n int) ([]byte, error) {
+func peekFile(f io.ReadSeeker, n int) ([]byte, error) {
 	head := make([]byte, n)
 	read, err := io.ReadFull(f, head)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
