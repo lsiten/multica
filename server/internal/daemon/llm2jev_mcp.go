@@ -675,18 +675,59 @@ type completionInput struct {
 	llm2jev.CompletionRequest
 }
 
+// completionFieldError names the field a rejected completion payload got
+// wrong, so the caller can repair the shape instead of guessing. The type
+// error from encoding/json carries the field path; when it does not (older
+// wrappers, or a toolchain that reports the mismatch differently), the known
+// fields are probed one by one against their expected shape so the recovery
+// message stays actionable either way.
+func completionFieldError(raw json.RawMessage, decodeErr error) (field, expected string, ok bool) {
+	var fieldError *json.UnmarshalTypeError
+	if errors.As(decodeErr, &fieldError) {
+		name := fieldError.Field[strings.LastIndex(fieldError.Field, ".")+1:]
+		switch strings.ToLower(name) {
+		case "criteria":
+			return "criteria", "use an array of nonempty strings", true
+		case "evidence":
+			return "evidence", "use an array of nonempty strings", true
+		case "task_id":
+			return "task_id", "use a string or omit this field to use the current task default", true
+		case "goal":
+			return "goal", "use a string or omit this field to use the current task default", true
+		}
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return "", "", false
+	}
+	for _, name := range []string{"criteria", "evidence"} {
+		rawField, present := fields[name]
+		if !present {
+			continue
+		}
+		var values []string
+		if err := json.Unmarshal(rawField, &values); err != nil {
+			return name, "use an array of nonempty strings", true
+		}
+	}
+	for _, name := range []string{"task_id", "goal"} {
+		rawField, present := fields[name]
+		if !present {
+			continue
+		}
+		var value string
+		if err := json.Unmarshal(rawField, &value); err != nil {
+			return name, "use a string or omit this field to use the current task default", true
+		}
+	}
+	return "", "", false
+}
+
 func (s *llm2jevMCPServer) prepareCompletionInput(raw json.RawMessage) (completionInput, error) {
 	var input completionInput
 	if err := strictVscreenJSON(raw, &input); err != nil {
-		var fieldError *json.UnmarshalTypeError
-		if errors.As(err, &fieldError) {
-			field := fieldError.Field[strings.LastIndex(fieldError.Field, ".")+1:]
-			switch field {
-			case "criteria", "evidence":
-				return input, &llm2jev.InputError{Field: field, Expected: "use an array of nonempty strings"}
-			case "task_id", "goal":
-				return input, &llm2jev.InputError{Field: field, Expected: "use a string or omit this field to use the current task default"}
-			}
+		if field, expected, ok := completionFieldError(raw, err); ok {
+			return input, &llm2jev.InputError{Field: field, Expected: expected}
 		}
 		return input, fmt.Errorf("%w: invalid completion request", llm2jev.ErrInvalidRequest)
 	}
