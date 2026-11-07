@@ -5,12 +5,17 @@ on:
     tags:
       - "v*.*.*"
       - "!v*-dirty*"
+  # Re-run a release from an existing tag without deleting and re-pushing it.
+  # Dispatch with `gh workflow run fork-desktop.yml --ref vX.Y.Z`.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: fork-desktop-release
+  # Key the group by tag: a queued or wedged run for one tag must not block
+  # later releases, and re-dispatching the same tag serializes correctly.
+  group: fork-desktop-release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -21,6 +26,11 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
+      - name: Require a release tag ref
+        if: github.event_name == 'workflow_dispatch' && github.ref_type != 'tag'
+        run: |
+          echo "::error::Dispatch with a release tag ref, e.g. gh workflow run fork-desktop.yml --ref v1.0.118"
+          exit 1
       - name: Validate release tag
         id: version
         env:
