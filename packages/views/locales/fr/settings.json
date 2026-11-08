@@ -3258,6 +3258,8 @@
       "stop_confirm_description_other": "{{count}} exécutions sont actives sur cet appareil. L'arrêt les interrompra : les exécutions concernées seront marquées en échec à l'expiration du délai. Le démon ne redémarrera pas automatiquement.",
       "cancel": "Annuler",
       "stop_daemon": "Arrêter le démon",
+      "jev_reports": "Rapports Jev · {{pending}} en attente · {{failed}} en échec",
+      "jev_reports_hint": "Les rapports en attente sont réessayés automatiquement. Recherchez Jev dans les journaux pour examiner les échecs conservés.",
       "logs_title": "Journaux du démon local",
       "close": "Fermer",
       "search": "Rechercher…",

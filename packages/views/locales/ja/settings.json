@@ -3258,6 +3258,8 @@
       "stop_confirm_description_other": "このデバイスで {{count}} 件の実行が進行中です。今停止すると実行は中断され、タイムアウト後に失敗としてマークされます。デーモンは自動再起動しません。",
       "cancel": "キャンセル",
       "stop_daemon": "デーモンを停止",
+      "jev_reports": "Jev レポート · 送信待ち {{pending}} 件 · 失敗 {{failed}} 件",
+      "jev_reports_hint": "送信待ちのレポートは自動的に再試行されます。保持された失敗を調べるにはログで Jev を検索してください。",
       "logs_title": "ローカルデーモンのログ",
       "close": "閉じる",
       "search": "検索…",

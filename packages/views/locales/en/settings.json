@@ -3334,6 +3334,8 @@
       "stop_confirm_description_other": "{{count}} runs are currently active on this device. Stopping now will interrupt them — affected runs get marked failed once the timeout hits. The daemon won't auto-restart.",
       "cancel": "Cancel",
       "stop_daemon": "Stop daemon",
+      "jev_reports": "Jev reports · {{pending}} pending · {{failed}} failed",
+      "jev_reports_hint": "Pending reports retry automatically. Search the logs for Jev to investigate retained failures.",
       "logs_title": "Local daemon logs",
       "close": "Close",
       "search": "Search…",

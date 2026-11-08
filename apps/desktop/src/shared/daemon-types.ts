@@ -130,6 +130,12 @@ export interface DaemonStatus {
   mcp?: DaemonMcpReadiness[];
   /** Profile's opt-in process ownership roles (ai/mirror/application/environment/gateway). */
   processServices?: string[];
+  jevDecisionReports?: {
+    readonly pendingCount: number;
+    readonly pendingBytes: number;
+    readonly failedCount: number;
+    readonly failedBytes: number;
+  };
 }
 
 export interface DaemonPrefs {

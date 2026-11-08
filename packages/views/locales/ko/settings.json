@@ -2972,6 +2972,8 @@
       "stop_confirm_description_other": "이 기기에서 실행 {{count}}개가 진행 중입니다. 지금 중지하면 실행이 중단되고 시간 초과 후 실패로 표시됩니다. 데몬은 자동으로 다시 시작되지 않습니다.",
       "cancel": "취소",
       "stop_daemon": "데몬 중지",
+      "jev_reports": "Jev 보고서 · 대기 {{pending}}개 · 실패 {{failed}}개",
+      "jev_reports_hint": "대기 중인 보고서는 자동으로 재시도됩니다. 보관된 실패를 조사하려면 로그에서 Jev를 검색하세요.",
       "logs_title": "로컬 데몬 로그",
       "close": "닫기",
       "search": "검색...",

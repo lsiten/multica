@@ -33,6 +33,7 @@ import {
   formatUptime,
 } from "../../../shared/daemon-types";
 import { daemonStateLabel } from "./daemon-i18n";
+import { JevReportQueue } from "./jev-report-queue";
 import { parseLogLine, type LogLevel, type ParsedLogLine } from "./parse-daemon-log";
 
 interface DaemonPanelProps {
@@ -269,6 +270,12 @@ export function DaemonPanel({
             </button>
           </TooltipHint>
         </div>
+
+        {status.jevDecisionReports && (status.jevDecisionReports.pendingCount > 0 || status.jevDecisionReports.failedCount > 0) && (
+          <div className="shrink-0 px-4 py-2">
+            <JevReportQueue status={status} showHint />
+          </div>
+        )}
 
         {/* Toolbar */}
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2">

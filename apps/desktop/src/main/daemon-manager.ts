@@ -22,6 +22,7 @@ import type {
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
+import { parseDaemonHealth, type HealthPayload } from "./daemon-health";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
 import { createDaemonQuitHandler } from "./daemon-quit";
@@ -187,22 +188,6 @@ function sendStatus(status: DaemonStatus): void {
   }
 }
 
-interface HealthPayload {
-  status?: string;
-  pid?: number;
-  profile?: string;
-  /** Daemon's runtime.GOOS. Absent on daemons older than the #3916 fix. */
-  os?: string;
-  uptime?: string;
-  daemon_id?: string;
-  device_name?: string;
-  server_url?: string;
-  cli_version?: string;
-  active_task_count?: number;
-  agents?: string[];
-  workspaces?: unknown[];
-}
-
 async function fetchHealthAtPort(
   port: number,
   timeoutMs = HEALTH_PROBE_TIMEOUT_MS,
@@ -214,7 +199,7 @@ async function fetchHealthAtPort(
       signal: controller.signal,
     });
     if (!res.ok) return null;
-    return (await res.json()) as HealthPayload;
+    return parseDaemonHealth(await res.json());
   } catch {
     return null;
   } finally {
@@ -451,6 +436,12 @@ async function fetchHealth(): Promise<DaemonStatus> {
     profile: active.name,
     serverUrl: data.server_url,
     externallyManaged,
+    jevDecisionReports: {
+      pendingCount: data.pending_jev_decision_report_count,
+      pendingBytes: data.pending_jev_decision_report_bytes,
+      failedCount: data.failed_jev_decision_report_count,
+      failedBytes: data.failed_jev_decision_report_bytes,
+    },
   };
 }
 

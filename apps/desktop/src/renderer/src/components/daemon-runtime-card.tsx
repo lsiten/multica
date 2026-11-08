@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { useT } from "@multica/views/i18n";
 import { DaemonPanel } from "./daemon-panel";
+import { JevReportQueue } from "./jev-report-queue";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import { daemonStateLabel } from "./daemon-i18n";
@@ -176,6 +177,7 @@ export function DaemonRuntimeActions() {
         </span>
         {isRunning && (
           <>
+            <JevReportQueue status={status} />
             <Button size="sm" variant="ghost" onClick={() => setPanelOpen(true)}>
               <ScrollText className="size-3.5 mr-1.5" />
               {t(($) => $.desktop.daemon.view_logs)}

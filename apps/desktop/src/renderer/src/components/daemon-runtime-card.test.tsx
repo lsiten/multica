@@ -7,6 +7,7 @@ const translations = {
   desktop: {
     daemon: {
       view_logs: "查看日志",
+      jev_reports: "Jev reports · {{pending}} pending · {{failed}} failed",
       title: "守护进程",
       state_running: "运行中",
       state_recovery_paused: "恢复已暂停",
@@ -34,8 +35,8 @@ vi.mock("@multica/core/agents", () => ({
 }));
 vi.mock("@multica/views/i18n", () => ({
   useT: () => ({
-    t: (selector: (resources: typeof translations) => string) =>
-      selector(translations),
+    t: (selector: (resources: typeof translations) => string, values?: Record<string, number>) =>
+      selector(translations)?.replace(/{{(\w+)}}/g, (_, key: string) => String(values?.[key] ?? "")),
   }),
 }));
 vi.mock("./daemon-panel", () => ({ DaemonPanel: () => null }));
@@ -96,5 +97,14 @@ describe("DaemonRuntimeActions — recovery budget", () => {
 
     expect(await screen.findByText("启动")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("守护进程：恢复已暂停");
+  });
+});
+
+describe("DaemonRuntimeActions report queue diagnostics", () => {
+  it("shows pending and failed counts beside the log action", async () => {
+    stubDaemonAPI({ state: "running", jevDecisionReports: { pendingCount: 3, failedCount: 2, pendingBytes: 1024, failedBytes: 512 } });
+    render(<DaemonRuntimeActions />);
+    expect(await screen.findByText("Jev reports · 3 pending · 2 failed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看日志" })).toBeInTheDocument();
   });
 });

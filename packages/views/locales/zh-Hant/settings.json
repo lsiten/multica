@@ -3258,6 +3258,8 @@
       "stop_confirm_description_other": "此裝置當前有 {{count}} 次執行正在進行。立即停止會中斷這些執行；超時後，受影響的執行會被標記為失敗。守護程序不會自動重啟。",
       "cancel": "取消",
       "stop_daemon": "停止守護程序",
+      "jev_reports": "Jev 報告 · {{pending}} 筆待傳送 · {{failed}} 筆失敗",
+      "jev_reports_hint": "待傳送報告會自動重試。在日誌中搜尋 Jev 可排查保留的失敗報告。",
       "logs_title": "本地守護程序日誌",
       "close": "關閉",
       "search": "搜尋...",

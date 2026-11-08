@@ -3258,6 +3258,8 @@
       "stop_confirm_description_other": "此设备当前有 {{count}} 次运行正在进行。立即停止会中断这些运行；超时后，受影响的运行会被标记为失败。守护进程不会自动重启。",
       "cancel": "取消",
       "stop_daemon": "停止守护进程",
+      "jev_reports": "Jev 报告 · {{pending}} 条待发送 · {{failed}} 条失败",
+      "jev_reports_hint": "待发送报告会自动重试。在日志中搜索 Jev 可排查保留的失败报告。",
       "logs_title": "本地守护进程日志",
       "close": "关闭",
       "search": "搜索...",
