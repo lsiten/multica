@@ -190,6 +190,7 @@ func (d *Daemon) buildEvaluationContext(effective Task, provider string, cfg *pr
 		}
 	}
 	if cfg != nil {
+		ec.CallTimeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 		ec.ConfigRevision = cfg.Revision
 		ec.Source = cfg.Source
 		ec.ModelRevision = cfg.ModelRevision

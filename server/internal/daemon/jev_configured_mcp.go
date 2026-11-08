@@ -16,14 +16,18 @@ import (
 )
 
 type configuredJevMCPSet struct {
-	inner  interface{ Close() }
-	lease  *modelservice.Lease
-	logger *slog.Logger
+	inner            interface{ Close() }
+	lease            *modelservice.Lease
+	logger           *slog.Logger
+	readinessCleanup func()
 }
 
 func (s *configuredJevMCPSet) Close() {
 	if s == nil {
 		return
+	}
+	if s.readinessCleanup != nil {
+		s.readinessCleanup()
 	}
 	if s.inner != nil {
 		s.inner.Close()
@@ -73,6 +77,7 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 		effective.Agent.Model = cfg.ModelID
 	case "remote":
 		effective.Agent.CustomEnv["OPENAI_BASE_URL"] = cfg.Endpoint
+		delete(effective.Agent.CustomEnv, "OPENAI_API_KEY")
 		if cfg.CredentialEnv != "" {
 			credential := strings.TrimSpace(task.Agent.CustomEnv[cfg.CredentialEnv])
 			if credential == "" {
@@ -110,7 +115,7 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 		return nil, nil, fmt.Errorf("invalid Jev evaluation context: %w", err)
 	}
 
-	config, set, err := startTaskLLM2JevMCPAtWithLimitsAndBroker(ctx, task.ID, provider, effective, logger, "127.0.0.1", "", d.cfg.LLM2JevMaxConcurrency, d.cfg.LLM2JevTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.mcpBroker())
+	config, set, err := startTaskLLM2JevMCPAtWithLimitsAndBroker(ctx, task.ID, provider, effective, logger, "127.0.0.1", "", d.cfg.LLM2JevMaxConcurrency, evalCtx.CallTimeout, int64(d.cfg.LLM2JevMaxConcurrency)*32, d.mcpBroker())
 	if err != nil {
 		if lease != nil {
 			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -122,7 +127,11 @@ func (d *Daemon) startTaskConfiguredJevMCP(ctx context.Context, task Task, provi
 		}
 		return nil, nil, err
 	}
-	return config, &configuredJevMCPSet{inner: set, lease: lease, logger: logger}, nil
+	configured := &configuredJevMCPSet{inner: set, lease: lease, logger: logger}
+	if reason := llm2jevMCPUnavailableReason(effective, provider); reason != "" {
+		configured.readinessCleanup = registerTaskMCPReadinessProviderUnavailable(d, task, llm2jevMCPName, "task", reason)
+	}
+	return config, configured, nil
 }
 
 func configuredJevSource(cfg *protocol.WorkspaceJevConfig) string {
