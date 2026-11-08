@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Edit3, Loader2, Play, RefreshCw, Server, Trash2, Upload, X } from "@multica/ui/icons";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import { ApplicationRelations } from "./application-relations";
 import { ApplicationStatusBadge } from "./controls";
 import { ApplicationLogs } from "./application-logs";
 import { ApplicationCancelOperation } from "./application-cancel-operation";
+import { applicationRequestKey, type ApplicationRequestKey } from "./application-request-key";
 
 function InstanceCard({ instance, application, board, workspaceId, runtimeLabel }: { instance: ApplicationInstance; application: Application; board: ApplicationBoard; workspaceId: string; runtimeLabel: string }) {
   const { t } = useT("applications");
@@ -60,11 +61,22 @@ function DeleteInstance({ workspaceId, instance, application }: { workspaceId: s
   const operation = useApplicationOperation(workspaceId, application.id);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
-  const confirm = async () => {
-    try { setError(""); await operation.mutateAsync({ action: "delete", revision: application.revision, runtime_id: instance.runtime_id, idempotency_key: crypto.randomUUID() }); toast.success(t(($) => $.accepted)); setOpen(false); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : t(($) => $.invalid_config)); }
+  const requestKey = useRef<ApplicationRequestKey | null>(null);
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    if (!next) { requestKey.current = null; setError(""); }
   };
-  return <AlertDialog open={open} onOpenChange={setOpen}><AlertDialogTrigger render={<Button variant="outline" size="sm" aria-label={t(($) => $.delete_instance)}><Trash2 />{t(($) => $.delete_instance)}</Button>} /><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t(($) => $.delete_instance)}</AlertDialogTitle><AlertDialogDescription>{t(($) => $.delete_instance_help)}</AlertDialogDescription></AlertDialogHeader>{error && <p role="alert" className="break-words text-caption text-destructive">{error}</p>}<AlertDialogFooter><AlertDialogCancel disabled={operation.isPending}>{t(($) => $.cancel)}</AlertDialogCancel><Button variant="destructive" disabled={operation.isPending} aria-busy={operation.isPending} onClick={() => void confirm()}>{t(($) => $.delete_instance)}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>;
+  const confirm = async () => {
+    try {
+      setError("");
+      const input = { action: "delete" as const, revision: application.revision, runtime_id: instance.runtime_id };
+      requestKey.current = applicationRequestKey(requestKey.current, { workspaceId, applicationId: application.id, request: input });
+      await operation.mutateAsync({ ...input, idempotency_key: requestKey.current.key });
+      toast.success(t(($) => $.accepted));
+      changeOpen(false);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t(($) => $.invalid_config)); }
+  };
+  return <AlertDialog open={open} onOpenChange={changeOpen}><AlertDialogTrigger render={<Button variant="outline" size="sm" aria-label={t(($) => $.delete_instance)}><Trash2 />{t(($) => $.delete_instance)}</Button>} /><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t(($) => $.delete_instance)}</AlertDialogTitle><AlertDialogDescription>{t(($) => $.delete_instance_help)}</AlertDialogDescription></AlertDialogHeader>{error && <p role="alert" className="break-words text-caption text-destructive">{error}</p>}<AlertDialogFooter><AlertDialogCancel disabled={operation.isPending}>{t(($) => $.cancel)}</AlertDialogCancel><Button variant="destructive" disabled={operation.isPending} aria-busy={operation.isPending} onClick={() => void confirm()}>{t(($) => $.delete_instance)}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }
 
 function DeleteApplication({ workspaceId, application }: { workspaceId: string; application: Application }) {
@@ -109,7 +121,18 @@ export function ApplicationDetail({ applicationId }: { applicationId: string }) 
       {tab === "configuration" && <section className="max-w-3xl space-y-5 rounded-xl border p-5"><div className="flex items-center justify-between"><h2 className="text-body font-medium">{t(($) => $.configuration)}</h2><span className="text-caption text-muted-foreground">{t(($) => $.revision)} {application.revision}</span></div><dl className="grid gap-4 text-body sm:grid-cols-2"><div><dt className="text-caption text-muted-foreground">{t(($) => $.kind)}</dt><dd className="mt-1">{application.kind === "composition" ? t(($) => $.composition) : t(($) => $.service)}</dd></div>{application.kind === "service" && <><div><dt className="text-caption text-muted-foreground">{t(($) => $.mode)}</dt><dd className="mt-1">{application.config.mode === "external" ? t(($) => $.external) : t(($) => $.managed)}</dd></div><div><dt className="text-caption text-muted-foreground">{t(($) => $.port)}</dt><dd className="mt-1 font-mono">{application.config.port}</dd></div><div><dt className="text-caption text-muted-foreground">{t(($) => $.health)}</dt><dd className="mt-1">{application.config.health.kind === "http" ? t(($) => $.health_http) : application.config.health.kind === "tcp" ? t(($) => $.health_tcp) : t(($) => $.health_none)}</dd></div><div className="sm:col-span-2"><dt className="text-caption text-muted-foreground">{t(($) => $.program)}</dt><dd className="mt-1 overflow-x-auto rounded-lg bg-muted p-3 font-mono text-caption">{JSON.stringify(application.config.command)}</dd></div>{application.config.work_dir && <div><dt className="text-caption text-muted-foreground">{t(($) => $.work_dir)}</dt><dd className="mt-1 break-words font-mono text-caption">{application.config.work_dir}</dd></div>}{application.config.ref && <div><dt className="text-caption text-muted-foreground">{t(($) => $.ref)}</dt><dd className="mt-1 break-words font-mono text-caption">{application.config.ref}</dd></div>}</>}</dl></section>}
       {tab === "orchestration" && <ApplicationRelations key={application.id} workspaceId={workspaceId} application={application} board={board} />}
       {tab === "logs" && <ApplicationLogs key={application.id} workspaceId={workspaceId} application={application} board={board} />}
-      {tab === "activity" && <section className="space-y-4"><h2 className="text-body font-medium">{t(($) => $.activity)}</h2>{!operations.length && <p className="rounded-xl border p-8 text-center text-caption text-muted-foreground">{t(($) => $.no_activity)}</p>}{operations.map((operation) => <details key={operation.id} className="rounded-xl border p-4" open={operation.state === "running" || operation.state === "queued" || operation.state === "cancelling"}><summary className="cursor-pointer"><span className="inline-flex flex-wrap items-center gap-3 text-body"><span>{operation.action === "unknown" ? t(($) => $.unknown) : labels[operation.action]}</span><ApplicationStatusBadge status={operation.state} /><span className="text-caption text-muted-foreground">{new Date(operation.created_at).toLocaleString()}</span><span className="text-caption text-muted-foreground">{operation.actor_type}</span></span></summary><ApplicationCancelOperation workspaceId={workspaceId} operation={operation} />{operation.error && <p className="mt-3 break-words text-caption text-destructive">{operation.error}</p>}<div className="mt-3 space-y-2">{operation.steps.map((step) => <div key={step.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-3"><span className="min-w-0 break-words text-caption">{names.get(step.application_id) ?? step.application_id}</span><ApplicationStatusBadge status={step.state} />{step.error && <p className="w-full break-words text-caption text-destructive">{step.error}</p>}</div>)}</div></details>)}</section>}
+      {tab === "activity" && <section className="space-y-4"><h2 className="text-body font-medium">{t(($) => $.activity)}</h2>{!operations.length && <p className="rounded-xl border p-8 text-center text-caption text-muted-foreground">{t(($) => $.no_activity)}</p>}{operations.map((operation) => <details key={operation.id} className="rounded-xl border p-4" open={operation.state === "running" || operation.state === "queued" || operation.state === "cancelling" || operation.state === "partial" || operation.steps.some((step) => step.state === "blocked" || step.state === "failed")}><summary className="cursor-pointer"><span className="inline-flex flex-wrap items-center gap-3 text-body"><span>{operation.action === "unknown" ? t(($) => $.unknown) : labels[operation.action]}</span><ApplicationStatusBadge status={operation.state} /><span className="text-caption text-muted-foreground">{new Date(operation.created_at).toLocaleString()}</span><span className="text-caption text-muted-foreground">{operation.actor_type}</span></span></summary><ApplicationCancelOperation workspaceId={workspaceId} operation={operation} />
+          {(operation.state === "partial" || operation.steps.some((step) => step.state === "blocked" || step.state === "failed")) && (
+            <div className="mt-3 space-y-3">
+              <p className="text-caption text-muted-foreground">{t(($) => $.review_incomplete_help)}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => setTab("orchestration")}>{t(($) => $.review_plan)}</Button>
+                {operation.action !== "unknown" && operation.action !== "delete" && (
+                  <ApplicationOperationDialog workspaceId={workspaceId} application={application} board={board} action={operation.action} initialRuntimeId={operation.snapshot.root_runtime_id} trigger={<Button size="sm" variant="outline">{t(($) => $.review_operation)}</Button>} />
+                )}
+              </div>
+            </div>
+          )}{operation.error && <p className="mt-3 break-words text-caption text-destructive">{operation.error}</p>}<div className="mt-3 space-y-2">{operation.steps.map((step) => <div key={step.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-3"><span className="min-w-0 break-words text-caption">{names.get(step.application_id) ?? step.application_id}</span><ApplicationStatusBadge status={step.state} />{step.error && <p className="w-full break-words text-caption text-destructive">{step.error}</p>}</div>)}</div></details>)}</section>}
     </div></div>
   </div>;
 }

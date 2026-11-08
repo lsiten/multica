@@ -14,6 +14,7 @@ import { Switch } from "@multica/ui/components/ui/switch";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@multica/ui/components/ui/dialog";
 import { RuntimePicker } from "../agents/components/runtime-picker";
 import { useT } from "../i18n";
+import { applicationRequestKey, type ApplicationRequestKey } from "./application-request-key";
 
 type Action = ApplicationOperationRequest["action"];
 
@@ -29,7 +30,7 @@ function OperationForm({ workspaceId, application, board, action, initialRuntime
   const [placements, setPlacements] = useState<Record<string, string>>({});
   const [force, setForce] = useState(false);
   const [error, setError] = useState("");
-  const requestKey = useRef<{ signature: string; key: string } | null>(null);
+  const requestKey = useRef<ApplicationRequestKey | null>(null);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const runtimes = useQuery(runtimeListOptions(workspaceId));
   const members = useQuery(memberListOptions(workspaceId));
@@ -45,10 +46,9 @@ function OperationForm({ workspaceId, application, board, action, initialRuntime
   const submit = async () => {
     if (!usable) return;
     const input = { action, revision: application.revision, runtime_id: runtimeId, placements, force };
-    const signature = JSON.stringify(input);
-    if (requestKey.current?.signature !== signature) requestKey.current = { signature, key: crypto.randomUUID() };
     try {
       setError("");
+      requestKey.current = applicationRequestKey(requestKey.current, { workspaceId, applicationId: application.id, request: input });
       await operation.mutateAsync({ ...input, idempotency_key: requestKey.current.key });
       toast.success(t(($) => $.accepted));
       onAccepted();
