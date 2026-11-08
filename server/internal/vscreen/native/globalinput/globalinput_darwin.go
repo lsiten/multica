@@ -43,7 +43,7 @@ static int32_t gi_mouse(int kind, CGFloat x, CGFloat y, int button, int64_t dx, 
 	return 0;
 }
 
-static void gi_key(CGKeyCode code, bool down, CGEventFlags flags) {
+static int32_t gi_key(CGKeyCode code, bool down, CGEventFlags flags) {
 	CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStatePrivate);
 	CGEventRef e = CGEventCreateKeyboardEvent(src, code, down);
 	if (e != NULL) {
@@ -52,6 +52,7 @@ static void gi_key(CGKeyCode code, bool down, CGEventFlags flags) {
 		CFRelease(e);
 	}
 	if (src != NULL) CFRelease(src);
+ return e == NULL ? -2 : 0;
 }
 
 static void gi_unicode(const uint16_t *chars, size_t len) {
@@ -80,7 +81,7 @@ import (
 type darwinInjector struct{}
 
 // New returns the CoreGraphics-backed global injector for macOS.
-func New() Injector { return &darwinInjector{} }
+func New() Injector { return newTrackedInjector(&darwinInjector{}) }
 
 func (darwinInjector) Available() bool { return bool(C.gi_trusted()) }
 func (darwinInjector) Close() error    { return nil }
@@ -174,7 +175,9 @@ func (i darwinInjector) Key(event KeyEvent) error {
 	if !event.Down {
 		down = C.bool(false)
 	}
-	C.gi_key(C.CGKeyCode(code), down, modifierFlags(event.Modifiers))
+	if C.gi_key(C.CGKeyCode(code), down, modifierFlags(event.Modifiers)) != 0 {
+		return ErrUnavailable
+	}
 	return nil
 }
 

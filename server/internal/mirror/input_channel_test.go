@@ -21,7 +21,7 @@ type resolvingInputBackend struct {
 	resume    chan struct{}
 }
 
-func (b *resolvingInputBackend) ResourceForGrant(protocol.MirrorControlGrant) (protocol.ResourceKey, bool) {
+func (b *resolvingInputBackend) ResourceForInput(protocol.MirrorControlGrant, protocol.MirrorInputMessage) (protocol.ResourceKey, bool) {
 	close(b.resolving)
 	<-b.resume
 	return testResource(1), true
@@ -70,8 +70,10 @@ func TestInputRevokedDuringSourceResolutionNeverDispatches(t *testing.T) {
 	}
 }
 
+func (b *recordingInputBackend) ReleaseInput(protocol.MirrorControlGrant, string) {}
+
 func (b *recordingInputBackend) InteractionEnabled() bool { return true }
-func (b *recordingInputBackend) ResourceForGrant(protocol.MirrorControlGrant) (protocol.ResourceKey, bool) {
+func (b *recordingInputBackend) ResourceForInput(protocol.MirrorControlGrant, protocol.MirrorInputMessage) (protocol.ResourceKey, bool) {
 	return testResource(1), true
 }
 func (b *recordingInputBackend) DispatchInput(_ context.Context, _ protocol.ResourceKey, _ protocol.MirrorControlGrant, input protocol.MirrorInputMessage) string {
@@ -191,5 +193,38 @@ func TestInputChannelWheelReleasesResourceForNextGesture(t *testing.T) {
 	}
 	if m.Arbiter().ActiveGestures() != 0 {
 		t.Fatal("completed wheel gesture retained the display lock")
+	}
+}
+
+func TestInputOldPeerCleanupPreservesReplacementGrant(t *testing.T) {
+	m := NewRuntimeMirror(nil, time.Hour)
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
+	oldPeer := newControlGrantTestPeer(t)
+	m.peers["viewer"] = oldPeer
+	oldGrant := testControlGrant("old", "display", time.Now().Add(time.Minute))
+	if !m.BindControlGrant("viewer", oldGrant, 1) {
+		t.Fatal("bind old grant")
+	}
+	replacement := newControlGrantTestPeer(t)
+	m.peers["viewer"] = replacement
+	grant := oldGrant
+	grant.GrantID = "replacement"
+	if !m.BindControlGrant("viewer", grant, 1) {
+		t.Fatal("bind replacement grant")
+	}
+	a := NewArbiter()
+	m.SetArbiter(a)
+	principal := Principal{Kind: PrincipalHuman, ID: "viewer", GrantID: grant.GrantID}
+	resource := testResource(1)
+	if a.Acquire(resource, principal, "replacement-input", 0) != AcquireHeld {
+		t.Fatal("replacement input not acquired")
+	}
+	m.releaseViewerControl("viewer", oldPeer)
+	if !m.HasControl("viewer") {
+		t.Fatal("old peer cleanup revoked replacement grant")
+	}
+	holder, gesture, held := a.Holder(resource)
+	if !held || holder != principal || gesture != "replacement-input" {
+		t.Fatal("old peer cleanup released replacement input")
 	}
 }

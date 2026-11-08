@@ -25,6 +25,8 @@ type mirrorControlBackend struct {
 
 	mu      sync.Mutex
 	catalog map[string]cachedCatalog
+	inputMu sync.Mutex
+	held    map[string]heldNativeInput
 }
 
 type cachedCatalog struct {
@@ -33,7 +35,7 @@ type cachedCatalog struct {
 }
 
 func newMirrorControlBackend(d *Daemon) *mirrorControlBackend {
-	return &mirrorControlBackend{d: d, catalog: make(map[string]cachedCatalog)}
+	return &mirrorControlBackend{d: d, catalog: make(map[string]cachedCatalog), held: make(map[string]heldNativeInput)}
 }
 
 // SetHumanInteractionEnabled toggles the host master switch for remote human
@@ -82,47 +84,44 @@ func (b *mirrorControlBackend) remember(runtimeID string, sources []native.Sourc
 	b.mu.Unlock()
 }
 
-// describeSource resolves one granted source against a current native catalog,
-// reusing the cache and falling back to one bounded native-host query.
-func (b *mirrorControlBackend) describeSource(workspaceID, runtimeID string, source protocol.MirrorSource, nativeEpoch, generation string) (native.SourceDescriptor, protocol.ResourceKey, bool) {
-	var sources []native.SourceDescriptor
-	if cached, ok := b.catalogFor(runtimeID); ok {
-		sources = cached
-	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		fresh, err := b.d.vscreenSources(ctx, workspaceID, runtimeID)
-		if err != nil {
-			return native.SourceDescriptor{}, protocol.ResourceKey{}, false
-		}
-		b.remember(runtimeID, fresh)
-		sources = fresh
-	}
-	for _, s := range sources {
-		if s.Source == source && s.NativeEpoch == nativeEpoch && s.Generation == generation {
-			return s, s.Resource, true
-		}
-	}
-	return native.SourceDescriptor{}, protocol.ResourceKey{}, false
-}
-
-func (b *mirrorControlBackend) ResourceForGrant(grant protocol.MirrorControlGrant) (protocol.ResourceKey, bool) {
-	return b.resourceForSourceScoped(grant.WorkspaceID, grant.RuntimeID, grant.Source, grant.NativeEpoch, grant.SourceGeneration)
-}
-
-func (b *mirrorControlBackend) resourceForSourceScoped(workspaceID, runtimeID string, source protocol.MirrorSource, nativeEpoch, generation string) (protocol.ResourceKey, bool) {
-	if workspaceID == "" || runtimeID == "" {
+// ResourceForInput refreshes a mismatched catalog before arbitration. Native
+// dispatch must not hold the arbiter lock while waiting for the host catalog.
+func (b *mirrorControlBackend) ResourceForInput(grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) (protocol.ResourceKey, bool) {
+	if grant.WorkspaceID == "" || grant.RuntimeID == "" {
 		return protocol.ResourceKey{}, false
 	}
-	_, resource, ok := b.describeSource(workspaceID, runtimeID, source, nativeEpoch, generation)
-	return resource, ok
+	if descriptor, ok := b.cachedInputSource(grant, msg); ok {
+		return descriptor.Resource, true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	sources, err := b.d.vscreenSources(ctx, grant.WorkspaceID, grant.RuntimeID)
+	if err != nil {
+		return protocol.ResourceKey{}, false
+	}
+	b.remember(grant.RuntimeID, sources)
+	descriptor, ok := b.cachedInputSource(grant, msg)
+	return descriptor.Resource, ok
+}
+
+func (b *mirrorControlBackend) cachedInputSource(grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) (native.SourceDescriptor, bool) {
+	sources, ok := b.catalogFor(grant.RuntimeID)
+	if !ok {
+		return native.SourceDescriptor{}, false
+	}
+	for _, source := range sources {
+		if source.Source == grant.Source && source.NativeEpoch == grant.NativeEpoch && source.Generation == grant.SourceGeneration && source.GeometryRevision == msg.GeometryRevision {
+			return source, true
+		}
+	}
+	return native.SourceDescriptor{}, false
 }
 
 // DispatchInput applies one accepted gesture. It returns "" on success or a
 // protocol.MirrorInput* nack reason.
 func (b *mirrorControlBackend) DispatchInput(_ context.Context, resource protocol.ResourceKey, grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) string {
-	descriptor, _, ok := b.describeSource(grant.WorkspaceID, grant.RuntimeID, grant.Source, grant.NativeEpoch, grant.SourceGeneration)
-	if !ok {
+	descriptor, ok := b.cachedInputSource(grant, msg)
+	if !ok || descriptor.Resource != resource {
 		return protocol.MirrorInputStale
 	}
 	// A geometry change invalidates the frame the viewer clicked on.
@@ -149,20 +148,19 @@ func (b *mirrorControlBackend) DispatchInput(_ context.Context, resource protoco
 			return protocol.MirrorInputUnsupported
 		}
 		x, y := mapFrameToDisplay(msg.Pointer.X, msg.Pointer.Y, descriptor)
-		err := injector.Pointer(globalinput.PointerEvent{
+		event := globalinput.PointerEvent{
 			Kind:   msg.Kind,
 			Button: globalinput.Button(msg.Pointer.Button),
 			X:      x, Y: y,
 			DeltaX: msg.Pointer.DeltaX, DeltaY: msg.Pointer.DeltaY,
-		})
-		return injectorErrorReason(err)
+		}
+		return b.dispatchPointer(injector, grant, msg.GestureID, event)
 	case protocol.MirrorInputKeyDown, protocol.MirrorInputKeyUp:
 		if msg.Key == nil {
 			return protocol.MirrorInputUnsupported
 		}
 		down := msg.Kind == protocol.MirrorInputKeyDown
-		err := injector.Key(globalinput.KeyEvent{Key: msg.Key.Key, Modifiers: append([]string(nil), msg.Key.Modifiers...), Down: down})
-		return injectorErrorReason(err)
+		return b.dispatchKey(injector, grant, msg.GestureID, globalinput.KeyEvent{Key: msg.Key.Key, Modifiers: append([]string(nil), msg.Key.Modifiers...), Down: down})
 	case protocol.MirrorInputType:
 		if msg.Text == nil {
 			return protocol.MirrorInputUnsupported

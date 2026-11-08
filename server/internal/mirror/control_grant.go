@@ -182,7 +182,7 @@ func (m *RuntimeMirror) dropControlGrantLockedNotify(viewerID string, peer *mirr
 		peer.inputClose = nil
 	}
 	if a := m.Arbiter(); a != nil {
-		a.ReleasePrincipal(Principal{Kind: PrincipalHuman, ID: viewerID})
+		a.ReleasePrincipal(Principal{Kind: PrincipalHuman, ID: viewerID, GrantID: grant.GrantID})
 	}
 	if notify {
 		m.notifyControlState(viewerID, grant.UserID, false, grant.Source)
@@ -227,26 +227,26 @@ func (m *RuntimeMirror) SetControlStateHook(fn func(ControlStateChange), generat
 	}
 	m.mu.Lock()
 	viewerIDs := make([]string, 0, len(m.peers))
-	for viewerID := range m.peers {
+	peers := make(map[string]*mirrorPeer, len(m.peers))
+	for viewerID, peer := range m.peers {
 		viewerIDs = append(viewerIDs, viewerID)
-	}
-	sort.Strings(viewerIDs)
-	type boundControl struct {
-		viewerID string
-		grant    protocol.MirrorControlGrant
-	}
-	bound := make([]boundControl, 0, len(viewerIDs))
-	for _, viewerID := range viewerIDs {
-		peer := m.peers[viewerID]
-		peer.mu.Lock()
-		if peer.controlGrant != nil {
-			bound = append(bound, boundControl{viewerID: viewerID, grant: peer.controlGrant.value})
-		}
-		peer.mu.Unlock()
+		peers[viewerID] = peer
 	}
 	m.mu.Unlock()
-	for _, item := range bound {
-		fn(ControlStateChange{ViewerID: item.viewerID, UserID: item.grant.UserID, Active: true, Source: item.grant.Source})
+	sort.Strings(viewerIDs)
+	for _, viewerID := range viewerIDs {
+		peer := peers[viewerID]
+		peer.mu.Lock()
+		if !peer.closed && peer.controlGrant != nil && time.Now().Before(peer.controlGrant.deadline) {
+			m.controlMu.Lock()
+			current := m.controlStateHookGeneration == generation
+			m.controlMu.Unlock()
+			if current {
+				grant := peer.controlGrant.value
+				fn(ControlStateChange{ViewerID: viewerID, UserID: grant.UserID, Active: true, Source: grant.Source})
+			}
+		}
+		peer.mu.Unlock()
 	}
 	return true
 }

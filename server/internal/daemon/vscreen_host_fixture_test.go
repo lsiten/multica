@@ -218,6 +218,17 @@ func vscreenTestHost() int {
 			delete(enabled, request.Resource)
 			response.Quiescent = true
 		case "sources":
+			if path := os.Getenv("MIRROR_FIXTURE_SOURCE_LOG"); path != "" {
+				file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					return 24
+				}
+				_, writeErr := file.WriteString("sources\n")
+				closeErr := file.Close()
+				if writeErr != nil || closeErr != nil {
+					return 24
+				}
+			}
 			if barrier := os.Getenv("VSCREEN_FIXTURE_SOURCES_BARRIER"); barrier != "" && mirrorFixtureBarrierArmed() {
 				if err := os.WriteFile(barrier, []byte("entered"), 0600); err != nil {
 					return 11

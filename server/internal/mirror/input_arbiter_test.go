@@ -142,3 +142,37 @@ func TestArbiterInvalidInput(t *testing.T) {
 		t.Fatalf("empty gesture = %v, want busy", got)
 	}
 }
+
+func TestArbiterPhysicalDisplayContendsAcrossRuntimeProjections(t *testing.T) {
+	a := NewArbiter()
+	first := testResource(501)
+	first.DisplayID = 7
+	second := first
+	second.RuntimeID = "another-runtime"
+	second.WorkspaceID = "another-workspace"
+	if got := a.Acquire(first, human, "drag", 0); got != AcquireHeld {
+		t.Fatal(got)
+	}
+	if got := a.Acquire(second, otherHuman, "key", 0); got != AcquireBusy {
+		t.Fatalf("same native display accepted concurrent projected gesture: %s", got)
+	}
+	if n := a.EmergencyReleaseRuntime(second.WorkspaceID, second.RuntimeID); n != 0 {
+		t.Fatal("non-owner projection released native display")
+	}
+	if n := a.EmergencyReleaseRuntime(first.WorkspaceID, first.RuntimeID); n != 1 {
+		t.Fatal("owner runtime did not release native display")
+	}
+	if got := a.Acquire(second, otherHuman, "key", 0); got != AcquireHeld {
+		t.Fatal(got)
+	}
+	independent := second
+	independent.DisplayID++
+	if got := a.Acquire(independent, agent, "other-display", 0); got != AcquireHeld {
+		t.Fatal("different native display contends")
+	}
+	independent = second
+	independent.UID++
+	if got := a.Acquire(independent, agent, "other-login", 0); got != AcquireHeld {
+		t.Fatal("different native user contends")
+	}
+}

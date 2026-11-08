@@ -7,7 +7,7 @@ import (
 )
 
 // globalInjectorHolder lazily constructs one platform global injector per
-// daemon. The injector itself is stateless apart from OS permission state.
+// daemon. The injector retains successfully posted downs until released.
 var (
 	globalInjectorOnce sync.Once
 	globalInjectorInst globalinput.Injector

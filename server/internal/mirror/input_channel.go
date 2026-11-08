@@ -52,18 +52,9 @@ func (m *RuntimeMirror) bindInputChannel(viewerID string, peer *mirrorPeer, chan
 }
 
 func (m *RuntimeMirror) releaseViewerControl(viewerID string, peer *mirrorPeer) {
-	m.mu.Lock()
-	arbiter := m.arbiter
-	m.mu.Unlock()
-	if arbiter != nil {
-		arbiter.ReleasePrincipal(Principal{Kind: PrincipalHuman, ID: viewerID})
-	}
 	peer.mu.Lock()
-	grant := peer.controlGrant
-	peer.mu.Unlock()
-	if grant != nil {
-		m.RevokeControlGrant(viewerID, grant.value.GrantID, grant.generation)
-	}
+	defer peer.mu.Unlock()
+	m.dropControlGrantLocked(viewerID, peer)
 }
 
 func (m *RuntimeMirror) handleInputMessage(
@@ -118,7 +109,7 @@ func (m *RuntimeMirror) handleInputMessage(
 	}
 
 	// Gate 3: resolve the granted source to the shared resource and validate epoch.
-	resource, ok := backend.ResourceForGrant(grant)
+	resource, ok := backend.ResourceForInput(grant, input)
 	if !ok {
 		m.nack(channel, channelMu, channelClosed, input, protocol.MirrorInputStale)
 		return
@@ -134,7 +125,7 @@ func (m *RuntimeMirror) handleInputMessage(
 	}
 
 	// FCFS at atomic-gesture granularity per resource.
-	principal := Principal{Kind: PrincipalHuman, ID: viewerID}
+	principal := Principal{Kind: PrincipalHuman, ID: viewerID, GrantID: grant.GrantID}
 	switch arbiter.Acquire(resource, principal, input.GestureID, gestureDefaultTTL) {
 	case AcquireBusy:
 		m.nack(channel, channelMu, channelClosed, input, protocol.MirrorInputBusy)
@@ -155,7 +146,9 @@ func (m *RuntimeMirror) handleInputMessage(
 	authorized := !peer.closed && peer.controlGrant == c && time.Now().Before(c.deadline) &&
 		time.Now().Before(c.value.ExpiresAt) && backend.InteractionEnabled()
 	if authorized {
-		reason = backend.DispatchInput(context.Background(), resource, grant, input)
+		reason = arbiter.dispatch(resource, principal, input.GestureID, func() string {
+			return backend.DispatchInput(context.Background(), resource, grant, input)
+		}, func() { backend.ReleaseInput(grant, input.GestureID) })
 	}
 	peer.mu.Unlock()
 	if releaseAtEnd || reason != "" {

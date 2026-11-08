@@ -137,7 +137,8 @@ func (m *RuntimeMirror) publishAuthorization(viewerID, kind, title, message stri
 // remote human interaction (default off), and applies one accepted input.
 // DispatchInput returns "" when applied or a MirrorInput* nack reason.
 type ControlBackend interface {
-	ResourceForGrant(grant protocol.MirrorControlGrant) (protocol.ResourceKey, bool)
+	ReleaseInput(grant protocol.MirrorControlGrant, gestureID string)
+	ResourceForInput(grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) (protocol.ResourceKey, bool)
 	InteractionEnabled() bool
 	DispatchInput(ctx context.Context, resource protocol.ResourceKey, grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) string
 }

@@ -2,7 +2,6 @@ package mirror
 
 import (
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,8 +24,9 @@ const (
 // Principal identifies one contender. ID is the viewer id for humans and the
 // task id for agents; it must be unique within a kind.
 type Principal struct {
-	Kind PrincipalKind
-	ID   string
+	Kind    PrincipalKind
+	ID      string
+	GrantID string
 }
 
 func (p Principal) valid() bool {
@@ -44,8 +44,12 @@ func (p Principal) valid() bool {
 // gestureLock is one atomic click/drag/type/key-chord hold on a resource.
 type gestureLock struct {
 	principal Principal
+	resource  protocol.ResourceKey
 	gestureID string
 	expiresAt time.Time
+	deadline  time.Time
+	timer     *time.Timer
+	release   func()
 }
 
 // DefaultGestureTTL bounds how long a single gesture may hold a resource
@@ -57,8 +61,8 @@ const DefaultGestureTTL = 5 * time.Second
 // the contender retries after re-observing. Different resources never contend,
 // so a human on a physical screen never blocks an agent on the virtual screen.
 //
-// Locks are lazily expired on access, so the arbiter needs no background
-// goroutine for correctness. It is safe for concurrent use.
+// Locks expire on access; dispatched native input also arms a release timer.
+// It is safe for concurrent use.
 type Arbiter struct {
 	mu      sync.Mutex
 	locks   map[string]*gestureLock
@@ -83,6 +87,9 @@ func newArbiterWithClock(now func() time.Time, maxHold time.Duration) *Arbiter {
 }
 
 func resourceKey(r protocol.ResourceKey) string {
+	if r.DisplayID != 0 {
+		return r.BackendIdentity + "|physical|" + strconv.FormatUint(uint64(r.UID), 10) + "|" + strconv.FormatUint(uint64(r.DisplayID), 10)
+	}
 	return r.BackendIdentity + "|" + r.WorkspaceID + "|" + r.RuntimeID + "|" +
 		strconv.FormatUint(uint64(r.UID), 10) + "|" + strconv.FormatUint(uint64(r.DisplayID), 10)
 }
@@ -97,7 +104,7 @@ const (
 )
 
 // Acquire attempts to hold the resource for one atomic gesture. A repeat for
-// the same principal+gesture renews the TTL (e.g. a drag continuation). A lock
+// the same principal+gesture renews the idle TTL up to the absolute hold bound. A lock
 // held by the same principal but a different gesture is still contention.
 func (a *Arbiter) Acquire(resource protocol.ResourceKey, principal Principal, gestureID string, ttl time.Duration) AcquireResult {
 	if resource.Validate() != nil || !principal.valid() || gestureID == "" {
@@ -114,11 +121,17 @@ func (a *Arbiter) Acquire(resource protocol.ResourceKey, principal Principal, ge
 	if existing, exists := a.locks[key]; exists {
 		if existing.principal == principal && existing.gestureID == gestureID {
 			existing.expiresAt = now.Add(ttl)
+			if existing.expiresAt.After(existing.deadline) {
+				existing.expiresAt = existing.deadline
+			}
+			if existing.timer != nil {
+				existing.timer.Reset(existing.expiresAt.Sub(now))
+			}
 			return AcquireReentry
 		}
 		return AcquireBusy
 	}
-	a.locks[key] = &gestureLock{principal: principal, gestureID: gestureID, expiresAt: now.Add(ttl)}
+	a.locks[key] = &gestureLock{principal: principal, resource: resource, gestureID: gestureID, expiresAt: now.Add(ttl), deadline: now.Add(a.maxHold)}
 	return AcquireHeld
 }
 
@@ -129,7 +142,7 @@ func (a *Arbiter) Release(resource protocol.ResourceKey, principal Principal, ge
 	defer a.mu.Unlock()
 	if lock, ok := a.locks[key]; ok &&
 		lock.principal == principal && lock.gestureID == gestureID {
-		delete(a.locks, key)
+		a.releaseLocked(key)
 	}
 }
 
@@ -144,7 +157,7 @@ func (a *Arbiter) Sweep() {
 func (a *Arbiter) sweepLocked(now time.Time) {
 	for k, lock := range a.locks {
 		if !lock.expiresAt.After(now) {
-			delete(a.locks, k)
+			a.releaseLocked(k)
 		}
 	}
 }
@@ -158,7 +171,7 @@ func (a *Arbiter) EmergencyRelease() int {
 	n := 0
 	for k, lock := range a.locks {
 		if lock.principal.Kind != PrincipalLocal {
-			delete(a.locks, k)
+			a.releaseLocked(k)
 			n++
 		}
 	}
@@ -171,10 +184,9 @@ func (a *Arbiter) EmergencyReleaseRuntime(workspaceID, runtimeID string) int {
 	defer a.mu.Unlock()
 	n := 0
 	for k, lock := range a.locks {
-		parts := strings.Split(k, "|")
-		if lock.principal.Kind != PrincipalLocal && len(parts) >= 3 &&
-			parts[1] == workspaceID && parts[2] == runtimeID {
-			delete(a.locks, k)
+		if lock.principal.Kind != PrincipalLocal &&
+			lock.resource.WorkspaceID == workspaceID && lock.resource.RuntimeID == runtimeID {
+			a.releaseLocked(k)
 			n++
 		}
 	}
@@ -211,7 +223,7 @@ func (a *Arbiter) ReleasePrincipal(principal Principal) int {
 	n := 0
 	for k, lock := range a.locks {
 		if lock.principal == principal {
-			delete(a.locks, k)
+			a.releaseLocked(k)
 			n++
 		}
 	}

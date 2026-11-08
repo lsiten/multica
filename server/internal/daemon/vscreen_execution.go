@@ -435,22 +435,7 @@ func (e *vscreenExecution) invokePhysical(ctx context.Context, name string, args
 			err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerUp, Button: globalinput.ButtonLeft, X: x, Y: y})
 		}
 	case protocol.VscreenActionDrag:
-		fromX, fromY := toDisplay(args.Action.Drag.From)
-		toX, toY := toDisplay(args.Action.Drag.To)
-		err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerDown, Button: globalinput.ButtonLeft, X: fromX, Y: fromY})
-		if err == nil {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(time.Duration(args.Action.Drag.DurationMS) * time.Millisecond):
-			}
-		}
-		if err == nil {
-			err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerMove, Button: globalinput.ButtonLeft, X: toX, Y: toY})
-		}
-		if err == nil {
-			err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputPointerUp, Button: globalinput.ButtonLeft, X: toX, Y: toY})
-		}
+		err = p.drag(ctx, args.Action.Drag)
 	case protocol.VscreenActionScroll:
 		x, y := toDisplay(args.Action.Scroll.Position)
 		err = p.injector.Pointer(globalinput.PointerEvent{Kind: protocol.MirrorInputWheel, X: x, Y: y, DeltaX: args.Action.Scroll.DeltaX, DeltaY: args.Action.Scroll.DeltaY})

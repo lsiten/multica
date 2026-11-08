@@ -269,25 +269,17 @@ func managedVscreenCapabilities() []string {
 	return []string{protocol.DaemonCapabilityVirtualScreenV1, protocol.DaemonCapabilityScreenMirrorVideoV2, protocol.DaemonCapabilityMirrorViewerGrantV1}
 }
 
-// managedScreenControlCapabilities advertises the human input (control)
-// capability, which is independent of the virtual screen. It only needs a
-// global input injector: the macOS Accessibility bridge or the Windows
-// SendInput backend. A Windows host without virtual-screen support can still
-// accept human control on a mirror session, so the control capability must not
-// be gated on native.Supported(); it is gated on the injector being available.
+// managedScreenControlCapabilities requires the managed catalog and viewer-grant
+// path as well as a usable global injector.
 func managedScreenControlCapabilities() []string {
-	if !globalInputAvailable() {
+	if !native.Supported() || !globalInputAvailable() {
 		return nil
 	}
 	return []string{protocol.DaemonCapabilityScreenControlV1}
 }
 
-// globalInputAvailable probes the platform global input injector once. The
-// injector is a stateless platform singleton, so a single construction is
-// reused across the per-request capability advertisements. In mirror process
-// mode the daemon does not inject itself (the mirror process does); the runtime
-// control backend denies input there regardless, so an over-eager advertisement
-// degrades to a clean denied rather than a security hole.
+// globalInputAvailable reuses a probe instance across capability advertisements.
+// In process mode actual input is owned and dispatched by the mirror child.
 var (
 	globalInputProbeOnce sync.Once
 	globalInputProbeInst globalinput.Injector
