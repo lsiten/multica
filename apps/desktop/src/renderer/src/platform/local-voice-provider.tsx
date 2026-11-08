@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { LocalVoiceContext } from "@multica/views/platform";
 import type { LocalVoiceAdapter, LocalVoiceStatus } from "@multica/core/platform";
 import type { LocalVoiceAPI, LocalVoiceLanguage } from "../../../shared/local-voice";
@@ -30,8 +30,12 @@ export function mapVoiceLanguage(locale: string): LocalVoiceLanguage {
 async function decodeRecordingToPcm16(blob: Blob): Promise<Float32Array> {
   const bytes = await blob.arrayBuffer();
   const audioContext = new AudioContext();
-  const audioBuffer = await audioContext.decodeAudioData(bytes);
-  void audioContext.close();
+  let audioBuffer: AudioBuffer;
+  try {
+    audioBuffer = await audioContext.decodeAudioData(bytes);
+  } finally {
+    await audioContext.close();
+  }
   const targetSampleRate = 16_000;
   const length = Math.max(1, Math.ceil(audioBuffer.duration * targetSampleRate));
   const offline = new OfflineAudioContext(1, length, targetSampleRate);
@@ -57,27 +61,44 @@ export function buildLocalVoiceAdapter(
     status = next;
     for (const listener of listeners) listener();
   };
-  const unsubscribe = api.onStatus(apply);
-  void api.getStatus().then(apply, () => {});
+  let unsubscribe: (() => void) | null = null;
+  let subscriptionGeneration = 0;
   const getSnapshot = (): LocalVoiceStatus => status;
   const subscribe = (listener: () => void): (() => void) => {
     listeners.add(listener);
+    if (listeners.size === 1) {
+      const generation = ++subscriptionGeneration;
+      const applyCurrent = (next: LocalVoiceStatus) => {
+        if (generation === subscriptionGeneration) apply(next);
+      };
+      unsubscribe = api.onStatus(applyCurrent);
+      void api.getStatus().then(applyCurrent, () => {});
+    }
     return () => {
       listeners.delete(listener);
-      if (listeners.size === 0) unsubscribe();
+      if (listeners.size === 0) {
+        subscriptionGeneration += 1;
+        unsubscribe?.();
+        unsubscribe = null;
+      }
     };
   };
   const retry = (): void => {
     void api.retry();
   };
   const transcribe = async (recording: Blob, signal: AbortSignal): Promise<string> => {
+    if (signal.aborted) return "";
     const id = `voice-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const onAbort = () => api.cancel(id);
     signal.addEventListener("abort", onAbort, { once: true });
     try {
       const samples = await decodeRecordingToPcm16(recording);
       if (signal.aborted || samples.length === 0) return "";
-      return await api.transcribe(id, samples, getLanguage());
+      const text = await api.transcribe(id, samples, getLanguage());
+      return signal.aborted ? "" : text;
+    } catch (error) {
+      if (signal.aborted) return "";
+      throw error;
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
@@ -89,10 +110,14 @@ export function buildLocalVoiceAdapter(
 // preload exposes window.localVoiceAPI. On any build without it the context stays
 // null and chat voice input falls back to runtime transcription.
 export function LocalVoiceProvider({ locale, children }: { locale: string; children: ReactNode }) {
+  const language = useRef(mapVoiceLanguage(locale));
+  useEffect(() => {
+    language.current = mapVoiceLanguage(locale);
+  }, [locale]);
   const adapter = useMemo(() => {
     const api = window.localVoiceAPI;
     if (!api) return null;
-    return buildLocalVoiceAdapter(api, () => mapVoiceLanguage(locale));
-  }, [locale]);
+    return buildLocalVoiceAdapter(api, () => language.current);
+  }, []);
   return <LocalVoiceContext.Provider value={adapter}>{children}</LocalVoiceContext.Provider>;
 }
