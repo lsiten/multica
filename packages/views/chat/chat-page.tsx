@@ -305,7 +305,7 @@ export function ChatPage() {
   // THIS pane, which the user resizes independently of the browser window.
   const queuedTasks = c.pendingTask?.queued_tasks ?? [];
   const activeDoc = useDocModeStore(selectActiveDocument(c.activeSessionId));
-  useDocWorkingIndicator(c.activeSessionId ?? "", !!c.pendingTaskId);
+  useDocWorkingIndicator(c.activeSessionId ?? "", c.pendingTask?.status === "running");
   useEffect(() => {
     if (isCompact && activeDoc) setFilesOpen(false);
   }, [isCompact, activeDoc]);

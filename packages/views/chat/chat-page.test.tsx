@@ -8,7 +8,7 @@ import { WorkspaceSlugProvider } from "@multica/core/paths";
 import { useDocModeStore } from "@multica/core/chat";
 import { documentContentVersionKeys } from "@multica/core/chat/document-content-version-queries";
 import type { ChatReference } from "./components/chat-input";
-import type { Agent } from "@multica/core/types";
+import type { Agent, ChatPendingTask } from "@multica/core/types";
 import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enChat from "../locales/en/chat.json";
@@ -100,6 +100,7 @@ const storeRef = vi.hoisted(() => ({
 const storeListeners = vi.hoisted(() => new Set<() => void>());
 const availableAgentsRef = vi.hoisted(() => ({ current: [] as Agent[] }));
 const agentsSettledRef = vi.hoisted(() => ({ current: true }));
+const pendingTaskRef = vi.hoisted((): { current: ChatPendingTask | null } => ({ current: null }));
 const mockStartNewChat = vi.hoisted(() => vi.fn());
 const mockToastError = vi.hoisted(() => vi.fn());
 const mockSetActiveSession = vi.hoisted(() =>
@@ -157,8 +158,8 @@ vi.mock("./components/use-chat-controller", async () => {
       noAgent: false,
       availability: "online",
       messages: [],
-      pendingTask: null,
-      pendingTaskId: null,
+      pendingTask: pendingTaskRef.current,
+      pendingTaskId: pendingTaskRef.current?.task_id ?? null,
       showSkeleton: false,
       hasMessages: false,
       firstItemIndex: 0,
@@ -270,6 +271,7 @@ beforeEach(() => {
   window.getSelection()?.removeAllRanges();
   useDocModeStore.setState({ activeBySession: {}, workingBySession: {}, diffViewBySession: {} });
   storeRef.current = { activeSessionId: null };
+  pendingTaskRef.current = null;
   storeListeners.clear();
   availableAgentsRef.current = [agent];
   agentsSettledRef.current = true;
@@ -514,6 +516,22 @@ describe("ChatPage responsive layout", () => {
 
 
 describe("ChatPage document conversation", () => {
+  it.each(["queued", "dispatched", "waiting_local_directory", "deferred", undefined])(
+    "clears the document editing indicator when execution changes from running to %s",
+    async (status) => {
+      useDocModeStore.getState().openDoc("session-1", { kind: "issue", id: "issue-doc", label: "Plan" });
+      pendingTaskRef.current = { task_id: "task-1", status: "running" };
+      const { rerender } = renderPage("session=session-1");
+      expect(await screen.findByText(enChat.doc_mode.working)).toBeInTheDocument();
+
+      pendingTaskRef.current = { task_id: "task-1", status };
+      rerender();
+      await waitFor(() => expect(screen.queryByText(enChat.doc_mode.working)).not.toBeInTheDocument());
+      expect(screen.getByText("Document passage")).toBeInTheDocument();
+      expect(useDocModeStore.getState().activeBySession["session-1"]?.id).toBe("issue-doc");
+    },
+  );
+
   it("adds the open document to the same conversation input without closing its body", async () => {
     useDocModeStore.getState().openDoc("session-1", { kind: "issue", id: "issue-doc", label: "Plan" });
     const { rerender } = renderPage("session=session-1");
