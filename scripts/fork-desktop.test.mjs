@@ -15,9 +15,14 @@ function stepScript(name) {
   assert.ok(block, `Missing workflow step: ${name}`);
   const match = block.match(/^        run: (.*)$/m);
   assert.ok(match, `Missing run command: ${name}`);
-  return match[1] === "|"
-    ? block.slice(match.index + match[0].length + 1).replace(/^          /gm, "")
-    : match[1];
+  if (match[1] !== "|") return match[1];
+  const lines = block.slice(match.index + match[0].length + 1).split("\n");
+  const script = [];
+  for (const line of lines) {
+    if (line.trim() && !line.startsWith("          ")) break;
+    script.push(line.slice(10));
+  }
+  return script.join("\n");
 }
 
 function fixtureDirectory(t) {
@@ -128,3 +133,51 @@ ${stepScript("Publish complete desktop release")}
     }
   }
 });
+
+for (const [tag, accepted] of [["v1.2.3", true], ["v1.2.3-rc.1", true], ["v1.2.3-dirty", false], ["main", false], ["v1.2", false]]) {
+  test(`release tag validation ${tag}`, (t) => {
+    const directory = fixtureDirectory(t);
+    const output = join(directory, "tag-output");
+    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", stepScript("Validate release tag")], {
+      cwd: directory,
+      encoding: "utf8",
+      env: { ...process.env, RELEASE_TAG: tag, GITHUB_OUTPUT: output.replaceAll("\\", "/") },
+    });
+    assert.equal(result.status === 0, accepted, result.stderr);
+    if (accepted) {
+      assert.equal(readFileSync(output, "utf8"), `tag=${tag}\nprerelease=${tag.includes("-")}\n`);
+    } else {
+      assert.equal(existsSync(output), false);
+    }
+  });
+}
+
+for (const draft of ["true", "false"]) {
+  test(`publication respects existing release draft=${draft}`, (t) => {
+    const directory = fixtureDirectory(t);
+    mkdirSync(join(directory, "artifacts"));
+    writeFileSync(join(directory, "artifacts/installer.zip"), "installer fixture");
+    const calls = join(directory, "github-calls");
+    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", `
+gh() {
+  printf '%s\\n' "$2" >> "$GH_TEST_LOG"
+  if [[ "$2" == view ]]; then printf '%s\\n' "$GH_TEST_DRAFT"; fi
+}
+${stepScript("Publish complete desktop release")}
+`], {
+      cwd: directory,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GH_TEST_LOG: calls.replaceAll("\\", "/"),
+        GH_TEST_DRAFT: draft,
+        GH_REPO: "test/desktop",
+        RELEASE_TAG: "v1.2.3",
+        PRERELEASE: "false",
+        GITHUB_STEP_SUMMARY: join(directory, "summary").replaceAll("\\", "/"),
+      },
+    });
+    assert.equal(result.status === 0, draft === "true", result.stderr);
+    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), draft === "true" ? ["view", "upload", "edit"] : ["view"]);
+  });
+}

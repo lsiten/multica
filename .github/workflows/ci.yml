@@ -8,6 +8,15 @@ on:
   schedule:
     - cron: "23 3 * * *"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_acceptance:
+        required: true
+        type: boolean
+    outputs:
+      accepted_sha:
+        description: Commit validated by full release acceptance
+        value: ${{ jobs.release-acceptance.outputs.accepted_sha }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
@@ -41,11 +50,11 @@ jobs:
           node-version: 22
 
       - name: Test CI selection and gates
-        run: node --test scripts/ci-scope.test.mjs scripts/check-image-budget.test.mjs
+        run: node --test scripts/ci-scope.test.mjs scripts/check-image-budget.test.mjs scripts/fork-release-gate.test.mjs
 
       - name: Filter paths
         id: filter
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        if: ${{ !inputs.release_acceptance && (github.event_name == 'pull_request' || github.event_name == 'push') }}
         uses: dorny/paths-filter@v3
         with:
           # Pushes compare before/head SHAs. PRs use the pull-request file API;
@@ -57,7 +66,7 @@ jobs:
       - name: Decide
         id: decide
         env:
-          EVENT_NAME: ${{ github.event_name }}
+          EVENT_NAME: ${{ inputs.release_acceptance && 'workflow_dispatch' || github.event_name }}
           FILTER_RESULTS: ${{ toJSON(steps.filter.outputs) }}
         run: node scripts/ci-scope.mjs decide
 
@@ -952,3 +961,24 @@ jobs:
 
       - name: Check frontend quality
         uses: ./.github/actions/frontend-quality
+
+  release-acceptance:
+    needs: [changes, frontend, backend]
+    if: ${{ inputs.release_acceptance && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      accepted_sha: ${{ steps.acceptance.outputs.accepted_sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Require complete acceptance of the release commit
+        id: acceptance
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/fork-release-gate.mjs

@@ -31,8 +31,17 @@ jobs:
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
-  build:
+  acceptance:
     needs: verify
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      release_acceptance: true
+
+  build:
+    needs: [verify, acceptance]
     permissions:
       contents: read
       packages: write
@@ -60,6 +69,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.acceptance.outputs.accepted_sha }}
       - name: Check deployment contracts
         run: bash scripts/selfhost-source.test.sh
       - uses: docker/setup-qemu-action@v3

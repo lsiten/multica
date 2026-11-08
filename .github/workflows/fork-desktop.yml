@@ -47,8 +47,17 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
+  acceptance:
     needs: verify
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      release_acceptance: true
+
+  build:
+    needs: [verify, acceptance]
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.acceptance.outputs.accepted_sha }}
           fetch-depth: 0
       - name: Install rpmbuild (Linux)
         if: matrix.target == 'linux'
