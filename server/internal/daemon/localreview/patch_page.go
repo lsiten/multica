@@ -2,6 +2,7 @@ package localreview
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -68,15 +69,18 @@ func ReadPatchPage(ctx context.Context, input io.Reader, request PatchPageReques
 			page.HasMore = true
 			return page, nil
 		}
-		text := strings.TrimSuffix(strings.TrimSuffix(string(line), "\n"), "\r")
-		entry := PatchLine{Text: text, Kind: "meta"}
-		if match := patchHunkHeader.FindStringSubmatch(text); match != nil {
+		entry := PatchLine{Kind: "meta"}
+		var match [][]byte
+		if bytes.HasPrefix(line, []byte("@@ -")) {
+			match = patchHunkHeader.FindSubmatch(line)
+		}
+		if match != nil {
 			previousOld, previousNew := oldLine, newLine
-			oldLine, err = strconv.ParseInt(match[1], 10, 64)
+			oldLine, err = strconv.ParseInt(string(match[1]), 10, 64)
 			if err != nil {
 				return page, ErrInvalidPatchPage
 			}
-			newLine, err = strconv.ParseInt(match[2], 10, 64)
+			newLine, err = strconv.ParseInt(string(match[2]), 10, 64)
 			if err != nil {
 				return page, ErrInvalidPatchPage
 			}
@@ -84,10 +88,10 @@ func ReadPatchPage(ctx context.Context, input io.Reader, request PatchPageReques
 				entry.ContextOldStart, entry.ContextNewStart, entry.ContextLines = previousOld, previousNew, gap
 			}
 			insideHunk = true
-		} else if strings.HasPrefix(text, "diff --git ") {
+		} else if bytes.HasPrefix(line, []byte("diff --git ")) {
 			insideHunk = false
-		} else if insideHunk && len(text) > 0 {
-			switch text[0] {
+		} else if insideHunk {
+			switch line[0] {
 			case ' ':
 				entry.Kind, entry.OldLine, entry.NewLine = "context", oldLine, newLine
 				oldLine++
@@ -104,6 +108,7 @@ func ReadPatchPage(ctx context.Context, input io.Reader, request PatchPageReques
 		if index <= request.Offset {
 			continue
 		}
+		entry.Text = strings.TrimSuffix(strings.TrimSuffix(string(line), "\n"), "\r")
 		page.Lines = append(page.Lines, entry)
 		page.NextLine = index
 		size += len(line)
