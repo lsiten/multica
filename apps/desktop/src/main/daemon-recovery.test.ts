@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -448,6 +448,19 @@ describe("recovery budget persistence", () => {
     return join(mkdtempSync(join(tmpdir(), "multica-recovery-")), "budget.json");
   }
 
+  it.each([
+    {},
+    { paused: true },
+    { attemptTimestamps: "invalid", paused: true },
+    { attemptTimestamps: ["1000"], paused: true },
+    { attemptTimestamps: [-1], paused: true },
+    { attemptTimestamps: [1000], paused: "true" },
+  ])("rejects malformed persisted budget %j", (saved) => {
+    const path = tempBudgetPath();
+    writeFileSync(path, JSON.stringify(saved));
+    expect(loadRecoveryBudget(path, 2000)).toBeNull();
+  });
+
   it("round-trips a persisted budget", () => {
     const path = tempBudgetPath();
     saveRecoveryBudget(path, { attemptTimestamps: [1_000, 2_000], paused: true });
@@ -477,13 +490,13 @@ describe("recovery budget persistence", () => {
     expect(reachDecision(restored, 2_000)).toBe("pause");
   });
 
-  it("clears a fully aged-out budget", () => {
+  it("drops expired attempts while retaining an explicit-resume pause", () => {
     const path = tempBudgetPath();
     saveRecoveryBudget(path, { attemptTimestamps: [1_000], paused: true });
 
     expect(
       loadRecoveryBudget(path, 1_000 + RECOVERY_ATTEMPT_WINDOW_MS + 1),
-    ).toEqual({ attemptTimestamps: [], paused: false });
+    ).toEqual({ attemptTimestamps: [], paused: true });
   });
 
   it("persists a budget change through the onChange sink", () => {

@@ -119,14 +119,8 @@ let autoStartSuppressedAfterQuit = false;
 // Once a foreign-OS daemon (for example WSL2) is observed on this profile, do
 // not replace it with a native daemon if its forwarded health endpoint drops.
 let externalDaemonObserved = false;
-const recoveryPolicy = new DaemonRecoveryPolicy();
+let recoveryPolicy = new DaemonRecoveryPolicy();
 
-// Durable recovery-budget slot in userData (FR-DSK-02 / GAP-10): a rate-limited
-// "recovery_paused" daemon keeps its 30-minute attempt budget across a Desktop
-// restart instead of resetting to a fresh budget on boot.
-function recoveryBudgetPath(): string {
-  return join(app.getPath("userData"), "daemon-recovery-budget.json");
-}
 const lifecycleOperations = new DaemonOperationGate();
 
 // Auth-probe state for the current start attempt. When a start fails to reach
@@ -327,13 +321,19 @@ async function ensureActiveProfile(): Promise<ActiveProfile | null> {
   // after startup, and caching "unresolved" would persist until something
   // happened to invalidate it.
   activeProfile = await resolveActiveProfile();
+  if (activeProfile) {
+    const path = join(profileDir(activeProfile.name), "desktop_recovery_budget.json");
+    const saved = loadRecoveryBudget(path, Date.now());
+    if (saved) recoveryPolicy.restoreBudget(saved, Date.now());
+    recoveryPolicy.setOnChange((budget) => saveRecoveryBudget(path, budget));
+  }
   return activeProfile;
 }
 
 function invalidateActiveProfile(): void {
   activeProfile = null;
   externalDaemonObserved = false;
-  recoveryPolicy.reset();
+  recoveryPolicy = new DaemonRecoveryPolicy();
 }
 
 function setDesiredDaemonRunning(desired: boolean, explicit = false): void {
@@ -341,7 +341,7 @@ function setDesiredDaemonRunning(desired: boolean, explicit = false): void {
   if (desired && explicit) autoStartSuppressedAfterQuit = false;
   if (desiredDaemonRunning === desired && !explicit) return;
   desiredDaemonRunning = desired;
-  recoveryPolicy.reset();
+  if (desired && explicit) recoveryPolicy.reset();
 }
 
 function observeDaemonBoundary(status: DaemonStatus): void {
@@ -1462,20 +1462,6 @@ export function setupDaemonManager(
   getMainWindow = windowGetter;
   getStatusWindows = statusWindowsGetter;
 
-  // Restore the recovery budget from the previous session so a paused budget
-  // survives a Desktop restart (FR-DSK-02 / GAP-10), then persist on every
-  // later budget-changing mutation.
-  const savedRecoveryBudget = loadRecoveryBudget(
-    recoveryBudgetPath(),
-    Date.now(),
-  );
-  if (savedRecoveryBudget) {
-    recoveryPolicy.restoreBudget(savedRecoveryBudget, Date.now());
-  }
-  recoveryPolicy.setOnChange((budget) =>
-    saveRecoveryBudget(recoveryBudgetPath(), budget),
-  );
-
   ipcMain.handle("daemon:set-target-api-url", async (_e, url: string) => {
     const normalized = url || null;
     if (targetApiBaseUrl !== normalized) {
@@ -1490,7 +1476,11 @@ export function setupDaemonManager(
     if (desiredRunningBeforeUpdateStop !== null) return UPDATE_IN_PROGRESS;
     externalDaemonObserved = false;
     setDesiredDaemonRunning(true, true);
-    return lifecycleOperations.runForeground(() => startDaemon());
+    return lifecycleOperations.runForeground(async () => {
+      await ensureActiveProfile();
+      recoveryPolicy.reset();
+      return startDaemon();
+    });
   });
   ipcMain.handle("daemon:stop", () => {
     if (desiredRunningBeforeUpdateStop !== null) {
@@ -1504,7 +1494,11 @@ export function setupDaemonManager(
     if (desiredRunningBeforeUpdateStop !== null) return UPDATE_IN_PROGRESS;
     externalDaemonObserved = false;
     setDesiredDaemonRunning(true, true);
-    return lifecycleOperations.runForeground(() => restartDaemon());
+    return lifecycleOperations.runForeground(async () => {
+      await ensureActiveProfile();
+      recoveryPolicy.reset();
+      return restartDaemon();
+    });
   });
   ipcMain.handle("daemon:get-status", () => fetchHealth());
   ipcMain.handle("daemon:probe-runtimes", () => probeLocalRuntimes());
@@ -1579,7 +1573,9 @@ export function setupDaemonManager(
         await ensureRunningDaemonVersionMatches();
         return;
       }
-      await startDaemon();
+      if (!recoveryPolicy.canStartAutomatically(Date.now())) return;
+      const active = await ensureActiveProfile();
+      if (active) await startDaemon(active);
     });
   });
 

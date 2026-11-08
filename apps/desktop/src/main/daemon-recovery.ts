@@ -84,6 +84,11 @@ export class DaemonRecoveryPolicy {
     this.attemptTimestamps = snapshot.attemptTimestamps.slice();
     this.paused = snapshot.paused;
     this.pruneAttemptBudget(now);
+    this.failureCount = this.attemptTimestamps.length;
+    if (this.failureCount > 0) {
+      this.nextAttemptAt = Math.max(...this.attemptTimestamps) +
+        RECOVERY_BACKOFF_MS[Math.min(this.failureCount - 1, RECOVERY_BACKOFF_MS.length - 1)];
+    }
   }
 
   private notify(): void {
@@ -129,15 +134,18 @@ export class DaemonRecoveryPolicy {
     if (this.consecutiveStopped < RECOVERY_STOPPED_THRESHOLD) return "none";
 
     this.consecutiveStopped = 0;
-    if (observation.now < this.nextAttemptAt) return "none";
+    return this.canStartAutomatically(observation.now) ? "confirm" : this.paused ? "pause" : "none";
+  }
+
+  canStartAutomatically(now: number): boolean {
+    this.pruneAttemptBudget(now);
+    if (this.paused) return false;
     if (this.attemptTimestamps.length >= RECOVERY_ATTEMPT_BUDGET) {
       this.paused = true;
-      // First time the budget is exhausted; persist so a restart keeps the
-      // daemon paused until the window ages out or a member starts it.
       this.notify();
-      return "pause";
+      return false;
     }
-    return "confirm";
+    return now >= this.nextAttemptAt;
   }
 
   recordRecoveryAttempt(now: number): void {
@@ -212,9 +220,8 @@ export function saveRecoveryBudget(
 
 /**
  * Load a persisted recovery budget. Returns null when there is none or the
- * file is corrupt. Attempts older than the 30-minute window are pruned, and a
- * paused flag with no remaining in-window attempts is cleared — a budget whose
- * window has fully aged out should not keep gating recovery after a restart.
+ * file is corrupt. Expired attempts are pruned while a persisted pause stays
+ * latched until an explicit member action resumes the daemon.
  */
 export function loadRecoveryBudget(
   filePath: string,
@@ -232,20 +239,15 @@ export function loadRecoveryBudget(
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== "object") return null;
-  const obj = parsed as Record<string, unknown>;
+  if (
+    !parsed || typeof parsed !== "object" ||
+    !("attemptTimestamps" in parsed) || !Array.isArray(parsed.attemptTimestamps) ||
+    !parsed.attemptTimestamps.every((value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0) ||
+    !("paused" in parsed) || typeof parsed.paused !== "boolean"
+  ) return null;
   const cutoff = now - RECOVERY_ATTEMPT_WINDOW_MS;
-  const attempts = Array.isArray(obj.attemptTimestamps)
-    ? obj.attemptTimestamps.filter(
-        (value): value is number =>
-          typeof value === "number" &&
-          Number.isFinite(value) &&
-          value > cutoff,
-      )
-    : [];
-  const paused =
-    typeof obj.paused === "boolean" ? obj.paused && attempts.length > 0 : false;
-  return { attemptTimestamps: attempts, paused };
+  const attempts = parsed.attemptTimestamps.filter((value: number) => value > cutoff);
+  return { attemptTimestamps: attempts, paused: parsed.paused };
 }
 
 export interface RecoveryProfile {
