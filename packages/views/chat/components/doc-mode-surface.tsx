@@ -19,7 +19,7 @@ import {
   useRecordDocumentContentVersion,
   useRollbackDocumentContentVersion,
 } from "@multica/core/chat/document-content-version-queries";
-import type { DocumentContentVersion } from "@multica/core/api/document-content-version";
+import { DocVersionHistory } from "./doc-version-history";
 import { RichContent } from "../../rich-content";
 import { Attachment } from "../../editor/attachment";
 import { useT } from "../../i18n";
@@ -55,7 +55,7 @@ function textCodeBlock(content: string): string {
 }
 
 function documentQuote(label: string, content: string): string {
-  return [`> 引用文件：${label}`, "", textCodeBlock(content)].join("\n");
+  return [`> ${label}`, "", textCodeBlock(content)].join("\n");
 }
 
 function isOfficePath(path: string): boolean {
@@ -277,19 +277,7 @@ function DocSubIssueButton({
   );
 }
 
-/**
- * DocModeSurface — the confirmed v12 "based-on-document" surface.
- *
- * When a document is open (doc-mode) it fills the chat detail pane (C): the
- * document body renders full-area, and a floating layer shows ONLY the working
- * status (D7) — the conversation stays in its original place (D10), it is not
- * moved here. Text (Markdown/HTML) renders via RichContent; a binary document
- * (image / PDF) renders via Attachment and is never edited in place.
- *
- * Default view is the current content with no diff (D6); toggling the diff view
- * shows the version history so the user can compare and roll back (D8/D9).
- * Closing (X) is the only way out — an edit completing never auto-closes (D9).
- */
+/** Displays the selected document while the session conversation stays mounted. */
 export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string; sessionId: string; onAddToChat?: (content: string) => void }) {
   const { t } = useT("chat");
   const doc = useDocModeStore(selectActiveDocument(sessionId));
@@ -301,9 +289,11 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   const user = useAuthStore((s) => s.user);
   const [editing, setEditing] = useState(false);
   const [edited, setEdited] = useState("");
+  const [editBase, setEditBase] = useState<{ readonly content: string; readonly revision: number; readonly contentType: string } | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [workspaceEditing, setWorkspaceEditing] = useState(false);
   const [workspaceEdited, setWorkspaceEdited] = useState("");
+  const [workspaceEditBase, setWorkspaceEditBase] = useState("");
   const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
 
@@ -313,6 +303,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     // must never survive onto the next document while its query is resolving.
     setEditing(false);
     setEdited("");
+    setEditBase(null);
     setSaveError(null);
     setWorkspaceEditing(false);
     setWorkspaceEdited("");
@@ -328,7 +319,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   const current = useDocumentContentVersionCurrent(wsId, activeRef, { loadAttachments: !isTextAttachment || diffView });
   const versions = useDocumentContentVersions(wsId, activeRef, { loadAttachments: diffView });
   const attachmentTextContent = useQuery({
-    queryKey: ["attachment-text-content", doc?.id],
+    queryKey: ["attachment-text-content", wsId, doc?.id],
     queryFn: ({ signal }) => api.getAttachmentTextContent(doc!.id, signal),
     enabled: isTextAttachment && !diffView,
     staleTime: 60_000,
@@ -406,6 +397,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   const openWorkspaceEdit = useCallback(() => {
     if (workspaceContentText === null) return;
     setWorkspaceEdited(workspaceContentText);
+    setWorkspaceEditBase(workspaceContentText);
     setWorkspaceSaveError(null);
     setWorkspaceEditing(true);
   }, [workspaceContentText]);
@@ -424,7 +416,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         relative_path: workspaceRequest.relative_path,
         command_id: createSafeId(),
         action: "merge_edit",
-        edit_base: workspaceContentText ?? "",
+        edit_base: workspaceEditBase,
         edit_new: workspaceEdited,
       });
       if (result?.conflict) {
@@ -439,25 +431,26 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     } finally {
       setWorkspaceSaving(false);
     }
-  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceContentText, workspaceEdited]);
+  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEditBase, workspaceEdited]);
 
   const openEdit = useCallback(() => {
-    if (!current.data?.content) return;
+    if (current.data?.content == null) return;
+    setEditBase({ content: current.data.content, revision: current.data.owner_revision ?? current.data.revision, contentType: current.data.content_type ?? "text/markdown" });
     setEdited(current.data.content);
     setSaveError(null);
     setEditing(true);
     setDiffView(sessionId, false);
-  }, [current.data?.content, setDiffView, sessionId]);
+  }, [current.data, setDiffView, sessionId]);
 
   const save = useCallback(async () => {
-    if (!doc || !current.data) return;
+    if (!doc || !editBase || saveError === "changed_reload") return;
     try {
       await record.mutateAsync({
         ref: doc,
         input: {
-          content_type: current.data.content_type ?? doc.contentType ?? "text/markdown",
+          content_type: editBase.contentType,
           content: edited,
-          expected_revision: current.data.revision,
+          expected_revision: editBase.revision,
         },
       });
       setEditing(false);
@@ -470,7 +463,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         setSaveError("save_failed");
       }
     }
-  }, [record, doc, edited, current]);
+  }, [record, doc, edited, current, editBase, saveError]);
 
   if (!doc) return null;
 
@@ -490,9 +483,9 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
       : null;
     return (
       <div className="flex h-full flex-col min-h-0">
-        <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
-          <h2 className="truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
-        <div className="flex items-center gap-1">
+        <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+          <h2 className="max-w-full truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
+        <div className="flex flex-wrap items-center gap-1">
           {officePath && canOpenLocalPath() && (
             <Button
               variant="ghost"
@@ -505,7 +498,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
             </Button>
           )}
           {workspaceContentText !== null && !doc.projectResourceId && (
-            <Button variant={workspaceEditing ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={openWorkspaceEdit}>
+            <Button variant={workspaceEditing ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={openWorkspaceEdit} disabled={workspaceEditing}>
               <Pencil className="h-4 w-4" />
               {t(($) => $.doc_mode.edit)}
             </Button>
@@ -526,7 +519,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         <DocEdit
           label={doc.relativePath ?? doc.label ?? "File"}
           content={workspaceEdited}
-          dirty={workspaceEdited !== (workspaceContentText ?? "")}
+          dirty={workspaceEdited !== workspaceEditBase}
           saving={workspaceSaving}
           error={workspaceSaveError}
           onChange={setWorkspaceEdited}
@@ -549,7 +542,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
           total={fileContent?.size ?? 0}
           label={doc.relativePath ?? doc.label ?? "File"}
           path={doc.relativePath ?? doc.label ?? "File"}
-          onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(`${doc.relativePath ?? doc.label ?? "File"} 的选区`, selection)) : undefined}
+          onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(doc.relativePath ?? doc.label ?? "File", selection)) : undefined}
         />
       )}
       </div>
@@ -563,25 +556,32 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   const binaryAttachment = doc.kind === "attachment" && !isTextAttachment;
   // Editing is available for an issue's text document (the requirement doc) to
   // any workspace member — mirrors the backend, whose record handler gates on
-  // requireUserID only. Attachments (binary) and workspace files are read-only.
+  // requireUserID only. Workspace-file edits use the separate merge flow above.
   const canEdit = !!user && doc.kind === "issue" && isText && current.data?.content != null;
 
   return (
     <div className="flex h-full flex-col min-h-0">
-      <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
-        <h2 className="truncate text-body font-semibold">
+      <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+        <h2 className="max-w-full truncate text-body font-semibold">
           {doc.label ?? (doc.kind === "issue" ? t(($) => $.doc_mode.issue) : t(($) => $.doc_mode.attachment))}
         </h2>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {canEdit && (
             <Button
               variant={editing ? "secondary" : "ghost"}
               size="sm"
               className="gap-1.5"
               onClick={openEdit}
+              disabled={editing}
             >
               <Pencil className="h-4 w-4" />
               {t(($) => $.doc_mode.edit)}
+            </Button>
+          )}
+          {onAddToChat && bodyContent !== null && (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat(documentQuote(doc.label ?? "Document", bodyContent))}>
+              <MessageSquareQuote className="h-4 w-4" />
+              {t(($) => $.doc_mode.add_to_chat)}
             </Button>
           )}
           <Button
@@ -610,7 +610,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
           <DocEdit
             label={doc.label ?? "Document"}
             content={edited}
-            dirty={edited !== (current.data?.content ?? "")}
+            dirty={edited !== editBase?.content}
             saving={record.isPending}
             error={saveError}
             onChange={setEdited}
@@ -629,6 +629,8 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         ) : diffView ? (
           <DocVersionHistory
             versions={versions.data ?? []}
+            current={current.data}
+            diffLabel={t(($) => $.doc_mode.diff)}
             loading={versions.isLoading}
             onRollback={(revision) => rollback.mutate({ ref: doc, revision })}
             rollbackLabel={t(($) => $.doc_mode.rollback)}
@@ -644,7 +646,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
             contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
             isText={isText}
             label={doc.label ?? "Document"}
-            onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(`${doc.label ?? "Document"} 的选区`, selection)) : undefined}
+            onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(doc.label ?? "Document", selection)) : undefined}
             parentIssueId={doc.kind === "issue" ? doc.id : undefined}
           />
         )}
@@ -707,7 +709,7 @@ function DocBody({
   }
   // Binary (image / PDF): render via the attachment preview; never edited in
   // place (D3/D10). Text (Markdown/HTML): render inline via RichContent.
-  if (!isText && attachment) {
+  if (!isText && attachment && !contentUrl) {
     return (
       <div className="mx-auto flex min-h-full max-w-4xl items-start justify-center p-6">
         <Attachment attachment={{ kind: "record", attachment }} layout="block" />
@@ -804,50 +806,6 @@ function WorkspaceFileBody({
         </p>
       )}
     </div>
-  );
-}
-
-function DocVersionHistory({
-  versions,
-  loading,
-  onRollback,
-  rollbackLabel,
-}: {
-  versions: DocumentContentVersion[];
-  loading: boolean;
-  onRollback: (revision: number) => void;
-  rollbackLabel: string;
-}) {
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-    );
-  }
-  if (versions.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        <p className="text-body">—</p>
-      </div>
-    );
-  }
-  return (
-    <ul className="divide-y p-4">
-      {versions.map((v) => (
-        <li key={v.id} className="flex items-center justify-between gap-3 py-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-body font-medium">{`v${v.revision}`}</p>
-            {v.note ? (
-              <p className="truncate text-muted-foreground">{v.note}</p>
-            ) : null}
-          </div>
-          <Button size="sm" variant="ghost" onClick={() => onRollback(v.revision)}>
-            {rollbackLabel}
-          </Button>
-        </li>
-      ))}
-    </ul>
   );
 }
 

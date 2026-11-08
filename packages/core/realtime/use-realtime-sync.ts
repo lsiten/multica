@@ -72,7 +72,9 @@ import {
   sortChatSessions,
   QUICK_ACTIONS_PENDING_TIMEOUT_MS,
 } from "../chat/queries";
-import { useChatStore } from "../chat";
+import { useChatStore, useDocModeStore } from "../chat";
+import { documentContentVersionKeys } from "../chat/document-content-version-queries";
+import { DocumentContentChangedSchema } from "../api/document-content-version";
 import { upsertChatMessageToCaches } from "../chat/message-cache";
 import {
   promotePendingChatTask,
@@ -676,6 +678,9 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: agentActivityKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentRunCountsKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: chatKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: documentContentVersionKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: ["chat-workspace-file-content", wsId] });
+    qc.invalidateQueries({ queryKey: ["attachment-text-content", wsId] });
     qc.invalidateQueries({ queryKey: labelKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: propertyKeys.all(wsId) });
     // A catalog edit missed while disconnected would otherwise sit behind the
@@ -1204,6 +1209,14 @@ export function useRealtimeSync(
         const workspaceId = getCurrentWsId();
         if (workspaceId) debouncedRefresh("issue-progress", () => { void qc.invalidateQueries({ queryKey: issueProgressKeys.all(workspaceId) }); });
       }
+      if (msg.type === "document_content:changed") {
+        const parsed = DocumentContentChangedSchema.safeParse(msg.payload);
+        if (!parsed.success) return;
+        const { workspace_id: wsId, owner_type: kind, owner_id: id } = parsed.data;
+        qc.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, { kind, id }) });
+        if (kind === "attachment") qc.invalidateQueries({ queryKey: ["attachment-text-content", wsId, id] });
+        return;
+      }
       if (msg.type === "application:changed") {
         const wsId = getCurrentWsId();
         if (wsId) void qc.invalidateQueries({ queryKey: applicationKeys.all(wsId) });
@@ -1234,6 +1247,7 @@ export function useRealtimeSync(
       if (!issue?.id) return;
       const wsId = getCurrentWsId();
       if (wsId) {
+        qc.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, { kind: "issue", id: issue.id }) });
         onIssueUpdated(qc, wsId, issue, {
           assigneeChanged: payload.assignee_changed,
           statusChanged: payload.status_changed,
@@ -1882,6 +1896,24 @@ export function useRealtimeSync(
 
     const unsubTaskCompleted = ws.on("task:completed", (p) => {
       const payload = p as TaskCompletedPayload;
+      const wsId = getCurrentWsId();
+      if (wsId) {
+        if (payload.issue_id) {
+          qc.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, { kind: "issue", id: payload.issue_id }) });
+        }
+        qc.invalidateQueries({
+          queryKey: ["chat-workspace-file-content", wsId],
+          predicate: (query) => query.queryKey[4] === payload.task_id
+            || (!!payload.chat_session_id && query.queryKey[2] === payload.chat_session_id),
+        });
+        if (payload.chat_session_id) {
+          const doc = useDocModeStore.getState().activeBySession[payload.chat_session_id];
+          if (doc && doc.kind !== "workspace_file") {
+            qc.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, doc) });
+            if (doc.kind === "attachment") qc.invalidateQueries({ queryKey: ["attachment-text-content", wsId, doc.id] });
+          }
+        }
+      }
       if (!payload.chat_session_id) return; // issue tasks handled elsewhere
       chatWsLogger.info("task:completed (global, chat)", {
         task_id: payload.task_id,

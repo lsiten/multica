@@ -18,6 +18,8 @@ export const DocumentContentVersionSchema = z.object({
   owner_type: z.enum(["issue", "attachment"]),
   owner_id: z.string().uuid(),
   revision: z.number().int().positive(),
+  // Issue CAS counter paired with the current issue body; history revisions are independent.
+  owner_revision: z.number().int().positive().optional(),
   content_type: z.string(),
   // Text body. Absent for a binary version.
   content: z.string().nullable().optional().default(null),
@@ -45,7 +47,7 @@ export const RecordDocumentContentVersionRequestSchema = z.object({
   content_url: z.string().nullable().optional(),
   size_bytes: nonNegativeInt.optional(),
   note: z.string().nullable().optional(),
-  // Optimistic lock: the revision the writer believes is current. A mismatch
+  // Issue optimistic lock: owner_revision from the current response. A mismatch
   // yields 409 Conflict; the client then retries off the fresh revision.
   expected_revision: z.number().int().positive().optional(),
   // Fold consecutive same-actor edits into the actor's latest version (D4).
@@ -57,3 +59,12 @@ export type DocumentContentVersionList = z.infer<typeof DocumentContentVersionLi
 export type RecordDocumentContentVersionRequest = z.infer<
   typeof RecordDocumentContentVersionRequestSchema
 >;
+
+export const DocumentContentChangedSchema = z.object({
+  workspace_id: z.string().min(1),
+  owner_type: z.enum(["issue", "attachment"]),
+  owner_id: z.string().min(1),
+  revision: z.number().int().positive(),
+});
+
+export type DocumentContentChangedPayload = z.infer<typeof DocumentContentChangedSchema>;

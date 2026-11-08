@@ -3,7 +3,11 @@
 import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { WorkspaceSlugProvider } from "@multica/core/paths";
+import { useDocModeStore } from "@multica/core/chat";
+import { documentContentVersionKeys } from "@multica/core/chat/document-content-version-queries";
+import type { ChatReference } from "./components/chat-input";
 import type { Agent } from "@multica/core/types";
 import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
@@ -25,7 +29,7 @@ vi.mock("./components/chat-message-list", () => ({
   ChatMessageSkeleton: () => <div>chat-message-skeleton</div>,
 }));
 vi.mock("./components/chat-input", () => ({
-  ChatInput: () => <div>chat-input</div>,
+  ChatInput: ({ references = [] }: { references?: ChatReference[] }) => <div>chat-input{references.map((reference) => <span key={reference.id}>{reference.content}</span>)}</div>,
 }));
 vi.mock("./components/chat-thread-list", () => ({
   ChatThreadList: ({
@@ -72,8 +76,10 @@ vi.mock("@multica/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.width < 768,
   useIsCompact: () => layout.width < 768,
 }));
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@multica/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/paths")>()),
   useRequiredWorkspaceSlug: () => "acme",
+  useWorkspaceSlug: () => "acme",
   useWorkspacePaths: () => ({ chat: () => "/acme/chat" }),
 }));
 const platformWorkspace = vi.hoisted(() => ({ slug: "acme" }));
@@ -107,34 +113,25 @@ const subscribeToStore = vi.hoisted(() => (cb: () => void) => {
   return () => storeListeners.delete(cb);
 });
 
+vi.mock("@multica/core/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/auth")>()),
+  useAuthStore: Object.assign(
+    (selector: (state: { user: null }) => unknown) => selector({ user: null }),
+    { getState: () => ({ user: null }) },
+  ),
+}));
+
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: mockToastError },
 }));
 
-vi.mock("@multica/core/chat", () => ({
+vi.mock("@multica/core/chat", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/chat")>()),
   useChatStore: Object.assign(
     (selector?: (s: { activeSessionId: string | null }) => unknown) =>
       selector ? selector(storeRef.current) : storeRef.current,
     { getState: () => storeRef.current },
   ),
-  useDocModeStore: (selector?: (state: any) => unknown) => {
-    const state: any = {
-      activeBySession: {},
-      workingBySession: {},
-      diffViewBySession: {},
-      openDoc: vi.fn(),
-      closeDoc: vi.fn(),
-      setWorking: vi.fn(),
-      setDiffView: vi.fn(),
-    };
-    return selector ? selector(state) : state;
-  },
-  selectActiveDocument: (sessionId: string | null) => (state: any) =>
-    sessionId ? state.activeBySession[sessionId] ?? null : null,
-  selectWorking: (sessionId: string | null) => (state: any) =>
-    sessionId ? state.workingBySession[sessionId] ?? false : false,
-  selectDiffView: (sessionId: string | null) => (state: any) =>
-    sessionId ? state.diffViewBySession[sessionId] ?? false : false,
 }));
 
 vi.mock("./components/use-chat-controller", async () => {
@@ -229,15 +226,24 @@ function renderPage(search: string, { strict = false } = {}) {
   // out of re-rendering, which would make the rerender-based tests vacuous.
   // ChatPage reads the client-only quick-actions pending marker via useQuery,
   // so the page needs a QueryClient like it has in the real app shell.
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
+  qc.setQueryDefaults(["workspaces", "list"], { staleTime: Infinity });
+  qc.setQueryData(["workspaces", "list"], [{ id: "ws-1", slug: "acme" }]);
+  qc.setQueryData(documentContentVersionKeys.current("ws-1", { kind: "issue", id: "issue-doc" }), {
+    id: "version-1", owner_type: "issue", owner_id: "issue-doc", revision: 1,
+    content: "Document passage", content_type: "text/markdown", content_url: null,
+  });
+  qc.setQueryData(documentContentVersionKeys.list("ws-1", { kind: "issue", id: "issue-doc" }), []);
   const makeUi = () => {
     const page = (
       <QueryClientProvider client={qc}>
+        <WorkspaceSlugProvider slug="acme">
         <I18nProvider locale="en" resources={TEST_RESOURCES}>
           <NavigationProvider value={navigation}>
             <ChatPage />
           </NavigationProvider>
         </I18nProvider>
+        </WorkspaceSlugProvider>
       </QueryClientProvider>
     );
     return strict ? <StrictMode>{page}</StrictMode> : page;
@@ -261,6 +267,8 @@ function renderPage(search: string, { strict = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.getSelection()?.removeAllRanges();
+  useDocModeStore.setState({ activeBySession: {}, workingBySession: {}, diffViewBySession: {} });
   storeRef.current = { activeSessionId: null };
   storeListeners.clear();
   availableAgentsRef.current = [agent];
@@ -502,4 +510,48 @@ describe("ChatPage responsive layout", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("chat-input")).toBeInTheDocument();
   });
+});
+
+
+describe("ChatPage document conversation", () => {
+  it("adds the open document to the same conversation input without closing its body", async () => {
+    useDocModeStore.getState().openDoc("session-1", { kind: "issue", id: "issue-doc", label: "Plan" });
+    const { rerender } = renderPage("session=session-1");
+    expect(await screen.findByText("Document passage")).toBeInTheDocument();
+    expect(screen.getByText("chat-input")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: enChat.doc_mode.add_to_chat }));
+    expect(screen.getByText(/```text/)).toHaveTextContent("Document passage");
+    expect(screen.getByRole("button", { name: enChat.doc_mode.close })).toBeInTheDocument();
+    expect(useDocModeStore.getState().activeBySession["session-1"]?.id).toBe("issue-doc");
+    rerender({ search: "session=session-2" });
+    expect(screen.queryByText(/```text/)).not.toBeInTheDocument();
+    rerender({ search: "session=session-1" });
+    expect(screen.getByText(/```text/)).toHaveTextContent("Document passage");
+    fireEvent.click(screen.getByRole("button", { name: enChat.doc_mode.close }));
+    expect(screen.getByText(/```text/)).toHaveTextContent("Document passage");
+    act(() => useDocModeStore.getState().openDoc("session-1", { kind: "issue", id: "issue-doc", label: "Plan" }));
+    expect(screen.getByText("Document passage")).toBeInTheDocument();
+  });
+  it("adds a selected passage through the real document surface", async () => {
+    useDocModeStore.getState().openDoc("session-1", { kind: "issue", id: "issue-doc", label: "Plan" });
+    renderPage("session=session-1");
+    const passage = await screen.findByText("Document passage");
+    const text = passage.firstChild;
+    if (!text) throw new Error("Missing document text node");
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 8);
+    range.getBoundingClientRect = () => new DOMRect(20, 20, 80, 20);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+    fireEvent.mouseUp(passage);
+    const buttons = screen.getAllByText(enChat.doc_mode.add_to_chat);
+    const selectionButton = buttons[1];
+    if (!selectionButton) throw new Error("Missing selection action");
+    fireEvent.click(selectionButton);
+    await waitFor(() => expect(screen.getByText(/```text/)).toHaveTextContent("Document"));
+    expect(screen.getByText(/```text/)).not.toHaveTextContent("Document passage");
+    expect(screen.getByText("Document passage")).toBeInTheDocument();
+  });
+
 });

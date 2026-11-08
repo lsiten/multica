@@ -26,19 +26,20 @@ const documentContentVersionOwnerType = "issue"
 // version. content and content_url are mutually exclusive: text versions carry
 // content, binary versions carry content_url.
 type DocumentContentVersionResponse struct {
-	ID          string  `json:"id"`
-	OwnerType   string  `json:"owner_type"`
-	OwnerID     string  `json:"owner_id"`
-	Revision    int64   `json:"revision"`
-	ContentType string  `json:"content_type"`
-	Content     *string `json:"content,omitempty"`
-	ContentURL  *string `json:"content_url,omitempty"`
-	SizeBytes   int64   `json:"size_bytes"`
-	ActorType   string  `json:"actor_type"`
-	ActorID     string  `json:"actor_id"`
-	Merged      bool    `json:"merged"`
-	Note        *string `json:"note,omitempty"`
-	CreatedAt   string  `json:"created_at"`
+	ID            string  `json:"id"`
+	OwnerType     string  `json:"owner_type"`
+	OwnerID       string  `json:"owner_id"`
+	Revision      int64   `json:"revision"`
+	OwnerRevision *int64  `json:"owner_revision,omitempty"`
+	ContentType   string  `json:"content_type"`
+	Content       *string `json:"content,omitempty"`
+	ContentURL    *string `json:"content_url,omitempty"`
+	SizeBytes     int64   `json:"size_bytes"`
+	ActorType     string  `json:"actor_type"`
+	ActorID       string  `json:"actor_id"`
+	Merged        bool    `json:"merged"`
+	Note          *string `json:"note,omitempty"`
+	CreatedAt     string  `json:"created_at"`
 }
 
 func textPtr(t pgtype.Text) *string {
@@ -201,6 +202,7 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 				writeError(w, http.StatusInternalServerError, "failed to commit content version")
 				return
 			}
+			h.publishDocumentContentVersion(merged)
 			writeJSON(w, http.StatusOK, documentContentVersionToResponse(merged, true))
 			return
 		}
@@ -238,6 +240,7 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 	   the requirement so the agent can initiate a change confirmation. Best-effort.
 	*/
 	h.maybeReopenRequirementOnEdit(r.Context(), issue)
+	h.publishDocumentContentVersion(row)
 	writeJSON(w, http.StatusCreated, documentContentVersionToResponse(row, false))
 }
 
@@ -404,7 +407,7 @@ func (h *Handler) RecordContentVersionFromIssueUpdate(ctx context.Context, issue
 			WorkspaceID: issue.WorkspaceID,
 		})
 		if lerr == nil && latest.ActorType == actorType && sameActor(latest.ActorID, actorUUID) {
-			_, uerr := q.UpdateDocumentContentVersionContent(ctx, db.UpdateDocumentContentVersionContentParams{
+			merged, uerr := q.UpdateDocumentContentVersionContent(ctx, db.UpdateDocumentContentVersionContentParams{
 				Content:     pgtype.Text{String: issue.Description.String, Valid: issue.Description.Valid},
 				ContentUrl:  pgtype.Text{},
 				SizeBytes:   int64(len(issue.Description.String)),
@@ -416,6 +419,9 @@ func (h *Handler) RecordContentVersionFromIssueUpdate(ctx context.Context, issue
 				Revision:    latest.Revision,
 				WorkspaceID: issue.WorkspaceID,
 			})
+			if uerr == nil {
+				h.publishDocumentContentVersion(merged)
+			}
 			return uerr
 		}
 	}
@@ -428,7 +434,7 @@ func (h *Handler) RecordContentVersionFromIssueUpdate(ctx context.Context, issue
 	if lerr == nil {
 		nextRev = latest.Revision + 1
 	}
-	if _, err := q.InsertDocumentContentVersion(ctx, db.InsertDocumentContentVersionParams{
+	row, err := q.InsertDocumentContentVersion(ctx, db.InsertDocumentContentVersionParams{
 		WorkspaceID: issue.WorkspaceID,
 		OwnerType:   documentContentVersionOwnerType,
 		OwnerID:     issue.ID,
@@ -440,9 +446,11 @@ func (h *Handler) RecordContentVersionFromIssueUpdate(ctx context.Context, issue
 		ActorType:   actorType,
 		ActorID:     actorUUID,
 		Note:        noteField,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("insert content version: %w", err)
 	}
+	h.publishDocumentContentVersion(row)
 	return nil
 }
 
@@ -528,6 +536,7 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 				writeError(w, http.StatusInternalServerError, "failed to commit content version")
 				return
 			}
+			h.publishDocumentContentVersion(merged)
 			writeJSON(w, http.StatusOK, documentContentVersionToResponse(merged, true))
 			return
 		}
@@ -561,6 +570,7 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusInternalServerError, "failed to commit content version")
 		return
 	}
+	h.publishDocumentContentVersion(row)
 	writeJSON(w, http.StatusCreated, documentContentVersionToResponse(row, false))
 }
 
@@ -699,7 +709,7 @@ func (h *Handler) GetDocumentContentVersionLatest(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
-	h.writeLatestContentVersion(w, r, documentContentVersionOwnerType, issue.ID, issue.WorkspaceID)
+	h.writeLatestContentVersion(w, r, documentContentVersionOwnerType, issue.ID, issue.WorkspaceID, &issue)
 }
 
 // GetDocumentContentVersionLatestForAttachment returns the most recent (current)
@@ -713,12 +723,12 @@ func (h *Handler) GetDocumentContentVersionLatestForAttachment(w http.ResponseWr
 	if !ok {
 		return
 	}
-	h.writeLatestContentVersion(w, r, documentContentVersionAttachmentType, att.ID, att.WorkspaceID)
+	h.writeLatestContentVersion(w, r, documentContentVersionAttachmentType, att.ID, att.WorkspaceID, nil)
 }
 
 // writeLatestContentVersion serves the current content version for one owner,
 // shared by the issue and attachment read paths.
-func (h *Handler) writeLatestContentVersion(w http.ResponseWriter, r *http.Request, ownerType string, ownerID, workspaceID pgtype.UUID) {
+func (h *Handler) writeLatestContentVersion(w http.ResponseWriter, r *http.Request, ownerType string, ownerID, workspaceID pgtype.UUID, issue *db.Issue) {
 	row, err := h.Queries.GetLatestDocumentContentVersion(r.Context(), db.GetLatestDocumentContentVersionParams{
 		OwnerType:   ownerType,
 		OwnerID:     ownerID,
@@ -732,7 +742,12 @@ func (h *Handler) writeLatestContentVersion(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to load content version")
 		return
 	}
-	writeJSON(w, http.StatusOK, documentContentVersionToResponse(row, false))
+	response := documentContentVersionToResponse(row, false)
+	if issue != nil {
+		response.OwnerRevision = &issue.Revision
+		response.Content = textPtr(issue.Description)
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) nextContentRevision(q *db.Queries, ctx context.Context, ownerType string, ownerID, workspaceID pgtype.UUID) (int64, error) {

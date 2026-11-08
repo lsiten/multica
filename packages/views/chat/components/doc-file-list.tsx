@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "@multica/ui/icons";
+import { ChevronRight, Eye, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "@multica/ui/icons";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { useLocalDirectoryStore } from "@multica/core/chat/local-directory-store";
@@ -17,6 +17,7 @@ import { fileIcon } from "../../editor/utils/file-icon";
 import { LocalReviewIndex } from "../../issues/components/local-review-index";
 import { GroupChatManagement } from "./group-chat-management";
 import { Button } from "@multica/ui/components/ui/button";
+import { IconButton } from "@multica/ui/components/common/icon-button";
 import { useChatFileDirectory } from "./use-chat-file-directory";
 import { ChatDirectorySelector } from "./chat-directory-selector";
 
@@ -378,11 +379,26 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           {projectID && (projectIssues?.issues ?? []).length > 0 ? (
             <ul className="divide-y">
               {(projectIssues?.issues ?? []).map((issue: Issue) => (
-                <li key={issue.id}>
-                  <AppLink href={workspaceSlug ? paths.workspace(workspaceSlug).issueDetail(issue.identifier || issue.id) : `/issues/${issue.identifier || issue.id}`} className="block px-3 py-2 hover:bg-accent/50">
+                <li key={issue.id} className="flex items-center pr-2">
+                  <AppLink href={workspaceSlug ? paths.workspace(workspaceSlug).issueDetail(issue.identifier || issue.id) : `/issues/${issue.identifier || issue.id}`} className="min-w-0 flex-1 px-3 py-2 hover:bg-accent/50">
                     <span className="block truncate text-caption font-medium">{issue.identifier}</span>
                     <span className="block truncate text-body">{issue.title}</span>
                   </AppLink>
+                  <IconButton
+                    label={`${t(($) => $.doc_mode.preview)} ${issue.title}`}
+                    className="shrink-0"
+                    disabled={!sessionId}
+                    onClick={() => openDoc(sessionId ?? "", {
+                      kind: "issue",
+                      id: issue.id,
+                      label: issue.title,
+                      contentType: "text/markdown",
+                      sessionId: sessionId ?? undefined,
+                      projectId: projectID,
+                    })}
+                  >
+                    <Eye />
+                  </IconButton>
                 </li>
               ))}
             </ul>

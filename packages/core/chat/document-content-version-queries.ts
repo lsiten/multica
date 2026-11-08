@@ -25,6 +25,8 @@ import type { DocumentRef } from "./doc-mode-store";
 // projections.
 export const documentContentVersionKeys = {
   all: (wsId: string) => ["document-content-versions", wsId] as const,
+  document: (wsId: string, ref: DocumentRef) =>
+    [...documentContentVersionKeys.all(wsId), ref.kind, ref.id] as const,
   current: (wsId: string, ref: DocumentRef) =>
     [...documentContentVersionKeys.all(wsId), ref.kind, ref.id, "current"] as const,
   list: (wsId: string, ref: DocumentRef) =>
@@ -125,8 +127,11 @@ export function useRecordDocumentContentVersion(wsId: string) {
           ? api.recordIssueContentVersion(ref.id, input)
           : Promise.reject(new Error("workspace files are read-only"));
     },
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: documentContentVersionKeys.all(wsId) });
+    onSuccess: (_result, { ref }) => {
+      client.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, ref) });
+      if (ref.kind === "attachment") {
+        client.invalidateQueries({ queryKey: ["attachment-text-content", wsId, ref.id] });
+      }
     },
   });
 }
@@ -151,8 +156,11 @@ export function useRollbackDocumentContentVersion(wsId: string) {
           ? api.rollbackIssueContentVersion(ref.id, revision, input)
           : Promise.reject(new Error("workspace files are read-only"));
     },
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: documentContentVersionKeys.all(wsId) });
+    onSuccess: (_result, { ref }) => {
+      client.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, ref) });
+      if (ref.kind === "attachment") {
+        client.invalidateQueries({ queryKey: ["attachment-text-content", wsId, ref.id] });
+      }
     },
   });
 }

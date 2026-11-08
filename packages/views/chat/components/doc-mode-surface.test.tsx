@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
@@ -9,6 +9,7 @@ import enChat from "../../locales/en/chat.json";
 import { useDocModeStore } from "@multica/core/chat";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import { DocModeSurface } from "./doc-mode-surface";
+import { applyReviewFileEdit } from "../../platform/local-review-pages";
 import { ApiError, setApiInstance } from "@multica/core/api";
 
 const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
@@ -49,6 +50,7 @@ vi.mock("../../platform/local-review-pages", async () => {
   const actual = await vi.importActual<typeof import("../../platform/local-review-pages")>("../../platform/local-review-pages");
   return {
     ...actual,
+    applyReviewFileEdit: vi.fn().mockResolvedValue({ conflict: false }),
     // Only the "file_content" action is exercised for a workspace_file doc; the
     // content versions hooks are disabled (ref.kind !== "workspace_file"), so no
     // other review action is requested here.
@@ -165,9 +167,9 @@ it("previews a project directory file without a run and keeps it read-only", asy
   expect(screen.queryByRole("button", { name: enChat.doc_mode.edit })).not.toBeInTheDocument();
 });
 
-function renderSurface() {
+function renderSurface(client = newClient()) {
   return render(
-    <QueryClientProvider client={newClient()}>
+    <QueryClientProvider client={client}>
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
         <DocModeSurface wsId="ws-1" sessionId="session-1" />
       </I18nProvider>
@@ -176,6 +178,11 @@ function renderSurface() {
 }
 
 beforeEach(() => {
+  vi.mocked(applyReviewFileEdit).mockClear();
+  cvs.current = null;
+  cvs.versions = [];
+  cvs.record = null;
+  authState.user = null;
   useDocModeStore.setState({
     activeBySession: {},
     workingBySession: {},
@@ -208,6 +215,22 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
     renderSurface();
     // The workspace-file content query resolves through the mocked transport.
     await screen.findByText("hello");
+  });
+
+  it("merges against the edit-start body after the workspace file refreshes", async () => {
+    const client = newClient();
+    openWorkspaceDoc();
+    renderSurface(client);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByTestId("doc-edit-input"), { target: { value: "my file draft" } });
+    session.current.content = { ...session.current.content, text: "other writer" };
+    await act(async () => { await client.invalidateQueries({ queryKey: ["chat-workspace-file-content"] }); });
+    act(() => useDocModeStore.getState().setWorking("session-1", true));
+    expect(screen.getByTestId("doc-edit-input")).toHaveValue("my file draft");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(applyReviewFileEdit).toHaveBeenCalledWith(expect.objectContaining({
+      edit_base: "hello", edit_new: "my file draft",
+    })));
   });
 
   it("shows a truncation notice with the full size when the preview is cut", async () => {
@@ -246,7 +269,8 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
 });
 
 describe("DocModeSurface (image attachment preview)", () => {
-  it("uses the attachment record from the file projection for native image preview", async () => {
+  it.each([null, "https://cdn.example.test/updated.png"])("previews the latest binary version, falling back to the upload when current URL is %s", async (currentUrl) => {
+    cvs.current = currentUrl ? { content: null, content_url: currentUrl, content_type: "image/png", revision: 2 } : null;
     session.current.files = {
       ...session.current.files,
       attachments: [{
@@ -274,9 +298,12 @@ describe("DocModeSurface (image attachment preview)", () => {
       contentType: "image/png",
       sessionId: "session-1",
     });
-    renderSurface();
+    const client = newClient();
+    renderSurface(client);
+    await waitFor(() => expect(client.getQueryData(["chat", "ws-1", "session-files", "session-1"])).toMatchObject({ attachments: [{ id: "att-image" }] }));
+    act(() => useDocModeStore.getState().setWorking("session-1", true));
     const image = await screen.findByRole("img", { name: "board.png" });
-    expect(image).toHaveAttribute("src", "https://cdn.example.test/board.png");
+    expect(image).toHaveAttribute("src", currentUrl ?? "https://cdn.example.test/board.png");
   });
 });
 
@@ -381,6 +408,47 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     });
   });
 
+  it("saves with the issue owner revision when it differs from the history revision", async () => {
+    cvs.record = vi.fn(async () => cvs.current);
+    cvs.current = { ...cvs.current, revision: 1, owner_revision: 8 };
+    openIssueDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByText("Edit"));
+    fireEvent.change(screen.getByTestId("doc-edit-input"), { target: { value: "# Updated" } });
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(cvs.record).toHaveBeenCalledWith({
+      content_type: "text/markdown", content: "# Updated", expected_revision: 8,
+    }));
+  });
+
+  it("keeps the edit-start revision when a refreshed document arrives before the first save", async () => {
+    cvs.record = vi.fn(async () => cvs.current);
+    openIssueDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByText("Edit"));
+    fireEvent.change(screen.getByTestId("doc-edit-input"), { target: { value: "# My draft" } });
+    cvs.current = { ...cvs.current, revision: 2, content: "# Other writer" };
+    act(() => useDocModeStore.getState().setWorking("session-1", true));
+    expect(screen.getByTestId("doc-edit-input")).toHaveValue("# My draft");
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(cvs.record).toHaveBeenCalledWith({
+      content_type: "text/markdown", content: "# My draft", expected_revision: 1,
+    }));
+  });
+
+  it("renders additions and removals for the selected historical document", async () => {
+    cvs.current = { ...cvs.current, revision: 3, content: "common\ncurrent line" };
+    cvs.versions = [cvs.current, { ...cvs.current, id: "cv-2", revision: 2, content: "common\nprevious line" }, { ...cvs.current, id: "cv-1", revision: 1, content: "common\nfirst line" }];
+    openIssueDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "Diff" }));
+    expect(screen.getByText(/previous line/)).toHaveTextContent("- previous line");
+    expect(screen.getByText(/current line/)).toHaveTextContent("+ current line");
+    fireEvent.click(screen.getByRole("button", { name: "v1" }));
+    expect(screen.queryByText(/previous line/)).not.toBeInTheDocument();
+    expect(screen.getByText(/first line/)).toHaveTextContent("- first line");
+  });
+
   it("surfaces a 409 conflict as a reload prompt without clobbering the draft", async () => {
     cvs.record = vi.fn(async () => {
       throw new ApiError("conflict", 409, "Conflict");
@@ -395,5 +463,9 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     fireEvent.click(screen.getByText("Save"));
     // A 409 keeps the draft open and prompts the user to reload (fail-closed).
     await screen.findByText(enChat.doc_mode.changed_reload);
+    expect(screen.getByTestId("doc-edit-input")).toHaveValue("# Edited");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(cvs.record).toHaveBeenCalledTimes(1);
   });
 });

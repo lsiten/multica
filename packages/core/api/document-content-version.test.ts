@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiClient } from "./client";
 import {
@@ -94,6 +96,18 @@ describe("ApiClient document content versions", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.example.test/api/issues/issue-1/content-versions/current",
     );
+  });
+
+  it("preserves the owner CAS revision independently of the history revision", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse({ ...VALID_VERSION, owner_revision: 9 })));
+    const client = new ApiClient("https://api.example.test");
+    expect(await client.getIssueContentVersionCurrent("issue-1")).toMatchObject({ revision: 3, owner_revision: 9 });
+  });
+
+  it.each([0, -1, "9", null])("rejects malformed owner_revision %s", async (ownerRevision) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse({ ...VALID_VERSION, owner_revision: ownerRevision })));
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.getIssueContentVersionCurrent("issue-1")).rejects.toThrow("Malformed document content version response");
   });
 
   it("records an issue version and returns the created row", async () => {

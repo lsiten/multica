@@ -9,6 +9,7 @@ import { useIsCompact } from "@multica/ui/hooks/use-mobile";
 import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@multica/core/paths";
 import { getCurrentSlug } from "@multica/core/platform";
 import { useChatStore } from "@multica/core/chat";
+import { createSafeId } from "@multica/core/utils";
 import { chatQuickActionsPendingOptions } from "@multica/core/chat/queries";
 import { useRegenerateChatQuickActions } from "@multica/core/chat/mutations";
 import { useQuickActionsPendingTimeout } from "@multica/core/chat/use-quick-actions-pending-timeout";
@@ -23,7 +24,7 @@ import { ListColumn } from "../layout/list-column";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { ChatMessageList, ChatMessageSkeleton } from "./components/chat-message-list";
-import { ChatInput } from "./components/chat-input";
+import { ChatInput, type ChatReference } from "./components/chat-input";
 import { ChatQueue } from "./components/chat-queue";
 import { ChatThreadList } from "./components/chat-thread-list";
 import { ChatSessionHeader } from "./components/chat-session-header";
@@ -71,6 +72,9 @@ export function ChatPage() {
   // can rehydrate the store before this page observes the destination URL.
   const isCurrentChatRoute = pathname === wsPaths.chat();
   const isCompact = useIsCompact();
+  const [filesOpen, setFilesOpen] = useState<boolean | null>(null);
+  const showFiles = filesOpen ?? !isCompact;
+  const [referencesBySession, setReferencesBySession] = useState<Record<string, ChatReference[]>>({});
 
   const c = useChatController({
     isActive: isCurrentChatRoute && getCurrentSlug() === workspaceSlug,
@@ -300,14 +304,37 @@ export function ChatPage() {
   // `@container`: the conversation column's gutter (CHAT_GUTTER) widens with
   // THIS pane, which the user resizes independently of the browser window.
   const queuedTasks = c.pendingTask?.queued_tasks ?? [];
-  // Doc mode (FR-CHAT-02): when a document is open for this session, the detail
-  // area shows the document full-area and hides the message body; a generic
-  // agent-working indicator floats over it (D7). The store is session-keyed and
-  // persisted, so switching sessions restores each session's open document.
   const activeDoc = useDocModeStore(selectActiveDocument(c.activeSessionId));
   useDocWorkingIndicator(c.activeSessionId ?? "", !!c.pendingTaskId);
+  useEffect(() => {
+    if (isCompact && activeDoc) setFilesOpen(false);
+  }, [isCompact, activeDoc]);
+  const addDocumentReference = (content: string) => {
+    const sessionId = c.activeSessionId;
+    if (!sessionId || !activeDoc) return;
+    const reference = {
+      id: createSafeId(),
+      label: activeDoc.label ?? activeDoc.relativePath ?? t(($) => $.doc_mode.issue),
+      content,
+    };
+    setReferencesBySession((previous) => ({
+      ...previous,
+      [sessionId]: [...(previous[sessionId] ?? []), reference],
+    }));
+  };
+  const removeReference = (id: string) => {
+    const sessionId = c.activeSessionId ?? "";
+    setReferencesBySession((previous) => ({
+      ...previous,
+      [sessionId]: (previous[sessionId] ?? []).filter((reference) => reference.id !== id),
+    }));
+  };
+  const clearReferences = () => {
+    const sessionId = c.activeSessionId ?? "";
+    setReferencesBySession((previous) => ({ ...previous, [sessionId]: [] }));
+  };
   const conversation = (
-    <div className="flex flex-1 flex-col min-h-0 @container">
+    <div className="flex min-w-0 flex-1 flex-col min-h-0 @container">
       {c.currentSession && (
         <ChatSessionHeader
           leading={
@@ -329,9 +356,16 @@ export function ChatPage() {
           onArchive={handleArchive}
         />
       )}
-      <div className="flex min-h-0 flex-1">
       {c.currentSession && (
-        <div className="w-72 shrink-0 overflow-hidden border-r">
+        <div className="flex shrink-0 items-center border-b px-3 py-1">
+          <Button variant={showFiles ? "secondary" : "ghost"} size="sm" aria-expanded={showFiles} onClick={() => setFilesOpen(!showFiles)}>
+            {t(($) => $.doc_file_list.toggle)}
+          </Button>
+        </div>
+      )}
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+      {c.currentSession && showFiles && (
+        <div className="absolute inset-y-0 left-0 z-10 w-72 max-w-full overflow-hidden border-r bg-background @3xl:static @3xl:z-auto @3xl:shrink-0">
           <DocModeFileList
             wsId={c.wsId}
             sessionId={c.activeSessionId}
@@ -340,11 +374,16 @@ export function ChatPage() {
           />
         </div>
       )}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col @container">
       {activeDoc ? (
-        <DocModeSurface wsId={c.wsId} sessionId={c.activeSessionId ?? ""} />
-      ) : (
-      <>
-      {c.showSkeleton ? (
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <DocModeSurface
+            wsId={c.wsId}
+            sessionId={c.activeSessionId ?? ""}
+            onAddToChat={addDocumentReference}
+          />
+        </div>
+      ) : c.showSkeleton ? (
         <ChatMessageSkeleton />
       ) : c.hasMessages ? (
         <ChatMessageList
@@ -410,6 +449,9 @@ export function ChatPage() {
       />
 
       <ChatInput
+        references={referencesBySession[c.activeSessionId ?? ""] ?? []}
+        onRemoveReference={removeReference}
+        onReferencesConsumed={clearReferences}
         onSend={c.handleSend}
         restoreDraftRequest={c.restoreDraftRequest}
         conversationStarterRequest={c.conversationStarterRequest}
@@ -437,8 +479,7 @@ export function ChatPage() {
         isProjectUpdating={c.isProjectUpdating}
         focusRequest={c.focusInputRequest}
       />
-      </>
-      )}
+      </div>
       </div>
     </div>
   );

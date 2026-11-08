@@ -244,6 +244,26 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     expect(session.current.directoryRequests).toEqual([".","00-项目管理"]);
   });
 
+  it("opens an issue preview in the current chat while retaining its navigation link", async () => {
+    const issue: Issue = {
+      id: "issue-preview", workspace_id: "ws-1", project_id: "proj-1", number: 1,
+      identifier: "TEST-1", title: "Document to discuss", description: "body",
+      status: "todo", status_category: "unstarted", priority: "none",
+      assignee_type: null, assignee_id: null, creator_type: "member", creator_id: "member-1",
+      parent_issue_id: null, position: 1, stage: null, start_date: null, due_date: null,
+      metadata: {}, properties: {}, created_at: "2026-01-01", updated_at: "2026-01-01",
+    };
+    listIssues.mockResolvedValue({ issues: [issue], total: 1 });
+    renderList(newClient());
+    await screen.findByText("Acme");
+    fireEvent.click(screen.getByRole("tab", { name: enChat.doc_file_list.issues }));
+    fireEvent.click(await screen.findByRole("button", { name: `${enChat.doc_mode.preview} ${issue.title}` }));
+    expect(useDocModeStore.getState().activeBySession["session-1"]).toMatchObject({
+      kind: "issue", id: issue.id, sessionId: "session-1", projectId: "proj-1", label: issue.title,
+    });
+    expect(screen.getByText(issue.title).closest("a")).toHaveAttribute("href", "/issues/TEST-1");
+  });
+
   it("requests open project issues and removes a blocked issue when it completes", async () => {
     // Given a completed issue and a blocked issue in the selected project.
     const blocked: Issue = {

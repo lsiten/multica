@@ -1,3 +1,4 @@
+import type { DocumentContentChangedPayload } from "../api/document-content-version";
 import type { Issue, IssueMetadata, IssueReaction } from "./issue";
 import type { IssueProperty, IssuePropertyValues } from "./property";
 import type { Agent } from "./agent";
@@ -11,6 +12,7 @@ import type { Label } from "./label";
 // WebSocket event types (matching Go server protocol/events.go)
 export type WSEventType =
   | "application:changed"
+  | "document_content:changed"
   | "issue:created"
   | "issue:updated"
   | "issue_attachments:changed"
@@ -647,6 +649,7 @@ export interface ChatSessionCreatedPayload {
  * forgets the payload shape — that's the whole point.
  */
 export interface WSEventPayloadMap {
+  "document_content:changed": DocumentContentChangedPayload;
   "application:changed": { application_id?: string; instance_id?: string; operation_id?: string; workspace_id: string };
   "human-request:changed": { request_id: string; issue_id?: string; chat_session_id?: string; project_id?: string };
   "issue:created": IssueCreatedPayload;

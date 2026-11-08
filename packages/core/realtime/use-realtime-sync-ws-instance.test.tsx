@@ -9,6 +9,7 @@ import type { WSClient } from "../api/ws-client";
 import { EMPTY_ISSUE_VIEW_PREFERENCE } from "../api/schemas";
 import { defaultStorage } from "../platform/storage";
 import { issueKeys } from "../issues/queries";
+import { documentContentVersionKeys } from "../chat/document-content-version-queries";
 import { chatKeys } from "../chat/queries";
 import { runtimeKeys } from "../runtimes/queries";
 import { applicationKeys } from "../applications/queries";
@@ -81,9 +82,62 @@ describe("useRealtimeSync — ws instance change", () => {
   let invalidateSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
     stores = createStores();
     invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+  });
+
+  it.each(["session-1", undefined])("refreshes the completed run's document bodies for session %s without invalidating other sessions", async (chatSessionId) => {
+    const ws = createMockWs();
+    const fileKey = ["chat-workspace-file-content", "ws-1", "session-1", "file-1", "task-1"];
+    const otherFileKey = ["chat-workspace-file-content", "ws-1", "session-2", "file-2", "task-2"];
+    const currentKey = documentContentVersionKeys.current("ws-1", { kind: "issue", id: "issue-1" });
+    const listKey = documentContentVersionKeys.list("ws-1", { kind: "issue", id: "issue-1" });
+    for (const key of [fileKey, otherFileKey, currentKey, listKey]) qc.setQueryData(key, "old body");
+    const observer = new QueryObserver(qc, { queryKey: fileKey, queryFn: async () => "new body", staleTime: Infinity });
+    const unsubscribe = observer.subscribe(() => {});
+    renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+    const handler = vi.mocked(ws.on).mock.calls.find(([event]) => event === "task:completed")?.[1];
+    if (!handler) throw new Error("Missing completed handler");
+    handler({ task_id: "task-1", issue_id: "issue-1", chat_session_id: chatSessionId, agent_id: "agent-1", status: "completed" });
+    await waitFor(() => expect(qc.getQueryData(fileKey)).toBe("new body"));
+    unsubscribe();
+    expect(qc.getQueryState(currentKey)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(otherFileKey)?.isInvalidated).toBe(false);
+  });
+
+  it.each(["issue", "attachment"] as const)("refreshes only the committed %s document from a metadata event", async (kind) => {
+    const ws = createMockWs();
+    const key = documentContentVersionKeys.current("ws-1", { kind, id: "doc-1" });
+    const listKey = documentContentVersionKeys.list("ws-1", { kind, id: "doc-1" });
+    const otherKey = documentContentVersionKeys.current("ws-1", { kind, id: "doc-2" });
+    for (const queryKey of [key, listKey, otherKey, ["attachment-text-content", "ws-1", "doc-1"]]) qc.setQueryData(queryKey, "old");
+    const observer = new QueryObserver(qc, { queryKey: key, queryFn: async () => "committed", staleTime: Infinity });
+    const unsubscribe = observer.subscribe(() => {});
+    renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+    const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
+    if (!onAny) throw new Error("Missing event handler");
+    onAny({ type: "document_content:changed", payload: { workspace_id: "ws-1", owner_type: kind, owner_id: "doc-1", revision: 2 } });
+    await waitFor(() => expect(qc.getQueryData(key)).toBe("committed"));
+    unsubscribe();
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(otherKey)?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(["attachment-text-content", "ws-1", "doc-1"])?.isInvalidated).toBe(kind === "attachment");
+  });
+
+  it.each([
+    { workspace_id: "ws-2", owner_type: "issue", owner_id: "doc-1", revision: 2 },
+    { workspace_id: "ws-1", owner_type: "issue", owner_id: "doc-1", revision: 0 },
+  ])("ignores stale-scope or malformed document events %j", (payload) => {
+    const ws = createMockWs();
+    const key = documentContentVersionKeys.current("ws-1", { kind: "issue", id: "doc-1" });
+    qc.setQueryData(key, "current");
+    renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+    const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
+    if (!onAny) throw new Error("Missing event handler");
+    onAny({ type: "document_content:changed", payload });
+    expect(qc.getQueryState(key)?.isInvalidated).toBe(false);
   });
 
   it("skips invalidation on first non-null ws instance", () => {
