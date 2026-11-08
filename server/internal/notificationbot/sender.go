@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,9 +22,8 @@ import (
 var ErrDelivery = errors.New("notification provider rejected the message or is unavailable")
 
 // ErrPermanent is returned only for provider responses that a retry cannot
-// change (an HTTP 4xx: an invalid webhook, token, recipient, or malformed
-// request). The worker must not retry these; transient failures (network,
-// timeout, 5xx) keep returning ErrDelivery so they can be retried.
+// change, such as an invalid webhook, token, recipient, or malformed request.
+// Request timeouts, rate limits and server failures remain retryable.
 var ErrPermanent = errors.New("notification provider rejected the message permanently")
 
 // Sender pins outbound hosts, rejects redirects and bounds calls. Client is an
@@ -127,11 +127,11 @@ func (s Sender) Send(ctx context.Context, config Config, message string) error {
 		return ErrDelivery
 	}
 	defer response.Body.Close()
-	if response.StatusCode >= 400 && response.StatusCode < 500 {
+	if response.StatusCode >= 400 && response.StatusCode < 500 && response.StatusCode != http.StatusRequestTimeout && response.StatusCode != http.StatusTooManyRequests {
 		return ErrPermanent
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return ErrDelivery
+		return &deliveryRetryError{seconds: retryAfterSeconds(response.Header.Get("Retry-After"), now)}
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 65537))
 	if err != nil || len(raw) > 65536 {
@@ -169,4 +169,24 @@ func (s Sender) Send(ctx context.Context, config Config, message string) error {
 		return ErrConfig
 	}
 	return ErrDelivery
+}
+
+// deliveryRetryError carries only a bounded delay, never provider response text.
+type deliveryRetryError struct {
+	seconds int32
+}
+
+func (e *deliveryRetryError) Error() string { return ErrDelivery.Error() }
+func (e *deliveryRetryError) Unwrap() error { return ErrDelivery }
+
+func retryAfterSeconds(value string, now time.Time) int32 {
+	const maxRetrySeconds = 3600
+	if seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+		return int32(min(max(seconds, 0), maxRetrySeconds))
+	}
+	if deadline, err := http.ParseTime(value); err == nil {
+		seconds := math.Ceil(deadline.Sub(now).Seconds())
+		return int32(min(max(seconds, 0), maxRetrySeconds))
+	}
+	return 0
 }

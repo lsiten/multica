@@ -86,6 +86,7 @@ func (w *Worker) deliver(ctx context.Context, delivery db.NotificationBotDeliver
 		return err
 	}
 	finished := errors.Is(err, pgx.ErrNoRows)
+	retrySeconds := 60 * delivery.Attempts
 	if !finished {
 		var preferences map[string]string
 		if err := json.Unmarshal(target.Preferences, &preferences); err != nil {
@@ -125,13 +126,17 @@ func (w *Worker) deliver(ctx context.Context, delivery db.NotificationBotDeliver
 		if err := w.Queries.RecordNotificationBotResult(ctx, db.RecordNotificationBotResultParams{ID: delivery.BotID, LastError: lastError}); err != nil {
 			return err
 		}
-		// A permanent provider rejection (4xx) cannot be fixed by retrying, so
+		// A permanent provider rejection cannot be fixed by retrying, so
 		// finish instead of scheduling another attempt; transient failures keep
 		// retrying up to the attempt ceiling.
 		finished = sendErr == nil || errors.Is(sendErr, ErrPermanent) || delivery.Attempts >= 6
+		var retry *deliveryRetryError
+		if !finished && errors.As(sendErr, &retry) {
+			retrySeconds = max(retrySeconds, retry.seconds)
+		}
 	}
 	return w.Queries.FinishNotificationBotDelivery(ctx, db.FinishNotificationBotDeliveryParams{
-		ID: delivery.ID, Attempts: delivery.Attempts, Finished: finished, RetrySeconds: 60 * delivery.Attempts,
+		ID: delivery.ID, Attempts: delivery.Attempts, Finished: finished, RetrySeconds: retrySeconds,
 	})
 }
 

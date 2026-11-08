@@ -49,16 +49,13 @@ func TestSenderChecksProviderAcknowledgement(t *testing.T) {
 	}
 }
 
-// TestSenderClassifiesPermanentErrors locks GAP-07: an HTTP 4xx is a permanent
-// provider rejection (invalid webhook/token/recipient) that a retry cannot fix,
-// so Send must return ErrPermanent; a 5xx stays a transient ErrDelivery so the
-// worker can retry it.
+// Provider timeouts and rate limits remain retryable alongside server failures.
 func TestSenderClassifiesPermanentErrors(t *testing.T) {
 	config, err := ParseConfig("telegram", Credentials{BotToken: "123:fixture", ChatID: "1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, status := range []int{400, 401, 403, 404, 429} {
+	for _, status := range []int{400, 401, 403, 404} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
 			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
@@ -69,7 +66,7 @@ func TestSenderClassifiesPermanentErrors(t *testing.T) {
 			}
 		})
 	}
-	for _, status := range []int{500, 502, 503} {
+	for _, status := range []int{408, 429, 500, 502, 503} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
 			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
