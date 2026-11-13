@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Bot, MessageSquare, Plus } from "@multica/ui/icons";
+import { ArrowLeft, Bot, MessageSquare, Plus, Users } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { Button } from "@multica/ui/components/ui/button";
 import { IconButton } from "@multica/ui/components/common/icon-button";
@@ -29,7 +29,7 @@ import { ChatQueue } from "./components/chat-queue";
 import { ChatThreadList } from "./components/chat-thread-list";
 import { ChatSessionHeader } from "./components/chat-session-header";
 import { EmptyState } from "./components/chat-empty-state";
-import { NewChatButton } from "./components/new-chat-button";
+import { AgentPicker, NewChatButton } from "./components/new-chat-button";
 import { useChatController } from "./components/use-chat-controller";
 import { OfflineBanner } from "./components/offline-banner";
 import { NoAgentBanner } from "./components/no-agent-banner";
@@ -183,6 +183,12 @@ export function ChatPage() {
     setComposingNew(true);
   };
 
+  const startNewGroupChat = (agents: Agent[], title?: string) => {
+    supersedeAgentIntent();
+    const [lead] = agents;
+    if (lead) c.handleStartNewGroupChat(lead, agents, title);
+  };
+
   const changeProjectContext = (projectId: string | null) => {
     if (projectId === c.activeProjectId) return;
     c.handleProjectChange(projectId);
@@ -257,9 +263,31 @@ export function ChatPage() {
     />
   );
 
+  const newGroupChatButton = (
+    <AgentPicker
+      agents={c.availableAgents}
+      userId={c.user?.id}
+      onSelect={() => undefined}
+      onSelectMany={startNewGroupChat}
+      multiSelect
+      side="bottom"
+      align="start"
+      triggerRender={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full text-muted-foreground"
+          aria-label={t(($) => $.window.new_group_chat_tooltip)}
+        />
+      }
+      trigger={<Users />}
+    />
+  );
+
   const listHeader = (
     <PanelHeader as="h1" title={t(($) => $.page.title)} leading={<CollapsedNavTrigger />}>
       {newChatButton}
+      {newGroupChatButton}
     </PanelHeader>
   );
 

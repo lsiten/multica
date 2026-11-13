@@ -20,8 +20,15 @@ import type {
   DaemonStatus,
   DaemonPrefs,
   LocalRuntimeProbe,
+  ManagedWorktree,
+  ManagedWorktreeCleanupResult,
+  DaemonProcessOverviewEntry,
+  DaemonProcessOverviewResult,
+  DaemonProcessOverviewTotal,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
+import { requestReviewInventory } from "./local-review-inventory";
+import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
 import { parseDaemonHealth, type HealthPayload } from "./daemon-health";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
@@ -33,6 +40,7 @@ import {
 } from "./update-install-gate";
 import {
   deriveProfileName,
+  healthPortForProfile,
   profileArgs,
   profileConfigPath,
   profileDir,
@@ -214,6 +222,41 @@ async function fetchProfileHealth(
   return probeProfileHealth(active.name, (port) =>
     fetchHealthAtPort(port, timeoutMs),
   );
+}
+
+async function fetchWorktreeManager(
+  path: string,
+  init?: RequestInit,
+  selectedProfile?: ActiveProfile,
+  timeoutMs = 120_000,
+): Promise<unknown> {
+  const active = selectedProfile ?? await ensureActiveProfile();
+  if (!active) throw new Error("The daemon profile is not ready yet.");
+  const config = await readProfileConfig(active.name);
+  if (typeof config.token !== "string" || !config.token) {
+    throw new Error("Sign in before managing worktrees.");
+  }
+  const portRecord = await readDaemonPortRecord(active.name);
+  const port = portRecord?.port ?? healthPortForProfile(active.name);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      ...init,
+      headers: { ...init?.headers, Authorization: `Bearer ${config.token}`, "X-Multica-Profile": active.name },
+      signal: init?.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
+    });
+    if (response.status === 404) throw new Error("Update and restart the daemon to manage worktrees.");
+    if (!response.ok) throw new Error(await response.text());
+    if (response.status === 204) return null;
+    const body = await response.json();
+    if (path === "/worktrees" && body && typeof body === "object" && Array.isArray((body as { worktrees?: unknown }).worktrees)) {
+      return (body as { worktrees: unknown[] }).worktrees;
+    }
+    return body;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**
@@ -1131,6 +1174,26 @@ async function restartDaemon(): Promise<{ success: boolean; error?: string }> {
   return startDaemon();
 }
 
+async function setProcessServices(
+  services: string[],
+  active?: ActiveProfile,
+): Promise<{ success: boolean; error?: string }> {
+  const bin = await resolveCliBinary();
+  if (!bin) return { success: false, error: "multica CLI is not available." };
+  const profile = active ?? await ensureActiveProfile();
+  if (!profile) return { success: false, error: "No active daemon profile." };
+  const wrote = await new Promise<boolean>((resolve) => {
+    execFile(
+      bin,
+      ["config", "set", "process_services", services.join(","), ...profileArgs(profile.name)],
+      { cwd: profileDir(profile.name), timeout: 15_000, env: desktopSpawnEnv() },
+      (error) => resolve(!error),
+    );
+  });
+  if (!wrote) return { success: false, error: "Failed to update process_services config." };
+  return restartDaemon();
+}
+
 async function daemonPidIsConfirmedAbsent(profile: string): Promise<boolean> {
   try {
     const raw = await readFile(profilePidPath(profile), "utf-8");
@@ -1490,6 +1553,48 @@ export function setupDaemonManager(
       recoveryPolicy.reset();
       return restartDaemon();
     });
+  });
+  ipcMain.handle("daemon:set-process-services", (_event, services: unknown) =>
+    lifecycleOperations.runForeground(() => setProcessServices(
+      Array.isArray(services) ? services.filter((service): service is string => typeof service === "string") : [],
+    )),
+  );
+  ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
+    parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
+  );
+  ipcMain.handle("daemon:processes-overview", async (): Promise<DaemonProcessOverviewResult> => {
+    const response = await fetchWorktreeManager("/runtimes/processes/overview");
+    const result: DaemonProcessOverviewResult = { processes: [], total: { available: false } };
+    if (!response || typeof response !== "object") return result;
+    const value = (response as { processes?: unknown }).processes;
+    if (Array.isArray(value)) result.processes = value.filter((entry): entry is DaemonProcessOverviewEntry => {
+      if (!entry || typeof entry !== "object") return false;
+      const item = entry as Partial<DaemonProcessOverviewEntry>;
+      return typeof item.category === "string" && typeof item.id === "string" && typeof item.name === "string" && typeof item.state === "string" && typeof item.ready === "boolean";
+    });
+    const total = (response as { total?: unknown }).total;
+    if (total && typeof total === "object") {
+      const item = total as Partial<DaemonProcessOverviewTotal>;
+      result.total = { available: item.available === true };
+      if (typeof item.process_count === "number") result.total.process_count = item.process_count;
+      if (typeof item.memory_bytes === "number") result.total.memory_bytes = item.memory_bytes;
+      if (typeof item.cpu_time_ms === "number") result.total.cpu_time_ms = item.cpu_time_ms;
+    }
+    return result;
+  });
+  ipcMain.handle("daemon:review-inventory", () => requestReviewInventory({
+    resolveProfile: async () => {
+      const active = await ensureActiveProfile();
+      if (!active) return null;
+      const record = await readDaemonPortRecord(active.name);
+      return { ...active, port: record?.port ?? healthPortForProfile(active.name) };
+    },
+    health: (profile) => fetchHealthAtPort(profile.port),
+    inventory: (profile) => fetchWorktreeManager("/worktrees", undefined, profile),
+  }));
+  ipcMain.handle("daemon:cleanup-worktrees", async (_event, paths: unknown, discardChanges: unknown = false): Promise<ManagedWorktreeCleanupResult> => {
+    if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((path) => typeof path !== "string" || !path) || typeof discardChanges !== "boolean") throw new Error("Select between 1 and 1000 worktrees to clean.");
+    return parseManagedWorktreeCleanup(await fetchWorktreeManager("/worktrees", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths, discard_changes: discardChanges }) }));
   });
   ipcMain.handle("daemon:get-status", () => fetchHealth());
   ipcMain.handle("daemon:probe-runtimes", () => probeLocalRuntimes());

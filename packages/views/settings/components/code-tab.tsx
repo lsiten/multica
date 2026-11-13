@@ -44,7 +44,6 @@ import { GitHubMark } from "./github-mark";
 import { VCSConnectionRows } from "./code-vcs";
 import { HostMark, HostStatus } from "./code-host";
 import { RepositoriesSection } from "./repositories-section";
-import { LocalWorktreeReviews } from "../../issues/components/local-worktree-reviews";
 import { PRMergeStatusRow } from "./pr-merge-status-row";
 
 type GitHubSettingsKey =
@@ -263,7 +262,6 @@ export function CodeTab() {
         </SettingsCard>
       </SettingsSection>
 
-      <LocalWorktreeReviews workspaceId={wsId} />
       <RepositoriesSection />
 
       <SettingsSection

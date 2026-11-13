@@ -72,11 +72,6 @@ vi.mock("@multica/core/api", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // The repository list and self-hosted rows have their own tests.
 vi.mock("./repositories-section", () => ({ RepositoriesSection: () => null }));
-vi.mock("../../issues/components/local-worktree-reviews", () => ({
-  LocalWorktreeReviews: ({ workspaceId }: { workspaceId: string }) => (
-    <div data-testid="local-worktree-reviews">{workspaceId}</div>
-  ),
-}));
 vi.mock("./code-vcs", () => ({ VCSConnectionRows: () => <div>VCS rows</div> }));
 // The merge rule editor has its own test on the statuses it offers.
 vi.mock("./pr-merge-status-row", () => ({
@@ -126,11 +121,6 @@ function connect() {
 }
 
 describe("CodeTab — GitHub", () => {
-  it("preserves local worktree reviews in the consolidated Code page", () => {
-    render(<CodeTab />, { wrapper: Wrapper });
-    expect(screen.getByTestId("local-worktree-reviews")).toHaveTextContent("workspace-1");
-  });
-
   it("offers to connect GitHub and opens the install flow", async () => {
     mockGetConnectURL.mockResolvedValue({ configured: true, url: "https://github.com/apps/x" });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
