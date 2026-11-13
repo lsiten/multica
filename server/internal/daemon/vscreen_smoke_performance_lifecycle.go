@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -17,7 +18,7 @@ func (p *performanceProducer) createSource(ctx context.Context) error {
 	key := protocol.ResourceKey{BackendIdentity: p.backendID, WorkspaceID: p.workspaceID, RuntimeID: uuid.NewString(), UID: uint32(p.uid())}
 	response, err := p.client.Call(ctx, native.Request{Operation: "ensure", Resource: key, Width: 1600, Height: 900})
 	if err != nil {
-		return err
+		return fmt.Errorf("prepare performance display: %w", err)
 	}
 	if response.Display == nil || !response.Display.Managed {
 		return errors.New("performance_display_readback_invalid")
@@ -54,14 +55,14 @@ func (p *performanceProducer) createSource(ctx context.Context) error {
 	owned.fixture = fixture
 	authority := appcontrol.Authority{Resource: key, Epoch: owned.epoch, TaskID: "performance", TransactionID: uuid.NewString(), LeaseEpoch: 1}
 	if err = p.client.Grant(ctx, authority, 15*time.Second); err != nil {
-		return err
+		return fmt.Errorf("authorize performance fixture: %w", err)
 	}
 	if err = p.client.ResumeApps(ctx, authority); err != nil {
-		return err
+		return fmt.Errorf("resume performance fixture: %w", err)
 	}
 	fixture.BeforeLaunch()
 	if _, err = p.client.LaunchApp(ctx, authority, appcontrol.LaunchRequest{BundleID: bundle}); err != nil {
-		return err
+		return fmt.Errorf("launch performance fixture: %w", err)
 	}
 	if err = p.client.Revoke(ctx, authority); err != nil {
 		return err
@@ -84,7 +85,7 @@ func (p *performanceProducer) createSource(ctx context.Context) error {
 		case <-ticker.C:
 		}
 	}
-	meta := performanceSource{SourceID: source.Source.SourceID, RuntimeID: key.RuntimeID, SourceTag: tag, NativeEpoch: source.NativeEpoch, Generation: source.Generation, Width: 1600, Height: 900, FPS: 30, source: source}
+	meta := performanceSource{Binding: source.MirrorSourceBinding, SourceID: source.Source.SourceID, RuntimeID: key.RuntimeID, SourceTag: tag, NativeEpoch: source.NativeEpoch, Generation: source.Generation, Width: 1600, Height: 900, FPS: 30, source: source}
 	meta.Marker = projectPerformanceMarker(*owned.marker, source, 1600, 900)
 	p.sources[meta.SourceID] = meta
 	runtime := mirror.NewRuntimeMirror(nil, time.Second)

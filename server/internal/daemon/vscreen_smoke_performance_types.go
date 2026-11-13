@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/internal/vscreen/native"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // VscreenPerformanceRequest is the benchmark target, separate from negotiated video geometry.
@@ -33,15 +34,16 @@ type performanceMarker struct {
 	Reason    string  `json:"reason,omitempty"`
 }
 type performanceSource struct {
-	SourceID    string            `json:"source_id"`
-	RuntimeID   string            `json:"runtime_id"`
-	SourceTag   uint32            `json:"source_tag"`
-	NativeEpoch string            `json:"native_epoch"`
-	Generation  string            `json:"generation"`
-	Marker      performanceMarker `json:"marker"`
-	Width       int               `json:"width"`
-	Height      int               `json:"height"`
-	FPS         int               `json:"fps"`
+	Binding     protocol.MirrorSourceBinding `json:"binding"`
+	SourceID    string                       `json:"source_id"`
+	RuntimeID   string                       `json:"runtime_id"`
+	SourceTag   uint32                       `json:"source_tag"`
+	NativeEpoch string                       `json:"native_epoch"`
+	Generation  string                       `json:"generation"`
+	Marker      performanceMarker            `json:"marker"`
+	Width       int                          `json:"width"`
+	Height      int                          `json:"height"`
+	FPS         int                          `json:"fps"`
 	source      native.SourceDescriptor
 }
 type performanceReady struct {
@@ -112,11 +114,12 @@ type performanceOfferRequest struct {
 	Offer    mirror.SessionDescription `json:"offer"`
 }
 type performanceOfferResponse struct {
-	Answer     mirror.SessionDescription `json:"answer"`
-	SourceID   string                    `json:"source_id"`
-	SourceTag  uint32                    `json:"source_tag"`
-	Marker     performanceMarker         `json:"marker"`
-	Negotiated VscreenPerformanceRequest `json:"negotiated"`
+	ViewerGrant protocol.MirrorViewerGrant `json:"viewer_grant"`
+	Answer      mirror.SessionDescription  `json:"answer"`
+	SourceID    string                     `json:"source_id"`
+	SourceTag   uint32                     `json:"source_tag"`
+	Marker      performanceMarker          `json:"marker"`
+	Negotiated  VscreenPerformanceRequest  `json:"negotiated"`
 }
 type performanceProcessReading struct {
 	Start, RSS, CPU uint64

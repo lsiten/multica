@@ -43,6 +43,14 @@ class Peer extends EventTarget {
   createOffer = async () => this.localDescription;
   setLocalDescription = vi.fn(async (description: {type:string;sdp?:string}) => { this.localDescription = {type:description.type,sdp:description.sdp ?? ""}; });
   setRemoteDescription = async () => {};
+  private sampledFrames = 0;
+  getStats = async () => {
+    this.sampledFrames += 20;
+    return new Map<string, unknown>([["video", {
+      type: "inbound-rtp", kind: "video", id: "video", timestamp: this.sampledFrames * 50,
+      framesDecoded: this.sampledFrames, bytesReceived: this.sampledFrames * 1000,
+    }]]);
+  };
   close = vi.fn();
 }
 const scope = {
@@ -143,10 +151,11 @@ describe("Video viewer lease lifecycle", () => {
       });
     vi.stubGlobal("fetch", fetch);
     const state = vi.fn();
+    const statistics = vi.fn();
     const session = new MirrorVideoSession({
       api: new ApiClient(scope.backendIdentity).vscreen(scope),
       binding,
-      callbacks: { state, stream: vi.fn(), metadata: vi.fn() },
+      callbacks: { state, stream: vi.fn(), metadata: vi.fn(), statistics },
     });
     await session.start();
     const peer = Peer.latest;
@@ -188,7 +197,9 @@ describe("Video viewer lease lifecycle", () => {
     expect(peer.addTransceiver).toHaveBeenCalledWith("video", {
       direction: "recvonly",
     });
+    expect(statistics).toHaveBeenLastCalledWith({ framesPerSecond: 20, bitsPerSecond: 160000, packetLossPercent: null, roundTripTimeMs: null });
     await session.close();
+    expect(statistics).toHaveBeenLastCalledWith(null);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

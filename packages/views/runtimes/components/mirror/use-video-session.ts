@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { getApi } from "@multica/core/api";
+import type { MirrorVideoStats } from "./video-stats";
 import type {
   MirrorSourceBinding,
   VscreenScope,
@@ -21,6 +22,7 @@ export function useVideoSession(
   retry: number,
 ) {
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [statistics, setStatistics] = useState<MirrorVideoStats | null>(null);
   const [quality, setQuality] = useState<VscreenVideoQuality | null>(null);
   const [metadata, setMetadata] = useState<VscreenVideoMetadata | null>(null);
   const [status, setStatus] = useState<{
@@ -61,6 +63,9 @@ export function useVideoSession(
           api: getApi().vscreen(scope),
           binding,
           callbacks: {
+            statistics: (value) => {
+              if (active) setStatistics(value);
+            },
             quality: (value) => {
               if (active) setQuality(value);
             },
@@ -100,6 +105,7 @@ export function useVideoSession(
     setStream(null);
     setMetadata(null);
     setQuality(null);
+    setStatistics(null);
     setStatus({ state: binding ? "preparing" : "closed" });
     setControlState({ status: "inactive" });
     setVoiceTranscript("");
@@ -175,6 +181,7 @@ export function useVideoSession(
     stream: current ? stream : null,
     metadata: current ? metadata : null,
     quality: current ? quality : null,
+    statistics: current ? statistics : null,
     control: current ? controlState : { status: "inactive" as const },
     startControl: () => currentSession?.startControl(),
     stopControl: () => currentSession?.stopControl(),

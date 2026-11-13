@@ -126,8 +126,9 @@ vi.mock("./use-video-session", () => ({
     state: "streaming",
     control: { status: "inactive" },
     reason: null,
-    quality: null,
+    quality: { width: 1600, height: 900, fps: 30, bitrate: 4_000_000, max_level_idc: 31 },
     metadata: null,
+    statistics: { framesPerSecond: 24, bitsPerSecond: 2_000_000, packetLossPercent: 0.5, roundTripTimeMs: 25 },
     startControl,
     stopControl,
     sendInput: vi.fn(),
@@ -165,6 +166,17 @@ vi.mock("./mirror-control-bar", () => ({
 }));
 
 describe("MirrorSurface emergency stop", () => {
+  it("shows measured receive statistics alongside negotiated quality", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<I18nProvider locale="en" resources={RESOURCES}>
+      <QueryClientProvider client={queryClient}>
+        <MirrorSurface scope={scope} runtime={runtime} />
+      </QueryClientProvider>
+    </I18nProvider>);
+
+    expect(await screen.findByText("1600 × 900 · 24 FPS · 2.0 Mbps · 25 ms RTT · 0.5% loss")).toBeInTheDocument();
+  });
+
   it("leaves local control mode after the host command is accepted", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

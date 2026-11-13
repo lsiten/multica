@@ -199,6 +199,16 @@ export function MirrorSurface({
                         : t(($) => $.vscreen.negotiating);
   const label = runtimeDisplayLabel(runtime);
   const quality = video.quality ?? video.metadata?.quality;
+  const statistics = video.statistics;
+  const measuredStats = quality && [
+    `${Math.round(statistics?.framesPerSecond ?? quality.fps)} FPS`,
+    statistics?.bitsPerSecond === null || statistics?.bitsPerSecond === undefined
+      ? null : `${(statistics.bitsPerSecond / 1_000_000).toFixed(1)} Mbps`,
+    statistics?.roundTripTimeMs === null || statistics?.roundTripTimeMs === undefined
+      ? null : `${Math.round(statistics.roundTripTimeMs)} ms RTT`,
+    statistics?.packetLossPercent === null || statistics?.packetLossPercent === undefined
+      ? null : `${statistics.packetLossPercent.toFixed(1)}% loss`,
+  ].filter((value): value is string => value !== null).join(" · ");
   useEffect(() => {
     const onFullscreenChange = () =>
       setFullscreen(document.fullscreenElement === surfaceRef.current);
@@ -422,9 +432,9 @@ export function MirrorSurface({
         <span role={video.state === "failed" && !video.reconnecting ? "alert" : "status"}>
           {status}
         </span>
-        {!compact && quality && (
+        {!compact && measuredStats && (
           <span className="ml-auto tabular-nums">
-            {quality.width} × {quality.height} · {quality.fps} FPS
+            {quality.width} × {quality.height} · {measuredStats}
           </span>
         )}
       </div>

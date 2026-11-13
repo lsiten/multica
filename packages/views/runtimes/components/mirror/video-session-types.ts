@@ -1,3 +1,4 @@
+import type { MirrorVideoStats } from "./video-stats";
 import type {
   MirrorControlGrant,
   MirrorInputAck,
@@ -26,6 +27,7 @@ export interface MirrorVideoCallbacks {
   readonly state: (state: MirrorVideoState, reason?: string) => void;
   readonly stream: (stream: MediaStream | null) => void;
   readonly quality?: (quality: VscreenVideoQuality | null) => void;
+  readonly statistics?: (statistics: MirrorVideoStats | null) => void;
   readonly metadata: (metadata: VscreenVideoMetadata | null) => void;
   readonly control?: (state: MirrorControlState) => void;
   readonly transcript?: (text: string) => void;

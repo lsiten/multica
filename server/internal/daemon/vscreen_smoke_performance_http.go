@@ -157,7 +157,7 @@ func (p *performanceProducer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				marker = projectPerformanceMarker(*owned.marker, source.source, answer.VideoQuality.Width, answer.VideoQuality.Height)
 			}
 		}
-		write(performanceOfferResponse{Answer: answer.SessionDescription, SourceID: in.SourceID, SourceTag: source.SourceTag, Marker: marker, Negotiated: VscreenPerformanceRequest{answer.VideoQuality.Width, answer.VideoQuality.Height, answer.VideoQuality.FPS}})
+		write(performanceOfferResponse{ViewerGrant: grant, Answer: answer.SessionDescription, SourceID: in.SourceID, SourceTag: source.SourceTag, Marker: marker, Negotiated: VscreenPerformanceRequest{answer.VideoQuality.Width, answer.VideoQuality.Height, answer.VideoQuality.FPS}})
 	case "/renew", "/viewer/close":
 		var in struct {
 			ViewerID string `json:"viewer_id"`
@@ -178,6 +178,11 @@ func (p *performanceProducer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 			p.peers[in.ViewerID] = peer
+			write(struct {
+				OK          bool                       `json:"ok"`
+				ViewerGrant protocol.MirrorViewerGrant `json:"viewer_grant"`
+			}{true, peer.grant})
+			return
 		} else {
 			if stats, ok := peer.runtime.PeerStatistics(in.ViewerID); ok {
 				value, known := performanceRTPBytes(stats)

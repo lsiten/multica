@@ -59,6 +59,35 @@ func TestPerformanceTwoPionViewersShareOneProviderAndDetach(t *testing.T) {
 		if err = json.Unmarshal(response.Body.Bytes(), &answer); err != nil {
 			t.Fatal(err)
 		}
+		var authority struct {
+			ViewerGrant protocol.MirrorViewerGrant `json:"viewer_grant"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &authority); err != nil {
+			t.Fatal(err)
+		}
+		p.mu.Lock()
+		actualGrant := p.peers[id].grant
+		p.mu.Unlock()
+		actualGrant.ExpiresAt = actualGrant.ExpiresAt.UTC()
+		authority.ViewerGrant.ExpiresAt = authority.ViewerGrant.ExpiresAt.UTC()
+		if authority.ViewerGrant != actualGrant || !authority.ViewerGrant.ExpiresAt.After(time.Now()) {
+			t.Fatal("diagnostic offer omitted the actual live viewer grant")
+		}
+		renewal := performanceTestRequest(p, "POST", "/renew", map[string]string{"viewer_id": id})
+		if renewal.Code != 200 {
+			t.Fatal(renewal.Body.String())
+		}
+		if err := json.Unmarshal(renewal.Body.Bytes(), &authority); err != nil {
+			t.Fatal(err)
+		}
+		p.mu.Lock()
+		renewedGrant := p.peers[id].grant
+		p.mu.Unlock()
+		renewedGrant.ExpiresAt = renewedGrant.ExpiresAt.UTC()
+		authority.ViewerGrant.ExpiresAt = authority.ViewerGrant.ExpiresAt.UTC()
+		if authority.ViewerGrant != renewedGrant || !renewedGrant.ExpiresAt.After(actualGrant.ExpiresAt) {
+			t.Fatal("diagnostic renewal omitted the actual extended viewer grant")
+		}
 		if answer.Negotiated.Width == 0 || answer.Negotiated.Height == 0 {
 			t.Fatal("missing negotiated resolution")
 		}

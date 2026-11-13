@@ -15,6 +15,7 @@ import type {
 } from "@multica/core/types";
 import { peerIceServers } from "./mirror-peer";
 import { gatherVideoIce } from "./video-ice";
+import { observeMirrorVideoStats } from "./video-stats";
 
 import {
   MirrorVideoError,
@@ -606,6 +607,9 @@ export class MirrorVideoSession {
         iceServers: peerIceServers(ice.iceServers),
       });
       this.peer = peer;
+      if (this.options.callbacks.statistics) {
+        observeMirrorVideoStats(peer, this.abort.signal, this.options.callbacks.statistics);
+      }
       peer.addTransceiver("video", { direction: "recvonly" });
       peer.ontrack = (event) => {
         if (this.disposed) {
