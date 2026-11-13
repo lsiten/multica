@@ -7,6 +7,24 @@ the backend/web images, and `fork-desktop.yml` builds desktop installers from
 the same tag. Prerelease tags such as `vX.Y.Z-rc.1` create GitHub prereleases;
 dirty tags are rejected. The upstream `release.yml` stays disabled for this fork.
 
+Both fork channels first call `ci.yml` from the caller commit with
+`release_acceptance: true`. CI selects every validation scope and requires its
+frontend and backend aggregate gates to succeed. The acceptance script also
+checks that the checkout matches the caller's `GITHUB_SHA`, then emits
+`accepted_sha`. Release builds check out that immutable SHA. Failed, cancelled,
+skipped, missing, or path-filtered acceptance blocks the build and publication
+through their job dependencies.
+
+The reusable call grants `contents: read` and `pull-requests: read`. Its workflow
+source comes from the same commit and its token permissions are bounded by the
+caller. [GitHub reusable workflow semantics](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows), [GitHub token permission semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations).
+
+The existing CI frontend test job already includes the desktop package. Run the
+release contract fixtures locally with `node --test scripts/fork-release-gate.test.mjs scripts/ci-scope.test.mjs scripts/fork-desktop.test.mjs`.
+These exercise the real acceptance CLI and publication shell steps with inert
+fixtures. The GitHub-hosted CI run and signed installation/update checks remain
+part of release-environment acceptance.
+
 The desktop matrix builds both x64 and arm64 on macOS, Windows, and Linux:
 
 - macOS: DMG and ZIP.

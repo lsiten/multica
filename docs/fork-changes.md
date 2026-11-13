@@ -4,13 +4,17 @@
 > 用于交接、评审、升级对账与发布决策。
 >
 > - 统计基线：上游 `9b1ab4f9e`（`MUL-8546: docs(changelog): release 0.8.0`，最近一次上游同步点）
-> - 当前 HEAD：`ed807eac4`（`main`，2026-11-07）
-> - 统计口径：提交数取 `git log HEAD --not 9b1ab4f9e`；文件差异取 `git diff 9b1ab4f9e HEAD`
-> - 桌面端当前版本：`1.0.118`；根工程/文档站版本：`0.2.0`
+> - 历史统计快照为 `ed807eac4`（`main`，2026-11-07）。
+> - 本轮于 2026-11-13 核验 `codex/macos-fork-optimization`，提交锚点为 `b14297232`，并检查本轮工作区改动。
+> - 统计口径：历史提交数取 `git log ed807eac4 --not 9b1ab4f9e`，文件差异取 `git diff 9b1ab4f9e ed807eac4`
+> - 历史快照中的桌面版本为 `1.0.118`；根工程/文档站版本：`0.2.0`
 
 ---
 
 ## 1. 概览
+
+以下规模统计沿用 2026-11-07 快照。本轮优先处理 macOS，Windows 控制能力保留为独立需求。功能状态与剩余环境条件见 [需求文档 §19](fork-requirements.md#19-已知缺口与待办gap)，验证结论限定到实际执行的场景。
+
 
 | 指标 | 数值 |
 | --- | --- |
@@ -19,7 +23,7 @@
 | 主要新增后端模块 | `mirror`、`vscreen`、`runtimeproc`、`daemonws`、`jevmodels`、`application`、`applicationgateway`、`communications` |
 | 主要新增前端模块 | `views/runtimes`（镜像 UI）、`views/chat`、`views/settings`、`views/platform`、`views/applications`、`views/collaboration` |
 | 发布通道 | Fork Images（容器镜像）+ Fork Desktop Release（三平台安装包） |
-| 最新发布 | `v1.0.118`，24 个资产，Latest |
+| 历史发布快照（2026-11-07） | `v1.0.118`，24 个资产，Latest |
 
 **一句话定位**：上游 Multica 是「人与智能体协作的命令面板」，本 fork 在其之上把
 「本地智能体运行时」扩展成**可视（屏幕镜像）、可控（远程/代操作）、可评审（本地 MR）、
@@ -34,7 +38,7 @@
 | 运行时可见性 | 仅健康状态、配置、关联智能体 | 每个 runtime 唯一屏幕镜像，WebRTC 点对点，服务端不经手像素 | `server/internal/mirror`、`packages/views/runtimes/components/mirror` |
 | 远程交互 | 无 | 人工鼠标/键盘/文本注入 + 指挥智能体代操作，FCFS 仲裁显示资源 | `mirror/input_arbiter.go`、`vscreen` |
 | 虚拟屏 | 无 | 原生显示宿主、有界媒体 IPC、lease、窗口复用、本地选窗 | `server/internal/vscreen` |
-| 会话形态 | 对话流 | 文档化对话：内容版本化、浮动选区内联工具栏、浮动输入区 | `packages/views/chat` |
+| 会话形态 | 对话流 | 文档化对话、内容版本化、选区工具栏与同一会话输入区 | `packages/views/chat` |
 | 语音输入 | 无 | runtime 承载的按住说话 + 流式听写；桌面端离线 whisper | `apps/desktop`、`views/chat` |
 | 代码评审 | 走上游评审流程 | 本地 MR：runtime 持有的暂存区、选择性文件合并事务 | `LOCAL_MR_*.md`、`views` 评审组件 |
 | 决策模型 | 单一执行路径 | Jev 三来源（local / agent_context / remote），按 daemon 安装 | `server/internal/jevmodels`、`llm2jev` |
@@ -57,6 +61,7 @@
 - **审批**：`approval_broker.go` 把 Codex 的真实审批 RPC 路由到 peer 决策，而不是在本地伪造结果。
 - **网络**：`cloudflare_turn.go` 与 `ice_config.go` 支持 TURN 中继；内置 TURN 默认关闭（`feat(deploy): make built-in TURN relay opt-in`），避免默认引入中继成本与隐私面。
 - **前端**：`packages/views/runtimes/components/mirror/` 下有帧重组（`frame-reassembler`）、手势与坐标映射、控制条、聊天浮层、授权提示、controller presence、handoff 等组件，均有对应测试。
+- **观看指标**：WebRTC 接收端按单会话串行采样 inbound video、选中候选对 RTT、解码帧、码率和区间丢包率；统计在会话关闭或采样失败时清空，页面保留协商 FPS 作为稳定回退。原生性能夹具当前停在 `native host: needs_intervention`，没有把失败误报为媒体性能通过。
 
 隐私边界是硬约束：**服务端不经手像素，也不经手输入 payload**。
 
@@ -68,18 +73,18 @@
 
 ### 3.3 Chat 文档化协作（`packages/views/chat`，31 个新增文件）
 
-- **文档模式**：对话与文档双模，内容版本化，需求文档可人工编辑。
-- **浮动工具条**：文档视图中的选区浮动工具栏、浮动 composer，客服式输入不遮挡正文。
-- **语音**：runtime 承载的按住说话、流式听写；桌面端内置离线 whisper 转写。
-- **输入体验**：Codex 风格输入历史导航；项目文件、issue、附件多 Tab；群组协作上下文与来源控制。
-- **性能**：默认关闭文件面板、按需懒加载 Tab、目录分页读取与按需展开、渐进式加载历史工作目录。
+- 文档模式已挂载到 `ChatPage`，任务预览、附件与运行目录文件可从文件面板打开。文档替换消息正文区，原会话输入、提示与排队任务继续挂载。
+- 选区工具栏与整篇引用接入同一会话输入。编辑开始时冻结正文、任务 `owner_revision` 或文件 `edit_base`，查询刷新保留草稿，版本差异显示历史内容的增删。
+- 语音包含 runtime 转写与桌面离线适配。本轮修复重新订阅后的状态刷新、监听恢复和取消清理，真实麦克风及模型准备仍按安装环境验收。
+- **输入体验**：Codex 风格输入历史导航；项目文件、issue、附件多 Tab；群组协作上下文与来源控制。`ChatPage` 恢复单 agent 直聊和多 agent 群聊入口，多选后保留 lead agent 并立即写入列表缓存。
+- 文件面板在桌面宽布局默认展开、紧凑布局默认收起，可手动切换。Tab 按需加载，目录分页并按需展开。提交事件与运行完成定向刷新正文及版本。
 
 ### 3.4 Daemon 与运行时隔离（`server/internal/daemon`，585 个 Go 文件 / 320 个测试文件）
 
 - **多进程**：capability-gated 多进程守护，能力不足时 fail-closed 回退单进程。
 - **隔离**：并发工作区隔离与共享投递结算；agent 准入隔离并按配置容量填充调度。
 - **可靠性**：内置 MCP broker 保活；MCP 诊断与探测归属绑定到单次 run；报告重试相互隔离，失败任务不会拖住 agent；任务结果在 409 冲突围栏处被隔离；重建清理后恢复工作目录同步。
-- **工作树**：安全的自动/手动 worktree 清理，剔除已完全合并的本地目录分支，隐藏已移除的本地清单项。
+- **工作树**：安全的自动/手动 worktree 清理，剔除已完全合并的本地目录分支，隐藏已移除的本地清单项。总览集中在桌面端管理器，议题详情保留关联上下文，Settings > Code 移除重复总览。
 - **GUI 工具**：连接托管 GUI 工具与已停止运行的交接；干预报告跨重连持久化。
 
 配套：`runtimeproc`（33 文件，进程提交与准入错误分类）、`daemonws`（22 文件，daemon WebSocket hub 与断连观测）。
@@ -121,7 +126,7 @@
 
 - `server/internal/communications`（13 文件）：出站通信抽象与投递。
 - WeCom 媒体链路：流式解密落临时文件、带内容嗅探的预览、临时文件生命周期管理（Windows 语义见 §8）。
-- Lark：出站媒体与 Typing 反应清理（`docs/lark-outbound-media.md`、`docs/lark-typing-cleanup.md`）。
+- Lark 出站媒体仍有实现与环境前提待完成，相关方案见 `docs/lark-outbound-media.md`。Typing 反应清理的范围见 `docs/lark-typing-cleanup.md`。
 
 ---
 
@@ -131,11 +136,11 @@
 
 | 工作流 | 触发 | 产物 | 说明 |
 | --- | --- | --- | --- |
-| `fork-images.yml`（151 行） | `v*.*.*` tag | GHCR `backend` / `web` 镜像 | amd64 与 arm64 原生 runner 各建一份，全部成功后才发布 version 与 `sha-<full>` manifest；稳定 tag 更新 `latest`，预发布不更新 |
-| `fork-desktop.yml`（194 行） | `v*.*.*` tag + `workflow_dispatch` | DMG / ZIP / EXE / AppImage / DEB / RPM + 更新元数据 | 三平台矩阵，每平台 x64 + arm64 |
+| `fork-images.yml` | `v*.*.*` tag | GHCR `backend` / `web` 镜像 | 同提交全量 CI 通过后构建两种架构，backend arm64 使用 QEMU，web arm64 使用原生 runner。全部成功后发布版本与 `sha-<full>` manifest，稳定 tag 更新 `latest` |
+| `fork-desktop.yml` | `v*.*.*` tag + `workflow_dispatch` | DMG / ZIP / EXE / AppImage / DEB / RPM + 更新元数据 | 同提交全量 CI 通过后运行三平台矩阵，每平台 x64 + arm64 |
 | `release.yml`（上游） | — | — | `if: github.repository != 'lsiten/multica'`，在 fork 中整体跳过，避免重复发镜像与桌面产物 |
 
-### 4.2 桌面产物（`v1.0.118`，24 个资产）
+### 4.2 历史桌面产物快照（`v1.0.118`，24 个资产）
 
 | 平台 | 架构 | 格式 |
 | --- | --- | --- |
@@ -144,11 +149,13 @@
 | Linux | x86_64 / arm64 | `.AppImage`、`.deb`、`.rpm` |
 | 更新元数据 | — | `latest.yml`、`latest-mac.yml`、`latest-x64-mac.yml`、`latest-arm64.yml`、`latest-linux.yml`、`latest-linux-arm64.yml` |
 
-发布顺序：所有平台检查与构建全部通过 → `publish` job 先上传到 **draft** Release → 再转为公开。上传失败会留下可重试的 draft；**已公开的 Release 永不覆盖**。
+发布先调用同一提交的 `ci.yml` 并强制全量范围。`frontend` 和 `backend` 汇总检查通过、检出 SHA 校验一致后输出 `accepted_sha`，构建按该 SHA 检出。所有平台成功后，资产上传到 draft Release，再转为公开。上传失败保留可重试 draft，已公开版本的重复发布被拒绝。
+
+现有 CI 的 `frontend-test` 已覆盖桌面包。本轮增加发布对该全量验收的依赖，并保留各平台打包检查。本地夹具验证 SHA 不匹配、验收不完整、tag、签名环境与发布资产边界，GitHub Actions 和真实安装升级仍需发布环境验收。
 
 ### 4.3 版本策略
 
-- 桌面端使用独立版本线 `1.0.x`，与上游 `0.x` 解耦；打包前 `fork-desktop.yml` 会校验 `apps/desktop/package.json` 版本与 tag 严格一致。
+- 桌面端使用独立版本线 `1.0.x`，与上游 `0.x` 解耦；打包前 `fork-desktop.yml` 校验从 Git 派生的打包版本与 tag 一致。
 - 根工程与文档站仍跟随上游 `0.2.0`。
 - 发布 = 在目标提交上打 `vX.Y.Z` tag 并推送；prerelease 用 `vX.Y.Z-rc.1`；`-dirty` tag 被拒绝。
 
@@ -156,7 +163,7 @@
 
 - 并发组按 tag 隔离：`fork-desktop-release-${{ github.ref_name }}`，避免一个卡死的 run 阻塞后续所有发布。
 - 支持 `workflow_dispatch`（必须用 tag ref 派发），便于在不移动 tag 的情况下重跑。
-- 当前 Release 保留策略：`v1.0.118` / `v1.0.115` / `v1.0.114` + `v0.1.71` / `v0.1.70` / `v0.1.69`。
+- 历史记录中的 Release 保留集合为 `v1.0.118` / `v1.0.115` / `v1.0.114` + `v0.1.71` / `v0.1.70` / `v0.1.69`。
 
 ---
 
