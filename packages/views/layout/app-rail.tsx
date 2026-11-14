@@ -362,6 +362,12 @@ export function AppRail({
       label: t(($) => $.rail.inbox),
       fullLabel: t(($) => $.nav.inbox),
     },
+    applications: {
+      href: p.applications(),
+      icon: routeIconForPath(p.applications()),
+      label: t(($) => $.nav.applications),
+      fullLabel: t(($) => $.nav.applications),
+    },
     work: {
       href: p.issues(),
       icon: routeIconForPath(p.issues()),

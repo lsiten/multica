@@ -150,11 +150,11 @@ describe("AppRail global actions", () => {
 describe("AppRail order", () => {
   it("lists the spaces in the default order", () => {
     renderRail();
-    expect(railOrder()).toEqual(["inbox", "work", "team", "chat", "autopilots"]);
+    expect(railOrder()).toEqual(["inbox", "applications", "work", "team", "chat", "autopilots"]);
   });
 
   it("follows the saved order", () => {
-    const order = ["chat", "inbox", "work", "team", "autopilots"] as const;
+    const order = ["chat", "inbox", "applications", "work", "team", "autopilots"] as const;
     useRailOrderStore.getState().setOrder(order);
     renderRail();
     expect(railOrder()).toEqual(order);
@@ -178,11 +178,21 @@ describe("AppRail order", () => {
 });
 
 describe("AppRail spaces", () => {
+  it("opens Applications and keeps its space selected on application details", () => {
+    const { visit } = renderRail();
+    const applications = screen.getByRole("link", { name: "Applications" });
+    expect(applications).toHaveAttribute("href", "/acme/applications");
+
+    visit("/acme/applications/app-1");
+    expect(applications).toHaveAttribute("aria-current", "page");
+    expect(link("/acme/inbox")).not.toHaveAttribute("aria-current");
+  });
+
   it("links each space and marks the current route's space", () => {
     state.pathname = "/acme/projects/p-1";
     renderRail();
 
-    for (const href of ["/acme/inbox", "/acme/issues", "/acme/agents", "/acme/chat", "/acme/autopilots"]) {
+    for (const href of ["/acme/inbox", "/acme/applications", "/acme/issues", "/acme/agents", "/acme/chat", "/acme/autopilots"]) {
       expect(link(href)).not.toBeNull();
     }
     // Projects belong to the work space, which links to Issues.

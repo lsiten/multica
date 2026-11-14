@@ -16,6 +16,8 @@ describe("spaceForPath", () => {
 
   it.each([
     [ws.inbox(), "inbox"],
+    [ws.applications(), "applications"],
+    [ws.applicationDetail("app-1"), "applications"],
     [ws.myIssues(), "work"],
     [ws.issues(), "work"],
     [ws.issueDetail("MUL-1"), "work"],

@@ -3,6 +3,7 @@ import { createMemoryRouter, Outlet, useLocation, useMatches } from "react-route
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
+import { ApplicationDetailPage } from "./pages/application-detail-page";
 import { AutopilotDetailPage } from "./pages/autopilot-detail-page";
 import { SkillDetailPage } from "./pages/skill-detail-page";
 import { AgentDetailPage } from "./pages/agent-detail-page";
@@ -16,6 +17,7 @@ import {
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@multica/views/issues/components";
 import { ProjectsPage } from "@multica/views/projects/components";
+import { ApplicationsPage } from "@multica/views/applications";
 import { DashboardPage } from "@multica/views/dashboard";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
@@ -165,6 +167,16 @@ export const appRoutes: RouteObject[] = [
             path: "issues/:id/deliverables/:name",
             element: <IssueDetailPage />,
             handle: { title: "Issue" },
+          },
+          {
+            path: "applications",
+            element: <ApplicationsPage />,
+            handle: { title: "Applications" },
+          },
+          {
+            path: "applications/:id",
+            element: <ApplicationDetailPage />,
+            handle: { title: "Application" },
           },
           {
             path: "projects",

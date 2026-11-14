@@ -8,6 +8,7 @@
 
 export type AppSpaceId =
   | "inbox"
+  | "applications"
   | "work"
   | "team"
   | "chat"
@@ -20,6 +21,7 @@ export type RailSpaceId = Exclude<AppSpaceId, "settings">;
 /** Spaces in rail order. */
 export const RAIL_SPACES: readonly RailSpaceId[] = [
   "inbox",
+  "applications",
   "work",
   "team",
   "chat",
@@ -28,9 +30,7 @@ export const RAIL_SPACES: readonly RailSpaceId[] = [
 
 const SPACE_BY_SEGMENT: Record<string, AppSpaceId> = {
   inbox: "inbox",
-  // Applications sits in the sidebar's personal group next to Inbox, so it
-  // shares the Inbox space (no shell panel of its own).
-  applications: "inbox",
+  applications: "applications",
   "my-issues": "work",
   issues: "work",
   projects: "work",
