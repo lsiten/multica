@@ -76,9 +76,8 @@ func TestClaimTaskByRuntime_TopLevelIssueHasNoParent(t *testing.T) {
 	}
 }
 
-// A parent that does not resolve inside the sub-issue's workspace is dropped,
-// and the claim still succeeds: the parent is context, not a precondition.
-func TestClaimTaskByRuntime_ParentOutsideWorkspaceIsDropped(t *testing.T) {
+// A cross-workspace parent cannot establish a managed code owner.
+func TestClaimTaskByRuntime_RejectsParentOutsideWorkspace(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -91,7 +90,6 @@ func TestClaimTaskByRuntime_ParentOutsideWorkspaceIsDropped(t *testing.T) {
 	dbfx.Exec(t, `UPDATE issue SET parent_issue_id = $1 WHERE id = $2`, foreignParentID, issueID)
 
 	createCommentTriggeredClaimTask(t, ctx, agentID, runtimeID, issueID, nil)
-	if got := claimParentIssueTask(t, runtimeID).Task.ParentIssue; got != nil {
-		t.Errorf("parent outside the workspace must be dropped, got %+v", *got)
-	}
+	request := withURLParam(newOwnerDaemonRequest(http.MethodPost, "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil), "runtimeId", runtimeID)
+	testutil.Call(t, testHandler.ClaimTaskByRuntime, request).Want(http.StatusConflict)
 }

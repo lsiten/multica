@@ -19,6 +19,7 @@ func TestMirrorNotificationPreferenceCoversControlLifecycle(t *testing.T) {
 				workspaceID := dbfx.Workspace(t, "Mirror notifications", uuid.NewString(), testutil.Cols{
 					"settings": fmt.Sprintf(`{"mirror_network":{"mode":"builtin","viewer_notifications_enabled":%t}}`, enabled),
 				})
+				dbfx.Member(t, workspaceID, testUserID, "owner")
 				runtimeID := dbfx.Runtime(t, "Mirror notifications", testutil.Cols{"workspace_id": workspaceID, "daemon_id": "notification-daemon"})
 				dbfx.Cleanup(t, `DELETE FROM inbox_item WHERE workspace_id=$1`, workspaceID)
 				identity := daemonws.ClientIdentity{DaemonID: "notification-daemon", WorkspaceID: workspaceID, RuntimeIDs: []string{runtimeID}}
@@ -55,6 +56,7 @@ func TestMirrorNotificationPreferenceCoversControlLifecycle(t *testing.T) {
 func TestMirrorNotificationOptOutPreservesHistoryAndSkipsNewItems(t *testing.T) {
 	h := isolatedMirrorViewerHandler(t)
 	workspaceID := dbfx.Workspace(t, "Mirror opt-out", uuid.NewString())
+	dbfx.Member(t, workspaceID, testUserID, "owner")
 	runtimeID := dbfx.Runtime(t, "Mirror opt-out", testutil.Cols{"workspace_id": workspaceID, "daemon_id": "opt-out-daemon"})
 	dbfx.Cleanup(t, `DELETE FROM inbox_item WHERE workspace_id=$1`, workspaceID)
 	identity := daemonws.ClientIdentity{DaemonID: "opt-out-daemon", WorkspaceID: workspaceID, RuntimeIDs: []string{runtimeID}}
@@ -79,6 +81,7 @@ func TestMirrorNotificationPreferenceStillCoversViewerLifecycle(t *testing.T) {
 			workspaceID := dbfx.Workspace(t, "Viewer notifications", uuid.NewString(), testutil.Cols{
 				"settings": fmt.Sprintf(`{"mirror_network":{"mode":"builtin","viewer_notifications_enabled":%t}}`, enabled),
 			})
+			dbfx.Member(t, workspaceID, testUserID, "owner")
 			runtimeID := dbfx.Runtime(t, "Viewer notifications", testutil.Cols{"workspace_id": workspaceID})
 			dbfx.Cleanup(t, `DELETE FROM inbox_item WHERE workspace_id=$1`, workspaceID)
 			rt, err := h.Queries.GetAgentRuntime(context.Background(), parseUUID(runtimeID))

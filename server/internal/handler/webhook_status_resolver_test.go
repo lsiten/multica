@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/integrations/vcs"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
@@ -63,7 +64,7 @@ func TestWebhookStatusResolver(t *testing.T) {
 					// The same key is terminal in one workspace and nonterminal in
 					// the other; a process-wide resolver would close the wrong set.
 					for workspace := 0; workspace < 2; workspace++ {
-						ws := dbfx.Workspace(t, "Webhook status resolver", fmt.Sprintf("resolver-%s-%s-%d", provider, tc.name, workspace), testutil.Cols{"issue_prefix": "RSL"})
+						ws := dbfx.Workspace(t, "Webhook status resolver", fmt.Sprintf("resolver-%s-%s-%d-%s", provider, tc.name, workspace, uuid.NewString()), testutil.Cols{"issue_prefix": "RSL"})
 						wsID := parseUUID(ws)
 						fixture := testutil.New(testPool, ws, testUserID)
 						for key, category := range map[string]string{"approved": "done", "dropped": "closed", "review": "started"} {
