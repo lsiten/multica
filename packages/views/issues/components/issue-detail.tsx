@@ -1432,7 +1432,7 @@ export function IssueDetailSkeleton({
           {/* Width and gutters match the loaded column exactly (see its
               comment), so the skeleton doesn't reflow sideways when real
               content mounts. */}
-          <div className={cn(READING_COLUMN, "px-3 py-6 space-y-6 md:px-8 md:py-8")}>
+          <div className={cn(READING_COLUMN, "px-[var(--space-sm,0.75rem)] py-[var(--space-lg,1.5rem)] space-y-6 md:px-[var(--space-xl,2rem)] md:py-[var(--space-xl,2rem)]")}>
             <Skeleton className="h-8 w-3/4" />
             <div className="space-y-2">
               <Skeleton className="h-4 w-full" />
@@ -3507,7 +3507,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   const detailContent = (
     <CurrentIssueRenderContextProvider value={currentIssueRenderContext}>
-    <div className="relative flex h-full min-w-0 flex-1 flex-col">
+    <div
+      data-mc="issue-detail"
+      data-status={issue.status}
+      data-priority={issue.priority}
+      data-view={isPeek ? "peek" : "page"}
+      className="relative flex h-full min-w-0 flex-1 flex-col"
+    >
         {/* In-page find bar — floats over the top-right of the content column
             (below the breadcrumb header), outside the scroll container so it
             stays put while the timeline scrolls and its own text isn't walked.
@@ -3633,7 +3639,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             // and never reaches the chat launcher's corner (see IssuePeekHost).
             isPeek
               ? "mx-auto w-full px-6 py-5"
-              : cn(READING_COLUMN, "px-3 py-6 max-md:pb-chat-launcher md:px-8 md:py-8"),
+              : cn(READING_COLUMN, "px-[var(--space-sm,0.75rem)] py-[var(--space-lg,1.5rem)] max-md:pb-chat-launcher md:px-[var(--space-xl,2rem)] md:py-[var(--space-xl,2rem)]"),
           )}
         >
           <IssueDuplicateBanner
@@ -3646,6 +3652,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             }
           />
           <div id={descriptionSectionId}>
+          <div data-mc="issue-title">
           {titleLazy.active && (
             <div className={titleLazy.ready ? undefined : "hidden"}>
               <TitleEditor
@@ -3700,6 +3707,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               {issue.title}
             </div>
           )}
+          </div>
           {titleConflictDraft !== null ? (
             <RevisionConflictCompare
               className="mt-2"
@@ -4018,7 +4026,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <div className="my-8 border-t" />
 
           {/* Activity / Comments */}
-          <div data-comment-images={commentImageLayout}>
+          <div data-mc="issue-activity" data-comment-images={commentImageLayout}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h2 className="text-title-sm font-semibold">{t(($) => $.detail.activity_section)}</h2>
