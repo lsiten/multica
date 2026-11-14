@@ -38,3 +38,6 @@ SELECT * FROM jev_decision_log WHERE id = $1 AND workspace_id = $2;
 
 -- name: DeleteWorkspaceJevDecisionLogs :exec
 DELETE FROM jev_decision_log WHERE workspace_id = $1;
+
+-- name: JevDecisionLogSnapshotTime :one
+SELECT clock_timestamp()::timestamptz AS as_of;

@@ -164,7 +164,12 @@ func (h *Handler) ListJevDecisionLogs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid log time range")
 		return
 	}
-	asOf := time.Now().UTC()
+	databaseTime, err := h.Queries.JevDecisionLogSnapshotTime(r.Context())
+	if err != nil {
+		writeError(w, 500, "failed to establish Jev log snapshot")
+		return
+	}
+	asOf := databaseTime.Time.UTC()
 	if times["as_of"].Valid && times["as_of"].Time.Before(asOf) {
 		asOf = times["as_of"].Time
 	}

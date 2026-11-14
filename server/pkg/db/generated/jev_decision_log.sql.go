@@ -91,6 +91,17 @@ func (q *Queries) GetJevDecisionLog(ctx context.Context, arg GetJevDecisionLogPa
 	return i, err
 }
 
+const jevDecisionLogSnapshotTime = `-- name: JevDecisionLogSnapshotTime :one
+SELECT clock_timestamp()::timestamptz AS as_of
+`
+
+func (q *Queries) JevDecisionLogSnapshotTime(ctx context.Context) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, jevDecisionLogSnapshotTime)
+	var as_of pgtype.Timestamptz
+	err := row.Scan(&as_of)
+	return as_of, err
+}
+
 const listJevDecisionLogs = `-- name: ListJevDecisionLogs :many
 SELECT id, task_id, agent_id, agent_name, issue_identifier, tool, source, model, result_class, error_code, started_at, duration_ms
 FROM jev_decision_log
