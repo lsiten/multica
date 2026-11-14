@@ -39,6 +39,28 @@ func (d *Daemon) reconcileApplicationManager(ctx context.Context, root string, s
 			if err != nil {
 				return fail(err)
 			}
+			previousBoot, err := applicationhost.PreviousBoot(record)
+			if err != nil {
+				return fail(err)
+			}
+			if previousBoot {
+				err = applicationhost.WithRecordOwnership(path, record.HostID, func(current applicationhost.Record) error {
+					previousBoot, err := applicationhost.PreviousBoot(current)
+					if err != nil {
+						return err
+					}
+					if !previousBoot {
+						return errors.New("application host boot identity changed during recovery")
+					}
+					current.Address = ""
+					current.Observation = applicationObservation(current.Command, "stopped", "unknown", "")
+					record = current
+					return applicationhost.WriteRecord(path, current)
+				})
+				if err != nil {
+					return fail(err)
+				}
+			}
 			if record.Observation.ProcessState == "stopped" {
 				if err = applicationhost.WaitStopped(ctx, path, record.HostID); err != nil {
 					return fail(err)

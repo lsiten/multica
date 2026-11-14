@@ -56,8 +56,17 @@ func Launch(ctx context.Context, root string, scope runtimeproc.Scope, executabl
 			if err != nil {
 				return runtimeproc.Reconciliation{}, err
 			}
-			if inv.InstanceID != record.Identity.InstanceID || inv.DescendantsPossible {
+			if inv.InstanceID != record.Identity.InstanceID {
 				return runtimeproc.Reconciliation{}, errors.New("prior model descendants are unconfirmed")
+			}
+			if inv.DescendantsPossible {
+				previousBoot, err := inv.previousBoot()
+				if err != nil {
+					return runtimeproc.Reconciliation{}, err
+				}
+				if !previousBoot {
+					return runtimeproc.Reconciliation{}, errors.New("prior model descendants are unconfirmed")
+				}
 			}
 			manager, err := jevmodels.New(ctx, jevmodels.Config{RootDir: root, PythonPath: "unused-during-inspection"})
 			if err != nil {
@@ -72,6 +81,11 @@ func Launch(ctx context.Context, root string, scope runtimeproc.Scope, executabl
 			}
 			raw, err := json.Marshal(inv)
 			if err != nil {
+				manager.Close()
+				return runtimeproc.Reconciliation{}, err
+			}
+			inv.DescendantsPossible = false
+			if err := saveInventory(root, inv); err != nil {
 				manager.Close()
 				return runtimeproc.Reconciliation{}, err
 			}

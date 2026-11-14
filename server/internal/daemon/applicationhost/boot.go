@@ -1,23 +1,10 @@
 package applicationhost
 
-import (
-	"fmt"
-	"strings"
-
-	"github.com/multica-ai/multica/server/internal/util"
-)
+import "github.com/multica-ai/multica/server/internal/util"
 
 // CurrentBootID reads the operating system's stable boot-session identity.
 func CurrentBootID() (string, error) {
-	raw, err := readBootID()
-	if err != nil {
-		return "", fmt.Errorf("read application machine boot identity: %w", err)
-	}
-	id, err := util.ParseUUID(strings.Trim(strings.TrimSpace(raw), "{}"))
-	if err != nil {
-		return "", fmt.Errorf("invalid application machine boot identity: %w", err)
-	}
-	return util.UUIDToString(id), nil
+	return util.CurrentBootID()
 }
 
 // PreviousBoot proves that a private record belongs to a boot whose processes cannot still exist.

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/multica-ai/multica/server/internal/util"
 )
 
 // InstallJob is domain recovery state; a new attempt always receives a new ID.
@@ -21,8 +23,24 @@ type InstallJob struct {
 }
 type inventory struct {
 	InstanceID          string                `json:"instance_id"`
+	BootID              string                `json:"boot_id,omitempty"`
 	DescendantsPossible bool                  `json:"descendants_possible"`
 	Jobs                map[string]InstallJob `json:"jobs"`
+	modifiedAt          time.Time
+}
+
+func (inv inventory) previousBoot() (bool, error) {
+	if inv.BootID == "" {
+		// Older inventories can prove a prior boot only through their own write time.
+		bootTime, err := util.MachineBootTime()
+		return !inv.modifiedAt.IsZero() && inv.modifiedAt.Before(bootTime), err
+	}
+	bootID, err := util.ParseUUID(inv.BootID)
+	if err != nil {
+		return false, err
+	}
+	current, err := util.CurrentBootID()
+	return util.UUIDToString(bootID) != current, err
 }
 
 func readInventory(root string) (inventory, error) {
@@ -57,6 +75,7 @@ func readInventory(root string) (inventory, error) {
 	if len(inv.Jobs) > 65 {
 		return inv, errors.New("too many model install jobs")
 	}
+	inv.modifiedAt = after.ModTime()
 	return inv, nil
 }
 func saveInventory(root string, inv inventory) error {
