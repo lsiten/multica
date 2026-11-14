@@ -386,7 +386,9 @@ SELECT
     sqlc.narg(trigger_evidence_ref_id),
     -- The issue's status as this task is queued: the workflow step it works on (MUL-7420).
     COALESCE(sqlc.narg(workflow_step)::text, (SELECT i.status FROM issue i WHERE i.id = $3)),
-    sqlc.narg(fire_at),
+    -- Workflow handoffs are immediately due on the database's scheduling clock.
+    CASE WHEN sqlc.narg(workflow_handoff_revision)::bigint IS NOT NULL
+         THEN clock_timestamp() ELSE sqlc.narg(fire_at)::timestamptz END,
     COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, $3, $2)
 RETURNING *;
