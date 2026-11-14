@@ -78,18 +78,10 @@ WITH incoming AS (
         NULLIF(m.output_truncated, '')::bool,
         NULLIF(m.call_id, '')
     FROM incoming AS m
-    ON CONFLICT (id) DO UPDATE SET seq = CASE
-        WHEN task_message.task_id=EXCLUDED.task_id
-         AND task_message.seq=EXCLUDED.seq
-         AND task_message.type=EXCLUDED.type
-         AND task_message.content IS NOT DISTINCT FROM EXCLUDED.content
-         AND task_message.input IS NOT DISTINCT FROM EXCLUDED.input
-         AND task_message.output IS NOT DISTINCT FROM EXCLUDED.output
-         AND task_message.tool IS NOT DISTINCT FROM EXCLUDED.tool
-         AND task_message.call_id IS NOT DISTINCT FROM EXCLUDED.call_id
-        THEN task_message.seq
-        ELSE NULL
-    END
+    -- Same-task retries keep the first payload. Cross-task ID reuse aborts
+    -- the batch. Execution callbacks validate payload receipts before insertion.
+    ON CONFLICT (id) DO UPDATE SET seq = NULL
+    WHERE task_message.task_id <> EXCLUDED.task_id
     RETURNING *
 )
 SELECT * FROM inserted ORDER BY seq ASC;
