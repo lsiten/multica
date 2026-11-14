@@ -19,7 +19,7 @@
     "fumadocs-ui": "catalog:",
     "next": "catalog:",
     "next-themes": "catalog:",
-    "mermaid": "^11.14.0",
+    "mermaid": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
