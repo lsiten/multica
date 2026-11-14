@@ -88,7 +88,14 @@
     "wakeup_checkin": "silent check: {{note}}",
     "wakeup_checkin_coalesced_other": "{{count}} silent checks · latest: {{note}}",
     "wakeup_chip_created_by": "{{name}}'s wakeup",
-    "wakeup_chip_system": "System rule"
+    "wakeup_chip_system": "System rule",
+    "task_completed_one": "completed a run",
+    "task_failed_one": "run failed",
+    "activity_count_one": "{{count}} activity",
+    "show_more_activities_one": "Show {{count}} more activity",
+    "wakeup_child_done_stage_one": "Stage {{stage}}'s sub-issue finished",
+    "wakeup_child_done_all_one": "The sub-issue finished",
+    "wakeup_checkin_coalesced_one": "{{count}} silent check · latest: {{note}}"
   },
   "actor_issues": {
     "scope": {
@@ -127,7 +134,13 @@
     "tasks_count_other": "{{count}} runs",
     "chip_agents_working_other": "{{count}} agents working",
     "issues_count_other": "{{count}} issues",
-    "chip_agents_working_unknown": "Agents working: —"
+    "chip_agents_working_unknown": "Agents working: —",
+    "hover_header_one": "{{count}} active agent",
+    "hover_header_tasks_one": "{{count}} active run",
+    "hover_header_queued_one": "{{count}} queued agent",
+    "tasks_count_one": "{{count}} run",
+    "chip_agents_working_one": "{{count}} agent working",
+    "issues_count_one": "{{count}} issue"
   },
   "agent_live": {
     "is_working": "{{name}} is working",
@@ -139,7 +152,8 @@
     "transcript_button": "View transcript",
     "stop_button": "Stop",
     "stop_tooltip": "Stop agent",
-    "cancel_failed": "Failed to cancel run"
+    "cancel_failed": "Failed to cancel run",
+    "tool_count_one": "{{count}} tool"
   },
   "backlog_hint": {
     "title": "Agent is paused in Backlog",
@@ -163,7 +177,12 @@
     "delete_dialog_title_other": "Delete {{count}} issues?",
     "delete_dialog_desc_other": "This action cannot be undone. This will permanently delete the selected issues and all associated data.",
     "delete_dialog_warning": "Any workspace member can delete issues.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "update_success_one": "Updated {{count}} issue",
+    "update_partial_one": "Updated {{updated}} of {{count}} issue. The rest don't allow this change and were left as they were.",
+    "delete_success_one": "Deleted {{count}} issue",
+    "delete_dialog_title_one": "Delete {{count}} issue?",
+    "delete_dialog_desc_one": "This action cannot be undone. This will permanently delete the selected issue and all associated data."
   },
   "board": {
     "hide_column": "Hide column",
@@ -257,7 +276,10 @@
       "fold_other": "{{count}} comments from {{authors}}",
       "bar_authors_more_other": "{{names}} and {{count}} others",
       "resolve_failed": "Failed to resolve thread",
-      "unresolve_failed": "Failed to unresolve thread"
+      "unresolve_failed": "Failed to unresolve thread",
+      "bar_one": "{{count}} resolved comment from {{authors}}",
+      "fold_one": "{{count}} comment from {{authors}}",
+      "bar_authors_more_one": "{{names}} and {{count}} other"
     },
     "recipient_steer": "Add to current run",
     "recipient_steer_desc": "{{name}} reads it after the current step and keeps working on the original task. Text only.",
@@ -273,7 +295,11 @@
     "recipient_count_other": "{{count}} agents will receive this",
     "steer_attachment_notice": "Only text can join a running run, so a message with files is handled after it.",
     "restart_send": "Stop and send",
-    "restart_failed": "Couldn't stop the current run. Your message wasn't sent."
+    "restart_failed": "Couldn't stop the current run. Your message wasn't sent.",
+    "posted_partial_trigger_one": "Comment posted, but {{count}} mention wasn't triggered",
+    "reply_count_one": "{{count}} reply",
+    "trigger_will_start_count_one": "{{count}} agent will start when sent",
+    "recipient_count_one": "{{count}} agent will receive this"
   },
   "data_load_error": {
     "title": "Couldn't load issues",
@@ -308,7 +334,10 @@
     "overview_summary_with_size_other": "{{count}} deliverables · {{size}} total",
     "overview_close": "Close",
     "overview_empty": "No deliverables of this type.",
-    "group_comment_by": "Comment by {{name}}"
+    "group_comment_by": "Comment by {{name}}",
+    "view_all_one": "View all {{count}} deliverable",
+    "overview_summary_one": "{{count}} deliverable",
+    "overview_summary_with_size_one": "{{count}} deliverable · {{size}}"
   },
   "detail": {
     "metadata_close": "Close metadata",
@@ -428,7 +457,9 @@
     "project_directory_path_copied_with_branch": "Project directory path copied — work is on {{branch}}",
     "workdir_path_copy_failed": "Failed to copy workdir path",
     "workdir_path_unavailable": "No local workdir yet — issue has not been run by a local agent",
-    "pull_requests_empty_title": "No linked pull requests."
+    "pull_requests_empty_title": "No linked pull requests.",
+    "pull_request_card_files_count_one": "{{count}} file",
+    "thread_nav_show_replies_one": "Show {{count}} reply"
   },
   "display": {
     "tooltip": "Display settings",
@@ -533,7 +564,10 @@
     "more_runs_other": "{{count}} more",
     "strip_aria": "Cumulative cost over time — open the run timeline",
     "strip_no_usage": "No usage recorded",
-    "sparkline_now": "Now"
+    "sparkline_now": "Now",
+    "included_comments_one": "Includes {{count}} comment",
+    "summary_runs_one": "{{count}} run",
+    "more_runs_one": "{{count}} more"
   },
   "filtered_empty": {
     "title": "No issues match these filters",
@@ -638,7 +672,11 @@
     "advanced_group_match_trailing": "of these",
     "advanced_group_hint": "Conditions in this group are joined with “{{word}}”",
     "advanced_add_to_group": "Add to group",
-    "advanced_turn_into_group": "Turn into group"
+    "advanced_turn_into_group": "Turn into group",
+    "unsaved_changes_one": "{{count}} unsaved change",
+    "issue_count_one": "{{count}} issue",
+    "active_count_one": "{{count}} filter",
+    "advanced_conditions_one": "{{count}} condition"
   },
   "gantt": {
     "header_issue": "Issue",
@@ -697,7 +735,8 @@
     "steer_resend": "Send as a new run",
     "steer_resend_failed": "Couldn't send it as a new run.",
     "steer_step": "{{name}} added",
-    "steer_step_read": "Read"
+    "steer_step_read": "Read",
+    "steps_one": "{{count}} step"
   },
   "labels_panel": {
     "intro": "Create and manage labels to categorize issues across your workspace.",
@@ -851,7 +890,6 @@
       "members": "Membres",
       "labels": "Étiquettes",
       "issue_statuses": "États des tâches",
-      "wakeups": "Réveils",
       "properties": "Propriétés",
       "quick_actions": "Actions rapides",
       "plugins": "Plugins",
@@ -862,7 +900,8 @@
       "apps": "Applications connectées",
       "workflows": "Workflows",
       "jev": "Modèle de décision Jev",
-      "mirror_network": "Diffusion d’écran"
+      "mirror_network": "Diffusion d’écran",
+      "appearance": "Apparence"
     },
     "groups": {
       "personal": "Personnel",
@@ -876,7 +915,8 @@
     "search_clear": "Effacer la recherche",
     "search_empty": "Aucun paramètre correspondant",
     "search_results_other": "{{count}} résultats",
-    "admin_only": "Seuls les propriétaires et administrateurs peuvent modifier ceci"
+    "admin_only": "Seuls les propriétaires et administrateurs peuvent modifier ceci",
+    "search_results_one": "{{count}} result"
   },
   "peek": {
     "panel_label": "Issue preview",
@@ -992,7 +1032,8 @@
       "frequency_minutes_other": "Toutes les {{count}} minutes",
       "frequency_hourly": "Chaque heure à la minute {{minute}}",
       "frequency_daily": "Chaque jour à {{hour}}:{{minute}}",
-      "frequency_custom": "Planification récurrente personnalisée"
+      "frequency_custom": "Planification récurrente personnalisée",
+      "frequency_minutes_one": "Every minute"
     },
     "config": {
       "title": "Configuration",
@@ -1066,7 +1107,8 @@
     "not_merged_action": "Remove",
     "all_merged_to": "All PRs merged. The next merged PR moves this issue to {{status}}.",
     "issue_disabled": "PR merges won’t change this issue",
-    "issue_disabled_action": "Turn on"
+    "issue_disabled_action": "Turn on",
+    "waiting_to_one": "Moves to {{status}} when {{prs}} merges"
   },
   "priority": {
     "urgent": "Urgent",
@@ -1093,7 +1135,8 @@
       "selection_failed": "Could not capture the selection. Select text within one comment or description and try again.",
       "source_label": "Comment by {{name}}",
       "edit": "Edit annotation {{number}}",
-      "note_placeholder": "Add a comment…"
+      "note_placeholder": "Add a comment…",
+      "count_one": "{{count}} annotation"
     }
   },
   "requirement": {
@@ -1174,7 +1217,13 @@
     "detail_cache": "Cache hit",
     "cache_hit_value": "{{percent}} · saved {{amount}}",
     "detail_time": "Time",
-    "detail_branch": "Branch"
+    "detail_branch": "Branch",
+    "count_failed_one": "{{count}} failed",
+    "count_cancelled_one": "{{count}} cancelled",
+    "count_active_one": "{{count}} active",
+    "chart_aria_one": "Run activity: {{cost}} across {{count}} run",
+    "day_runs_one": "{{count}} run",
+    "cumulative_aria_one": "Cumulative cost over time: {{cost}} across {{count}} run"
   },
   "save_view": {
     "scope_label_workspace": "Assignee type",
@@ -1254,7 +1303,8 @@
     "error_comment_limit": "The source comment thread history has at least {{count}} comments; the limit is 256.",
     "error_text_limit": "The source text is {{size}} bytes; the limit is 1 MiB.",
     "error_attachment_count_limit": "The source has {{count}} attachments; the limit is 100.",
-    "error_attachment_size_limit": "The source attachments total {{size}} bytes; the limit is 500 MiB."
+    "error_attachment_size_limit": "The source attachments total {{size}} bytes; the limit is 500 MiB.",
+    "preview_summary_one": "Context from {{identifier}} · issue description + {{count}} comment"
   },
   "stage": {
     "none": "No stage",
@@ -1445,366 +1495,8 @@
       "row_actions": "Actions for {{name}}",
       "empty_title": "No saved views yet",
       "empty_description": "Set up filters and display options in an issue list, then save them as a view."
-    }
-  },
-  "wakeups": {
-    "title": "Wakeups",
-    "retry": "Could not load wakeups. Retry",
-    "every": "Every {{minutes}} min",
-    "once": "Trigger once",
-    "continuous": "Repeat wakeups",
-    "disable": "Turn off wakeup for {{agent}}",
-    "disable_error": "Could not turn off wakeup",
-    "source_run": "Run being monitored",
-    "source_agent": "{{agent}}, on behalf of {{name}}",
-    "next": "Next:",
-    "last_run": "View run record",
-    "run_completed": "Run completed",
-    "run_failed": "Run failed",
-    "run_cancelled": "Run cancelled",
-    "comment_created": "New comment",
-    "status_changed": "Issue status changed",
-    "run_queued": "Run queued",
-    "run_dispatched": "Run dispatched",
-    "run_started": "Run started",
-    "run_deferred": "Run deferred",
-    "run_waiting_local_directory": "Waiting for local directory",
-    "issue_updated": "Issue updated",
-    "assignee_changed": "Assignee changed",
-    "parent_changed": "Parent issue changed",
-    "project_changed": "Project changed",
-    "labels_changed": "Labels changed",
-    "properties_changed": "Properties changed",
-    "metadata_changed": "Metadata changed",
-    "comment_updated": "Comment edited",
-    "comment_deleted": "Comment deleted",
-    "comment_resolved": "Thread resolved",
-    "comment_unresolved": "Thread reopened",
-    "reaction_added": "Reaction added",
-    "reaction_removed": "Reaction removed",
-    "attachment_attached": "Attachment added",
-    "attachment_detached": "Attachment removed",
-    "at_time": "Wake at {{time}}",
-    "wake_agent": "Wake {{agent}}",
-    "needs_attention": "Needs attention",
-    "turn_off": "Turn off",
-    "ended": "Wakeup history · {{count}}",
-    "waiting_event": "Waiting for trigger",
-    "triggered_by_wakeup": "Triggered by wakeup",
-    "upcoming": "{{count}} enabled wakeup rules",
-    "more": "{{count}} more",
-    "toggle": "Wakeup for {{agent}}",
-    "enable_error": "Could not enable wakeup. Try again.",
-    "withdraw": "Cancel this execution",
-    "resubscribe": "Enable again",
-    "reschedule": "Set a new time",
-    "future_time": "Choose a future time.",
-    "local_time": "Time ({{timezone}})",
-    "closed_hint": "Wakeups cannot be enabled while this issue is completed or canceled.",
-    "completed": "Completed",
-    "expired": "Expired",
-    "disabled_state": "Turned off",
-    "agent_subject": "an agent",
-    "unknown_event": "When event {{event}} occurs",
-    "source_actor": "Person or agent being monitored",
-    "selected_member": "Selected member",
-    "selected_agent": "Selected agent",
-    "by_actor": "{{condition}} (triggered by {{agent}})",
-    "specific_run": "Specific run {{id}}",
-    "scheduled_time": "Wake at the scheduled time",
-    "every_hours": "Wake every {{hours}} hours",
-    "every_seconds": "Wake every {{seconds}} seconds",
-    "edit_instruction": "Edit prompt",
-    "instruction_effect": "Future wakeups use these instructions. Runs already in progress are not affected.",
-    "instruction_loading": "Loading prompt...",
-    "instruction_invalid": "Enter instructions within 12,000 UTF-8 bytes.",
-    "instruction_save_error": "Could not save the prompt.",
-    "instruction_cancel": "Cancel",
-    "instruction_save": "Save",
-    "instruction_saving": "Saving...",
-    "instruction_title": "What to do when woken",
-    "scope_title": "Monitored scope",
-    "scope_current": "This issue",
-    "any_event": "When any of these events occurs",
-    "execution_summary": "This execution: {{state}}",
-    "recent_execution": "Last execution: {{state}}",
-    "stopped_running": "Future wakeups are off · An execution has not finished",
-    "next_at": "Next: {{time}}",
-    "no_run": "Not run yet",
-    "permission_error": "You cannot manage this wakeup. Contact its creator or a workspace admin.",
-    "conflict_error": "This rule has changed. Refresh and try again.",
-    "conditions": {
-      "run_queued": "When {{agent}}’s run is queued",
-      "run_dispatched": "When a run is dispatched to {{agent}}",
-      "run_started": "When {{agent}} starts a run",
-      "run_deferred": "When {{agent}}’s run is deferred",
-      "run_waiting_local_directory": "When {{agent}}’s run waits for a local directory",
-      "issue_updated": "When this issue is updated",
-      "assignee_changed": "When this issue’s assignee changes",
-      "parent_changed": "When this issue’s parent changes",
-      "project_changed": "When this issue’s project changes",
-      "labels_changed": "When this issue’s labels change",
-      "properties_changed": "When this issue’s properties change",
-      "metadata_changed": "When this issue’s metadata changes",
-      "comment_updated": "When a comment is edited",
-      "comment_deleted": "When a comment is deleted",
-      "comment_resolved": "When a thread is resolved",
-      "comment_unresolved": "When a thread is reopened",
-      "reaction_added": "When a reaction is added",
-      "reaction_removed": "When a reaction is removed",
-      "attachment_attached": "When an attachment is added to this issue",
-      "attachment_detached": "When an attachment is removed from this issue",
-      "run_completed": "When {{agent}} finishes a run successfully",
-      "run_failed": "When {{agent}}’s run fails",
-      "run_cancelled": "When {{agent}}’s run is cancelled",
-      "comment_created": "When this issue receives a new comment",
-      "status_changed": "When this issue’s status changes"
     },
-    "rule_states": {
-      "waiting": "Waiting for trigger",
-      "scheduled": "Waiting for scheduled time",
-      "disabled": "Turned off",
-      "triggered": "Triggered",
-      "expired": "Expired",
-      "inactive": "Not enabled",
-      "issue_closed": "Issue ended; wakeups stopped",
-      "timed_out": "Timed out",
-      "paused": "Paused automatically"
-    },
-    "run_states": {
-      "queued": "Queued",
-      "deferred": "Deferred",
-      "dispatched": "Dispatched to agent",
-      "running": "Running",
-      "waiting_local_directory": "Waiting for local directory",
-      "completed": "Run succeeded",
-      "failed": "Run failed",
-      "cancelled": "Cancelled"
-    },
-    "hourly": "Wake every hour",
-    "today_time": "Today {{time}}",
-    "remaining_days": "{{days}} days left",
-    "remaining_days_hours": "{{days}}d {{hours}}h left",
-    "remaining_hours": "{{hours}}h left",
-    "remaining_minutes": "{{minutes}} min left",
-    "until_date": "until {{date}}",
-    "source_title": "Created by",
-    "source_member": "{{name}}",
-    "source_agent_unknown": "an agent",
-    "expiry_title": "Ends",
-    "expiry_at": "{{time}}",
-    "expiry_timed_out": "Timed out at {{time}}",
-    "timeout_then_wake": "Then wake {{agent}} to handle it",
-    "timeout_then_end": "Then end without a run",
-    "create": {
-      "open": "New wakeup",
-      "title": "New wakeup",
-      "when": "When",
-      "wake": "Wake",
-      "choose_condition": "Choose a condition",
-      "choose_agent": "Choose an agent",
-      "group_time": "Time",
-      "group_collaboration": "Collaboration",
-      "group_runs": "Runs and sub-issues",
-      "cond_at": "At a time",
-      "cond_at_hint": "In 10 min, tomorrow 09:00",
-      "cond_recurring": "Check regularly",
-      "cond_recurring_hint": "Hourly or daily, with an end date",
-      "cond_reply": "Someone replies",
-      "cond_reply_hint": "Anyone, or a specific person",
-      "cond_run_end": "An agent's run ends",
-      "cond_run_end_hint": "Succeeded, failed or cancelled",
-      "cond_custom": "Custom events…",
-      "cond_custom_hint": "{{count}} raw events",
-      "at_10m": "In 10 minutes",
-      "at_1h": "In 1 hour",
-      "at_tomorrow": "Tomorrow 09:00",
-      "at_custom": "Pick a time",
-      "hourly": "Every hour",
-      "daily": "Every day 09:00",
-      "weekdays": "Weekdays 09:00",
-      "until": "Until",
-      "anyone": "Anyone",
-      "members": "Members",
-      "agents": "Agents",
-      "any_agent": "Any agent",
-      "events_selected": "{{count}} events",
-      "instruction_placeholder": "For example: check the result and continue if it looks right",
-      "trigger_count": "Triggers",
-      "max_wait": "Wait up to",
-      "wait_days_other": "{{count}} days",
-      "on_timeout": "Then",
-      "timeout_wake": "Wake {{agent}} to handle it",
-      "timeout_end": "End without a run",
-      "the_agent": "the agent",
-      "on_behalf": "Runs act on your behalf",
-      "submit": "Create",
-      "submitting": "Creating…",
-      "cancel": "Cancel",
-      "error": "Could not create the wakeup. Check the settings and try again.",
-      "capacity_error": "This issue or workspace already has the maximum number of enabled wakeups.",
-      "missing_condition": "Choose a condition.",
-      "missing_agent": "Choose an agent to wake.",
-      "missing_events": "Choose at least one event.",
-      "until_future": "Choose an end date after today.",
-      "closed": "Completed or canceled issues cannot get new wakeups.",
-      "group_linked": "Linked",
-      "cond_field": "A field changes to a value",
-      "cond_field_hint": "Status, assignee, label, property",
-      "cond_children": "Sub-issues finish",
-      "cond_children_hint": "All of them, or one stage",
-      "cond_pr": "A linked PR's CI finishes",
-      "cond_pr_hint": "Or it merges",
-      "cond_issue": "Another issue's status",
-      "cond_issue_hint": "e.g. when it is done",
-      "field_status": "Status",
-      "field_assignee": "Assignee",
-      "field_label": "Label",
-      "field_property": "Property",
-      "field_kind": "Field",
-      "choose_status": "Choose a status",
-      "choose_assignee": "Choose an assignee",
-      "choose_label": "Choose a label",
-      "choose_property": "Choose a property",
-      "value_placeholder": "Value",
-      "squads": "Squads",
-      "children_all": "All sub-issues",
-      "children_stage": "Stage {{stage}}",
-      "pr_checks": "CI finishes",
-      "pr_merged": "It merges",
-      "pr_conflicts": "It has merge conflicts",
-      "choose_issue": "Choose an issue",
-      "pick_issue_title": "Watch an issue",
-      "pick_issue_description": "Wake the agent when this issue reaches the state you choose.",
-      "other_done": "is done",
-      "other_ended": "is done or cancelled",
-      "other_in_review": "moves to In Review",
-      "other_blocked": "moves to Blocked",
-      "max_fires": "Up to",
-      "max_fires_times_other": "{{count}} times",
-      "missing_value": "Choose a value.",
-      "missing_issue": "Choose an issue.",
-      "checked": "Checked",
-      "unchecked": "Unchecked",
-      "assignee_comment_hint": "{{name}} is the assignee and already runs when a member comments. This rule joins that run instead of starting another; add it only to give that run an extra instruction."
-    },
-    "system": {
-      "badge": "System",
-      "title_stage": "When stage {{stage}}'s sub-issues all finish",
-      "title_all": "When all sub-issues finish",
-      "wake_assignee": "Wake assignee {{name}}",
-      "remaining_other": "{{count}} to go",
-      "blocked_backlog": "Issue is in backlog; no wakeup for now",
-      "blocked_member": "Assignee is a member; they get an inbox notification",
-      "blocked_none": "No agent assignee; nobody is woken",
-      "turned_off": "Turned off for this issue",
-      "target_title": "Wakes",
-      "target_current": "Assignee (currently {{name}})",
-      "target_none": "The assignee: an agent or squad is woken, a member is notified",
-      "progress_title": "Progress",
-      "progress": "{{done}}/{{total}} finished",
-      "waiting_on": "waiting on {{ids}}",
-      "skip_title": "Skipped when",
-      "skip": "The issue is in backlog; it catches up once the issue leaves backlog",
-      "source": "System rule · on for issues with sub-issues",
-      "enable": "On for this issue",
-      "toggle": "Wake the assignee when sub-issues finish",
-      "save_error": "Could not save the system rule.",
-      "default_on": "On by default in this workspace. Change the default in Settings → Wakeups.",
-      "default_off": "Off by default in this workspace. Change the default in Settings → Wakeups.",
-      "notify_member": "Notify {{name}} in their inbox",
-      "instruction": "What to do when woken",
-      "instruction_edit": "Edit instruction",
-      "instruction_default": "Not set on this issue; uses the default:",
-      "instruction_placeholder": "Leave empty to use the default",
-      "instruction_invalid": "Keep the instruction within 4,000 bytes.",
-      "paused": "Paused: {{reason}}"
-    },
-    "cond": {
-      "status": "When this issue moves to {{status}}",
-      "assignee": "When this issue is assigned to {{name}}",
-      "label": "When this issue gets the label {{label}}",
-      "property": "When {{property}} is {{value}}",
-      "children_all": "When all sub-issues finish",
-      "children_stage": "When stage {{stage}}'s sub-issues all finish",
-      "pr_checks": "When a linked PR's CI finishes",
-      "pr_merged": "When a linked PR merges",
-      "pr_conflicts": "When a linked PR has merge conflicts",
-      "other_done": "When {{issue}} is done",
-      "other_ended": "When {{issue}} is done or cancelled",
-      "other_in_review": "When {{issue}} moves to In Review",
-      "other_blocked": "When {{issue}} moves to Blocked",
-      "another_issue": "another issue",
-      "unknown_label": "a deleted label",
-      "unknown_property": "a deleted property",
-      "checked": "checked",
-      "unchecked": "unchecked"
-    },
-    "wait": {
-      "reply_from": "Waiting for {{name}} to reply",
-      "reply_any": "Waiting for a reply",
-      "run_end": "Waiting for {{agent}}'s run",
-      "run_end_any": "Waiting for a run to end",
-      "status": "Waiting for {{status}}",
-      "assignee": "Waiting for {{name}} to be assigned",
-      "label": "Waiting for the label {{label}}",
-      "property": "Waiting for {{property}} = {{value}}",
-      "children_all": "Waiting for sub-issues",
-      "children_stage": "Waiting for stage {{stage}}",
-      "pr_checks": "Waiting for CI",
-      "pr_merged": "Waiting for the PR to merge",
-      "pr_conflicts": "Watching for merge conflicts",
-      "other_done": "Waiting for {{issue}}",
-      "other_ended": "Waiting for {{issue}} to end",
-      "other_in_review": "Waiting for {{issue}} to reach review",
-      "other_blocked": "Waiting for {{issue}} to be blocked",
-      "time": "{{time}} · wakes {{agent}}",
-      "header": "{{agent}}: {{what}}",
-      "paused": "Wakeup paused",
-      "open": "Show wakeups"
-    },
-    "paused": {
-      "max_fires": "Stopped after reaching {{count}} runs",
-      "loop": "Paused: it kept waking rules that woke it again",
-      "rate": "Paused: more than 12 runs in an hour",
-      "hint": "Turn it back on to resume; the count starts over."
-    },
-    "detail": {
-      "fires_other": "Triggered {{count}} times",
-      "fires_max": "Triggered {{count}} of at most {{max}} times",
-      "history_title": "Trigger history",
-      "history_empty": "Not triggered yet",
-      "history_error": "Could not load the history",
-      "run_checkin": "Silent check",
-      "run_commented": "{{state}} · commented",
-      "wake_now": "Wake now",
-      "wake_now_done": "{{agent}} will run shortly",
-      "wake_now_error": "Could not wake the agent",
-      "delete": "Delete",
-      "delete_title": "Delete this wakeup?",
-      "delete_body": "{{agent}} is no longer woken by it, and its runs that have not started are withdrawn. A run already started keeps going.",
-      "deleting": "Deleting…",
-      "delete_error": "Could not delete the wakeup"
-    },
-    "paused_reason": {
-      "max_fires": "reached its limit of {{count}} runs",
-      "loop": "it kept waking rules that woke it again",
-      "rate": "more than 12 runs in an hour"
-    },
-    "description": "Règles de la plateforme appliquées à chaque tâche. Chaque tâche peut les modifier dans sa section Réveils.",
-    "child_done_title": "À la fin des sous-tâches",
-    "child_done_description": "Réveille le responsable de la tâche parente quand une étape se termine alors qu’une étape suivante attend, puis une fois de plus quand toutes les sous-tâches sont fermées. Un responsable humain reçoit une notification à la place.",
-    "enabled": "Activé par défaut",
-    "instruction": "Instruction par défaut",
-    "instruction_hint": "Envoyée à l’agent réveillé. Laissez vide pour utiliser l’instruction intégrée ci-dessous.",
-    "instruction_placeholder": "Laisser vide pour l’instruction intégrée",
-    "builtin": "Instruction intégrée",
-    "save": "Enregistrer",
-    "saving": "Enregistrement…",
-    "save_error": "Impossible d’enregistrer la valeur par défaut.",
-    "customized_other": "{{count}} tâches ouvertes ont leur propre réglage et ignorent cette valeur par défaut.",
-    "admin_only": "Seuls les propriétaires et administrateurs peuvent modifier ces valeurs.",
-    "load_error": "Impossible de charger les valeurs par défaut des réveils."
+    "filter_count_one": "{{count}} filter"
   },
   "workflows": {
     "default_name": "Default",
@@ -1845,7 +1537,11 @@
       "no_matching_projects": "No matching projects",
       "default_covers_no_project": "Also applies to issues without a project",
       "new_blank": "Blank workflow",
-      "from_template": "From a template"
+      "from_template": "From a template",
+      "projects_one": "{{count}} project",
+      "statuses_one": "{{count}} status",
+      "handoffs_one": "{{count}} handoff step",
+      "usage_default_one": "{{count}} project + no-project issues"
     },
     "editor": {
       "create_title": "New workflow",
@@ -1909,7 +1605,8 @@
       "step_off": "Switched off: this workflow leaves the status out. Turn it on in the step list to use it.",
       "status_new_hint": "A new status. It is added to the status library when you save.",
       "no_other_status": "Every status is already a step.",
-      "no_handoff_step": "This step doesn't hand off: issues entering it keep their assignee and start no run."
+      "no_handoff_step": "This step doesn't hand off: issues entering it keep their assignee and start no run.",
+      "used_by_note_one": "Used by {{count}} project: {{names}}. Saved changes apply to it right away."
     },
     "mapping": {
       "title": "Move issues into {{name}}",
@@ -1930,7 +1627,14 @@
       "edit_description": "Some issues in projects using this workflow are on statuses you removed. Choose where they go; everything else stays.",
       "confirm_save_count_other": "Save and update {{count}} issues",
       "switched_other": "“{{project}}” now uses “{{workflow}}”; {{count}} issues updated",
-      "nothing_moves": "Every issue’s status is in both workflows, so nothing moves."
+      "nothing_moves": "Every issue’s status is in both workflows, so nothing moves.",
+      "issues_one": "{{count}} issue",
+      "switch_description_one": "{{project}} has {{count}} issue. Only issues on statuses “{{workflow}}” doesn’t have need a new status.",
+      "needs_mapping_one": "Needs a new status · {{count}} issue",
+      "unchanged_one": "The other {{count}} issue ({{statuses}}) keeps its status — both workflows have it.",
+      "confirm_count_one": "Switch and update {{count}} issue",
+      "confirm_save_count_one": "Save and update {{count}} issue",
+      "switched_one": "“{{project}}” now uses “{{workflow}}”; {{count}} issue updated"
     },
     "project": {
       "label": "Workflow",
@@ -1966,7 +1670,9 @@
       "under_minute": "under a minute",
       "error": "Couldn’t move the issue",
       "project_title": "Move {{issue}} to {{project}}?",
-      "project_confirm": "Move to {{project}}"
+      "project_confirm": "Move to {{project}}",
+      "minutes_one": "{{count}} minute",
+      "hours_one": "{{count}} hour"
     },
     "board": {
       "drop_hint_run": "Drop to hand to {{name}} and start the run",
@@ -2029,7 +1735,8 @@
       "title": "{{workflow}} workflow",
       "scope_own": "Only this project uses this workflow.",
       "no_handoff_here": "No handoff",
-      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them."
+      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them.",
+      "scope_shared_one": "{{count}} project uses this workflow. Its handoffs apply to every project using it."
     },
     "templates": {
       "delivery": {
@@ -2171,7 +1878,8 @@
     "built_in_locked": "Les états intégrés pilotent le comportement du système : ils ne peuvent être ni modifiés ni archivés, mais vous pouvez les réordonner.",
     "builtin_badge": "Intégré",
     "workflow_usage_other": "{{count}} workflows l’utilisent",
-    "workflow_usage_none": "Dans aucun workflow"
+    "workflow_usage_none": "Dans aucun workflow",
+    "workflow_usage_one": "{{count}} workflow uses it"
   },
   "quick_actions": {
     "title": "Actions rapides",
@@ -2229,12 +1937,6 @@
     "toast_saved": "Modifications enregistrées"
   },
   "preferences": {
-    "theme": {
-      "title": "Thème",
-      "light": "Clair",
-      "dark": "Sombre",
-      "system": "Système"
-    },
     "language": {
       "title": "Langue",
       "english": "English",
@@ -2243,6 +1945,8 @@
       "korean": "한국어",
       "japanese": "日本語",
       "french": "Français",
+      "spanish": "Español",
+      "russian": "Русский",
       "sync_failed": "Langue enregistrée sur cet appareil, mais la synchronisation avec votre compte a échoué. Vos autres appareils peuvent afficher la langue précédente."
     },
     "timezone": {
@@ -2262,9 +1966,14 @@
       "after_run": "Démarrer après cette exécution",
       "hint": "Définit seulement le choix par défaut. Vous pouvez le modifier pour chaque message avant l'envoi."
     },
+    "comment_images": {
+      "title": "Images dans les commentaires",
+      "thumbnails": "Miniatures",
+      "full": "Taille réelle",
+      "hint": "Les miniatures raccourcissent les longs fils ; cliquez sur une image pour l’afficher en taille réelle."
+    },
     "comments_title": "Commentaires et discussion",
     "region_title": "Langue et région",
-    "appearance_title": "Apparence",
     "issue_fields_title": "Champs affichés à la création de tâches",
     "issue_fields": {
       "field": "Champ",
@@ -2322,6 +2031,10 @@
       "toggleChat": {
         "label": "Afficher ou masquer la fenêtre de discussion",
         "description": "Ouvrir ou fermer la fenêtre de discussion flottante. À l'ouverture, le champ de message reçoit le focus."
+      },
+      "newChat": {
+        "label": "Demander à Multica",
+        "description": "Démarrer une nouvelle discussion dans la fenêtre de discussion flottante."
       },
       "findInIssue": {
         "label": "Rechercher dans la tâche",
@@ -2407,7 +2120,10 @@
   },
   "chat": {
     "floating_label": "Fenêtre de discussion flottante",
-    "floating_hint": "Afficher le bouton de chat flottant sur chaque page."
+    "floating_hint": "Afficher le bouton de chat flottant sur chaque page.",
+    "ask_agent_label": "Agent de Demander à Multica",
+    "ask_agent_hint": "L'agent avec lequel démarre une nouvelle discussion depuis la barre du bas, dans cet espace de travail.",
+    "ask_agent_last_used": "Dernier utilisé"
   },
   "issue": {
     "opening": {
@@ -2524,7 +2240,8 @@
       "cancel": "Annuler",
       "confirm": "Archiver la propriété",
       "failed": "Impossible d'archiver la propriété"
-    }
+    },
+    "usage_count_one": "{{count}} issue"
   },
   "labels": {
     "title": "Étiquettes",
@@ -2611,9 +2328,16 @@
         "label": "Priorité et date d'échéance",
         "description": "Quand la priorité ou la date d'échéance change sur les tâches que vous suivez"
       },
+      "new_issues": {
+        "label": "Nouvelles tâches",
+        "description": "Quand une tâche est créée dans un projet auquel vous êtes abonné"
+      },
       "agent_activity": {
         "label": "Activité des agents",
         "description": "Lorsqu'une exécution d'agent échoue"
+      },
+      "chat_replies": {
+        "label": "Inclure les réponses du chat"
       }
     },
     "system": {
@@ -2623,7 +2347,7 @@
     },
     "browser": {
       "label": "Notifications du navigateur",
-      "hint": "Autoriser ce navigateur à afficher des bannières de notification pour les nouveaux éléments de la boîte de réception.",
+      "hint": "Autorisez ce navigateur à afficher des bannières pour les notifications de la boîte de réception et les réponses du chat.",
       "enable": "Activer",
       "granted": "Ce navigateur peut afficher des bannières de notification.",
       "denied": "Bloqué par votre navigateur. Activez les notifications pour ce site dans ses réglages.",
@@ -2889,35 +2613,6 @@
     "inbound_pending_hint": "Envoyez un message à ce bot dans Feishu/Lark pour vérifier la réception. Si rien n’arrive, vérifiez la connexion persistante, l’abonnement im.message.receive_v1 et la publication/approbation de l’application. Les associations existantes peuvent ne pas encore avoir de vérification enregistrée.",
     "inbound_verified_hint": "Cette association a reçu un message valide. Cela ne confirme ni la connexion continue, ni l’exécution de l’agent, ni ses réponses."
   },
-  "composio": {
-    "page_description": "Connectez des applications que vos agents peuvent utiliser.",
-    "not_enabled_title": "Intégration Composio non activée",
-    "not_enabled_description_prefix": "Définissez",
-    "not_enabled_description_suffix": "sur le serveur pour activer les connexions aux boîtes à outils Composio.",
-    "loading": "Chargement des boîtes à outils…",
-    "load_failed": "Échec du chargement des boîtes à outils Composio.",
-    "empty_title": "Aucune application connectable pour l'instant",
-    "empty_description": "Aucune boîte à outils n'a encore de configuration d'authentification activée dans votre projet Composio. Activez-en une dans le tableau de bord Composio pour la rendre disponible ici.",
-    "search_placeholder": "Rechercher des boîtes à outils…",
-    "connect": "Connecter",
-    "connecting": "Connexion…",
-    "connected": "Connecté",
-    "disconnect": "Déconnecter",
-    "disconnecting": "Déconnexion…",
-    "connect_failed": "Impossible de démarrer la connexion. Veuillez réessayer.",
-    "disconnect_failed": "Impossible de déconnecter. Veuillez réessayer.",
-    "toast_disconnected": "Déconnecté",
-    "disconnect_confirm_title": "Déconnecter cette application ?",
-    "disconnect_confirm_description": "Votre compte connecté sera révoqué chez Composio et vos agents perdront l'accès à cette boîte à outils. Vous pourrez vous reconnecter plus tard.",
-    "disconnect_confirm_cancel": "Annuler",
-    "connections_load_failed": "Impossible de charger vos connexions existantes : l'état de connexion peut être incomplet.",
-    "toast_connected": "Connecté",
-    "toast_connect_failed": "Impossible d'établir la connexion. Veuillez réessayer.",
-    "last_used": "Dernière utilisation {{when}}",
-    "last_used_never": "Jamais utilisé",
-    "expired": "Jeton expiré",
-    "reconnect": "Reconnecter"
-  },
   "slack": {
     "section_title": "Slack",
     "page_description": "Discutez avec les agents dans Slack ou créez une tâche avec /issue.",
@@ -3022,7 +2717,8 @@
     "byo_submitting": "Connexion…",
     "byo_cancel": "Annuler",
     "byo_success_toast": "Bot DingTalk connecté",
-    "byo_failed_toast": "Impossible de connecter le bot DingTalk"
+    "byo_failed_toast": "Impossible de connecter le bot DingTalk",
+    "group_mentions_one": "{{count}} mention"
   },
   "wecom": {
     "section_title": "WeCom",
@@ -3161,7 +2857,9 @@
     "github_load_more": "Charger plus",
     "github_selected_count": "{{count}} sélectionnés",
     "github_cancel": "Annuler",
-    "github_import": "Ajouter les dépôts",
+    "github_import": "Ajouter {{count}} dépôts",
+    "github_import_one": "Ajouter {{count}} dépôt",
+    "github_import_other": "Ajouter {{count}} dépôts",
     "save": "Enregistrer",
     "saving": "Enregistrement...",
     "saved_hint": "Toutes les modifications sont enregistrées",
@@ -3194,7 +2892,10 @@
       "close_others": "Fermer les autres onglets",
       "open_window": "Ouvrir dans une nouvelle fenêtre",
       "new": "Nouvel onglet",
-      "pinned_name": "{{title}} (épinglé)"
+      "pinned_name": "{{title}} (épinglé)",
+      "copy_link": "Copier le lien",
+      "link_copied": "Lien copié",
+      "close_right": "Fermer les onglets à droite"
     },
     "updates": {
       "title": "Mises à jour",
@@ -3280,7 +2981,11 @@
       "waiting_logs": "En attente de journaux…",
       "reconnect_failed": "Impossible de reconnecter le démon",
       "try_again_moment": "Veuillez réessayer dans un instant.",
-      "try_again": "Veuillez réessayer."
+      "try_again": "Veuillez réessayer.",
+      "stop_confirm_title_one": "Stop daemon with {{count}} active run?",
+      "stop_confirm_description_one": "{{count}} run is currently active on this device. Stopping now will interrupt it — affected runs get marked failed once the timeout hits. The daemon won't auto-restart.",
+      "copied_lines_one": "Copied {{count}} line",
+      "runtime_count_one": "{{count}} runtime"
     },
     "processes": {
       "title": "Processus",
@@ -3586,17 +3291,51 @@
     "github_actions": "Actions GitHub"
   },
   "channels": {
-    "breadcrumb": "Fil d'Ariane"
+    "breadcrumb": "Fil d'Ariane",
+    "add": "Ajouter un canal de messagerie",
+    "connect": "Connecter",
+    "disconnect": "Déconnecter",
+    "open": "Ouvrir",
+    "normal": "Connecté",
+    "waiting_message": "En attente du premier message",
+    "disconnected": "Déconnecté",
+    "find_me": "Me trouver sur {{platform}}",
+    "manage": "Gérer {{platform}}",
+    "last_message": "Dernier message : {{time}}",
+    "ask_admin": "Contacter un administrateur",
+    "unavailable": "Connexion indisponible",
+    "permissions_title": "Qui peut connecter",
+    "owner_or_admin": "Propriétaire de l’agent ou administrateur de l’espace",
+    "admin_only": "Administrateurs de l’espace uniquement",
+    "connect_title": "Connecter un canal de messagerie",
+    "choose_description": "Choisissez un agent et une plateforme.",
+    "authorize_description": "Connecter {{agent}} à {{platform}}.",
+    "agent_label": "Agent",
+    "choose_agent": "Choisir un agent",
+    "platform_label": "Plateforme",
+    "region_label": "Région",
+    "method_label": "Méthode de connexion",
+    "feishu": "Feishu (Chine)",
+    "lark": "Lark (international)",
+    "setup_guide": "Guide de configuration",
+    "connection_changed": "Cette connexion n’est plus disponible. Fermez cette fenêtre et réessayez.",
+    "connect_failed": "Impossible de connecter le bot.",
+    "connect_success": "Canal de messagerie connecté.",
+    "disconnect_failed": "Impossible de déconnecter le bot.",
+    "disconnect_title": "Déconnecter le canal de messagerie ?",
+    "disconnect_description": "Cet agent ne recevra plus de messages de {{platform}}.",
+    "agent_unavailable": "Agent indisponible"
   },
   "mcp_usage": {
     "agent_count_other": "Utilisé par {{count}} agents",
-    "none": "Attribué à aucun agent"
+    "none": "Attribué à aucun agent",
+    "agent_count_one": "Used by {{count}} agent"
   },
   "mcp_sources": {
     "title": "Donner des outils aux agents",
     "current": "Cette page",
     "mcp": "Ajoutés par les administrateurs, partagés dans l'espace de travail puis attribués agent par agent.",
-    "apps": "Autorisées avec votre propre compte via Composio et activées sur les agents qui vous appartiennent.",
+    "apps": "Des comptes d'équipe ou personnels connectés via Multica et ajoutés à chaque agent.",
     "plugins": "Paquets installés pouvant ajouter des outils, des hooks planifiés et du stockage, chacun avec ses propres autorisations."
   },
   "jev": {
@@ -3913,6 +3652,375 @@
       "failed": "Échec",
       "interrupted": "Interrompu",
       "unknown": "Inconnu"
+    }
+  },
+  "appearance": {
+    "reset": "Rétablir les valeurs par défaut",
+    "color": {
+      "title": "Couleur"
+    },
+    "mode": {
+      "title": "Mode",
+      "light": "Clair",
+      "dark": "Sombre",
+      "system": "Système"
+    },
+    "theme": {
+      "title": "Thème",
+      "description": "Couleurs, bordures, ombres et coins de toute l’app.",
+      "default": "Par défaut",
+      "pop": "Pop",
+      "built_in": "Intégrés",
+      "installed": "Installés",
+      "remove": "Retirer {{name}}",
+      "safe_mode": "Mode sans échec : votre thème est suspendu jusqu’à la fermeture de cette fenêtre.",
+      "safe_mode_exit": "Utiliser mon thème",
+      "folder": "Dossier des thèmes",
+      "folder_problems": "Certains thèmes du dossier des thèmes ne passent pas les vérifications. Corrigez-les et enregistrez ; la dernière version valide reste utilisée."
+    },
+    "import": {
+      "button": "Importer un thème",
+      "from_zip": "Fichier de thème (.zip)",
+      "from_folder": "Dossier du thème",
+      "storage_full": "Pas assez d’espace sur cet appareil pour enregistrer le thème. Retirez un autre thème et réessayez.",
+      "confirm_title": "Installer « {{name}} » ?",
+      "warning": "Un thème peut modifier l’apparence de toutes les pages, y compris les boîtes de dialogue et les avertissements. N’installez que des thèmes de personnes de confiance.",
+      "author": "Auteur",
+      "version": "Version",
+      "replaces": "{{to}} (remplace {{from}})",
+      "includes": "Contient",
+      "cancel": "Annuler",
+      "confirm": "Installer et utiliser",
+      "error_title": "Impossible d’installer ce thème",
+      "error_description": "Rien n’a été modifié. Le fichier de thème présente ces problèmes :",
+      "close": "Fermer",
+      "has_options_one": "{{count}} option",
+      "has_options_other": "{{count}} options",
+      "has_assets_one": "{{count}} police ou image",
+      "has_assets_other": "{{count}} polices et images",
+      "beta": "Bêta",
+      "beta_note": "Les thèmes personnalisés sont en bêta. Les variables et le manifeste qu’un thème utilise peuvent changer, et le thème devra peut-être être mis à jour."
+    },
+    "store": {
+      "manage": "Gérer",
+      "title": "Thèmes",
+      "description": "Les thèmes que vous avez installés et ceux créés par la communauté.",
+      "description_local": "Les thèmes que vous avez installés.",
+      "search": "Rechercher des thèmes",
+      "installed_only": "Afficher uniquement les thèmes installés",
+      "showing_one": "{{count}} thème affiché",
+      "showing_other": "{{count}} thèmes affichés",
+      "installed": "Installé",
+      "loading": "Chargement des thèmes",
+      "error": "Impossible de charger la boutique de thèmes. Réessayez dans un instant.",
+      "retry": "Réessayer",
+      "none_installed": "Aucun thème n’est encore installé.",
+      "no_results": "Aucun thème ne correspond à « {{query}} ».",
+      "by": "par {{author}}",
+      "downloads_one": "{{downloads}} téléchargement",
+      "downloads_other": "{{downloads}} téléchargements",
+      "source": "{{repo}} sur GitHub",
+      "no_preview": "Pas d’aperçu",
+      "screenshot_alt": "{{name}} en mode {{mode}}",
+      "install": "Installer",
+      "installing": "Installation…",
+      "use": "Utiliser",
+      "in_use": "Utilisé",
+      "update": "Mettre à jour vers {{version}}",
+      "remove": "Supprimer",
+      "taken": "Un thème avec cet identifiant est déjà installé",
+      "installed_toast": "« {{name}} » est installé.",
+      "updated": "« {{name}} » est passé à {{version}}.",
+      "install_failed": "Impossible d’installer « {{name}} »",
+      "warning": "Un thème peut modifier le style de toutes les pages, y compris les boîtes de dialogue et les avertissements. Les thèmes de la boutique sont vérifiés automatiquement, mais ils sont créés par la communauté."
+    },
+    "updates": {
+      "title": "Thèmes de la boutique",
+      "description_one": "Vous avez {{count}} thème de la boutique.",
+      "description_other": "Vous avez {{count}} thèmes de la boutique.",
+      "check": "Rechercher des mises à jour",
+      "checking": "Recherche…",
+      "up_to_date": "Vos thèmes de la boutique sont à jour.",
+      "update_all": "Tout mettre à jour ({{count}})"
+    },
+    "own": {
+      "title": "Créer le vôtre",
+      "description": "Importez un thème au format .zip ou depuis un dossier, ou partez d’une copie du thème actuel."
+    },
+    "tools": {
+      "duplicate": "Dupliquer « {{name}} » en nouveau thème",
+      "open_folder": "Ouvrir le dossier des thèmes",
+      "guide": "Créer un thème",
+      "duplicated_web": "{{file}} a été téléchargé. Décompressez-le, modifiez theme.css, puis importez le dossier.",
+      "duplicated_desktop": "« {{name}} » a été créé dans le dossier des thèmes. Les modifications de son theme.css s’appliquent à l’enregistrement.",
+      "duplicate_failed": "Impossible de créer la copie : {{error}}"
+    },
+    "theme_options": {
+      "title": "Options du thème",
+      "description": "Proposées par {{name}}.",
+      "reset": "Réinitialiser les options"
+    },
+    "ui_text": {
+      "title": "Texte de l’interface",
+      "description": "Menus, boutons, listes, barre latérale et titres."
+    },
+    "latin_font": {
+      "title": "Police latine"
+    },
+    "ui_font": {
+      "inter": "Par défaut",
+      "system": "Système",
+      "serif": "Serif",
+      "mono": "Chasse fixe"
+    },
+    "cjk_font": {
+      "title": "Police CJK",
+      "description": "Caractères chinois ; le japonais et le coréen suivent ce réglage.",
+      "sans": "Sans",
+      "serif": "Serif",
+      "kai": "Kai",
+      "built_in": "Intégrées",
+      "local": "Sur cet appareil",
+      "load_local": "Afficher les polices de cet appareil…",
+      "loading": "Recherche des polices…",
+      "none": "Aucune police avec des caractères chinois sur cet appareil.",
+      "load_failed": "Impossible de lire les polices de cet appareil.",
+      "sample": "永和九年 漢字"
+    },
+    "follow_ui": "Comme l’interface",
+    "theme_font": "Police du thème",
+    "font_size": {
+      "title": "Taille du texte",
+      "description": "Agrandit uniquement le texte. Les espacements et la mise en page restent identiques.",
+      "value": "{{size}} px",
+      "default": "{{size}} px · Par défaut"
+    },
+    "content_text": {
+      "title": "Texte du contenu",
+      "description": "Descriptions de tickets, commentaires, chat et documents.",
+      "sample": "Les descriptions et commentaires se lisent en entier : ils peuvent utiliser une police faite pour la lecture, tandis que listes et boutons restent compacts."
+    },
+    "code_font": {
+      "title": "Police du code",
+      "description": "Blocs de code, code en ligne et journaux.",
+      "geist": "Par défaut",
+      "jetbrains": "Ligatures",
+      "system": "Chasse fixe système"
+    },
+    "content_size": {
+      "title": "Taille du texte",
+      "description": "Seulement le texte du contenu. Par défaut, comme l’interface.",
+      "follow": "Suivre la taille de l’interface"
+    },
+    "content_leading": {
+      "title": "Interligne",
+      "compact": "Serré",
+      "default": "Par défaut",
+      "relaxed": "Aéré"
+    },
+    "layout": {
+      "title": "Mise en page et accessibilité"
+    },
+    "density": {
+      "title": "Densité",
+      "description": "Hauteur des lignes dans les listes de tickets et la recherche.",
+      "compact": "Compacte",
+      "default": "Par défaut",
+      "comfortable": "Aérée"
+    },
+    "reduce_motion": {
+      "title": "Réduire les animations",
+      "description": "Désactive les animations et transitions. Désactivé, le réglage du système s’applique toujours."
+    },
+    "high_contrast": {
+      "title": "Augmenter le contraste",
+      "description": "Texte secondaire plus foncé et bordures plus marquées."
+    }
+  },
+  "connected_apps": {
+    "description": "Les comptes que vos agents utilisent pour accéder aux apps externes. Les actions autorisées sont exécutées immédiatement.",
+    "loading": "Chargement des apps…",
+    "load_failed": "Impossible de charger les apps.",
+    "team_title": "Comptes d'équipe",
+    "team_description": "Les comptes partagés de l'espace de travail, comme une boîte support ou le GitHub de l'entreprise. Les admins les connectent ; les agents qui reçoivent le compte d'équipe agissent en son nom.",
+    "team_empty": "Aucun compte d'équipe pour l'instant.",
+    "team_empty_member": "Aucun compte d'équipe pour l'instant. Demandez à un admin de l'espace d'en connecter un.",
+    "personal_title": "Mes comptes",
+    "personal_description": "Vos propres comptes. Quand vous lancez une exécution, les apps réglées sur le compte du déclencheur les utilisent.",
+    "personal_empty": "Vous n'avez connecté aucun compte.",
+    "connected_by": "Connecté par {{name}}",
+    "last_used": "Dernière utilisation {{when}}",
+    "last_used_never": "Jamais utilisé",
+    "used_by_one": "Utilisé par {{count}} agent",
+    "used_by_other": "Utilisé par {{count}} agents",
+    "expired": "À reconnecter",
+    "reconnect": "Reconnecter",
+    "rules": "Règles",
+    "activity": "Activité",
+    "disconnect": "Déconnecter",
+    "catalog_title": "Apps disponibles",
+    "catalog_label": "Apps que les membres peuvent ajouter",
+    "catalog_description": "Les apps sélectionnées ont des règles par défaut vérifiées. « Toutes les apps » ajoute tout ce que Composio peut connecter ; les actions que Multica ne sait pas classer demandent toujours d'abord. Une liste personnalisée n'autorise que les apps choisies.",
+    "catalog_all": "Toutes les apps",
+    "catalog_curated": "Sélection uniquement",
+    "catalog_custom": "Liste personnalisée",
+    "toast_connected": "Compte connecté",
+    "toast_connect_failed": "La connexion n'a pas abouti. Veuillez réessayer.",
+    "toast_disconnected": "Déconnecté",
+    "toast_failed": "Une erreur est survenue. Veuillez réessayer.",
+    "add": {
+      "search": "Rechercher une app…",
+      "empty": "Aucune app ne correspond.",
+      "curated": "Sélection",
+      "recommended_team": "Souvent un compte d'équipe",
+      "recommended_personal": "Souvent un compte personnel",
+      "connect_team": "Connecter un compte d’équipe",
+      "connect_personal": "Connecter mon compte",
+      "connecting": "Connexion…",
+      "connected": "Connecté",
+      "connect": "Connecter",
+      "team_description": "Connectez un compte partagé de l’espace de travail. Autorisez son utilisation sur la page Apps de chaque agent.",
+      "personal_description": "Connectez votre compte personnel. Les apps utilisant le compte de la personne qui déclenche l’exécution l’utilisent lorsque vous lancez une exécution."
+    },
+    "disconnect_team": {
+      "title": "Déconnecter le compte {{app}} de l'équipe ?",
+      "description": "Les agents qui utilisent le compte d'équipe perdent l'accès immédiatement.",
+      "agents": "Agents qui l'utilisent",
+      "no_agents": "Aucun agent ne l'utilise.",
+      "active_tasks": "Exécutions en cours : {{count}}",
+      "active_autopilots": "Autopilotes actifs : {{count}}",
+      "pending": "Confirmations qui seront annulées : {{count}}",
+      "cancel": "Annuler",
+      "confirm": "Déconnecter"
+    },
+    "disconnect_personal": {
+      "title": "Déconnecter votre compte {{app}} ?",
+      "description": "Les exécutions que vous lancez ne pourront plus l'utiliser. Vous pourrez le reconnecter plus tard.",
+      "cancel": "Annuler",
+      "confirm": "Déconnecter"
+    },
+    "detail": {
+      "team_title": "{{app}} · compte d'équipe",
+      "personal_title": "{{app}} · mon compte",
+      "rules_description": "Ce que les agents peuvent faire avec ce compte. Le niveau d'un agent ne peut que les rendre plus stricts.",
+      "rules_read_only": "Seuls les admins de l'espace peuvent modifier les règles du compte d'équipe.",
+      "default": "Par défaut : {{policy}}",
+      "activity_empty": "Aucun appel pour l'instant.",
+      "activity_failed": "Impossible de charger l'activité."
+    },
+    "classes": {
+      "read": {
+        "label": "Lire",
+        "description": "Rechercher, lister, récupérer"
+      },
+      "write": {
+        "label": "Écrire",
+        "description": "Créer et modifier du contenu"
+      },
+      "send": {
+        "label": "Envoyer",
+        "description": "Envoyer des e-mails ou messages, publier, inviter"
+      },
+      "delete": {
+        "label": "Supprimer",
+        "description": "Supprimer ou archiver"
+      },
+      "share": {
+        "label": "Partager",
+        "description": "Modifier les droits ou partager à l'extérieur"
+      }
+    },
+    "policies": {
+      "allow": "Autoriser",
+      "confirm": "Demander d'abord",
+      "block": "Bloquer"
+    },
+    "outcomes": {
+      "ok": "Exécuté",
+      "error": "Échec",
+      "blocked": "Bloqué",
+      "pending": "En attente",
+      "approved": "Approuvé",
+      "rejected": "Refusé",
+      "rate_limited": "Limite atteinte"
+    },
+    "scopes": {
+      "team": "Compte d'équipe",
+      "personal": "Compte du déclencheur"
+    },
+    "levels": {
+      "read": "Lecture seule",
+      "confirm_writes": "Demander avant d'écrire",
+      "write": "Peut écrire"
+    },
+    "request": {
+      "title_action": "{{agent}} veut exécuter {{tool}}",
+      "title_connect": "{{agent}} vous demande de connecter {{app}}",
+      "pending_count_one": "{{count}} action d'app en attente de confirmation",
+      "pending_count_other": "{{count}} actions d'app en attente de confirmation",
+      "waiting_for": "En attente de {{name}}",
+      "expires": "Expire {{when}}",
+      "redacted": "Seul·e {{name}} peut voir les détails.",
+      "arguments": "Arguments",
+      "edit": "Modifier",
+      "invalid_json": "Les arguments doivent être un objet JSON.",
+      "approve": "Approuver et exécuter",
+      "approve_all": "Tout approuver",
+      "reject": "Refuser",
+      "reject_reason": "Raison (facultatif, visible par l'agent)",
+      "connect": "Connecter {{app}}",
+      "connected_continue": "C'est connecté",
+      "status": {
+        "approved": "Approuvé",
+        "rejected": "Refusé",
+        "failed": "Échec",
+        "expired": "Expiré",
+        "cancelled": "Annulé"
+      },
+      "toast_approved": "Approuvé. L'agent va continuer.",
+      "toast_rejected": "Refusé. L'agent va s'adapter.",
+      "toast_failed": "Impossible d'enregistrer votre décision.",
+      "not_connected": "Connectez d'abord le compte.",
+      "connected_resumed": "{{app}} connecté. L'agent reprend là où il s'était arrêté.",
+      "rate_limited": "Ce compte a atteint sa limite d'appels par minute. Approuvez à nouveau dans une minute.",
+      "rate_limited_some_one": "{{count}} demande a atteint la limite par minute. Approuvez-la à nouveau dans une minute.",
+      "rate_limited_some_other": "{{count}} demandes ont atteint la limite par minute. Approuvez-les à nouveau dans une minute.",
+      "withdrawn": "Vous ne pouvez plus utiliser cet agent ; la demande a été retirée."
+    },
+    "tools": {
+      "tab": "Outils",
+      "description": "La classe d'un outil détermine la règle qui s'applique. Corrigez tout outil mal classé automatiquement ; le changement vaut pour tous les comptes de cette app dans l'espace de travail.",
+      "read_only": "Seuls les administrateurs de l'espace de travail peuvent modifier la classification des outils.",
+      "search": "Rechercher des outils",
+      "empty": "Aucun outil ne correspond.",
+      "auto": "Automatique ({{class}})",
+      "truncated": "{{shown}} sur {{total}} affichés. Recherchez pour affiner."
+    },
+    "custom": {
+      "title": "Liste d'apps personnalisée",
+      "description": "Les agents ne voient que les apps choisies, et personne ne peut connecter de compte pour une autre app.",
+      "selected_one": "{{count}} app sélectionnée",
+      "selected_other": "{{count}} apps sélectionnées",
+      "cancel": "Annuler",
+      "save": "Enregistrer la liste",
+      "saved": "Liste d'apps enregistrée",
+      "edit": "Modifier la liste",
+      "row_label": "Apps autorisées",
+      "row_description_one": "{{count}} app autorisée",
+      "row_description_other": "{{count}} apps autorisées"
+    },
+    "saved_access": {
+      "account": "Des restrictions enregistrées bloquent encore certaines actions de ce compte.",
+      "agent": "Cette app conserve un ancien accès en lecture seule.",
+      "catalog": "Une liste enregistrée masque les autres apps.",
+      "allow_actions": "Autoriser toutes les actions",
+      "open_catalog": "Afficher toutes les apps",
+      "account_confirm": "Les agents utilisant ce compte pourront lire, écrire, envoyer, supprimer et partager. Les restrictions enregistrées seront remplacées.",
+      "agent_confirm": "Cet agent pourra lire, écrire, envoyer, supprimer et partager via cette app, dans les limites du compte.",
+      "catalog_confirm": "Toutes les apps connectables seront disponibles dans l’espace de travail. Les connexions et les attributions existantes seront conservées.",
+      "cancel": "Annuler",
+      "admin_required": "Un administrateur peut rétablir l’accès.",
+      "account_link": "Ce compte conserve des restrictions. Rétablissez l’accès dans les apps connectées."
     }
   }
 }

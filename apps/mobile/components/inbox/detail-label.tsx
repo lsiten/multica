@@ -38,6 +38,7 @@ const TYPE_KEY: Record<InboxItemType, string> = {
   human_action_requested: "type.human_action_requested",
   issue_assigned: "type.assigned",
   issue_subscribed: "type.subscribed",
+  issue_created: "type.issue_created",
   unassigned: "type.unassigned",
   assignee_changed: "type.reassigned",
   status_changed: "type.status_changed",
@@ -62,6 +63,10 @@ const TYPE_KEY: Record<InboxItemType, string> = {
   runtime_mirror_viewer_stopped: "type.runtime_mirror_viewer_stopped",
   runtime_mirror_control_started: "type.runtime_mirror_control_started",
   runtime_mirror_control_stopped: "type.runtime_mirror_control_stopped",
+  app_action_requested: "type.app_action_requested",
+  app_action_reminder: "type.app_action_reminder",
+  app_connect_requested: "type.app_connect_requested",
+  app_action_result: "type.app_action_result",
 };
 
 // due_date is a calendar day — format timezone-safely (no offset day shift).

@@ -77,7 +77,7 @@ WITH expired_issue AS MATERIALIZED (
     WHERE t.issue_id IN (SELECT id FROM expired_issue)
        OR t.chat_session_id IN (SELECT id FROM expired_chat)
 ), eligible AS MATERIALIZED (
-    SELECT a.id, a.workspace_id, a.issue_id, a.comment_id, a.uploader_type, a.uploader_id, a.filename, a.url, a.content_type, a.size_bytes, a.created_at, a.chat_session_id, a.chat_message_id, a.task_id, a.source_context_id, CASE WHEN a.issue_id IS NULL AND a.chat_message_id IS NULL
+    SELECT a.id, a.workspace_id, a.issue_id, a.comment_id, a.uploader_type, a.uploader_id, a.filename, a.url, a.content_type, a.size_bytes, a.created_at, a.chat_session_id, a.chat_message_id, a.task_id, a.source_context_id, a.width, a.height, CASE WHEN a.issue_id IS NULL AND a.chat_message_id IS NULL
       THEN 'unbound' ELSE 'expired_owner' END::text AS cleanup_reason FROM attachment a
     WHERE a.source_context_id IS NULL AND a.created_at < $1::timestamptz
       AND ($2::uuid IS NULL OR a.workspace_id = $2::uuid)

@@ -88,7 +88,14 @@
     "wakeup_checkin": "silent check: {{note}}",
     "wakeup_checkin_coalesced_other": "{{count}} silent checks · latest: {{note}}",
     "wakeup_chip_created_by": "{{name}}'s wakeup",
-    "wakeup_chip_system": "System rule"
+    "wakeup_chip_system": "System rule",
+    "task_completed_one": "completed a run",
+    "task_failed_one": "run failed",
+    "activity_count_one": "{{count}} activity",
+    "show_more_activities_one": "Show {{count}} more activity",
+    "wakeup_child_done_stage_one": "Stage {{stage}}'s sub-issue finished",
+    "wakeup_child_done_all_one": "The sub-issue finished",
+    "wakeup_checkin_coalesced_one": "{{count}} silent check · latest: {{note}}"
   },
   "actor_issues": {
     "scope": {
@@ -127,7 +134,13 @@
     "tasks_count_other": "{{count}} runs",
     "chip_agents_working_other": "{{count}} agents working",
     "issues_count_other": "{{count}} issues",
-    "chip_agents_working_unknown": "Agents working: —"
+    "chip_agents_working_unknown": "Agents working: —",
+    "hover_header_one": "{{count}} active agent",
+    "hover_header_tasks_one": "{{count}} active run",
+    "hover_header_queued_one": "{{count}} queued agent",
+    "tasks_count_one": "{{count}} run",
+    "chip_agents_working_one": "{{count}} agent working",
+    "issues_count_one": "{{count}} issue"
   },
   "agent_live": {
     "is_working": "{{name}} is working",
@@ -139,7 +152,8 @@
     "transcript_button": "View transcript",
     "stop_button": "Stop",
     "stop_tooltip": "Stop agent",
-    "cancel_failed": "Failed to cancel run"
+    "cancel_failed": "Failed to cancel run",
+    "tool_count_one": "{{count}} tool"
   },
   "backlog_hint": {
     "title": "Agent is paused in Backlog",
@@ -163,7 +177,12 @@
     "delete_dialog_title_other": "Delete {{count}} issues?",
     "delete_dialog_desc_other": "This action cannot be undone. This will permanently delete the selected issues and all associated data.",
     "delete_dialog_warning": "Any workspace member can delete issues.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "update_success_one": "Updated {{count}} issue",
+    "update_partial_one": "Updated {{updated}} of {{count}} issue. The rest don't allow this change and were left as they were.",
+    "delete_success_one": "Deleted {{count}} issue",
+    "delete_dialog_title_one": "Delete {{count}} issue?",
+    "delete_dialog_desc_one": "This action cannot be undone. This will permanently delete the selected issue and all associated data."
   },
   "board": {
     "hide_column": "Hide column",
@@ -257,7 +276,10 @@
       "fold_other": "{{count}} comments from {{authors}}",
       "bar_authors_more_other": "{{names}} and {{count}} others",
       "resolve_failed": "Failed to resolve thread",
-      "unresolve_failed": "Failed to unresolve thread"
+      "unresolve_failed": "Failed to unresolve thread",
+      "bar_one": "{{count}} resolved comment from {{authors}}",
+      "fold_one": "{{count}} comment from {{authors}}",
+      "bar_authors_more_one": "{{names}} and {{count}} other"
     },
     "recipient_steer": "Add to current run",
     "recipient_steer_desc": "{{name}} reads it after the current step and keeps working on the original task. Text only.",
@@ -273,7 +295,11 @@
     "recipient_count_other": "{{count}} agents will receive this",
     "steer_attachment_notice": "Only text can join a running run, so a message with files is handled after it.",
     "restart_send": "Stop and send",
-    "restart_failed": "Couldn't stop the current run. Your message wasn't sent."
+    "restart_failed": "Couldn't stop the current run. Your message wasn't sent.",
+    "posted_partial_trigger_one": "Comment posted, but {{count}} mention wasn't triggered",
+    "reply_count_one": "{{count}} reply",
+    "trigger_will_start_count_one": "{{count}} agent will start when sent",
+    "recipient_count_one": "{{count}} agent will receive this"
   },
   "data_load_error": {
     "title": "Couldn't load issues",
@@ -308,7 +334,10 @@
     "overview_summary_with_size_other": "{{count}} deliverables · {{size}} total",
     "overview_close": "Close",
     "overview_empty": "No deliverables of this type.",
-    "group_comment_by": "Comment by {{name}}"
+    "group_comment_by": "Comment by {{name}}",
+    "view_all_one": "View all {{count}} deliverable",
+    "overview_summary_one": "{{count}} deliverable",
+    "overview_summary_with_size_one": "{{count}} deliverable · {{size}}"
   },
   "detail": {
     "metadata_close": "Close metadata",
@@ -428,7 +457,9 @@
     "project_directory_path_copied_with_branch": "Project directory path copied — work is on {{branch}}",
     "workdir_path_copy_failed": "Failed to copy workdir path",
     "workdir_path_unavailable": "No local workdir yet — issue has not been run by a local agent",
-    "pull_requests_empty_title": "No linked pull requests."
+    "pull_requests_empty_title": "No linked pull requests.",
+    "pull_request_card_files_count_one": "{{count}} file",
+    "thread_nav_show_replies_one": "Show {{count}} reply"
   },
   "display": {
     "tooltip": "Display settings",
@@ -533,7 +564,10 @@
     "more_runs_other": "{{count}} more",
     "strip_aria": "Cumulative cost over time — open the run timeline",
     "strip_no_usage": "No usage recorded",
-    "sparkline_now": "Now"
+    "sparkline_now": "Now",
+    "included_comments_one": "Includes {{count}} comment",
+    "summary_runs_one": "{{count}} run",
+    "more_runs_one": "{{count}} more"
   },
   "filtered_empty": {
     "title": "No issues match these filters",
@@ -638,7 +672,11 @@
     "advanced_group_match_trailing": "of these",
     "advanced_group_hint": "Conditions in this group are joined with “{{word}}”",
     "advanced_add_to_group": "Add to group",
-    "advanced_turn_into_group": "Turn into group"
+    "advanced_turn_into_group": "Turn into group",
+    "unsaved_changes_one": "{{count}} unsaved change",
+    "issue_count_one": "{{count}} issue",
+    "active_count_one": "{{count}} filter",
+    "advanced_conditions_one": "{{count}} condition"
   },
   "gantt": {
     "header_issue": "Issue",
@@ -697,7 +735,8 @@
     "steer_resend": "Send as a new run",
     "steer_resend_failed": "Couldn't send it as a new run.",
     "steer_step": "{{name}} added",
-    "steer_step_read": "Read"
+    "steer_step_read": "Read",
+    "steps_one": "{{count}} step"
   },
   "labels_panel": {
     "intro": "Create and manage labels to categorize issues across your workspace.",
@@ -936,7 +975,8 @@
     "not_merged_action": "Remove",
     "all_merged_to": "All PRs merged. The next merged PR moves this issue to {{status}}.",
     "issue_disabled": "PR merges won’t change this issue",
-    "issue_disabled_action": "Turn on"
+    "issue_disabled_action": "Turn on",
+    "waiting_to_one": "Moves to {{status}} when {{prs}} merges"
   },
   "priority": {
     "urgent": "Urgent",
@@ -963,7 +1003,8 @@
       "selection_failed": "Could not capture the selection. Select text within one comment or description and try again.",
       "source_label": "Comment by {{name}}",
       "edit": "Edit annotation {{number}}",
-      "note_placeholder": "Add a comment…"
+      "note_placeholder": "Add a comment…",
+      "count_one": "{{count}} annotation"
     }
   },
   "requirement": {
@@ -1044,7 +1085,13 @@
     "detail_cache": "Cache hit",
     "cache_hit_value": "{{percent}} · saved {{amount}}",
     "detail_time": "Time",
-    "detail_branch": "Branch"
+    "detail_branch": "Branch",
+    "count_failed_one": "{{count}} failed",
+    "count_cancelled_one": "{{count}} cancelled",
+    "count_active_one": "{{count}} active",
+    "chart_aria_one": "Run activity: {{cost}} across {{count}} run",
+    "day_runs_one": "{{count}} run",
+    "cumulative_aria_one": "Cumulative cost over time: {{cost}} across {{count}} run"
   },
   "save_view": {
     "scope_label_workspace": "Assignee type",
@@ -1124,7 +1171,8 @@
     "error_comment_limit": "The source comment thread history has at least {{count}} comments; the limit is 256.",
     "error_text_limit": "The source text is {{size}} bytes; the limit is 1 MiB.",
     "error_attachment_count_limit": "The source has {{count}} attachments; the limit is 100.",
-    "error_attachment_size_limit": "The source attachments total {{size}} bytes; the limit is 500 MiB."
+    "error_attachment_size_limit": "The source attachments total {{size}} bytes; the limit is 500 MiB.",
+    "preview_summary_one": "Context from {{identifier}} · issue description + {{count}} comment"
   },
   "stage": {
     "none": "No stage",
@@ -1315,7 +1363,8 @@
       "row_actions": "Actions for {{name}}",
       "empty_title": "No saved views yet",
       "empty_description": "Set up filters and display options in an issue list, then save them as a view."
-    }
+    },
+    "filter_count_one": "{{count}} filter"
   },
   "wakeups": {
     "title": "Wakeups",
@@ -1556,7 +1605,9 @@
       "missing_issue": "Choose an issue.",
       "checked": "Checked",
       "unchecked": "Unchecked",
-      "assignee_comment_hint": "{{name}} is the assignee and already runs when a member comments. This rule joins that run instead of starting another; add it only to give that run an extra instruction."
+      "assignee_comment_hint": "{{name}} is the assignee and already runs when a member comments. This rule joins that run instead of starting another; add it only to give that run an extra instruction.",
+      "wait_days_one": "{{count}} day",
+      "max_fires_times_one": "{{count}} time"
     },
     "system": {
       "badge": "System",
@@ -1588,7 +1639,8 @@
       "instruction_default": "Not set on this issue; uses the default:",
       "instruction_placeholder": "Leave empty to use the default",
       "instruction_invalid": "Keep the instruction within 4,000 bytes.",
-      "paused": "Paused: {{reason}}"
+      "paused": "Paused: {{reason}}",
+      "remaining_one": "{{count}} to go"
     },
     "cond": {
       "status": "When this issue moves to {{status}}",
@@ -1654,7 +1706,8 @@
       "delete_title": "Delete this wakeup?",
       "delete_body": "{{agent}} is no longer woken by it, and its runs that have not started are withdrawn. A run already started keeps going.",
       "deleting": "Deleting…",
-      "delete_error": "Could not delete the wakeup"
+      "delete_error": "Could not delete the wakeup",
+      "fires_one": "Triggered {{count}} time"
     },
     "paused_reason": {
       "max_fires": "reached its limit of {{count}} runs",
@@ -1701,7 +1754,11 @@
       "no_matching_projects": "No matching projects",
       "default_covers_no_project": "Also applies to issues without a project",
       "new_blank": "Blank workflow",
-      "from_template": "From a template"
+      "from_template": "From a template",
+      "projects_one": "{{count}} project",
+      "statuses_one": "{{count}} status",
+      "handoffs_one": "{{count}} handoff step",
+      "usage_default_one": "{{count}} project + no-project issues"
     },
     "editor": {
       "create_title": "New workflow",
@@ -1765,7 +1822,8 @@
       "step_off": "Switched off: this workflow leaves the status out. Turn it on in the step list to use it.",
       "status_new_hint": "A new status. It is added to the status library when you save.",
       "no_other_status": "Every status is already a step.",
-      "no_handoff_step": "This step doesn't hand off: issues entering it keep their assignee and start no run."
+      "no_handoff_step": "This step doesn't hand off: issues entering it keep their assignee and start no run.",
+      "used_by_note_one": "Used by {{count}} project: {{names}}. Saved changes apply to it right away."
     },
     "mapping": {
       "title": "Move issues into {{name}}",
@@ -1786,7 +1844,14 @@
       "edit_description": "Some issues in projects using this workflow are on statuses you removed. Choose where they go; everything else stays.",
       "confirm_save_count_other": "Save and update {{count}} issues",
       "switched_other": "“{{project}}” now uses “{{workflow}}”; {{count}} issues updated",
-      "nothing_moves": "Every issue’s status is in both workflows, so nothing moves."
+      "nothing_moves": "Every issue’s status is in both workflows, so nothing moves.",
+      "issues_one": "{{count}} issue",
+      "switch_description_one": "{{project}} has {{count}} issue. Only issues on statuses “{{workflow}}” doesn’t have need a new status.",
+      "needs_mapping_one": "Needs a new status · {{count}} issue",
+      "unchanged_one": "The other {{count}} issue ({{statuses}}) keeps its status — both workflows have it.",
+      "confirm_count_one": "Switch and update {{count}} issue",
+      "confirm_save_count_one": "Save and update {{count}} issue",
+      "switched_one": "“{{project}}” now uses “{{workflow}}”; {{count}} issue updated"
     },
     "project": {
       "label": "Workflow",
@@ -1822,7 +1887,9 @@
       "under_minute": "under a minute",
       "error": "Couldn’t move the issue",
       "project_title": "Move {{issue}} to {{project}}?",
-      "project_confirm": "Move to {{project}}"
+      "project_confirm": "Move to {{project}}",
+      "minutes_one": "{{count}} minute",
+      "hours_one": "{{count}} hour"
     },
     "board": {
       "drop_hint_run": "Drop to hand to {{name}} and start the run",
@@ -1885,7 +1952,8 @@
       "title": "{{workflow}} workflow",
       "scope_own": "Only this project uses this workflow.",
       "no_handoff_here": "No handoff",
-      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them."
+      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them.",
+      "scope_shared_one": "{{count}} project uses this workflow. Its handoffs apply to every project using it."
     },
     "templates": {
       "delivery": {
@@ -1982,6 +2050,7 @@
     "docs": "Documentation",
     "changelog": "Journal des modifications",
     "discord": "Discord",
+    "star_on_github": "Mettre une étoile sur GitHub",
     "feedback": "Faire un retour",
     "server_version": "Version du serveur {{version}}"
   },
@@ -2001,9 +2070,6 @@
     "workspaces_label": "Espaces de travail",
     "create_workspace": "Créer un espace de travail",
     "pending_invitations_label": "Invitations en attente",
-    "invitation_workspace_fallback": "Espace de travail",
-    "invitation_join": "Rejoindre",
-    "invitation_decline": "Refuser",
     "log_out": "Se déconnecter",
     "new_issue": "Nouvelle tâche",
     "pinned_label": "Épinglés",
@@ -2016,7 +2082,10 @@
     "discord_card": {
       "title": "Rejoignez notre Discord",
       "dismiss": "Ignorer"
-    }
+    },
+    "invitation_workspace_fallback": "Espace de travail",
+    "invitation_join": "Rejoindre",
+    "invitation_decline": "Refuser"
   },
   "spaces": {
     "work": "Travail",
@@ -2031,12 +2100,22 @@
     "chat": "Chat",
     "autopilots": "Auto",
     "switch_workspace": "Changer d'espace de travail",
-    "invitation_from": "{{name}} vous a invité",
+    "pin_workspace": "Épingler l’espace de travail",
+    "unpin_workspace": "Désépingler l’espace de travail",
     "open_in_new_window": "Ouvrir dans une nouvelle fenêtre",
     "open_in_new_window_click": "Clic",
     "open_in_other_window": "Déjà ouvert dans une autre fenêtre",
     "in_other_window": "Autre fenêtre",
-    "all_workspaces_open": "Chaque espace de travail est déjà ouvert dans une fenêtre"
+    "all_workspaces_open": "Chaque espace de travail est déjà ouvert dans une fenêtre",
+    "copy_link": "Copier le lien",
+    "link_copied": "Lien copié",
+    "workspace_settings": "Paramètres de l’espace de travail",
+    "mark_all_read": "Tout marquer comme lu",
+    "mark_all_read_failed": "Impossible de tout marquer comme lu",
+    "reset_order": "Rétablir l’ordre par défaut",
+    "copy_workspace_link": "Copier le lien de l’espace de travail",
+    "workspace_meta_one": "{{slug}} · {{count}} membre",
+    "workspace_meta_other": "{{slug}} · {{count}} membres"
   },
   "panels": {
     "work": {
@@ -2077,7 +2156,11 @@
       "view_duplicate": "Dupliquer",
       "view_delete": "Supprimer la vue",
       "unread": "Non lues",
-      "project_issues_retry": "Réessayer"
+      "project_issues_retry": "Réessayer",
+      "assignee_projects_only": "S'applique uniquement aux tâches affichées sous Projets",
+      "view_edit": "Modifier la vue",
+      "new_issue_here": "Nouvelle tâche dans ce projet",
+      "all_projects_one": "All {{count}} project"
     },
     "team": {
       "new_agent": "Nouvel agent",
@@ -2090,8 +2173,15 @@
       "squads_and_members": "Squads et membres",
       "members_other": "{{count}} membres",
       "resources": "Ressources",
-      "runtimes_offline_other": "{{count}} hors ligne",
-      "invite_member": "Inviter un membre"
+      "invite_member": "Inviter un membre",
+      "show_more_agents": "Afficher {{count}} de plus…",
+      "show_fewer_agents": "Afficher moins",
+      "runtimes_online_one": "{{count}} en ligne",
+      "runtimes_online_other": "{{count}} en ligne",
+      "open_issue": "Ouvrir {{identifier}}",
+      "stuck_one": "{{count}} task waiting on an offline runtime",
+      "running_tasks_one": "{{count}} task running",
+      "members_one": "{{count}} member"
     },
     "autopilots": {
       "all": "Toutes les automatisations",
@@ -2108,6 +2198,8 @@
       "dark": "Sombre",
       "system": "Système"
     },
+    "mode": "Mode",
+    "appearance_settings": "Paramètres d’apparence",
     "language": "Langue",
     "shortcuts": "Raccourcis clavier"
   },
@@ -2129,10 +2221,64 @@
     "direction_desc": "Décroissant",
     "section_columns": "Colonnes",
     "load_more": "Charger plus",
-    "loading_more": "Chargement…"
+    "loading_more": "Chargement…",
+    "filter_count_one": "{{count}} filter",
+    "selected_one": "{{count}} selected"
   },
   "object_page": {
     "toggle_panel": "Afficher ou masquer le panneau de droite",
     "properties": "Propriétés"
+  },
+  "whats_new": {
+    "trigger": "Nouveautés",
+    "panel": {
+      "title": "Nouveautés",
+      "close": "Fermer",
+      "new": "Nouveau",
+      "release_notes": "Journal des modifications v{{version}}",
+      "full_changelog": "Journal des modifications complet"
+    },
+    "action": {
+      "try": "Essayer",
+      "open": "Ouvrir",
+      "learn_more": "En savoir plus"
+    }
+  },
+  "star_prompt": {
+    "title_one": "{{agent}} a terminé {{count}} tâche",
+    "title_other": "{{agent}} a terminé {{count}} tâches",
+    "body": "Si Multica vous est utile, une étoile sur GitHub aide d'autres équipes à le découvrir.",
+    "star": "Star",
+    "star_label": "Mettre une Star à Multica sur GitHub",
+    "later": "Plus tard",
+    "close": "Fermer"
+  },
+  "bottom_bar": {
+    "label": "Barre d'état",
+    "working_one": "{{count}} agent au travail",
+    "working_other": "{{count}} agents au travail"
+  },
+  "feature_intro": {
+    "read_docs": "Lire la documentation",
+    "carousel": "carrousel",
+    "slide": "diapositive",
+    "slide_position": "{{current}} sur {{total}}",
+    "go_to_slide": "Aller à la diapositive {{index}}",
+    "previous": "Précédent",
+    "next": "Suivant"
+  },
+  "context_menu": {
+    "cut": "Couper",
+    "copy": "Copier",
+    "paste": "Coller",
+    "select_all": "Tout sélectionner",
+    "add_to_dictionary": "Ajouter au dictionnaire",
+    "open_link": "Ouvrir le lien dans le navigateur",
+    "copy_link_address": "Copier l’adresse du lien",
+    "copy_image": "Copier l’image",
+    "copy_code": "Copier le code",
+    "copy_table": "Copier le tableau",
+    "copied": "Copié",
+    "copy_failed": "Impossible de copier"
   }
 }

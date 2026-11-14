@@ -16,11 +16,6 @@ import (
 
 var ErrInvalidCodeWorkspaceSelection = errors.New("invalid code workspace selection")
 
-type TaskStartOptions struct {
-	EnableTaskSupplement bool
-	CodeWorkspace        *protocol.CodeWorkspaceSelection
-}
-
 func recordCodeWorkspaceSelection(ctx context.Context, q *db.Queries, task db.AgentTaskQueue, selection *protocol.CodeWorkspaceSelection) (db.AgentTaskQueue, error) {
 	if selection == nil {
 		return task, nil

@@ -45,7 +45,13 @@ type providerExecOptionsInput struct {
 	OmpMcpExtensionDir string
 
 	// Model is the resolved provider model ("") lets the CLI pick its default.
-	Model string
+	Model                 string
+	CursorHookCommand     []string
+	PiSkillPaths          []string
+	OpenclawModelOverride string
+	TaskToken             string
+	MulticaServerURL      string
+	MulticaWorkspaceID    string
 	// IdleWatchdogTimeout narrows the no-message watchdog for opencode/codearts;
 	// zero keeps the daemon-wide window.
 	IdleWatchdogTimeout time.Duration
@@ -79,6 +85,12 @@ func buildProviderExecOptions(in providerExecOptionsInput) agent.ExecOptions {
 		CostLimitUSDTicks:          in.CostLimitUSDTicks,
 		TokenLimit:                 autonomyPolicyTokenLimit(in.AutonomyPolicy),
 		EnableTaskSupplement:       in.TaskSupplementNegotiated,
+		CursorHookCommand:          in.CursorHookCommand,
+		PiSkillPaths:               in.PiSkillPaths,
+		OpenclawModelOverride:      in.OpenclawModelOverride,
+		TaskToken:                  in.TaskToken,
+		MulticaServerURL:           in.MulticaServerURL,
+		MulticaWorkspaceID:         in.MulticaWorkspaceID,
 		Cwd:                        in.WorkDir,
 		Model:                      in.Model,
 		ThreadName:                 deriveTaskThreadName(in.Task),
@@ -253,6 +265,12 @@ func buildWorkerProviderRun(in workerContext, provider string, logger *slog.Logg
 		CostLimitUSDTicks:               costLimitUSDTicks,
 		TaskSupplementNegotiated:        facts.TaskSupplementNegotiated,
 		WorkDir:                         in.Env.WorkDir,
+		CursorHookCommand:               facts.CursorHookCommand,
+		PiSkillPaths:                    in.Env.PiSkillPaths,
+		OpenclawModelOverride:           facts.OpenclawModelOverride,
+		TaskToken:                       in.Env.Env["MULTICA_TOKEN"],
+		MulticaServerURL:                in.Config.ServerBaseURL,
+		MulticaWorkspaceID:              in.Task.WorkspaceID,
 		ClaudeSettingsPath:              in.Env.ClaudeSettingsPath,
 		QwenpawWorkspace:                in.Env.QwenpawWorkspace,
 		ContextDir:                      in.Env.ContextDir,
@@ -291,7 +309,11 @@ func buildWorkerProviderRun(in workerContext, provider string, logger *slog.Logg
 	if err != nil {
 		return workerProviderRun{}, err
 	}
-	return workerProviderRun{Backend: backend, Options: execOpts, Prompt: BuildPrompt(in.Task, provider)}, nil
+	prompt := facts.Prompt
+	if prompt == "" {
+		prompt = BuildPrompt(in.Task, provider)
+	}
+	return workerProviderRun{Backend: backend, Options: execOpts, Prompt: prompt}, nil
 }
 
 // resolveWorkerModel picks the model the worker launches with: an explicit
@@ -345,6 +367,7 @@ func executePreparedProvider(
 		taskLog.Debug("worker backend execute returned error", "error", err)
 		return agent.Result{}, 0, agent.ExplainExecError(err)
 	}
+	taskOutputObserverFromContext(ctx).begin()
 	phaseRecorder.Mark(taskPhaseRuntimeStarted)
 	taskLog.Debug("worker backend started, draining messages")
 	return runProviderExecution(

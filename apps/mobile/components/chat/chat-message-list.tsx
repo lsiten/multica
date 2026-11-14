@@ -21,7 +21,7 @@ import type {
   TaskMessagePayload,
 } from "@multica/core/types";
 import type { AgentAvailability } from "@multica/core/agents";
-import { canContinueChatFailure } from "@multica/core/chat";
+import { canContinueChatFailure } from "@multica/core/chat/failure-recovery";
 import { continuousCorners } from "@/lib/radius";
 import { taskMessagesOptions } from "@/data/queries/chat";
 import { Text } from "@/components/ui/text";

@@ -32,7 +32,7 @@ func createWebhookTestAgent(t *testing.T, name string) string {
 		)
 		VALUES ($1, $2, '', 'cloud', '{}'::jsonb, $3, 'private', 1, $4, '', '{}'::jsonb, '[]'::jsonb, '{}'::jsonb)
 		RETURNING id
-	`, testWorkspaceID, name, testRuntimeID, testUserID).Scan(&agentID); err != nil {
+	`, testWorkspaceID, name, handlerTestRuntimeID(t), testUserID).Scan(&agentID); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 	t.Cleanup(func() {

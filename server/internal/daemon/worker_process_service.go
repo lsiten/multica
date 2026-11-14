@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -143,37 +143,47 @@ type workerContext struct {
 }
 
 type workerLaunchFacts struct {
-	ExecutablePath           string          `json:"executable_path,omitempty"`
-	LaunchPrefix             []string        `json:"launch_prefix,omitempty"`
-	CLIVersion               string          `json:"cli_version,omitempty"`
-	CodexVersion             string          `json:"codex_version,omitempty"`
-	BuiltinRuntime           bool            `json:"builtin_runtime"`
-	Model                    string          `json:"model,omitempty"`
-	IdleWatchdogTimeout      time.Duration   `json:"idle_watchdog_timeout,omitempty"`
-	ExtraArgs                []string        `json:"extra_args,omitempty"`
-	CustomArgs               []string        `json:"custom_args,omitempty"`
-	McpConfig                json.RawMessage `json:"mcp_config,omitempty"`
-	ThinkingLevel            string          `json:"thinking_level,omitempty"`
-	ServiceTier              string          `json:"service_tier,omitempty"`
-	OpenclawMode             string          `json:"openclaw_mode,omitempty"`
-	RuntimeBrief             string          `json:"runtime_brief,omitempty"`
-	TaskSupplementNegotiated bool            `json:"task_supplement_negotiated"`
+	SharedLocalDirectory     bool                      `json:"shared_local_directory"`
+	Prompt                   string                    `json:"prompt"`
+	TaskContext              execenv.TaskContextForEnv `json:"task_context"`
+	Receipt                  contextReceiptInput       `json:"receipt"`
+	CursorHookCommand        []string                  `json:"cursor_hook_command"`
+	ThinkingLevelWarning     string                    `json:"thinking_level_warning"`
+	OpenclawModelOverride    string                    `json:"openclaw_model_override"`
+	ExecutablePath           string                    `json:"executable_path,omitempty"`
+	LaunchPrefix             []string                  `json:"launch_prefix,omitempty"`
+	CLIVersion               string                    `json:"cli_version,omitempty"`
+	CodexVersion             string                    `json:"codex_version,omitempty"`
+	BuiltinRuntime           bool                      `json:"builtin_runtime"`
+	Model                    string                    `json:"model,omitempty"`
+	IdleWatchdogTimeout      time.Duration             `json:"idle_watchdog_timeout,omitempty"`
+	ExtraArgs                []string                  `json:"extra_args,omitempty"`
+	CustomArgs               []string                  `json:"custom_args,omitempty"`
+	McpConfig                json.RawMessage           `json:"mcp_config,omitempty"`
+	ThinkingLevel            string                    `json:"thinking_level,omitempty"`
+	ServiceTier              string                    `json:"service_tier,omitempty"`
+	OpenclawMode             string                    `json:"openclaw_mode,omitempty"`
+	RuntimeBrief             string                    `json:"runtime_brief,omitempty"`
+	TaskSupplementNegotiated bool                      `json:"task_supplement_negotiated"`
 }
 
 // PreparedEnv is the prepared execution environment delivered to a worker. It is
 // the JSON-safe projection of the environment control prepares in runTask: the
 // workdir, codex home, and resolved agent environment map.
 type PreparedEnv struct {
-	WorkDir            string            `json:"work_dir"`
-	RootDir            string            `json:"root_dir,omitempty"`
-	LocalWorktree      bool              `json:"local_worktree,omitempty"`
-	CodexHome          string            `json:"codex_home"`
-	ClaudeSettingsPath string            `json:"claude_settings_path,omitempty"`
-	QwenpawWorkspace   string            `json:"qwenpaw_workspace,omitempty"`
-	ContextDir         string            `json:"context_dir,omitempty"`
-	CursorMcpPluginDir string            `json:"cursor_mcp_plugin_dir,omitempty"`
-	OmpMcpExtensionDir string            `json:"omp_mcp_extension_dir,omitempty"`
-	Env                map[string]string `json:"env,omitempty"`
+	PiSkillPaths       []string                    `json:"pi_skill_paths"`
+	HermesHome         string                      `json:"hermes_home"`
+	Delivery           *execenv.WorktreeInspection `json:"delivery,omitempty"`
+	WorkDir            string                      `json:"work_dir"`
+	RootDir            string                      `json:"root_dir,omitempty"`
+	LocalWorktree      bool                        `json:"local_worktree,omitempty"`
+	CodexHome          string                      `json:"codex_home"`
+	ClaudeSettingsPath string                      `json:"claude_settings_path,omitempty"`
+	QwenpawWorkspace   string                      `json:"qwenpaw_workspace,omitempty"`
+	ContextDir         string                      `json:"context_dir,omitempty"`
+	CursorMcpPluginDir string                      `json:"cursor_mcp_plugin_dir,omitempty"`
+	OmpMcpExtensionDir string                      `json:"omp_mcp_extension_dir,omitempty"`
+	Env                map[string]string           `json:"env,omitempty"`
 }
 
 // workerGateRecord is one verification result the worker records into its gate.
@@ -503,6 +513,8 @@ func (s *workerProcessService) executionClient(grant protocol.ExecutionGrantResp
 // success); the terminal result the server settles the execution from is the
 // one executePreparedProvider produced through runProviderExecution.
 type workerRunResult struct {
+	RetiredSessionID        string                      `json:"retired_session_id,omitempty"`
+	ProviderError           string                      `json:"provider_error,omitempty"`
 	InstanceID              string                      `json:"instance_id"`
 	PID                     int                         `json:"pid"`
 	Ran                     bool                        `json:"ran"`
@@ -550,50 +562,25 @@ func (s *workerProcessService) reportWorkerRun(ctx context.Context, client *Exec
 }
 
 func (s *workerProcessService) executeProviderRun(ctx context.Context, client *ExecutionClient, runCtx *workerContext) workerRunResult {
-	run, err := buildWorkerProviderRun(*runCtx, runCtx.Provider, slog.Default(), workerApproveAll, agent.LocalProcessLauncher{})
-	if err != nil {
-		return workerRunResult{InstanceID: s.bootstrap.Identity.InstanceID, PID: os.Getpid(), Status: "failed", RunError: err.Error(), Execution: &client.identity}
-	}
-
-	// Genuinely run the provider: create the phase recorder (runProviderExecution
-	// dereferences it, so it must be non-nil), wire the Daemon-free seams from
-	// the scoped client, and drive the shared provider run. Nil budget is
-	// tolerated by runProviderExecution.
-	var msgSeq atomic.Int32
-	phaseRecorder := newTaskPhaseRecorder(slog.Default(), time.Now)
-	result, tools, runErr := executePreparedProvider(
-		ctx, run.Backend, run.Prompt, run.Options, slog.Default(), runCtx.Task.ID, runCtx.Env.CodexHome, &msgSeq, nil, phaseRecorder,
-		func(c context.Context, taskID string, messages []TaskMessageData) error {
-			return client.ReportTaskMessages(c, messages)
-		},
-		func(c context.Context, taskID, sessionID, workDir string) error {
-			return client.PinTaskSession(c, sessionID, workDir)
-		},
-		workerSupplementSubscribe(),
-		func(c context.Context, taskID string) (*TaskSupplement, error) { return client.ClaimSupplement(c) },
-		func(c context.Context, taskID, commentID string, delivered bool, reason string) error {
-			return client.AckSupplement(c, commentID, delivered, reason)
-		},
-		defaultTaskSupplementReadyInterval, defaultTaskSupplementPollInterval,
-		runCtx.Config.AgentIdleWatchdog, runCtx.Config.AgentToolWatchdog, runCtx.Config.AgentStartupTimeout,
-	)
+	result, tools, retired, runErr := runWorkerProvider(ctx, client, runCtx)
 	status := result.Status
 	if runErr != nil {
 		status = "failed"
 	}
 	// Persist the worker's genuine outcome before control adds directory-delivery metadata.
 	return workerRunResult{
-		InstanceID:              s.bootstrap.Identity.InstanceID,
-		PID:                     os.Getpid(),
-		Ran:                     true,
-		Output:                  result.Output,
+		InstanceID:       s.bootstrap.Identity.InstanceID,
+		PID:              os.Getpid(),
+		Ran:              true,
+		Output:           result.Output,
+		RetiredSessionID: retired, ProviderError: result.Error,
 		SessionID:               result.SessionID,
 		Status:                  status,
 		ToolCount:               tools,
 		RunError:                runErrMsg(runErr),
 		BudgetExceeded:          result.BudgetExceeded || result.TokenBudgetExceeded,
 		TokenBudgetExceeded:     result.TokenBudgetExceeded,
-		Usage:                   usageEntriesForResult(runCtx.Provider, result.Usage),
+		Usage:                   taskUsageEntries(runCtx.Provider, result.Usage),
 		Execution:               &client.identity,
 		WorkDir:                 runCtx.Env.WorkDir,
 		WorktreeDeliveryPending: runCtx.Env.LocalWorktree,

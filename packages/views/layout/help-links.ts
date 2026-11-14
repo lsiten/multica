@@ -4,4 +4,4 @@ export const CHANGELOG_URL = "https://multica.ai/changelog";
 // the same binaries either way, and the desktop client can point at a
 // self-hosted backend once installed. A self-host-relative /download would
 // only serve a copy of this page that still has to reach our release assets.
-export const DOWNLOAD_URL = "https://multica.ai/download";
+export const DOWNLOAD_URL = "https://github.com/lsiten/multica/releases/latest";

@@ -54,7 +54,7 @@ func (h *Handler) SaveProjectSupervision(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if !isWorkspaceAdmin(member.Role) || r.Header.Get("X-Actor-Source") == "task_token" {
+	if !isWorkspaceAdmin(member) || r.Header.Get("X-Actor-Source") == "task_token" {
 		writeError(w, http.StatusForbidden, "only workspace owners and admins may configure supervision")
 		return
 	}
@@ -79,7 +79,7 @@ func (h *Handler) CheckProjectSupervision(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if !isWorkspaceAdmin(member.Role) || r.Header.Get("X-Actor-Source") == "task_token" {
+	if !isWorkspaceAdmin(member) || r.Header.Get("X-Actor-Source") == "task_token" {
 		writeError(w, http.StatusForbidden, "only workspace owners and admins may check supervision")
 		return
 	}

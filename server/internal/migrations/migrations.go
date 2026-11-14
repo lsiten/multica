@@ -102,7 +102,7 @@ func ExtractVersion(filename string) string {
 		"900453_notification_bot_delivery_unique", "900454_notification_bot_delivery_ready",
 		"900455_issue_goal_mode", "900457_pinned_item_runtime_mirror",
 		"900458_runtime_mirror_event", "900459_runtime_mirror_event_index",
-		"900468_drop_reference_only_column":
+		"900468_drop_reference_only_column", "900573_agent_task_work_dir_missing":
 		return strings.TrimPrefix(base, "900")
 	}
 	return base

@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "@multica/core/api";
 import type { Agent } from "@multica/core/types";
 import { I18nProvider } from "@multica/core/i18n/react";
-import { RESOURCES } from "../../locales";
+import { getTestResources } from "../../test/i18n";
 import {
   NavigationProvider,
   type NavigationAdapter,
@@ -62,6 +62,10 @@ vi.mock("./tabs/activity-tab", () => ({
 vi.mock("./agent-instructions-section", () => ({
   AgentInstructionsSection: () => <div>instructions-section</div>,
 }));
+vi.mock("./agent-channels-section", () => ({
+  AgentChannelLinks: () => <div>channel-links</div>,
+  AgentChannelsSection: () => <div id="messaging-channels">channels-section</div>,
+}));
 vi.mock("./agent-skills-section", () => ({
   AgentSkillsSection: ({ onManage }: { onManage: () => void }) => (
     <button type="button" onClick={onManage}>
@@ -81,7 +85,6 @@ vi.mock("./agent-advanced-settings", () => ({
       "skills",
       "mcp_config",
       "composio_mcp",
-      "integrations",
     ].includes(value),
   AgentAdvancedSettings: ({
     section,
@@ -289,7 +292,7 @@ function renderPage(search = "") {
     getShareableUrl: (path) => `https://app.test${path}`,
   };
   const view = render(
-    <I18nProvider locale="en" resources={RESOURCES}>
+    <I18nProvider locale="en" resources={getTestResources()}>
       <NavigationProvider value={navigation}>
         <QueryClientProvider client={queryClient}>
           <AgentDetailPage agentId="agent-1" />

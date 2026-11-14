@@ -88,7 +88,14 @@
     "wakeup_checkin": "silent check: {{note}}",
     "wakeup_checkin_coalesced_other": "{{count}} silent checks · latest: {{note}}",
     "wakeup_chip_created_by": "{{name}}'s wakeup",
-    "wakeup_chip_system": "System rule"
+    "wakeup_chip_system": "System rule",
+    "task_completed_one": "completed a run",
+    "task_failed_one": "run failed",
+    "activity_count_one": "{{count}} activity",
+    "show_more_activities_one": "Show {{count}} more activity",
+    "wakeup_child_done_stage_one": "Stage {{stage}}'s sub-issue finished",
+    "wakeup_child_done_all_one": "The sub-issue finished",
+    "wakeup_checkin_coalesced_one": "{{count}} silent check · latest: {{note}}"
   },
   "actor_issues": {
     "scope": {
@@ -127,7 +134,13 @@
     "tasks_count_other": "{{count}} runs",
     "chip_agents_working_other": "{{count}} agents working",
     "issues_count_other": "{{count}} issues",
-    "chip_agents_working_unknown": "Agents working: —"
+    "chip_agents_working_unknown": "Agents working: —",
+    "hover_header_one": "{{count}} active agent",
+    "hover_header_tasks_one": "{{count}} active run",
+    "hover_header_queued_one": "{{count}} queued agent",
+    "tasks_count_one": "{{count}} run",
+    "chip_agents_working_one": "{{count}} agent working",
+    "issues_count_one": "{{count}} issue"
   },
   "agent_live": {
     "is_working": "{{name}} is working",
@@ -139,7 +152,8 @@
     "transcript_button": "View transcript",
     "stop_button": "Stop",
     "stop_tooltip": "Stop agent",
-    "cancel_failed": "Failed to cancel run"
+    "cancel_failed": "Failed to cancel run",
+    "tool_count_one": "{{count}} tool"
   },
   "backlog_hint": {
     "title": "Agent is paused in Backlog",
@@ -163,7 +177,12 @@
     "delete_dialog_title_other": "Delete {{count}} issues?",
     "delete_dialog_desc_other": "This action cannot be undone. This will permanently delete the selected issues and all associated data.",
     "delete_dialog_warning": "Any workspace member can delete issues.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "update_success_one": "Updated {{count}} issue",
+    "update_partial_one": "Updated {{updated}} of {{count}} issue. The rest don't allow this change and were left as they were.",
+    "delete_success_one": "Deleted {{count}} issue",
+    "delete_dialog_title_one": "Delete {{count}} issue?",
+    "delete_dialog_desc_one": "This action cannot be undone. This will permanently delete the selected issue and all associated data."
   },
   "board": {
     "hide_column": "Hide column",
@@ -257,7 +276,10 @@
       "fold_other": "{{count}} comments from {{authors}}",
       "bar_authors_more_other": "{{names}} and {{count}} others",
       "resolve_failed": "Failed to resolve thread",
-      "unresolve_failed": "Failed to unresolve thread"
+      "unresolve_failed": "Failed to unresolve thread",
+      "bar_one": "{{count}} resolved comment from {{authors}}",
+      "fold_one": "{{count}} comment from {{authors}}",
+      "bar_authors_more_one": "{{names}} and {{count}} other"
     },
     "recipient_steer": "Add to current run",
     "recipient_steer_desc": "{{name}} reads it after the current step and keeps working on the original task. Text only.",
@@ -273,7 +295,11 @@
     "recipient_count_other": "{{count}} agents will receive this",
     "steer_attachment_notice": "Only text can join a running run, so a message with files is handled after it.",
     "restart_send": "Stop and send",
-    "restart_failed": "Couldn't stop the current run. Your message wasn't sent."
+    "restart_failed": "Couldn't stop the current run. Your message wasn't sent.",
+    "posted_partial_trigger_one": "Comment posted, but {{count}} mention wasn't triggered",
+    "reply_count_one": "{{count}} reply",
+    "trigger_will_start_count_one": "{{count}} agent will start when sent",
+    "recipient_count_one": "{{count}} agent will receive this"
   },
   "data_load_error": {
     "title": "Couldn't load issues",
@@ -308,7 +334,10 @@
     "overview_summary_with_size_other": "{{count}} deliverables · {{size}} total",
     "overview_close": "Close",
     "overview_empty": "No deliverables of this type.",
-    "group_comment_by": "Comment by {{name}}"
+    "group_comment_by": "Comment by {{name}}",
+    "view_all_one": "View all {{count}} deliverable",
+    "overview_summary_one": "{{count}} deliverable",
+    "overview_summary_with_size_one": "{{count}} deliverable · {{size}}"
   },
   "detail": {
     "metadata_close": "Close metadata",
@@ -438,7 +467,7 @@
     "fact_device": "Appareil",
     "fact_runtime": "Runtime",
     "fact_daemon_cli": "CLI du daemon",
-    "fact_daemon_id": "Identifiant du daemon",
+    "fact_daemon_id": "ID du daemon",
     "usage_title": "Consommation",
     "no_agents": "Aucun agent n'est encore associé à ce runtime.",
     "diagnostics_cli": "CLI",
@@ -523,7 +552,10 @@
           "workload_queued": "En file d'attente",
           "visibility_workspace": "Espace de travail",
           "visibility_private": "Privé"
-        }
+        },
+        "title_one": "Unbind {{count}} agent and delete this Runtime?",
+        "checkbox_one": "I understand this {{count}} agent will be unbound and cannot run until I bind it to a runtime, and that any queued or in-progress runs will be cancelled.",
+        "confirm_one": "Unbind {{count}} agent and delete runtime"
       }
     },
     "toast_deleted": "Runtime supprimé",
@@ -540,7 +572,13 @@
     "technical_details": "Détails techniques",
     "serving_title": "Au service de",
     "serving_count_other": "{{count}} agents",
-    "diagnostics_title": "Diagnostics"
+    "diagnostics_title": "Diagnostics",
+    "pull_request_card_files_count_one": "{{count}} file",
+    "thread_nav_show_replies_one": "Show {{count}} reply",
+    "visibility_members_count_one": "{{count}} member",
+    "running_chip_one": "· {{count}} running",
+    "queued_chip_one": "· {{count}} queued",
+    "serving_count_one": "{{count}} agent"
   },
   "display": {
     "tooltip": "Display settings",
@@ -645,7 +683,10 @@
     "more_runs_other": "{{count}} more",
     "strip_aria": "Cumulative cost over time — open the run timeline",
     "strip_no_usage": "No usage recorded",
-    "sparkline_now": "Now"
+    "sparkline_now": "Now",
+    "included_comments_one": "Includes {{count}} comment",
+    "summary_runs_one": "{{count}} run",
+    "more_runs_one": "{{count}} more"
   },
   "filtered_empty": {
     "title": "No issues match these filters",
@@ -750,7 +791,11 @@
     "advanced_group_match_trailing": "of these",
     "advanced_group_hint": "Conditions in this group are joined with “{{word}}”",
     "advanced_add_to_group": "Add to group",
-    "advanced_turn_into_group": "Turn into group"
+    "advanced_turn_into_group": "Turn into group",
+    "unsaved_changes_one": "{{count}} unsaved change",
+    "issue_count_one": "{{count}} issue",
+    "active_count_one": "{{count}} filter",
+    "advanced_conditions_one": "{{count}} condition"
   },
   "gantt": {
     "header_issue": "Issue",
@@ -809,7 +854,8 @@
     "steer_resend": "Send as a new run",
     "steer_resend_failed": "Couldn't send it as a new run.",
     "steer_step": "{{name}} added",
-    "steer_step_read": "Read"
+    "steer_step_read": "Read",
+    "steps_one": "{{count}} step"
   },
   "labels_panel": {
     "intro": "Create and manage labels to categorize issues across your workspace.",
@@ -1143,7 +1189,8 @@
     "not_merged_action": "Remove",
     "all_merged_to": "All PRs merged. The next merged PR moves this issue to {{status}}.",
     "issue_disabled": "PR merges won’t change this issue",
-    "issue_disabled_action": "Turn on"
+    "issue_disabled_action": "Turn on",
+    "waiting_to_one": "Moves to {{status}} when {{prs}} merges"
   },
   "priority": {
     "urgent": "Urgent",
@@ -1170,7 +1217,8 @@
       "selection_failed": "Could not capture the selection. Select text within one comment or description and try again.",
       "source_label": "Comment by {{name}}",
       "edit": "Edit annotation {{number}}",
-      "note_placeholder": "Add a comment…"
+      "note_placeholder": "Add a comment…",
+      "count_one": "{{count}} annotation"
     }
   },
   "requirement": {
@@ -1251,7 +1299,13 @@
     "detail_cache": "Cache hit",
     "cache_hit_value": "{{percent}} · saved {{amount}}",
     "detail_time": "Time",
-    "detail_branch": "Branch"
+    "detail_branch": "Branch",
+    "count_failed_one": "{{count}} failed",
+    "count_cancelled_one": "{{count}} cancelled",
+    "count_active_one": "{{count}} active",
+    "chart_aria_one": "Run activity: {{cost}} across {{count}} run",
+    "day_runs_one": "{{count}} run",
+    "cumulative_aria_one": "Cumulative cost over time: {{cost}} across {{count}} run"
   },
   "save_view": {
     "scope_label_workspace": "Assignee type",
@@ -1331,7 +1385,8 @@
     "error_comment_limit": "The source comment thread history has at least {{count}} comments; the limit is 256.",
     "error_text_limit": "The source text is {{size}} bytes; the limit is 1 MiB.",
     "error_attachment_count_limit": "The source has {{count}} attachments; the limit is 100.",
-    "error_attachment_size_limit": "The source attachments total {{size}} bytes; the limit is 500 MiB."
+    "error_attachment_size_limit": "The source attachments total {{size}} bytes; the limit is 500 MiB.",
+    "preview_summary_one": "Context from {{identifier}} · issue description + {{count}} comment"
   },
   "stage": {
     "none": "No stage",
@@ -1522,7 +1577,8 @@
       "row_actions": "Actions for {{name}}",
       "empty_title": "No saved views yet",
       "empty_description": "Set up filters and display options in an issue list, then save them as a view."
-    }
+    },
+    "filter_count_one": "{{count}} filter"
   },
   "wakeups": {
     "title": "Wakeups",
@@ -1763,7 +1819,9 @@
       "missing_issue": "Choose an issue.",
       "checked": "Checked",
       "unchecked": "Unchecked",
-      "assignee_comment_hint": "{{name}} is the assignee and already runs when a member comments. This rule joins that run instead of starting another; add it only to give that run an extra instruction."
+      "assignee_comment_hint": "{{name}} is the assignee and already runs when a member comments. This rule joins that run instead of starting another; add it only to give that run an extra instruction.",
+      "wait_days_one": "{{count}} day",
+      "max_fires_times_one": "{{count}} time"
     },
     "system": {
       "badge": "System",
@@ -1795,7 +1853,8 @@
       "instruction_default": "Not set on this issue; uses the default:",
       "instruction_placeholder": "Leave empty to use the default",
       "instruction_invalid": "Keep the instruction within 4,000 bytes.",
-      "paused": "Paused: {{reason}}"
+      "paused": "Paused: {{reason}}",
+      "remaining_one": "{{count}} to go"
     },
     "cond": {
       "status": "When this issue moves to {{status}}",
@@ -1861,7 +1920,8 @@
       "delete_title": "Delete this wakeup?",
       "delete_body": "{{agent}} is no longer woken by it, and its runs that have not started are withdrawn. A run already started keeps going.",
       "deleting": "Deleting…",
-      "delete_error": "Could not delete the wakeup"
+      "delete_error": "Could not delete the wakeup",
+      "fires_one": "Triggered {{count}} time"
     },
     "paused_reason": {
       "max_fires": "reached its limit of {{count}} runs",
@@ -1908,7 +1968,11 @@
       "no_matching_projects": "No matching projects",
       "default_covers_no_project": "Also applies to issues without a project",
       "new_blank": "Blank workflow",
-      "from_template": "From a template"
+      "from_template": "From a template",
+      "projects_one": "{{count}} project",
+      "statuses_one": "{{count}} status",
+      "handoffs_one": "{{count}} handoff step",
+      "usage_default_one": "{{count}} project + no-project issues"
     },
     "editor": {
       "create_title": "New workflow",
@@ -1972,7 +2036,8 @@
       "step_off": "Switched off: this workflow leaves the status out. Turn it on in the step list to use it.",
       "status_new_hint": "A new status. It is added to the status library when you save.",
       "no_other_status": "Every status is already a step.",
-      "no_handoff_step": "This step doesn't hand off: issues entering it keep their assignee and start no run."
+      "no_handoff_step": "This step doesn't hand off: issues entering it keep their assignee and start no run.",
+      "used_by_note_one": "Used by {{count}} project: {{names}}. Saved changes apply to it right away."
     },
     "mapping": {
       "title": "Move issues into {{name}}",
@@ -1993,7 +2058,14 @@
       "edit_description": "Some issues in projects using this workflow are on statuses you removed. Choose where they go; everything else stays.",
       "confirm_save_count_other": "Save and update {{count}} issues",
       "switched_other": "“{{project}}” now uses “{{workflow}}”; {{count}} issues updated",
-      "nothing_moves": "Every issue’s status is in both workflows, so nothing moves."
+      "nothing_moves": "Every issue’s status is in both workflows, so nothing moves.",
+      "issues_one": "{{count}} issue",
+      "switch_description_one": "{{project}} has {{count}} issue. Only issues on statuses “{{workflow}}” doesn’t have need a new status.",
+      "needs_mapping_one": "Needs a new status · {{count}} issue",
+      "unchanged_one": "The other {{count}} issue ({{statuses}}) keeps its status — both workflows have it.",
+      "confirm_count_one": "Switch and update {{count}} issue",
+      "confirm_save_count_one": "Save and update {{count}} issue",
+      "switched_one": "“{{project}}” now uses “{{workflow}}”; {{count}} issue updated"
     },
     "project": {
       "label": "Workflow",
@@ -2029,7 +2101,9 @@
       "under_minute": "under a minute",
       "error": "Couldn’t move the issue",
       "project_title": "Move {{issue}} to {{project}}?",
-      "project_confirm": "Move to {{project}}"
+      "project_confirm": "Move to {{project}}",
+      "minutes_one": "{{count}} minute",
+      "hours_one": "{{count}} hour"
     },
     "board": {
       "drop_hint_run": "Drop to hand to {{name}} and start the run",
@@ -2092,7 +2166,8 @@
       "title": "{{workflow}} workflow",
       "scope_own": "Only this project uses this workflow.",
       "no_handoff_here": "No handoff",
-      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them."
+      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them.",
+      "scope_shared_one": "{{count}} project uses this workflow. Its handoffs apply to every project using it."
     },
     "templates": {
       "delivery": {
@@ -2194,7 +2269,9 @@
       "workload_hint": "{{running}} en cours · {{queued}} en attente",
       "cli": "CLI",
       "cloud_worker": "Worker cloud",
-      "local_daemon": "Daemon local"
+      "local_daemon": "Daemon local",
+      "runtimes_hint_one": "{{count}} online",
+      "health_issues_one": "{{count}} issue"
     },
     "rename": "Renommer la machine",
     "rename_dialog": {
@@ -2209,7 +2286,9 @@
       "toast_cleared": "Nom de la machine effacé",
       "toast_failed": "Échec du renommage de la machine"
     },
-    "runtime_count_other": "{{count}} runtimes"
+    "runtime_count_other": "{{count}} runtimes",
+    "busy_count_one": "{{count}} busy",
+    "runtime_count_one": "{{count}} runtime"
   },
   "health": {
     "online": {
@@ -2330,7 +2409,8 @@
     "heatmap_quietest_weekday": "Jour de semaine le plus calme",
     "heatmap_average": "moy. {{value}}",
     "heatmap_window_total_other": "Total sur {{count}} jours",
-    "tooltip_total": "Total"
+    "tooltip_total": "Total",
+    "heatmap_window_total_one": "{{count}}-day total"
   },
   "profiles": {
     "cta": "Ajouter un runtime",
@@ -2419,7 +2499,6 @@
   },
   "usage": {
     "period_label": "Période",
-    "dimension_label": "Dimension",
     "kpi_cost_label": "Coût · {{days}} j",
     "kpi_cost_delta": "{{sign}}{{pct}} % vs préc.",
     "kpi_cache_label": "Économies de cache · {{days}} j",
@@ -2427,8 +2506,6 @@
     "kpi_tokens_label": "Tokens · {{days}} j",
     "kpi_tokens_hint": "entrée {{input}} · sortie {{output}}",
     "when_title": "Quand ce runtime a dépensé",
-    "when_tab_daily": "Quotidien",
-    "when_tab_weekly": "Hebdomadaire",
     "when_tab_heatmap": "Carte de chaleur",
     "daily_metric_cost": "Coût",
     "daily_metric_tokens": "Tokens",
@@ -2472,7 +2549,11 @@
     "table_output": "Sortie",
     "table_cache_r": "Cache L",
     "table_cache_w": "Cache É",
-    "no_data": "Aucune donnée de consommation pour l'instant"
+    "no_data": "Aucune donnée de consommation pour l'instant",
+    "cost_by_label": "Regrouper par",
+    "unmapped_notice_one": "{{count}} model has no maintained price — its tokens are excluded from cost totals.",
+    "cost_by_caption_agent_one": "{{count}} agent on this runtime",
+    "cost_by_caption_model_one": "{{count}} model used"
   },
   "qoder": {
     "title": "Environnement Qoder Cloud Agents",
@@ -2552,13 +2633,15 @@
       "environment_waiting": "Les environnements se chargent une fois le jeton vérifié",
       "repo_count_other": "{{count}} dépôts",
       "optional": "Facultatif",
-      "execution_summary": "Jusqu'à {{concurrency}} à la fois · délai de {{timeout}} min"
+      "execution_summary": "Jusqu'à {{concurrency}} à la fois · délai de {{timeout}} min",
+      "repo_count_one": "{{count}} repository"
     },
     "stop_confirm": {
       "title": "Mettre Qoder Cloud Agents en pause ?",
       "description": "Aucune nouvelle tâche ne sera envoyée à Qoder tant qu'il n'est pas relancé.",
       "cancel": "Annuler",
-      "description_agents_other": "Ces {{count}} agents gardent leurs instructions et leur historique, mais ne peuvent plus prendre de tâches tant que Qoder n'est pas relancé ou qu'ils ne sont pas déplacés vers un autre environnement."
+      "description_agents_other": "Ces {{count}} agents gardent leurs instructions et leur historique, mais ne peuvent plus prendre de tâches tant que Qoder n'est pas relancé ou qu'ils ne sont pas déplacés vers un autre environnement.",
+      "description_agents_one": "This agent keeps its instructions and history but cannot take new tasks until Qoder is resumed or it moves to another runtime."
     },
     "connect_title": "Connecter Qoder Cloud Agents",
     "connect_description": "Multica exécute les tâches dans les sandboxes Qoder.",
@@ -2594,7 +2677,8 @@
       "edit_limits": "Modifier les paramètres d'exécution",
       "run_timeout": "Délai d'exécution",
       "manage_title": "Gérer",
-      "minutes_other": "{{count}} minutes"
+      "minutes_other": "{{count}} minutes",
+      "minutes_one": "{{count}} minute"
     },
     "disconnect_confirm": {
       "title": "Déconnecter Qoder Cloud Agents ?",
@@ -2604,8 +2688,10 @@
       "confirm": "Déconnecter",
       "working": "Déconnexion…",
       "cancel": "Annuler",
-      "done": "Qoder déconnecté"
-    }
+      "done": "Qoder déconnecté",
+      "description_agents_one": "This agent will be unbound. It keeps its instructions and history and can move to another runtime."
+    },
+    "agent_count_one": "{{count}} agent"
   },
   "mirror": {
     "title": "Écran de l’environnement d’exécution",
@@ -2834,5 +2920,31 @@
     "conflict_runtime_won": "Le runtime a une version plus récente. Votre modification a été ignorée — rééditez à partir de la version la plus récente.",
     "changed_reload": "Le fichier a changé depuis votre ouverture. Réchargez pour éditer la version la plus récente.",
     "save_failed": "Impossible d’enregistrer la modification. Réessayez."
-  }
+  },
+  "intro": {
+    "title": "Donnez à vos agents un ordinateur pour travailler",
+    "description": "Un runtime, c'est là où les agents exécutent vraiment leurs tâches : votre ordinateur, un serveur ou un service cloud.",
+    "slides": {
+      "local": {
+        "title": "Cet ordinateur se connecte tout seul",
+        "description": "Téléchargez l'app de bureau et connectez-vous : Claude Code, Codex et les autres CLI de cet ordinateur apparaissent d'eux-mêmes."
+      },
+      "remote": {
+        "title": "Une autre machine, deux commandes",
+        "description": "Installez la CLI sur un serveur ou un autre ordinateur, puis lancez multica setup pour le connecter."
+      },
+      "cloud": {
+        "title": "Ou un nœud cloud",
+        "description": "Pas envie de gérer des machines ? Créez un nœud cloud hébergé par Multica."
+      }
+    },
+    "art": {
+      "this_computer": "Cet ordinateur · Bureau",
+      "detected": "Harness détectés",
+      "run_there": "À lancer sur cette machine",
+      "connected": "{{name}} connecté à Multica"
+    }
+  },
+  "running_one": "{{count}} running",
+  "queued_one": "{{count}} queued"
 }

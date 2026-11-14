@@ -116,11 +116,15 @@ func (c *ExecutionClient) callback(ctx context.Context, operation, commentID str
 		var body struct {
 			Messages []TaskMessageData `json:"messages"`
 			Usage    []TaskUsageEntry  `json:"usage"`
+			Snapshot bool              `json:"snapshot"`
 		}
 		if err := json.Unmarshal(raw, &body); err != nil {
 			return err
 		}
 		if operation == "usage" {
+			if body.Snapshot {
+				return c.client.postJSON(ctx, path, request, response)
+			}
 			return c.client.ReportTaskUsage(ctx, c.identity.TaskID, body.Usage)
 		}
 		prepared, err := stableTaskMessages(c.identity.TaskID, c.identity.ExecutionID, body.Messages)

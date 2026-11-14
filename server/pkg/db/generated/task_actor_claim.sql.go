@@ -121,7 +121,7 @@ func (q *Queries) LockLegacyTaskActorMember(ctx context.Context, arg LockLegacyT
 }
 
 const lockTaskActorPrincipals = `-- name: LockTaskActorPrincipals :one
-SELECT r.id, r.workspace_id, r.daemon_id, r.name, r.runtime_mode, r.provider, r.status, r.device_info, r.metadata, r.last_seen_at, r.created_at, r.updated_at, r.owner_id, r.legacy_daemon_id, r.visibility, r.profile_id, r.custom_name FROM agent_runtime r
+SELECT r.id, r.workspace_id, r.daemon_id, r.name, r.runtime_mode, r.provider, r.status, r.device_info, r.metadata, r.last_seen_at, r.created_at, r.updated_at, r.owner_id, r.legacy_daemon_id, r.visibility, r.profile_id, r.custom_name, r.shared_with, r.max_concurrent_tasks FROM agent_runtime r
 JOIN agent a ON a.id= $1 AND a.runtime_id=r.id AND a.workspace_id=r.workspace_id
 JOIN member m ON m.user_id= $2 AND m.workspace_id=r.workspace_id
 JOIN "user" actor ON actor.id=m.user_id
@@ -163,6 +163,8 @@ func (q *Queries) LockTaskActorPrincipals(ctx context.Context, arg LockTaskActor
 		&i.Visibility,
 		&i.ProfileID,
 		&i.CustomName,
+		&i.SharedWith,
+		&i.MaxConcurrentTasks,
 	)
 	return i, err
 }

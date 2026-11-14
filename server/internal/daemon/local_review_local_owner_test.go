@@ -105,12 +105,12 @@ func TestLocalReviewOwnerCanApproveWithoutCloudIdentity(t *testing.T) {
 	if err := localreview.SaveRecord(root, key, prepared); err != nil {
 		t.Fatal(err)
 	}
-	d.markActiveEnvRoot(root)
+	releaseRoot := d.markActiveEnvRoot(root)
 	busyRequest := httptest.NewRequest(http.MethodPost, "/worktrees/review", bytes.NewReader(data))
 	busyRequest.Header = r.Header.Clone()
 	w = httptest.NewRecorder()
 	d.worktreeReviewHandler()(w, busyRequest)
-	d.unmarkActiveEnvRoot(root)
+	releaseRoot()
 	if w.Code != http.StatusConflict {
 		t.Fatal("recovery ignored active task environment", w.Code)
 	}

@@ -60,7 +60,7 @@ export function GroupChatParticipants({
           <button
             type="button"
             className={cn(
-              "inline-flex items-center gap-1 rounded-full px-1 py-0.5 text-micro text-muted-foreground transition-colors hover:text-foreground",
+              "inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-micro text-muted-foreground transition-colors hover:text-foreground",
               className,
             )}
             aria-label={t(($) => $.group.open_members)}

@@ -11,7 +11,7 @@ func TestRenumberedMigrationsKeepPublishedLedgerIdentities(t *testing.T) {
 		"453_notification_bot_delivery_unique", "454_notification_bot_delivery_ready",
 		"455_issue_goal_mode", "457_pinned_item_runtime_mirror",
 		"458_runtime_mirror_event", "459_runtime_mirror_event_index",
-		"468_drop_reference_only_column",
+		"468_drop_reference_only_column", "573_agent_task_work_dir_missing",
 	} {
 		for _, direction := range []string{"up", "down"} {
 			if got := ExtractVersion(filepath.Join("migrations", "900"+version+"."+direction+".sql")); got != version {

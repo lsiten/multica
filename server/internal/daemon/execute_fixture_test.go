@@ -22,6 +22,8 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 
 func executeFixtureProvider(d *Daemon, ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID, codexHome string, msgSeq *atomic.Int32) (finalResult agent.Result, finalTools int32, finalErr error) {
 
+ defer func(){ if finalResult.Status == "cleanup_unconfirmed" { d.cleanupUnconfirmed.Store(true) } }()
+ taskOutputObserverFromContext(ctx).begin()
 	budget := taskBudgetFromContext(ctx)
 	source := ""
 	if budget != nil {

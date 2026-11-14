@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { ReactNode } from "react";
-import { RESOURCES } from "../../../test/i18n";
+import { getTestResources } from "../../../test/i18n";
 import { LegacyRuntimeMirrorPage } from "./legacy-mirror-page";
 
 vi.mock("./use-runtime-mirror-session", () => ({
@@ -49,7 +49,7 @@ vi.mock("../../../layout/breadcrumb-header", () => ({
 function renderPage(connectionState: "streaming" | "negotiating") {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <I18nProvider locale="en" resources={RESOURCES}>
+    <I18nProvider locale="en" resources={getTestResources()}>
       <QueryClientProvider client={queryClient}>
         {children}
       </QueryClientProvider>

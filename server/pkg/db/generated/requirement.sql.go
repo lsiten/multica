@@ -125,7 +125,7 @@ func (q *Queries) GetRequirementByIssue(ctx context.Context, arg GetRequirementB
 }
 
 const listRequirementSubIssues = `-- name: ListRequirementSubIssues :many
-SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, kind FROM issue
+SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id, requester_user_id, kind FROM issue
 WHERE parent_issue_id = $1 AND workspace_id = $2
 ORDER BY position, created_at
 `
@@ -176,6 +176,7 @@ func (q *Queries) ListRequirementSubIssues(ctx context.Context, arg ListRequirem
 			&i.LastActivityAt,
 			&i.TriageState,
 			&i.DuplicateOfIssueID,
+			&i.RequesterUserID,
 			&i.Kind,
 		); err != nil {
 			return nil, err

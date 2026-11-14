@@ -69,7 +69,7 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, onS
   const meterBars = [0.38, 0.62, 0.86, 0.56, 0.32, 0.7, 0.94, 0.5, 0.74, 0.42, 0.82, 0.58];
   return <>
     {active && <div className="absolute bottom-1 inset-x-1.5 flex min-w-0 items-center gap-2" data-chat-dictation>
-      <Button size="icon-sm" variant="outline" className="shrink-0 rounded-full" aria-label={t(($) => $.input.voice_cancel)} title={t(($) => $.input.voice_cancel)} onClick={dictation.cancel}>
+      <Button size="icon-sm" variant="outline" className="shrink-0 rounded-md" aria-label={t(($) => $.input.voice_cancel)} title={t(($) => $.input.voice_cancel)} onClick={dictation.cancel}>
         <X aria-hidden="true" />
       </Button>
       <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -89,7 +89,7 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, onS
       <Button
         size="icon-sm"
         variant="outline"
-        className="shrink-0 rounded-full"
+        className="shrink-0 rounded-md"
         aria-label={t(($) => $.input.voice_stop)}
         title={t(($) => $.input.voice_stop)}
         disabled={dictation.phase !== "recording"}
@@ -100,7 +100,7 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, onS
           ? <LoaderCircle aria-hidden="true" className="motion-safe:animate-spin" />
           : <Square aria-hidden="true" className="size-3.5 fill-current" />}
       </Button>
-      <Button size="icon-sm" className="shrink-0 rounded-full" aria-label={t(($) => $.input.voice_send)} title={t(($) => $.input.voice_send)} disabled={!canSubmit || dictation.phase !== "recording" || (!hasContent && !dictation.hasTranscript && !!localVoice?.transcribeStream)} onClick={onSubmit}>
+      <Button size="icon-sm" className="shrink-0 rounded-md" aria-label={t(($) => $.input.voice_send)} title={t(($) => $.input.voice_send)} disabled={!canSubmit || dictation.phase !== "recording" || (!hasContent && !dictation.hasTranscript && !!localVoice?.transcribeStream)} onClick={onSubmit}>
         <ArrowUp aria-hidden="true" />
       </Button>
     </div>}

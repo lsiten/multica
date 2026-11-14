@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildIssueStatusCatalog } from "@multica/core/issue-statuses/queries";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { Issue } from "@multica/core/types";
-import { RESOURCES } from "../locales";
+import { getTestResources } from "../test/i18n";
 import { useIssueTargetWriter } from "./issue-target";
 import type { IssueTarget } from "./types";
 
@@ -52,7 +52,7 @@ function renderWriter(target: IssueTarget) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>
-      <I18nProvider locale="en" resources={{ en: RESOURCES.en }}>
+      <I18nProvider locale="en" resources={getTestResources()}>
         {children}
       </I18nProvider>
     </QueryClientProvider>

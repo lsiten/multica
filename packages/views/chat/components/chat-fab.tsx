@@ -17,13 +17,19 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@multica/ui/components/ui/tooltip";
+import { useIsMobile } from "@multica/ui/hooks/use-mobile";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { useT } from "../../i18n";
 
 const logger = createLogger("chat.ui");
 
+/**
+ * The floating launcher. From `md` up the bottom bar carries quick chat, so
+ * this is the launcher for narrow windows only.
+ */
 export function ChatFab() {
   const { t } = useT("chat");
+  const isMobile = useIsMobile();
   const wsId = useWorkspaceId();
   const isOpen = useChatStore((s) => s.isOpen);
   const toggle = useChatStore((s) => s.toggle);
@@ -38,10 +44,10 @@ export function ChatFab() {
   // aggregate hot path entirely (MUL-4159).
   const { data: hasPending } = useQuery({
     ...hasPendingChatTasksOptions(wsId),
-    enabled: !isOpen,
+    enabled: !isOpen && isMobile,
   });
 
-  if (isOpen) return null;
+  if (isOpen || !isMobile) return null;
 
   const unreadSessionCount = countUnreadChatSessions(sessions);
   const isRunning = hasPending?.has_pending ?? false;

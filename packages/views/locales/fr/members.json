@@ -8,7 +8,8 @@
     "unavailable": "Membre indisponible",
     "agents_section": "Agents ({{count}})",
     "detail_link": "Détail →",
-    "more_agents_other": "et {{count}} autres agents"
+    "more_agents_other": "et {{count}} autres agents",
+    "more_agents_one": "and {{count}} other agent"
   },
   "detail": {
     "members_breadcrumb": "Membres",

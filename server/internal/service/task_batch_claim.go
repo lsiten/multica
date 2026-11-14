@@ -77,6 +77,7 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		slog.Info("promote deferred tasks (batch): slot taken by a concurrent enqueue, skipping this tick")
 		promoted = nil
 	} else if err != nil {
+		s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeErrorPromoteDeferred, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
 		return nil, fmt.Errorf("promote deferred tasks: %w", err)
 	}
 	for _, task := range promoted {
@@ -112,6 +113,7 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 			MaxTasks:          int32(maxTasks),
 		})
 		if err != nil {
+			s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeErrorReclaimDispatched, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
 			return nil, fmt.Errorf("reclaim stale dispatched tasks: %w", err)
 		}
 		// The UPDATE's fixed setup/locking cost dominates array width. Query and
@@ -127,6 +129,7 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 	for i := range reclaimed {
 		s.trackTaskForReclaim(reclaimed[i], reclaimCheckAfter)
 		claimed = append(claimed, reclaimed[i])
+		s.recordClaimDecision(reclaimed[i].AgentID, reclaimed[i].RuntimeID, claimOutcomeReclaimedDispatched, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
 		slog.Info("stale dispatched task reclaimed (batch)",
 			"task_id", util.UUIDToString(reclaimed[i].ID),
 			"runtime_id", util.UUIDToString(reclaimed[i].RuntimeID),
@@ -149,12 +152,14 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		nonEmpty = append(nonEmpty, rid)
 	}
 	if len(nonEmpty) == 0 {
+		s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeEmptyCacheHit, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
 		return claimed, nil
 	}
 
 	// 4. One candidate SELECT across the non-empty set.
 	candidates, err := s.Queries.ListQueuedClaimCandidatesByRuntimes(ctx, nonEmpty)
 	if err != nil {
+		s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeErrorList, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
 		// Steps 2/6 commit reclaimed/claimed tasks in their own transactions,
 		// so `claimed` may already hold tasks dispatched server-side. Dropping
 		// them with a 500 makes the daemon HTTP-fall-back and claim a SECOND
@@ -186,6 +191,14 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		}
 	}
 
+	if len(candidates) == 0 {
+		s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeEmptyDB, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
+		return claimed, nil
+	}
+	candidateCounts := make(map[string]int, len(candidates))
+	for _, candidate := range candidates {
+		candidateCounts[util.UUIDToString(candidate.AgentID)]++
+	}
 	// 6. Give each agent a turn before filling its remaining capacity.
 	// A successful agent rejoins the tail; a full or locked agent drops out.
 	triedAgents := make(map[string]struct{}, len(candidates))
@@ -201,7 +214,7 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 	}
 	for i := 0; i < len(agentCandidates) && len(claimed) < maxTasks; i++ {
 		candidate := agentCandidates[i]
-		task, err := s.claimTask(ctx, candidate.AgentID, candidate.RuntimeID)
+		task, err := s.claimTask(ctx, candidate.AgentID, candidate.RuntimeID, claimScope{claimPath: claimPathBatch, candidates: candidateCounts[util.UUIDToString(candidate.AgentID)]})
 		if err != nil {
 			if claimErr == nil {
 				claimErr = fmt.Errorf("claim task: %w", err)

@@ -17,7 +17,8 @@
     "remove_member": "Retirer le membre",
     "select_agents": "Sélectionnez un ou plusieurs agents à ajouter au groupe.",
     "add_selected": "Ajouter la sélection",
-    "no_available_agents": "Aucun agent disponible"
+    "no_available_agents": "Aucun agent disponible",
+    "participants_one": "{{count}} member"
   },
   "doc_mode": {
     "issue": "Ticket",
@@ -91,7 +92,8 @@
   "fab": {
     "running": "Multica travaille...",
     "unread_other": "{{count}} discussions non lues",
-    "default": "Demander à Multica"
+    "default": "Demander à Multica",
+    "unread_one": "{{count}} unread chat"
   },
   "input": {
     "voice_failed": "Échec de l’enregistrement ou de la transcription. Vérifiez le microphone et le runtime sélectionné, puis réessayez.",
@@ -144,7 +146,9 @@
     "autonomy_enabled": "Mode autonome activé",
     "autonomy_hint": "Ces limites concernent uniquement ce message.",
     "autonomy_zero_unlimited": "0 signifie illimité. Ces limites s’appliquent uniquement à ce message.",
-    "autonomy_invalid": "Saisissez 0 ou un entier positif ; la durée est limitée à 86400 secondes."
+    "autonomy_invalid": "Saisissez 0 ou un entier positif ; la durée est limitée à 86400 secondes.",
+    "page_context_add": "Ajouter cette page comme contexte",
+    "page_context_remove": "Retirer le contexte de la page"
   },
   "queue": {
     "title_other": "{{count}} messages en file d'attente",
@@ -157,7 +161,8 @@
     "remove": "Retirer le message de la file d'attente",
     "more": "Plus d'actions sur la file d'attente",
     "fallback": "Message en file d'attente",
-    "action_failed_toast": "Impossible de mettre à jour le message en file d'attente"
+    "action_failed_toast": "Impossible de mettre à jour le message en file d'attente",
+    "title_one": "{{count}} queued message"
   },
   "message_list": {
     "show_details": "Afficher les détails",
@@ -203,7 +208,11 @@
     "quick_actions_heading": "Questions de suivi",
     "quick_actions_aria": "Suggestions pour continuer",
     "quick_actions_regenerate": "Régénérer les suggestions",
-    "quick_actions_regenerate_failed": "Impossible d'actualiser les suggestions. Veuillez réessayer."
+    "quick_actions_regenerate_failed": "Impossible d'actualiser les suggestions. Veuillez réessayer.",
+    "jump_to_latest": "Aller au plus récent",
+    "new_reply": "Nouvelle réponse",
+    "tools_one": "{{count}} tool",
+    "process_steps_one": "{{count}} step"
   },
   "session_history": {
     "untitled": "Sans titre",
@@ -260,7 +269,8 @@
     "agent_needs_runtime": "Runtime requis",
     "agent_needs_runtime_hint": "Associez un runtime avant de démarrer une discussion avec cet agent",
     "group_title_placeholder": "Nom du groupe (facultatif)",
-    "create_group": "Créer le groupe"
+    "create_group": "Créer le groupe",
+    "close_tooltip": "Fermer"
   },
   "empty_state": {
     "first_time_title": "Discutez avec vos agents",
@@ -287,9 +297,9 @@
       "label": "Recommander une action",
       "prompt": "Examinez ce que vous savez de mon espace de travail et recommandez une première action utile."
     },
-    "customize": "Personnaliser les amorces",
     "uploading": "Attendez la fin des téléversements avant d’utiliser une amorce.",
-    "draft_in_progress": "Envoyez ou effacez votre brouillon avant d’utiliser une amorce."
+    "draft_in_progress": "Envoyez ou effacez votre brouillon avant d’utiliser une amorce.",
+    "customize": "Customize"
   },
   "onboarding_cards": {
     "aria_label": "Façons de démarrer",
@@ -353,8 +363,6 @@
     "no_response_preview": "Aucune réponse textuelle",
     "quick_agents": "Agents fréquents",
     "add": "Ajouter",
-    "add_agent": "Ajouter un agent fréquent",
-    "unpin_agent": "Retirer des agents fréquents",
     "waiting": "En attente de réponse",
     "pin": "Épingler",
     "unpin": "Détacher",
@@ -374,5 +382,17 @@
     "unarchive": "Désarchiver la discussion",
     "delete": "Supprimer la discussion",
     "view_profile": "Voir le profil de l'agent"
+  },
+  "bar": {
+    "history": "Historique des discussions",
+    "history_group": {
+      "today": "Aujourd'hui",
+      "week": "7 derniers jours",
+      "older": "Plus anciennes"
+    },
+    "close_chip": "Fermer {{title}}",
+    "all_chats": "Toutes les discussions",
+    "more_one": "{{count}} autre discussion",
+    "more_other": "{{count}} autres discussions"
   }
 }

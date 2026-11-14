@@ -25,7 +25,7 @@ func TestChatFilesRetainStartedCanonicalChildWorkspace(t *testing.T) {
 	generation := time.Date(2026, 10, 23, 1, 0, 0, 0, time.UTC)
 	task := dbfx.Task(t, agentID, testutil.Cols{"issue_id": child, "runtime_id": testRuntimeID, "status": "dispatched", "dispatched_at": generation})
 	selection := protocol.CodeWorkspaceSelection{IssueID: root, RuntimeID: testRuntimeID, WorkDir: "/managed/family"}
-	request := withURLParam(newDaemonTokenRequest(http.MethodPost, "/api/daemon/tasks/"+task+"/start", map[string]any{"runtime_id": testRuntimeID, "dispatched_at": generation.Format(time.RFC3339Nano), "code_workspace": selection}, testWorkspaceID, "start-claim-test"), "taskId", task)
+	request := withURLParam(newOwnerDaemonRequest(http.MethodPost, "/api/daemon/tasks/"+task+"/start", map[string]any{"runtime_id": testRuntimeID, "dispatched_at": generation.Format(time.RFC3339Nano), "code_workspace": selection}), "taskId", task)
 	testutil.Call(t, testHandler.StartTask, request).Want(http.StatusOK)
 	var startMarker []byte
 	var startPath string
@@ -77,7 +77,7 @@ func TestStartTaskRejectsInvalidCodeWorkspaceSelection(t *testing.T) {
 				session := createHandlerTestChatSession(t, agent)
 				dbfx.Exec(t, `UPDATE agent_task_queue SET chat_session_id=$1 WHERE id=$2`, session, task)
 			}
-			req := withURLParam(newDaemonTokenRequest(http.MethodPost, "/api/daemon/tasks/"+task+"/start", map[string]any{"runtime_id": runtime, "dispatched_at": generation.Format(time.RFC3339Nano), "code_workspace": selection}, testWorkspaceID, "start-claim-test"), "taskId", task)
+			req := withURLParam(newOwnerDaemonRequest(http.MethodPost, "/api/daemon/tasks/"+task+"/start", map[string]any{"runtime_id": runtime, "dispatched_at": generation.Format(time.RFC3339Nano), "code_workspace": selection}), "taskId", task)
 			testutil.Call(t, testHandler.StartTask, req).Want(http.StatusBadRequest)
 			var status string
 			dbfx.QueryRow(t, `SELECT status FROM agent_task_queue WHERE id=$1`, task).Scan(&status)
@@ -125,7 +125,7 @@ func TestCodeWorkspaceMarkerSurvivesFailureAndCancellation(t *testing.T) {
 			dbfx.QueryRow(t, `SELECT issue_id FROM agent_task_queue WHERE id=$1`, task).Scan(&issue)
 			selection := protocol.CodeWorkspaceSelection{IssueID: issue, RuntimeID: runtime, WorkDir: "/managed/retained"}
 			start := func(value protocol.CodeWorkspaceSelection) *http.Request {
-				return withURLParam(newDaemonTokenRequest(http.MethodPost, "/api/daemon/tasks/"+task+"/start", map[string]any{"runtime_id": runtime, "dispatched_at": generation.Format(time.RFC3339Nano), "code_workspace": value}, testWorkspaceID, "start-claim-test"), "taskId", task)
+				return withURLParam(newOwnerDaemonRequest(http.MethodPost, "/api/daemon/tasks/"+task+"/start", map[string]any{"runtime_id": runtime, "dispatched_at": generation.Format(time.RFC3339Nano), "code_workspace": value}), "taskId", task)
 			}
 			testutil.Call(t, testHandler.StartTask, start(selection)).Want(http.StatusOK)
 			testutil.Call(t, testHandler.StartTask, start(selection)).Want(http.StatusOK)
@@ -159,7 +159,7 @@ func TestStartCodeWorkspaceRejectsForeignIssueWorkspace(t *testing.T) {
 	foreignWorkspace := dbfx.Workspace(t, "Foreign selected workspace", "foreign-selected-workspace")
 	foreignIssue := dbfx.Issue(t, "Foreign issue", testutil.Cols{"workspace_id": foreignWorkspace})
 	dbfx.Exec(t, `UPDATE agent_task_queue SET issue_id=$1 WHERE id=$2`, foreignIssue, task)
-	_, err := testHandler.TaskService.StartTask(t.Context(), parseUUID(task), service.TaskStartOptions{CodeWorkspace: &protocol.CodeWorkspaceSelection{IssueID: foreignIssue, RuntimeID: runtime, WorkDir: "/managed/foreign"}})
+	_, err := testHandler.TaskService.StartTask(t.Context(), parseUUID(task), service.TaskStartCapabilities{CodeWorkspace: &protocol.CodeWorkspaceSelection{IssueID: foreignIssue, RuntimeID: runtime, WorkDir: "/managed/foreign"}})
 	if !errors.Is(err, service.ErrInvalidCodeWorkspaceSelection) {
 		t.Fatalf("foreign workspace accepted: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestStartCodeWorkspaceRejectsForeignRuntimeWorkspace(t *testing.T) {
 	dbfx.Exec(t, `UPDATE agent_task_queue SET runtime_id=$1 WHERE id=$2`, runtime, task)
 	var issue string
 	dbfx.QueryRow(t, `SELECT issue_id FROM agent_task_queue WHERE id=$1`, task).Scan(&issue)
-	_, err := testHandler.TaskService.StartTask(t.Context(), parseUUID(task), service.TaskStartOptions{CodeWorkspace: &protocol.CodeWorkspaceSelection{IssueID: issue, RuntimeID: runtime, WorkDir: "/managed/foreign-runtime"}})
+	_, err := testHandler.TaskService.StartTask(t.Context(), parseUUID(task), service.TaskStartCapabilities{CodeWorkspace: &protocol.CodeWorkspaceSelection{IssueID: issue, RuntimeID: runtime, WorkDir: "/managed/foreign-runtime"}})
 	if !errors.Is(err, service.ErrInvalidCodeWorkspaceSelection) {
 		t.Fatalf("foreign runtime accepted: %v", err)
 	}

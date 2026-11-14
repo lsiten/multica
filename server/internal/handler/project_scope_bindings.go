@@ -65,7 +65,7 @@ func projectExecutionScopeResponse(ctx context.Context, q *db.Queries, project d
 		return response, err
 	}
 	for _, agent := range agents {
-		if !isWorkspaceAdmin(viewer.Role) && agent.OwnerID != viewer.UserID {
+		if !isWorkspaceAdmin(viewer) && agent.OwnerID != viewer.UserID {
 			if agent.PermissionMode != "public_to" {
 				continue
 			}
@@ -132,7 +132,7 @@ func (h *Handler) GetProjectExecutionScopeBindings(w http.ResponseWriter, r *htt
 
 func (h *Handler) UpdateProjectExecutionScopeBindings(w http.ResponseWriter, r *http.Request) {
 	project, member, ok := h.loadProjectScopeBindingTarget(w, r)
-	if !ok || !isWorkspaceAdmin(member.Role) {
+	if !ok || !isWorkspaceAdmin(member) {
 		if ok {
 			writeError(w, http.StatusForbidden, "only workspace owners and admins may manage project bindings")
 		}
@@ -243,5 +243,3 @@ func (h *Handler) loadProjectScopeBindingTarget(w http.ResponseWriter, r *http.R
 	member, ok := h.workspaceMember(w, r, workspaceID)
 	return project, member, ok
 }
-
-func isWorkspaceAdmin(role string) bool { return role == "owner" || role == "admin" }

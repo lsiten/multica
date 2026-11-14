@@ -71,7 +71,7 @@ func applicationTestEnqueue(t *testing.T, app application.View, runtimeID, actio
 func applicationTestClaim(t *testing.T, runtimeID string) []protocol.ApplicationClaim {
 	t.Helper()
 	request := squadScopeReq("", http.MethodPost, "/claim", map[string]string{"daemon_id": applicationTestDaemonID}, map[string]string{"runtimeId": runtimeID})
-	request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID))
+	request = request.WithContext(middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID), testUserID))
 	var claims []protocol.ApplicationClaim
 	testutil.Call(t, testHandler.ClaimRuntimeApplications, request).Want(http.StatusOK).JSON(&claims)
 	return claims
@@ -89,7 +89,7 @@ func applicationTestFinish(t *testing.T, runtimeID string, claim protocol.Applic
 		observation.HealthState = "unhealthy"
 	}
 	request := squadScopeReq("", http.MethodPost, "/result", map[string]any{"daemon_id": applicationTestDaemonID, "result": protocol.ApplicationStepResult{ClaimToken: claim.ClaimToken, State: state, Error: map[string]string{"failed": "fixture startup failed"}[state], Observation: observation}}, map[string]string{"runtimeId": runtimeID, "stepId": claim.StepID})
-	request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID))
+	request = request.WithContext(middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID), testUserID))
 	testutil.Call(t, testHandler.CompleteRuntimeApplication, request).Want(http.StatusOK)
 }
 
@@ -134,7 +134,7 @@ func TestApplicationOperationDurabilityIdempotencyAndFencing(t *testing.T) {
 	applicationTestEnqueue(t, app, runtimeID, "stop", "first-stop")
 	stale := protocol.ApplicationObservation{InstanceID: claims[0].Command.InstanceID, Generation: claims[0].Command.Generation, Revision: 1, ProcessState: "running", HealthState: "healthy"}
 	request := squadScopeReq("", http.MethodPost, "/observe", map[string]any{"daemon_id": applicationTestDaemonID, "observation": stale}, map[string]string{"runtimeId": runtimeID})
-	request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID))
+	request = request.WithContext(middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID), testUserID))
 	testutil.Call(t, testHandler.ReportRuntimeApplication, request).Want(http.StatusConflict)
 	stops := applicationTestClaim(t, runtimeID)
 	if len(stops) != 1 || stops[0].Command.Generation <= claims[0].Command.Generation {
@@ -243,7 +243,7 @@ func TestApplicationOperationRuntimeOwnership(t *testing.T) {
 	applicationTestEnqueue(t, app, runtimeID, "start", "authorized-start")
 	request := squadScopeReq("", http.MethodPost, "/claim", map[string]string{"daemon_id": applicationTestDaemonID}, map[string]string{"runtimeId": runtimeID})
 	request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, "77777777-7777-4777-8777-777777777777"))
-	testutil.Call(t, testHandler.ClaimRuntimeApplications, request).Want(http.StatusForbidden)
+	testutil.Call(t, testHandler.ClaimRuntimeApplications, request).Want(http.StatusNotFound)
 	if len(applicationTestClaim(t, runtimeID)) != 1 {
 		t.Fatal("unauthorized daemon consumed the command")
 	}
@@ -262,7 +262,7 @@ func TestApplicationNewStartAfterConfirmedExitGetsNewGeneration(t *testing.T) {
 	applicationTestFinish(t, runtimeID, initial, "completed")
 	observation := protocol.ApplicationObservation{InstanceID: initial.Command.InstanceID, Generation: initial.Command.Generation, Revision: 1, ProcessState: "stopped", HealthState: "unknown"}
 	request := squadScopeReq("", http.MethodPost, "/observe", map[string]any{"daemon_id": applicationTestDaemonID, "observation": observation}, map[string]string{"runtimeId": runtimeID})
-	request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID))
+	request = request.WithContext(middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID), testUserID))
 	testutil.Call(t, testHandler.ReportRuntimeApplication, request).Want(http.StatusNoContent)
 	applicationTestEnqueue(t, app, runtimeID, "start", "start-after-exit")
 	next := applicationTestClaim(t, runtimeID)
@@ -286,7 +286,7 @@ func TestApplicationLocalDesiredStateConvergesAndConflictRollsBack(t *testing.T)
 	report := func(desired string, status int) {
 		t.Helper()
 		request := squadScopeReq("", http.MethodPost, "/observe", map[string]any{"daemon_id": applicationTestDaemonID, "observation": observation, "desired_state": desired}, map[string]string{"runtimeId": runtimeID})
-		request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID))
+		request = request.WithContext(middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID), testUserID))
 		testutil.Call(t, testHandler.ReportRuntimeApplication, request).Want(status)
 	}
 	report("invalid", http.StatusBadRequest)

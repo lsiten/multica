@@ -92,7 +92,7 @@ func executionOperation(operation string) (method string, comment bool, ok bool)
 	switch operation {
 	case "status":
 		return "GET", false, true
-	case "start", "prepare-lease", "cancel-ack", "wait-local-directory", "progress", "session", "complete", "fail", "usage", "messages", "jev-decision-logs", "supplements/claim", "worktree-delivery", "project-graph/events":
+	case "start", "prepare-lease", "cancel-ack", "wait-local-directory", "progress", "session", "complete", "fail", "usage", "messages", "jev-decision-logs", "context-receipt", "supplements/claim", "worktree-delivery", "project-graph/events":
 		return "POST", false, true
 	case "supplements/ack":
 		return "POST", true, true

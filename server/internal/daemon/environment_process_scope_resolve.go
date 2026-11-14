@@ -13,6 +13,16 @@ import (
 func (s *environmentProcessService) resolveMutationScope(ctx context.Context, operation string, raw json.RawMessage) (environmentMutationScope, error) {
 	scope := environmentMutationScope{}
 	switch operation {
+	case "environment.local":
+		input, err := decodeLocalEnvironment(raw)
+		scope.WorkspaceID = input.Task.WorkspaceID
+		scope.addPath(input.Task.RootDir)
+		scope.addPath(input.Root)
+		scope.addPath(input.Start.Dir)
+		if len(scope.Paths) == 0 {
+			scope.Global = true
+		}
+		return scope, err
 	case "physical.recover_handoff":
 		var input environmentHandoffRecovery
 		if err := decodeEnvironmentPayload(raw, &input); err != nil {

@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import BalancedSequencer from "./test/balanced-sequencer";
 
 export default defineConfig({
   plugins: [react()],
@@ -9,5 +10,6 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./test/setup.ts"],
     include: ["**/*.test.{ts,tsx}"],
+    sequence: { sequencer: BalancedSequencer },
   },
 });

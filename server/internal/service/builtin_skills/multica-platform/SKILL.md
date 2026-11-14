@@ -1,6 +1,6 @@
 ---
 name: multica-platform
-description: "Use for Multica platform actions the runtime brief does not fully cover: issues and PR contracts, issue wakeups, requirements, coordination, chat, comments, mentions, agents, squads, autopilots, projects, runtimes, skill import, notifications. Not for the product code you are working on."
+description: "Manage Multica via CLI for issues, requirements, sub-issues, issue wakeups and handoffs, local environments, coordination, mentions, chats, agents, squads, autopilots, projects, runtimes, skill import and notifications."
 user-invocable: false
 allowed-tools: Bash(multica *), Bash(git *), Bash(gh *)
 ---
@@ -19,18 +19,21 @@ Read the invariants below, then open the reference(s) your task actually needs
 
 | Open | When the task is about |
 |---|---|
-| `references/issues.md` | Issues: PR linking, reading a linked PR's state, custom properties, status side effects, sub-issues and stages, who else is running (runs / rerun / cancel-task / run-messages / usage / search), subscribers, labels, comment reads, charts vs attached files in a comment |
+| `references/issues.md` | Issues: PR linking, reading a linked PR's state, saved views (reading, creating, changing), custom properties, status side effects, who else is running, wakeups (events, conditions, timers, check-ins), charts vs attached files in a comment |
+| `references/issue-run-handoffs.md` | Issue run handoffs and human-request cards |
 | `references/issue-wakeups.md` | Issue wakeups: events, conditions, timers, recurring checks and check-ins |
 | `references/coordination.md` | The coordination graph: how a task's project, sub-issues/stages, runs, and squad (leader / members / routing) connect — read it before acting on one node in isolation |
-| `references/mentions.md` | Writing a `mention://` link: which types enqueue a run, which are inert, why one silently did nothing |
+| `references/mentions.md` | Writing a `mention://` link: which types enqueue a run, which are inert, why one silently did nothing; steering another agent's running turn (`comment add --steer`) |
 | `references/notifications.md` | Personal inbox notification bots: platform credentials, workspace scope, delivery and test-send boundaries |
 | `references/agents.md` | Creating, copying or debugging an agent definition: fields, secrets, MCP config, skill binding |
 | `references/squads.md` | Squads: leader routing, roster, recording leader activity, why a squad did or did not run |
 | `references/autopilots.md` | Autopilots: schedule / webhook / manual triggers, `create_issue` vs `run_only`, why one did not fire |
-| `references/projects.md` | Projects, bounded project supervision and their durable resources (`github_repo`, `local_directory`, worktree mode) |
+| `references/projects.md` | Projects and their durable resources (`github_repo`, `local_directory`, worktree mode); project workflows — status columns, handoffs, a `[Project workflow]` block in your prompt, reading or changing a workflow (`multica workflow`, `multica project workflow`) |
 | `references/runtimes.md` | Runtimes, daemons, `repo checkout`, and the task CLI boundary |
 | `references/chat.md` | Chat: reading the current conversation (`chat history`, `chat thread [id]`), sending a message (`chat send`, with @-mentions in a group chat), and group chat — creating a (standalone or project-bound) group and managing its participants |
 | `references/requirements.md` | The requirement dimension: a `kind=requirement` issue, its requirement document, and the confirm/change lifecycle the agent drives with human-request cards |
+| `references/sub-issues.md` | Sub-issues: whether to split an issue at all, `todo` vs `backlog` children, serial chains, stages and the parent wakeups they drive |
+| `references/environments.md` | Local environments in the issue sidebar: writing `.multica/environments.toml`, `multica env start` / `stop` / `list`, detected servers |
 | `references/skill-import.md` | Importing a skill into this workspace from a URL or a local archive |
 
 Open what the task needs. A single-domain task usually needs one; a task that

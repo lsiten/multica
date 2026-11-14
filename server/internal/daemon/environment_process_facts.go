@@ -20,6 +20,7 @@ import (
 type environmentFactOwnerKey struct{}
 
 type environmentFact struct {
+	Local           *localEnvironmentFactPayload  `json:"local,omitempty"`
 	DirectoryStates []protocol.WorkDirectoryState `json:"directory_states,omitempty"`
 	RepoURL         string                        `json:"repo_url,omitempty"`
 	OwnerTaskID     string                        `json:"owner_task_id,omitempty"`
@@ -139,6 +140,8 @@ func (c *environmentFactCallback) fetch(ctx context.Context, fact environmentFac
 		}
 	}
 	switch fact.Kind {
+	case "local_environments", "local_declared", "local_claim", "local_result":
+		return c.localEnvironmentFact(ctx, fact)
 	case "work_directory_state":
 		return c.reportDirectoryStates(ctx, fact)
 	case "git_auth":

@@ -127,11 +127,11 @@ func TestWorktreeManagerRejectsUnauthorizedRequests(t *testing.T) {
 func TestWorktreeCleanupPreservesActiveAndUnownedDirectories(t *testing.T) {
 	d := worktreeTestDaemon(t)
 	path := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task1", nil)
-	d.markActiveEnvRoot(path)
+	releaseRoot := d.markActiveEnvRoot(path)
 	if reason := d.cleanupManagedWorktree(context.Background(), worktreeCleanup{path: path, discardChanges: true}); reason != "active" {
 		t.Fatalf("active cleanup: %q", reason)
 	}
-	d.unmarkActiveEnvRoot(path)
+	releaseRoot()
 	outside := t.TempDir()
 	if reason := d.cleanupManagedWorktree(context.Background(), worktreeCleanup{path: outside, discardChanges: true}); reason != "unowned" {
 		t.Fatalf("outside cleanup: %q", reason)

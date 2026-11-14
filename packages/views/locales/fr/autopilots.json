@@ -1,7 +1,6 @@
 {
   "page": {
     "new_autopilot": "Nouvelle automatisation",
-    "start_blank": "Partir de zéro",
     "table": {
       "name": "Nom",
       "agent": "Agent",
@@ -15,10 +14,6 @@
       "created": "Création"
     },
     "last_run_empty": "--",
-    "empty": {
-      "title": "Aucune automatisation pour l'instant",
-      "hint": "Planifiez du travail récurrent pour vos agents IA. Choisissez un modèle ou partez de zéro."
-    },
     "no_matches": "Aucune automatisation correspondante",
     "retry": "Réessayer",
     "title": "Automatisation",
@@ -156,6 +151,8 @@
   "run": {
     "issue_linked": "Tâche liée",
     "view_log": "Voir le journal d'exécution",
+    "stop": "Arrêter l'exécution",
+    "stop_failed": "Impossible d'arrêter l'exécution.",
     "skipped_group": {
       "label": "Ignorées",
       "summary": "{{count}} exécutions ignorées"
@@ -465,7 +462,8 @@
     "sort_by": "Trier par",
     "direction_asc": "Croissant",
     "direction_desc": "Décroissant",
-    "section_columns": "Colonnes"
+    "section_columns": "Colonnes",
+    "filter_active_count_one": "{{count}} filter"
   },
   "actions": {
     "row_menu": "Actions de l'automatisation",
@@ -478,10 +476,12 @@
       "warning": "Cette action est irréversible.",
       "cancel": "Annuler",
       "confirm": "Supprimer définitivement",
-      "deleting": "Suppression…"
+      "deleting": "Suppression…",
+      "description_one": "This will permanently delete \"{{name}}\" and its run history."
     },
     "selected_other": "{{count}} sélectionnées",
-    "clear_selection": "Effacer la sélection"
+    "clear_selection": "Effacer la sélection",
+    "selected_one": "{{count}} selected"
   },
   "wakeups": {
     "title": "Réveils de tâches",
@@ -501,8 +501,6 @@
     "select_page": "Sélectionner tous les réveils activés",
     "load_error": "Impossible de charger les réveils",
     "loading": "Chargement des réveils…",
-    "empty": "Aucune règle de réveil",
-    "empty_description": "Les planifications et attentes de PR ou de réponse que les agents posent sur les tâches apparaissent ici.",
     "disable_selected": "Désactiver la sélection",
     "confirm_title": "Désactiver {{count}} réveils ?",
     "confirm_body": "Les réveils futurs seront arrêtés. Les exécutions en file non confiées à un agent seront retirées. Les exécutions déjà confiées continueront ; arrêtez-les depuis le journal d’exécution.",
@@ -546,6 +544,58 @@
     "results": "Page {{page}} · {{count}} résultats",
     "previous": "Précédent",
     "next_page": "Suivant",
-    "clear_filters": "Effacer les filtres"
+    "clear_filters": "Effacer les filtres",
+    "intro": {
+      "title": "Rappelez vos agents au bon moment",
+      "description": "Les réveils sont attachés aux tâches : quand une PR est fusionnée, que quelqu'un répond ou que l'heure arrive, l'agent revient reprendre le travail. Quand la tâche se termine, ses réveils s'arrêtent.",
+      "slides": {
+        "event": {
+          "title": "Attendre qu'il se passe quelque chose",
+          "description": "Inutile de faire tourner un agent à vide en attendant. Dès que la condition est remplie, Multica le réveille."
+        },
+        "time": {
+          "title": "Ou choisir une heure",
+          "description": "Un réveil ponctuel convient à « revoir ça demain après-midi », un réveil récurrent à un contrôle quotidien."
+        },
+        "ends": {
+          "title": "S'arrête avec la tâche",
+          "description": "Les réveils appartiennent à leur tâche. Une fois celle-ci terminée ou annulée, ils se désactivent : aucune règle orpheline."
+        }
+      },
+      "art": {
+        "issue_inbox": "État vide des groupes de la boîte de réception",
+        "issue_board": "Colonnes du tableau redimensionnables",
+        "issue_paste": "Coller des images dans les commentaires",
+        "reply": "« La PR est fusionnée. Je mets à jour la doc et je ferme la tâche. »",
+        "event_examples": "PR fusionnée, nouveau commentaire"
+      }
+    },
+    "defaults": {
+      "title": "À la fin des sous-tâches",
+      "description": "Réveille le responsable de la tâche parente quand une étape se termine alors qu’une étape suivante attend, puis une fois de plus quand toutes les sous-tâches sont fermées. Un responsable humain reçoit une notification à la place.",
+      "badge": "Valeur par défaut de l’espace",
+      "enabled": "Activé par défaut",
+      "instruction": "Instruction par défaut",
+      "instruction_hint": "Envoyée à l’agent réveillé. Laissez vide pour utiliser l’instruction intégrée ci-dessous.",
+      "instruction_placeholder": "Laisser vide pour l’instruction intégrée",
+      "builtin": "Instruction intégrée",
+      "instruction_invalid": "Limitez l’instruction à 4 000 octets.",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…",
+      "save_error": "Impossible d’enregistrer la valeur par défaut.",
+      "customized_one": "{{count}} tâche ouverte a son propre réglage et ignore cette valeur par défaut.",
+      "customized_other": "{{count}} tâches ouvertes ont leur propre réglage et ignorent cette valeur par défaut.",
+      "admin_only": "Seuls les propriétaires et administrateurs peuvent modifier ces valeurs.",
+      "load_error": "Impossible de charger les valeurs par défaut des réveils.",
+      "edit_instruction": "Modifier l’instruction par défaut",
+      "view_instruction": "Voir l’instruction par défaut"
+    },
+    "banner_one": "{{count}} wakeup was paused automatically: {{issue}} “{{condition}}” — {{reason}}"
+  },
+  "intro": {
+    "label": "Automatisation",
+    "title": "Laissez vos agents se mettre au travail tout seuls",
+    "description": "Définissez une planification ou un webhook. À chaque déclenchement, Multica crée une tâche pour un agent, ou lance directement l'agent. Choisissez un modèle et adaptez-le.",
+    "templates": "Partir d'un modèle"
   }
 }

@@ -9,12 +9,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/internal/daemon/localenv"
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
 )
@@ -105,6 +109,62 @@ func TestEnvironmentChildOwnsPhysicalPrepareAndRejectsPrivatePayload(t *testing.
 		t.Fatalf("not an actual physical child: %s %v", inventory, err)
 	}
 	t.Logf("OBSERVE environment PID=%d parent=%d root=%s", observed.PID, os.Getpid(), observed.Root)
+
+	if runtime.GOOS != "windows" {
+		repo := filepath.Join(root, "environment-fixture")
+		if err := os.MkdirAll(filepath.Join(repo, ".multica"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		config := "[environments.fixture]\nstart = \"echo $$ > environment.pid; exec sleep 60\"\n"
+		if err := os.WriteFile(filepath.Join(repo, localenv.ConfigPath), []byte(config), 0600); err != nil {
+			t.Fatal(err)
+		}
+		localTask := localenv.Task{TaskID: "environment-task", IssueID: "issue", WorkspaceID: "workspace", RootDir: repo}
+		localCall := func(input localEnvironmentRequest) localEnvironmentReply {
+			t.Helper()
+			resp, err := call("environment.local", input)
+			if err != nil || resp.Receipt == nil || resp.Receipt.Error != nil {
+				t.Fatalf("local environment operation failed: %+v %v", resp, err)
+			}
+			var reply localEnvironmentReply
+			if err := json.Unmarshal(resp.Receipt.Result, &reply); err != nil || reply.Error != "" {
+				t.Fatalf("local environment response: %s %v", resp.Receipt.Result, err)
+			}
+			return reply
+		}
+		started := localCall(localEnvironmentRequest{Action: "start", Task: localTask, Start: environmentStartRequest{Name: "fixture", Dir: repo}})
+		if started.Environment == nil || started.Environment.Key == "" {
+			t.Fatal("child did not start local environment")
+		}
+		stoppedLocal := false
+		t.Cleanup(func() {
+			if !stoppedLocal {
+				localCall(localEnvironmentRequest{Action: "stop", Task: localTask, Name: "fixture"})
+			}
+		})
+		var pidData []byte
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+			pidData, err = os.ReadFile(filepath.Join(repo, "environment.pid"))
+			if err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(pidData)))
+		if err != nil {
+			t.Fatalf("environment did not record its PID: %q %v", pidData, err)
+		}
+		parentPID, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
+		if err != nil || strings.TrimSpace(string(parentPID)) != strconv.Itoa(observed.PID) {
+			t.Fatalf("environment belongs to a different process: pid=%d ppid=%q owner=%d err=%v", pid, parentPID, observed.PID, err)
+		}
+		listed := localCall(localEnvironmentRequest{Action: "list", Task: localTask})
+		if len(listed.Environments) != 1 || listed.Environments[0].Key != started.Environment.Key {
+			t.Fatal("child local environment inventory lost start result", listed)
+		}
+		localCall(localEnvironmentRequest{Action: "stop", Task: localTask, Name: "fixture"})
+		stoppedLocal = true
+	}
 	beforeRejected, err := os.ReadDir(root)
 	if err != nil {
 		t.Fatal(err)

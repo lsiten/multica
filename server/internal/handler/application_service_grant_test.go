@@ -90,7 +90,7 @@ func newApplicationServiceGrantFixture(t *testing.T, daemonOverrides ...string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	fx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(control), "workspace_id": workspace, "daemon_id": daemonID, "expires_at": time.Now().Add(time.Hour)})
+	fx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(control), "workspace_id": workspace, "daemon_id": daemonID, "owner_id": user, "expires_at": time.Now().Add(time.Hour)})
 	pat, err := auth.GeneratePATToken()
 	if err != nil {
 		t.Fatal(err)

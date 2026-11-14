@@ -10,7 +10,7 @@ Product contracts the runtime brief does not fully encode.
 - [Rerun, cancel, and inspect a run](#rerun-cancel-and-inspect-a-run)
 - [Subscribers](#subscribers)
 - [Labels](#labels)
-- [Sub-issues: todo starts work now, backlog parks it](#sub-issues-todo-starts-work-now-backlog-parks-it)
+- [Sub-issues and stages](#sub-issues-and-stages)
 - [Charts and files in a comment](#charts-and-files-in-a-comment)
 - [Incorrect to correct](#incorrect-to-correct)
 - [Run handoffs and member replies](#run-handoffs-and-member-replies)
@@ -36,6 +36,16 @@ Related to MUL-123   (body only)              # no link
 
 While a PR is open, its automatic links follow the live title, branch, and
 body: removing the key drops the link. After merge or close, existing links stay.
+
+For one issue delivered through PRs opened one after another, pass
+`--pr-auto-complete off` to `issue create` or `issue update <id>` before the
+first merge. The override keeps only this issue's status; other issues still
+follow the workspace's PR merge rule. Restore it with `--pr-auto-complete on`
+before the final PR merges, or leave it off and move the issue to `in_review`
+yourself. Turning it on takes effect at the next PR event. Inspect the setting
+with `issue pull-requests <id>` (JSON: `auto_complete.issue_disabled`). If an
+older server creates the issue but rejects the follow-up override, use the
+reported issue ID with `issue update`; do not retry `issue create`.
 
 ### Default for code-changing issue work
 
@@ -128,6 +138,52 @@ duplicate issue stops the operation before any position write. This protects
 against truncated or repeated pages, but does not promise a snapshot across
 concurrent edits. There is no CLI bulk-export or `--all` mode.
 
+### Saved views
+
+When a request names a saved view ("the Bugs view", a view link), read it
+with `view issues` instead of rebuilding its filters from `issue list` flags:
+the server applies every condition the view saves — "is not", the advanced
+condition tree, relative due dates, project status — which `issue list`
+cannot express.
+
+```bash
+multica view list --output json
+multica view issues "Bugs" --output json --fields identifier,title,status
+```
+
+`<view>` is an ID, ID prefix, or exact name. Pages hold at most 100 issues;
+while `has_more` is true, pass `next_cursor` to `--cursor`. Views and their
+"me" conditions resolve against the runtime owner, so a member's private view
+is only visible when that member owns the runtime.
+
+When asked to set up or change a view, write it yourself instead of
+describing the settings for the user to click through. A view written here is
+the same view the app saves: it appears in the owner's sidebar and stays
+editable in the app.
+
+```bash
+multica view create --name "Open bugs" --label Bug --status done,cancelled --negate status --view-mode list
+multica view update "Open bugs" --priority urgent,high --visibility workspace
+multica view duplicate "Open bugs" --name "Urgent bugs" --priority urgent
+multica view delete "Urgent bugs"
+```
+
+- Filter flags take names (status, label, project, member, agent) and resolve
+  them before writing; `--property` takes the `issue list --property` forms,
+  `--negate <filter>` makes a filter "is not". Layout flags (`--view-mode`,
+  `--grouping`, `--sort`, ...) are in `multica view create --help`.
+- `--scope` (`workspace` default, `my`, or a project via `--project <name>`)
+  is fixed at creation. Views start private and owned by the runtime owner.
+- `update` changes only what its flags name; a list flag replaces that
+  filter and `--status ""` clears it. A view using the app's advanced
+  condition tree refuses filter flags: pass `--clear-filters`, or
+  `--definition-file` with JSON edited from `view get`.
+- `--dry-run` prints the request unsaved. After saving, check the result with
+  `view issues`. "Changed since it was read" saved nothing: re-run; a stale
+  `view get` export is refused too, so export again and redo the edits. A
+  permission refusal means the runtime owner neither owns the view nor is an
+  admin: report it rather than duplicating the view to work around it.
+
 ## Custom properties: typed workflow state
 
 Workspaces may define custom issue properties (Severity, Environment, QA
@@ -172,19 +228,26 @@ multica issue property unset <issue-id> --name Environment
 ```bash
 multica issue list --property "Impact=High" --property "Impact=Medium" --output json
 multica issue list --property "QA Status=__none__" --status in_review --output json
+multica issue list --property "Effort>=3" --property "Due<2026-10-01" --output json
 multica issue list --sort property:Impact --direction desc --output json
 ```
 
 - `--property` takes one `Name=Value` per flag. Repeating the same property
-  matches ANY of its values; different properties must ALL match. Values are
+  matches ANY of its members; different properties must ALL match. Values are
   option names or ids (select types), `true`/`false` (checkbox), a member
   name/email/id (actor types), or the value itself for text, url, number,
   and date (`YYYY-MM-DD`); for `multi_text` / `multi_url` the value matches
   any single element of the list exactly. The reserved value `__none__` matches
   issues where the property is unset (works for every type; it is not
   index-backed, so use it for targeted audits rather than as a default
-  listing filter). Only `=` is supported today; the `>=`, `<=` and `!=`
-  spellings are reserved for comparison filters and are rejected.
+  listing filter).
+- Comparisons use the same flag: `>`, `>=`, `<`, `<=` on number; `>` (after)
+  and `<` (before) on date; `~=` (contains, case-insensitive) on text and
+  url. Quote the flag so the shell does not read `<` or `>` as redirection.
+  `!=` is rejected (the server has no not-equal filter); `>=` and `<=` on a
+  date are rejected with an error naming the strict form to use. Two
+  comparisons on one property OR, so they do not form a range. Number and
+  date comparisons are not index-backed.
 - `--sort property:<name-or-id>` orders select properties by option order —
   an ordinal scale (Low < Medium < High) sorts by meaning — and number/date/
   text/url by value; issues without the property sort last either way.
@@ -248,9 +311,12 @@ archived statuses remain readable via an explicit status filter.
   Squad leaders: dispatching members is not delivery — a dispatch turn
   leaves the parent `in_progress`, and it moves to `in_review` only when a
   later re-trigger confirms the overall goal is met.
+  An issue whose run carries a `[Project workflow]` block is the exception:
+  that block's statuses and commands are the whole status contract, and
+  none of the moves above apply to it.
 - **`in_review`** is an accepted issue status. Some workflows use it while a PR
   is open and awaiting review; moving to it is an explicit mutation.
-- **`done`** on a child issue can wake its parent's assignee (see Stages).
+- **`done`** on a child issue can wake its parent's assignee (see Stages in `references/sub-issues.md`).
 - **`cancelled`** is a terminal, user-driven decision to close the issue. Like
   `done` it enqueues no new agent work, but it does **not** stop tasks already in
   flight — a run in progress keeps going. To stop a running task, cancel the
@@ -271,8 +337,22 @@ archived statuses remain readable via an explicit status filter.
 - **Failed issue-triggered tasks** may roll an issue from `in_progress` back to
   `todo` when no active task / retry remains — that is the main server-owned
   status write on the agent-run path.
+- **Project workflows** can limit which statuses an issue takes and turn a
+  status change into a handoff to another agent. When the per-turn prompt
+  carries a `[Project workflow]` block, read `references/projects.md`.
 
 ## Who else is running right now
+
+The issue sidebar's **Include sub-issues** checkbox uses
+`GET /api/issues/{id}/task-runs?scope=subtree` to show the current issue and
+every descendant at any depth. This is full, uncapped execution history with
+per-run usage and owning issue labels, never ancestors or siblings. It drives
+the sidebar totals, status indicators, spend chart, and complete Runs timeline.
+The Runs dialog inherits the sidebar scope when opened and provides its own
+checkbox beside the issue title. Changing it updates only the dialog; reopening
+the dialog inherits the sidebar selection again.
+The default endpoint still returns only the current issue. The subtree scope
+is separate from the active-only family coordination read below.
 
 Nothing about concurrent runs is pushed into your prompt: the answer changes
 while a turn is running, and most turns never need it. Ask the server on the
@@ -349,72 +429,11 @@ Labels tag issues and filter them; they are distinct from properties and status.
   UUID (a UUID from `label list`, never a display name — see "A name is not an
   id").
 
-## Sub-issues: todo starts work now, backlog parks it
+## Sub-issues and stages
 
-On an agent-assigned issue, create status decides whether the assignee fires
-immediately. A non-backlog status (e.g. `todo`) enqueues the agent at create
-time; `backlog` sets the assignee without triggering.
-
-Parallel children — all start now:
-
-```bash
-multica issue create --title "..." --parent <issue-id> --assignee <agent> --status todo
-```
-
-Strictly serial children — park later steps, promote one at a time:
-
-```bash
-multica issue create --title "Step 2: ..." --parent <issue-id> --assignee <agent> --status backlog
-multica issue status <child-id> todo   # promote when the previous step is truly done
-```
-
-Creating every serial step as `todo` enqueues the whole chain at once.
-
-### Stages: order sub-issues into barrier groups
-
-`--stage <N>` (N >= 1) groups sub-issues under the same parent into ordered
-stages. The platform's sub-issue wakeup **wakes the parent assignee when a stage
-closes while a later stage is waiting** — every sub-issue up to that stage has
-reached a terminal status (`done`/`cancelled`) — and **once more when every
-sub-issue, staged or not, is closed**. A completion that closes nothing is
-silent. A sibling set with **no** stages wakes the parent once, when the *last*
-sub-issue finishes. A parent in `backlog` is not woken; it catches up once it
-leaves backlog. A member assignee gets an inbox notification instead of a run.
-
-Advancement is agent-driven: the server only detects the closed barrier and
-wakes the parent assignee, who then decides whether to promote the next stage's
-`backlog` sub-issues to `todo`.
-
-```bash
-# Stage 1 runs now; later stages parked until promoted
-multica issue create --title "Research A" --parent <id> --assignee <agent> --stage 1 --status todo
-multica issue create --title "Research B" --parent <id> --assignee <agent> --stage 1 --status todo
-multica issue create --title "Build"      --parent <id> --assignee <agent> --stage 2 --status backlog
-multica issue create --title "Ship"       --parent <id> --assignee <agent> --stage 3 --status backlog
-```
-
-When both Stage 1 sub-issues finish you (the parent assignee) are woken by the
-sub-issue wakeup; its `[WAKEUP]` block lists every stage and names the next one.
-Inspect the layout, then promote the next stage:
-
-```bash
-multica issue children <parent-id>             # sub-issues grouped by stage
-multica issue status <stage-2-child-id> todo   # promote when its deps are met
-```
-
-`issue children --output json` reports per-stage `done` counts, including custom
-statuses in terminal categories. When reading issue JSON, `status` is the exact
-key; `status_category` retains the seven-value API enum for installed clients:
-`backlog` / `todo` mean unstarted, `in_progress` / `in_review` / `blocked` mean
-started, `done` means successful terminal, and `cancelled` means cancelled
-terminal (the internal closed category). These values encode lifecycle, not
-built-in automation behavior. Check `status_category` for `done` / `cancelled`
-(or use the stage counts), not just the concrete `status` key, to recognize
-terminal children.
-
-Read each sub-issue's description before promoting and only promote items whose
-stated dependencies are met; if a description conflicts with the parent's
-breakdown, leave it `backlog` and comment to confirm first.
+Whether to split an issue at all, `todo` vs `backlog` children, serial chains,
+stages and their parent wakeups live in `references/sub-issues.md`. Read it
+before creating a sub-issue.
 
 ## Charts and files in a comment
 
@@ -430,15 +449,20 @@ Where content goes decides how it shows:
   a file card that opens in the viewer, **HTML included**: an uploaded
   `report.html` is a deliverable to open, not an inline chart. Use it for
   something the reader keeps or downloads.
+- **An attached image at a specific spot** — reference the attached path in
+  the body, e.g. `![Option A](./a.png)` with `--attachment ./a.png` in the same
+  call. The CLI rewrites that link to the uploaded file before posting, so the
+  image shows right there instead of at the end. Code spans and blocks are left
+  alone.
 
-For HTML that should follow light / dark mode, style it with the page's theme
-variables: `var(--background)`, `var(--foreground)`, `var(--muted)`,
-`var(--muted-foreground)`, `var(--border)`, `var(--primary)`,
-`var(--chart-1)` … `var(--chart-5)`, `var(--font-sans)`. Using any of them opts
-the block into the app's color scheme, so also set the page background
-(`body { background: var(--background); color: var(--foreground) }`). HTML
-that uses none keeps its own look. Size to the content, not the viewport:
-`100vh` heights have no fixed viewport to fill here.
+For HTML that follows light / dark mode, style it with `var(--background)`,
+`var(--foreground)`, `var(--muted)`, `var(--muted-foreground)`, `var(--border)`,
+`var(--primary)`, `var(--chart-1)` … `var(--chart-5)`, `var(--font-sans)`. Any
+of them opts the block into the app's color scheme, so set the page background
+(`body { background: var(--background); color: var(--foreground) }`). Never put
+token text on a fixed light fill: it is near-white in dark mode, so a pastel
+`background:#fde2e4` needs a fixed dark `color`. HTML that uses no token keeps
+its own look. Size to the content: `100vh` has no fixed viewport to fill here.
 
 ````markdown
 ```html title="p95 latency, last 7 days"
@@ -459,40 +483,6 @@ Body-only "Part of MUL-123"         # incorrect — passing mention, won't link
 MUL-123: fix login redirect        # correct — links the PR
 ```
 
-Serial / phased sub-issues (don't start the whole chain at once):
+## Wakeups and run handoffs
 
-```bash
-# incorrect — all fire immediately, no ordering
-multica issue create --title "Step 2" --parent <issue-id> --assignee <agent> --status todo
-multica issue create --title "Step 3" --parent <issue-id> --assignee <agent> --status todo
-
-# correct — stage them; Stage 1 runs, later stages park and are promoted as
-# each stage's barrier closes
-multica issue create --title "Step 1" --parent <issue-id> --assignee <agent> --stage 1 --status todo
-multica issue create --title "Step 2" --parent <issue-id> --assignee <agent> --stage 2 --status backlog
-multica issue create --title "Step 3" --parent <issue-id> --assignee <agent> --stage 3 --status backlog
-```
-
-Reading a file you do not control (incorrect):
-
-```bash
-# incorrect — --description-file / --attachment default to the current working
-# directory; a path outside it is refused unless --allow-external-file is set
-multica issue update <id> --description-file /tmp/other-run/description.md
-# correct — write the file inside the working directory, or pass
-# --allow-external-file when the path is genuinely outside it (MUL-4252)
-multica issue update <id> --description-file ./description.md
-```
-
-
-## Issue wakeups
-
-For event, condition and timer rules, recurring checks and check-ins, read
-[Issue wakeups](issue-wakeups.md).
-
-
-## Run handoffs and member replies
-
-After posting the final results and updating the final status of an unfinished issue, read its current revision and report the exact next work with `multica issue next-step <issue> --body-file ./next-step.json`. This is a run-scoped command: it can only write the authenticated running task's assigned issue. Chat, supervision, automation-only and other issue-less runs must deliver their handoff in their own conversation or result, with issue comments when authorized; mentioning or managing an issue does not bind the run to it. A rejected handoff write is a reporting error, not a product blocker. Include `kind`, `summary`, `actor_type` (`member`, `agent`, or `unknown`), `actor_id` when known, `issue_revision`, and concrete `missing` fields or `evidence`. An agent actor must be the reporting agent. Never infer a reviewer or blocker from a title. Use `review` only with actual delivery evidence; ending a run does not complete its issue.
-
-For a required decision or manual action, first create this run's formal request with `multica human-request create --body-file ./request.json`, then include its `request_id` in a `manual_action` or `awaiting_decision` handoff with the same designated member. Ordinary `choice` and `input` requests may set `response_mode: "chat_or_card"`. A composer-bound, successfully persisted reply consumes the exact request revision and is as final as the card control. Do not ask for the same confirmation again. Discussion and failed submissions do not consume requests. Authorization, manual completion, and existing card-only requests keep explicit card controls; verify manual work in the resulting follow-up before proceeding.
+Read [Wakeups and run handoffs](issue-run-handoffs.md) for recurring checks, unfinished issue handoffs and member decision requests.

@@ -29,10 +29,12 @@
     "current_agent": "Agent actuel",
     "current_autopilot": "Automatisation actuelle",
     "inbox": "Boîte de réception",
-    "current_chat": "Discussion actuelle"
+    "current_chat": "Discussion actuelle",
+    "selected_issues_one": "{{count}} selected issue"
   },
   "commands": {
     "current_theme_aria": "Thème actuel",
+    "current_mode_aria": "Mode actuel",
     "new_issue": "Nouvelle tâche",
     "new_project": "Nouveau projet",
     "new_autopilot": "Nouvelle automatisation",
@@ -63,7 +65,9 @@
     "subscribe": "S'abonner",
     "unsubscribe": "Se désabonner",
     "delete": "Supprimer la tâche",
-    "delete_selected_other": "Supprimer {{count}} tâches"
+    "delete_selected_other": "Supprimer {{count}} tâches",
+    "quick_actions_available_one": "{{count}} available",
+    "delete_selected_one": "Delete {{count}} issue"
   },
   "project": {
     "change_status": "Changer le statut du projet...",
@@ -106,7 +110,6 @@
     "project": "Projet",
     "parent": "Tâche parente",
     "quick_actions": "Actions rapides",
-    "theme": "Thème",
     "project_status": "Statut du projet",
     "no_project": "Aucun projet",
     "current": "Actuel"
@@ -137,14 +140,8 @@
     "type_to_search": "Saisissez du texte pour rechercher des tâches et des projets"
   },
   "delegate": {
-    "heading": "Confier à un agent",
-    "create_and_assign": "Créer une tâche et l'assigner à {{name}}",
-    "squad": "Squad",
-    "context_aria": "Contexte joint",
-    "parent": "Sous {{identifier}}",
-    "pick_crumb": "Choisir",
-    "pick_another": "Confier à un autre agent ou squad...",
-    "detected": "Instruction"
+    "row": "Confier à un agent : « {{prompt}} »",
+    "hint": "Création rapide"
   },
   "best": {
     "assign": "Assigner {{subject}} à {{name}}",
@@ -163,8 +160,6 @@
     "navigate": "Naviguer",
     "select": "Valider",
     "open_in_new_tab": "Ouvrir dans un nouvel onglet",
-    "delegate": "Créer et confier à {{name}}",
-    "search_instead": "Rechercher comme mots-clés",
     "back": "Retour",
     "prefix_commands": "Commandes",
     "prefix_issues": "Tâches",

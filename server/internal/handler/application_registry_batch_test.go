@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/middleware"
@@ -38,7 +39,7 @@ func TestApplicationHeartbeatRefreshesFactsWithoutRepeatedWorkspaceEvents(t *tes
 	send := func(desired string) {
 		t.Helper()
 		request := squadScopeReq("", http.MethodPost, "/observe", map[string]any{"daemon_id": applicationTestDaemonID, "observation": observation, "desired_state": desired}, map[string]string{"runtimeId": runtimeID})
-		request = request.WithContext(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID))
+		request = request.WithContext(middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(request.Context(), testWorkspaceID, applicationTestDaemonID), testUserID))
 		testutil.Call(t, h.ReportRuntimeApplication, request).Want(http.StatusNoContent)
 	}
 	var before, after string
@@ -110,7 +111,7 @@ func TestApplicationRegistryBatchRechecksCurrentAuthorization(t *testing.T) {
 			ctx := t.Context()
 			userID := createPlainMember(t, "registry-"+uuid.NewString()+"@multica.test")
 			runtimeID := applicationTestRuntime(t)
-			if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public"}); err != nil {
+			if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public", SharedWith: []pgtype.UUID{}}); err != nil {
 				t.Fatal(err)
 			}
 			projectID := dbfx.Project(t, "registry permissions")
@@ -153,7 +154,7 @@ func TestApplicationRegistryBatchRechecksCurrentAuthorization(t *testing.T) {
 				}
 				dbfx.Member(t, testWorkspaceID, userID, "member")
 			case "runtime":
-				if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "private"}); err != nil {
+				if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "private", SharedWith: []pgtype.UUID{}}); err != nil {
 					t.Fatal(err)
 				}
 			case "agent-project":

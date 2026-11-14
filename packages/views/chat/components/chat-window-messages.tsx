@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type ComponentProps, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { motion, useIsPresent } from "motion/react";
 import type { AgentAvailability } from "@multica/core/agents";
@@ -16,12 +16,13 @@ const CHAT_VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 1_000_000;
 export function ChatWindowMessages({
   sessionId,
   pendingTask,
-  pendingTaskLoading,
   availability,
   onQuickAction,
   quickActionsDisabled,
   quickActionsPendingMessageId,
   onReady,
+  annotations,
+  onFailureAction,
   children,
 }: {
   sessionId: string | null;
@@ -33,6 +34,8 @@ export function ChatWindowMessages({
   quickActionsPendingMessageId: string | null;
   /** This area has something to show — the window can fade in around it. */
   onReady?: () => void;
+  annotations?: ComponentProps<typeof ChatMessageList>["annotations"];
+  onFailureAction?: ComponentProps<typeof ChatMessageList>["onFailureAction"];
   children: ReactNode;
 }) {
   const isPresent = useIsPresent();
@@ -54,7 +57,7 @@ export function ChatWindowMessages({
     (count, page) => count + page.messages.length,
     0,
   );
-  const showSkeleton = !!sessionId && (isLoading || pendingTaskLoading);
+  const showSkeleton = !!sessionId && isLoading;
   const showList = !showSkeleton && (messages.length > 0 || !!pendingTask?.task_id);
 
   // The skeleton and the empty state are right on their first frame; the list
@@ -94,6 +97,9 @@ export function ChatWindowMessages({
             ? regenerateQuickActions.mutateAsync({ sessionId, messageId: message.id })
             : undefined}
           quickActionsPendingMessageId={quickActionsPendingMessageId}
+          annotations={annotations}
+          onFailureAction={onFailureAction}
+          failureActionsDisabled={quickActionsDisabled}
         />
       ) : children}
     </motion.div>

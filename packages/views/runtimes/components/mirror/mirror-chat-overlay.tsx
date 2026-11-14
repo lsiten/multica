@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
+import { useReducedMotion } from "@multica/core/appearance";
 import { useLayoutEffect, useRef } from "react";
 import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
 import type { ChatMessage, ChatPendingTask } from "@multica/core/types";

@@ -33,7 +33,11 @@
     "remove_parent_issue_success": "Removed parent issue",
     "add_sub_issue": "Add sub-issue...",
     "delete_issue": "Delete issue",
-    "mark_duplicate": "Mark as duplicate..."
+    "mark_duplicate": "Mark as duplicate...",
+    "locate_in_sidebar": "サイドバーで表示",
+    "restore_to_inbox": "インボックスに戻す",
+    "quick_actions": "クイックアクション",
+    "open_in_new_window": "新しいウィンドウで開く"
   },
   "activity": {
     "created": "created this issue",
@@ -88,7 +92,11 @@
     "wakeup_checkin": "silent check: {{note}}",
     "wakeup_checkin_coalesced_other": "{{count}} silent checks · latest: {{note}}",
     "wakeup_chip_created_by": "{{name}}'s wakeup",
-    "wakeup_chip_system": "System rule"
+    "wakeup_chip_system": "System rule",
+    "created_on_behalf_of": "{{name}} の代理としてこのタスクを作成しました",
+    "environment_stopped": "環境 {{name}} を停止しました",
+    "environment_restarted": "環境 {{name}} を再起動しました",
+    "environment_started": "環境 {{name}} を起動しました"
   },
   "actor_issues": {
     "scope": {
@@ -162,8 +170,11 @@
     "delete_failed": "Failed to delete issues",
     "delete_dialog_title_other": "Delete {{count}} issues?",
     "delete_dialog_desc_other": "This action cannot be undone. This will permanently delete the selected issues and all associated data.",
-    "delete_dialog_warning": "Any workspace member can delete issues.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "delete_restricted": "自分または所有するエージェントが作成したタスクを削除できます。ワークスペースの owner と admin はすべてのタスクを削除できます。",
+    "copy_links": "リンクをコピー",
+    "links_copied_other": "{{count}} 件のリンクをコピーしました",
+    "delete_count_other": "タスク {{count}} 件を削除"
   },
   "board": {
     "hide_column": "Hide column",
@@ -275,7 +286,10 @@
     "recipient_count_other": "{{count}} agents will receive this",
     "steer_attachment_notice": "Only text can join a running run, so a message with files is handled after it.",
     "restart_send": "Stop and send",
-    "restart_failed": "Couldn't stop the current run. Your message wasn't sent."
+    "restart_failed": "Couldn't stop the current run. Your message wasn't sent.",
+    "reply_action": "返信",
+    "actions_label": "コメントの操作",
+    "create_issue_from_selection": "選択内容からサブタスクを作成"
   },
   "data_load_error": {
     "title": "Couldn't load issues",
@@ -310,7 +324,10 @@
     "overview_summary_with_size_other": "{{count}} deliverables · {{size}} total",
     "overview_close": "Close",
     "overview_empty": "No deliverables of this type.",
-    "group_comment_by": "Comment by {{name}}"
+    "group_comment_by": "Comment by {{name}}",
+    "copy_link": "最新版へのリンクをコピー",
+    "not_found": "この課題に「{{name}}」という成果物はありません",
+    "link_load_failed": "「{{name}}」を開くための成果物を読み込めませんでした。再読み込みしてもう一度お試しください。"
   },
   "detail": {
     "metadata_close": "Close metadata",
@@ -402,7 +419,6 @@
     "agents_group": "Agents",
     "mark_done_tooltip": "Mark as done",
     "archive_tooltip": "Archive",
-    "restore_to_inbox_tooltip": "Restore to inbox",
     "pin_tooltip": "Pin to sidebar",
     "unpin_tooltip": "Unpin from sidebar",
     "quick_jump_label": "Quick navigation",
@@ -430,7 +446,23 @@
     "project_directory_path_copied_with_branch": "Project directory path copied — work is on {{branch}}",
     "workdir_path_copy_failed": "Failed to copy workdir path",
     "workdir_path_unavailable": "No local workdir yet — issue has not been run by a local agent",
-    "pull_requests_empty_title": "No linked pull requests."
+    "pull_requests_empty_title": "No linked pull requests.",
+    "load_failed": "タスクを読み込めませんでした。",
+    "load_retry": "再試行",
+    "sidebar_settings": {
+      "open": "サイドバーをカスタマイズ",
+      "title": "サイドバー",
+      "reset": "リセット",
+      "footer": "ドラッグで並べ替え。すべてのタスクに適用されます。",
+      "always_shown": "常に表示",
+      "empty": "このタスクにはありません",
+      "customize": "カスタマイズ",
+      "drag_handle": "{{section}}を並べ替え",
+      "hidden_count_other": "{{count}} 個のセクションを非表示"
+    },
+    "pull_request_state_open": "オープン",
+    "project_subscription_badge": "プロジェクト経由で購読中",
+    "project_subscription_hint": "このプロジェクトのすべてのタスクを購読しています。ここで購読解除すると、このタスクの通知だけが止まります。"
   },
   "display": {
     "tooltip": "Display settings",
@@ -474,7 +506,8 @@
     "card_labels": "Labels",
     "card_child_progress": "Sub-issue progress",
     "show_sub_issues": "Show sub-issues",
-    "layout_options": "{{layout}} options"
+    "layout_options": "{{layout}} options",
+    "card_pull_requests": "Pull requests"
   },
   "duplicates": {
     "banner_prefix": "Duplicate of",
@@ -530,18 +563,23 @@
     "summary_runs_other": "{{count}} runs",
     "agent_time": "{{duration}} agent time",
     "elapsed": "{{duration}} elapsed",
-    "latest": "Latest",
+    "latest": "最新",
     "open_timeline": "Open timeline",
     "more_runs_other": "{{count}} more",
     "strip_aria": "Cumulative cost over time — open the run timeline",
     "strip_no_usage": "No usage recorded",
     "sparkline_now": "Now",
     "jump_to_run": "実行に移動",
-    "queued_count_other": "{{count}} 件待機中"
+    "queued_count_other": "{{count}} 件待機中",
+    "include_children": "サブタスクを含める",
+    "loading": "実行履歴を読み込み中...",
+    "load_failed_retry": "実行履歴を読み込めませんでした。再試行",
+    "empty": "この範囲には実行履歴がありません。"
   },
   "filtered_empty": {
     "title": "No issues match these filters",
-    "clear_button": "Clear filters"
+    "clear_button": "Clear filters",
+    "unread_title": "未読のタスクはありません"
   },
   "filters": {
     "tooltip": "Filter",
@@ -565,7 +603,7 @@
     "section_relation": "Relation to me",
     "relation_assigned": "Assigned to me",
     "relation_created": "Created by me",
-    "relation_my_agents": "Assigned to my agents",
+    "relation_my_agents": "マイエージェントの作業",
     "section_agent_status": "Agent status",
     "agent_status_running": "Running",
     "operator_label": "Match",
@@ -644,7 +682,9 @@
     "advanced_add_to_group": "Add to group",
     "advanced_turn_into_group": "Turn into group",
     "section_read_state": "既読状態",
-    "read_state_unread": "未読"
+    "read_state_unread": "未読",
+    "relation_subscribed": "自分が購読中",
+    "agent_status_idle": "待機中"
   },
   "gantt": {
     "header_issue": "Issue",
@@ -969,8 +1009,15 @@
       "selection_failed": "Could not capture the selection. Select text within one comment or description and try again.",
       "source_label": "Comment by {{name}}",
       "edit": "Edit annotation {{number}}",
-      "note_placeholder": "Add a comment…"
-    }
+      "note_placeholder": "Add a comment…",
+      "send_all": "すべて送信",
+      "send_with_annotations_and_body": "保存済みの注釈 {{count}} 件と下書きの本文もまとめて送信します。",
+      "send_with_annotations": "保存済みの注釈 {{count}} 件もまとめて送信します。",
+      "send_with_body": "下書きの本文もまとめて送信します。",
+      "confirm_add_short": "追加",
+      "save_short": "保存"
+    },
+    "recipients_changed": "返信先が変更されました。送信先を確認してから、もう一度送信してください。"
   },
   "requirement": {
     "task": "Task",
@@ -1062,7 +1109,7 @@
     "variant_my_any": "Any relation",
     "variant_my_assigned": "Assigned to me",
     "variant_my_created": "Created by me",
-    "variant_my_involved": "Involved",
+    "variant_my_involved": "マイエージェントの作業",
     "title": "ビューとして保存",
     "hint_workspace": "ワークスペースの全タスクをもとに作成",
     "hint_my_any": "「マイタスク · すべて」をもとに作成",
@@ -1252,7 +1299,8 @@
       "created_at": "Created",
       "updated_at": "Updated",
       "child_progress": "Sub-issue progress",
-      "creator": "Created by"
+      "creator": "Created by",
+      "pull_requests": "Pull requests"
     },
     "calculation": {
       "label": "Calculate",
@@ -1276,7 +1324,8 @@
   },
   "timeline": {
     "loading": "Loading...",
-    "jump_to_latest": "Jump to latest"
+    "jump_to_latest": "Jump to latest",
+    "new_comments_other": "新しいコメント {{count}} 件"
   },
   "view": {
     "tooltip_board": "Board view",
@@ -1355,7 +1404,10 @@
       "row_actions": "Actions for {{name}}",
       "empty_title": "No saved views yet",
       "empty_description": "Set up filters and display options in an issue list, then save them as a view."
-    }
+    },
+    "save_view": "ビューを保存",
+    "add_filter": "フィルターを追加",
+    "setup_hint": "このビューにはまだ条件がないため、すべてのタスクを表示しています"
   },
   "wakeups": {
     "title": "Wakeups",
@@ -1620,15 +1672,16 @@
       "enable": "On for this issue",
       "toggle": "Wake the assignee when sub-issues finish",
       "save_error": "Could not save the system rule.",
-      "default_on": "On by default in this workspace. Change the default in Settings → Wakeups.",
-      "default_off": "Off by default in this workspace. Change the default in Settings → Wakeups.",
+      "default_on": "ワークスペースでは既定でオン。",
+      "default_off": "ワークスペースでは既定でオフ。",
       "notify_member": "Notify {{name}} in their inbox",
       "instruction": "What to do when woken",
       "instruction_edit": "Edit instruction",
       "instruction_default": "Not set on this issue; uses the default:",
       "instruction_placeholder": "Leave empty to use the default",
       "instruction_invalid": "Keep the instruction within 4,000 bytes.",
-      "paused": "Paused: {{reason}}"
+      "paused": "Paused: {{reason}}",
+      "default_change": "既定値を変更"
     },
     "cond": {
       "status": "When this issue moves to {{status}}",
@@ -1877,7 +1930,6 @@
       "brief_header": "The workflow brief this run received"
     },
     "detail": {
-      "follows_project": "(from project)",
       "card_title": "{{workflow}} · from {{project}}"
     },
     "list_separator": ", ",
@@ -1917,15 +1969,12 @@
       "name_placeholder": "Status name",
       "add": "Add"
     },
-    "menu": {
-      "view_flow": "View full flow",
-      "switch": "Switch workflow"
-    },
     "flow": {
       "title": "{{workflow}} workflow",
       "scope_own": "Only this project uses this workflow.",
       "no_handoff_here": "No handoff",
-      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them."
+      "scope_shared_other": "{{count}} projects use this workflow. Its handoffs apply to all of them.",
+      "switch": "ワークフローを切り替え"
     },
     "templates": {
       "delivery": {
@@ -1983,5 +2032,146 @@
     "wait_run": "Wait for the active run to end.",
     "reconnect": "Reconnect the runtime and verify ownership before retrying.",
     "check_task": "Check the issue and refresh the inventory before retrying."
+  },
+  "web": {
+    "open_in_desktop": "デスクトップで開く"
+  },
+  "desktop": {
+    "link_other_instance": "デスクトップアプリは別の Multica インスタンスに接続されています。",
+    "link_workspace_unavailable": "このワークスペースはデスクトップアプリでは利用できません。"
+  },
+  "unread_filter_error": {
+    "title": "未読のタスクを読み込めませんでした"
+  },
+  "relation_filter_error": {
+    "title": "「自分との関係」フィルターを読み込めませんでした",
+    "hint": "「自分が購読中」または「マイエージェントの作業」で絞り込んだタスクは、購読とエージェントを読み込むまで表示できません。"
+  },
+  "app_calls": {
+    "section_title": "アプリ",
+    "chips_label": "この実行で使ったアプリ",
+    "calls_count_other": "{{count}} 回",
+    "more": "ほか {{count}} 件",
+    "scope": {
+      "team": "チームアカウント",
+      "personal": "個人アカウント"
+    },
+    "outcome": {
+      "ok": "実行済み",
+      "error": "失敗",
+      "blocked": "ブロック",
+      "pending": "確認待ち",
+      "approved": "承認済み",
+      "rejected": "却下",
+      "rate_limited": "レート制限"
+    }
+  },
+  "environments": {
+    "section_title": "環境",
+    "running_count_other": "{{count}} 件実行中",
+    "this_machine": "このマシン",
+    "unknown_machine": "不明なマシン",
+    "state": {
+      "starting": "起動中",
+      "running": "実行中",
+      "exited": "終了",
+      "stopped": "停止",
+      "unreachable": "応答なし",
+      "stopping": "停止中",
+      "preparing": "準備中"
+    },
+    "expires_in_minutes_other": "{{count}}分後に期限切れ",
+    "expires_in_hours_other": "{{count}}時間後に期限切れ",
+    "expires_in_days_other": "{{count}}日後に期限切れ",
+    "started_ago": "起動: {{time}}",
+    "ended_ago": "終了: {{time}}",
+    "last_seen": "最終応答: {{time}}",
+    "ended_count_other": "終了済み {{count}} 件",
+    "detected_hint": "このタスクの実行ディレクトリで待ち受けていたサーバー",
+    "remote_hint": "{{machine}} で実行中です。localhost の URL はそのマシンでのみ開けます。",
+    "localhost_hint": "localhost の URL は、それを実行しているマシンでのみ開けます。",
+    "open": "開く",
+    "copy_url": "URL をコピー",
+    "copied": "URL をコピーしました",
+    "copy_failed": "URL をコピーできませんでした",
+    "offline": "オフライン",
+    "machine_offline": "{{machine}} はオフラインです",
+    "more_actions": "その他の操作",
+    "view_logs": "ログを表示",
+    "restart": "再起動",
+    "stop": "停止",
+    "stop_confirm_item": "停止…",
+    "run_first": "初回の実行",
+    "run_nth_other": "{{count}} 回目の実行",
+    "someone": "誰か",
+    "started_by": "{{name}} が起動",
+    "restarted_by": "{{name}} が再起動",
+    "started_by_agent_in_run": "{{name}} が「{{run}}」で起動",
+    "stopped_by": "{{name}} が停止",
+    "stopped_on_expiry": "期限切れで自動停止",
+    "exited_ago": "{{time}}に終了",
+    "exit_code": "終了コード {{code}}",
+    "detected_label": "自動検出したサービス · {{name}}",
+    "detected_no_logs": "このサービスは環境設定から起動されていないため、ログを見ることも再起動することもできません。",
+    "offline_hint": "このマシンがオンラインに戻ると操作できます。",
+    "outdated_hint": "このマシンの Multica を更新すると、ここから操作できます。",
+    "no_permission_hint": "このマシンを使えるメンバーだけが停止・再起動できます。",
+    "waiting_machine": "マシンの応答を待っています",
+    "waiting_ready": "サービスの準備を待っています",
+    "no_response": "応答なし",
+    "action_failed": {
+      "stop": "停止できませんでした",
+      "restart": "再起動できませんでした",
+      "start": "起動できませんでした"
+    },
+    "stop_confirm_title": "{{name}} を停止しますか？",
+    "stop_confirm_body": "このサービス（{{process}}）は自動検出されたもので、環境設定から起動されたものではありません。停止するとここからは再起動できず、エージェントに起動し直してもらう必要があります。",
+    "cancel": "キャンセル",
+    "preparing_title": "{{name}} が環境を準備しています",
+    "preparing_hint": "起動するとここに表示されます",
+    "start_menu": {
+      "trigger": "環境を起動",
+      "note": "プロジェクトの環境設定に従い、このマシンでの最新の実行のコードで起動します。",
+      "no_permission": "マシンを使えるメンバーだけが、そのマシンで環境を起動できます。",
+      "nothing_to_start": "このタスクはまだ実行されていないか、以前の実行のコードが削除されているため、直接起動できる環境はありません。",
+      "ask_agent": "{{name}} に起動を依頼",
+      "ask_any_agent": "エージェントに起動を依頼",
+      "new_run": "新しい実行",
+      "preparing": "準備中",
+      "ask_agent_hint": "{{name}} がこのタスクのコードを用意してから環境を起動します。プロジェクトに環境設定がない場合は、起動方法を自分で判断します。",
+      "ask_any_agent_hint": "エージェントがこのタスクのコードを用意してから環境を起動します。プロジェクトに環境設定がない場合は、起動方法を自分で判断します。",
+      "ask_failed": "エージェントに依頼できませんでした",
+      "agent_instruction": "環境を起動してください：このタスクのコードを用意し、`multica env start` でプロジェクトに設定された環境を起動します。環境設定がない場合は、起動方法を自分で判断してください。サービスは動かしたままにして、アクセス先の URL を返信してください。"
+    },
+    "log": {
+      "title": "{{name}} · ログ",
+      "filter": "ログを絞り込む",
+      "wrap": "折り返し",
+      "follow": "最新を追う",
+      "copy": "コピー",
+      "copied": "ログをコピーしました",
+      "copy_failed": "ログをコピーできませんでした",
+      "refresh": "更新",
+      "footer_other": "直近 {{count}} 行を表示 · {{time}} に更新",
+      "loading": "ログを読み込んでいます…",
+      "empty": "まだ出力がありません",
+      "no_match": "一致する行はありません",
+      "no_response": "マシンが応答しませんでした",
+      "failed": "ログを読み込めませんでした：{{error}}",
+      "offline_excerpt": "このマシンはオフラインです。終了前に最後に出力された内容を表示しています。",
+      "offline_empty": "このマシンがオンラインに戻るとログを表示できます。",
+      "exit_divider": "{{time}} に終了",
+      "exit_divider_code": "{{time}} に終了 · 終了コード {{code}}",
+      "stopped_divider": "{{time}} に停止"
+    },
+    "app_desktop_hint": "デスクトップアプリです。実行中のマシンの Multica Desktop からウィンドウに切り替えられます。",
+    "app_remote_hint": "{{machine}} で実行中です。そのマシンの Multica Desktop からウィンドウに切り替えられます。",
+    "focus": "ウィンドウに切り替え",
+    "focus_gone": "{{name}} はもう実行されていません",
+    "focus_unsupported": "このマシンのデーモンはまだアプリのウィンドウに切り替えられません。Multica を更新してもう一度お試しください。",
+    "focus_unavailable": "ローカルのデーモンが実行されていません",
+    "focus_failed": "{{name}} に切り替えられませんでした",
+    "retry": "再試行",
+    "dismiss": "閉じる"
   }
 }

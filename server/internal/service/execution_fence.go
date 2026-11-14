@@ -71,7 +71,7 @@ func LockExecutionCallback(ctx context.Context, q *db.Queries, taskID pgtype.UUI
 		return ErrExecutionStale
 	}
 	switch request.Operation {
-	case "status", "usage", "messages", "jev-decision-logs", "session", "cancel-ack", "supplements/ack", "worktree-delivery", "project-graph/events":
+	case "status", "usage", "messages", "jev-decision-logs", "context-receipt", "session", "cancel-ack", "supplements/ack", "worktree-delivery", "project-graph/events":
 		return nil
 	case "complete":
 		// The HTTP operation stays complete for grant authorization, even

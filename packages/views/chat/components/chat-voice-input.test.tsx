@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { LocalVoiceAdapter, LocalVoiceStatus } from "@multica/core/platform";
-import { RESOURCES } from "../../test/i18n";
+import { getTestResources } from "../../test/i18n";
 import { ChatVoiceInput } from "./chat-voice-input";
 
 const mocks = vi.hoisted(() => ({
@@ -33,7 +33,7 @@ function adapter(): LocalVoiceAdapter {
   };
 }
 function view() {
-  return <I18nProvider locale="en" resources={RESOURCES}>
+  return <I18nProvider locale="en" resources={getTestResources()}>
     <ChatVoiceInput agentId="agent" disabled={false} onBegin={() => draft} onActiveChange={activeChange} />
   </I18nProvider>;
 }

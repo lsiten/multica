@@ -2419,7 +2419,6 @@
   },
   "usage": {
     "period_label": "時間範圍",
-    "dimension_label": "維度",
     "kpi_cost_label": "費用 · {{days}} 天",
     "kpi_cost_delta": "{{sign}}{{pct}}% 對比上期",
     "kpi_cache_label": "快取節省 · {{days}} 天",
@@ -2427,8 +2426,6 @@
     "kpi_tokens_label": "Token · {{days}} 天",
     "kpi_tokens_hint": "輸入 {{input}} · 輸出 {{output}}",
     "when_title": "這個執行時在何時消耗",
-    "when_tab_daily": "按天",
-    "when_tab_weekly": "按周",
     "when_tab_heatmap": "熱力圖",
     "daily_metric_cost": "費用",
     "daily_metric_tokens": "Token",
@@ -2463,6 +2460,7 @@
     "cost_by_title_model": "按模型分攤",
     "cost_by_tab_agent": "按 AI 代理",
     "cost_by_tab_model": "按模型",
+    "cost_by_label": "分組方式",
     "cost_by_caption_agent_other": "{{count}} 個 AI 代理使用此執行時",
     "cost_by_caption_model_other": "{{count}} 個模型已使用",
     "daily_breakdown_toggle": "每日明細表",
@@ -2834,5 +2832,29 @@
     "conflict_runtime_won": "執行時已有更新版本，你的改動已丟棄，請基於最新版本重新編輯。",
     "changed_reload": "檔案在你開啟後已變化，請載入最新版本後再編輯。",
     "save_failed": "無法儲存改動，請重試。"
+  },
+  "intro": {
+    "title": "給 AI 代理一臺做事的電腦",
+    "description": "執行時是 AI 代理真正執行任務的地方：你的電腦、一臺伺服器，或者雲端服務。",
+    "slides": {
+      "local": {
+        "title": "這臺電腦，自動連接",
+        "description": "下載桌面端並登入，這臺電腦上的 Claude Code、Codex 等會自動出現。"
+      },
+      "remote": {
+        "title": "其他機器，兩條命令",
+        "description": "在伺服器或另一臺電腦上裝好 CLI，執行 multica setup 就連上了。"
+      },
+      "cloud": {
+        "title": "或者用雲端節點",
+        "description": "不想自己管機器？建立一臺 Multica 託管的雲節點。"
+      }
+    },
+    "art": {
+      "this_computer": "這臺電腦 · 桌面端",
+      "detected": "自動識別到的 harness",
+      "run_there": "在那臺機器上執行",
+      "connected": "{{name}} 已連接到 Multica"
+    }
   }
 }

@@ -2501,7 +2501,6 @@
   },
   "usage": {
     "period_label": "Period",
-    "dimension_label": "Dimension",
     "kpi_cost_label": "Cost · {{days}}D",
     "kpi_cost_delta": "{{sign}}{{pct}}% vs prev",
     "kpi_cache_label": "Cache savings · {{days}}D",
@@ -2509,8 +2508,6 @@
     "kpi_tokens_label": "Tokens · {{days}}D",
     "kpi_tokens_hint": "in {{input}} · out {{output}}",
     "when_title": "When this runtime spent",
-    "when_tab_daily": "Daily",
-    "when_tab_weekly": "Weekly",
     "when_tab_heatmap": "Heatmap",
     "daily_metric_cost": "Cost",
     "daily_metric_tokens": "Tokens",
@@ -2546,6 +2543,7 @@
     "cost_by_title_model": "Cost by model",
     "cost_by_tab_agent": "By agent",
     "cost_by_tab_model": "By model",
+    "cost_by_label": "Group by",
     "cost_by_caption_agent_one": "{{count}} agent on this runtime",
     "cost_by_caption_agent_other": "{{count}} agents on this runtime",
     "cost_by_caption_model_one": "{{count}} model used",
@@ -2924,5 +2922,29 @@
     "conflict_runtime_won": "The runtime has a newer version. Your edit was discarded — rebase against the latest.",
     "changed_reload": "The file changed since you opened it. Reload to edit against the latest version.",
     "save_failed": "Couldn’t save the edit. Try again."
+  },
+  "intro": {
+    "title": "Give your agents a computer to work on",
+    "description": "A runtime is where agents actually run their work: your computer, a server, or a cloud service.",
+    "slides": {
+      "local": {
+        "title": "This computer connects itself",
+        "description": "Download the desktop app and sign in. Claude Code, Codex and the other CLIs on this computer show up on their own."
+      },
+      "remote": {
+        "title": "Another machine, two commands",
+        "description": "Install the CLI on a server or another computer, then run multica setup to connect it."
+      },
+      "cloud": {
+        "title": "Or use a cloud node",
+        "description": "Rather not manage machines? Create a cloud node hosted by Multica."
+      }
+    },
+    "art": {
+      "this_computer": "This computer · Desktop",
+      "detected": "Detected harnesses",
+      "run_there": "Run on that machine",
+      "connected": "{{name}} connected to Multica"
+    }
   }
 }

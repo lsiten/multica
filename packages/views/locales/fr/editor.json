@@ -87,7 +87,11 @@
     "table_columns_other": "{{count}} colonnes",
     "address": "Adresse",
     "address_hint": "?paramètres",
-    "reload": "Actualiser"
+    "reload": "Actualiser",
+    "tree_items_one": "{{count}} item",
+    "tree_keys_one": "{{count}} key",
+    "table_rows_one": "{{count}} row",
+    "table_columns_one": "{{count}} column"
   },
   "link_hover": {
     "copy_link": "Copier le lien",

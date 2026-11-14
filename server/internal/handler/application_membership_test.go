@@ -20,7 +20,7 @@ func TestApplicationCredentialsDoNotReviveAfterMemberRejoins(t *testing.T) {
 	}
 	ctx := context.Background()
 	endpoint, runtimeID := applicationAccessFixture(t)
-	if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public"}); err != nil {
+	if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public", SharedWith: []pgtype.UUID{}}); err != nil {
 		t.Fatal(err)
 	}
 	userID := createPlainMember(t, "application-rejoin-"+uuid.NewString()+"@multica.test")

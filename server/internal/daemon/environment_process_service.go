@@ -77,6 +77,7 @@ type environmentProcessBinding struct {
 	Policy         environmentProcessPolicy    `json:"policy"`
 	WorkspacesRoot string                      `json:"workspaces_root"`
 	FactsAddress   string                      `json:"facts_address"`
+	IgnoreCommands []string                    `json:"ignore_commands"`
 	Runtimes       []environmentRuntimeBinding `json:"runtimes"`
 }
 type environmentApplicationSource struct {
@@ -126,7 +127,7 @@ func RunEnvironmentService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	defer cancel()
 	owner := &environmentProcessService{bootstrap: b, daemon: d, life: life, cancel: cancel}
 	defer owner.shutdown(context.Background())
-	service, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, DetachMutations: true, ReconcileMutation: owner.reconcileMutation, Capabilities: []string{"environment.bind", "cache.sync", "cache.coauthor", "cache.checkout", "physical.prepare", "physical.recover_handoff", "physical.begin_task", "physical.root_confirm", "physical.root_claim", "physical.select", "physical.attach", "physical.abort", "physical.finish_begin", "physical_finish_confirm", "physical.verify_completion", "application.source", "review.run", "environment.operation", "environment.gc", "worktree-delivery.ack"}, ConcurrentCapabilities: []string{"physical_finish_confirm"}, ReadCapabilities: []string{"cache.lookup", "environment.inventory", "worktree-delivery.receipts", "review.read", "environment.command", "environment.mutation_scope"}, Handler: owner.mutate, ReadHandler: owner.read, Shutdown: owner.shutdown})
+	service, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, DetachMutations: true, ReconcileMutation: owner.reconcileMutation, Capabilities: []string{"environment.bind", "environment.local", "cache.sync", "cache.coauthor", "cache.checkout", "physical.prepare", "physical.recover_handoff", "physical.begin_task", "physical.root_confirm", "physical.root_claim", "physical.select", "physical.attach", "physical.abort", "physical.finish_begin", "physical_finish_confirm", "physical.verify_completion", "application.source", "review.run", "environment.operation", "environment.gc", "worktree-delivery.ack"}, ConcurrentCapabilities: []string{"physical_finish_confirm"}, ReadCapabilities: []string{"cache.lookup", "environment.inventory", "worktree-delivery.receipts", "review.read", "environment.command", "environment.mutation_scope"}, Handler: owner.mutate, ReadHandler: owner.read, Shutdown: owner.shutdown})
 	if err != nil {
 		return err
 	}
@@ -197,6 +198,7 @@ func (s *environmentProcessService) bind(binding environmentProcessBinding) erro
 		s.factsAddress = binding.FactsAddress
 		s.daemon.client = client
 		s.daemon.cfg.WorkspacesRoot = canonical
+		s.daemon.environments = newEnvironmentService(s.daemon.cfg, localEnvironmentReporter{facts: facts}, binding.IgnoreCommands, s.daemon.logger)
 		if err := execenv.EnsureWorkspacesRootMarker(canonical); err != nil {
 			return err
 		}
@@ -240,8 +242,9 @@ func (s *environmentProcessService) bind(binding environmentProcessBinding) erro
 	// both read the maps, so ordering them after the map assignment closes the
 	// partial-initialization window for both.
 	if firstBind && s.life != nil {
-		s.workers.Add(2)
+		s.workers.Add(3)
 		go func() { defer s.workers.Done(); s.daemon.gcLoop(s.life) }()
+		go func() { defer s.workers.Done(); s.daemon.environments.run(s.life) }()
 		go func() { defer s.workers.Done(); s.daemon.environmentRecycleLoop(s.life) }()
 	}
 	return nil
@@ -275,6 +278,13 @@ func (s *environmentProcessService) mutate(ctx context.Context, request runtimep
 		return environmentOperationResult(nil, errors.New("environment service is not bound"))
 	}
 	switch request.Operation {
+	case "environment.local":
+		input, err := decodeLocalEnvironment(request.Payload)
+		if err != nil {
+			return environmentOperationResult(nil, err)
+		}
+		if input.Action == "claim" { ctx = s.life }
+  return environmentOperationResult(s.daemon.executeLocalEnvironment(ctx, input), nil)
 	case "physical.recover_handoff":
 		var input environmentHandoffRecovery
 		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {

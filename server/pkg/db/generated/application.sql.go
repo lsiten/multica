@@ -2203,7 +2203,7 @@ func (q *Queries) LockApplicationProject(ctx context.Context, arg LockApplicatio
 }
 
 const lockApplicationRuntime = `-- name: LockApplicationRuntime :one
-SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility, profile_id, custom_name FROM agent_runtime WHERE id=$1 AND workspace_id=$2 FOR KEY SHARE
+SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id, visibility, profile_id, custom_name, shared_with, max_concurrent_tasks FROM agent_runtime WHERE id=$1 AND workspace_id=$2 FOR KEY SHARE
 `
 
 type LockApplicationRuntimeParams struct {
@@ -2232,6 +2232,8 @@ func (q *Queries) LockApplicationRuntime(ctx context.Context, arg LockApplicatio
 		&i.Visibility,
 		&i.ProfileID,
 		&i.CustomName,
+		&i.SharedWith,
+		&i.MaxConcurrentTasks,
 	)
 	return i, err
 }

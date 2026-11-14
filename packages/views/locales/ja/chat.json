@@ -144,7 +144,9 @@
     "autonomy_enabled": "自律実行を有効化",
     "autonomy_hint": "上限はこのメッセージだけに適用されます。",
     "autonomy_zero_unlimited": "0 は無制限です。これらの上限はこのメッセージだけに適用されます。",
-    "autonomy_invalid": "0 または 0 以上の整数を入力してください。時間上限は 86400 秒です。"
+    "autonomy_invalid": "0 または 0 以上の整数を入力してください。時間上限は 86400 秒です。",
+    "page_context_add": "このページをコンテキストに追加",
+    "page_context_remove": "ページのコンテキストを削除"
   },
   "queue": {
     "title_other": "キュー内のメッセージ {{count}} 件",
@@ -203,7 +205,9 @@
     "quick_actions_heading": "フォローアップ質問",
     "quick_actions_aria": "フォローアップの候補",
     "quick_actions_regenerate": "候補を再生成",
-    "quick_actions_regenerate_failed": "候補を再生成できませんでした。もう一度お試しください。"
+    "quick_actions_regenerate_failed": "候補を再生成できませんでした。もう一度お試しください。",
+    "jump_to_latest": "最新に移動",
+    "new_reply": "新しい返信"
   },
   "session_history": {
     "untitled": "無題",
@@ -260,7 +264,8 @@
     "agent_needs_runtime": "ランタイム未設定",
     "agent_needs_runtime_hint": "このエージェントとチャットする前にランタイムを設定してください",
     "group_title_placeholder": "グループ名（任意）",
-    "create_group": "グループを作成"
+    "create_group": "グループを作成",
+    "close_tooltip": "閉じる"
   },
   "empty_state": {
     "first_time_title": "エージェントとチャット",
@@ -287,9 +292,9 @@
       "label": "アクションを提案",
       "prompt": "私のワークスペースについて知っていることを踏まえ、最初に役立つアクションを提案してください。"
     },
-    "customize": "開始例をカスタマイズ",
     "uploading": "アップロードが完了してから開始例を使用してください。",
-    "draft_in_progress": "開始例を使う前に、下書きを送信するか消去してください。"
+    "draft_in_progress": "開始例を使う前に、下書きを送信するか消去してください。",
+    "customize": "Customize"
   },
   "onboarding_cards": {
     "aria_label": "はじめ方",
@@ -353,8 +358,6 @@
     "no_response_preview": "テキスト返信なし",
     "quick_agents": "よく使う Agent",
     "add": "追加",
-    "add_agent": "よく使う Agent を追加",
-    "unpin_agent": "よく使うから外す",
     "waiting": "返信待ち",
     "pin": "ピン留め",
     "unpin": "ピン留めを解除",
@@ -374,5 +377,16 @@
     "archive": "チャットをアーカイブ",
     "unarchive": "アーカイブを解除",
     "view_profile": "Agent のプロフィール"
+  },
+  "bar": {
+    "history": "チャット履歴",
+    "history_group": {
+      "today": "今日",
+      "week": "過去 7 日間",
+      "older": "それ以前"
+    },
+    "close_chip": "{{title}} を閉じる",
+    "all_chats": "すべてのチャット",
+    "more_other": "他 {{count}} 件のチャット"
   }
 }

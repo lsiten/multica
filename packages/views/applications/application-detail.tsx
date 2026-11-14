@@ -11,6 +11,7 @@ import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes"
 import { Button } from "@multica/ui/components/ui/button";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@multica/ui/components/ui/alert-dialog";
 import { cn } from "@multica/ui/lib/utils";
+import { openExternal } from "../platform/open-external";
 import { AppLink, useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { CollectionPageHeader, CollectionPageState } from "../layout/collection-page";
@@ -33,11 +34,9 @@ function InstanceCard({ instance, application, board, workspaceId, runtimeLabel 
   const launch = useLaunchApplication(workspaceId, child.id);
   const [opening, setOpening] = useState(false);
   const openEndpoint = async (endpointId: string) => {
-    const windowHandle = window.open("about:blank", "_blank");
-    if (windowHandle) windowHandle.opener = null;
     setOpening(true);
-    try { const url = await launch.mutateAsync(endpointId); if (windowHandle) windowHandle.location.href = url; else window.location.href = url; }
-    catch (cause) { windowHandle?.close(); toast.error(cause instanceof Error ? cause.message : t(($) => $.load_failed)); }
+    try { const url = await launch.mutateAsync(endpointId); openExternal(url, { webTarget:"same-tab" }); }
+    catch (cause) { toast.error(cause instanceof Error ? cause.message : t(($) => $.load_failed)); }
     finally { setOpening(false); }
   };
   return <div className="space-y-4 rounded-xl border p-4">

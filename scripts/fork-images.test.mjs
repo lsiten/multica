@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 const workflow = readFileSync(".github/workflows/fork-images.yml", "utf8");
 assert.match(workflow, /push:\n    tags:\n      - "v\*\.\*\.\*"\n      - "!v\*-dirty\*"/);
 assert.doesNotMatch(workflow, /branches:|workflow_dispatch:/);
-assert.match(workflow, /build:\n    needs: verify/);
+assert.match(workflow, /build:\n    needs: \[verify, acceptance\]/);
 assert.match(workflow, /publish:\n    needs: \[verify, build\]/);
 assert.ok(workflow.includes("image: backend\n            arch: arm64\n            runs-on: ubuntu-latest\n            qemu: true"));
 assert.ok(workflow.includes("image: web\n            arch: arm64\n            runs-on: ubuntu-24.04-arm\n            qemu: false"));

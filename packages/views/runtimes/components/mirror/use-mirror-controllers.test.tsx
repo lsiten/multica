@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { VscreenScope, VscreenSourceDescriptor } from "@multica/core/types";
-import { RESOURCES } from "../../../test/i18n";
+import { getTestResources } from "../../../test/i18n";
 import { useMirrorControllers } from "./use-mirror-controllers";
 
 const scope: VscreenScope = {
@@ -52,7 +52,7 @@ describe("useMirrorControllers", () => {
       defaultOptions: { queries: { retry: false } },
     });
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={RESOURCES}>
+      <I18nProvider locale="en" resources={getTestResources()}>
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>

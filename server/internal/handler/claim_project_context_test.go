@@ -114,7 +114,9 @@ func TestClaimTask_IssueProjectInForeignWorkspace_DegradesToWorkspaceRepos(t *te
 		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 LIMIT 1`,
 		testWorkspaceID,
 	).Scan(&agentID, &runtimeID)
+	dbfx.Exec(t, `UPDATE agent_runtime SET last_seen_at=now() WHERE id=$1`, runtimeID)
 
+	dbfx.Exec(t, `UPDATE agent_runtime SET last_seen_at=now() WHERE id=$1`, runtimeID)
 	issueID := dbfx.Issue(t, "issue pointing at a foreign project", testutil.Cols{
 		"project_id": foreignProjectID,
 		"priority":   "medium",
@@ -125,8 +127,7 @@ func TestClaimTask_IssueProjectInForeignWorkspace_DegradesToWorkspaceRepos(t *te
 		"issue_id":   issueID,
 	})
 
-	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/claim", nil,
-		testWorkspaceID, "test-claim-foreign-issue-project")
+	req := newOwnerDaemonRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/claim", nil)
 	req = withURLParam(req, "runtimeId", runtimeID)
 	w := testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusOK)
 
@@ -246,6 +247,7 @@ func TestClaimTask_ProjectResourceFromForeignWorkspace_IsFilteredOut(t *testing.
 		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 LIMIT 1`,
 		testWorkspaceID,
 	).Scan(&agentID, &runtimeID)
+	dbfx.Exec(t, `UPDATE agent_runtime SET last_seen_at=now() WHERE id=$1`, runtimeID)
 
 	issueID := dbfx.Issue(t, "issue with a mismatched project resource", testutil.Cols{
 		"project_id": projectID,
@@ -257,8 +259,7 @@ func TestClaimTask_ProjectResourceFromForeignWorkspace_IsFilteredOut(t *testing.
 		"issue_id":   issueID,
 	})
 
-	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/claim", nil,
-		testWorkspaceID, "test-claim-foreign-resource")
+	req := newOwnerDaemonRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/claim", nil)
 	req = withURLParam(req, "runtimeId", runtimeID)
 	w := testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusOK)
 
@@ -322,8 +323,7 @@ func TestClaimTask_AutopilotRunOnlyForeignWorkspace_CancelsTask(t *testing.T) {
 		"autopilot_run_id": foreignRunID,
 	})
 
-	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+localRuntimeID+"/claim", nil,
-		testWorkspaceID, "test-claim-foreign-autopilot")
+	req := newOwnerDaemonRequest("POST", "/api/daemon/runtimes/"+localRuntimeID+"/claim", nil)
 	req = withURLParam(req, "runtimeId", localRuntimeID)
 	w := testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusInternalServerError)
 	if !strings.Contains(w.Text(), "task workspace isolation check failed") {
@@ -393,6 +393,7 @@ func TestBuildClaimedTaskResponse_SourceLoadFailure_PreservesTaskAndEmitsNoConte
 		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 LIMIT 1`,
 		testWorkspaceID,
 	).Scan(&agentID, &runtimeID)
+	dbfx.Exec(t, `UPDATE agent_runtime SET last_seen_at=now() WHERE id=$1`, runtimeID)
 
 	projectID := dbfx.Project(t, "Source load failure project")
 	dbfx.Insert(t, "project_resource", testutil.Cols{
@@ -502,6 +503,7 @@ func TestRejectClaimSourceLoad_MissingRow_CancelsTask(t *testing.T) {
 		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 LIMIT 1`,
 		testWorkspaceID,
 	).Scan(&agentID, &runtimeID)
+	dbfx.Exec(t, `UPDATE agent_runtime SET last_seen_at=now() WHERE id=$1`, runtimeID)
 
 	taskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": nil})
 	dbfx.Exec(t, `UPDATE agent_task_queue SET status = 'dispatched' WHERE id = $1`, taskID)

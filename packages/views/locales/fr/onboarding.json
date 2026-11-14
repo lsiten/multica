@@ -197,7 +197,8 @@
     "hint_waiting": "En attente du premier résultat…",
     "continue": "Commencer avec Mika",
     "online_label": "en ligne",
-    "offline_label": "hors ligne"
+    "offline_label": "hors ligne",
+    "runtime_count_one": "{{count}} agent runtime"
   },
   "step_platform": {
     "headline": "Connectez un ordinateur pour exécuter votre agent.",
@@ -226,7 +227,8 @@
     "stage_stalled_term": "l'application de bureau",
     "stage_stalled_suffix": " est la voie la plus simple — un clic et cet ordinateur est connecté. Fermez cette fenêtre et choisissez l'application de bureau, ou cliquez sur Ignorer pour continuer.",
     "eyebrow": "Connecter un ordinateur",
-    "cli_dialog_connect": "Connecter et continuer"
+    "cli_dialog_connect": "Connecter et continuer",
+    "runtimes_connected_one": "{{count}} computer connected"
   },
   "errors": {
     "skip_failed": "Échec de la finalisation de la prise en main",

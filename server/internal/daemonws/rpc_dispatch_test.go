@@ -224,6 +224,45 @@ func TestMirrorAnswerFailureDispatchRuntimeScope(t *testing.T) {
 	select {
 	case got := <-failures:
 		t.Fatalf("foreign runtime invoked failure handler: %+v", got)
+	}
+}
+
+func TestRPCDispatch_ResponsePrecedesCleanup(t *testing.T) {
+	hub := NewHub()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	hub.SetRPCHandler(func(ctx context.Context, _ ClientIdentity, _ string, _ json.RawMessage) (int, json.RawMessage, error) {
+		if !AfterRPCResponse(ctx, func() {
+			close(entered)
+			<-release
+			close(finished)
+		}) {
+			t.Error("hub request has no completion phase")
+		}
+		return http.StatusOK, json.RawMessage(`{"ok":true}`), nil
+	})
+	defer func() {
+		close(release)
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("RPC cleanup did not finish")
+		}
+	}()
+	conn := dialRPCTestConn(t, hub, ClientIdentity{DaemonID: "daemon-cleanup", RuntimeIDs: []string{"rt-cleanup"}})
+	resp := sendRPCRequest(t, conn, protocol.RPCRequestPayload{RequestID: "cleanup", Method: "tasks.claim"})
+	if resp.Status != http.StatusOK || string(resp.Body) != `{"ok":true}` {
+		t.Fatalf("response = %+v", resp)
+	}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cleanup was not called")
+	}
+	select {
+	case <-finished:
+		t.Fatal("cleanup finished before being released")
 	default:
 	}
 }

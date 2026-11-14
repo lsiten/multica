@@ -1,6 +1,6 @@
-// Package analytics ships product telemetry events to an external analytics
-// backend (PostHog). Events feed the acquisition → activation → expansion
-// funnel — see events.go for the event contract.
+// Package analytics provides a buffered PostHog client.
+// Product events go through metrics.RecordEvent; current server events are
+// metrics-only. The client remains available for non-metrics-only events.
 //
 // Design:
 //   - Capture is non-blocking. Request handlers must never wait on analytics

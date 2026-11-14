@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage, TaskMessagePayload } from "@multica/core/types";
 import { I18nProvider } from "@multica/core/i18n/react";
-import { RESOURCES } from "../../../test/i18n";
+import { getTestResources } from "../../../test/i18n";
 import { MirrorChatOverlay } from "./mirror-chat-overlay";
 
 vi.mock("@multica/core/chat/queries", () => ({
@@ -16,7 +16,7 @@ function message(id: string, text: string): ChatMessage {
 }
 
 function view(client: QueryClient, messages: ChatMessage[], pendingId?: string) {
-  return <I18nProvider locale="en" resources={RESOURCES}>
+  return <I18nProvider locale="en" resources={getTestResources()}>
     <QueryClientProvider client={client}>
       <MirrorChatOverlay agentName="Mika" messages={messages} pendingTask={pendingId ? { task_id: pendingId } : null} />
     </QueryClientProvider>

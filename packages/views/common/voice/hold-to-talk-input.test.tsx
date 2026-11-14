@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
-import { RESOURCES } from "../../test/i18n";
+import { getTestResources } from "../../test/i18n";
 import { HoldToTalkInput } from "./hold-to-talk-input";
 
 const stopTrack = vi.fn();
@@ -26,7 +26,7 @@ class FakeRecorder {
 }
 
 function view(transcript = "", enabled = true, extra: Partial<React.ComponentProps<typeof HoldToTalkInput>> = {}) {
-  return <I18nProvider locale="en" resources={RESOURCES}>
+  return <I18nProvider locale="en" resources={getTestResources()}>
     <HoldToTalkInput enabled={enabled} transcript={transcript} onVoice={onVoice} onTranscript={onTranscript} {...extra} />
   </I18nProvider>;
 }
@@ -55,7 +55,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe("HoldToTalkInput", () => {
   it("accepts a direct transcription response without a mirror session", async () => {
     const transcribe = vi.fn(async () => "Direct transcript");
-    render(<I18nProvider locale="en" resources={RESOURCES}>
+    render(<I18nProvider locale="en" resources={getTestResources()}>
       <HoldToTalkInput enabled onVoice={transcribe} onTranscript={onTranscript} />
     </I18nProvider>);
     fireEvent.keyUp(await hold(), { key: " " });
@@ -69,7 +69,7 @@ describe("HoldToTalkInput", () => {
       signal = requestSignal;
       return new Promise<string>((resolve) => { finish = resolve; });
     });
-    const { unmount } = render(<I18nProvider locale="en" resources={RESOURCES}>
+    const { unmount } = render(<I18nProvider locale="en" resources={getTestResources()}>
       <HoldToTalkInput enabled onVoice={transcribe} onTranscript={onTranscript} />
     </I18nProvider>);
     fireEvent.keyUp(await hold(), { key: " " });

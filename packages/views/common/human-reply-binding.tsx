@@ -112,5 +112,5 @@ export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: strin
     {error && <p role="alert" className="text-destructive">{error}</p>}
     <div className="flex flex-wrap gap-2"><Button size="sm" variant={plain ? "secondary" : "ghost"} aria-pressed={plain} onClick={() => { setPlain(!plain); setError(""); }}>{t($ => $.human_request.reply_plain)}</Button>{(stale || error) && <Button size="sm" variant="outline" onClick={() => { setError(""); void query.refetch().then(result => { const refreshed = result.data?.filter(request => !!matchHumanTextAnswer(request, text, selectedId === request.id) && (!selectedId || selectedId === request.id)) ?? []; setSnapshot(refreshed.length === 1 && scopeId ? { scopeId, text, request: refreshed[0]! } : null); }); }}>{t($ => $.human_request.refresh)}</Button>}</div>
   </div> : error ? <p role="alert" className="px-3 py-2 text-caption text-destructive">{error}</p> : null;
-  return { submit, pick, preview, acceptedReplyId, bound: !!snapshot && !!answer && !plain && candidates.length <= 1, stale };
+  return { submit, pick, preview, acceptedReplyId, requiresSubmission: !!snapshot || available.length > 0, bound: !!snapshot && !!answer && !plain && candidates.length <= 1, stale };
 }

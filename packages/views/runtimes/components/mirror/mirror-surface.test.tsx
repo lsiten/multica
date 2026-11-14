@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { RuntimeDevice, VscreenScope } from "@multica/core/types";
-import { RESOURCES } from "../../../test/i18n";
+import { getTestResources } from "../../../test/i18n";
 import { MirrorSurface } from "./mirror-surface";
 
 const scope: VscreenScope = {
@@ -168,7 +168,7 @@ vi.mock("./mirror-control-bar", () => ({
 describe("MirrorSurface emergency stop", () => {
   it("shows measured receive statistics alongside negotiated quality", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<I18nProvider locale="en" resources={RESOURCES}>
+    render(<I18nProvider locale="en" resources={getTestResources()}>
       <QueryClientProvider client={queryClient}>
         <MirrorSurface scope={scope} runtime={runtime} />
       </QueryClientProvider>
@@ -182,7 +182,7 @@ describe("MirrorSurface emergency stop", () => {
       defaultOptions: { queries: { retry: false } },
     });
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={RESOURCES}>
+      <I18nProvider locale="en" resources={getTestResources()}>
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>
@@ -227,7 +227,7 @@ describe("MirrorSurface interaction", () => {
     platformOpenFloating = vi.fn(async () => undefined);
     try {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      render(<I18nProvider locale="en" resources={RESOURCES}>
+      render(<I18nProvider locale="en" resources={getTestResources()}>
         <QueryClientProvider client={queryClient}>
           <MirrorSurface scope={scope} runtime={runtime} />
         </QueryClientProvider>
@@ -256,7 +256,7 @@ describe("MirrorSurface interaction", () => {
 
   it("toggles the video conversation overlay without deleting its session", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<I18nProvider locale="en" resources={RESOURCES}>
+    render(<I18nProvider locale="en" resources={getTestResources()}>
       <QueryClientProvider client={queryClient}>
         <MirrorSurface scope={scope} runtime={runtime} />
       </QueryClientProvider>
@@ -281,7 +281,7 @@ describe("MirrorSurface interaction", () => {
       defaultOptions: { queries: { retry: false } },
     });
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={RESOURCES}>
+      <I18nProvider locale="en" resources={getTestResources()}>
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>
@@ -300,7 +300,7 @@ describe("MirrorSurface toolbar buttons", () => {
   it("keeps the refresh button clickable and refetches sources", async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={RESOURCES}>
+      <I18nProvider locale="en" resources={getTestResources()}>
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>
@@ -320,7 +320,7 @@ describe("MirrorSurface toolbar buttons", () => {
     platformOpenFloating = openFloating;
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={RESOURCES}>
+      <I18nProvider locale="en" resources={getTestResources()}>
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>
@@ -345,7 +345,7 @@ describe("MirrorSurface toolbar buttons", () => {
     platformOpenFloating = vi.fn(async () => undefined);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={RESOURCES}>
+      <I18nProvider locale="en" resources={getTestResources()}>
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>

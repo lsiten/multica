@@ -2,10 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/multica-ai/multica/server/internal/events"
+	"github.com/multica-ai/multica/server/internal/projectaccess"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -78,10 +83,20 @@ func (h *Handler) ListPins(w http.ResponseWriter, r *http.Request) {
 	includeViews := strings.Contains(include, "view")
 	includeRuntimeMirrors := strings.Contains(include, pinnedItemTypeRuntimeMirror)
 
+	// Pins on private projects (or their issues) the caller cannot see are
+	// left out rather than deleted, so they come back if access does.
+	hidden, ok := h.requestHiddenProjects(w, r, workspaceID)
+	if !ok {
+		return
+	}
+
 	resp := make([]PinnedItemResponse, 0, len(pins))
 	for _, p := range pins {
 		if (p.ItemType == "view" && !includeViews) ||
 			(p.ItemType == pinnedItemTypeRuntimeMirror && !includeRuntimeMirrors) {
+			continue
+		}
+		if !hidden.Empty() && !h.pinVisible(r, hidden, p) {
 			continue
 		}
 		resp = append(resp, pinnedItemToResponse(p))
@@ -123,10 +138,14 @@ func (h *Handler) CreatePin(w http.ResponseWriter, r *http.Request) {
 	// Verify the item exists in this workspace
 	switch req.ItemType {
 	case "issue":
-		if _, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
+		issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
 			ID: itemUUID, WorkspaceID: wsUUID,
-		}); err != nil {
+		})
+		if err != nil {
 			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		if !h.requireProjectVisible(w, r, workspaceID, issue.ProjectID, http.StatusNotFound, "issue not found") {
 			return
 		}
 	case "project":
@@ -134,6 +153,9 @@ func (h *Handler) CreatePin(w http.ResponseWriter, r *http.Request) {
 			ID: itemUUID, WorkspaceID: wsUUID,
 		}); err != nil {
 			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		if !h.requireProjectVisible(w, r, workspaceID, itemUUID, http.StatusNotFound, "project not found") {
 			return
 		}
 	case "view":
@@ -192,7 +214,7 @@ func (h *Handler) CreatePin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := pinnedItemToResponse(pin)
-	h.publish(protocol.EventPinCreated, workspaceID, "member", userID, map[string]any{"pin": resp})
+	h.publishPin(protocol.EventPinCreated, workspaceID, userID, map[string]any{"pin": resp})
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -225,7 +247,7 @@ func (h *Handler) DeletePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.publish(protocol.EventPinDeleted, workspaceID, "member", userID, map[string]any{
+	h.publishPin(protocol.EventPinDeleted, workspaceID, userID, map[string]any{
 		"item_type": itemType,
 		"item_id":   itemID,
 	})
@@ -269,7 +291,37 @@ func (h *Handler) ReorderPins(w http.ResponseWriter, r *http.Request) {
 	// Fan out so other sessions (web/desktop, or a second tab) refetch
 	// the pin list and pick up the new order. Without this, reorder is
 	// only consistent on the originating client until a hard refresh.
-	h.publish(protocol.EventPinReordered, workspaceID, "member", userID, map[string]any{"items": req.Items})
+	h.publishPin(protocol.EventPinReordered, workspaceID, userID, map[string]any{"items": req.Items})
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) pinVisible(r *http.Request, hidden projectaccess.Hidden, pin db.PinnedItem) bool {
+	switch pin.ItemType {
+	case "project":
+		return hidden.CanSeeProject(pin.ItemID)
+	case "issue":
+		projectID, err := h.Queries.GetIssueProjectID(r.Context(), pin.ItemID)
+		if err != nil {
+			// A missing issue keeps today's behavior (the client prunes it);
+			// a read failure hides the pin rather than risk showing it.
+			return errors.Is(err, pgx.ErrNoRows)
+		}
+		return hidden.CanSeeProject(projectID)
+	default:
+		return true
+	}
+}
+
+// publishPin sends a pin event to its member's own sessions only: a pin is
+// that member's, and its item id may name a private project or issue.
+func (h *Handler) publishPin(eventType, workspaceID, userID string, payload any) {
+	h.Bus.Publish(events.Event{
+		Type:                eventType,
+		WorkspaceID:         workspaceID,
+		ActorType:           "member",
+		ActorID:             userID,
+		MemberPrivateUserID: userID,
+		Payload:             payload,
+	})
 }

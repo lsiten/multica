@@ -99,7 +99,9 @@
     "usage_totals_pending": "Les totaux de consommation sont encore en cours de traitement",
     "show_all": "Tout afficher",
     "show_less": "Afficher le top {{count}}",
-    "no_data": "Aucune activité d'agent sur cette fenêtre."
+    "no_data": "Aucune activité d'agent sur cette fenêtre.",
+    "usage_unreported_one": "{{count}} run did not report usage",
+    "usage_unreported_pending_one": "{{count}} run did not report usage · totals are still being processed"
   },
   "empty": {
     "title": "Aucune consommation pour l'instant",

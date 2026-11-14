@@ -52,9 +52,9 @@ func TestLocalReviewResolvesReusedTaskBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	request.Action, request.SnapshotID = "approve", snapshot.ID
-	d.markActiveEnvRoot(priorRoot)
+	releaseRoot := d.markActiveEnvRoot(priorRoot)
 	w := callReview(t, d, request, "test-token")
-	d.unmarkActiveEnvRoot(priorRoot)
+	releaseRoot()
 	if w.Code != http.StatusConflict {
 		t.Fatal("review ignored an active reused source", w.Code)
 	}

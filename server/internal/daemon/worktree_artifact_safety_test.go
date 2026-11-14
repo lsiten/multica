@@ -1,6 +1,7 @@
 package daemon
 
 import (
+ "context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -92,7 +93,7 @@ func TestLegacyGCRespectsReuseLockAndReviewLease(t *testing.T) {
 					defer release()
 				}
 
-				d.applyGCAction(root, action, &gcStats{byPattern: map[string]int{}})
+				d.applyGCAction(context.Background(), root, action, &gcStats{byPattern: map[string]int{}})
 
 				if _, err := os.Stat(sentinel); err != nil {
 					t.Fatalf("%s protection ignored: %v", protection, err)

@@ -68,7 +68,7 @@ func preparePhysical(params PhysicalPrepareParams, preclaimed bool, logger *slog
 			copy := *params.LocalWorktree
 			copy.PrivateCheckout = true
 			params.LocalWorktree = &copy
-		} else if _, git := detectGitRepo(params.LocalWorkDir); git {
+		} else if _, gitErr := resolveGitRoot(params.LocalWorkDir); gitErr == nil {
 			params.LocalWorktree = &LocalWorktreeParams{LocalPath: params.LocalWorkDir, PrivateCheckout: true, RetainCheckout: true}
 			params.LocalWorkDir = ""
 		} else {

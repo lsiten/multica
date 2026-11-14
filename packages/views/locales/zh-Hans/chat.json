@@ -144,7 +144,9 @@
     "autonomy_enabled": "已启用自主执行",
     "autonomy_hint": "这些上限只作用于本条消息。",
     "autonomy_zero_unlimited": "0 表示不限制；这些上限只作用于本条消息。",
-    "autonomy_invalid": "请输入 0 或非负整数；时间上限不能超过 86400 秒。"
+    "autonomy_invalid": "请输入 0 或非负整数；时间上限不能超过 86400 秒。",
+    "page_context_add": "将当前页面添加为上下文",
+    "page_context_remove": "移除页面上下文"
   },
   "queue": {
     "title_other": "{{count}} 条排队消息",
@@ -203,7 +205,9 @@
     "quick_actions_heading": "后续提问",
     "quick_actions_aria": "后续提问建议",
     "quick_actions_regenerate": "重新生成建议",
-    "quick_actions_regenerate_failed": "无法重新生成建议，请重试。"
+    "quick_actions_regenerate_failed": "无法重新生成建议，请重试。",
+    "jump_to_latest": "跳到最新",
+    "new_reply": "新回复"
   },
   "session_history": {
     "untitled": "无标题",
@@ -260,7 +264,8 @@
     "agent_needs_runtime": "需绑定运行时",
     "agent_needs_runtime_hint": "请先绑定运行时，再与该智能体开始对话",
     "group_title_placeholder": "群聊名称（可选）",
-    "create_group": "创建群聊"
+    "create_group": "创建群聊",
+    "close_tooltip": "关闭"
   },
   "empty_state": {
     "first_time_title": "和你的智能体对话",
@@ -287,9 +292,9 @@
       "label": "推荐一个操作",
       "prompt": "根据你对我的工作区的了解，推荐一个有用的初始操作。"
     },
-    "customize": "自定义开场建议",
     "uploading": "请等待附件上传完成后再使用开场建议。",
-    "draft_in_progress": "请先发送或清空草稿，再使用开场建议。"
+    "draft_in_progress": "请先发送或清空草稿，再使用开场建议。",
+    "customize": "自定义"
   },
   "onboarding_cards": {
     "aria_label": "开始方式",
@@ -353,8 +358,6 @@
     "no_response_preview": "无文字回复",
     "quick_agents": "常用智能体",
     "add": "添加",
-    "add_agent": "添加常用智能体",
-    "unpin_agent": "移出常用",
     "waiting": "等待回复",
     "pin": "置顶",
     "unpin": "取消置顶",
@@ -374,5 +377,16 @@
     "unarchive": "取消归档",
     "delete": "删除会话",
     "view_profile": "查看智能体资料"
+  },
+  "bar": {
+    "history": "对话历史",
+    "history_group": {
+      "today": "今天",
+      "week": "过去 7 天",
+      "older": "更早"
+    },
+    "close_chip": "关闭 {{title}}",
+    "all_chats": "全部对话",
+    "more_other": "另外 {{count}} 个对话"
   }
 }

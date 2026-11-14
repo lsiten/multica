@@ -133,7 +133,11 @@ func (h *Handler) PerformIssueProgressAction(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		response := issueToResponse(accepted, h.getIssuePrefix(r.Context(), accepted.WorkspaceID))
-		h.fillStatusCategory(r.Context(), accepted.WorkspaceID, &response)
+		hidden, ok := h.requestHiddenProjects(w, r, uuidToString(accepted.WorkspaceID))
+		if !ok {
+			return
+		}
+		h.fillStatusCategory(r.Context(), accepted.WorkspaceID, hidden, &response)
 		h.publish("issue:updated", uuidToString(accepted.WorkspaceID), "member", uuidToString(member.UserID), map[string]any{"issue": response, "status_changed": true, "prev_status": issue.Status})
 		h.processChildEvents(r.Context(), accepted.ParentIssueID, issue.ParentIssueID)
 		writeJSON(w, 200, map[string]any{"issue_id": uuidToString(accepted.ID), "status": accepted.Status, "task_id": nil})

@@ -272,7 +272,7 @@ func TestFamilyWorkspaceChangedDirectoryDropsProviderResume(t *testing.T) {
 			task.PriorWorkDir = t.TempDir()
 			task.PriorSessionID = "previous-session"
 			ctx := execenv.TaskContextForEnv{PriorSessionResumed: true}
-			gateResumeToReachableSession(&task, &ctx, provider, t.TempDir(), true, false, d.logger)
+			gateResumeToReachableSession(&task, &ctx, provider, t.TempDir(), true, false, false, false, d.logger)
 			if task.PriorSessionID != "" || ctx.PriorSessionResumed {
 				t.Fatal("moved issue retained its previous provider session")
 			}

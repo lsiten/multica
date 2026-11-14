@@ -2419,7 +2419,6 @@
   },
   "usage": {
     "period_label": "期間",
-    "dimension_label": "ディメンション",
     "kpi_cost_label": "コスト · {{days}} 日",
     "kpi_cost_delta": "前期比 {{sign}}{{pct}}%",
     "kpi_cache_label": "キャッシュによる節約 · {{days}} 日",
@@ -2427,8 +2426,6 @@
     "kpi_tokens_label": "トークン · {{days}} 日",
     "kpi_tokens_hint": "入力 {{input}} · 出力 {{output}}",
     "when_title": "このランタイムでコストが発生した時期",
-    "when_tab_daily": "日別",
-    "when_tab_weekly": "週別",
     "when_tab_heatmap": "ヒートマップ",
     "daily_metric_cost": "コスト",
     "daily_metric_tokens": "トークン",
@@ -2463,6 +2460,7 @@
     "cost_by_title_model": "モデル別コスト",
     "cost_by_tab_agent": "エージェント別",
     "cost_by_tab_model": "モデル別",
+    "cost_by_label": "グループ化",
     "cost_by_caption_agent_other": "このランタイムのエージェント {{count}} 個",
     "cost_by_caption_model_other": "使用されたモデル {{count}} 個",
     "daily_breakdown_toggle": "日別内訳テーブル",
@@ -2834,5 +2832,29 @@
     "conflict_runtime_won": "ランタイムに新しいバージョンがあります。変更は破棄されました。最新に対して再編集してください。",
     "changed_reload": "ファイルが編集開始後に変更されています。最新を再読み込みしてから編集してください。",
     "save_failed": "変更を保存できませんでした。再試行してください。"
+  },
+  "intro": {
+    "title": "エージェントに作業用のコンピューターを",
+    "description": "ランタイムは、エージェントが実際にタスクを実行する場所です。手元のコンピューター、サーバー、またはクラウドサービスを使えます。",
+    "slides": {
+      "local": {
+        "title": "このコンピューターは自動で接続",
+        "description": "デスクトップアプリをダウンロードしてサインインすると、このコンピューターの Claude Code や Codex などが自動的に表示されます。"
+      },
+      "remote": {
+        "title": "ほかのマシンはコマンド 2 つ",
+        "description": "サーバーや別のコンピューターに CLI をインストールし、multica setup を実行すれば接続できます。"
+      },
+      "cloud": {
+        "title": "クラウドノードも使える",
+        "description": "マシンを自分で管理したくないなら、Multica がホストするクラウドノードを作成できます。"
+      }
+    },
+    "art": {
+      "this_computer": "このコンピューター · デスクトップ",
+      "detected": "検出された harness",
+      "run_there": "そのマシンで実行",
+      "connected": "{{name}} が Multica に接続されました"
+    }
   }
 }

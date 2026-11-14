@@ -318,6 +318,9 @@ func buildWorkerContext(cfg Config, task Task, provider string, env *execenv.Env
 	prepared := PreparedEnv{Env: agentEnv}
 	if env != nil {
 		prepared.WorkDir = env.WorkDir
+		prepared.PiSkillPaths = env.PiSkillPaths
+		prepared.HermesHome = env.HermesHome
+		prepared.Delivery = env.LocalWorktree.Inspection()
 		prepared.RootDir = env.RootDir
 		prepared.LocalWorktree = env.LocalWorktree != nil
 		prepared.CodexHome = env.CodexHome
@@ -365,7 +368,7 @@ func (d *Daemon) workerProcessEnabled() bool {
 // transcript messages, session pin, supplement claim/ack, prepare-lease renewal
 // and a status query. It carries no control/gateway authority.
 func workerExecutionOperations() []string {
-	return []string{"status", "start", "prepare-lease", "progress", "session", "complete", "fail", "usage", "messages", "supplements/claim", "supplements/ack", "worktree-delivery"}
+	return []string{"status", "start", "prepare-lease", "progress", "session", "complete", "fail", "usage", "context-receipt", "messages", "supplements/claim", "supplements/ack", "worktree-delivery"}
 }
 
 // assembleWorkerBindInput assembles the closed bind request the control parent
@@ -550,24 +553,28 @@ func (d *Daemon) attemptWorkerRun(ctx context.Context, task Task, provider strin
 	return workerRunDecision{UseWorkerResult: true, Result: wr}, nil
 }
 
-// projectWorkerResult projects a genuine worker run result onto the TaskResult the
-// control parent returns. It is a pure, *Daemon-free projection so the hot-path
-// branch and its opt-in test share one definition. A nil prepared environment
-// yields empty WorkDir/EnvRoot rather than a panic (the branch always passes a
-// prepared env; the guard keeps the projection safe to unit-test in isolation).
+// projectWorkerResult retains worker metadata on launch or transport errors.
 func projectWorkerResult(wr *workerRunResult, env *execenv.Environment) TaskResult {
 	result := TaskResult{
-		Status:    wr.Status,
-		Comment:   wr.Output,
-		SessionID: wr.SessionID,
-		Usage:     wr.Usage,
-		Execution: wr.Execution,
+		Status:           wr.Status,
+		RetiredSessionID: wr.RetiredSessionID,
+		Comment:          wr.Output,
+		SessionID:        wr.SessionID,
+		Usage:            wr.Usage,
+		Execution:        wr.Execution,
 	}
 	if wr.RunError != "" {
 		result.Comment = wr.RunError
 		result.FailureReason = taskRunFailureReason(errors.New(wr.RunError))
 	}
-	if wr.BudgetExceeded || wr.TokenBudgetExceeded {
+	if wr.ProviderError != "" {
+		result.Comment = wr.ProviderError
+	}
+	if wr.Status == "cleanup_unconfirmed" {
+		result.Status = "failed"
+		result.FailureReason = "cleanup_unconfirmed"
+	}
+	if wr.Status != "cleanup_unconfirmed" && (wr.BudgetExceeded || wr.TokenBudgetExceeded) {
 		result.Status, result.FailureReason, result.Comment = "blocked", "budget_exceeded", "Task stopped after reported provider usage reached its autonomy cost limit."
 		if wr.TokenBudgetExceeded {
 			result.FailureReason, result.Comment = "token_budget_exceeded", "Task stopped after reported token usage reached its autonomy limit."

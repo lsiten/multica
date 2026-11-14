@@ -450,6 +450,9 @@ func TestSweepDispatchedStaleTask(t *testing.T) {
 		mu.Unlock()
 	})
 
+	if _, err := testPool.Exec(context.Background(), `UPDATE agent_runtime SET status='online',last_seen_at=now() WHERE id=(SELECT runtime_id FROM agent WHERE id=$1)`, agentID); err != nil {
+		t.Fatal(err)
+	}
 	// Fail stale tasks — dispatch timeout of 1 second (our task is 10 minutes old)
 	failedTasks, err := queries.FailStaleTasks(context.Background(), db.FailStaleTasksParams{
 		DispatchTimeoutSecs: 1.0,

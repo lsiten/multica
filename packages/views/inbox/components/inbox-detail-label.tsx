@@ -19,6 +19,7 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     human_action_requested: t(($) => $.types.human_action_requested),
     issue_assigned: t(($) => $.types.issue_assigned),
     issue_subscribed: t(($) => $.types.issue_subscribed),
+    issue_created: t(($) => $.types.issue_created),
     unassigned: t(($) => $.types.unassigned),
     assignee_changed: t(($) => $.types.assignee_changed),
     status_changed: t(($) => $.types.status_changed),
@@ -43,6 +44,10 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     runtime_mirror_control_started: t(($) => $.types.runtime_mirror_control_started),
     runtime_mirror_control_stopped: t(($) => $.types.runtime_mirror_control_stopped),
     children_done: t(($) => $.types.children_done),
+    app_action_requested: t(($) => $.types.app_action_requested),
+    app_action_reminder: t(($) => $.types.app_action_reminder),
+    app_connect_requested: t(($) => $.types.app_connect_requested),
+    app_action_result: t(($) => $.types.app_action_result),
   };
 }
 

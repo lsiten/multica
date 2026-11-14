@@ -144,7 +144,9 @@
     "autonomy_enabled": "자율 실행 사용",
     "autonomy_hint": "한도는 이 메시지에만 적용됩니다.",
     "autonomy_zero_unlimited": "0은 제한 없음입니다. 이 제한은 이 메시지에만 적용됩니다.",
-    "autonomy_invalid": "0 또는 0 이상의 정수를 입력하세요. 시간 제한은 86400초입니다."
+    "autonomy_invalid": "0 또는 0 이상의 정수를 입력하세요. 시간 제한은 86400초입니다.",
+    "page_context_add": "이 페이지를 컨텍스트로 추가",
+    "page_context_remove": "페이지 컨텍스트 제거"
   },
   "queue": {
     "title_other": "대기 중인 메시지 {{count}}개",
@@ -203,7 +205,9 @@
     "quick_actions_heading": "후속 질문",
     "quick_actions_aria": "추천 후속 질문",
     "quick_actions_regenerate": "제안 다시 생성",
-    "quick_actions_regenerate_failed": "제안을 다시 생성하지 못했습니다. 다시 시도해 주세요."
+    "quick_actions_regenerate_failed": "제안을 다시 생성하지 못했습니다. 다시 시도해 주세요.",
+    "jump_to_latest": "최신으로 이동",
+    "new_reply": "새 답장"
   },
   "session_history": {
     "untitled": "제목 없음",
@@ -260,7 +264,8 @@
     "agent_needs_runtime": "런타임 필요",
     "agent_needs_runtime_hint": "이 에이전트와 채팅하기 전에 런타임을 연결하세요",
     "group_title_placeholder": "그룹 이름(선택 사항)",
-    "create_group": "그룹 만들기"
+    "create_group": "그룹 만들기",
+    "close_tooltip": "닫기"
   },
   "empty_state": {
     "first_time_title": "에이전트와 채팅하기",
@@ -287,9 +292,9 @@
       "label": "작업 추천",
       "prompt": "내 워크스페이스에 대해 알고 있는 내용을 바탕으로 유용한 첫 작업을 추천해 주세요."
     },
-    "customize": "시작 예시 편집",
     "uploading": "업로드가 완료된 후 대화 시작 예시를 사용해 주세요.",
-    "draft_in_progress": "대화 시작 예시를 사용하려면 먼저 초안을 보내거나 지워 주세요."
+    "draft_in_progress": "대화 시작 예시를 사용하려면 먼저 초안을 보내거나 지워 주세요.",
+    "customize": "Customize"
   },
   "onboarding_cards": {
     "aria_label": "시작 방법",
@@ -353,8 +358,6 @@
     "no_response_preview": "텍스트 답변 없음",
     "quick_agents": "자주 쓰는 Agent",
     "add": "추가",
-    "add_agent": "자주 쓰는 Agent 추가",
-    "unpin_agent": "자주 쓰기에서 제거",
     "waiting": "답장 대기 중",
     "pin": "고정",
     "unpin": "고정 해제",
@@ -374,5 +377,16 @@
     "archive": "채팅 보관",
     "unarchive": "채팅 보관 해제",
     "view_profile": "Agent 프로필 보기"
+  },
+  "bar": {
+    "history": "채팅 기록",
+    "history_group": {
+      "today": "오늘",
+      "week": "지난 7일",
+      "older": "이전"
+    },
+    "close_chip": "{{title}} 닫기",
+    "all_chats": "모든 채팅",
+    "more_other": "채팅 {{count}}개 더 보기"
   }
 }

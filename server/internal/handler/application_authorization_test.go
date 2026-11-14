@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -22,7 +23,7 @@ func TestApplicationQueuedStartRechecksMembershipRuntimeAndAgentProjectAccess(t 
 			ctx := context.Background()
 			userID := createPlainMember(t, "application-queued-"+uuid.NewString()+"@multica.test")
 			runtimeID := applicationTestRuntime(t)
-			if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public"}); err != nil {
+			if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public", SharedWith: []pgtype.UUID{}}); err != nil {
 				t.Fatal(err)
 			}
 			projectID := dbfx.Project(t, "queued application authorization")
@@ -53,7 +54,7 @@ func TestApplicationQueuedStartRechecksMembershipRuntimeAndAgentProjectAccess(t 
 				}
 				dbfx.Member(t, testWorkspaceID, userID, "member")
 			case "runtime":
-				if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "private"}); err != nil {
+				if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "private", SharedWith: []pgtype.UUID{}}); err != nil {
 					t.Fatal(err)
 				}
 			case "agent-project":
@@ -80,14 +81,14 @@ func TestApplicationPreparingClaimCannotRenewOrPublishAfterRuntimePermissionRevo
 	ctx := context.Background()
 	userID := createPlainMember(t, "application-preparing-"+uuid.NewString()+"@multica.test")
 	runtimeID := applicationTestRuntime(t)
-	if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public"}); err != nil {
+	if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "public", SharedWith: []pgtype.UUID{}}); err != nil {
 		t.Fatal(err)
 	}
 	app := applicationTestCreate(t, dbfx.Project(t, "preparation permission"), "API", "service")
 	applicationTestOperationCleanup(t, app.ID)
 	testutil.Call(t, testHandler.EnqueueApplicationOperation, squadScopeReq(userID, http.MethodPost, "/operations", application.OperationInput{Action: "start", Revision: app.Revision, RuntimeID: runtimeID, IdempotencyKey: "preparing-permission"}, map[string]string{"id": app.ID})).Want(http.StatusAccepted)
 	claim := applicationTestClaim(t, runtimeID)[0]
-	if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "private"}); err != nil {
+	if _, err := testHandler.Queries.UpdateAgentRuntimeVisibility(ctx, db.UpdateAgentRuntimeVisibilityParams{ID: parseUUID(runtimeID), Visibility: "private", SharedWith: []pgtype.UUID{}}); err != nil {
 		t.Fatal(err)
 	}
 	service := testHandler.applicationService()

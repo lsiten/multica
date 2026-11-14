@@ -1,6 +1,7 @@
 package daemon
 
 import (
+ "context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -79,7 +80,7 @@ func TestLegacyFullCleanupReclaimsArtifactsAfterPreservingDelivery(t *testing.T)
 			output := filepath.Join(root, "output", "report.txt")
 			writeLifecycleFile(t, output, "unique delivery")
 
-			d.applyGCAction(root, gcActionClean, &gcStats{byPattern: map[string]int{}})
+			d.applyGCAction(context.Background(), root, gcActionClean, &gcStats{byPattern: map[string]int{}})
 
 			if _, err := os.Stat(output); err != nil {
 				t.Fatalf("delivery removed: %v", err)

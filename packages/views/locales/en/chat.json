@@ -146,7 +146,9 @@
     "autonomy_enabled": "Autonomous mode enabled",
     "autonomy_hint": "The limits apply to this message only.",
     "autonomy_zero_unlimited": "0 means unlimited. These limits apply to this message only.",
-    "autonomy_invalid": "Enter 0 or a non-negative integer; time is capped at 86400 seconds."
+    "autonomy_invalid": "Enter 0 or a non-negative integer; time is capped at 86400 seconds.",
+    "page_context_add": "Add this page as context",
+    "page_context_remove": "Remove page context"
   },
   "queue": {
     "title_one": "{{count}} queued message",
@@ -208,7 +210,9 @@
     "quick_actions_heading": "Follow-up questions",
     "quick_actions_aria": "Suggested follow-ups",
     "quick_actions_regenerate": "Regenerate suggestions",
-    "quick_actions_regenerate_failed": "Couldn't refresh suggestions. Please try again."
+    "quick_actions_regenerate_failed": "Couldn't refresh suggestions. Please try again.",
+    "jump_to_latest": "Jump to latest",
+    "new_reply": "New reply"
   },
   "session_history": {
     "untitled": "Untitled",
@@ -265,7 +269,8 @@
     "agent_needs_runtime": "Needs runtime",
     "agent_needs_runtime_hint": "Bind a runtime before starting a chat with this agent",
     "group_title_placeholder": "Group name (optional)",
-    "create_group": "Create group"
+    "create_group": "Create group",
+    "close_tooltip": "Close"
   },
   "empty_state": {
     "first_time_title": "Chat with your agents",
@@ -292,9 +297,9 @@
       "label": "Recommend an action",
       "prompt": "Review what you know about my workspace and recommend a useful first action."
     },
-    "customize": "Customize starters",
     "uploading": "Wait for uploads to finish before using a starter.",
-    "draft_in_progress": "Send or clear your draft before using a starter."
+    "draft_in_progress": "Send or clear your draft before using a starter.",
+    "customize": "Customize"
   },
   "onboarding_cards": {
     "aria_label": "Ways to start",
@@ -358,8 +363,6 @@
     "no_response_preview": "No text reply",
     "quick_agents": "Frequent agents",
     "add": "Add",
-    "add_agent": "Add a frequent agent",
-    "unpin_agent": "Remove from frequent",
     "waiting": "Waiting for reply",
     "pin": "Pin",
     "unpin": "Unpin",
@@ -379,5 +382,17 @@
     "unarchive": "Unarchive chat",
     "delete": "Delete chat",
     "view_profile": "View agent profile"
+  },
+  "bar": {
+    "history": "Chat history",
+    "history_group": {
+      "today": "Today",
+      "week": "Last 7 days",
+      "older": "Older"
+    },
+    "close_chip": "Close {{title}}",
+    "all_chats": "All chats",
+    "more_one": "{{count}} more chat",
+    "more_other": "{{count}} more chats"
   }
 }

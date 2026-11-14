@@ -138,7 +138,7 @@ func (d *Daemon) ensureEnvironmentProcess(ctx context.Context) (*environmentProc
 	return client, nil
 }
 func (c *environmentProcessClient) sync(ctx context.Context) error {
-	binding := environmentProcessBinding{WorkspacesRoot: c.daemon.cfg.WorkspacesRoot, FactsAddress: c.facts.address, Policy: environmentPolicyFromConfig(c.daemon.cfg)}
+	binding := environmentProcessBinding{IgnoreCommands: environmentIgnoreCommands(c.daemon.cfg.Agents), WorkspacesRoot: c.daemon.cfg.WorkspacesRoot, FactsAddress: c.facts.address, Policy: environmentPolicyFromConfig(c.daemon.cfg)}
 	c.daemon.mu.Lock()
 	for id, workspace := range c.daemon.workspaces {
 		current := environmentRuntimeBinding{WorkspaceID: id, RuntimeIDs: append([]string(nil), workspace.runtimeIDs...)}
