@@ -243,7 +243,7 @@ func startReplacementHostFixture(t *testing.T, d *Daemon, command protocol.Appli
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		raw, readErr := os.ReadFile(controlPath)
-		if readErr == nil {
+		if readErr == nil && len(raw) > 0 {
 			f.address = string(raw)
 			break
 		}

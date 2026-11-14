@@ -224,6 +224,7 @@ func TestMirrorAnswerFailureDispatchRuntimeScope(t *testing.T) {
 	select {
 	case got := <-failures:
 		t.Fatalf("foreign runtime invoked failure handler: %+v", got)
+	default:
 	}
 }
 
