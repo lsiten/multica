@@ -55,6 +55,7 @@ import { HealthBadge, HealthIcon, shortDaemonId, useHealthLabel } from "./shared
 import { ProviderLogo } from "./provider-logo";
 import { UsageSection } from "./usage-section";
 import { DeleteRuntimeDialog } from "./delete-runtime-dialog";
+import { RuntimeMirrorAction } from "./runtime-mirror-action";
 import { RuntimeAccessEditor, RuntimeAccessReadout } from "./runtime-access-editor";
 import { RuntimeConcurrencyField } from "./runtime-concurrency-field";
 import { DeleteRuntimeProfileDialog } from "./delete-runtime-profile-dialog";
@@ -181,9 +182,12 @@ export function RuntimeDetail({
           </span>
         }
         actions={
-          canDelete ? (
-            <RuntimeActionsMenu onDelete={() => setDeleteOpen(true)} />
-          ) : undefined
+          <>
+            <RuntimeMirrorAction runtime={runtime} />
+            {canDelete && (
+              <RuntimeActionsMenu onDelete={() => setDeleteOpen(true)} />
+            )}
+          </>
         }
         panel={
           <RuntimeProperties

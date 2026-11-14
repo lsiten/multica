@@ -81,6 +81,7 @@ vi.mock("@multica/core/auth", () => ({
 // runtime access from, so the real implementation is kept rather than stubbed —
 // a stub here would just re-derive the rule this test is meant to pin down.
 vi.mock("@multica/core/runtimes", async () => ({
+  ...await vi.importActual<typeof import("@multica/core/runtimes")>("@multica/core/runtimes"),
   isRuntimeUsableForUser: (
     await vi.importActual<typeof import("@multica/core/runtimes")>(
       "@multica/core/runtimes",
@@ -111,6 +112,7 @@ vi.mock("@multica/core/agents", () => ({
 vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     runtimes: () => "/runtimes",
+    runtimeMirror: (runtimeId: string) => `/runtimes/${runtimeId}/mirror`,
     agentDetail: () => "/agents",
   }),
 }));
@@ -158,8 +160,8 @@ vi.mock("../../agents/presence", () => ({
 }));
 vi.mock("../../common/actor-avatar", () => ({ ActorAvatar: () => null }));
 vi.mock("../../navigation", () => ({
-  AppLink: ({ href, children }: { href: string; children: ReactNode }) => (
-    <a href={href}>{children}</a>
+  AppLink: ({ href, children, ...props }: { href: string; children: ReactNode }) => (
+    <a href={href} {...props}>{children}</a>
   ),
   useNavigation: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
@@ -402,6 +404,20 @@ describe("RuntimeDetail visibility section", () => {
     expect(screen.getByText("Specific members")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(screen.getByTestId("usage-section")).toBeInTheDocument();
+  });
+
+  it("opens a public runtime mirror without granting delete access", () => {
+    renderDetail(makeRuntime({
+      owner_id: "someone-else",
+      visibility: "public",
+      daemon_id: "daemon-1",
+      metadata: { capabilities: ["screen-mirror-video-v2", "mirror-viewer-grant-v1"] },
+    }));
+
+    const header = within(screen.getByRole("banner"));
+    expect(header.getByRole("button", { name: "Open mirror" }))
+      .toHaveAttribute("href", "/runtimes/rt-1/mirror");
+    expect(header.queryByRole("button", { name: "More actions" })).not.toBeInTheDocument();
   });
 
   it("renders a read-only visibility chip when the caller cannot edit", () => {

@@ -12,11 +12,13 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Folder, X } from "@multica/ui/icons";
+import { Folder, Monitor, X } from "@multica/ui/icons";
 import { cn } from "@multica/ui/lib/utils";
 import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 import { ShimmerText } from "@multica/ui/components/common/shimmer-text";
 import { ApiError } from "@multica/core/api";
+import { useAuthStore } from "@multica/core/auth";
+import { isRuntimeUsableForUser, runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { issueDetailOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
@@ -47,7 +49,15 @@ const EMPTY_PINS: PinnedItem[] = [];
 const PINNED_PREVIEW_LIMIT = 5;
 
 function pinHref(p: WorkspacePaths, pin: PinnedItem): string {
-  return pin.item_type === "issue" ? p.issueDetail(pin.item_id) : p.projectDetail(pin.item_id);
+  switch (pin.item_type) {
+    case "issue":
+      return p.issueDetail(pin.item_id);
+    case "runtime_mirror":
+      return p.runtimeMirror(pin.item_id);
+    case "project":
+    case "view":
+      return p.projectDetail(pin.item_id);
+  }
 }
 
 /**
@@ -293,13 +303,14 @@ function SortablePinItem({
 }
 
 /**
- * Resolves a pin's display data (label + status/icon) from the issue /
- * project / view detail cache. All three queries are declared unconditionally
+ * Resolves a pin's display data from the issue, project, or runtime cache.
+ * Queries are declared unconditionally
  * with `enabled` gates so the hook order stays stable regardless of
  * `pin.item_type`.
  *
  * Loading renders a flat skeleton so the panel height doesn't jump. A missing
- * item (deleted / 404) renders nothing and unpins itself.
+ * issue or project (deleted / 404) renders nothing and unpins itself.
+ * Runtime pins are retained when the runtime list is unavailable or incomplete.
  */
 function PinRow({
   pin,
@@ -315,6 +326,8 @@ function PinRow({
   wsId: string;
 }) {
   const isIssue = pin.item_type === "issue";
+  const isRuntimeMirror = pin.item_type === "runtime_mirror";
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const agents = useIssueAgentState(wsId, isIssue ? pin.item_id : "");
   const unread = useIssueUnread(wsId, isIssue ? pin.item_id : "");
   const statusCatalog = useIssueStatuses(wsId);
@@ -324,15 +337,33 @@ function PinRow({
     ...projectDetailOptions(wsId, pin.item_id),
     enabled: pin.item_type === "project",
   });
+  const runtimeQuery = useQuery({ ...runtimeListOptions(wsId), enabled: isRuntimeMirror });
 
   const triggeredRef = useRef(false);
   useEffect(() => {
+    if (isRuntimeMirror) return;
     const err = isIssue ? issueQuery.error : projectQuery.error;
     if (err instanceof ApiError && err.status === 404 && !triggeredRef.current) {
       triggeredRef.current = true;
       onUnpin();
     }
-  }, [isIssue, issueQuery.error, onUnpin, projectQuery.error]);
+  }, [isIssue, isRuntimeMirror, issueQuery.error, onUnpin, projectQuery.error]);
+
+  if (isRuntimeMirror) {
+    if (runtimeQuery.isPending) return <PinSkeleton />;
+    const runtime = runtimeQuery.data?.find((candidate) => candidate.id === pin.item_id);
+    if (runtimeQuery.isError || !runtime || !isRuntimeUsableForUser(runtime, currentUserId)) return null;
+    return (
+      <SortablePinItem
+        pin={pin}
+        href={href}
+        onUnpin={onUnpin}
+        label={runtimeDisplayLabel(runtime)}
+        active={active}
+        iconNode={<Monitor aria-hidden="true" className="size-4 shrink-0" />}
+      />
+    );
+  }
 
   if (isIssue) {
     if (issueQuery.isPending) return <PinSkeleton />;

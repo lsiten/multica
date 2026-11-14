@@ -29,6 +29,7 @@ vi.mock("@multica/core/auth", () => ({
 vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     runtimes: () => "/runtimes",
+    runtimeMirror: (runtimeId: string) => `/runtimes/${runtimeId}/mirror`,
     runtimeSettings: (machineId: string, runtimeId: string) =>
       `/runtimes/${machineId}/runtime/${runtimeId}`,
   }),
@@ -174,6 +175,17 @@ describe("RuntimeDetailPage", () => {
     expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("Jiayuan")).toBeInTheDocument();
     expect(screen.getByText("Daemon ID")).toBeInTheDocument();
+  });
+
+  it("opens the readable runtime mirror from the machine header", () => {
+    renderPage({
+      runtimes: [makeRuntime({
+        metadata: { capabilities: ["screen-mirror-video-v2", "mirror-viewer-grant-v1"] },
+      })],
+    });
+
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Open mirror" }))
+      .toHaveAttribute("href", "/runtimes/rt-claude/mirror");
   });
 
   it("moves Rename machine into the ⋯ menu", async () => {

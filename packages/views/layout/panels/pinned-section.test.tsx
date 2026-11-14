@@ -17,11 +17,26 @@ vi.mock("../../issues/actions/issue-actions-menu-items", () => ({
 }));
 vi.mock("../../issues/actions/use-issue-actions", () => ({ useIssueActions: () => ({}) }));
 
-const state = vi.hoisted(() => ({
-  pins: [] as PinnedItem[],
-  detail: { isPending: false, isError: false, data: null as unknown, error: null as unknown },
-  deletePin: vi.fn(),
-}));
+const state = vi.hoisted(() => {
+  const runtimes: { isPending: boolean; isError: boolean; data: unknown[]; error: unknown } = {
+    isPending: false, isError: false, data: [], error: null,
+  };
+  return {
+    pins: [] as PinnedItem[],
+    detail: { isPending: false, isError: false, data: null as unknown, error: null as unknown },
+    runtimes,
+    deletePin: vi.fn(),
+  };
+});
+
+vi.mock("@multica/core/auth", () => {
+  const auth = { user: { id: "user-1" } };
+  return {
+    useAuthStore: Object.assign(<T,>(selector: (value: typeof auth) => T) => selector(auth), {
+      getState: () => auth,
+    }),
+  };
+});
 
 vi.mock("@multica/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => buildIssueStatusCatalog([]),
@@ -62,14 +77,16 @@ vi.mock("@multica/core/pins/mutations", () => ({
 }));
 vi.mock("@multica/core/issues/queries", () => ({ issueDetailOptions: () => ({ queryKey: ["issue"] }) }));
 vi.mock("@multica/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
+vi.mock("@multica/core/runtimes/queries", () => ({ runtimeListOptions: () => ({ queryKey: ["runtimes"] }) }));
 vi.mock("@multica/core/issue-views/queries", () => ({
   issueViewDetailOptions: () => ({ queryKey: ["view"] }),
 }));
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
-  useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
+  useQuery: ({ queryKey, enabled }: { queryKey: readonly unknown[]; enabled?: boolean }) => {
     if (queryKey[0] === "pins") return { data: state.pins };
     if (queryKey[0] === "issue") return state.detail;
+    if (queryKey[0] === "runtimes" && enabled !== false) return state.runtimes;
     return { isPending: true, isError: false, data: undefined, error: null };
   },
 }));
@@ -98,12 +115,43 @@ function Harness({ pathname, currentIssueId = null }: { pathname: string; curren
 beforeEach(() => {
   state.pins = [pin(1)];
   state.detail = { isPending: false, isError: false, data: null, error: null };
+  state.runtimes = { isPending: false, isError: false, data: [], error: null };
   state.deletePin.mockReset();
   activePinnedRoute = false;
   useSidebarTreeStore.setState({ pinnedCollapsed: false });
 });
 
 describe("PinnedSection", () => {
+  it("renders a pinned runtime mirror with its label, mirror route and active state", async () => {
+    state.pins = [{ ...pin(1), item_type: "runtime_mirror", item_id: "runtime-1" }];
+    state.runtimes.data = [{
+      id: "runtime-1", name: "Codex (desktop)", custom_name: "Studio", provider: "codex", owner_id: "user-1",
+    }];
+
+    renderWithI18n(<Harness pathname="/acme/runtimes/runtime-1/mirror" />);
+
+    const row = await screen.findByRole("link", { name: "Studio (Codex)" });
+    expect(row).toHaveAttribute("href", "/acme/runtimes/runtime-1/mirror");
+    expect(row).toHaveAttribute("aria-current", "page");
+    expect(activePinnedRoute).toBe(true);
+    expect(state.deletePin).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "pending", isPending: true, isError: false, error: null },
+    { name: "failed", isPending: false, isError: true, error: new ApiError("missing endpoint", 404, "Not Found") },
+    { name: "temporarily absent", isPending: false, isError: false, error: null },
+  ])("retains runtime mirror pins when runtimes are $name", ({ isPending, isError, error }) => {
+    state.pins = [{ ...pin(1), item_type: "runtime_mirror", item_id: "runtime-1" }];
+    state.runtimes = { isPending, isError, error, data: [] };
+
+    renderWithI18n(<Harness pathname="/acme/issues" />);
+
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryAllByRole("listitem")).toHaveLength(isPending ? 1 : 0);
+    expect(state.deletePin).not.toHaveBeenCalled();
+  });
+
   it("unpins items whose detail is gone", async () => {
     state.detail = { isPending: false, isError: true, data: null, error: new ApiError("missing", 404, "Not Found") };
     renderWithI18n(<Harness pathname="/acme/issues" />);

@@ -47,6 +47,7 @@ import {
   type RuntimeMachine,
 } from "./runtime-machines";
 import { RenameMachineDialog } from "./rename-machine-dialog";
+import { MachineMirrorAction } from "./runtime-mirror-action";
 import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
 import { pendingRuntimesForProfiles } from "./pending-runtime";
 import {
@@ -289,9 +290,12 @@ export function RuntimeDetailPage({
           </span>
         }
         actions={
-          renameTarget ? (
-            <MachineActionsMenu onRename={() => setRenameOpen(true)} />
-          ) : undefined
+          <>
+            <MachineMirrorAction runtimes={machine.runtimes} />
+            {renameTarget && (
+              <MachineActionsMenu onRename={() => setRenameOpen(true)} />
+            )}
+          </>
         }
         panel={<MachineProperties machine={machine} members={members} />}
       >
