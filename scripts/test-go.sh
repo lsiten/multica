@@ -9,10 +9,10 @@ usage() {
   echo "usage: $0 [--race] [--only regular|agent]" >&2
 }
 
-# The suite is two `go test` invocations: every package outside pkg/agent at
-# the default parallelism, then pkg/agent throttled (see below). `--only`
-# selects one half so CI can give each its own runner; the default still runs
-# both for `make test`, check.sh, and the release workflow.
+# The suite is two `go test` invocations: packages outside pkg/agent run
+# serially against their shared database, then pkg/agent runs throttled.
+# `--only` selects one half for its own CI runner; the default runs both
+# for `make test`, check.sh, and the release workflow.
 go_test_args=(test)
 only=all
 while [ "$#" -gt 0 ]; do
@@ -49,7 +49,9 @@ if [ "$only" != agent ]; then
       *) regular_packages+=("$package") ;;
     esac
   done
-  "$GUARD_SCRIPT" -- go "${go_test_args[@]}" "${regular_packages[@]}"
+  # Upload cleanup takes short table locks. Other packages must finish their
+  # writes before its tests run against the same database.
+  "$GUARD_SCRIPT" -- go "${go_test_args[@]}" -p 1 "${regular_packages[@]}"
 fi
 
 if [ "$only" != regular ]; then
