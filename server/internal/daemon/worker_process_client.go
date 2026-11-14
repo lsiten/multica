@@ -25,8 +25,8 @@ import (
 // environment), a worker owns a single server-claimed execution: control
 // launches the child, binds the exact execution identity + scoped grant + the
 // execution context, drives one genuine provider run, then stops the child.
-// The legacy in-process runner (executeAndDrain) is the default and is never
-// affected here; a worker is launched only when an opt-in capability admits it.
+// The worker is the only production execution owner; the control parent owns
+// orchestration and reconciliation, never a second provider runner.
 //
 // This is the control-parent half of the F3 move-out. It owns only the private
 // runtime channel and the launch/bind/run lifecycle. The worker itself owns the
@@ -304,21 +304,17 @@ func (c *workerProcessClient) close() {
 	})
 }
 
-// buildWorkerContext assembles the execution context the control parent delivers to
-// a per-execution task worker. It is the *Daemon-free foundation of the opt-in F3
-// move-out: when the worker capability is admitted, runTask hands the worker the
-// same facts the legacy in-process runner uses to prepare and run the provider —
-// the daemon-wide config, the server-claimed task, the prepared environment, and
-// the assembled agent environment — so the worker resolves the backend and
-// ExecOptions identically through buildWorkerProviderRun. The legacy in-process
-// runner (executeAndDrain) is the default and is never affected here.
+// buildWorkerContext assembles the execution context the control parent delivers
+// to a per-execution task worker. The parent hands over the daemon config,
+// claimed task, prepared environment, and assembled agent environment; the child
+// resolves the backend and ExecOptions through buildWorkerProviderRun.
 //
 // The agent environment is assembled by the caller (runTask) and passed in, so this
 // function reads no daemon state and mutates nothing: it is a pure projection. A
 // nil prepared environment yields an empty projection rather than a panic, so a
 // worker that cannot resolve its environment fails closed through
 // buildWorkerProviderRun instead of a nil dereference.
-func buildWorkerContext(cfg Config, task Task, provider string, env *execenv.Environment, agentEnv map[string]string) workerContext {
+func buildWorkerContext(cfg Config, task Task, provider string, env *execenv.Environment, agentEnv map[string]string, launchFacts ...workerLaunchFacts) workerContext {
 	prepared := PreparedEnv{Env: agentEnv}
 	if env != nil {
 		prepared.WorkDir = env.WorkDir
@@ -331,30 +327,29 @@ func buildWorkerContext(cfg Config, task Task, provider string, env *execenv.Env
 		prepared.CursorMcpPluginDir = env.CursorMcpPluginDir
 		prepared.OmpMcpExtensionDir = env.OmpMcpExtensionDir
 	}
-	return workerContext{
+	context := workerContext{
 		Provider: provider,
 		Config:   cfg,
 		Task:     task,
 		Env:      prepared,
 	}
+	if len(launchFacts) > 0 {
+		context.Launch = launchFacts[0]
+	}
+	return context
 }
 
-// workerProcessEnabled reports whether this profile runs the per-execution task
-// worker (F3). It is the gate of the move-out: config loading keeps it opt-in
-// until native child settlement is proven for the installed desktop build, while
-// MULTICA_WORKER_PROCESS_ENABLED can explicitly enable it. It is also false when
-// no managed executable is configured (a worker with no binary to launch would
-// fail closed). The hot path is a separate execution path, not a drop-in swap of
-// executeAndDrain.
+// workerProcessEnabled reports whether the mandatory per-execution worker can
+// launch. The only remaining prerequisite is the pinned daemon executable;
+// there is no opt-in flag or in-process execution mode.
 func (d *Daemon) workerProcessEnabled() bool {
-	return d.cfg.WorkerProcessEnabled && d.cfg.NativeHostExecutable != ""
+	return d.cfg.NativeHostExecutable != ""
 }
 
-// runWorkerExecution is the *Daemon-coupled orchestration of the opt-in F3
-// move-out: given an already-launched per-execution task worker, it binds
+// runWorkerExecution is the Daemon-coupled orchestration of one per-execution
+// task worker: given an already-launched child, it binds
 // the exact execution facts + context, drives one genuine provider run, then
-// stops the child. The legacy in-process runner (executeAndDrain) stays the
-// default and is never touched here. The launch itself happens in the caller
+// stops the child. The launch itself happens in the caller
 // (runTaskInWorker / ensureWorkerProcess) so the server-side bind can use
 // the worker's instance id before the bind.
 //
@@ -363,9 +358,8 @@ func (d *Daemon) workerProcessEnabled() bool {
 // must never report a terminal result for this task. Doing so would
 // double-settle the execution against the server's already-terminal
 // idempotency and a conflicting-authority 409. A refused bind is a definitive
-// decision (returned, not an error, so the caller can fall back to the in-process
-// runner); a transport failure is uncertain (returned, never a fabricated
-// result); a launchable-but-not-ready worker fails closed.
+// admission failure; a transport failure is uncertain (returned, never a
+// fabricated result); a launchable-but-not-ready worker fails closed.
 // workerExecutionOperations is the closed set of task-local callback operations
 // a per-execution worker is granted: it produces the terminal result, usage,
 // transcript messages, session pin, supplement claim/ack, prepare-lease renewal
@@ -377,11 +371,11 @@ func workerExecutionOperations() []string {
 // assembleWorkerBindInput assembles the closed bind request the control parent
 // hands a per-execution task worker, from the runTask locals plus the
 // server-side execution bind and grant. It is the contract prerequisite of the
-// opt-in F3 move-out: control binds the exact execution identity server-side
+// control binds the exact execution identity server-side
 // (the worker's own instance id), issues the scoped credential, projects the
 // execution context (buildWorkerContext), and hands the worker the exact facts
-// it applies its closed launch-authorization contract to. The legacy in-process
-// runner (executeAndDrain) stays the default and is never touched here.
+// it applies its closed launch-authorization contract to. The child worker is
+// the execution owner; the parent never runs a provider itself.
 //
 // It fails closed on any server-side bind/grant error (a bind or grant that
 // cannot be confirmed is never turned into a launch) and never fabricates an
@@ -389,7 +383,7 @@ func workerExecutionOperations() []string {
 // and the worker's own instance id, so the worker's launch decision is applied
 // to real, server-authorized facts. A nil worker (or a worker without an
 // instance id) cannot be bound and fails closed rather than guessing.
-func (d *Daemon) assembleWorkerBindInput(ctx context.Context, worker *workerProcessClient, task Task, provider string, agentEnv map[string]string, env *execenv.Environment, supervisorEpoch int64) (workerRunInput, error) {
+func (d *Daemon) assembleWorkerBindInput(ctx context.Context, worker *workerProcessClient, task Task, provider string, agentEnv map[string]string, env *execenv.Environment, supervisorEpoch int64, launchFacts ...workerLaunchFacts) (workerRunInput, error) {
 	if worker == nil || worker.instanceID == "" {
 		return workerRunInput{}, errors.New("worker process without an instance id cannot be bound")
 	}
@@ -429,7 +423,7 @@ func (d *Daemon) assembleWorkerBindInput(ctx context.Context, worker *workerProc
 	if grant.Identity.TaskID != task.ID || grant.Identity.RuntimeID != task.RuntimeID || grant.Identity.ExecutionID != identity.ExecutionID || !validExecutionGrant(*grant) {
 		return workerRunInput{}, errors.New("execution grant does not match the bind identity")
 	}
-	wc := buildWorkerContext(d.cfg, task, provider, env, agentEnv)
+	wc := buildWorkerContext(d.cfg, task, provider, env, agentEnv, launchFacts...)
 	return workerRunInput{
 		Grant:               *grant,
 		CallbackURL:         d.cfg.ServerBaseURL,
@@ -439,22 +433,19 @@ func (d *Daemon) assembleWorkerBindInput(ctx context.Context, worker *workerProc
 	}, nil
 }
 
-// runTaskInWorker composes the full opt-in F3 move-out: it launches a
+// runTaskInWorker composes the full per-execution worker flow: it launches a
 // per-execution task worker, assembles the exact server-authorized bind request
 // (bind + grant + callback + context), and drives one genuine provider run. It is
-// the method the hot-path branch will call when a profile opts into the per-
-// execution worker; the legacy in-process runner (executeAndDrain) stays the
-// default and is never touched here.
+// the method the task hot path calls; there is no in-process provider fallback.
 //
 // The second return value, ran, tells the caller whether the worker actually
-// drove a provider run: a refused bind (not launchable) returns ran=false with
-// no error so the caller can fall back to the in-process runner; a transport
-// failure is uncertain (an error, ran=false) so the caller neither fabricates a
-// result nor relaunches. The terminal result the server settles the execution
+// drove a provider run. A refused bind is a terminal worker admission failure;
+// a transport failure is uncertain, so the caller neither fabricates a result
+// nor relaunches. The terminal result the server settles the execution
 // from is the worker's own callback (client.Callback), NOT this method: the
 // control parent must never also settle, so the caller must not double-settle
 // when ran=true.
-func (d *Daemon) runTaskInWorker(ctx context.Context, execID string, task Task, provider string, agentEnv map[string]string, env *execenv.Environment, supervisorEpoch int64) (*workerRunResult, bool, error) {
+func (d *Daemon) runTaskInWorker(ctx context.Context, execID string, task Task, provider string, agentEnv map[string]string, env *execenv.Environment, supervisorEpoch int64, launchFacts ...workerLaunchFacts) (*workerRunResult, bool, error) {
 	launch := d.workerProcessLaunch
 	if launch == nil {
 		launch = d.ensureWorkerProcess
@@ -465,7 +456,7 @@ func (d *Daemon) runTaskInWorker(ctx context.Context, execID string, task Task, 
 	}
 	d.registerWorkerProcess(worker, execID, task.ID, provider)
 	defer worker.close()
-	in, err := d.assembleWorkerBindInput(ctx, worker, task, provider, agentEnv, env, supervisorEpoch)
+	in, err := d.assembleWorkerBindInput(ctx, worker, task, provider, agentEnv, env, supervisorEpoch, launchFacts...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -474,22 +465,19 @@ func (d *Daemon) runTaskInWorker(ctx context.Context, execID string, task Task, 
 		return nil, false, err
 	}
 	if result.Status == "refused" {
-		// A refused bind never ran a provider; the caller may fall back to the
-		// in-process runner (which then settles), so this is not an error.
-		return result, false, nil
+		return result, false, errors.New("task worker refused execution admission")
 	}
 	return result, true, nil
 }
 
-// workerRunDecision is the outcome of attempting the opt-in per-execution task
-// worker on the hot path. UseWorkerResult reports that the worker drove a genuine
+// workerRunDecision is the outcome of attempting the per-execution task worker on
+// the hot path. UseWorkerResult reports that the worker drove a genuine
 // provider run and settled the execution via its OWN callback (client.Callback),
-// so the control parent must NOT run the provider in-process (executeAndDrain) and
-// must NOT settle the task in-process: it returns the projected worker result and
+// so the control parent must not run or settle the provider itself: it returns the
+// projected worker result and
 // lets handleTask's final pre-completion check (shouldInterruptAgent) discard the
-// redundant settle. A zero value (UseWorkerResult == false) means the control
-// parent must fall back to the in-process runner, which settles the execution
-// itself -- this is a refused bind (not launchable) or an uncertain transport.
+// redundant settle. A zero value means the worker produced no result and the
+// caller must fail the execution without retrying in another owner.
 type workerRunDecision struct {
 	// UseWorkerResult is true only when the worker ran and settled the execution.
 	UseWorkerResult bool
@@ -497,16 +485,15 @@ type workerRunDecision struct {
 	Result *workerRunResult
 }
 
-// attemptWorkerRun is the hot-path decision for the opt-in F3 move-out: it runs
-// the per-execution worker only when a profile opts in (workerProcessEnabled) and
+// attemptWorkerRun is the hot-path decision for the per-execution worker: it
+// launches the child, binds the execution, and
 // the worker drives a genuine, settled provider run. It is the sole hot-path
 // caller of runTaskInWorker, so the branch in runTask stays a single, testable
 // decision. It never fabricates a result: an uncertain transport or a refused bind
-// returns a zero decision (with the transport error, if any) so the caller falls
-// back to the in-process runner. The default (gate OFF) path returns a zero
-// decision without launching anything.
+// returns an error for any admission, transport, or execution failure. There is
+// no gate-off path in the production lifecycle.
 // acquireControlSupervisor obtains the real control-supervisor epoch the
-// opt-in F3 move-out must bind the worker with. The server rejects a bind whose
+// worker must bind with. The server rejects a bind whose
 // supervisor epoch is below 1, so the hot path must acquire a live-held epoch
 // BEFORE it launches and binds a worker. One daemon holds one control
 // incarnation for its lifetime: the first bind acquires (expected epoch 0)
@@ -539,34 +526,26 @@ func (d *Daemon) acquireControlSupervisor(ctx context.Context, runtimeID string)
 	return resp.Epoch, nil
 }
 
-func (d *Daemon) attemptWorkerRun(ctx context.Context, task Task, provider string, agentEnv map[string]string, env *execenv.Environment) (workerRunDecision, error) {
+func (d *Daemon) attemptWorkerRun(ctx context.Context, task Task, provider string, agentEnv map[string]string, env *execenv.Environment, launchFacts ...workerLaunchFacts) (workerRunDecision, error) {
 	if !d.workerProcessEnabled() {
-		return workerRunDecision{}, nil
+		return workerRunDecision{}, errors.New("required task worker executable is not configured")
 	}
-	// The server-side bind rejects a supervisor epoch below 1, so the opt-in
-	// move-out must acquire a real control-supervisor epoch BEFORE it binds the
-	// worker. An old or drain-only server (one that does not advertise execution
-	// reconciliation) returns ErrExecutionUnsupported: that is a DEFINITIVE
-	// decision the server cannot bind an execution, so the control parent refuses
-	// the worker move-out and falls back to the in-process runner (the plan's
-	// "old server -> drain-only" contract). It is a clean fall-back (nil error),
-	// never an uncertain one. Any other acquisition error is uncertain (the
-	// outcome may already be settled by the worker's callback), so it is surfaced
-	// and the pre-completion check reconciles a possible double-settle.
+	// The server-side bind requires a real control-supervisor epoch. A server
+	// without execution reconciliation is incompatible with the mandatory
+	// multi-process execution contract and must fail explicitly.
 	epoch, err := d.acquireControlSupervisor(ctx, task.RuntimeID)
 	if err != nil {
 		if errors.Is(err, ErrExecutionUnsupported) {
-			return workerRunDecision{}, nil
+			return workerRunDecision{}, fmt.Errorf("multi-process execution reconciliation is required: %w", err)
 		}
 		return workerRunDecision{}, err
 	}
-	wr, ran, werr := d.runTaskInWorker(ctx, task.ID, task, provider, agentEnv, env, epoch)
-	if werr != nil || !ran {
-		// Uncertain transport or a refused bind: the worker did not drive a settled
-		// run, so the control parent falls back to the in-process runner (which
-		// settles the execution itself). The error is surfaced only when the outcome
-		// was genuinely uncertain, so a refused bind is a clean fall-back (nil).
+	wr, ran, werr := d.runTaskInWorker(ctx, task.ID, task, provider, agentEnv, env, epoch, launchFacts...)
+	if werr != nil {
 		return workerRunDecision{}, werr
+	}
+	if !ran {
+		return workerRunDecision{}, errors.New("task worker did not execute")
 	}
 	return workerRunDecision{UseWorkerResult: true, Result: wr}, nil
 }

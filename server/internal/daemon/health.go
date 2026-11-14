@@ -23,6 +23,8 @@ import (
 type HealthResponse struct {
 	ApplicationService     *ApplicationServiceHealth `json:"application_service,omitempty"`
 	Status                 string                    `json:"status"`
+	OwnersReady            bool                      `json:"owners_ready"`
+	ProcessOwners          []HealthProcessOwner      `json:"process_owners"`
 	RemoteBootstrapPending bool                      `json:"remote_bootstrap_pending"`
 	PID                    int                       `json:"pid"`
 	// OS is the daemon's runtime.GOOS. The desktop app compares it against its
@@ -75,22 +77,21 @@ type HealthResponse struct {
 	// Terminal report queue diagnostics are additive and expose only counts and
 	// bytes, never payloads or local paths. Failed records require operator
 	// attention; pending records are still being replayed automatically.
-	PendingTerminalReportCount int      `json:"pending_terminal_report_count"`
-	PendingTerminalReportBytes int64    `json:"pending_terminal_report_bytes"`
-	FailedTerminalReportCount  int      `json:"failed_terminal_report_count"`
-	FailedTerminalReportBytes  int64    `json:"failed_terminal_report_bytes"`
+	PendingTerminalReportCount int   `json:"pending_terminal_report_count"`
+	PendingTerminalReportBytes int64 `json:"pending_terminal_report_bytes"`
+	FailedTerminalReportCount  int   `json:"failed_terminal_report_count"`
+	FailedTerminalReportBytes  int64 `json:"failed_terminal_report_bytes"`
 	// Jev decision reports mirror the terminal report queue: a non-retryable
 	// record (400/403/404/409) is quarantined on disk with no other surface, so
 	// the failed count lets an operator see the backlog without logging in.
-	PendingJevDecisionReportCount int   `json:"pending_jev_decision_report_count"`
-	PendingJevDecisionReportBytes int64 `json:"pending_jev_decision_report_bytes"`
-	FailedJevDecisionReportCount  int   `json:"failed_jev_decision_report_count"`
-	FailedJevDecisionReportBytes  int64 `json:"failed_jev_decision_report_bytes"`
-	Agents                     []string `json:"agents"`
-	// ProcessServices is the profile's opt-in process ownership list (the roles
-	// this daemon extracted into separate child processes: ai/mirror/application/
-	// environment/gateway). Surfaced so a desktop panel can toggle it without
-	// reading the on-disk config; empty means the legacy in-process owners.
+	PendingJevDecisionReportCount int      `json:"pending_jev_decision_report_count"`
+	PendingJevDecisionReportBytes int64    `json:"pending_jev_decision_report_bytes"`
+	FailedJevDecisionReportCount  int      `json:"failed_jev_decision_report_count"`
+	FailedJevDecisionReportBytes  int64    `json:"failed_jev_decision_report_bytes"`
+	Agents                        []string `json:"agents"`
+	// ProcessServices is the complete process ownership set for this daemon
+	// (ai/mirror/application/environment/gateway). It is surfaced so the desktop
+	// panel can display the active topology without reading the on-disk config.
 	ProcessServices []string `json:"process_services,omitempty"`
 	// SkippedAgents maps a provider that WAS discovered on this machine to the
 	// reason the last registration round dropped it (version undetectable,
@@ -369,7 +370,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 		// Running describes the local control plane. A cold offline bootstrap
 		// exposes its separate remote readiness and admits no task claims.
 		status := "starting"
-		if d.ready.Load() {
+		if d.ready.Load() && (!requiredProcessOwnersConfigured(d.cfg.ProcessServices) || d.ownerReady.Load()) {
 			status = "running"
 		}
 
@@ -377,6 +378,8 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 
 			ApplicationService:                d.applicationProcessHealth(r.Context()),
 			Status:                            status,
+			OwnersReady:                       d.ownerReady.Load() || !requiredProcessOwnersConfigured(d.cfg.ProcessServices),
+			ProcessOwners:                     d.processOwnersHealth(r.Context()),
 			RemoteBootstrapPending:            d.remoteBootstrapPending.Load(),
 			PID:                               os.Getpid(),
 			OS:                                runtime.GOOS,
@@ -469,6 +472,10 @@ func (d *Daemon) mcpReadinessHandler() http.HandlerFunc {
 // this endpoint.
 func (d *Daemon) shutdownHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if d.client != nil && !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

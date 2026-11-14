@@ -1,3 +1,5 @@
+//go:build !windows
+
 package daemon
 
 import (
@@ -13,8 +15,8 @@ import (
 // single-pid reading excludes children, so the tree reading must be >= the
 // single-pid reading and count at least the root plus one spawned child.
 func TestSampleProcessTreeAggregatesTree(t *testing.T) {
-	// The native tree sampler only exists on macOS (and cgo builds); other
-	// platforms report the aggregate as unavailable and the panel degrades to "—".
+	// Platforms without a native tree sampler report the aggregate as unavailable
+	// and the panel degrades to "—". Linux and macOS both provide one.
 	if !sampleProcessMetrics(os.Getpid()).Available {
 		t.Skip("no native resource sampler on this platform")
 	}
@@ -35,6 +37,9 @@ func TestSampleProcessTreeAggregatesTree(t *testing.T) {
 	if tree.ProcessCount < 2 {
 		t.Fatalf("expected >=2 processes in tree, got %d", tree.ProcessCount)
 	}
+	if tree.ProcessCount == 2048 {
+		t.Fatal("process tree count hit the old fixed queue limit; child enumeration is looping the root")
+	}
 	// The tree is a superset of the single-pid reading, so both metrics must be
 	// >= the single-pid reading.
 	if tree.CpuTimeMS < single.CPUTimeMS {
@@ -44,7 +49,6 @@ func TestSampleProcessTreeAggregatesTree(t *testing.T) {
 		t.Fatalf("tree mem %d < single mem %d", tree.MemoryBytes, single.MemoryBytes)
 	}
 }
-
 
 // TestIsMulticaAppProcessDetectsMulticaPath guards the total-footprint
 // detection. proc_pidinfo(PROC_PIDPATHINFO) returns 0 on both success and

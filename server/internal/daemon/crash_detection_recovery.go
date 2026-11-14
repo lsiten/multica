@@ -12,7 +12,7 @@ import (
 
 // crashDetectAndReconcile retires a prior owner with unresolved state that is provably
 // dead, so a crashed service's record does not permanently block the split
-// process (which would otherwise stay failed-closed to in-process forever).
+// process (which would otherwise stay permanently unavailable).
 //
 // It never retires a live owner. Safety is layered:
 //   - a liveness pre-check avoids attempting Reconcile when the prior owner is
@@ -22,8 +22,8 @@ import (
 //     instead of retiring a live owner, even if the liveness pre-check is wrong.
 //
 // Returns nil if the prior owner was retired (or there is no prior record / it
-// is already replaceable), or a non-nil error to fail closed to the legacy
-// in-process owner when the prior owner is live or its liveness is uncertain.
+// is already replaceable), or a non-nil error when the prior owner is live or
+// its liveness is uncertain.
 func (d *Daemon) crashDetectAndReconcile(ctx context.Context, root string, scope runtimeproc.Scope, service string) error {
 	previous, err := runtimeproc.InspectRecord(root, scope)
 	if errors.Is(err, os.ErrNotExist) {

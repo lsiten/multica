@@ -355,10 +355,13 @@ func TestShutdownHandlerPostCancelsDaemonContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	d := &Daemon{cancelFunc: cancel}
+	d := &Daemon{cancelFunc: cancel, client: NewClient(""), cfg: Config{Profile: "profile-test"}}
+	d.client.SetToken("local-secret")
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/shutdown", nil)
+	req.Header.Set("Authorization", "Bearer local-secret")
+	req.Header.Set("X-Multica-Profile", "profile-test")
 	d.shutdownHandler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -369,6 +372,16 @@ func TestShutdownHandlerPostCancelsDaemonContext(t *testing.T) {
 	case <-ctx.Done():
 	case <-time.After(time.Second):
 		t.Fatal("daemon context was not cancelled after POST /shutdown")
+	}
+}
+
+func TestShutdownHandlerRequiresLocalAuthorization(t *testing.T) {
+	d := &Daemon{cancelFunc: func() {}, client: NewClient(""), cfg: Config{Profile: "profile-test"}}
+	d.client.SetToken("local-secret")
+	rec := httptest.NewRecorder()
+	d.shutdownHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/shutdown", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized shutdown request to return 401, got %d", rec.Code)
 	}
 }
 
@@ -1065,5 +1078,15 @@ func TestHealthHandlerReportsProcessServices(t *testing.T) {
 		resp.ProcessServices[0] != "application" ||
 		resp.ProcessServices[1] != "gateway" {
 		t.Errorf("ProcessServices: got %v, want [application gateway]", resp.ProcessServices)
+	}
+	if len(resp.ProcessOwners) != 5 {
+		t.Fatalf("ProcessOwners: got %d entries, want all five owner roles", len(resp.ProcessOwners))
+	}
+	for _, owner := range resp.ProcessOwners {
+		if owner.Name == "application" || owner.Name == "gateway" {
+			if owner.State != "failed" || owner.Ready {
+				t.Errorf("configured owner %q: got state=%q ready=%v, want failed/false", owner.Name, owner.State, owner.Ready)
+			}
+		}
 	}
 }

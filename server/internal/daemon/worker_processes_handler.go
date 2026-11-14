@@ -25,7 +25,7 @@ type workerProcessStateResponse struct {
 	CpuTimeMS    uint64   `json:"cpu_time_ms,omitempty"`
 }
 
-func (d *Daemon) workerProcessStateResponse(r *http.Request, entry *activeWorker) workerProcessStateResponse {
+func (d *Daemon) workerProcessStateResponse(r *http.Request, entry *activeWorker, cache *processMetricsCache) workerProcessStateResponse {
 	out := workerProcessStateResponse{
 		ExecID:     entry.execID,
 		InstanceID: entry.instanceID,
@@ -39,7 +39,7 @@ func (d *Daemon) workerProcessStateResponse(r *http.Request, entry *activeWorker
 	}
 	// Best-effort local resource reading. Never gates the status: a missing
 	// sampler or a vanished child leaves the fields unset (the panel shows "—").
-	if metrics := sampleProcessMetrics(entry.pid); metrics.Available {
+	if metrics := cache.singleFor(entry.pid); metrics.Available {
 		out.Pid = entry.pid
 		out.MemoryBytes = metrics.MemoryBytes
 		out.CpuTimeMS = metrics.CPUTimeMS
@@ -64,6 +64,10 @@ func (d *Daemon) workerProcessStateResponse(r *http.Request, entry *activeWorker
 // process-status panel and never touches the server.
 func (d *Daemon) workerProcessesHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if d.client != nil && !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -75,8 +79,9 @@ func (d *Daemon) workerProcessesHandler() http.HandlerFunc {
 		}
 		entries := d.workerProcessRegistry.snapshot()
 		workers := make([]workerProcessStateResponse, 0, len(entries))
+		cache := newProcessMetricsCache()
 		for _, entry := range entries {
-			workers = append(workers, d.workerProcessStateResponse(r, entry))
+			workers = append(workers, d.workerProcessStateResponse(r, entry, cache))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"processes": workers})
@@ -94,6 +99,10 @@ type workerProcessStopRequest struct {
 // control action; it never touches the server.
 func (d *Daemon) workerProcessStopHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if d.client != nil && !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

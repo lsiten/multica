@@ -12,17 +12,12 @@ import (
 )
 
 // providerExecOptionsInput is the exact set of facts needed to assemble the
-// provider ExecOptions for one execution. It is the shared launch seam of the
-// F3 provider-run migration: the legacy in-process runner (runTask) builds it
-// from the task, the prepared environment, the resolved model/args, and the
-// daemon-wide provider budgets; the per-execution task worker (F3) will build
-// the same struct from its own bind facts before launching the provider.
+// provider ExecOptions for one execution. The task worker builds it from the
+// claimed task, prepared environment, resolved model and arguments, and
+// provider budgets.
 //
-// Keeping the assembly in one function with no *Daemon reference is what lets
-// both callers produce an identical provider launch without duplicating the
-// contract. It is a pure, side-effect-free assembly: it reads no daemon state
-// and mutates nothing, so its behaviour is covered by provider_launch_test.go
-// and by the existing runTask suite.
+// Keeping the assembly free of *Daemon state makes the child launch contract
+// explicit and testable.
 type providerExecOptionsInput struct {
 	// Provider is the runtime identity (e.g. "codex", "opencode", "kimi").
 	Provider string
@@ -78,10 +73,7 @@ type providerExecOptionsInput struct {
 }
 
 // buildProviderExecOptions assembles the provider ExecOptions for one execution
-// from its input facts. It is the shared launch seam of the F3 provider-run
-// migration: both the legacy in-process runner (runTask) and the per-execution
-// task worker call it so the provider launch is assembled identically in either
-// process. It is a pure assembly — it reads no daemon state and mutates nothing.
+// from its input facts. It reads no daemon state and mutates nothing.
 func buildProviderExecOptions(in providerExecOptionsInput) agent.ExecOptions {
 	execOpts := agent.ExecOptions{
 		CostLimitUSDTicks:          in.CostLimitUSDTicks,
@@ -137,13 +129,8 @@ func buildProviderExecOptions(in providerExecOptionsInput) agent.ExecOptions {
 }
 
 // providerBackendInput is the exact set of facts needed to resolve the agent
-// backend for one execution. It is the second half of the shared launch seam of
-// the F3 provider-run migration, alongside providerExecOptionsInput: the legacy
-// in-process runner (runTask) builds it from the task, the resolved executable
-// and version, the assembled agent environment, and the daemon-wide logger; the
-// per-execution task worker (F3) will build the same struct from its own bind
-// facts (its own logger and its own approval callback) before launching the
-// provider.
+// backend for one execution. It is the backend-resolution input used by the task worker, including the
+// bound task, resolved executable, assembled environment, and child-local seams.
 //
 // The approval callback and logger are passed in rather than read from *Daemon
 // so the seam has no daemon reference: the worker supplies its own. This is a
@@ -179,11 +166,7 @@ type providerBackendInput struct {
 }
 
 // resolveProviderBackend resolves the agent backend for one execution through
-// the unified runtime resolver. It is the second half of the shared launch seam
-// of the F3 provider-run migration: both the legacy in-process runner (runTask)
-// and the per-execution task worker call it so the backend is resolved
-// identically in either process. It is a pure, side-effect-free assembly — it
-// reads no daemon state and mutates nothing.
+// the unified runtime resolver. It reads no daemon state and mutates nothing.
 func resolveProviderBackend(in providerBackendInput) (agent.Backend, error) {
 	return agent.ResolveBackend(in.Provider, agent.Config{
 		RequestApproval: in.RequestApproval,
@@ -204,8 +187,7 @@ func resolveProviderBackend(in providerBackendInput) (agent.Backend, error) {
 // workerProviderRun is the fully assembled provider run a worker launches from its
 // delivered context: the ExecOptions, the resolved backend, and the prompt. It is
 // the *Daemon-free assembly the per-execution task worker uses to genuinely run
-// the provider (the legacy in-process runner builds the equivalent inline in
-// runTask). It reads only the delivered context and the passed seams; it holds no
+// the provider (the control parent only assembles the child-worker request). It reads only the delivered context and the passed seams; it holds no
 // *Daemon reference.
 type workerProviderRun struct {
 	Backend agent.Backend
@@ -214,10 +196,9 @@ type workerProviderRun struct {
 }
 
 // buildWorkerProviderRun assembles the provider run from the context the control
-// parent delivered. It is the *Daemon-free launch seam the F3 task worker calls:
-// it reuses buildProviderExecOptions and resolveProviderBackend so the worker and
-// the legacy runner resolve the provider identically, then returns the ready-to-
-// run provider. provider is the runtime identity the worker runs (the control
+// parent delivered. It is the Daemon-free launch seam the task worker calls:
+// it reuses buildProviderExecOptions and resolveProviderBackend, then returns
+// the ready-to-run provider. provider is the runtime identity the worker runs (the control
 // parent delivers it, mirroring runTask's provider param). A missing provider,
 // agent, or an unresolved backend yields an error so the worker fails closed
 // instead of fabricating a run.
@@ -236,23 +217,56 @@ func buildWorkerProviderRun(in workerContext, provider string, logger *slog.Logg
 	if autonomyPolicy != nil {
 		costLimitUSDTicks = effectiveAutonomyCostLimit(autonomyPolicy)
 	}
+	facts := in.Launch
+	model := facts.Model
+	if model == "" {
+		model = resolveWorkerModel(provider, in.Task, in.Config)
+	}
+	extraArgs := facts.ExtraArgs
+	if extraArgs == nil {
+		extraArgs = defaultArgsForProvider(in.Config, provider)
+	}
+	customArgs := facts.CustomArgs
+	if customArgs == nil && in.Task.Agent != nil {
+		customArgs = in.Task.Agent.CustomArgs
+	}
+	mcpConfig := facts.McpConfig
+	if len(mcpConfig) == 0 && in.Task.Agent != nil {
+		mcpConfig = in.Task.Agent.McpConfig
+	}
+	thinkingLevel := facts.ThinkingLevel
+	if thinkingLevel == "" && in.Task.Agent != nil {
+		thinkingLevel = in.Task.Agent.ThinkingLevel
+	}
+	serviceTier := facts.ServiceTier
+	if serviceTier == "" && in.Task.Agent != nil {
+		serviceTier = in.Task.Agent.ServiceTier
+	}
+	cliVersion := facts.CLIVersion
+	if cliVersion == "" {
+		cliVersion = in.Config.CLIVersion
+	}
 	execOpts := buildProviderExecOptions(providerExecOptionsInput{
 		Provider:                        provider,
 		Task:                            in.Task,
 		AutonomyPolicy:                  autonomyPolicy,
 		CostLimitUSDTicks:               costLimitUSDTicks,
+		TaskSupplementNegotiated:        facts.TaskSupplementNegotiated,
 		WorkDir:                         in.Env.WorkDir,
 		ClaudeSettingsPath:              in.Env.ClaudeSettingsPath,
 		QwenpawWorkspace:                in.Env.QwenpawWorkspace,
 		ContextDir:                      in.Env.ContextDir,
 		CursorMcpPluginDir:              in.Env.CursorMcpPluginDir,
 		OmpMcpExtensionDir:              in.Env.OmpMcpExtensionDir,
-		Model:                           resolveWorkerModel(provider, in.Task, in.Config),
-		ExtraArgs:                       defaultArgsForProvider(in.Config, provider),
-		CustomArgs:                      in.Task.Agent.CustomArgs,
-		McpConfig:                       in.Task.Agent.McpConfig,
-		ThinkingLevel:                   in.Task.Agent.ThinkingLevel,
-		ServiceTier:                     in.Task.Agent.ServiceTier,
+		Model:                           model,
+		IdleWatchdogTimeout:             facts.IdleWatchdogTimeout,
+		ExtraArgs:                       extraArgs,
+		CustomArgs:                      customArgs,
+		McpConfig:                       mcpConfig,
+		ThinkingLevel:                   thinkingLevel,
+		ServiceTier:                     serviceTier,
+		OpenclawMode:                    facts.OpenclawMode,
+		RuntimeBrief:                    facts.RuntimeBrief,
 		AgentTimeout:                    in.Config.AgentTimeout,
 		CodexSemanticInactivityTimeout:  in.Config.CodexSemanticInactivityTimeout,
 		CodexFirstTurnNoProgressTimeout: in.Config.CodexFirstTurnNoProgressTimeout,
@@ -265,9 +279,13 @@ func buildWorkerProviderRun(in workerContext, provider string, logger *slog.Logg
 		Task:            in.Task,
 		Logger:          logger,
 		RequestApproval: requestApproval,
-		CLIVersion:      in.Config.CLIVersion,
+		ExecutablePath:  facts.ExecutablePath,
+		LaunchPrefix:    facts.LaunchPrefix,
+		CLIVersion:      cliVersion,
 		Env:             in.Env.Env,
 		DaemonVersion:   in.Config.CLIVersion,
+		CodexVersion:    facts.CodexVersion,
+		BuiltinRuntime:  facts.BuiltinRuntime,
 		ProcessLauncher: processLauncher,
 	})
 	if err != nil {
@@ -292,17 +310,11 @@ func resolveWorkerModel(provider string, task Task, cfg Config) string {
 // creates the agent context, launches the backend, and drives the shared,
 // *Daemon-free runProviderExecution. It is the *Daemon-free driver the per-
 // execution task worker (F3) uses to run the provider without a *Daemon: the
-// legacy in-process runner (executeAndDrain) does the same backend launch plus
-// its own budget snapshot, usage reconciliation and running-tasks health
-// counter, which are caller-owned and stay in the legacy runner.
+// The caller owns budget snapshots, usage reconciliation and health accounting.
 //
 // The transcript report, session pin, supplement claim/ack, supplement signal
-// subscription and the watchdog windows are supplied by the caller, so the
-// worker wires them to its scoped ExecutionClient and the legacy runner wires
-// the same seams to *Daemon. A nil budget is tolerated by runProviderExecution
-// (its budget watcher is gated and its result path nil-checks the budget); a
-// nil phase recorder is NOT tolerated (the transcript drain marks it), so the
-// caller must supply a real recorder.
+// subscription, and watchdog windows are supplied by the worker scoped client.
+// A nil budget is tolerated by runProviderExecution; a nil phase recorder is not.
 func executePreparedProvider(
 	ctx context.Context,
 	backend agent.Backend,
@@ -324,7 +336,7 @@ func executePreparedProvider(
 	defer agentCancel()
 	session, err := backend.Execute(agentCtx, prompt, opts)
 	if err != nil {
-		// Mirror the legacy runner's launch-error boundary: an unconfirmed
+		// Mirror the provider launch-error boundary: an unconfirmed
 		// vscreen stop is reported as such, every other backend start failure
 		// is explained once here so the worker does not fabricate a result.
 		if errors.Is(context.Cause(ctx), errVscreenIntervention) {

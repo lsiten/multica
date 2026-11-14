@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/modelservice"
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
 )
 
@@ -66,11 +68,11 @@ func safeProcessPID(p *runtimeproc.Process) int {
 
 // fillTreeMetrics adds the tree aggregate (this pid + its whole descendant tree)
 // to entry so a parent row reflects the children it runs, not just itself.
-func fillTreeMetrics(entry *processOverviewEntry, pid int) {
+func fillTreeMetrics(entry *processOverviewEntry, pid int, cache *processMetricsCache) {
 	if pid <= 0 {
 		return
 	}
-	if tree := sampleProcessTree(pid); tree.Available {
+	if tree := cache.treeFor(pid); tree.Available {
 		entry.TreeMemoryBytes = tree.MemoryBytes
 		entry.TreeCpuTimeMS = tree.CpuTimeMS
 		entry.ProcessCount = tree.ProcessCount
@@ -81,15 +83,15 @@ func fillTreeMetrics(entry *processOverviewEntry, pid int) {
 // state probe for one child runtimeproc.Process. It never gates the listing: a
 // probe failure or a vanished child leaves the row reported as "unavailable"
 // with resource fields unset, exactly like the task-worker handler.
-func describeRuntimeProcess(ctx context.Context, p *runtimeproc.Process, entry processOverviewEntry) processOverviewEntry {
+func describeRuntimeProcess(ctx context.Context, p *runtimeproc.Process, entry processOverviewEntry, cache *processMetricsCache) processOverviewEntry {
 	pid := safeProcessPID(p)
 	if pid > 0 {
-		if metrics := sampleProcessMetrics(pid); metrics.Available {
+		if metrics := cache.singleFor(pid); metrics.Available {
 			entry.Pid = metrics.PID
 			entry.MemoryBytes = metrics.MemoryBytes
 			entry.CpuTimeMS = metrics.CPUTimeMS
 		}
-		fillTreeMetrics(&entry, pid)
+		fillTreeMetrics(&entry, pid, cache)
 	}
 	if p == nil || p.Client == nil {
 		entry.State = "unavailable"
@@ -113,8 +115,8 @@ func describeRuntimeProcess(ctx context.Context, p *runtimeproc.Process, entry p
 // processesOverviewHandler lists every category the daemon can supervise as one
 // unified, category-tagged list with best-effort resource usage. It is a local
 // read: it serves the local process-status panel and never touches the server.
-// In-process services (MCP / JEV) are not child processes and are served by
-// their own endpoints, so they stay off this list.
+// Required capability services (including MCP and JEV) are child processes and
+// are included in this list alongside the daemon and per-task workers.
 //
 // Every managed category is always present, so the panel never hides a
 // supervised category behind a nil child. The daemon's own process is first; the
@@ -127,19 +129,27 @@ func describeRuntimeProcess(ctx context.Context, p *runtimeproc.Process, entry p
 // monitor instead of a bare sum of per-row readings.
 func (d *Daemon) processesOverviewHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if d.client != nil && !d.jevLocalAuthorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		cache := newProcessMetricsCache()
 		var out []processOverviewEntry
-		out = append(out, d.daemonProcessEntry(r))
-		out = append(out, d.taskWorkerOverviewEntries(r)...)
-		out = append(out, d.singletonProcessEntry(r, "application", "application service", d.snapshotApplicationProcess, d.applicationProcessMode))
-		out = append(out, d.singletonProcessEntry(r, "gateway", "gateway", d.snapshotGatewayProcess, d.gatewayProcessMode))
-		out = append(out, d.singletonProcessEntry(r, "environment", "environment service", d.snapshotEnvironmentProcess, d.environmentProcessMode))
-		out = append(out, d.singletonProcessEntry(r, "mirror", "mirror service", d.snapshotMirrorProcess, d.mirrorProcessMode))
+		out = append(out, d.daemonProcessEntry(r, cache))
+		out = append(out, d.taskWorkerOverviewEntries(r, cache)...)
+		out = append(out, d.singletonProcessEntry(r, "application", "application service", d.snapshotApplicationProcess, d.applicationProcessMode, cache))
+		out = append(out, d.singletonProcessEntry(r, "gateway", "gateway", d.snapshotGatewayProcess, d.gatewayProcessMode, cache))
+		out = append(out, d.singletonProcessEntry(r, "environment", "environment service", d.snapshotEnvironmentProcess, d.environmentProcessMode, cache))
+		out = append(out, d.singletonProcessEntry(r, "mirror", "mirror service", d.snapshotMirrorProcess, d.mirrorProcessMode, cache))
+		out = append(out, d.singletonProcessEntry(r, "ai", "ai service", d.snapshotAIProcess, func() bool {
+			return slices.Contains(d.cfg.ProcessServices, "ai")
+		}, cache))
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"processes": out, "total": d.processOverviewTotal()})
+		json.NewEncoder(w).Encode(map[string]any{"processes": out, "total": d.processOverviewTotal(cache)})
 	}
 }
 
@@ -148,7 +158,7 @@ func (d *Daemon) processesOverviewHandler() http.HandlerFunc {
 // supervising process must be visible too, with its own resource reading. The
 // daemon is not stoppable from a per-row action — it is managed by the app's
 // start/stop/restart lifecycle — so stoppable stays false.
-func (d *Daemon) daemonProcessEntry(r *http.Request) processOverviewEntry {
+func (d *Daemon) daemonProcessEntry(r *http.Request, cache *processMetricsCache) processOverviewEntry {
 	entry := processOverviewEntry{
 		Category:  "daemon",
 		ID:        "daemon",
@@ -156,14 +166,14 @@ func (d *Daemon) daemonProcessEntry(r *http.Request) processOverviewEntry {
 		Stoppable: false,
 	}
 	pid := os.Getpid()
-	if metrics := sampleProcessMetrics(pid); metrics.Available {
+	if metrics := cache.singleFor(pid); metrics.Available {
 		entry.Pid = metrics.PID
 		entry.MemoryBytes = metrics.MemoryBytes
 		entry.CpuTimeMS = metrics.CPUTimeMS
 	}
-	fillTreeMetrics(&entry, pid)
+	fillTreeMetrics(&entry, pid, cache)
 	entry.State = "starting"
-	if d.ready.Load() {
+	if d.ready.Load() && (!requiredProcessOwnersConfigured(d.cfg.ProcessServices) || d.ownerReady.Load()) {
 		entry.State = "running"
 		entry.Ready = true
 	}
@@ -178,7 +188,7 @@ func (d *Daemon) daemonProcessEntry(r *http.Request) processOverviewEntry {
 // stretch the whole overview past the panel's refetch interval (the sequential
 // form was O(N x 2s)). Each goroutine writes only its own result slot, so the
 // shared slice has no locking.
-func (d *Daemon) taskWorkerOverviewEntries(r *http.Request) []processOverviewEntry {
+func (d *Daemon) taskWorkerOverviewEntries(r *http.Request, cache *processMetricsCache) []processOverviewEntry {
 	if d.workerProcessRegistry == nil {
 		return nil
 	}
@@ -193,7 +203,7 @@ func (d *Daemon) taskWorkerOverviewEntries(r *http.Request) []processOverviewEnt
 		wg.Add(1)
 		go func(i int, entry *activeWorker) {
 			defer wg.Done()
-			state := d.workerProcessStateResponse(r, entry)
+			state := d.workerProcessStateResponse(r, entry, cache)
 			outEntry := processOverviewEntry{
 				Category:     "task_worker",
 				ID:           state.ExecID,
@@ -208,7 +218,7 @@ func (d *Daemon) taskWorkerOverviewEntries(r *http.Request) []processOverviewEnt
 				CpuTimeMS:    state.CpuTimeMS,
 				Stoppable:    true,
 			}
-			fillTreeMetrics(&outEntry, state.Pid)
+			fillTreeMetrics(&outEntry, state.Pid, cache)
 			results[i] = outEntry
 		}(i, entry)
 	}
@@ -238,14 +248,14 @@ func (d *Daemon) taskWorkerOverviewEntries(r *http.Request) []processOverviewEnt
 // siblings; the total then falls back to the daemon's own tree, which is never
 // wrong (only smaller). The parent walk is guarded by parentPID > 1 so the total
 // never walks launchd when the daemon has been adopted.
-func (d *Daemon) processOverviewTotal() processOverviewTotal {
-	daemonTree := sampleProcessTree(os.Getpid())
+func (d *Daemon) processOverviewTotal(cache *processMetricsCache) processOverviewTotal {
+	daemonTree := cache.treeFor(os.Getpid())
 	parentPID := int(syscall.Getppid())
 	if parentPID <= 1 {
 		// The daemon was adopted by launchd; never walk the whole system.
 		return toOverviewTotal(daemonTree)
 	}
-	parentTree := sampleProcessTree(parentPID)
+	parentTree := cache.treeFor(parentPID)
 	if parentTree.Available && (isMulticaAppProcess(parentPID) || largerFootprint(parentTree, daemonTree)) {
 		return toOverviewTotal(parentTree)
 	}
@@ -290,15 +300,10 @@ func largerFootprint(candidate, baseline ProcessTreeMetrics) bool {
 // service, reported rather than omitted, so the panel shows every supervised
 // category in one place.
 //
-// A missing child is NOT "stopped": the fail-closed design guarantees the
-// in-process owner runs whenever the separate process is absent, so the
-// service is functional. processModeActive distinguishes the two cases:
-// true means the daemon is still in process mode (a child is being started or
-// the start is retrying) so the row is "starting"; false means the separate
-// process failed and the daemon fell back to the in-process owner, which is
-// running. This stops the panel from showing a working service that the
-// in-process fallback runs as "stopped".
-func (d *Daemon) singletonProcessEntry(r *http.Request, category, name string, resolve func() *runtimeproc.Process, processModeActive func() bool) processOverviewEntry {
+// A missing child is never represented as an in-process owner. A configured
+// service remains "starting" until its child is ready; a missing configured
+// role is reported as failed so the desktop can explain why startup stopped.
+func (d *Daemon) singletonProcessEntry(r *http.Request, category, name string, resolve func() *runtimeproc.Process, processModeActive func() bool, cache *processMetricsCache) processOverviewEntry {
 	entry := processOverviewEntry{
 		Category: category,
 		ID:       category,
@@ -306,7 +311,7 @@ func (d *Daemon) singletonProcessEntry(r *http.Request, category, name string, r
 	}
 	process := resolve()
 	if process != nil {
-		return describeRuntimeProcess(r.Context(), process, entry)
+		return describeRuntimeProcess(r.Context(), process, entry, cache)
 	}
 	// Still in process mode: a child is being started (or the start is retrying)
 	// so the row is "starting" rather than "stopped".
@@ -314,17 +319,8 @@ func (d *Daemon) singletonProcessEntry(r *http.Request, category, name string, r
 		entry.State = "starting"
 		return entry
 	}
-	// In-process mode: the fail-closed in-process owner is the active owner once
-	// the daemon is up. Report it as running so the panel never shows a working
-	// service as "stopped". d.ready guards the not-yet-initialised case (a bare
-	// &Daemon{} with no running owner), which should still read as "stopped".
-	if d.ready.Load() {
-		entry.State = "running"
-		entry.Ready = true
-		entry.Detail = "in-process"
-		return entry
-	}
-	entry.State = "stopped"
+	entry.State = "failed"
+	entry.Detail = "required-owner-missing"
 	return entry
 }
 
@@ -366,4 +362,15 @@ func (d *Daemon) snapshotMirrorProcess() *runtimeproc.Process {
 		return nil
 	}
 	return d.mirrorProcess.process
+}
+
+// snapshotAIProcess returns the live model-service child process, or nil.
+func (d *Daemon) snapshotAIProcess() *runtimeproc.Process {
+	d.jevModelsMu.Lock()
+	defer d.jevModelsMu.Unlock()
+	backend, ok := d.jevModels.(*modelservice.Client)
+	if !ok || backend == nil {
+		return nil
+	}
+	return backend.Process()
 }

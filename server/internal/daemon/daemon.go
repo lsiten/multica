@@ -437,11 +437,9 @@ type repoCacheBackend interface {
 type Daemon struct {
 	environmentProcessMu sync.Mutex
 	environmentProcess   *environmentProcessClient
-	// environmentProcessActive mirrors environmentProcessMode once startup
-	// has decided. It is set optimistically when the role is configured and
-	// cleared if the separate process can't start, so the whole daemon
-	// (setup, loops, task paths) treats a failed separate process as the
-	// in-process owner rather than a broken owner.
+	// environmentProcessActive is the live topology bit for the required
+	// environment child owner. It is set from the validated process-owner set
+	// and remains false only for direct test fixtures or an unconfigured daemon.
 	environmentProcessActive atomic.Bool
 	environmentServiceOwner  bool // physical service excludes application lifecycle/retention authority
 	mirrorProcessMu          sync.Mutex
@@ -453,7 +451,6 @@ type Daemon struct {
 	jevModelsMu              sync.Mutex
 	jevModelsClosing         bool
 	jevModels                modelservice.Backend
-	jevModelsFallback        modelservice.Backend
 	jevModelsErr             error
 	jevModelRetryAt          time.Time
 	jevModelFailures         int
@@ -462,19 +459,10 @@ type Daemon struct {
 	repoCache                repoCacheBackend
 	skillCache               *SkillBundleCache
 	logger                   *slog.Logger
-	// mcpBrokerMu guards builtinMCP: the owner seam is swapped at runtime
-	// when a separate gateway process recovers after an in-process bridge,
-	// while tasks read it concurrently on the hot path.
+	// mcpBrokerMu guards the gateway-backed MCP broker seam while tasks read it
+	// concurrently on the hot path.
 	mcpBrokerMu sync.RWMutex
 	builtinMCP  mcpBroker
-
-	// probe*ForTest are nil in production; set only by tests to exercise a
-	// separate-process recovery without launching a real child, so the
-	// re-probe handover (bridge retirement / flag / owner seam) is
-	// verifiable. They are never populated by the real daemon path.
-	probeEnvironmentProcessForTest func(ctx context.Context) (*environmentProcessClient, error)
-	probeApplicationProcessForTest func(ctx context.Context) (*applicationProcessClient, error)
-	probeGatewayProcessForTest     func(ctx context.Context) (*gatewayProcessClient, error)
 
 	// terminalReports is the durable outbox for complete/fail callbacks. The
 	// sender hook is production-wired through Client and overridable in focused
@@ -748,16 +736,14 @@ type Daemon struct {
 	applicationHostLauncher func(string) (*exec.Cmd, error)
 	applicationProcessMu    sync.Mutex
 	applicationProcess      *applicationProcessClient
-	// applicationProcessActive mirrors applicationProcessMode once startup has
-	// decided; cleared on a failed separate-process start so the daemon treats
-	// it as the in-process owner (see environmentProcessActive).
+	// applicationProcessActive is the live topology bit for the required
+	// application child owner.
 	applicationProcessActive atomic.Bool
 	applicationTransport     func(string) applicationTransport
 	gatewayProcessMu         sync.Mutex
 	gatewayProcess           *gatewayProcessClient
-	// gatewayProcessActive mirrors gatewayProcessMode once startup has decided;
-	// cleared on a failed separate-process start so the daemon treats it as the
-	// in-process owner (see environmentProcessActive).
+	// gatewayProcessActive is the live topology bit for the required gateway
+	// child owner.
 	gatewayProcessActive         atomic.Bool
 	applicationSourceProvider    func(context.Context, applicationSourceRequest) (applicationPreparedSource, error)
 	environmentOperationsMu      sync.Mutex
@@ -793,7 +779,8 @@ type Daemon struct {
 	// /health dimensions and must never replace activeTasks in safety barriers.
 	runningTasks      atomic.Int64
 	resourceWaitTasks atomic.Int64
-	ready             atomic.Bool // false until preflight completes; gates /health status (starting -> running)
+	ready             atomic.Bool // local control readiness; gates task/bootstrap state
+	ownerReady        atomic.Bool // true only after every required child owner is ready
 	// reloadPendingReason explains why a confirmed multica version change hasn't
 	// restarted the daemon yet (a task was running at the barrier check). Set
 	// and cleared by trySelfReload, read by /health. Diagnostic only.
@@ -852,7 +839,7 @@ type Daemon struct {
 
 	runner taskRunner // executes agent tasks; set to d.runTask by New(), overridable in tests
 	// workerProcessLaunch, when set, replaces ensureWorkerProcess so a focused
-	// test can drive the opt-in F3 orchestration through a fake transport
+	// test can drive the worker orchestration through a fake transport
 	// without launching a real child. Production leaves it nil and the
 	// orchestration falls back to ensureWorkerProcess.
 	workerProcessLaunch func(ctx context.Context, execID string) (*workerProcessClient, error)
@@ -874,11 +861,11 @@ type Daemon struct {
 
 	// acquireSupervisor, when set, replaces the server-side control-supervisor
 	// acquisition (d.client.AcquireExecutionSupervisor) so a focused test can
-	// drive the opt-in F3 hot path without a real server. Production leaves it
+	// drive the worker hot path without a real server. Production leaves it
 	// nil and the hot path falls back to d.client.AcquireExecutionSupervisor.
 	acquireSupervisor func(ctx context.Context, runtimeID string, req protocol.SupervisorRequest) (*protocol.SupervisorResponse, error)
-	// supervisorMu guards the control-supervisor state below. The opt-in F3
-	// hot path (attemptWorkerRun) is the only writer: one daemon holds one
+	// supervisorMu guards the control-supervisor state below. The worker hot path
+	// (attemptWorkerRun) is the only writer: one daemon holds one
 	// control incarnation across all of its per-execution worker binds.
 	supervisorMu         sync.Mutex
 	supervisorInstanceID string
@@ -978,9 +965,8 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		inputArbiter:                mirror.NewArbiter(),
 		workerProcessRegistry:       newWorkerProcessRegistry(),
 	}
-	// Decide the per-role process mode optimistically from config. Run clears
-	// the flag if a separate process can't start, so a failure falls back to
-	// the in-process owner instead of exiting (see the service-start blocks).
+	// Seed the live topology bits from the validated child-owner set. Run treats
+	// any configured child that cannot start as a fatal startup error.
 	if slices.Contains(d.cfg.ProcessServices, "environment") {
 		d.environmentProcessActive.Store(true)
 	}
@@ -1013,6 +999,22 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	}
 	d.runUpdateFn = d.runUpdate
 	return d
+}
+
+// requiredProcessOwnersConfigured identifies a production topology. Config
+// loaded through LoadConfig always satisfies this invariant; the explicit
+// check keeps zero-value/unit fixtures from accidentally being treated as a
+// live daemon lifecycle.
+func requiredProcessOwnersConfigured(roles []string) bool {
+	if len(roles) != 5 {
+		return false
+	}
+	for _, role := range []string{"ai", "mirror", "application", "environment", "gateway"} {
+		if !slices.Contains(roles, role) {
+			return false
+		}
+	}
+	return true
 }
 
 // setAgentVersion records the detected CLI version for an agent provider so
@@ -2356,11 +2358,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// The built-in MCP listener is either owned in-process (legacy default) or by
-	// a gateway process. A gateway owner needs authenticated identity, so the
-	// gateway process is launched after resolveAuth below; the in-process broker
-	// is started in the gateway service block when the gateway process is not
-	// active, which also covers a gateway start that failed and fell back.
+	// The gateway child is launched after authentication so its scoped identity
+	// can be bound to the current account before it owns the MCP listener.
 
 	agentNames := make([]string, 0, len(d.agents()))
 	for name := range d.agents() {
@@ -2417,6 +2416,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// until the account and runtime scopes have been verified.
 	d.remoteBootstrapPending.Store(true)
 	d.ready.Store(true)
+	d.ownerReady.Store(false)
 	go d.serveHealth(ctx, healthLn, time.Now())
 
 	// Renew the PAT before the first API call, then do the initial
@@ -2480,8 +2480,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	defer d.closeVscreens()
 	defer d.closeRuntimeMirrors()
 
-	// Start workspace sync loop to discover newly created workspaces.
-	go d.workspaceSyncLoop(ctx)
+	// Terminal report replay can start as soon as account authority is known;
+	// runtime registration and task claim wait until required child owners are
+	// ready below.
 	terminalReportsDone := make(chan struct{})
 	go func() { defer close(terminalReportsDone); d.terminalReportReplayLoop(ctx) }()
 	defer func() { cancel(); <-terminalReportsDone }()
@@ -2489,32 +2490,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go func() { defer close(jevReportsDone); d.jevDecisionReportLoop(ctx) }()
 	defer func() { cancel(); <-jevReportsDone }()
 
-	// Discover agent CLIs installed after startup (MUL-5439). Separate from the
-	// workspace sync loop because that one runs on a thirty-minute consistency
-	// interval — far too slow for "install a CLI, see it under Runtimes".
-	go d.agentDiscoveryLoop(ctx)
-
-	taskWakeups := make(chan taskWakeup, 256)
-	go d.taskWakeupLoop(ctx, taskWakeups)
-	go d.heartbeatLoop(ctx)
-	go d.workDirectoryStateLoop(ctx)
+	var environment *environmentProcessClient
 	if d.environmentProcessMode() {
 		environmentCtx, stop := context.WithTimeout(ctx, 30*time.Second)
-		environment, err := d.ensureEnvironmentProcess(environmentCtx)
+		var err error
+		environment, err = d.ensureEnvironmentProcess(environmentCtx)
 		stop()
 		if err != nil {
-			// Fail closed to the in-process owner, but on a cancellable bridge a
-			// re-probe retires once the separate process recovers, so the separate
-			// process is not masked in-process forever and the two never double-run.
-			d.environmentProcessActive.Store(false)
-			d.logger.Warn("environment service start failed; falling back to in-process", "error", err)
-			if mErr := execenv.EnsureWorkspacesRootMarker(d.cfg.WorkspacesRoot); mErr != nil {
-				d.logger.Warn("workspaces root marker not written; CLI fail-closed guard limited to task workdirs", "error", mErr)
-			}
-			bridgeCtx, bridgeCancel := context.WithCancel(ctx)
-			go d.gcLoop(bridgeCtx)
-			go d.environmentRecycleLoop(bridgeCtx)
-			go d.reProbeEnvironmentService(ctx, bridgeCancel)
+			_ = healthLn.Close()
+			return fmt.Errorf("start required environment service: %w", err)
 		} else {
 			defer func() {
 				if cerr := environment.close(); cerr != nil {
@@ -2523,25 +2507,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 			}()
 		}
 	} else {
-		go d.gcLoop(ctx)
-		go d.environmentRecycleLoop(ctx)
+		_ = healthLn.Close()
+		return errors.New("required environment process owner is not configured")
 	}
-	go d.autoUpdateLoop(ctx)
-	go d.tokenRenewalLoop(ctx)
-	go d.localReviewLoop(ctx)
 	var application *applicationProcessClient
-	var applicationFailed bool
 	if d.applicationProcessMode() {
 		appCtx, appCancel := context.WithTimeout(ctx, 30*time.Second)
 		var appErr error
 		application, appErr = d.ensureApplicationProcess(appCtx)
 		appCancel()
 		if appErr != nil {
-			// Fail closed to the in-process owner, but a re-probe retires it
-			// once the separate process recovers (see the bridge below).
-			d.applicationProcessActive.Store(false)
-			d.logger.Warn("application service start failed; falling back to in-process", "error", appErr)
-			applicationFailed = true
+			_ = healthLn.Close()
+			return fmt.Errorf("start required application service: %w", appErr)
 		}
 	}
 	if d.applicationProcessMode() {
@@ -2555,33 +2532,19 @@ func (d *Daemon) Run(ctx context.Context) error {
 			}
 		}()
 	} else {
-		applicationsDone := make(chan struct{})
-		applicationTunnelDone := make(chan struct{})
-		if applicationFailed {
-			// Config wants the separate process but it could not start: keep the
-			// in-process owner on a cancellable bridge the re-probe retires on
-			// recovery, so it is a transient bridge, not the permanent owner.
-			bridgeCtx, bridgeCancel := context.WithCancel(ctx)
-			go func() { defer close(applicationsDone); d.applicationLoop(bridgeCtx) }()
-			go func() { defer close(applicationTunnelDone); d.applicationTunnelLoop(bridgeCtx) }()
-			go d.reProbeApplicationService(ctx, bridgeCancel)
-		} else {
-			go func() { defer close(applicationsDone); d.applicationLoop(ctx) }()
-			go func() { defer close(applicationTunnelDone); d.applicationTunnelLoop(ctx) }()
-			defer func() { cancel(); <-applicationTunnelDone }()
-			defer func() { cancel(); <-applicationsDone; d.stopOwnedApplications() }()
-		}
+		_ = healthLn.Close()
+		return errors.New("required application process owner is not configured")
 	}
 
-	var gatewayFailed bool
+	var gateway *gatewayProcessClient
 	if d.gatewayProcessMode() {
 		gatewayCtx, gatewayCancel := context.WithTimeout(ctx, 30*time.Second)
-		gateway, err := d.ensureGatewayProcess(gatewayCtx)
+		var err error
+		gateway, err = d.ensureGatewayProcess(gatewayCtx)
 		gatewayCancel()
 		if err != nil {
-			d.gatewayProcessActive.Store(false)
-			d.logger.Warn("gateway service start failed; falling back to in-process", "error", err)
-			gatewayFailed = true
+			_ = healthLn.Close()
+			return fmt.Errorf("start required gateway service: %w", err)
 		} else {
 			d.setMCPBroker(gateway)
 			defer func() {
@@ -2591,29 +2554,67 @@ func (d *Daemon) Run(ctx context.Context) error {
 		}
 	}
 	if !d.gatewayProcessMode() {
-		builtinMCP, err := startBuiltinMCPBroker(ctx)
+		_ = healthLn.Close()
+		return errors.New("required gateway process owner is not configured")
+	}
+
+	var mirror *mirrorProcessClient
+	if d.mirrorProcessMode() {
+		var err error
+		mirror, err = d.ensureMirrorProcess(ctx)
 		if err != nil {
 			_ = healthLn.Close()
-			return err
+			return fmt.Errorf("start required mirror service: %w", err)
 		}
-		d.setMCPBroker(builtinMCP)
-		defer func() {
-			builtinMCP.close()
-			d.setMCPBroker(nil)
-		}()
-		if gatewayFailed {
-			// Config wants the separate gateway but it could not start: keep the
-			// in-process broker as a transient bridge a re-probe retires on
-			// recovery, so the separate gateway is not masked in-process forever.
-			go d.reProbeGatewayService(ctx)
+		defer d.closeMirrorProcess()
+	}
+	aiBackend, err := d.jevModelManager()
+	if err != nil {
+		_ = healthLn.Close()
+		return fmt.Errorf("start required ai service: %w", err)
+	}
+	ownerProbes := map[string]ownerProbe{
+		"environment": func(probeCtx context.Context) error { return probeRuntimeOwner(probeCtx, environment.process) },
+		"application": func(probeCtx context.Context) error { return probeRuntimeOwner(probeCtx, application.process) },
+		"gateway":     func(probeCtx context.Context) error { return probeRuntimeOwner(probeCtx, gateway.process) },
+		"mirror":      func(probeCtx context.Context) error { return probeRuntimeOwner(probeCtx, mirror.process) },
+	}
+	if aiOwner, ok := aiBackend.(interface{ Process() *runtimeproc.Process }); ok {
+		ownerProbes["ai"] = func(probeCtx context.Context) error { return probeRuntimeOwner(probeCtx, aiOwner.Process()) }
+	} else {
+		_ = healthLn.Close()
+		return errors.New("ai process owner does not expose a supervised process")
+	}
+	go d.superviseOwners(ctx, ownerProbes)
+
+	// Required child owners are ready before this first registration. A runtime
+	// must never become claimable while one of its capability owners is still
+	// in-process or unavailable.
+	if err := d.syncWorkspacesFromAPI(ctx, false); err != nil {
+		if d.startupMayProceedWithoutRuntimes(err) {
+			d.logger.Warn("starting with no runtimes registered: an automatic DSH runtime profile install is still running; the runtime registers when it finishes")
+		} else {
+			_ = healthLn.Close()
+			return fmt.Errorf("register runtimes after required services became ready: %w", err)
 		}
 	}
+
+	go d.autoUpdateLoop(ctx)
+	go d.tokenRenewalLoop(ctx)
+	go d.localReviewLoop(ctx)
+	go d.workspaceSyncLoop(ctx)
+	go d.agentDiscoveryLoop(ctx)
+	taskWakeups := make(chan taskWakeup, 256)
+	go d.taskWakeupLoop(ctx, taskWakeups)
+	go d.heartbeatLoop(ctx)
+	go d.workDirectoryStateLoop(ctx)
 
 	// Preflight succeeded and the background loops are up: the daemon has
 	// registered its runtimes and can now claim and run tasks. Flip /health
 	// from "starting" to "running" — this is the signal `daemon start`'s
 	// readiness wait blocks on, so success is reported only after startup
 	// actually completed, not merely because the health port came up.
+	d.ownerReady.Store(true)
 	d.ready.Store(true)
 	d.logger.Debug("background loops launched (workspace-sync, terminal-report-replay, task-wakeup, heartbeat, gc, auto-update, token-renewal); health now reporting ready")
 	err = d.pollLoop(ctx, taskWakeups)
@@ -4583,8 +4584,7 @@ func (d *Daemon) preflightAuth(ctx context.Context) error {
 	d.tryRenewToken(ctx)
 	err := d.syncWorkspacesFromAPI(ctx, false)
 	if d.startupMayProceedWithoutRuntimes(err) {
-		d.logger.Warn("starting with no runtimes registered: an automatic DSH runtime profile install is still running; " +
-			"the runtime registers when it finishes")
+		d.logger.Warn("starting with no runtimes registered: an automatic DSH runtime profile install is still running; the runtime registers when it finishes")
 		return nil
 	}
 	return err
@@ -9729,15 +9729,6 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if err := configureCodexTaskShellEnvironment(provider, env.CodexHome, os.Environ(), agentEnv, agentCustomEnv, d.logger); err != nil {
 		return TaskResult{}, err
 	}
-	// All providers execute directly on the host. The launcher seam remains
-	// available for unit tests, but no guest VM or sandbox launcher is wired
-	// into production task execution.
-	var processLauncher agent.ProcessLauncher = agent.LocalProcessLauncher{}
-	// The overlay is authoritative once built, so nothing on the command line
-	// may re-point HERMES_HOME out of it. Both argv regions are stripped
-	// together, against the same assembled argv the resolver read: a selection
-	// can straddle them (a prefix ending in a bare `-p` captures the first
-	// custom arg), which per-region stripping cannot see.
 	var hermesOverlayCustomArgs []string
 	hermesOverlayActive := provider == "hermes" && env != nil && env.HermesHome != ""
 	if hermesOverlayActive {
@@ -9748,31 +9739,28 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		profileFixedArgs, hermesOverlayCustomArgs = agent.StripHermesProfileSelectors(
 			profileFixedArgs, rawCustomArgs, d.logger)
 	}
-	// Resolve the backend through the unified runtime resolver: built-in
-	// runtime identities (e.g. "omp") dispatch through NewRuntime, protocol
-	// families go through New. This is the single production boundary — the
-	// daemon never calls agent.New or agent.NewRuntime directly, so the two
-	// factories stay meaning exactly one thing each.
-	// The backend is resolved through the shared launch seam so the legacy
-	// runner and the per-execution task worker (F3) resolve the provider
-	// identically; the approval callback and logger are supplied by the
-	// caller, so the seam has no *Daemon reference.
-	backend, err := resolveProviderBackend(providerBackendInput{
-		Provider:        provider,
-		Task:            task,
-		Logger:          d.logger,
-		RequestApproval: d.requestTaskApproval(task),
-		ExecutablePath:  entry.Path,
-		LaunchPrefix:    profileFixedArgs,
-		CLIVersion:      resolvedVersion,
-		Env:             agentEnv,
-		DaemonVersion:   d.cfg.CLIVersion,
-		CodexVersion:    codexVersion,
-		BuiltinRuntime:  !usesCustomProfileCommand,
-		ProcessLauncher: processLauncher,
-	})
-	if err != nil {
-		return TaskResult{}, fmt.Errorf("create agent backend: %w", err)
+	// Provider backend construction is test-only. A live Daemon hands launch facts
+	// to the child worker and never resolves or owns an agent backend here.
+	var backend agent.Backend
+	if d.cancelFunc == nil && !requiredProcessOwnersConfigured(d.cfg.ProcessServices) && fixtureProviderExecution != nil {
+		var processLauncher agent.ProcessLauncher = agent.LocalProcessLauncher{}
+		backend, err = resolveProviderBackend(providerBackendInput{
+			Provider:        provider,
+			Task:            task,
+			Logger:          d.logger,
+			RequestApproval: d.requestTaskApproval(task),
+			ExecutablePath:  entry.Path,
+			LaunchPrefix:    profileFixedArgs,
+			CLIVersion:      resolvedVersion,
+			Env:             agentEnv,
+			DaemonVersion:   d.cfg.CLIVersion,
+			CodexVersion:    codexVersion,
+			BuiltinRuntime:  !usesCustomProfileCommand,
+			ProcessLauncher: processLauncher,
+		})
+		if err != nil {
+			return TaskResult{}, fmt.Errorf("create fixture agent backend: %w", err)
+		}
 	}
 
 	// Two-tier model resolution: an explicit agent.model wins,
@@ -9915,19 +9903,26 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		"idle_watchdog", execOpts.IdleWatchdogTimeout,
 	)
 
-	// F3 opt-in: when a profile opts into the per-execution task worker,
+	// The per-execution task worker is the production provider owner,
 	// the worker runs the provider in a separate process and settles the
-	// execution via its OWN callback (client.Callback). When it ran
+	// execution via its OWN callback (client.Callback). When it runs
 	// (ran=true) the execution is already settled server-side, so the
-	// control parent must NOT run the provider in-process (executeAndDrain)
+	// control parent must NOT run the provider in-process
 	// — that would double-run — and the in-process settlement is skipped by
 	// the pre-completion check (shouldInterruptAgent on completed/failed/
-	// cancelled), so it must not double-settle either. A refused bind
-	// (ran=false, no error) or an uncertain outcome falls back to the
-	// in-process runner below. The default (gate OFF) path is untouched.
+	// cancelled), so it must not double-settle either.
 	// Control consumes the worker's durable outcome and reports it after local
 	// directory finalization. An uncertain worker run must never be run again.
-	wdec, werr := d.attemptWorkerRun(ctx, task, provider, agentEnv, env)
+	var wdec workerRunDecision
+	var werr error
+	// Unit fixtures install an explicit test-only provider hook. A production
+	// Daemon never has this hook and therefore always takes the child-worker
+	// path below.
+	if d.cancelFunc == nil && !requiredProcessOwnersConfigured(d.cfg.ProcessServices) && fixtureProviderExecution != nil {
+		// Keep the fixture's environment assertions independent of runtimeproc.
+	} else {
+		wdec, werr = d.attemptWorkerRun(ctx, task, provider, agentEnv, env)
+	}
 	if werr == nil && wdec.UseWorkerResult {
 		taskLog.Info("task executed in per-execution worker", "worker_status", wdec.Result.Status)
 		recordWorkerUsage(taskBudget, wdec.Result.Usage)
@@ -9939,11 +9934,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		}
 		return TaskResult{WorkDir: env.WorkDir, EnvRoot: env.RootDir}, errors.Join(errWorkerOutcomeUncertain, werr)
 	}
+	if d.cancelFunc != nil || requiredProcessOwnersConfigured(d.cfg.ProcessServices) || fixtureProviderExecution == nil {
+		return TaskResult{WorkDir: env.WorkDir, EnvRoot: env.RootDir}, errors.New("multi-process task worker returned no result")
+	}
 
 	// Shared across the resume-retry below so the retry's transcript rows
 	// keep ascending seq values for the same task.
 	var msgSeq atomic.Int32
-	result, tools, err := d.executeAndDrain(ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
+	result, tools, err := fixtureProviderExecution(d, ctx, backend, prompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 	if err != nil {
 		if autonomyPolicy != nil && autonomyPolicy.MaxDurationSeconds > 0 && errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 			taskLog.Warn("autonomy duration limit reached", "max_duration_seconds", autonomyPolicy.MaxDurationSeconds)
@@ -10053,7 +10051,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			freshPrompt = runtimeBrief + "\n\n" + freshPrompt
 		}
 
-		retryResult, retryTools, retryErr := d.executeAndDrain(ctx, backend, freshPrompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
+		retryResult, retryTools, retryErr := fixtureProviderExecution(d, ctx, backend, freshPrompt, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq)
 		if retryErr != nil {
 			taskLog.Error("fresh session also failed to start; keeping the original poisoned result", "error", retryErr)
 		} else if retryResult.Status != "completed" && retryResult.SessionID == "" {
@@ -10579,114 +10577,27 @@ func reportedUsageTokenLimitReached(usage agent.TokenUsage, limit int64) bool {
 	return overflow || total >= limit
 }
 
-// executeAndDrain runs a backend, drains its message stream (forwarding to the
-// server), and waits for the final result. msgSeq numbers the reported task
-// messages and is owned by the caller so a same-task retry continues the
-// sequence instead of restarting at 1 — the server orders the transcript by
-// seq alone, and duplicate seqs would interleave the two attempts' rows.
-func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID, codexHome string, msgSeq *atomic.Int32) (finalResult agent.Result, finalTools int32, finalErr error) {
-
-	budget := taskBudgetFromContext(ctx)
-	source := ""
-	if budget != nil {
-		source = budget.nextAttempt()
-		defer func() {
-			budget.RecordSnapshot(source, budget.primaryProvider, finalResult.Usage)
-			if errors.Is(budget.Check(), errTaskTokenLimit) {
-				finalResult.TokenBudgetExceeded = true
-				finalResult.BudgetExceeded = true
-			}
-			if errors.Is(budget.Check(), errTaskCostLimit) {
-				finalResult.BudgetExceeded = true
-			}
-		}()
-	}
-	phaseRecorder := taskPhaseRecorderFromContext(ctx)
-	// Wrap the caller's ctx so the idle watchdog (below) can interrupt both
-	// the agent subprocess (via the ctx passed to backend.Execute) AND the
-	// drain loop with a single cancel. Without this layer the backend would
-	// stay tied to the parent ctx and our cancellation could only abort
-	// drain, leaving the subprocess running.
-	agentCtx, agentCancel := context.WithCancel(ctx)
-	defer agentCancel()
-
-	session, err := backend.Execute(agentCtx, prompt, opts)
-	if err != nil {
-		// One provider-agnostic boundary for launches: every backend's
-		// cmd.Start() failure arrives here, so diagnosing ENOEXEC at this point
-		// covers claude, opencode and any CLI added later without a wrap in
-		// each backend (MUL-6164).
-		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-			return agent.Result{}, 0, errors.Join(errVscreenStopUnconfirmed, err)
-		}
-		err = agent.ExplainExecError(err)
-		taskLog.Debug("backend execute returned error", "error", err)
-		return agent.Result{}, 0, err
-	}
-
-	if (opts.TokenLimit > 0 || opts.CostLimitUSDTicks > 0) && session.UsageSnapshot == nil {
-		if budget != nil {
-			_ = budget.RejectUnreportedUsage()
-		}
-		agentCancel()
-		defer func() { finalErr = errTaskUsageUnavailable }()
-	}
-	defer func() {
-		if session.UsageSnapshot != nil {
-			if snapshot, known := session.UsageSnapshot(); known {
-				finalResult.Usage = reconcileUsageSnapshot(finalResult.Usage, opts.Model, snapshot)
-			}
-		}
-	}()
-	// This counter intentionally starts at the narrower provider-session
-	// boundary, not at the earlier server-side StartTask transition.
-	d.runningTasks.Add(1)
-	defer d.runningTasks.Add(-1)
-	phaseRecorder.Mark(taskPhaseRuntimeStarted)
-	taskLog.Debug("backend started, draining messages")
-
-	// reportTaskMessages and pinTaskSession are the transport seams the provider
-	// run uses to post transcript rows and pin the session. They are defined here
-	// so the drain loop and the startup-diagnosis callback post through a single
-	// injectable transport instead of reaching for d.client directly: the legacy
-	// runner wires them to d.client, and the per-execution task worker (F3) will
-	// wire the same closures to its own transport, so a worker that owns the
-	// provider run reports transcript rows and pins sessions without a *Daemon
-	// reference.
-	reportTaskMessages := func(reportCtx context.Context, taskID string, messages []TaskMessageData) error {
-		return d.client.ReportTaskMessages(reportCtx, taskID, messages)
-	}
-	pinTaskSession := func(pinCtx context.Context, taskID, sessionID, workDir string) error {
-		return d.client.PinTaskSession(pinCtx, taskID, sessionID, workDir)
-	}
-	claimSupplement := d.client.ClaimTaskSupplement
-	ackSupplement := d.client.AckTaskSupplement
-	subscribeSupplement := d.taskSupplementSignals.subscribe
-	readyInterval := d.effectiveTaskSupplementReadyInterval()
-	pollInterval := d.effectiveTaskSupplementPollInterval()
-	// The shared provider run is *Daemon-free, so the legacy runner reads the watchdog
-	// windows here and passes them into runProviderExecution; the F3 task worker supplies
-	// the same values from its own configuration.
-	idleWindow := d.cfg.AgentIdleWatchdog
-	toolWindow := d.cfg.AgentToolWatchdog
-	startupThreshold := d.cfg.AgentStartupTimeout
-
-	return runProviderExecution(
-		ctx, agentCtx, agentCancel, session, opts, budget, source, taskLog, taskID, codexHome, msgSeq, phaseRecorder,
-		reportTaskMessages, pinTaskSession, subscribeSupplement, claimSupplement, ackSupplement, readyInterval, pollInterval,
-		idleWindow, toolWindow, startupThreshold,
-	)
-}
+// fixtureProviderExecution is populated only by _test.go in this package.
+// A production build leaves it nil, making the control process unable to run a
+// provider even when a Daemon is constructed outside Run.
+var fixtureProviderExecution func(*Daemon, context.Context, agent.Backend, string, agent.ExecOptions, *slog.Logger, string, string, *atomic.Int32) (agent.Result, int32, error)
 
 // runProviderExecution drives the shared provider run for one execution: it owns the budget
 // watcher, task-supplement loop, transcript drain, idle/startup watchdogs and the terminal
 // result classification. It is deliberately *Daemon-free: the transcript report and
 // session-pin transports, the supplement claim/ack callbacks, the supplement signal
-// subscription and the watchdog windows are supplied by the caller, so the legacy in-process
-// runner wires them to *Daemon and the F3 per-execution task worker wires the same seams to
+// subscription and watchdog windows are supplied by the caller; the per-execution
+// task worker wires the same seams to
 // its own transport. Budget snapshot, usage reconciliation and the runningTasks health
 // counter stay in the caller because they touch the caller's named returns and *Daemon-owned
 // health state.
+
+// runProviderExecution drives the shared provider run for one execution: it owns the budget
+// watcher, task-supplement loop, transcript drain, idle/startup watchdogs and the terminal
+// result classification. It is deliberately Daemon-free: the transcript report
+// and session-pin transports, supplement claim/ack callbacks, supplement signal
+// subscription, and watchdog windows are supplied by the worker's scoped client.
+// Budget snapshot and health accounting remain in the control parent.
 func runProviderExecution(
 	ctx context.Context,
 	agentCtx context.Context,
@@ -10880,7 +10791,7 @@ func runProviderExecution(
 		drainCtx, drainFinished, drainCancel, forceDrainStop, stopWatchdog)
 }
 
-// terminalResultHandoffBudget is how long executeAndDrain waits, after force-
+// terminalResultHandoffBudget is how long provider execution waits, after force-
 // stopping a run, for the backend to hand over whatever result it has. It only
 // decides how long we believe a backend before falling back to the liveness
 // verdict; the backend caps its own finalization, so in practice the wait ends
@@ -10901,7 +10812,7 @@ const terminalResultHandoffBudget = 30 * time.Second
 
 // idleWatchdogReason formats the human-facing explanation surfaced on
 // idle_watchdog dispositions. Centralised so the result-arrival branch and the
-// drain-timeout branch in executeAndDrain emit identical wording.
+// drain-timeout branch emit identical wording.
 func idleWatchdogReason(window time.Duration) string {
 	return fmt.Sprintf("agent produced no new messages for %s and message queue was empty; force-stopped by idle watchdog", window)
 }
@@ -11803,9 +11714,9 @@ func defaultArgsForProvider(cfg Config, provider string) []string {
 	return append([]string(nil), args...)
 }
 
-// runTaskMessageDrain is the transcript drain loop extracted verbatim from
-// executeAndDrain's inline goroutine. It is *Daemon-free: the legacy runner
-// wires reportTaskMessages/pinTaskSession to d.client, and the per-execution
+// runTaskMessageDrain is the transcript drain loop shared by the per-execution
+// worker. It is *Daemon-free: the caller wires reportTaskMessages/pinTaskSession
+// to its own transport, and the per-execution
 // task worker (F3) will wire the same closures to its own transport. It owns
 // the drainFinished signal (closed when the transcript tail is flushed) and
 // reacts to forcedDrainStop (the caller's defer-triggered force stop).
@@ -12111,8 +12022,8 @@ drainDone:
 	flush()
 }
 
-// classifyTerminalResult is the terminal result/disposition hand-off extracted from
-// executeAndDrain. It is *Daemon-free: the legacy runner and the per-execution task
+// classifyTerminalResult is the terminal result/disposition hand-off shared by
+// the per-execution task
 // worker (F3) both call it to decide the final result after the drain loop, applying
 // budget tagging and startup/idle/cancel/timeout reclassification. budgetExceeded and
 // tokenBudgetExceeded are pointers so budgetResultFor can observe-and-set them, exactly

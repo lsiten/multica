@@ -87,6 +87,25 @@ it("returns process rows and the daemon's deduplicated footprint total", async (
   expect(requests[0]?.path).toBe("/runtimes/processes/overview");
 });
 
+it("routes local Daemon capabilities through the authenticated health port", async () => {
+  await invoke("daemon:set-target-api-url", "https://ipc.test");
+  const capabilities = {
+    mcp: [{ name: "identity-actions", state: "ready", ready: true }],
+    services: [{ name: "llm2jev" }],
+    applications: [{ workspace_id: "ws", runtime_id: "rt", application_id: "app", revision: 1 }],
+  };
+  response = capabilities;
+  expect(await invoke("daemon:mcp-readiness")).toEqual(capabilities.mcp);
+  expect(await invoke("daemon:mcp-services")).toEqual({ ...capabilities, instances: [] });
+  expect(await invoke("daemon:list-local-applications")).toEqual(capabilities.applications);
+  expect(requests.map((request) => request.path)).toEqual([
+    "/mcp/readiness",
+    "/mcp/services",
+    "/applications/local",
+  ]);
+  expect(requests.every((request) => request.authorization === "Bearer fixture-token" && request.profile === profile)).toBe(true);
+});
+
 it("refuses authenticated operations until a desktop profile is selected", async () => {
   await expect(invoke("daemon:list-worktrees")).rejects.toThrow("profile is not ready");
   expect(requests).toEqual([]);
@@ -95,12 +114,4 @@ it("refuses authenticated operations until a desktop profile is selected", async
 it("rejects cleanup input before contacting the daemon", async () => {
   await expect(invoke("daemon:cleanup-worktrees", [], false)).rejects.toThrow("Select between 1 and 1000");
   expect(requests).toEqual([]);
-});
-
-it("keeps process-service changes behind CLI validation before restart", async () => {
-  await invoke("daemon:set-target-api-url", "https://ipc.test");
-  fixture.exec.mockClear().mockImplementation((_bin: string, _args: string[], _options: unknown, done: (error: Error | null) => void) => done(new Error("invalid service")));
-  expect(await invoke("daemon:set-process-services", ["invalid-role"])).toEqual({ success: false, error: "Failed to update process_services config." });
-  expect(fixture.exec).toHaveBeenCalledTimes(1);
-  expect(fixture.exec.mock.calls[0]?.[1]).toEqual(["config", "set", "process_services", "invalid-role", "--profile", profile]);
 });

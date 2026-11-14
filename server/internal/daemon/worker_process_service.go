@@ -27,11 +27,9 @@ import (
 // contract admits it (DecideWorkerLaunch), so an uncertain bind/Start/launch ACK
 // or a worker-id mismatch can never launch a second provider for the same claim.
 //
-// This is the first F3 cut: the worker process role and its launch-authorization
-// gate are real and driven by a control parent over the private runtime channel.
-// The provider run (the legacy handleTask/runTask lifecycle) is the next slice and
-// stays legacy/opt-in until it has its own runtime acceptance; the legacy
-// in-process runner is the default and is never affected here.
+// The worker owns the provider run and all task-scoped callbacks. The control
+// parent only supplies the bound execution context and reconciles the durable
+// outcome.
 type workerProcessService struct {
 	bootstrap runtimeproc.Bootstrap
 
@@ -62,8 +60,7 @@ type workerProcessService struct {
 }
 
 // RunWorkerService starts the worker role and owns its private record until a
-// durable stopped receipt. It runs only when a control parent launched it; the
-// legacy in-process runner is the default and is never affected here.
+// durable stopped receipt. It runs only when a control parent launched it.
 func RunWorkerService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	if b.Identity.Scope.Service != "worker" {
 		return errors.New("unsupported worker role")
@@ -128,12 +125,10 @@ type workerBindRequest struct {
 type workerContext struct {
 	// Provider is the runtime identity (e.g. "codex", "opencode", "kimi") the
 	// control parent delivers so the worker resolves the exact provider it is
-	// authorized to run. It is a separate fact from AgentData: the legacy runner
-	// receives it as a runTask parameter, and the worker needs the same.
+	// authorized to run.
 	Provider string
 	// Config is the daemon-wide configuration the worker reuses (timeouts,
-	// budgets, agent entries) so the launch is assembled identically to the
-	// legacy in-process runner.
+	// budgets, and agent entries).
 	Config Config
 	// Task is the server-claimed task; it supplies the resume session, thread
 	// name, resume continuity, and the prompt brief.
@@ -141,11 +136,33 @@ type workerContext struct {
 	// Env is the prepared execution environment (workdir, codex home, mcp, and
 	// the resolved agent environment) so the backend resolves identically.
 	Env PreparedEnv
+	// Launch carries the resolved provider launch facts assembled by control.
+	// Keeping these facts in the bind payload prevents the worker from silently
+	// dropping runtime profiles, MCP overlays, model selection, or task briefs.
+	Launch workerLaunchFacts
+}
+
+type workerLaunchFacts struct {
+	ExecutablePath           string          `json:"executable_path,omitempty"`
+	LaunchPrefix             []string        `json:"launch_prefix,omitempty"`
+	CLIVersion               string          `json:"cli_version,omitempty"`
+	CodexVersion             string          `json:"codex_version,omitempty"`
+	BuiltinRuntime           bool            `json:"builtin_runtime"`
+	Model                    string          `json:"model,omitempty"`
+	IdleWatchdogTimeout      time.Duration   `json:"idle_watchdog_timeout,omitempty"`
+	ExtraArgs                []string        `json:"extra_args,omitempty"`
+	CustomArgs               []string        `json:"custom_args,omitempty"`
+	McpConfig                json.RawMessage `json:"mcp_config,omitempty"`
+	ThinkingLevel            string          `json:"thinking_level,omitempty"`
+	ServiceTier              string          `json:"service_tier,omitempty"`
+	OpenclawMode             string          `json:"openclaw_mode,omitempty"`
+	RuntimeBrief             string          `json:"runtime_brief,omitempty"`
+	TaskSupplementNegotiated bool            `json:"task_supplement_negotiated"`
 }
 
 // PreparedEnv is the prepared execution environment delivered to a worker. It is
-// the JSON-safe projection of the environment the legacy runner prepares in
-// runTask: the workdir, codex home, and the resolved agent environment map.
+// the JSON-safe projection of the environment control prepares in runTask: the
+// workdir, codex home, and resolved agent environment map.
 type PreparedEnv struct {
 	WorkDir            string            `json:"work_dir"`
 	RootDir            string            `json:"root_dir,omitempty"`
@@ -539,9 +556,9 @@ func (s *workerProcessService) executeProviderRun(ctx context.Context, client *E
 	}
 
 	// Genuinely run the provider: create the phase recorder (runProviderExecution
-	// dereferences it, so it must be non-nil), wire the *Daemon-free seams from
-	// the scoped client, and drive the shared provider run the legacy in-process
-	// runner calls. Nil budget is tolerated by runProviderExecution.
+	// dereferences it, so it must be non-nil), wire the Daemon-free seams from
+	// the scoped client, and drive the shared provider run. Nil budget is
+	// tolerated by runProviderExecution.
 	var msgSeq atomic.Int32
 	phaseRecorder := newTaskPhaseRecorder(slog.Default(), time.Now)
 	result, tools, runErr := executePreparedProvider(

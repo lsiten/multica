@@ -13,8 +13,7 @@ import (
 // budgetBreachFromSnapshot reports whether a provider usage snapshot has reached
 // the task's cost or token autonomy limit. It is the shared breach seam of the
 // F3 provider-run migration: both the budget watcher (runBudgetWatcher) and the
-// final result computation evaluate the same snapshot through it, so the legacy
-// in-process runner and the per-execution task worker enforce identical autonomy
+// final result computation evaluate the same snapshot through it, so the per-execution task worker enforce identical autonomy
 // limits without a *Daemon reference. It is pure: it reads only the passed facts
 // and mutates nothing.
 func budgetBreachFromSnapshot(usage agent.TokenUsage, opts agent.ExecOptions) (costReached, tokenReached bool) {
@@ -27,7 +26,7 @@ func budgetBreachFromSnapshot(usage agent.TokenUsage, opts agent.ExecOptions) (c
 // migration. It polls a provider session's usage snapshot on a fixed interval and,
 // once the task's cost or token autonomy limit is reached, records the breach on
 // the passed flags and cancels the agent context so the run stops. The legacy
-// in-process runner (executeAndDrain) and the per-execution task worker (F3) call
+// per-execution task worker calls
 // the same function, so a worker that owns the provider run enforces identical
 // autonomy limits without a *Daemon reference.
 //
@@ -69,7 +68,7 @@ func runBudgetWatcher(budgetCtx context.Context, session *agent.Session, opts ag
 // state, reconciling the usage snapshot and marking the cost/token breach. It is
 // the completion of the shared budget-enforcement seam of the F3 provider-run
 // migration (alongside budgetBreachFromSnapshot and runBudgetWatcher): the legacy
-// in-process runner (executeAndDrain) and the per-execution task worker apply the
+// per-execution task worker applies the
 // same budget verdict to the final result without a *Daemon reference.
 //
 // It is side-effect-free with respect to daemon state: it reads only the passed

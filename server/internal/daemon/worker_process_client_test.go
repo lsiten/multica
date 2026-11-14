@@ -226,21 +226,19 @@ func TestBuildWorkerContextProjectsRunTaskLocals(t *testing.T) {
 	}
 }
 
-// TestWorkerProcessEnabledGateDefaultsOff proves the opt-in gate is closed by
-// default: the legacy in-process runner stays the default and the hot path is
-// unaffected unless a profile both opts in and has a managed executable.
-func TestWorkerProcessEnabledGateDefaultsOff(t *testing.T) {
+// TestWorkerProcessRequiresManagedExecutable proves that every production
+// worker launch requires the pinned native executable.
+func TestWorkerProcessRequiresManagedExecutable(t *testing.T) {
 	d := &Daemon{cfg: Config{}}
 	if d.workerProcessEnabled() {
-		t.Fatalf("worker must be disabled by default")
+		t.Fatalf("worker must remain unavailable without an executable")
 	}
-	d.cfg.WorkerProcessEnabled = true
 	if d.workerProcessEnabled() {
-		t.Fatalf("worker must be disabled without a managed executable")
+		t.Fatalf("worker must remain unavailable without a managed executable")
 	}
 	d.cfg.NativeHostExecutable = "/usr/local/bin/multica"
 	if !d.workerProcessEnabled() {
-		t.Fatalf("worker must be enabled when opted in with an executable")
+		t.Fatalf("worker must be enabled when an executable is configured")
 	}
 }
 

@@ -8,9 +8,14 @@ func TestValidateProcessServices(t *testing.T) {
 			t.Fatalf("supported roles rejected: %v", err)
 		}
 	})
-	t.Run("empty keeps the legacy default", func(t *testing.T) {
-		if err := ValidateProcessServices(nil); err != nil {
-			t.Fatalf("empty set rejected: %v", err)
+	t.Run("empty is rejected", func(t *testing.T) {
+		if err := ValidateProcessServices(nil); err == nil {
+			t.Fatal("empty set accepted")
+		}
+	})
+	t.Run("partial set is rejected", func(t *testing.T) {
+		if err := ValidateProcessServices([]string{"ai"}); err == nil {
+			t.Fatal("partial set accepted")
 		}
 	})
 	t.Run("rejects an unexposed role", func(t *testing.T) {

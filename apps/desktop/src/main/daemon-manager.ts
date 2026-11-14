@@ -22,12 +22,26 @@ import type {
   LocalRuntimeProbe,
   ManagedWorktree,
   ManagedWorktreeCleanupResult,
-  DaemonProcessOverviewEntry,
   DaemonProcessOverviewResult,
-  DaemonProcessOverviewTotal,
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
 import { requestReviewInventory } from "./local-review-inventory";
+import {
+  parseDaemonBuiltinMcpResponse,
+  parseDaemonJevModelsResponse,
+  parseDaemonLocalApplications,
+  parseDaemonMcpReadiness,
+  parseDaemonProcessOverview,
+  parseDaemonWorkerProcesses,
+  parseLocalApplicationLookupRequest,
+  parseLocalApplicationOperationRequest,
+} from "./daemon-ipc-schemas";
+import {
+  requestLocalReview,
+  requestLocalReviewBranches,
+  requestLocalReviewFileEdit,
+  requestLocalReviewPage,
+} from "./local-review-request";
 import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
 import { parseDaemonHealth, type HealthPayload } from "./daemon-health";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
@@ -467,7 +481,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
   }
 
   return {
-    state: "running",
+    state: data.owners_ready === false ? "starting" : "running",
     pid: data.pid,
     uptime: data.uptime,
     daemonId: data.daemon_id,
@@ -476,6 +490,9 @@ async function fetchHealth(): Promise<DaemonStatus> {
     workspaceCount: Array.isArray(data.workspaces)
       ? data.workspaces.length
       : 0,
+    processServices: data.process_services,
+    ownersReady: data.owners_ready,
+    processOwners: data.process_owners,
     profile: active.name,
     serverUrl: data.server_url,
     externallyManaged,
@@ -1174,26 +1191,6 @@ async function restartDaemon(): Promise<{ success: boolean; error?: string }> {
   return startDaemon();
 }
 
-async function setProcessServices(
-  services: string[],
-  active?: ActiveProfile,
-): Promise<{ success: boolean; error?: string }> {
-  const bin = await resolveCliBinary();
-  if (!bin) return { success: false, error: "multica CLI is not available." };
-  const profile = active ?? await ensureActiveProfile();
-  if (!profile) return { success: false, error: "No active daemon profile." };
-  const wrote = await new Promise<boolean>((resolve) => {
-    execFile(
-      bin,
-      ["config", "set", "process_services", services.join(","), ...profileArgs(profile.name)],
-      { cwd: profileDir(profile.name), timeout: 15_000, env: desktopSpawnEnv() },
-      (error) => resolve(!error),
-    );
-  });
-  if (!wrote) return { success: false, error: "Failed to update process_services config." };
-  return restartDaemon();
-}
-
 async function daemonPidIsConfirmedAbsent(profile: string): Promise<boolean> {
   try {
     const raw = await readFile(profilePidPath(profile), "utf-8");
@@ -1554,33 +1551,86 @@ export function setupDaemonManager(
       return restartDaemon();
     });
   });
-  ipcMain.handle("daemon:set-process-services", (_event, services: unknown) =>
-    lifecycleOperations.runForeground(() => setProcessServices(
-      Array.isArray(services) ? services.filter((service): service is string => typeof service === "string") : [],
-    )),
-  );
   ipcMain.handle("daemon:list-worktrees", async (): Promise<ManagedWorktree[]> =>
     parseManagedWorktrees(await fetchWorktreeManager("/worktrees")),
   );
-  ipcMain.handle("daemon:processes-overview", async (): Promise<DaemonProcessOverviewResult> => {
-    const response = await fetchWorktreeManager("/runtimes/processes/overview");
-    const result: DaemonProcessOverviewResult = { processes: [], total: { available: false } };
-    if (!response || typeof response !== "object") return result;
-    const value = (response as { processes?: unknown }).processes;
-    if (Array.isArray(value)) result.processes = value.filter((entry): entry is DaemonProcessOverviewEntry => {
+  ipcMain.handle("daemon:mcp-readiness", async () => {
+    return parseDaemonMcpReadiness(await fetchWorktreeManager("/mcp/readiness"));
+  });
+  ipcMain.handle("daemon:mcp-services", async () =>
+    parseDaemonBuiltinMcpResponse(await fetchWorktreeManager("/mcp/services")),
+  );
+  ipcMain.handle("daemon:list-local-applications", async () =>
+    parseDaemonLocalApplications(await fetchWorktreeManager("/applications/local")),
+  );
+  ipcMain.handle("daemon:local-application-supported", async (_event, request: unknown) => {
+    const input = parseLocalApplicationLookupRequest(request);
+    if (!input) return false;
+    const response = await fetchWorktreeManager("/applications/local");
+    const applications = response && typeof response === "object" && Array.isArray((response as { applications?: unknown }).applications)
+      ? (response as { applications: unknown[] }).applications
+      : [];
+    return applications.some((entry) => {
       if (!entry || typeof entry !== "object") return false;
-      const item = entry as Partial<DaemonProcessOverviewEntry>;
-      return typeof item.category === "string" && typeof item.id === "string" && typeof item.name === "string" && typeof item.state === "string" && typeof item.ready === "boolean";
+      const item = entry as Record<string, unknown>;
+      return item.workspace_id === input.workspace_id && item.runtime_id === input.runtime_id &&
+        item.application_id === input.application_id && item.revision === input.revision;
     });
-    const total = (response as { total?: unknown }).total;
-    if (total && typeof total === "object") {
-      const item = total as Partial<DaemonProcessOverviewTotal>;
-      result.total = { available: item.available === true };
-      if (typeof item.process_count === "number") result.total.process_count = item.process_count;
-      if (typeof item.memory_bytes === "number") result.total.memory_bytes = item.memory_bytes;
-      if (typeof item.cpu_time_ms === "number") result.total.cpu_time_ms = item.cpu_time_ms;
+  });
+  ipcMain.handle("daemon:local-application-operation", (_event, request: unknown) => {
+    if (!parseLocalApplicationOperationRequest(request)) throw new Error("Local application request is invalid.");
+    return fetchWorktreeManager("/applications/local", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  });
+  ipcMain.handle("daemon:jev-models", async () =>
+    parseDaemonJevModelsResponse(await fetchWorktreeManager("/jev/models")),
+  );
+  ipcMain.handle("daemon:worker-processes", async () => {
+    return parseDaemonWorkerProcesses(await fetchWorktreeManager("/runtimes/processes"));
+  });
+  ipcMain.handle("daemon:worker-process-stop", (_event, execId: unknown) => {
+    if (typeof execId !== "string" || !execId.trim()) throw new Error("Execution ID is required.");
+    return fetchWorktreeManager("/runtimes/processes/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exec_id: execId }),
+    });
+  });
+  ipcMain.handle("daemon:jev-model-register", (_event, modelId: unknown, revision: unknown) => {
+    if (typeof modelId !== "string" || !modelId.trim() || typeof revision !== "string") {
+      throw new Error("Model ID and revision are required.");
     }
-    return result;
+    return fetchWorktreeManager("/jev/models/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId, revision }),
+    });
+  });
+  ipcMain.handle("daemon:jev-model-install", (_event, modelId: unknown, revision: unknown) => {
+    if (typeof modelId !== "string" || !modelId.trim() || (revision !== undefined && typeof revision !== "string")) {
+      throw new Error("Model ID and revision are invalid.");
+    }
+    return fetchWorktreeManager("/jev/models/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId, revision: revision ?? "" }),
+    });
+  });
+  ipcMain.handle("daemon:jev-model-cancel", (_event, modelId: unknown, revision: unknown) => {
+    if (typeof modelId !== "string" || !modelId.trim() || (revision !== undefined && typeof revision !== "string")) {
+      throw new Error("Model ID and revision are invalid.");
+    }
+    return fetchWorktreeManager("/jev/models/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId, revision: revision ?? "" }),
+    });
+  });
+  ipcMain.handle("daemon:processes-overview", async (): Promise<DaemonProcessOverviewResult> => {
+    return parseDaemonProcessOverview(await fetchWorktreeManager("/runtimes/processes/overview"));
   });
   ipcMain.handle("daemon:review-inventory", () => requestReviewInventory({
     resolveProfile: async () => {
@@ -1592,6 +1642,48 @@ export function setupDaemonManager(
     health: (profile) => fetchHealthAtPort(profile.port),
     inventory: (profile) => fetchWorktreeManager("/worktrees", undefined, profile),
   }));
+  const localReviewReads = new Map<string, AbortController>();
+  const localReviewTransport = {
+    resolveProfile: async () => {
+      const active = await ensureActiveProfile();
+      if (!active) return null;
+      const record = await readDaemonPortRecord(active.name);
+      return { ...active, port: record?.port ?? healthPortForProfile(active.name) };
+    },
+    health: async (profile: { readonly name: string; readonly port: number }, signal?: AbortSignal) => {
+      if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+      return fetchHealthAtPort(profile.port);
+    },
+    review: (profile: { readonly name: string; readonly port: number }, request: unknown, signal?: AbortSignal) =>
+      fetchWorktreeManager("/worktrees/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal,
+      }, profile),
+  };
+  ipcMain.handle("daemon:read-local-review", (_event, request: unknown) => requestLocalReview(request, localReviewTransport));
+  ipcMain.handle("daemon:read-local-review-branches", (_event, request: unknown, readID?: unknown) => {
+    const id = typeof readID === "string" && readID ? readID : undefined;
+    const controller = new AbortController();
+    if (id) localReviewReads.set(id, controller);
+    return requestLocalReviewBranches(request, localReviewTransport, controller.signal).finally(() => {
+      if (id && localReviewReads.get(id) === controller) localReviewReads.delete(id);
+    });
+  });
+  ipcMain.handle("daemon:read-local-review-page", (_event, request: unknown, readID?: unknown) => {
+    const id = typeof readID === "string" && readID ? readID : undefined;
+    const controller = new AbortController();
+    if (id) localReviewReads.set(id, controller);
+    return requestLocalReviewPage(request, localReviewTransport, controller.signal).finally(() => {
+      if (id && localReviewReads.get(id) === controller) localReviewReads.delete(id);
+    });
+  });
+  ipcMain.handle("daemon:apply-file-edit", (_event, request: unknown) => requestLocalReviewFileEdit(request, localReviewTransport));
+  ipcMain.on("daemon:cancel-local-review-read", (_event, readID: unknown) => {
+    if (typeof readID !== "string") return;
+    localReviewReads.get(readID)?.abort();
+  });
   ipcMain.handle("daemon:cleanup-worktrees", async (_event, paths: unknown, discardChanges: unknown = false): Promise<ManagedWorktreeCleanupResult> => {
     if (!Array.isArray(paths) || paths.length === 0 || paths.length > 1000 || paths.some((path) => typeof path !== "string" || !path) || typeof discardChanges !== "boolean") throw new Error("Select between 1 and 1000 worktrees to clean.");
     return parseManagedWorktreeCleanup(await fetchWorktreeManager("/worktrees", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths, discard_changes: discardChanges }) }));

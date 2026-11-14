@@ -3295,6 +3295,7 @@
       "all": "全部",
       "category": {
         "daemon": "守护进程",
+        "ai": "AI 服务",
         "task_worker": "任务 worker",
         "mcp": "MCP 服务",
         "jev": "JEV 模型",
@@ -3320,7 +3321,7 @@
       },
       "service_config": {
         "title": "服务配置",
-        "description": "选择哪些服务作为独立进程运行。更改需要重启守护进程。",
+        "description": "五个服务始终作为独立子进程运行，不能单独关闭。",
         "applied": "服务配置已更新，守护进程已重启。",
         "apply_failed": "更新服务配置失败。",
         "restart_confirm_title": "重启守护进程？",

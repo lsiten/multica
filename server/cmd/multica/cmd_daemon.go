@@ -1288,7 +1288,7 @@ func runDaemonRestart(cmd *cobra.Command, args []string) error {
 		pid, _ := health["pid"].(float64)
 		if pid > 0 {
 			fmt.Fprintf(os.Stderr, "Stopping daemon (pid %d)...\n", int(pid))
-			if err := requestDaemonShutdown(healthPort); err != nil {
+			if err := requestDaemonShutdown(healthPort, profile); err != nil {
 				if p, perr := os.FindProcess(int(pid)); perr == nil {
 					_ = p.Kill()
 				}
@@ -1357,7 +1357,7 @@ func runDaemonStop(cmd *cobra.Command, _ []string) error {
 	// GenerateConsoleCtrlEvent can't reach it; HTTP works on both
 	// platforms and triggers the same context-cancel path the daemon
 	// already uses for self-restart.
-	if err := requestDaemonShutdown(healthPort); err != nil {
+	if err := requestDaemonShutdown(healthPort, profile); err != nil {
 		fmt.Fprintf(os.Stderr, "Graceful shutdown request failed: %v — falling back to forced kill.\n", err)
 		if kerr := process.Kill(); kerr != nil {
 			return fmt.Errorf("kill daemon (pid %d): %w", int(pid), kerr)
@@ -1386,11 +1386,19 @@ func runDaemonStop(cmd *cobra.Command, _ []string) error {
 // requestDaemonShutdown POSTs to the daemon's /shutdown endpoint to ask it
 // to exit gracefully. Returns an error if the request could not be delivered
 // (network error, non-2xx status, or the endpoint predates this change).
-func requestDaemonShutdown(healthPort int) error {
+func requestDaemonShutdown(healthPort int, profile string) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/shutdown", healthPort)
 	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
 		return err
+	}
+	// Older daemons did not authenticate /shutdown. Send credentials whenever
+	// the profile has them; if the profile is absent or tokenless, preserve the
+	// legacy request so an older daemon can still be stopped. Current daemons
+	// reject that request and the caller falls back to a verified PID kill.
+	if profileConfig, loadErr := cli.LoadCLIConfigForProfile(profile); loadErr == nil && strings.TrimSpace(profileConfig.Token) != "" {
+		req.Header.Set("Authorization", "Bearer "+profileConfig.Token)
+		req.Header.Set("X-Multica-Profile", profile)
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Do(req)

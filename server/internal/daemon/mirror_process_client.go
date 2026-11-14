@@ -92,13 +92,6 @@ func (d *Daemon) ensureMirrorProcess(ctx context.Context) (*mirrorProcessClient,
 	if d.cfg.NativeVscreenPreferencesPath == "" || d.cfg.NativeHostExecutable == "" {
 		return nil, errors.New("mirror process configuration missing")
 	}
-	resources, err := d.mirrorRoster()
-	if err != nil {
-		return nil, err
-	}
-	if len(resources) == 0 {
-		return nil, errors.New("mirror has no authorized runtime")
-	}
 	reporter, err := d.initVscreenReporter(ctx)
 	if err != nil {
 		return nil, err
@@ -126,7 +119,7 @@ func (d *Daemon) ensureMirrorProcess(ctx context.Context) (*mirrorProcessClient,
 	if err != nil {
 		return nil, err
 	}
-	identity, err := runtimeproc.NewIdentity(runtimeproc.Scope{Backend: resources[0].BackendIdentity, Account: reporter.config.AccountID, Profile: d.cfg.Profile, DaemonID: d.cfg.DaemonID, Service: "mirror"}, d.cfg.NativeHostBuild)
+	identity, err := runtimeproc.NewIdentity(runtimeproc.Scope{Backend: d.cfg.ServerBaseURL, Account: reporter.config.AccountID, Profile: d.cfg.Profile, DaemonID: d.cfg.DaemonID, Service: "mirror"}, d.cfg.NativeHostBuild)
 	if err != nil {
 		return nil, err
 	}

@@ -142,8 +142,8 @@ func taskSupplementFailureReason(ctx context.Context, err error) string {
 // wakes immediately on a content-free WebSocket hint, and otherwise uses the same
 // five-second cadence as task cancellation polling.
 //
-// It is the shared supplement seam of the F3 provider-run migration: the legacy
-// in-process runner (executeAndDrain) and the per-execution task worker call it with
+// It is the shared supplement seam of the provider-run migration: the
+// per-execution task worker calls it with
 // their own claim/acknowledge transport and poll intervals, so a worker that owns the
 // provider run handles task supplements without a *Daemon reference. Its side effects are
 // confined to the passed transport, the session, and the log.

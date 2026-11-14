@@ -27,59 +27,36 @@ func (unavailableModels) Catalog(context.Context) ([]jevmodels.Model, error) {
 	return nil, errors.New("model child unavailable")
 }
 
-func TestJevModelManagerFallsBackToInProcessWhenProcessLaunchFails(t *testing.T) {
-	// When the ai process cannot be started (here: its account is unreachable,
-	// so the process scope can never be built), the daemon must fall back to
-	// the in-process manager instead of leaving the model unavailable or
-	// aborting. This mirrors environment/application/gateway fail-closed.
+func TestJevModelManagerFailsWhenProcessLaunchUnavailable(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer backend.Close()
-	d := &Daemon{cfg: Config{WorkspacesRoot: t.TempDir(), ProcessServices: []string{"ai"}}, client: NewClient(backend.URL)}
-	if _, err := d.jevModelManager(); err != nil {
-		t.Fatalf("unavailable ai process should fall back to the in-process manager, got %v", err)
-	}
-	// The in-process manager now bridges the failed ai process. While the
-	// backoff has not elapsed the same fallback is returned so the model stays
-	// available; the split process is re-probed only after the backoff elapses.
-	if _, err := d.jevModelManager(); err != nil {
-		t.Fatalf("initialized in-process manager was replaced: %v", err)
-	}
-	if got, _ := d.jevModelManager(); got == nil {
-		t.Fatal("expected an initialized in-process backend")
-	}
-	if d.jevModelsFallback == nil {
-		t.Fatal("expected the in-process backend to be the bridging fallback, not a permanent owner")
+	d := &Daemon{cfg: Config{WorkspacesRoot: t.TempDir(), ProcessServices: []string{"ai", "mirror", "application", "environment", "gateway"}}, client: NewClient(backend.URL)}
+	if _, err := d.jevModelManager(); err == nil {
+		t.Fatal("unavailable ai process must not fall back to an in-process manager")
 	}
 }
 
-// TestJevModelManagerReprobesAccountAfterFallback verifies the in-process
-// fallback bridges a separate-process failure without permanently masking it:
-// once the backoff elapses the ai account is re-probed instead of the fallback
-// being reused forever.
-func TestJevModelManagerReprobesAccountAfterFallback(t *testing.T) {
+func TestJevModelManagerRetriesChildWithoutLocalFallback(t *testing.T) {
 	var probes int
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		probes++
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/me" {
+			probes++
+		}
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer backend.Close()
-	d := &Daemon{cfg: Config{WorkspacesRoot: t.TempDir(), ProcessServices: []string{"ai"}}, client: NewClient(backend.URL)}
-	if _, err := d.jevModelManager(); err != nil {
-		t.Fatalf("unavailable ai process should fall back to the in-process manager, got %v", err)
+	d := &Daemon{cfg: Config{WorkspacesRoot: t.TempDir(), ProcessServices: []string{"ai", "mirror", "application", "environment", "gateway"}}, client: NewClient(backend.URL)}
+	if _, err := d.jevModelManager(); err == nil {
+		t.Fatal("first child launch failure was hidden")
 	}
-	if d.jevModelsFallback == nil {
-		t.Fatal("expected an in-process fallback to bridge the ai process failure")
-	}
-	// Advance the retry timer into the past so the next call re-probes the
-	// account instead of returning the cached fallback without a re-probe.
 	d.jevModelRetryAt = time.Time{}
-	if _, err := d.jevModelManager(); err != nil {
-		t.Fatalf("fallback should bridge the retry without surfacing a failure, got %v", err)
+	if _, err := d.jevModelManager(); err == nil {
+		t.Fatal("retry child launch failure was hidden")
 	}
 	if probes < 2 {
-		t.Fatalf("expected the ai account to be re-probed after the backoff, got %d probes", probes)
+		t.Fatalf("expected the ai account to be re-probed, got %d probes", probes)
 	}
 }
 func TestJevModelManagerKeepsInitializedBackendWithoutRemoteProbe(t *testing.T) {

@@ -32,6 +32,16 @@ type Client struct {
 	uncertain  *UncertainOperation
 }
 
+// Process exposes the owned child for local diagnostics. The control daemon
+// never uses this handle to execute model work; it is read-only supervision
+// metadata for the process overview endpoint.
+func (c *Client) Process() *runtimeproc.Process {
+	if c == nil {
+		return nil
+	}
+	return c.process
+}
+
 func newClient(p *runtimeproc.Process) (*Client, error) {
 	status, err := p.Client.Health(context.Background())
 	if err != nil {

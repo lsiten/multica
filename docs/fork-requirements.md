@@ -632,25 +632,24 @@ awaiting_takeover ──本地夺回──▶ human ──归还+新截图──
 - **默认值**：未配置时五个角色全部启用。
 - **规则**：
   - 未知或重复角色 → 配置校验失败，daemon 不启动（fail-closed）。
-  - 角色生效时对应能力迁移到子进程；未生效时走进程内实现。
+  - 生产 profile 必须同时声明五个角色；对应能力只允许由子进程持有，不能用进程内 owner 补位。
   - `environment` 生效后，git 与 worktree 操作迁移到子进程。
 - **验收**：
   1. 不配置时 `/health.process_services` 返回恰好 5 个角色。
   2. 配置 `["bogus"]` 时 daemon 启动失败且不监听端口。
-  3. 只声明 `["ai"]` 时其余角色显示 `in-process`。
+  3. 只声明 `["ai"]` 或显式空列表时配置校验失败，daemon 不启动。
 
-### 5.2 FR-DMN-02 fail-closed 回退与重探
+### 5.2 FR-DMN-02 强制子进程 owner 与 fail-closed
 
 - **优先级**：P0
 - **规则**：
-  - 子进程启动失败不崩溃，回落到进程内实现，并启动退避重探。
-  - 重探成功后**退休桥接**，保证任何时刻只有一个 owner。
-  - 状态可见：`starting`（进程激活但尚未就绪）/ `running + in-process` / `ready`（有 pid）。
+  - 子进程启动失败或执行授权失败时，daemon fail-closed 退出，不回落到进程内 provider、MCP、应用或环境 owner。
+  - 任务 worker 拒绝、旧服务端缺少 execution reconciliation 或 transport outcome 不确定时，任务进入明确错误/待重试状态，控制进程不得再次执行 provider。
+  - 状态可见：`starting`（进程激活但尚未就绪）/ `ready`（有 pid）/ `failed`（缺少必需 owner）。
 - **验收**：
-  1. 人为让 environment 子进程失败：daemon 仍 `running`，任务仍可执行，概览显示 `in-process`。
-  2. 故障清除后下一轮重探变为 `ready` 且有 pid。
-  3. 桥接退休后同一作用域只有一份 owner 记录。
-  4. daemon 退出时子进程与桥都被关闭，无孤儿。
+  1. 人为让 environment 子进程失败：daemon 不进入 `running`，并返回带 owner 名称的启动错误。
+  2. 旧服务端不提供 execution reconciliation：worker 任务 fail-closed，不执行进程内 provider。
+  3. daemon 退出时已启动的子进程被关闭，无孤儿。
 
 ### 5.3 FR-DMN-03 子进程控制通道
 
@@ -699,8 +698,8 @@ awaiting_takeover ──本地夺回──▶ human ──归还+新截图──
 
 ### 5.6 FR-DMN-06 Worker 进程（每任务一次性）
 
-- **优先级**：P1（默认关闭）
-- **开关**：`MULTICA_WORKER_PROCESS_ENABLED`，默认 false。
+- **优先级**：P1（生产强制开启）
+- **开关**：无独立开关；每个已 claim 的 task 都必须由一次性 worker 子进程承载。
 - **规则**：
   - 每个执行一个 worker，承载 provider 启动与工具调用；**不共享凭据**。
   - 无运行上下文则 fail-closed，不跑 provider。
@@ -708,8 +707,8 @@ awaiting_takeover ──本地夺回──▶ human ──归还+新截图──
   - 崩溃后结果通过 `review-artifacts/.pending-*` 兜底落地，下次启动捞回并上报一次。
   - 状态接口不含凭据。
 - **验收**：
-  1. 未开启时不产生 worker 子进程，任务仍在 daemon 内执行。
-  2. 开启后进程列表出现该执行且状态 `ready`。
+  1. 缺少 worker 可执行文件或 execution reconciliation 时任务 fail-closed，不在 daemon 内执行 provider。
+  2. 正常执行时进程列表出现该执行且状态 `ready`。
   3. 停掉 worker 后任务被标记失败而非挂起。
   4. 大结果写出前被 kill，重启后只上报一次。
 
@@ -773,12 +772,12 @@ awaiting_takeover ──本地夺回──▶ human ──归还+新截图──
 - **优先级**：P1
 - **行为**：桌面端与 CLI 可查看六类进程：daemon、task_worker、application、gateway、environment、mirror。
 - **规则**：
-  - 未启动的常驻服务**也出现在列表**（`stopped` / `starting` / `running-in-process`），只有 task_worker 可停止。
+  - 未启动的常驻服务**也出现在列表**（`stopped` / `starting` / `failed` / `ready`），生产状态不显示 `running-in-process`。
   - 资源采样 best-effort：单进程与整棵子树分别统计；总量是**去重后的整树足迹**，不等于各行之和。
   - 探针失败显示 `unavailable`，**不隐藏行**。
   - 本地端点要求 Bearer + profile 头一致 + 无 Origin。
 - **验收**：
-  1. 未启用 application 角色时仍有该行，`detail=in-process`。
+  1. 缺少 application 角色时仍有该行，`detail=required-owner-missing`。
   2. 高并发下总量**小于**各行子树之和（证明去重）。
   3. 带 Origin 头访问 `/worktrees` 被拒。
 

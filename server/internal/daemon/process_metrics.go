@@ -3,7 +3,55 @@ package daemon
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
+
+// processMetricsCache deduplicates native sampler work within one overview
+// request. Parent rows, worker rows, and the deduplicated total often refer to
+// the same PIDs, so sampling each tree independently multiplies OS work.
+type processMetricsCache struct {
+	mu     sync.Mutex
+	single map[int]ProcessMetrics
+	tree   map[int]ProcessTreeMetrics
+}
+
+func newProcessMetricsCache() *processMetricsCache {
+	return &processMetricsCache{single: make(map[int]ProcessMetrics), tree: make(map[int]ProcessTreeMetrics)}
+}
+
+func (c *processMetricsCache) singleFor(pid int) ProcessMetrics {
+	if c == nil {
+		return sampleProcessMetrics(pid)
+	}
+	c.mu.Lock()
+	metrics, ok := c.single[pid]
+	c.mu.Unlock()
+	if ok {
+		return metrics
+	}
+	metrics = sampleProcessMetrics(pid)
+	c.mu.Lock()
+	c.single[pid] = metrics
+	c.mu.Unlock()
+	return metrics
+}
+
+func (c *processMetricsCache) treeFor(pid int) ProcessTreeMetrics {
+	if c == nil {
+		return sampleProcessTree(pid)
+	}
+	c.mu.Lock()
+	metrics, ok := c.tree[pid]
+	c.mu.Unlock()
+	if ok {
+		return metrics
+	}
+	metrics = sampleProcessTree(pid)
+	c.mu.Lock()
+	c.tree[pid] = metrics
+	c.mu.Unlock()
+	return metrics
+}
 
 // ProcessMetrics is a point-in-time resource reading for one OS process. It is
 // local-only diagnostic data: it never leaves the daemon and carries no secret.

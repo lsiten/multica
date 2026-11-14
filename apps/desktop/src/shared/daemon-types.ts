@@ -106,6 +106,14 @@ export interface DaemonProcessOverviewResult {
 
 export interface DaemonStatus {
   state: DaemonState;
+  ownersReady?: boolean;
+  processOwners?: Array<{
+    name: string;
+    configured: boolean;
+    state: string;
+    ready: boolean;
+    reason?: string;
+  }>;
   pid?: number;
   uptime?: string;
   daemonId?: string;
@@ -128,7 +136,7 @@ export interface DaemonStatus {
   externallyManaged?: boolean;
   /** Built-in and task-managed MCP readiness snapshots from the daemon. */
   mcp?: DaemonMcpReadiness[];
-  /** Profile's opt-in process ownership roles (ai/mirror/application/environment/gateway). */
+  /** Strict child-process ownership roles reported by the Daemon. */
   processServices?: string[];
   jevDecisionReports?: {
     readonly pendingCount: number;

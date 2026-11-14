@@ -2,13 +2,10 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/multica-ai/multica/server/internal/cli"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -50,84 +47,54 @@ func TestVerifiedLocalAuthorityBootsWithoutRemotePreflight(t *testing.T) {
 	}
 }
 
-func TestDaemonRunServesLocalDuringOutageAndRecoversAuthority(t *testing.T) {
+func TestRequiredProcessOwnersRejectsIncompleteSet(t *testing.T) {
+	if requiredProcessOwnersConfigured(nil) {
+		t.Fatal("empty process-owner set must not be accepted")
+	}
+	if requiredProcessOwnersConfigured([]string{"ai", "mirror", "application", "environment"}) {
+		t.Fatal("partial process-owner set must not be accepted")
+	}
+	if !requiredProcessOwnersConfigured([]string{"ai", "mirror", "application", "environment", "gateway"}) {
+		t.Fatal("complete process-owner set must be accepted")
+	}
+}
+
+func TestDaemonRunFailsClosedWhenRequiredOwnerCannotStart(t *testing.T) {
 	t.Setenv(cli.TaskConfigRootEnv, t.TempDir())
-	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "mul_owned_fixture"}); err != nil {
+	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{Token: "local-authority-token"}, "strict-offline"); err != nil {
 		t.Fatal(err)
 	}
-	var offline atomic.Bool
-	offline.Store(true)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if offline.Load() {
-			http.Error(w, "temporary outage", 503)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/tokens/current/renew":
-			_, _ = io.WriteString(w, `{"renewed":false,"expires_at":"2099-01-01T00:00:00Z"}`)
-		case "/api/daemon/workspaces":
-			_, _ = io.WriteString(w, "[]")
-		case "/api/me":
-			_, _ = io.WriteString(w, `{"id":"11111111-1111-4111-8111-111111111111"}`)
-		default:
-			http.NotFound(w, r)
-		}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "remote unavailable", http.StatusServiceUnavailable)
 	}))
 	defer backend.Close()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-	root := t.TempDir()
-	d := New(Config{ServerBaseURL: backend.URL, WorkspacesRoot: filepath.Join(root, "workspaces"), DaemonID: "cold-fixture", HealthPort: port, NativeVscreenPreferencesPath: filepath.Join(root, "native.json"), PollInterval: time.Second, LaunchedBy: "desktop"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- d.Run(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				t.Error(err)
-			}
-		case <-time.After(10 * time.Second):
-			t.Error("local daemon shutdown waited for unavailable backend")
-		}
-	})
-	client := &http.Client{Timeout: time.Second, Transport: &http.Transport{Proxy: nil}}
-	defer client.CloseIdleConnections()
-	health := func() HealthResponse {
-		response, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
-		if err != nil {
-			return HealthResponse{}
-		}
-		defer response.Body.Close()
-		var result HealthResponse
-		_ = json.NewDecoder(response.Body).Decode(&result)
-		return result
+	cfg := Config{
+		ServerBaseURL:                backend.URL,
+		Profile:                      "strict-offline",
+		DaemonID:                     "strict-offline-device",
+		WorkspacesRoot:               filepath.Join(root, "workspaces"),
+		NativeVscreenPreferencesPath: filepath.Join(root, "native.json"),
+		NativeHostExecutable:         filepath.Join(root, "missing-native"),
+		ProcessServices:              []string{"ai", "mirror", "application", "environment", "gateway"},
 	}
-	waitApplicationManager(t, func() bool { state := health(); return state.Status == "running" && state.RemoteBootstrapPending })
-	select {
-	case err := <-done:
-		t.Fatalf("outage killed local daemon: %v", err)
-	default:
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	first := New(cfg, logger)
+	first.client.SetToken("local-authority-token")
+	first.accountID = "verified-account"
+	if err := first.saveLocalAuthority(); err != nil {
+		t.Fatal(err)
 	}
-	if len(d.allRuntimeIDs()) != 0 {
-		t.Fatal("unverified cold bootstrap admitted runtime authority")
+	d := New(cfg, logger)
+	runErr := d.Run(t.Context())
+	if runErr == nil || !strings.Contains(runErr.Error(), "start required environment service") {
+		t.Fatalf("Run() error = %v, want required-owner startup failure", runErr)
 	}
-	offline.Store(false)
-	waitApplicationManager(t, func() bool { state := health(); return state.Status == "running" && !state.RemoteBootstrapPending })
-	d.mu.Lock()
-	account := d.accountID
-	d.mu.Unlock()
-	if account != "11111111-1111-4111-8111-111111111111" {
-		t.Fatal("remote recovery did not verify account")
-	}
-	if _, err := os.Stat(d.localAuthorityPath()); err != nil {
-		t.Fatalf("recovered authority not durable: %v", err)
+	if d.remoteBootstrapPending.Load() {
+		t.Fatal("failed strict startup must not leave remote bootstrap pending")
 	}
 }
 

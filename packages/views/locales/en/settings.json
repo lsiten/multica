@@ -3374,6 +3374,7 @@
       "category": {
         "daemon": "Daemon",
         "task_worker": "Task worker",
+        "ai": "AI service",
         "mcp": "MCP service",
         "jev": "JEV model",
         "application": "Application",
@@ -3398,7 +3399,7 @@
       },
       "service_config": {
         "title": "Service configuration",
-        "description": "Choose which services run as separate processes. Changes require a daemon restart.",
+        "description": "All five services always run as separate child processes. Individual services cannot be disabled.",
         "applied": "Service configuration updated and daemon restarted.",
         "apply_failed": "Failed to update service configuration.",
         "restart_confirm_title": "Restart the daemon?",

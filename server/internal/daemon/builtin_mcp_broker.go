@@ -129,11 +129,10 @@ func (b *builtinMCPBroker) ready() bool {
 	return !b.closed && b.listener != nil && b.server != nil
 }
 
-// mcpBroker is the seam the daemon hot path uses to reach the built-in MCP
-// listener. The legacy owner is the in-process *builtinMCPBroker; an opted-in
-// daemon routes the same seam through a gateway process (gatewayProcessClient)
-// whose listener and route table live in a separate process. Both owners keep
-// the exact register/ready/close contract so task consumers are unchanged.
+// mcpBroker is the seam the daemon hot path uses to reach the gateway-owned
+// built-in MCP listener. The concrete broker remains in the gateway child;
+// gatewayProcessClient keeps the daemon-side register/ready/close contract so
+// task consumers do not depend on the transport details.
 type mcpBroker interface {
 	register(path string, handler http.Handler) (string, func())
 	ready() bool

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Loader2, RefreshCw, Square } from "@multica/ui/icons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
@@ -20,19 +20,24 @@ import { Switch } from "@multica/ui/components/ui/switch";
 import { SettingsCard, SettingsSection } from "@multica/views/settings";
 import { useT } from "@multica/views/i18n";
 import { toast } from "sonner";
-import type { DaemonStatus, DaemonProcessOverviewTotal } from "../../../shared/daemon-types";
+import {
+  daemonStatusAlive,
+  type DaemonProcessOverviewTotal,
+  type DaemonStatus,
+} from "../../../shared/daemon-types";
 
 // Unified process overview: the daemon supervises several long-lived child
-// processes (application, gateway, environment, mirror) plus per-execution task
-// workers, and in-process services (MCP / JEV). This panel aggregates every
+// processes (AI, application, gateway, environment, mirror) plus per-execution
+// task workers, and brokered services (MCP / JEV). This panel aggregates every
 // category the daemon exposes locally into one manageable list, with a per-row
 // state dot and a stop action for the categories that support it. Child
-// processes carry best-effort CPU/memory usage; in-process services (MCP / JEV)
+// processes carry best-effort CPU/memory usage; brokered services (MCP / JEV)
 // are status-only and their resource usage is not metered.
 
 type ProcessCategory =
   | "daemon"
   | "task_worker"
+  | "ai"
   | "application"
   | "gateway"
   | "environment"
@@ -91,6 +96,7 @@ function dotClass(ready: boolean, state: string): string {
 const KNOWN_CATEGORIES: ProcessCategory[] = [
   "daemon",
   "task_worker",
+  "ai",
   "application",
   "gateway",
   "environment",
@@ -221,7 +227,11 @@ function normalizeJev(raw: unknown): UnifiedProcess[] {
 
 export function ProcessesOverview({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
-  const enabled = status.state === "running";
+  // A daemon with a bound health port is queryable while child owners are
+  // still starting or have failed. Keep diagnostics visible in that window;
+  // hiding them behind the stricter "running" state made missing owners look
+  // like an empty panel and blocked recovery diagnosis.
+  const enabled = daemonStatusAlive(status.state);
   const queryKey = ["desktop-process-overview", status.profile, status.daemonId];
   const overview = useQuery({
     queryKey: [...queryKey, "overview"],
@@ -508,10 +518,8 @@ function ResourceUsageChart({
   );
 }
 
-// The profile's opt-in process ownership roles. Toggling one rewrites the
-// profile config (multica config set process_services) and restarts the daemon,
-// so a change is never applied silently — it always goes through the confirm
-// dialog below, since a restart interrupts in-flight task work.
+// Production Daemon always owns the complete set of child-process roles.
+// Keep this list aligned with the backend startup contract.
 const SUPPORTED_PROCESS_SERVICES = [
   "ai",
   "mirror",
@@ -519,74 +527,10 @@ const SUPPORTED_PROCESS_SERVICES = [
   "environment",
   "gateway",
 ] as const;
-type ProcessService = (typeof SUPPORTED_PROCESS_SERVICES)[number];
-
-// Hard safety deadline for the apply-and-restart IPC. The request is bounded by
-// the config-write and stop/start child timeouts and now runs through the
-// lifecycle gate, but a stalled IPC must never trap the confirm dialog: after
-// this deadline the applying flag is cleared so the dialog can still be closed.
-const APPLY_HARD_TIMEOUT_MS = 180_000;
 
 function ProcessServicesConfig({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
-  const current = status.processServices ?? [];
-  const enabled = new Set(current);
-  const [pending, setPending] = useState<ProcessService | null>(null);
-  const [applying, setApplying] = useState(false);
-  // Monotonic per-apply generation: a result (or the hard timeout) only acts
-  // while it still owns the current generation, so a superseded apply can never
-  // clear a newer dialog or surface a stale toast.
-  const applyGenRef = useRef(0);
-
-  const nextSet = (service: string): string[] =>
-    enabled.has(service)
-      ? current.filter((item) => item !== service)
-      : [...current, service];
-
-  const confirm = () => {
-    if (!pending) return;
-    const service = pending;
-    const gen = ++applyGenRef.current;
-    const isCurrent = () => applyGenRef.current === gen;
-    setApplying(true);
-    let settled = false;
-    const clear = () => {
-      if (!isCurrent()) return;
-      setApplying(false);
-      setPending(null);
-    };
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      clear();
-    }, APPLY_HARD_TIMEOUT_MS);
-    window.daemonAPI
-      .setProcessServices(nextSet(service))
-      .then((result) => {
-        if (settled || !isCurrent()) return;
-        settled = true;
-        clearTimeout(timeout);
-        if (result.success) {
-          toast.success(t(($) => $.desktop.processes.service_config.applied));
-        } else {
-          toast.error(t(($) => $.desktop.processes.service_config.apply_failed), {
-            description: result.error,
-          });
-        }
-      })
-      .catch((error) => {
-        if (settled || !isCurrent()) return;
-        settled = true;
-        clearTimeout(timeout);
-        toast.error(t(($) => $.desktop.processes.service_config.apply_failed), {
-          description: error instanceof Error ? error.message : undefined,
-        });
-      })
-      .finally(() => {
-        clearTimeout(timeout);
-        clear();
-      });
-  };
+  const enabled = new Set(status.processServices ?? SUPPORTED_PROCESS_SERVICES);
 
   return (
     <SettingsSection
@@ -601,41 +545,10 @@ function ProcessServicesConfig({ status }: { status: DaemonStatus }) {
                 {t(($) => $.desktop.processes.service[service])}
               </span>
             </div>
-            <Switch
-              size="sm"
-              checked={enabled.has(service)}
-              disabled={applying}
-              onCheckedChange={() => setPending(service)}
-            />
+            <Switch size="sm" checked={enabled.has(service)} disabled />
           </div>
         ))}
       </SettingsCard>
-      <Dialog
-        open={pending !== null}
-        onOpenChange={(open) => {
-          if (!open && !applying) setPending(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t(($) => $.desktop.processes.service_config.restart_confirm_title)}
-            </DialogTitle>
-            <DialogDescription>
-              {t(($) => $.desktop.processes.service_config.restart_confirm_description)}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" disabled={applying} onClick={() => setPending(null)}>
-              {t(($) => $.desktop.daemon.cancel)}
-            </Button>
-            <Button disabled={applying} onClick={confirm}>
-              {applying && <Loader2 className="size-3.5 animate-spin" />}
-              {t(($) => $.desktop.processes.service_config.apply)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </SettingsSection>
   );
 }

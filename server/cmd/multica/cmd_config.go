@@ -57,7 +57,7 @@ var configSetCmd = &cobra.Command{
 		"heartbeat_interval, agent_timeout, " +
 		"codex_semantic_inactivity_timeout, codex_handshake_timeout, " +
 		"disable_auto_update, auto_update_check_interval, disable_auto_reload.\n\n" +
-		"process_services is a comma-separated profile setting (currently ai, mirror, and application); an empty value keeps in-process ownership. " +
+		"process_services is a comma-separated profile setting for required child owners (ai, mirror, application, environment, gateway); empty or partial values are invalid. " +
 		"It has no flag or environment override.\n\n" +
 		"The daemon keys (device_name, runtime_name, workspaces_root, max_concurrent_tasks, " +
 		"poll_interval, ws_claim_poll_interval, heartbeat_interval, agent_timeout, " +
@@ -183,9 +183,8 @@ func applyConfigSet(cfg *cli.CLIConfig, key, value string) error {
 		if err := cli.ValidateProcessServices(roles); err != nil {
 			return err
 		}
-		// Store as a non-nil pointer so an explicit empty list (in-process
-		// opt-out) stays distinguishable from "never set", which the daemon
-		// maps to DefaultProcessServices.
+		// Store the required process-owner set. Empty is invalid because
+		// capability ownership is always out of process.
 		cfg.ProcessServices = &roles
 	case "workspaces_root":
 		value = strings.TrimSpace(value)

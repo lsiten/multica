@@ -176,7 +176,6 @@ interface DaemonAPI {
   stop: () => Promise<{ success: boolean; error?: string }>;
   restart: () => Promise<{ success: boolean; error?: string }>;
   getStatus: () => Promise<DaemonStatus>;
-  setProcessServices: (services: string[]) => Promise<{ success: boolean; error?: string }>;
   getMcpReadiness: () => Promise<DaemonMcpReadiness[]>;
   probeRuntimes: () => Promise<LocalRuntimeProbe>;
   getHostName: () => Promise<string>;

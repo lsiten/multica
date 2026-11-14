@@ -22,9 +22,8 @@ const (
 // CLIConfig holds persistent CLI settings.
 type CLIConfig struct {
 	// ProcessServices is a pointer so the daemon can tell "never set" from an
-	// explicit empty list. nil (absent key) defaults to every supported role;
-	// a non-nil empty slice (JSON `[]`) keeps the legacy in-process owners, so
-	// an operator's "disable all" choice is preserved.
+	// explicit list. nil (absent key) defaults to every supported role; a
+	// non-nil empty or partial list is rejected during daemon config validation.
 	ProcessServices *[]string `json:"process_services,omitempty"`
 	ServerURL       string    `json:"server_url,omitempty"`
 	AppURL          string    `json:"app_url,omitempty"`

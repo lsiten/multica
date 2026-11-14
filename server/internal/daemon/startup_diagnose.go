@@ -49,7 +49,7 @@ func buildStartupDiagnosis(codexHome string, threshold time.Duration) string {
 // On fire it:
 //  1. publishes the diagnosis exactly once (inline transcript error row so
 //     the chat shows an actionable cause instead of an endless spinner),
-//  2. sets fired so executeAndDrain tags the terminal result,
+//  2. sets fired so provider execution tags the terminal result,
 //  3. cancels agentCtx, which kills the agent subprocess exactly like the
 //     idle watchdog's cancel.
 //

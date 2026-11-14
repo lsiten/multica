@@ -34,9 +34,8 @@ type gatewayProcessService struct {
 	unregister map[string]func()
 }
 
-// RunGatewayService starts the gateway role and owns its exclusive listener until
-// a durable stopped receipt. It runs only when a control parent opted in; the
-// legacy in-process broker is the default and is never affected here.
+// RunGatewayService starts the mandatory gateway role and owns its exclusive
+// listener until a durable stopped receipt.
 func RunGatewayService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	if b.Identity.Scope.Service != "gateway" {
 		return errors.New("unsupported gateway role")

@@ -23,7 +23,7 @@ type Execution struct {
 }
 
 // validate rejects an identity that cannot be a real dispatched task. It never
-// fabricates fields: an empty execution is incomplete, not a legacy fallback.
+// fabricates fields: an empty execution is incomplete.
 func (e Execution) validate() error {
 	if e.WorkspaceID == "" || e.RuntimeID == "" || e.TaskID == "" || e.DispatchedAt == "" {
 		return errors.New("model execution identity is incomplete")
@@ -135,8 +135,8 @@ func (r realManager) Acquire(ctx context.Context, s jevmodels.Selection) (ModelL
 	}, nil
 }
 
-// Backend is the daemon-facing model control surface. *Client (IPC) and *Local
-// (in-process) both implement it.
+// Backend is the daemon-facing model control surface implemented by the AI
+// child-process client.
 type Backend interface {
 	Catalog(ctx context.Context) ([]jevmodels.Model, error)
 	Status(ctx context.Context, id, revision string) (jevmodels.Status, error)
@@ -145,71 +145,6 @@ type Backend interface {
 	CancelInstall(ctx context.Context, id, revision string) error
 	Acquire(ctx context.Context, s jevmodels.Selection, e Execution) (*Lease, error)
 	Close() error
-}
-
-// Local serves the jevmodels manager in-process, without IPC. It is used only
-// when the ai process service is not enabled; the daemon still sees a Backend.
-type Local struct {
-	Manager *jevmodels.Manager
-}
-
-func (l *Local) Catalog(ctx context.Context) ([]jevmodels.Model, error) {
-	return l.Manager.Catalog(), nil
-}
-
-func (l *Local) Status(ctx context.Context, id, revision string) (jevmodels.Status, error) {
-	return l.Manager.Status(id, revision)
-}
-
-func (l *Local) Register(ctx context.Context, id, revision string) (jevmodels.Model, error) {
-	return l.Manager.Register(ctx, id, revision, nil)
-}
-
-func (l *Local) StartInstall(ctx context.Context, id, revision string) error {
-	result, err := l.Manager.StartInstall(ctx, id, revision)
-	if err != nil {
-		return err
-	}
-	go func() { <-result }()
-	return nil
-}
-
-func (l *Local) CancelInstall(ctx context.Context, id, revision string) error {
-	return l.Manager.CancelInstall(id, revision)
-}
-
-func (l *Local) Stop(ctx context.Context, id, revision string) error {
-	return l.Manager.Stop(id, revision)
-}
-
-func (l *Local) Remove(ctx context.Context, id, revision string) error {
-	return l.Manager.Remove(id, revision)
-}
-
-func (l *Local) Acquire(ctx context.Context, s jevmodels.Selection, e Execution) (*Lease, error) {
-	// The daemon-facing Backend cannot tell a *Local apart from a *Client, so a
-	// *Local whose Manager is nil slips past the backendUsable guard. Fail
-	// closed here rather than dereferencing a nil Manager below.
-	if l == nil || l.Manager == nil {
-		return nil, errors.New("model service manager is not available")
-	}
-	if err := e.validate(); err != nil {
-		return nil, err
-	}
-	lease, err := l.Manager.Acquire(ctx, s)
-	if err != nil {
-		return nil, err
-	}
-	wrapped := &Lease{Endpoint: lease.Endpoint, Token: lease.Token, Device: lease.Device}
-	wrapped.release = func(context.Context) error {
-		lease.Release()
-		return nil
-	}
-	return wrapped, nil
-}
-
-func (l *Local) Close() error {
-	return l.Manager.Close()
 }
 
 // encode marshals a domain result for a runtimeproc receipt.

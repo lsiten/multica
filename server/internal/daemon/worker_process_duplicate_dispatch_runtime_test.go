@@ -40,7 +40,6 @@ func TestWorkerProcessRuntimeDuplicateDispatchIsRejected(t *testing.T) {
 	}
 	root := t.TempDir()
 	d := New(Config{
-		WorkerProcessEnabled:         true,
 		ServerBaseURL:                backend.URL,
 		DaemonID:                     "owned-daemon",
 		Profile:                      "owned-fixture",

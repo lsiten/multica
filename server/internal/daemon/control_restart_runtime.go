@@ -41,8 +41,7 @@ func RunControlService(ctx context.Context, b runtimeproc.Bootstrap) error {
 // completed and a valid identity, confirms the prior instance stopped; any
 // missing/suspect/draining/incomplete/identical record keeps the fact false and
 // the daemon on drain-before-restart. This keeps the hot path
-// (executeAndDrain/handleTask/runTask/attemptWorkerRun) and the default
-// drain-before-restart path byte-identical.
+// task hot path and the default drain-before-restart path byte-identical.
 func (d *Daemon) startControlRuntime(ctx context.Context) {
 	// Default-when-supported (capability-gated): when no ControlRuntimeRoot is
 	// configured the control opts into owning a runtimeproc record only when a

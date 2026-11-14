@@ -22,12 +22,12 @@ import (
 // It benchmarks the single hot-path decision attemptWorkerRun — the only branch
 // the control parent takes on the move-out — in both modes:
 //
-//	original / in-process: the gate is OFF (WorkerProcessEnabled false), so
+//	legacy fixture path: no managed worker executable is configured, so
 //	  attemptWorkerRun returns a zero decision and never launches a worker; the
 //	  control parent settles the execution in-process (the legacy default).
 //	extracted / new:      the gate is ON and a launchable bind, so
 //	  attemptWorkerRun drives the worker (bind -> run -> stop) through a faithful
-//	  transport, exactly as the opt-in hot path does
+//	  transport, exactly as the child-worker hot path does
 //	  (TestAttemptWorkerRunOptInTakesWorkerPath).
 //
 // Both measurements run the real decision on the same task, so the ratio is a
@@ -50,7 +50,7 @@ func perfBaselineTask() (Task, time.Time) {
 	}, dispatchedAt
 }
 
-// perfBaselineDaemon builds the Daemon + fakes the opt-in hot path relies on,
+// perfBaselineDaemon builds the Daemon + fakes the child-worker hot path relies on,
 // mirroring hotPathFakes but without a *testing.T (a benchmark owns no test).
 // The bind/grant/supervisor seams are server-authoritative and the worker is a
 // faithful, launchable transport so the extracted path is driven by real, not
@@ -69,7 +69,6 @@ func perfBaselineDaemon() (*Daemon, Task) {
 	d := &Daemon{
 		cfg: Config{
 			ServerBaseURL:        "https://server.example",
-			WorkerProcessEnabled: true,
 			NativeHostExecutable: "/test-owned/exec",
 		},
 		workerProcessLaunch: func(context.Context, string) (*workerProcessClient, error) {
@@ -108,20 +107,19 @@ func perfBaselineDaemon() (*Daemon, Task) {
 	return d, task
 }
 
-// BenchmarkWorkerHotPathGateOff measures the ORIGINAL in-process hot path: with
-// the move-out gate OFF, attemptWorkerRun must return a zero decision without
-// launching anything, so the control parent settles in-process. This is the
-// baseline the extraction must not regress.
-func BenchmarkWorkerHotPathGateOff(b *testing.B) {
-	d := &Daemon{cfg: Config{}} // gate OFF by default: the legacy in-process runner.
+// BenchmarkWorkerHotPathUnavailable measures the fail-closed path when the
+// required worker executable is absent. No provider is started in the control
+// process and no child launch is attempted.
+func BenchmarkWorkerHotPathUnavailable(b *testing.B) {
+	d := &Daemon{cfg: Config{}}
 	task, _ := perfBaselineTask()
 	env := &execenv.Environment{WorkDir: "/w", RootDir: "/r"}
 
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		decision, err := d.attemptWorkerRun(context.Background(), task, "codex", nil, env)
-		if err != nil {
-			b.Fatalf("gate off: %v", err)
+		if err == nil {
+			b.Fatal("missing executable must fail closed")
 		}
 		if decision.UseWorkerResult {
 			b.Fatalf("gate off must not take the worker path")
@@ -129,13 +127,11 @@ func BenchmarkWorkerHotPathGateOff(b *testing.B) {
 	}
 }
 
-// BenchmarkWorkerHotPathOptIn measures the NEW extracted hot path: with the gate
-// ON and a launchable bind, attemptWorkerRun drives the worker (bind -> run ->
-// stop) through a faithful transport and returns the genuine, un-fabricated
-// result the control parent projects. Compared against
-// BenchmarkWorkerHotPathGateOff it is the F6 comparable baseline of the
-// extraction's per-execution overhead.
-func BenchmarkWorkerHotPathOptIn(b *testing.B) {
+// BenchmarkWorkerHotPathWorker measures the mandatory child-worker hot path.
+// With a launchable bind, attemptWorkerRun drives the worker (bind -> run ->
+// stop) through a faithful transport and returns the genuine result projected
+// by the control parent.
+func BenchmarkWorkerHotPathWorker(b *testing.B) {
 	d, task := perfBaselineDaemon()
 	env := &execenv.Environment{WorkDir: "/w", RootDir: "/r"}
 
@@ -146,10 +142,10 @@ func BenchmarkWorkerHotPathOptIn(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		decision, err := d.attemptWorkerRun(context.Background(), task, "codex", nil, env)
 		if err != nil {
-			b.Fatalf("opt-in: %v", err)
+			b.Fatalf("worker: %v", err)
 		}
 		if !decision.UseWorkerResult {
-			b.Fatalf("opt-in + launchable bind must take the worker path")
+			b.Fatalf("launchable worker must take the worker path")
 		}
 		if !decision.Result.Ran || decision.Result.Status != "completed" {
 			b.Fatalf("expected a genuine completed run, got %+v", decision.Result)

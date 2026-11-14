@@ -3009,6 +3009,7 @@
       "all": "전체",
       "category": {
         "daemon": "데몬",
+        "ai": "AI 서비스",
         "task_worker": "태스크 워커",
         "mcp": "MCP 서비스",
         "jev": "JEV 모델",
@@ -3034,7 +3035,7 @@
       },
       "service_config": {
         "title": "서비스 설정",
-        "description": "어떤 서비스를 독립 프로세스로 실행할지 선택합니다. 변경에는 데몬 재시작이 필요합니다.",
+        "description": "5개 서비스는 항상 별도의 자식 프로세스로 실행됩니다. 개별 서비스는 비활성화할 수 없습니다.",
         "applied": "서비스 설정이 업데이트되고 데몬이 재시작되었습니다.",
         "apply_failed": "서비스 설정 업데이트 실패.",
         "restart_confirm_title": "데몬을 재시작하십니까?",

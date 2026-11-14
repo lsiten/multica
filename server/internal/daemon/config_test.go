@@ -1962,13 +1962,10 @@ func TestApplyOpenclawOverride_CLITimeout(t *testing.T) {
 	})
 }
 
-// TestLoadConfigProcessServicesDefaultsOnUnlessExplicitlyEmpty verifies the
-// opt-in contract after the pointer change: an UNSET process_services (no config
-// / omitted key) defaults to every supported role so the multiprocess owners
-// run by default, while an EXPLICIT empty list keeps the legacy in-process
-// owners (preserving an operator's "disable all" choice). An explicit selection
-// is respected verbatim.
-func TestLoadConfigProcessServicesDefaultsOnUnlessExplicitlyEmpty(t *testing.T) {
+// TestLoadConfigProcessServicesRequiresAllOwners verifies that an unset profile
+// resolves to every required child owner and old empty/partial profiles are
+// migrated to the strict child-owner set.
+func TestLoadConfigProcessServicesRequiresAllOwners(t *testing.T) {
 	stageFakeAgent(t)
 	redirectTestHome(t, t.TempDir())
 	base := Overrides{ServerURL: "http://localhost:0", WorkspacesRoot: t.TempDir()}
@@ -1982,38 +1979,33 @@ func TestLoadConfigProcessServicesDefaultsOnUnlessExplicitlyEmpty(t *testing.T) 
 		t.Fatalf("default ProcessServices = %v, want %v", cfg.ProcessServices, cli.DefaultProcessServices())
 	}
 
-	// An explicit empty list keeps the legacy in-process owners (no default).
+	// An explicit empty list from a pre-migration profile is normalized and backed up.
 	writeCLIConfigForProfile(t, "", cli.CLIConfig{ProcessServices: &[]string{}})
-	cfg, err = LoadConfig(base)
-	if err != nil {
-		t.Fatalf("LoadConfig explicit empty: %v", err)
+	if cfg, err = LoadConfig(base); err != nil {
+		t.Fatalf("LoadConfig did not migrate explicit empty process service set: %v", err)
 	}
-	if len(cfg.ProcessServices) != 0 {
-		t.Fatalf("explicit empty ProcessServices = %v, want []", cfg.ProcessServices)
+	if !reflect.DeepEqual(cfg.ProcessServices, cli.DefaultProcessServices()) {
+		t.Fatalf("migrated empty ProcessServices = %v, want %v", cfg.ProcessServices, cli.DefaultProcessServices())
 	}
 
-	// An explicit selection is respected.
+	// A partial selection is migrated in the same way.
 	writeCLIConfigForProfile(t, "", cli.CLIConfig{ProcessServices: &[]string{"ai"}})
-	cfg, err = LoadConfig(base)
-	if err != nil {
-		t.Fatalf("LoadConfig explicit set: %v", err)
+	if cfg, err = LoadConfig(base); err != nil {
+		t.Fatalf("LoadConfig did not migrate partial process service set: %v", err)
 	}
-	if !reflect.DeepEqual(cfg.ProcessServices, []string{"ai"}) {
-		t.Fatalf("explicit ProcessServices = %v, want [ai]", cfg.ProcessServices)
+	if !reflect.DeepEqual(cfg.ProcessServices, cli.DefaultProcessServices()) {
+		t.Fatalf("migrated partial ProcessServices = %v, want %v", cfg.ProcessServices, cli.DefaultProcessServices())
 	}
 }
 
-func TestLoadConfigWorkerProcessIsOptIn(t *testing.T) {
+func TestLoadConfigUsesRequiredProcessOwnerSet(t *testing.T) {
 	stageFakeAgent(t)
 	redirectTestHome(t, t.TempDir())
-	os.Unsetenv("MULTICA_WORKER_PROCESS_ENABLED")
-	t.Cleanup(func() { os.Unsetenv("MULTICA_WORKER_PROCESS_ENABLED") })
-
 	cfg, err := LoadConfig(Overrides{ServerURL: "http://localhost:0", WorkspacesRoot: t.TempDir()})
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.WorkerProcessEnabled {
-		t.Fatal("worker process must remain opt-in until native worker settlement is proven")
+	if !reflect.DeepEqual(cfg.ProcessServices, cli.DefaultProcessServices()) {
+		t.Fatalf("ProcessServices = %v, want %v", cfg.ProcessServices, cli.DefaultProcessServices())
 	}
 }

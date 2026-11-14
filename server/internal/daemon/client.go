@@ -591,7 +591,7 @@ type TaskCancelAck struct {
 
 // AckTaskCancelled tells the server this daemon observed the task's
 // cancellation and has finished flushing the transcript (runner.run only
-// returns after executeAndDrain's drain wait), so the server can settle its
+// returns after its drain wait), so the server can settle its
 // deferred chat finalization now instead of waiting out the sweeper grace
 // period (#5219). Idempotent server-side.
 //

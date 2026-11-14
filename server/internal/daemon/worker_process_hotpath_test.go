@@ -12,7 +12,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// hotPathFakes builds the Daemon seams the opt-in hot-path branch relies on: a
+// hotPathFakes builds the Daemon seams the child-worker hot path branch relies on: a
 // launchable worker with a faithful transport, plus a server-authorized bind and
 // grant. It mirrors TestRunTaskInWorkerLaunchesAssemblesAndRuns so the opt-in
 // decision (attemptWorkerRun) is driven by real, not canned, worker behavior.
@@ -31,7 +31,7 @@ func hotPathFakes(t *testing.T, transport *fakeWorkerTransport) (*Daemon, *Task)
 		instanceID: workerInstanceID,
 	}
 	d := &Daemon{
-		cfg: Config{ServerBaseURL: "https://server.example", WorkerProcessEnabled: true, NativeHostExecutable: "/test-owned/exec"},
+		cfg: Config{NativeHostExecutable: "/test-owned/exec"},
 		workerProcessLaunch: func(_ context.Context, _ string) (*workerProcessClient, error) {
 			return worker, nil
 		},
@@ -42,7 +42,7 @@ func hotPathFakes(t *testing.T, transport *fakeWorkerTransport) (*Daemon, *Task)
 			if req.WorkerID != workerInstanceID {
 				t.Fatalf("bind worker id = %q, want %q", req.WorkerID, workerInstanceID)
 			}
-			// The server rejects a bind whose supervisor epoch is below 1; the opt-in
+			// The server rejects a bind whose supervisor epoch is below 1; the child-worker
 			// hot path must therefore bind with the real acquired epoch (never 0).
 			if req.SupervisorEpoch != 1 {
 				t.Fatalf("bind supervisor epoch = %d, want 1 (the acquired epoch, not 0)", req.SupervisorEpoch)
@@ -63,26 +63,24 @@ func hotPathFakes(t *testing.T, transport *fakeWorkerTransport) (*Daemon, *Task)
 	return d, task
 }
 
-// TestAttemptWorkerRunGateOffNeverLaunches proves the default (gate OFF) path is
-// inert: attemptWorkerRun returns a zero decision and never launches a worker, so
-// the control parent falls back to the in-process runner and the hot path is
-// untouched.
-func TestAttemptWorkerRunGateOffNeverLaunches(t *testing.T) {
-	d := &Daemon{cfg: Config{}}
+// TestAttemptWorkerRunWithoutExecutableFailsClosed proves a missing worker
+// executable never launches a child.
+func TestAttemptWorkerRunWithoutExecutableFailsClosed(t *testing.T) {
+	d := &Daemon{cfg: Config{}, cancelFunc: func() {}}
 	launched := 0
 	d.workerProcessLaunch = func(_ context.Context, _ string) (*workerProcessClient, error) {
 		launched++
 		return nil, nil
 	}
 	decision, err := d.attemptWorkerRun(context.Background(), Task{ID: "t"}, "codex", nil, nil)
-	if err != nil {
-		t.Fatalf("attemptWorkerRun: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "required task worker executable") {
+		t.Fatalf("missing executable must fail closed, got %v", err)
 	}
 	if decision.UseWorkerResult {
-		t.Fatalf("gate OFF must not take the worker path")
+		t.Fatalf("missing executable must not take the worker path")
 	}
 	if launched != 0 {
-		t.Fatalf("gate OFF must not launch a worker, launched=%d", launched)
+		t.Fatalf("missing executable must not launch a worker, launched=%d", launched)
 	}
 }
 
@@ -106,7 +104,7 @@ func TestAttemptWorkerRunOptInTakesWorkerPath(t *testing.T) {
 		t.Fatalf("attemptWorkerRun: %v", err)
 	}
 	if !decision.UseWorkerResult {
-		t.Fatalf("opt-in + launchable bind must take the worker path")
+		t.Fatalf("launchable worker must take the worker path")
 	}
 	if !decision.Result.Ran || decision.Result.Status != "completed" {
 		t.Fatalf("expected a genuine completed run, got %+v", decision.Result)
@@ -120,27 +118,26 @@ func TestAttemptWorkerRunOptInTakesWorkerPath(t *testing.T) {
 	}
 }
 
-// TestAttemptWorkerRunRefusedBindFallsBack proves a refused bind (not launchable)
-// is a clean fall-back: no error and no worker result, so the control parent
-// returns to the in-process runner and settles the execution itself.
-func TestAttemptWorkerRunRefusedBindFallsBack(t *testing.T) {
+// TestAttemptWorkerRunRefusedBindFailsClosed proves a refused bind is a
+// terminal worker admission error. Mandatory multi-process execution never
+// runs the provider in the control process after a refusal.
+func TestAttemptWorkerRunRefusedBindFailsClosed(t *testing.T) {
 	transport := &fakeWorkerTransport{refuseBind: true}
 	d, task := hotPathFakes(t, transport)
 
 	decision, err := d.attemptWorkerRun(context.Background(), *task, "codex", nil, nil)
-	if err != nil {
-		t.Fatalf("a refused bind must not be an error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "refused execution admission") {
+		t.Fatalf("a refused bind must fail closed, got %v", err)
 	}
 	if decision.UseWorkerResult {
-		t.Fatalf("a refused bind must fall back to the in-process runner, not take the worker path")
+		t.Fatalf("a refused bind must not produce a worker result")
 	}
 }
 
-// TestAttemptWorkerRunUncertainFallsBack proves an uncertain transport (a genuine
-// transport failure, not a domain refusal) surfaces an error with a zero
-// decision, so the control parent neither fabricates a result nor double-runs;
-// it falls back and the pre-completion check reconciles any double-settle.
-func TestAttemptWorkerRunUncertainFallsBack(t *testing.T) {
+// TestAttemptWorkerRunUncertainFailsClosed proves an uncertain transport (a
+// genuine transport failure, not a domain refusal) surfaces an error with a
+// zero decision, so the control parent neither fabricates nor retries in-process.
+func TestAttemptWorkerRunUncertainFailsClosed(t *testing.T) {
 	transport := &fakeWorkerTransport{failNext: true}
 	d, task := hotPathFakes(t, transport)
 
@@ -170,19 +167,16 @@ func TestProjectWorkerResult(t *testing.T) {
 	}
 }
 
-// TestAttemptWorkerRunOldServerRefusesInProcessFallback proves the "old server
-// -> drain-only" contract: when the control-supervisor acquisition returns
-// ErrExecutionUnsupported (a server that does not advertise execution
-// reconciliation), attemptWorkerRun refuses the worker move-out with a CLEAN
-// fall-back (nil error, zero decision) and never launches or binds a worker, so
-// the control parent falls back to the in-process runner and settles itself.
-func TestAttemptWorkerRunOldServerRefusesInProcessFallback(t *testing.T) {
+// TestAttemptWorkerRunOldServerFailsClosed proves the mandatory multi-process
+// contract: a server without execution reconciliation cannot accept a worker
+// run and the control process does not fall back to provider execution.
+func TestAttemptWorkerRunOldServerFailsClosed(t *testing.T) {
 	dispatchedAt := time.Now().Truncate(time.Second)
 	task := &Task{ID: uuid.NewString(), RuntimeID: uuid.NewString(), DispatchedAt: dispatchedAt.Format(time.RFC3339)}
 
 	launched := 0
 	d := &Daemon{
-		cfg: Config{ServerBaseURL: "https://server.example", WorkerProcessEnabled: true, NativeHostExecutable: "/test-owned/exec"},
+		cfg: Config{NativeHostExecutable: "/test-owned/exec"},
 		workerProcessLaunch: func(_ context.Context, _ string) (*workerProcessClient, error) {
 			launched++
 			return &workerProcessClient{}, nil
@@ -193,8 +187,8 @@ func TestAttemptWorkerRunOldServerRefusesInProcessFallback(t *testing.T) {
 	}
 
 	decision, err := d.attemptWorkerRun(context.Background(), *task, "codex", nil, nil)
-	if err != nil {
-		t.Fatalf("an old-server (ErrExecutionUnsupported) acquisition must be a clean fall-back (nil), got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "execution reconciliation is required") {
+		t.Fatalf("an old server must fail closed, got %v", err)
 	}
 	if decision.UseWorkerResult {
 		t.Fatalf("an old server must refuse the worker move-out, not take the worker path")

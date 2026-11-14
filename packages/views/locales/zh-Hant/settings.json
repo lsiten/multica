@@ -3295,6 +3295,7 @@
       "all": "全部",
       "category": {
         "daemon": "守護程序",
+        "ai": "AI 服務",
         "task_worker": "任務 worker",
         "mcp": "MCP 服務",
         "jev": "JEV 模型",
@@ -3320,7 +3321,7 @@
       },
       "service_config": {
         "title": "服務配置",
-        "description": "選擇哪些服務作為獨立程序執行。更改需要重啟守護程序。",
+        "description": "五個服務始終作為獨立子程序執行，不能單獨關閉。",
         "applied": "服務配置已更新，守護程序已重啟。",
         "apply_failed": "更新服務配置失敗。",
         "restart_confirm_title": "重啟守護程序？",

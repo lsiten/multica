@@ -115,7 +115,7 @@ var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
 type Config struct {
-	ProcessServices              []string // Profile opt-in: one process owner per supported role.
+	ProcessServices              []string // Complete child-owner set: ai, mirror, application, environment, gateway.
 	NativeHostExecutable         string   // Trusted same-binary absolute path; empty disables managed native work.
 	NativeHostBuild              string   // Version/commit identity; never read from renderer or PATH.
 	NativeVscreenPreferencesPath string   // Profile-private enabled preference file.
@@ -136,11 +136,6 @@ type Config struct {
 	LLM2JevEnabled               bool                  // inject semantic decision MCP when supported (default: true)
 	LLM2JevMaxConcurrency        int                   // per-task semantic MCP call concurrency
 	LLM2JevTimeout               time.Duration         // per-call semantic MCP timeout
-	// WorkerProcessEnabled opts a profile into the per-execution task worker
-	// (F3): when true a server-claimed execution is run by a launched worker
-	// child instead of the legacy in-process runner. Default OFF: the legacy
-	// in-process runner is the default and the hot path is unaffected.
-	WorkerProcessEnabled bool
 	// ControlRuntimeRoot opts a profile into owning a runtimeproc control record so a
 	// capability-replacing control restart can confirm the prior control instance stopped
 	// (F3/G). Default empty: the daemon keeps drain-before-restart and writes no control
@@ -276,23 +271,29 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// purely from env-var configuration. We log a warning and proceed with
 	// no overrides.
 	var profileCommandOverrides map[string]string
-	var processServices []string
+	processServices := cli.DefaultProcessServices()
 	if cliCfg, err := cli.LoadCLIConfigForProfile(overrides.Profile); err != nil {
 		slog.Warn("could not load CLI config for backend overrides; proceeding without",
 			"profile", overrides.Profile, "err", err)
 	} else {
-		// An unset process_services (nil) defaults to every supported role so the
-		// multiprocess owners run by default; the fail-closed fallback still keeps
-		// the legacy in-process runner if a separate process can't start, so no
-		// task is lost or double-run. An explicit empty list (non-nil) keeps the
-		// legacy in-process owners, preserving an operator's "disable all" choice.
+		// An unset process_services defaults to every required process owner.
+		// Empty/partial values from pre-migration profiles are normalized once;
+		// unknown roles remain hard errors so typos cannot be hidden.
 		if cliCfg.ProcessServices == nil {
 			processServices = cli.DefaultProcessServices()
 		} else {
 			if err := cli.ValidateProcessServices(*cliCfg.ProcessServices); err != nil {
-				return Config{}, err
+				if !cli.LegacyProcessServices(*cliCfg.ProcessServices) {
+					return Config{}, err
+				}
+				if migrateErr := cli.MigrateLegacyProcessServices(overrides.Profile, &cliCfg); migrateErr != nil {
+					return Config{}, fmt.Errorf("migrate legacy process_services: %w", migrateErr)
+				}
+				processServices = cli.DefaultProcessServices()
+				slog.Warn("migrated legacy process_services profile to the required child-owner set", "profile", overrides.Profile)
+			} else {
+				processServices = append([]string(nil), *cliCfg.ProcessServices...)
 			}
-			processServices = append([]string(nil), *cliCfg.ProcessServices...)
 		}
 		if oc := openclawOverrideFrom(cliCfg); oc != nil {
 			applyOpenclawOverride(oc)
@@ -558,18 +559,6 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if llm2jevTimeout <= 0 {
 		llm2jevTimeout = 45 * time.Second
 	}
-	// Keep the per-execution worker opt-in until its native child process has
-	// proved healthy for the installed desktop build. A worker launch or callback
-	// transport failure is deliberately fail-closed to avoid double-running a
-	// provider, which means enabling it by default can leave a real chat task in
-	// running state while reconciliation waits for evidence that never arrives.
-	// The stable in-process runner remains the default; operators and the desktop
-	// process panel can opt in explicitly with MULTICA_WORKER_PROCESS_ENABLED=1.
-	workerProcessEnabled := false
-	if raw, ok := os.LookupEnv("MULTICA_WORKER_PROCESS_ENABLED"); ok {
-		workerProcessEnabled = strings.ToLower(strings.TrimSpace(raw)) != "false" && strings.TrimSpace(raw) != "0"
-	}
-
 	// ControlRuntimeRoot defaults empty: the control writes no runtimeproc record,
 	// so a capability-replacing restart is never admitted and the daemon drains before restart.
 	controlRuntimeRoot := strings.TrimSpace(os.Getenv("MULTICA_CONTROL_RUNTIME_ROOT"))
@@ -771,7 +760,6 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		LLM2JevEnabled:                  llm2jevEnabled,
 		LLM2JevMaxConcurrency:           llm2jevMaxConcurrency,
 		LLM2JevTimeout:                  llm2jevTimeout,
-		WorkerProcessEnabled:            workerProcessEnabled,
 		ControlRuntimeRoot:              controlRuntimeRoot,
 		PollInterval:                    pollInterval,
 		WSClaimPollInterval:             wsClaimPollInterval,

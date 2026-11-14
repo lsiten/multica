@@ -173,7 +173,7 @@ func (c *ExecutionClient) ReportTaskMessages(ctx context.Context, messages []Tas
 
 // PinTaskSession persists this execution's resume pointer mid-flight through the
 // scoped transport. A pin with no session id and no work dir is a no-op, matching
-// the legacy in-process client so an empty probe never posts.
+// the scoped transport so an empty probe never posts.
 func (c *ExecutionClient) PinTaskSession(ctx context.Context, sessionID, workDir string) error {
 	if sessionID == "" && workDir == "" {
 		return nil

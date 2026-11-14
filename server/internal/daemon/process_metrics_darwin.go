@@ -8,6 +8,7 @@ package daemon
 #include <sys/resource.h>
 #include <sys/sysctl.h>
 #include <string.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 // read_one_process fills cpu_ns (user+system, ns) and rss (bytes) for a single
@@ -34,16 +35,35 @@ static int proc_resource(int pid, unsigned long long *rss, unsigned long long *c
 }
 
 // proc_tree_resource sums cpu_ns and rss across the whole descendant tree of
-// root_pid, counting only processes owned by getuid(). It walks breadth-first
-// via sysctl KERN_PROC_PID, and stops descending into any process it cannot
-// read (a different uid, or one that vanished). A process tree has no shared
-// descendants, so no per-pid dedup is needed. Returns 0 when the root itself is
-// readable, so a vanished root reads as unavailable.
+// root_pid, counting only processes owned by getuid(). KERN_PROC_PID returns
+// the requested process itself, not its children; using it as a child lookup
+// makes the root enqueue itself until the old fixed queue reaches 2048. Take
+// one KERN_PROC_ALL snapshot instead and match each process's parent PID.
+// Processes that vanish between the snapshot and the resource read are
+// skipped, and an unreadable process is not counted or traversed.
 static int proc_tree_resource(int root_pid, unsigned long long *cpu_ns, unsigned long long *rss, int *count) {
 	*cpu_ns = 0;
 	*rss = 0;
 	*count = 0;
-	int queue[2048];
+	int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
+	size_t proc_size = 0;
+	if (sysctl(mib, 4, NULL, &proc_size, NULL, 0) != 0 || proc_size == 0) {
+		return 1;
+	}
+	struct kinfo_proc *processes = (struct kinfo_proc *)malloc(proc_size);
+	if (processes == NULL) {
+		return 1;
+	}
+	if (sysctl(mib, 4, processes, &proc_size, NULL, 0) != 0) {
+		free(processes);
+		return 1;
+	}
+	int process_count = (int)(proc_size / sizeof(struct kinfo_proc));
+	int *queue = (int *)malloc((size_t)(process_count + 1) * sizeof(int));
+	if (queue == NULL) {
+		free(processes);
+		return 1;
+	}
 	int head = 0;
 	int tail = 0;
 	queue[tail++] = root_pid;
@@ -58,16 +78,14 @@ static int proc_tree_resource(int root_pid, unsigned long long *cpu_ns, unsigned
 		*cpu_ns += mycpu;
 		*rss += myrss;
 		*count += 1;
-		struct kinfo_proc kids[128];
-		size_t ksize = sizeof(kids);
-		int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
-		if (sysctl(mib, 4, kids, &ksize, NULL, 0) == 0) {
-			int n = (int)(ksize / sizeof(struct kinfo_proc));
-			for (int i = 0; i < n && tail < 2048; i++) {
-				queue[tail++] = kids[i].kp_proc.p_pid;
+		for (int i = 0; i < process_count && tail < process_count + 1; i++) {
+			if (processes[i].kp_eproc.e_ppid == pid && processes[i].kp_proc.p_pid != pid) {
+				queue[tail++] = processes[i].kp_proc.p_pid;
 			}
 		}
 	}
+	free(queue);
+	free(processes);
 	return 0;
 }
 

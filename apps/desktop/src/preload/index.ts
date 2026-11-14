@@ -342,8 +342,6 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:restart"),
   getStatus: (): Promise<DaemonStatus> =>
     ipcRenderer.invoke("daemon:get-status"),
-  setProcessServices: (services: string[]): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke("daemon:set-process-services", services),
   getMcpReadiness: (): Promise<DaemonMcpReadiness[]> =>
     ipcRenderer.invoke("daemon:mcp-readiness"),
   probeRuntimes: (): Promise<LocalRuntimeProbe> =>
