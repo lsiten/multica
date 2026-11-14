@@ -121,7 +121,7 @@ func TestLocalReviewInventoryDoesNotResolveMalformedProjectContext(t *testing.T)
 
 func TestAutomationInventoryAndGCPreserveAuthoritativeProjectWithoutContext(t *testing.T) {
 	// Given an automation project binding absent from (or different from) run context.
-	runtime := dbfx.Runtime(t, "automation-project-inventory", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "automation-project-inventory", testutil.Cols{"runtime_mode": "local", "daemon_id": "automation-project-daemon"})
 	agent := dbfx.Agent(t, "automation-project-agent", runtime)
 	project := dbfx.Project(t, "Automation authoritative project")
 	other := dbfx.Project(t, "Stale context project")
@@ -159,7 +159,7 @@ func TestAutomationInventoryAndGCPreserveAuthoritativeProjectWithoutContext(t *t
 
 func TestAutomationProjectAttributionRejectsForeignWorkspaceBinding(t *testing.T) {
 	// Given a malformed cross-workspace automation binding pointing at a local project.
-	runtime := dbfx.Runtime(t, "foreign-automation-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "foreign-automation-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "foreign-auto-daemon"})
 	agent := dbfx.Agent(t, "foreign-automation-agent", runtime)
 	project := dbfx.Project(t, "Do not infer this project")
 	foreign := dbfx.Workspace(t, "Foreign automation", "foreign-automation-project")

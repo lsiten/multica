@@ -14,7 +14,7 @@ import (
 )
 
 func TestTaskGCReportsRunAndIssueLifecycleSeparately(t *testing.T) {
-	runtime := dbfx.Runtime(t, "lifecycle-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "lifecycle-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "lifecycle-daemon"})
 	agent := dbfx.Agent(t, "lifecycle-agent", runtime)
 	issue := dbfx.Issue(t, "Delivery still awaiting review", testutil.Cols{"status": "in_review"})
 	completed := time.Now().UTC().Add(-10 * 24 * time.Hour).Truncate(time.Microsecond)
@@ -37,7 +37,7 @@ func TestTaskGCReportsRunAndIssueLifecycleSeparately(t *testing.T) {
 }
 
 func TestTaskGCIdentifiesSupersededDirectoryWithoutLosingReviewTask(t *testing.T) {
-	runtime := dbfx.Runtime(t, "gc-workline-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "gc-workline-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "gc-workline-daemon"})
 	agent := dbfx.Agent(t, "gc-workline-agent", runtime)
 	issue := dbfx.Issue(t, "Current delivery", testutil.Cols{"status": "in_review"})
 	first := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "issue_id": issue, "status": "completed", "completed_at": time.Now(), "work_dir": "/old/workdir", "created_at": time.Now().Add(-time.Hour)})
@@ -51,7 +51,7 @@ func TestTaskGCIdentifiesSupersededDirectoryWithoutLosingReviewTask(t *testing.T
 }
 
 func TestBatchTaskGCIsRuntimeScopedAndReportsPendingHumanRequest(t *testing.T) {
-	runtime := dbfx.Runtime(t, "gc-batch-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "gc-batch-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "gc-batch-daemon"})
 	otherRuntime := dbfx.Runtime(t, "gc-other-runtime", testutil.Cols{"runtime_mode": "local"})
 	agent := dbfx.Agent(t, "gc-batch-agent", runtime)
 	issue := dbfx.Issue(t, "Waiting for input", testutil.Cols{"status": "blocked"})
@@ -70,7 +70,7 @@ func TestBatchTaskGCIsRuntimeScopedAndReportsPendingHumanRequest(t *testing.T) {
 }
 
 func TestBatchTaskGCConfirmsMissingTasksWithoutTreatingForeignRuntimeAsMissing(t *testing.T) {
-	runtime := dbfx.Runtime(t, "gc-deleted-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "gc-deleted-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "gc-deleted-daemon"})
 	agent := dbfx.Agent(t, "gc-deleted-agent", runtime)
 	task := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "status": "completed"})
 	foreign := dbfx.Task(t, agent, testutil.Cols{"runtime_id": testRuntimeID, "status": "completed"})
@@ -86,7 +86,7 @@ func TestBatchTaskGCConfirmsMissingTasksWithoutTreatingForeignRuntimeAsMissing(t
 }
 
 func TestTaskGCOldAgentDoesNotPinEveryHistoricalWorklineOfAnOpenIssue(t *testing.T) {
-	runtime := dbfx.Runtime(t, "gc-current-agent-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "gc-current-agent-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "gc-current-agent-daemon"})
 	oldAgent := dbfx.Agent(t, "gc-previous-contributor", runtime)
 	newAgent := dbfx.Agent(t, "gc-current-contributor", runtime)
 	issue := dbfx.Issue(t, "Member-owned task", testutil.Cols{"status": "in_progress", "assignee_type": "member", "assignee_id": testUserID})
@@ -110,7 +110,7 @@ func TestTaskGCBatchRejectsMalformedInputBeforeDeletionFacts(t *testing.T) {
 }
 
 func TestTaskGCReportsAuthoritativeChatAndAutomationParents(t *testing.T) {
-	runtime := dbfx.Runtime(t, "gc-parent-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "gc-parent-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "gc-parent-daemon"})
 	agent := dbfx.Agent(t, "gc-parent-agent", runtime)
 	chat := dbfx.Insert(t, "chat_session", testutil.Cols{"workspace_id": testWorkspaceID, "agent_id": agent, "creator_id": testUserID, "status": "archived"})
 	automation := dbfx.Insert(t, "autopilot", testutil.Cols{"workspace_id": testWorkspaceID, "title": "GC parent", "assignee_id": agent, "execution_mode": "run_only", "created_by_type": "member", "created_by_id": testUserID})
@@ -150,7 +150,7 @@ func TestCloudWorktreeInventoryDoesNotInferLocalApproval(t *testing.T) {
 }
 
 func TestTaskGCReportsSystemRunProvenance(t *testing.T) {
-	runtime := dbfx.Runtime(t, "supervision-gc", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "supervision-gc", testutil.Cols{"runtime_mode": "local", "daemon_id": "supervision-daemon"})
 	agent := dbfx.Agent(t, "supervision-gc-agent", runtime)
 	project := dbfx.Project(t, "Supervised project")
 	task := dbfx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "status": "failed", "completed_at": time.Now(), "context": `{"type":"project_supervision","project_id":"` + project + `"}`})

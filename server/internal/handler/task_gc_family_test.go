@@ -24,7 +24,7 @@ func TestTaskGCProtectsSharedCodeUntilTheIssueTreeIsSettled(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Given a completed child run whose code directory is shared with its requirement.
-			runtime := dbfx.Runtime(t, "family-gc-runtime", testutil.Cols{"runtime_mode": "local"})
+			runtime := dbfx.Runtime(t, "family-gc-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "family-gc-daemon"})
 			agent := dbfx.Agent(t, "family-gc-agent", runtime)
 			root := dbfx.Issue(t, "Requirement", testutil.Cols{"kind": "requirement", "status": tc.rootStatus})
 			child := dbfx.Issue(t, "Finished child", testutil.Cols{"status": "done", "parent_issue_id": root})
@@ -52,7 +52,7 @@ func TestTaskGCProtectsSharedCodeUntilTheIssueTreeIsSettled(t *testing.T) {
 
 func TestTaskGCRetainsCodeWhenTheIssueTreeContainsACycle(t *testing.T) {
 	// Given a completed run with a corrupt cyclic issue ancestry.
-	runtime := dbfx.Runtime(t, "cyclic-family-gc-runtime", testutil.Cols{"runtime_mode": "local"})
+	runtime := dbfx.Runtime(t, "cyclic-family-gc-runtime", testutil.Cols{"runtime_mode": "local", "daemon_id": "family-gc-daemon"})
 	agent := dbfx.Agent(t, "cyclic-family-gc-agent", runtime)
 	root := dbfx.Issue(t, "Cycle root", testutil.Cols{"status": "done"})
 	child := dbfx.Issue(t, "Cycle child", testutil.Cols{"status": "done", "parent_issue_id": root})
