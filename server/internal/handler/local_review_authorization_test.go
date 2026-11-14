@@ -58,9 +58,9 @@ func TestLocalReviewClaimRequiresOwningCredential(t *testing.T) {
 		status             int
 	}{
 		{"owner PAT", testUserID, "", http.StatusOK},
-		{"other member PAT", member, "", http.StatusForbidden},
+		{"other member PAT", member, "", http.StatusNotFound},
 		{"owning daemon", "", "owning-daemon", http.StatusOK},
-		{"other daemon", "", "other-daemon", http.StatusForbidden},
+		{"other daemon", "", "other-daemon", http.StatusNotFound},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRequestAsUser(tc.user, http.MethodPost, "/claim", nil)
@@ -85,7 +85,7 @@ func TestLocalReviewRuntimeBindingIsOwnerAndTaskScoped(t *testing.T) {
 		status              int
 	}{
 		{"owner", testUserID, runtime, http.StatusOK},
-		{"other member", member, runtime, http.StatusForbidden},
+		{"other member", member, runtime, http.StatusNotFound},
 		{"wrong runtime", testUserID, otherRuntime, http.StatusNotFound},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

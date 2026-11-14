@@ -71,7 +71,7 @@ func TestRuntimeWorkDirectoryStateRecordsMissingActivePathsAndGuardsDaemonOwners
 	for _, tc := range []struct {
 		daemon string
 		status int
-	}{{"other-daemon", http.StatusForbidden}, {"directory-daemon", http.StatusOK}} {
+	}{{"other-daemon", http.StatusNotFound}, {"directory-daemon", http.StatusOK}} {
 		r := withURLParam(newDaemonTokenRequest(http.MethodPost, "/work-directories", []protocol.WorkDirectoryState{{Path: "/shared", Missing: true}}, testWorkspaceID, tc.daemon), "runtimeId", runtime)
 		testutil.Call(t, testHandler.UpdateRuntimeWorkDirectories, r).Want(tc.status)
 	}

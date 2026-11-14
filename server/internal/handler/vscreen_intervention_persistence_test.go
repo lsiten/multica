@@ -25,7 +25,7 @@ func TestVscreenInterventionAuthenticatedDaemonRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "mdt_" + uuid.NewString()
-	dbfx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(token), "workspace_id": testWorkspaceID, "daemon_id": rt.DaemonID.String, "expires_at": testutil.Raw("now()+interval '1 hour'")})
+	dbfx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(token), "workspace_id": testWorkspaceID, "daemon_id": rt.DaemonID.String, "owner_id": testUserID, "expires_at": testutil.Raw("now()+interval '1 hour'")})
 	router := chi.NewRouter()
 	router.Use(middleware.DaemonAuth(f.h.Queries, nil, nil, nil))
 	router.Post("/api/daemon/runtimes/{runtimeId}/vscreen/interventions", f.h.ReportVscreenIntervention)

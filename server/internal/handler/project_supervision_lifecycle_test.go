@@ -20,7 +20,7 @@ func TestTaskContextDaemonLifecycle(t *testing.T) {
 		{service.HumanFollowupContextType, "fail"},
 	} {
 		t.Run(tc.contextType+"/"+tc.outcome, func(t *testing.T) {
-			runtimeID := dbfx.Runtime(t, "coordination lifecycle")
+			runtimeID := dbfx.Runtime(t, "coordination lifecycle", testutil.Cols{"daemon_id": "coordination"})
 			agentID := dbfx.Agent(t, "coordination lead", runtimeID)
 			projectID := dbfx.Project(t, "coordination lifecycle", testutil.Cols{"lead_type": "agent", "lead_id": agentID})
 			var taskContext any = service.ProjectCoordinationContext{

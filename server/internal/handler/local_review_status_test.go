@@ -36,8 +36,8 @@ func TestReviewStatusChecksCredentialRuntimeAndClaim(t *testing.T) {
 	}{
 		{"owner", testUserID, "", runtime, claim.ClaimToken, http.StatusOK, true},
 		{"daemon", "", "status-daemon", runtime, claim.ClaimToken, http.StatusOK, true},
-		{"other member", member, "", runtime, claim.ClaimToken, http.StatusForbidden, false},
-		{"other daemon", "", "foreign-daemon", runtime, claim.ClaimToken, http.StatusForbidden, false},
+		{"other member", member, "", runtime, claim.ClaimToken, http.StatusNotFound, false},
+		{"other daemon", "", "foreign-daemon", runtime, claim.ClaimToken, http.StatusNotFound, false},
 		{"other runtime", testUserID, "", otherRuntime, claim.ClaimToken, http.StatusOK, false},
 		{"wrong token", testUserID, "", runtime, "wrong", http.StatusOK, false},
 	} {

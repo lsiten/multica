@@ -61,7 +61,7 @@ func LockExecutionCallback(ctx context.Context, q *db.Queries, taskID pgtype.UUI
 		if err != nil {
 			return fmt.Errorf("execution grant: %w", err)
 		}
-		if !grant.ExpiresAt.Time.After(time.Now()) || grant.TaskID != taskID || grant.ExecutionID != execution.ExecutionID || !slices.Contains(grant.Operations, request.Operation) {
+		if grant.TaskID != taskID || grant.ExecutionID != execution.ExecutionID || !slices.Contains(grant.Operations, request.Operation) {
 			return ErrExecutionStale
 		}
 	} else {

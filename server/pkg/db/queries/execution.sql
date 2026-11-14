@@ -42,12 +42,12 @@ INSERT INTO execution_grant(token_hash,task_id,execution_id,operations,expires_a
 VALUES ($1,$2,$3,$4,$5) RETURNING *;
 
 -- name: GetExecutionGrant :one
-SELECT g.*, e.workspace_id, e.runtime_id, e.daemon_id, e.worker_id FROM execution_grant g
+SELECT g.*, e.workspace_id, e.runtime_id, e.daemon_id, e.worker_id, r.owner_id FROM execution_grant g
 JOIN task_execution e ON e.task_id=g.task_id AND e.execution_id=g.execution_id
 JOIN agent_task_queue t ON t.id=e.task_id AND t.runtime_id=e.runtime_id AND t.dispatched_at=e.dispatched_at
 JOIN agent_runtime r ON r.id=e.runtime_id AND r.workspace_id=e.workspace_id AND r.daemon_id=e.daemon_id
-WHERE g.token_hash=$1 AND NOT g.revoked AND NOT e.revoked AND g.expires_at>now()
- AND (t.completed_at IS NULL OR t.completed_at>now()-interval '24 hours')
+WHERE g.token_hash=$1 AND NOT g.revoked AND NOT e.revoked AND g.expires_at>clock_timestamp()
+ AND (t.completed_at IS NULL OR t.completed_at>clock_timestamp()-interval '24 hours')
  AND EXISTS(SELECT 1 FROM member m WHERE m.workspace_id=e.workspace_id AND m.user_id=r.owner_id);
 
 -- name: RevokeExecutionGrant :exec

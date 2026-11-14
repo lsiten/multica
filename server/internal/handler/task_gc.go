@@ -37,6 +37,11 @@ func (h *Handler) GetTaskGCCheck(w http.ResponseWriter, r *http.Request) {
 	if !h.requireDaemonWorkspaceAccess(w, r, uuidToString(agent.WorkspaceID)) {
 		return
 	}
+	if task.RuntimeID.Valid {
+		if _, ok := h.requireDaemonRuntimeAccess(w, r, uuidToString(task.RuntimeID)); !ok {
+			return
+		}
+	}
 	rows, err := h.taskGCLifecycles(r, agent.WorkspaceID, task.RuntimeID, []pgtype.UUID{task.ID})
 	if err != nil || len(rows) != 1 {
 		writeError(w, http.StatusServiceUnavailable, "task lifecycle unavailable")
@@ -58,6 +63,11 @@ func (h *Handler) BatchTaskGCCheck(w http.ResponseWriter, r *http.Request) {
 	if raw := chi.URLParam(r, "runtimeId"); raw != "" {
 		runtimeID, ok = parseUUIDOrBadRequest(w, raw, "runtime_id")
 		if !ok {
+			return
+		}
+	}
+	if runtimeID.Valid {
+		if _, ok := h.requireDaemonRuntimeAccess(w, r, uuidToString(runtimeID)); !ok {
 			return
 		}
 	}

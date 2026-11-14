@@ -165,7 +165,7 @@ func (f *interventionFixture) sendReport(t *testing.T, state protocol.VscreenInt
 		t.Fatal(err)
 	}
 	req := withURLParam(newRequest(http.MethodPost, "/api/daemon/runtimes/"+f.report.RuntimeID+"/vscreen/interventions", f.report), "runtimeId", f.report.RuntimeID)
-	req = req.WithContext(middleware.WithDaemonContext(req.Context(), testWorkspaceID, rt.DaemonID.String))
+	req = req.WithContext(middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(req.Context(), testWorkspaceID, rt.DaemonID.String), testUserID))
 	var row db.RuntimeVscreenIntervention
 	call := testutil.Call(t, f.h.ReportVscreenIntervention, req).Want(status)
 	if status == http.StatusOK {

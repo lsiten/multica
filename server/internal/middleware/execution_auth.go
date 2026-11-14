@@ -33,6 +33,7 @@ func authenticateExecutionGrant(w http.ResponseWriter, r *http.Request, q *db.Qu
 		return
 	}
 	ctx := WithDaemonContext(r.Context(), util.UUIDToString(grant.WorkspaceID), grant.DaemonID)
+	ctx = WithDaemonTokenOwnerID(ctx, util.UUIDToString(grant.OwnerID))
 	ctx = auth.WithExecutionRequest(ctx, auth.ExecutionRequest{Present: true, ExecutionID: util.UUIDToString(grant.ExecutionID), WorkerID: util.UUIDToString(grant.WorkerID), GrantHash: hash, Operation: operation})
 	next.ServeHTTP(w, r.WithContext(ctx))
 }

@@ -41,7 +41,7 @@ func TestCreateMirrorSessionConsumesOfferBeforeDaemonAnswer(t *testing.T) {
 	t.Cleanup(func() { testHandler.DaemonHub = previousHub })
 
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := middleware.WithDaemonContext(r.Context(), testWorkspaceID, daemonID)
+		ctx := middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(r.Context(), testWorkspaceID, daemonID), testUserID)
 		testHandler.DaemonWebSocket(w, r.WithContext(ctx))
 	}))
 	defer wsServer.Close()
@@ -132,7 +132,7 @@ func TestDaemonMirrorAnswerFailureOverWebSocketExposesFailedSessionWithoutAnswer
 	t.Cleanup(func() { testHandler.DaemonHub = previousHub })
 
 	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := middleware.WithDaemonContext(r.Context(), testWorkspaceID, daemonID)
+		ctx := middleware.WithDaemonTokenOwnerID(middleware.WithDaemonContext(r.Context(), testWorkspaceID, daemonID), testUserID)
 		testHandler.DaemonWebSocket(w, r.WithContext(ctx))
 	}))
 	defer wsServer.Close()

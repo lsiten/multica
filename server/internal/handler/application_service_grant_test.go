@@ -464,7 +464,7 @@ func TestApplicationServiceGrantParentOwnershipAndRuntimeBoundary(t *testing.T) 
 		t.Fatal(err)
 	}
 	f.fx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(otherDaemonToken), "workspace_id": f.workspace, "daemon_id": uuid.NewString(), "expires_at": time.Now().Add(time.Hour)})
-	testutil.Call(t, f.router.ServeHTTP, applicationServiceRequest("POST", f.path("/application-service-grants"), otherDaemonToken, f.grantInput(1))).Want(403)
+	testutil.Call(t, f.router.ServeHTTP, applicationServiceRequest("POST", f.path("/application-service-grants"), otherDaemonToken, f.grantInput(1))).Want(404)
 	otherUser := f.fx.User(t, "other workspace administrator", "app-grant-other-"+uuid.NewString()+"@example.test")
 	f.fx.Member(t, f.workspace, otherUser, "admin")
 	otherPAT, err := auth.GeneratePATToken()
@@ -472,7 +472,7 @@ func TestApplicationServiceGrantParentOwnershipAndRuntimeBoundary(t *testing.T) 
 		t.Fatal(err)
 	}
 	f.fx.Insert(t, "personal_access_token", testutil.Cols{"user_id": otherUser, "name": "other fixture parent", "token_hash": auth.HashToken(otherPAT), "token_prefix": otherPAT[:8], "expires_at": time.Now().Add(time.Hour)})
-	testutil.Call(t, f.router.ServeHTTP, applicationServiceRequest("POST", f.path("/application-service-grants"), otherPAT, f.grantInput(1))).Want(403)
+	testutil.Call(t, f.router.ServeHTTP, applicationServiceRequest("POST", f.path("/application-service-grants"), otherPAT, f.grantInput(1))).Want(404)
 	var rotated protocol.ApplicationServiceGrantResponse
 	testutil.Call(t, f.router.ServeHTTP, applicationServiceRequest("POST", f.path("/application-service-grants"), f.pat, f.grantInput(1))).Want(200).JSON(&rotated)
 	testutil.Call(t, f.router.ServeHTTP, applicationServiceRequest("POST", f.path("/applications/sync"), rotated.Token, f.body())).Want(200)

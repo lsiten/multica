@@ -92,7 +92,7 @@ func newExecutionFixture(t *testing.T) executionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(token), "workspace_id": workspace, "daemon_id": daemonID, "expires_at": time.Now().Add(time.Hour)})
+	fx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(token), "workspace_id": workspace, "daemon_id": daemonID, "owner_id": user, "expires_at": time.Now().Add(time.Hour)})
 	fx.Cleanup(t, "DELETE FROM runtime_supervisor WHERE runtime_id=$1", runtime)
 	fx.Cleanup(t, "DELETE FROM execution_snapshot WHERE runtime_id=$1", runtime)
 	fx.Cleanup(t, "DELETE FROM task_execution WHERE task_id=$1", task)
@@ -453,7 +453,7 @@ func TestExecutionGrantRefreshExpiryAndForeignRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.fx.Insert(t, "daemon_token", testutil.Cols{"token_hash": auth.HashToken(otherToken), "workspace_id": f.workspace, "daemon_id": "another-daemon", "expires_at": time.Now().Add(time.Hour)})
-	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/execution-supervisor"), otherToken, protocol.SupervisorRequest{InstanceID: uuid.NewString(), ExpectedEpoch: 1})).Want(403)
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/execution-supervisor"), otherToken, protocol.SupervisorRequest{InstanceID: uuid.NewString(), ExpectedEpoch: 1})).Want(404)
 	// A refreshed dispatch with an expired preparation lease cannot bind a new worker.
 	f.fx.Exec(t, "UPDATE agent_task_queue SET dispatched_at=dispatched_at+interval '1 microsecond',prepare_lease_expires_at=now()-interval '1 minute' WHERE id=$1", f.task)
 	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/tasks/"+f.task+"/execution"), f.control, protocol.BindExecutionRequest{WorkerID: uuid.NewString(), DispatchedAt: f.claim.Add(time.Microsecond), SupervisorEpoch: 1})).Want(409)

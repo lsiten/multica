@@ -58,5 +58,6 @@ func authenticateApplicationServiceGrant(w http.ResponseWriter, r *http.Request,
 	}
 	identity := auth.ApplicationServiceIdentity{TokenHash: tokenHash, RuntimeID: runtimeID, WorkspaceID: util.UUIDToString(grant.WorkspaceID), DaemonID: grant.DaemonID, OwnerID: util.UUIDToString(grant.OwnerID), MemberID: util.UUIDToString(grant.MemberID), ServiceInstanceID: util.UUIDToString(grant.ServiceInstanceID), Generation: grant.Generation, Operation: operation, ExpiresAt: grant.ExpiresAt.Time}
 	ctx := WithDaemonContext(r.Context(), identity.WorkspaceID, identity.DaemonID)
+	ctx = WithDaemonTokenOwnerID(ctx, identity.OwnerID)
 	next.ServeHTTP(w, r.WithContext(auth.WithApplicationServiceIdentity(ctx, identity)))
 }

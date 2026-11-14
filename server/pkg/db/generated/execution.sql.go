@@ -196,12 +196,12 @@ func (q *Queries) CreateExecutionSnapshot(ctx context.Context, arg CreateExecuti
 }
 
 const getExecutionGrant = `-- name: GetExecutionGrant :one
-SELECT g.token_hash, g.task_id, g.execution_id, g.operations, g.expires_at, g.revoked, e.workspace_id, e.runtime_id, e.daemon_id, e.worker_id FROM execution_grant g
+SELECT g.token_hash, g.task_id, g.execution_id, g.operations, g.expires_at, g.revoked, e.workspace_id, e.runtime_id, e.daemon_id, e.worker_id, r.owner_id FROM execution_grant g
 JOIN task_execution e ON e.task_id=g.task_id AND e.execution_id=g.execution_id
 JOIN agent_task_queue t ON t.id=e.task_id AND t.runtime_id=e.runtime_id AND t.dispatched_at=e.dispatched_at
 JOIN agent_runtime r ON r.id=e.runtime_id AND r.workspace_id=e.workspace_id AND r.daemon_id=e.daemon_id
-WHERE g.token_hash=$1 AND NOT g.revoked AND NOT e.revoked AND g.expires_at>now()
- AND (t.completed_at IS NULL OR t.completed_at>now()-interval '24 hours')
+WHERE g.token_hash=$1 AND NOT g.revoked AND NOT e.revoked AND g.expires_at>clock_timestamp()
+ AND (t.completed_at IS NULL OR t.completed_at>clock_timestamp()-interval '24 hours')
  AND EXISTS(SELECT 1 FROM member m WHERE m.workspace_id=e.workspace_id AND m.user_id=r.owner_id)
 `
 
@@ -216,6 +216,7 @@ type GetExecutionGrantRow struct {
 	RuntimeID   pgtype.UUID        `json:"runtime_id"`
 	DaemonID    string             `json:"daemon_id"`
 	WorkerID    pgtype.UUID        `json:"worker_id"`
+	OwnerID     pgtype.UUID        `json:"owner_id"`
 }
 
 func (q *Queries) GetExecutionGrant(ctx context.Context, tokenHash string) (GetExecutionGrantRow, error) {
@@ -232,6 +233,7 @@ func (q *Queries) GetExecutionGrant(ctx context.Context, tokenHash string) (GetE
 		&i.RuntimeID,
 		&i.DaemonID,
 		&i.WorkerID,
+		&i.OwnerID,
 	)
 	return i, err
 }
@@ -427,7 +429,7 @@ func (q *Queries) LockRuntimeSupervisor(ctx context.Context, runtimeID pgtype.UU
 }
 
 const lockTaskForExecution = `-- name: LockTaskForExecution :one
-SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot, work_dir_missing, workflow_step FROM agent_task_queue WHERE id=$1 FOR UPDATE
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot, workflow_step, work_dir_missing FROM agent_task_queue WHERE id=$1 FOR UPDATE
 `
 
 func (q *Queries) LockTaskForExecution(ctx context.Context, id pgtype.UUID) (AgentTaskQueue, error) {
@@ -493,8 +495,8 @@ func (q *Queries) LockTaskForExecution(ctx context.Context, id pgtype.UUID) (Age
 		&i.CancelledByID,
 		&i.CancelledByName,
 		&i.IssueSnapshot,
-		&i.WorkDirMissing,
 		&i.WorkflowStep,
+		&i.WorkDirMissing,
 	)
 	return i, err
 }

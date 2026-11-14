@@ -191,9 +191,9 @@ func TestHumanRequestAutopilotProjectContinuation(t *testing.T) {
 		t.Fatalf("continuation lost the original project resources: %+v", resp.ProjectResources)
 	}
 	dbfx.Exec(t, "UPDATE agent_task_queue SET status='dispatched',dispatched_at=now() WHERE id=$1", task.ID)
-	startRequest := withURLParam(newDaemonTokenRequest(http.MethodPost, "/api/daemon/tasks/"+uuidToString(task.ID)+"/start", nil, testWorkspaceID, "confirmed-followup"), "taskId", uuidToString(task.ID))
+	startRequest := withURLParam(newOwnerDaemonRequest(http.MethodPost, "/api/daemon/tasks/"+uuidToString(task.ID)+"/start", nil), "taskId", uuidToString(task.ID))
 	testutil.Call(t, testHandler.StartTask, startRequest).Want(http.StatusOK)
-	completeRequest := withURLParam(newDaemonTokenRequest(http.MethodPost, "/api/daemon/tasks/"+uuidToString(task.ID)+"/complete", map[string]any{"output": "confirmed repository verified"}, testWorkspaceID, "confirmed-followup"), "taskId", uuidToString(task.ID))
+	completeRequest := withURLParam(newOwnerDaemonRequest(http.MethodPost, "/api/daemon/tasks/"+uuidToString(task.ID)+"/complete", map[string]any{"output": "confirmed repository verified"}), "taskId", uuidToString(task.ID))
 	testutil.Call(t, testHandler.CompleteTask, completeRequest).Want(http.StatusOK)
 	original, err := testHandler.Queries.GetAgentTask(ctx, source.ID)
 	if err != nil || original.Status != source.Status {
