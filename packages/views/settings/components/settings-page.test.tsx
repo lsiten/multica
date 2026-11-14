@@ -59,6 +59,8 @@ vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
 vi.mock("./mcp-tab", stub("McpTab"));
+vi.mock("./jev-tab", stub("JevTab"));
+vi.mock("./jev-decision-logs-tab", stub("JevDecisionLogsTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
 
 const shell = vi.hoisted(() => ({
@@ -251,6 +253,23 @@ describe("SettingsPage Plugin feature flag", () => {
 });
 
 describe("SettingsPage workflows", () => {
+  it.each([
+    { tab: "jev", label: "Jev decision model", panel: "JevTab" },
+    { tab: "jev-logs", label: "Jev decision logs", panel: "JevDecisionLogsTab" },
+  ])("opens $label from its settings URL and search", ({ tab, label, panel }) => {
+    navigationState.search = `tab=${tab}`;
+    renderWithI18n(<SettingsPage />);
+
+    expect(screen.getByText(panel)).toBeInTheDocument();
+    expect(within(nav()).getByRole("link", { name: label })).toHaveAttribute("aria-current", "page");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: label },
+    });
+    const result = within(screen.getByRole("listbox", { name: "Search settings" })).getByRole("option", { name: new RegExp(label) });
+    fireEvent.click(result);
+    expect(push).toHaveBeenCalledWith(`/acme/settings?tab=${tab}`);
+  });
+
   it("mounts workflows without feature flag configuration and keeps wakeups", () => {
     navigationState.search = "tab=workflows";
 

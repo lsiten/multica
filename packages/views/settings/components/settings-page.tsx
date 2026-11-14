@@ -5,8 +5,10 @@ import {
   AlarmClock,
   Bell,
   Blocks,
+  Brain,
   CreditCard,
   FolderGit2,
+  FileText,
   Keyboard,
   KeyRound,
   ListPlus,
@@ -51,6 +53,8 @@ import { QuickActionsTab } from "./quick-actions-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
+import { JevTab } from "./jev-tab";
+import { JevDecisionLogsTab } from "./jev-decision-logs-tab";
 import { BillingTab } from "./billing-tab";
 import {
   SETTINGS_ANCHOR_ATTR,
@@ -213,6 +217,13 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
               <QuickActionsTab />,
               { wide: true },
             ),
+            entry("jev", t(($) => $.page.tabs.jev), Brain, <JevTab />, {
+              adminOnly: true,
+            }),
+            entry("jev-logs", t(($) => $.jev_logs.title), FileText, <JevDecisionLogsTab />, {
+              wide: true,
+              adminOnly: true,
+            }),
           ],
         },
         {
