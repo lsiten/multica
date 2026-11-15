@@ -164,6 +164,7 @@ function WakeupRow({
   onEnable: (input?: { at?: string; rearm?: boolean }) => Promise<void>;
 }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const workspaceId = useCurrentWorkspace()?.id ?? "";
   const text = useWakeupText();
   const viewTZ = useViewingTimezone();
@@ -297,7 +298,7 @@ function WakeupRow({
           )}
           {wakeup.next_fire_at && (
             <p className="text-caption text-muted-foreground">
-              {new Date(wakeup.next_fire_at).toLocaleString(undefined, {
+              {new Date(wakeup.next_fire_at).toLocaleString(locale, {
                 timeZone: viewTZ,
               })}{" "}
               · {viewTZ}

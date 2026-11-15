@@ -10,21 +10,6 @@ export const envelope = {
   daemon_generation: "daemon-1",
   request_id: "request-1",
 };
-export const stateWire = {
-  ...envelope,
-  state: {
-    runtime_id: scope.runtimeId,
-    state: "ready",
-    native_epoch: "native-1",
-    display_generation: "display-1",
-    geometry_revision: 2,
-    control_state: "agent",
-    active_task_id: "task-1",
-    intervention_id: null,
-    permissions: { screen_recording: "granted", accessibility: "granted" },
-    state_revision: 3,
-  },
-};
 export const sourceWire = {
   resource: {
     backend_identity: scope.backendIdentity,
@@ -32,15 +17,15 @@ export const sourceWire = {
     runtime_id: scope.runtimeId,
     uid: 501,
   },
-  source: { kind: "virtual", source_id: "display-1" },
+  source: { kind: "physical", source_id: "display-1" },
   native_epoch: "native-1",
   generation: "capture-1",
-  primary: false,
-  name: "Virtual",
+  primary: true,
+  name: "Primary display",
   width: 1600,
   height: 900,
   scale: 2,
-  geometry_revision: stateWire.state.geometry_revision,
+  geometry_revision: 1,
 };
 export const grantWire = {
   grant_id: "grant-1",

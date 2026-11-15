@@ -14,7 +14,6 @@ import { pinListOptions, useCreatePin, useDeletePin } from "@multica/core/pins";
 import { Pin, PinOff } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
-import { PAGE_GUTTER, PAGE_RAIL } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import {
   LegacyRuntimeMirrorPage,
@@ -121,21 +120,13 @@ function VideoMirrorPage({
           </Button>
         }
       />
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className={`${PAGE_RAIL} ${PAGE_GUTTER} py-6`}>
-          <div className="mx-auto max-w-5xl space-y-5">
-            <div>
-              <h1 className="text-title-sm font-semibold [overflow-wrap:anywhere]">{label}</h1>
-              <p className="mt-1 text-body text-muted-foreground">
-                {t(($) => $.mirror.description)}
-              </p>
-            </div>
-            <MirrorSurface
-              key={JSON.stringify(scope)}
-              scope={scope}
-              runtime={runtime}
-            />
-          </div>
+      <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-3">
+        <div className="mx-auto h-full max-w-[100rem]">
+          <MirrorSurface
+            key={JSON.stringify(scope)}
+            scope={scope}
+            runtime={runtime}
+          />
         </div>
       </main>
     </div>

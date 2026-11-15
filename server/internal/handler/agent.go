@@ -599,8 +599,7 @@ type AgentTaskResponse struct {
 	// quick-create run must file the issue it is about to create. Omitted when
 	// the issue has no parent or the parent cannot be read in this workspace;
 	// the daemon then renders no parent block.
-	ParentIssue         *ClaimParentIssue                    `json:"parent_issue,omitempty"`
-	VscreenIntervention *protocol.VscreenContinuationContext `json:"vscreen_intervention,omitempty"`
+	ParentIssue *ClaimParentIssue `json:"parent_issue,omitempty"`
 	// RequestingUserName + RequestingUserProfileDescription mirror the user
 	// the agent is acting on behalf of (see daemon/types.go). v1 sources them
 	// from the runtime owner so they're populated for daemon runtimes and

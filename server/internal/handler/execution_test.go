@@ -75,6 +75,16 @@ func (f executionFixture) grantRequest() protocol.ExecutionGrantRequest {
 
 func newExecutionFixture(t *testing.T) executionFixture {
 	t.Helper()
+	f := newExecutionClaimFixture(t)
+	bind := protocol.BindExecutionRequest{WorkerID: uuid.NewString(), DispatchedAt: f.claim, SupervisorEpoch: 1}
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/tasks/"+f.task+"/execution"), f.control, bind)).Want(200).JSON(&f.identity)
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/tasks/"+f.task+"/execution-grants"), f.control, f.grantRequest())).Want(200).JSON(&f.grant)
+	f.fx.Cleanup(t, "DELETE FROM execution_message_receipt WHERE execution_id=$1", f.identity.ExecutionID)
+	return f
+}
+
+func newExecutionClaimFixture(t *testing.T) executionFixture {
+	t.Helper()
 	if testHandler == nil {
 		t.Fatal("managed PostgreSQL is required")
 	}
@@ -103,11 +113,16 @@ func newExecutionFixture(t *testing.T) executionFixture {
 	if supervisor.Epoch != 1 {
 		t.Fatalf("initial epoch=%d", supervisor.Epoch)
 	}
-	bind := protocol.BindExecutionRequest{WorkerID: uuid.NewString(), DispatchedAt: claim, SupervisorEpoch: 1}
-	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/tasks/"+task+"/execution"), token, bind)).Want(200).JSON(&f.identity)
-	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/tasks/"+task+"/execution-grants"), token, f.grantRequest())).Want(200).JSON(&f.grant)
-	fx.Cleanup(t, "DELETE FROM execution_message_receipt WHERE execution_id=$1", f.identity.ExecutionID)
 	return f
+}
+
+func TestBindTaskExecutionAfterStartTask(t *testing.T) {
+	f := newExecutionClaimFixture(t)
+	start := map[string]any{"runtime_id": f.runtime, "dispatched_at": f.claim.Format(time.RFC3339Nano)}
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("start"), f.control, start)).Want(200)
+
+	bind := protocol.BindExecutionRequest{WorkerID: uuid.NewString(), DispatchedAt: f.claim, SupervisorEpoch: 1}
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.controlPath("/tasks/"+f.task+"/execution"), f.control, bind)).Want(200)
 }
 
 func TestExecutionClaimAndGrantIsolation(t *testing.T) {

@@ -1,8 +1,15 @@
 export { createChatStore, CHAT_MIN_W, CHAT_MIN_H, CHAT_DEFAULT_W, CHAT_DEFAULT_H, DRAFT_NEW_SESSION } from "./store";
 export type { ChatStoreOptions, ChatState, ChatTimelineItem } from "./store";
 export { useRecentContextStore, selectRecentContexts } from "./recent-context-store";
-export { useDocModeStore, selectActiveDocument, selectWorking, selectDiffView } from "./doc-mode-store";
-export type { DocumentRef, DocumentKind } from "./doc-mode-store";
+export {
+  useDocModeStore,
+  selectActiveDocument,
+  selectWorking,
+  selectDiffView,
+  selectDocumentDraft,
+  documentDraftKey,
+} from "./doc-mode-store";
+export type { DocumentDraft, DocumentKind, DocumentRef } from "./doc-mode-store";
 export { useLocalDirectoryStore, selectCurrentLocalDirectory } from "./local-directory-store";
 export type { CurrentLocalDirectory } from "./local-directory-store";
 export { chatFileDirectories } from "./file-directories";

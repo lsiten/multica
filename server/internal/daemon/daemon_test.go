@@ -7022,6 +7022,10 @@ func TestHermesProfileChainCoversLaunchPrefix(t *testing.T) {
 	}
 }
 
-func (c *syncRaceRepoCache) CreateWorktreeContext(_ context.Context, params repocache.WorktreeParams) (*repocache.WorktreeResult,error) { return c.CreateWorktree(params) }
+func (c *syncRaceRepoCache) CreateWorktreeContext(_ context.Context, params repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
+	return c.CreateWorktree(params)
+}
 
-func (c *syncRaceRepoCache) SyncContext(_ context.Context, workspaceID string, repos []repocache.RepoInfo) error { return c.Sync(workspaceID,repos) }
+func (c *syncRaceRepoCache) SyncContext(_ context.Context, workspaceID string, repos []repocache.RepoInfo) error {
+	return c.Sync(workspaceID, repos)
+}

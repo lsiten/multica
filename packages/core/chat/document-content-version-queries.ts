@@ -165,4 +165,26 @@ export function useRollbackDocumentContentVersion(wsId: string) {
   });
 }
 
+export function useDeleteDocumentContentVersion(wsId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      ref,
+      revision,
+    }: {
+      ref: DocumentRef;
+      revision: number;
+    }): Promise<void> => {
+      return ref.kind === "attachment"
+        ? api.deleteAttachmentContentVersion(ref.id, revision)
+        : ref.kind === "issue"
+          ? api.deleteIssueContentVersion(ref.id, revision)
+          : Promise.reject(new Error("workspace files are read-only"));
+    },
+    onSuccess: (_result, { ref }) => {
+      client.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, ref) });
+    },
+  });
+}
+
 export type { DocumentContentVersion, DocumentContentVersionList };

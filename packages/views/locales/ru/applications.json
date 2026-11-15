@@ -7,6 +7,7 @@
   "board": "Run board",
   "search": "Search applications",
   "all_projects": "All projects",
+  "all_runtimes": "All runtimes",
   "empty": "No applications yet",
   "empty_help": "Create an application in a project to run or register a service.",
   "no_matches": "No matching applications",
@@ -19,6 +20,11 @@
   "service": "Service application",
   "composition": "Composition",
   "unknown": "Unknown",
+  "actor_types": {
+    "member": "Участник",
+    "agent": "Агент",
+    "unknown": "Неизвестно"
+  },
   "mode": "Service management",
   "managed": "Start and manage",
   "external": "Register an existing service",

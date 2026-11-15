@@ -57,9 +57,7 @@ const (
 	EventInboxBatchRead      = "inbox:batch-read"
 	EventInboxBatchArchived  = "inbox:batch-archived"
 
-	// Runtime mirror control metadata. The payload never contains input data.
-	EventRuntimeMirrorControl = "runtime_mirror:control"
-	EventInboxDeleted         = "inbox:deleted"
+	EventInboxDeleted = "inbox:deleted"
 
 	// Workspace events
 	EventWorkspaceUpdated = "workspace:updated"

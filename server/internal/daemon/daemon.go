@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/multica-ai/multica/server/internal/agentdesktop"
 	"github.com/multica-ai/multica/server/internal/cli"
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/localenv"
@@ -477,7 +478,6 @@ type Daemon struct {
 	mirrorProcess            *mirrorProcessClient
 	mirrorProcessClosed      bool
 	mirrorPendingRemoval     map[string]bool
-	mirrorReportBridge       mirrorReportPort
 	mirrorChild              *mirrorProcessService
 	jevModelsMu              sync.Mutex
 	jevModelsClosing         bool
@@ -694,26 +694,19 @@ type Daemon struct {
 	// runtimeMirrors owns one shared capture source per registered runtime.
 	// Access is guarded by d.mu; entries are removed when a runtime is removed
 	// or when the daemon shuts down.
-	vscreenLocalOwner       func(context.Context, string) bool
-	vscreenReporter         *vscreenReporter
 	vscreenMu               sync.Mutex
 	vscreen                 *vscreenRuntime
-	vscreenInput            VscreenInputHandler
-	vscreenTakeover         VscreenTakeoverHandler
 	vscreenServerGeneration string
 	runtimeMirrors          map[string]*mirror.RuntimeMirror
-	// inputArbiter serializes atomic gestures per display resource across human
-	// viewers and agent tasks. It is shared by every runtime mirror.
-	inputArbiter   *mirror.Arbiter
-	controlBackend *mirrorControlBackend
-	// humanInteractionEnabled is the host-side master switch for remote human
-	// control. It defaults to off (view-only); it never gates agent actions.
-	humanInteractionEnabled atomic.Bool
-	// mirrorControlGeneration identifies the live daemon control WebSocket.
-	// mirrorControlCancel cancels negotiation owned by the previous connection
+	agentDesktopMu          sync.Mutex
+	agentDesktopTasks       map[string]string
+	agentDesktopControlMu   sync.Mutex
+	agentDesktopControls    map[string]*agentDesktopControlSession
+	// mirrorConnectionGeneration identifies the live daemon mirror WebSocket.
+	// mirrorConnectionCancel cancels negotiation owned by the previous connection
 	// when a replacement connects; both are guarded by d.mu.
-	mirrorControlGeneration mirrorControlGeneration
-	mirrorControlCancel     context.CancelFunc
+	mirrorConnectionGeneration mirrorConnectionGeneration
+	mirrorConnectionCancel     context.CancelFunc
 
 	// batchClaimUnsupported is set once a batch claim gets a 404 from the
 	// server (no /api/daemon/tasks/claim route — an un-upgraded server), so
@@ -1008,7 +1001,6 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 		workspaceChanges:            newWorkspaceChangeSignal(),
 		wsRPC:                       newWSRPCClient(wsRPCResponseGrace),
 		runtimeMirrors:              make(map[string]*mirror.RuntimeMirror),
-		inputArbiter:                mirror.NewArbiter(),
 		workerProcessRegistry:       newWorkerProcessRegistry(),
 	}
 	// Seed the live topology bits from the validated child-owner set. Run treats
@@ -1021,9 +1013,6 @@ func New(cfg Config, logger *slog.Logger) *Daemon {
 	}
 	if slices.Contains(d.cfg.ProcessServices, "gateway") {
 		d.gatewayProcessActive.Store(true)
-	}
-	if d.mirrorProcessMode() {
-		d.inputArbiter = nil
 	}
 	d.activeEnvRootsCond = sync.NewCond(&d.activeEnvRootsMu)
 	if d.environmentProcessMode() {
@@ -2467,9 +2456,9 @@ func (d *Daemon) run(ctx context.Context, healthLn net.Listener) error {
 	defer d.reportOutboxOwner.release()
 	// Deregister runtimes on shutdown (uses a fresh context since ctx will be cancelled).
 	defer d.deregisterRuntimes()
-	defer d.closeVscreenReporter()
 	defer d.closeVscreens()
 	defer d.closeRuntimeMirrors()
+	defer d.closeAgentDesktopControls()
 
 	// Terminal report replay can start as soon as account authority is known;
 	// runtime registration and task claim wait until required child owners are
@@ -3512,6 +3501,7 @@ func (d *Daemon) registerRuntimesForWorkspaceBatchLocked(ctx context.Context, wo
 		"runtimes":             runtimes,
 		"failed_profiles":      failedProfiles,
 		"max_concurrent_tasks": d.cfg.MaxConcurrentTasks,
+		"agent_desktop":        agentdesktop.CachedReadiness(),
 	}
 
 	resp, err := d.client.Register(ctx, req)
@@ -3558,6 +3548,7 @@ func (d *Daemon) registerBuiltinRuntimesForWorkspaceLocked(ctx context.Context, 
 		"server_url":           util.RuntimeAPIURL(d.cfg.ServerBaseURL),
 		"runtimes":             runtimes,
 		"max_concurrent_tasks": d.cfg.MaxConcurrentTasks,
+		"agent_desktop":        agentdesktop.CachedReadiness(),
 		// Deliberately empty: this call carries no profiles, so it must not
 		// report profile failures either.
 		"failed_profiles": []map[string]string{},
@@ -6684,11 +6675,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		result.Comment = "daemon shut down while task was in flight"
 	}
 
-	reportContext := ctx
-	if d.mirrorProcessMode() {
-		reportContext = context.WithValue(ctx, mirrorReportedClaimKey{}, mirrorTaskClaim{TaskID: task.ID, WorkspaceID: task.WorkspaceID, RuntimeID: task.RuntimeID, AgentID: task.AgentID, DispatchedAt: task.DispatchedAt, PriorSessionID: task.PriorSessionID, Source: task.MirrorSource, Continuation: task.VscreenContinuation})
-	}
-	d.reportTaskResult(reportContext, task.ID, result, taskLog)
+	d.reportTaskResult(ctx, task.ID, result, taskLog)
 
 }
 
@@ -6974,10 +6961,6 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			execution:             result.Execution,
 		}); err != nil {
 			taskLog.Error("report failed task failed", "error", err)
-		} else if failureReason == "gui_human_intervention" {
-			if err := d.markVscreenInterventionStopped(ctx, taskID); err != nil {
-				taskLog.Warn("virtual screen intervention report pending")
-			}
 		}
 	}
 }
@@ -8635,10 +8618,6 @@ func qualifyTaskModel(
 }
 
 func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot int, taskLog *slog.Logger) (taskResult TaskResult, returnErr error) {
-	parentCtx := ctx
-	ctx, cancelVscreen := context.WithCancelCause(ctx)
-	defer cancelVscreen(nil)
-	defer func() { finalizeVscreenStop(parentCtx, ctx, &taskResult, &returnErr) }()
 	phaseRecorder := taskPhaseRecorderFromContext(ctx)
 	phaseRecorder.Mark(taskPhasePrepareStarted)
 	// A claim carries the task-row agent id both at the top level and inside
@@ -9118,30 +9097,24 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			cursorMcpAuthSource = strings.TrimSpace(task.Agent.CustomEnv[execenv.CursorMcpAuthSourceEnv])
 		}
 	}
-	vscreenConfig, vscreenBroker, vscreenExecution, vscreenErr := d.startTaskVscreen(ctx, task, provider, cancelVscreen)
-	if errors.Is(vscreenErr, errVscreenProviderUnavailable) && task.VscreenContinuation == nil {
-		taskCtx.AgentInstructions += "\nManaged GUI tools are unavailable for this provider. Report GUI work as unavailable; do not use shell or other desktop automation as a fallback. Non-GUI work may continue."
-	} else if vscreenErr != nil {
-		return TaskResult{}, vscreenErr
+	agentDesktopConfig, agentDesktopExecution, agentDesktopErr := d.startTaskAgentDesktop(ctx, task, provider)
+	if agentDesktopErr != nil {
+		return TaskResult{}, agentDesktopErr
 	}
-	if vscreenBroker != nil {
-		taskCtx.AgentInstructions += vscreenExecutionInstructions
-		if task.VscreenContinuation != nil {
-			taskCtx.AgentInstructions += "\nNew run after human intervention: acquire and freshly observe before acting. Human handoff summary: " + task.VscreenContinuation.HumanSummary
-		}
-		defer vscreenExecution.Close()
-		defer vscreenBroker.Close()
+	if agentDesktopExecution != nil {
+		taskCtx.AgentInstructions += agentDesktopInstructions
+		defer agentDesktopExecution.Close()
 		// Loading an explicit base preserves inherited runtime MCP servers even when the Agent has no managed entries.
 		if len(effectiveMcpConfig) == 0 || string(effectiveMcpConfig) == "null" {
 			effectiveMcpConfig = json.RawMessage(`{"mcpServers":{}}`)
 		}
-		effectiveMcpConfig, vscreenErr = mergeRuntimeAndAgentMcpConfig(provider, effectiveMcpConfig)
-		if vscreenErr != nil {
-			return TaskResult{}, vscreenErr
+		effectiveMcpConfig, agentDesktopErr = mergeRuntimeAndAgentMcpConfig(provider, effectiveMcpConfig)
+		if agentDesktopErr != nil {
+			return TaskResult{}, agentDesktopErr
 		}
-		effectiveMcpConfig, vscreenErr = mergeVscreenMCP(effectiveMcpConfig, vscreenConfig)
-		if vscreenErr != nil {
-			return TaskResult{}, vscreenErr
+		effectiveMcpConfig, agentDesktopErr = mergeAgentDesktopMCP(effectiveMcpConfig, agentDesktopConfig)
+		if agentDesktopErr != nil {
+			return TaskResult{}, agentDesktopErr
 		}
 	}
 	// Expose the semantic decision and completion tools through the same MCP
@@ -12584,7 +12557,6 @@ func runTaskMessageDrain(
 	}
 
 	var sessionPinned atomic.Bool
-	drainInterrupted := drainCtx.Done()
 	for {
 		select {
 		case msg, ok := <-session.Messages:
@@ -12665,7 +12637,7 @@ func runTaskMessageDrain(
 					// credential) to a peer that does not scrub nested
 					// values yet. Deployment order is not a control we
 					// have, so this side has to be safe on its own.
-					Input: redact.InputMap(vscreenTranscriptInput(msg.Tool, msg.Input)),
+					Input: redact.InputMap(msg.Input),
 				})
 				mu.Unlock()
 				flushFirstVisible()
@@ -12692,10 +12664,6 @@ func runTaskMessageDrain(
 					toolName = callIDToTool[msg.CallID]
 				}
 				s := msgSeq.Add(1)
-				if isVscreenToolName(toolName) {
-					output = "Managed virtual screen tool returned; native observation and input omitted."
-					outputTruncated = false
-				}
 				taskLog.Info("tool_result observed", "seq", s, "tool", toolName, "call_id", msg.CallID)
 				batch = append(batch, TaskMessageData{
 					Seq:       int(s),
@@ -12739,13 +12707,7 @@ func runTaskMessageDrain(
 				mu.Unlock()
 				flushFirstVisible()
 			}
-		case <-drainInterrupted:
-			if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-				// GUI stop cancels the provider first; keep consuming its owned cleanup
-				// messages until the backend closes the stream or the drain budget expires.
-				drainInterrupted = nil
-				continue
-			}
+		case <-drainCtx.Done():
 			goto drainDone
 		case <-forcedDrainStop:
 			goto drainDone
@@ -12860,13 +12822,6 @@ func classifyTerminalResult(
 		result = budgetResultFor(result, session, opts, budget, source, budgetExceeded, tokenBudgetExceeded)
 		stopWatchdog()
 		waitForDrain()
-		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-			select {
-			case <-drainFinished:
-			default:
-				return result, toolCount.Load(), errVscreenStopUnconfirmed
-			}
-		}
 		// terminalObserved outranks a watchdog that fired anyway: if the backend
 		// had already read its authoritative result, this is the real outcome and
 		// re-tagging it would report a completed run as a hang.
@@ -12900,24 +12855,6 @@ func classifyTerminalResult(
 			case <-timer.C:
 			}
 			return budgetResultFor(agent.Result{Status: "aborted", Error: "provider-reported cost limit reached"}, session, opts, budget, source, budgetExceeded, tokenBudgetExceeded), toolCount.Load(), nil
-		}
-		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-			// A cancelled context is not proof that the owned provider and tools have stopped.
-			select {
-			case result, ok := <-session.Result:
-				if !ok {
-					return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
-				}
-				waitForDrain()
-				select {
-				case <-drainFinished:
-				default:
-					return result, toolCount.Load(), errVscreenStopUnconfirmed
-				}
-				return result, toolCount.Load(), nil
-			case <-time.After(terminalResultHandoffBudget):
-				return agent.Result{}, toolCount.Load(), errVscreenStopUnconfirmed
-			}
 		}
 		// The drain loop is exiting on this same Done signal; wait for its
 		// final flush so the timeout/watchdog/cancel terminals below cannot

@@ -28,6 +28,20 @@ export interface DocumentRef {
   relativePath?: string;
 }
 
+export type DocumentDraft =
+  | {
+      readonly kind: "version";
+      readonly content: string;
+      readonly baseContent: string;
+      readonly baseRevision: number;
+      readonly contentType: string;
+    }
+  | {
+      readonly kind: "workspace_file";
+      readonly content: string;
+      readonly baseContent: string;
+    };
+
 interface DocModeState {
   // The document the chat is currently in doc mode about, per session.
   // Null when no document is open. Persisted so a reload restores doc mode.
@@ -39,6 +53,9 @@ interface DocModeState {
   workingBySession: Record<string, boolean>;
   // The diff view toggle (D6: not shown by default; the user switches to it).
   diffViewBySession: Record<string, boolean>;
+  // Unsaved edits survive closing, switching documents, reloads and session
+  // changes. The key is derived from the document identity, not the session.
+  draftsByDocument: Record<string, DocumentDraft>;
   // Enter doc mode with a document (full-screen doc + floating working).
   openDoc: (sessionId: string, doc: DocumentRef) => void;
   // Explicitly close the document (D9: only an explicit close returns to chat).
@@ -47,6 +64,8 @@ interface DocModeState {
   setWorking: (sessionId: string, working: boolean) => void;
   // Toggle the diff view (D6).
   setDiffView: (sessionId: string, diff: boolean) => void;
+  setDocumentDraft: (doc: DocumentRef, draft: DocumentDraft) => void;
+  clearDocumentDraft: (doc: DocumentRef) => void;
 }
 
 export const useDocModeStore = create<DocModeState>()(
@@ -55,6 +74,7 @@ export const useDocModeStore = create<DocModeState>()(
       activeBySession: {},
       workingBySession: {},
       diffViewBySession: {},
+      draftsByDocument: {},
       openDoc: (sessionId, doc) =>
         set((state) => ({
           activeBySession: { ...state.activeBySession, [sessionId]: doc },
@@ -94,23 +114,55 @@ export const useDocModeStore = create<DocModeState>()(
             [sessionId]: diff,
           },
         })),
+      setDocumentDraft: (doc, draft) =>
+        set((state) => ({
+          draftsByDocument: {
+            ...state.draftsByDocument,
+            [documentDraftKey(doc)]: draft,
+          },
+        })),
+      clearDocumentDraft: (doc) =>
+        set((state) => {
+          const key = documentDraftKey(doc);
+          if (!state.draftsByDocument[key]) return state;
+          const { [key]: _removed, ...draftsByDocument } = state.draftsByDocument;
+          return { draftsByDocument };
+        }),
     }),
     {
       name: "multica_doc_mode",
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({
         activeBySession: state.activeBySession,
+        draftsByDocument: state.draftsByDocument,
         // "working" and "diff view" are ephemeral UI state, not persisted.
       }),
-      version: 2,
-      // v1 persisted by workspace; drop it so no stale workspace-scoped document
-      // leaks across sessions once the key becomes session-scoped.
-      migrate: () => ({ activeBySession: {} }),
+      version: 3,
+      migrate: (persisted, version) => {
+        // v1 persisted by workspace; drop it so no stale workspace-scoped
+        // document leaks across sessions once the key becomes session-scoped.
+        if (version < 2) return { activeBySession: {}, draftsByDocument: {} };
+        const previous = persisted as { activeBySession?: Record<string, DocumentRef | null> } | undefined;
+        return {
+          activeBySession: previous?.activeBySession ?? {},
+          draftsByDocument: {},
+        };
+      },
     },
   ),
 );
 
 const NO_DOC: DocumentRef | null = null;
+
+export function documentDraftKey(doc: DocumentRef): string {
+  return [
+    doc.kind,
+    doc.id,
+    doc.taskId ?? "",
+    doc.projectResourceId ?? "",
+    doc.relativePath ?? "",
+  ].join(":");
+}
 
 export function selectActiveDocument(sessionId: string | null) {
   return (state: DocModeState) =>
@@ -123,4 +175,8 @@ export function selectWorking(sessionId: string | null) {
 
 export function selectDiffView(sessionId: string | null) {
   return (state: DocModeState) => (sessionId ? state.diffViewBySession[sessionId] ?? false : false);
+}
+
+export function selectDocumentDraft(doc: DocumentRef | null) {
+  return (state: DocModeState) => (doc ? state.draftsByDocument[documentDraftKey(doc)] : undefined);
 }

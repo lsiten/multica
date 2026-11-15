@@ -16,11 +16,13 @@ import { useRestoredScrollOffset } from "../../platform";
 import { useIssueDetailScrollRestore } from "../hooks/use-issue-detail-scroll-restore";
 import { WorkProgressEntry, WorkProgressSummary } from "./work-progress-entry";
 import { useWorkProgressLabels } from "./work-progress-labels";
+import { useLocale } from "../../i18n";
 
 const FILTERS: ProgressFilter[] = ["all", "blocked", "review", "follow_up", "ready", "awaiting_agent", "other_member", "prerequisites"];
 
 export function WorkProgressPanel({ scope, currentProjectId, showSummary = true }: { scope: ProgressScope; currentProjectId?: string | null; showSummary?: boolean }) {
   const { t } = useWorkProgressLabels();
+  const locale = useLocale();
   const workspaceId = useWorkspaceId();
   const memberId = useAuthStore(state => state.user?.id) ?? "";
   const navigation = useNavigation();
@@ -100,6 +102,6 @@ export function WorkProgressPanel({ scope, currentProjectId, showSummary = true 
       const showGroup = ancestor && (group.length > 1 || ancestor.id !== group[0]?.issue.id);
       return <div key={ancestor?.id ?? group[0]?.issue.id} className="space-y-2">{showGroup && <h3 className="break-words text-caption font-medium"><AppLink href={paths.issueDetail(ancestor.identifier || ancestor.id)} className="rounded-sm hover:underline">{ancestor.identifier} · {ancestor.title}</AppLink></h3>}{group.map(entry => <WorkProgressEntry key={entry.issue.id} entry={entry} currentProjectId={currentProjectId} />)}</div>;
     })}
-    {view && <div className="flex flex-wrap items-center justify-between gap-2 text-caption text-muted-foreground"><span>{t($ => $.work_progress.showing, { shown: entries.length, total: view.filtered_total })}</span><span>{t($ => $.work_progress.updated, { time: new Date(view.as_of).toLocaleTimeString() })}</span>{query.hasNextPage && <Button size="sm" variant="outline" disabled={query.isFetchingNextPage} aria-busy={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t($ => $.work_progress.load_more)}</Button>}</div>}
+    {view && <div className="flex flex-wrap items-center justify-between gap-2 text-caption text-muted-foreground"><span>{t($ => $.work_progress.showing, { shown: entries.length, total: view.filtered_total })}</span><span>{t($ => $.work_progress.updated, { time: new Date(view.as_of).toLocaleTimeString(locale) })}</span>{query.hasNextPage && <Button size="sm" variant="outline" disabled={query.isFetchingNextPage} aria-busy={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t($ => $.work_progress.load_more)}</Button>}</div>}
   </section>;
 }

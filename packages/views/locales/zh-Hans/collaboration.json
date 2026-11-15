@@ -10,6 +10,11 @@
   "project_tab_graph": "项目协作实况",
   "project_title": "项目协作实况",
   "project_description": "只显示有运行证据的 Agent 关系。",
+  "view_graph": "关系图",
+  "view_list": "列表",
+  "accessible_nodes": "智能体与小队",
+  "accessible_relations": "协作关系",
+  "no_relations": "暂无可显示的协作关系。",
   "agents_count": "{{count}} 个 Agent",
   "refresh": "刷新",
   "load_failed": "项目协作实况加载失败。",
@@ -124,5 +129,11 @@
     "failed": "失败",
     "cancelled": "已取消"
   },
+  "events": {
+    "task_started": "任务开始",
+    "task_finished": "任务完成",
+    "task_failed": "任务失败"
+  },
+  "runtime_event": "运行事件",
   "run_count": "{{count}} 次运行"
 }

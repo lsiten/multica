@@ -337,12 +337,9 @@ type MessageKindRecorder interface {
 // Hub keeps daemon WebSocket connections indexed by runtime ID. Messages are
 // best-effort wakeup hints; the daemon still uses HTTP claim for correctness.
 type Hub struct {
-	voicePending      map[string]*voicePending
-	vscreenPending    map[string]*vscreenPending
-	interventionMu    sync.RWMutex
-	onIntervention    VscreenInterventionHandler
-	onVscreenDisabled VscreenDisabledHandler
-	upgrader          websocket.Upgrader
+	voicePending          map[string]*voicePending
+	runtimeQueriesPending map[string]*runtimeQueryPending
+	upgrader              websocket.Upgrader
 
 	mu          sync.RWMutex
 	clients     map[*client]bool
@@ -364,10 +361,8 @@ type Hub struct {
 	onMirrorAnswer        MirrorAnswerHandler
 	onMirrorAnswerFailure MirrorAnswerFailureHandler
 
-	mirrorViewerMu       sync.RWMutex
-	onMirrorViewer       MirrorViewerHandler
-	mirrorControlStateMu sync.RWMutex
-	onMirrorControlState MirrorControlStateHandler
+	mirrorViewerMu sync.RWMutex
+	onMirrorViewer MirrorViewerHandler
 
 	disconnectMu sync.RWMutex
 	onDisconnect DisconnectHandler
@@ -1120,14 +1115,20 @@ func (c *client) handleFrame(raw []byte) {
 		rec.RecordDaemonWSMessageReceived(kind)
 	}
 	switch msg.Type {
-	case protocol.EventVscreenIntervention:
-		c.handleVscreenIntervention(msg.Payload)
 	case protocol.EventVoiceTranscript:
 		c.handleVoiceResult(msg.Payload)
-	case protocol.EventVscreenResult:
-		c.handleVscreenReceipt(msg.Payload)
-	case protocol.EventVscreenQueryResult:
-		c.handleVscreenQueryResult(msg.Payload)
+	case protocol.EventMirrorSourcesResult:
+		c.handleRuntimeQueryResult(msg.Payload, protocol.EventMirrorSourcesResult)
+	case protocol.EventAgentDesktopReadinessResult:
+		c.handleRuntimeQueryResult(msg.Payload, protocol.EventAgentDesktopReadinessResult)
+	case protocol.EventAgentDesktopPermissionGuideResult:
+		c.handleRuntimeQueryResult(msg.Payload, protocol.EventAgentDesktopPermissionGuideResult)
+	case protocol.EventAgentDesktopControlStartResult:
+		c.handleRuntimeQueryResult(msg.Payload, protocol.EventAgentDesktopControlStartResult)
+	case protocol.EventAgentDesktopControlInputResult:
+		c.handleRuntimeQueryResult(msg.Payload, protocol.EventAgentDesktopControlInputResult)
+	case protocol.EventAgentDesktopControlStopResult:
+		c.handleRuntimeQueryResult(msg.Payload, protocol.EventAgentDesktopControlStopResult)
 	case protocol.EventDaemonHeartbeat:
 		c.handleHeartbeatFrame(msg.Payload)
 	case protocol.EventDaemonRPCRequest:
@@ -1138,8 +1139,6 @@ func (c *client) handleFrame(raw []byte) {
 		c.handleMirrorAnswerFailureFrame(msg.Payload)
 	case protocol.EventMirrorViewer:
 		c.handleMirrorViewerFrame(msg.Payload)
-	case protocol.EventMirrorControlState:
-		c.handleMirrorControlStateFrame(msg.Payload)
 	default:
 		// Unknown app messages are intentionally ignored for forward
 		// compatibility with future daemon → server message types.

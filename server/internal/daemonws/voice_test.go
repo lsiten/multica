@@ -12,7 +12,7 @@ import (
 
 func TestVoiceRelayRoundTripAndCleanup(t *testing.T) {
 	h := NewHub()
-	c := dialVscreenTestConn(t, h, ClientIdentity{DaemonID: "daemon", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
+	c := dialMirrorTestConn(t, h, ClientIdentity{DaemonID: "daemon", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	done := make(chan protocol.VoiceResult, 1)
@@ -34,7 +34,7 @@ func TestVoiceRelayRoundTripAndCleanup(t *testing.T) {
 	if frame.Type != protocol.EventVoiceTranscribe || req.AudioBase64 != "YQ==" {
 		t.Fatal("incorrect relay payload")
 	}
-	if err := c.WriteJSON(protocol.Message{Type: protocol.EventVoiceTranscript, Payload: mustMarshalRaw(protocol.VoiceResult{VscreenEnvelope: req.VscreenEnvelope, Text: "hello"})}); err != nil {
+	if err := c.WriteJSON(protocol.Message{Type: protocol.EventVoiceTranscript, Payload: mustMarshalRaw(protocol.VoiceResult{RuntimeEnvelope: req.RuntimeEnvelope, Text: "hello"})}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -54,8 +54,8 @@ func TestVoiceRelayRoundTripAndCleanup(t *testing.T) {
 
 func TestVoiceRelayRejectsForeignReplyAndCancels(t *testing.T) {
 	h := NewHub()
-	c := dialVscreenTestConn(t, h, ClientIdentity{DaemonID: "daemon", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
-	foreign := dialVscreenTestConn(t, h, ClientIdentity{DaemonID: "other", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
+	c := dialMirrorTestConn(t, h, ClientIdentity{DaemonID: "daemon", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
+	foreign := dialMirrorTestConn(t, h, ClientIdentity{DaemonID: "other", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -71,7 +71,7 @@ func TestVoiceRelayRejectsForeignReplyAndCancels(t *testing.T) {
 	if err := json.Unmarshal(frame.Payload, &req); err != nil {
 		t.Fatal(err)
 	}
-	if err := foreign.WriteJSON(protocol.Message{Type: protocol.EventVoiceTranscript, Payload: mustMarshalRaw(protocol.VoiceResult{VscreenEnvelope: req.VscreenEnvelope, Text: "forged"})}); err != nil {
+	if err := foreign.WriteJSON(protocol.Message{Type: protocol.EventVoiceTranscript, Payload: mustMarshalRaw(protocol.VoiceResult{RuntimeEnvelope: req.RuntimeEnvelope, Text: "forged"})}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -103,7 +103,7 @@ func TestVoiceRelayRejectsForeignReplyAndCancels(t *testing.T) {
 
 func TestVoiceRelayBoundsConcurrencyAndReleasesOnDisconnect(t *testing.T) {
 	h := NewHub()
-	c := dialVscreenTestConn(t, h, ClientIdentity{DaemonID: "daemon", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
+	c := dialMirrorTestConn(t, h, ClientIdentity{DaemonID: "daemon", WorkspaceID: "ws", RuntimeIDs: []string{"rt"}})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	done := make(chan error, 2)
@@ -115,7 +115,7 @@ func TestVoiceRelayBoundsConcurrencyAndReleasesOnDisconnect(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := h.TranscribeVoice(ctx, "ws", "rt", "daemon", audio); !errors.Is(err, ErrVscreenCapacity) {
+	if _, err := h.TranscribeVoice(ctx, "ws", "rt", "daemon", audio); !errors.Is(err, ErrMirrorCapacity) {
 		t.Fatalf("expected capacity limit, got %v", err)
 	}
 	if err := c.Close(); err != nil {
@@ -124,7 +124,7 @@ func TestVoiceRelayBoundsConcurrencyAndReleasesOnDisconnect(t *testing.T) {
 	for range 2 {
 		select {
 		case err := <-done:
-			if !errors.Is(err, ErrVscreenUnavailable) {
+			if !errors.Is(err, ErrMirrorUnavailable) {
 				t.Fatalf("disconnect: %v", err)
 			}
 		case <-ctx.Done():

@@ -1,7 +1,12 @@
 import { app } from "electron";
 import { execFile } from "child_process";
 import { createHash } from "crypto";
-import { createReadStream, createWriteStream, existsSync } from "fs";
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  readFileSync,
+} from "fs";
 import { chmod, mkdir, rename, rm } from "fs/promises";
 import { join, dirname } from "path";
 import { pipeline } from "stream/promises";
@@ -16,6 +21,7 @@ import { selectPlatformReleaseAssetName } from "./cli-release-asset";
 
 const GITHUB_LATEST_BASE =
   "https://github.com/multica-ai/multica/releases/latest/download";
+const AGENT_DESKTOP_VERSION = "1.3.1";
 
 function binaryName(): string {
   return process.platform === "win32" ? "multica.exe" : "multica";
@@ -23,6 +29,48 @@ function binaryName(): string {
 
 export function managedCliPath(): string {
   return join(app.getPath("userData"), "bin", binaryName());
+}
+
+function managedAgentDesktopPath(): string {
+  return join(
+    app.getPath("home"),
+    ".multica",
+    "tools",
+    "agent-desktop",
+    AGENT_DESKTOP_VERSION,
+  );
+}
+
+function agentDesktopInstalled(): boolean {
+  const directory = managedAgentDesktopPath();
+  const executable = join(
+    directory,
+    process.platform === "win32" ? "agent-desktop.exe" : "agent-desktop",
+  );
+  const helper =
+    process.platform === "darwin"
+      ? join(directory, "agent-desktop-macos-helper")
+      : process.platform === "linux"
+        ? join(directory, "agent-desktop-linux-clipboard-owner")
+        : null;
+  try {
+    return (
+      readFileSync(join(directory, "VERSION"), "utf8").trim() ===
+        `v${AGENT_DESKTOP_VERSION}` &&
+      existsSync(executable) &&
+      (helper === null || existsSync(helper))
+    );
+  } catch (error) {
+    if (error instanceof Error) return false;
+    throw error;
+  }
+}
+
+export async function prepareAgentDesktop(cliPath: string): Promise<void> {
+  await run(cliPath, ["agent-desktop", "install"]);
+  if (!agentDesktopInstalled()) {
+    throw new Error("agent-desktop installer completed without a usable release");
+  }
 }
 
 function run(cmd: string, args: string[], cwd?: string): Promise<void> {
@@ -152,6 +200,8 @@ export async function ensureManagedCli(
   options: { forceInstall?: boolean } = {},
 ): Promise<string> {
   const target = managedCliPath();
-  if (existsSync(target) && !options.forceInstall) return target;
-  return installFresh();
+  const cliPath =
+    existsSync(target) && !options.forceInstall ? target : await installFresh();
+  await prepareAgentDesktop(cliPath);
+  return cliPath;
 }

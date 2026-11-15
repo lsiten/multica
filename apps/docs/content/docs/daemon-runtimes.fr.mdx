@@ -188,6 +188,33 @@ Lorsque le propriétaire retire des membres, restreint un runtime public à des 
 
 L'annulation conserve l'historique de discussion et enregistre sur le serveur les données de restauration du brouillon et des pièces jointes. Les versions web et bureau utilisent l'interface de restauration existante ; la version mobile ne propose pas encore cette interface. Une exécution démarrée sans sortie attend l'accusé d'annulation du daemon ou la fin du délai de finalisation du serveur avant de décider si la saisie doit être restaurée. Un daemon connecté reçoit l'annulation lors de sa vérification habituelle. Si l'ordinateur est hors ligne, l'accès côté serveur est tout de même révoqué immédiatement, mais le processus local peut continuer jusqu'à sa reconnexion et à la réception de l'annulation ; le serveur ne peut pas garantir un arrêt à distance immédiat.
 
+## Miroir d’écran du runtime
+
+Le miroir d’écran du runtime est en lecture seule. Le spectateur peut choisir un écran physique ou système et regarder une vidéo H.264 en direct ; il ne peut pas envoyer d’entrée pointeur ou clavier, demander une prise en main, sélectionner une fenêtre d’application ni rendre le contrôle à une exécution.
+
+Multica ne crée plus d’écran virtuel pour les agents. Les actions de bureau passent uniquement par la version figée `agent-desktop`. Un agent ne reçoit ces outils que si l’exécution possède un rattachement de source miroir authentifié et que le daemon annonce `agent-desktop-v1`. Si le fournisseur, la session graphique, les autorisations ou l’installation à version figée sont indisponibles, l’exécution échoue explicitement au lieu de lancer une autre implémentation graphique.
+
+### Autorisations
+
+L’enregistrement de l’écran est nécessaire pour afficher un écran physique ou système. L’accessibilité est nécessaire à `agent-desktop` pour inspecter et piloter les applications accessibles. Le daemon effectue les vérifications sans ouvrir d’invite d’autorisation ni réinitialiser les réglages système. Une autorisation manquante, un runtime hors ligne ou un écran indisponible sont signalés dans le visualiseur et n’activent aucun chemin de contrôle.
+
+Les versions Desktop et CLI installent `agent-desktop` v1.3.1 dans `~/.multica/tools/agent-desktop/1.3.1/`. L’installation gérée contient `VERSION`, `SHA256SUMS`, la licence Apache-2.0 et l’assistant de plateforme. Chaque démarrage vérifie la version exacte et les sommes de contrôle ; Multica n’utilise pas une installation arbitraire trouvée dans `PATH`.
+
+### Compatibilité des sources
+
+Seules les sources physiques et système sont acceptées. Si un client plus récent reçoit une source virtuelle d’un serveur plus ancien, il considère le catalogue de sources comme indisponible et la page reste en lecture seule. Les clients plus anciens qui contiennent encore des commandes de contrôle ne reçoivent aucune autorisation de contrôle du serveur actuel.
+
+### Vérification
+
+Exécutez le scénario de miroir dans le navigateur, ainsi que les vérifications ciblées du protocole et de la capture :
+
+```bash
+pnpm exec playwright test e2e/runtime-vscreen.spec.ts
+(cd server && go test ./internal/mirror/... ./internal/agentdesktop ./internal/handler ./internal/daemon -count=1)
+```
+
+Le scénario navigateur utilise un catalogue de sources synthétique et une vidéo canvas. Il vérifie la page livrée et les contraintes sur les sources, pas la capture native, les autorisations de plateforme ni les actions de bureau.
+
 ## Profils de runtime personnalisés
 
 Si votre équipe utilise un wrapper interne, un exécutable à version figée, ou a besoin d'arguments supplémentaires fixes pour un outil compatible, créez un **profil de runtime personnalisé**.

@@ -147,6 +147,7 @@ type Config struct {
 	NativeHostExecutable           string                // Trusted same-binary absolute path; empty disables managed native work.
 	NativeHostBuild                string                // Version/commit identity; never read from renderer or PATH.
 	NativeVscreenPreferencesPath   string                // Profile-private enabled preference file.
+	AgentDesktopHeaded             bool                  // Allow agent-desktop physical pointer and keyboard input.
 	KeepEnvAfterTask               bool                  // preserve env after task for debugging
 	LLM2JevEnabled                 bool                  // inject semantic decision MCP when supported (default: true)
 	LLM2JevMaxConcurrency          int                   // per-task semantic MCP call concurrency

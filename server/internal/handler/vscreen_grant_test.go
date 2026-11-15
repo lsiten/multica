@@ -27,7 +27,7 @@ func TestVscreenManagedViewerRenewAndMemberRevocation(t *testing.T) {
 func testVscreenManagedViewerRenewAndMemberRevocation(t *testing.T, version int) {
 	// Given: a public runtime, signed viewer JWT, and real daemon WebSocket.
 	const daemonID = "vscreen-grant-daemon"
-	runtimeID := dbfx.Runtime(t, "Vscreen grant", testutil.Cols{"workspace_id": testWorkspaceID, "owner_id": testUserID, "daemon_id": daemonID, "provider": "vscreen-grant", "device_info": "test", "visibility": "public", "status": "online", "metadata": testutil.Raw(`'{"capabilities":["screen-mirror-v1","virtual-screen-v1","mirror-viewer-grant-v1","screen-mirror-video-v2"]}'::jsonb`)})
+	runtimeID := dbfx.Runtime(t, "Vscreen grant", testutil.Cols{"workspace_id": testWorkspaceID, "owner_id": testUserID, "daemon_id": daemonID, "provider": "vscreen-grant", "device_info": "test", "visibility": "public", "status": "online", "metadata": testutil.Raw(`'{"capabilities":["mirror-viewer-grant-v1","screen-mirror-video-v2"]}'::jsonb`)})
 	userID := createSecondWorkspaceMember(t)
 	h := *testHandler
 	h.DaemonHub = daemonws.NewHub()
@@ -43,26 +43,23 @@ func testVscreenManagedViewerRenewAndMemberRevocation(t *testing.T, version int)
 				daemonErrors <- err
 				return
 			}
-			if frame.Type != protocol.EventVscreenQuery {
+			if frame.Type != protocol.EventMirrorSourcesQuery {
 				frames <- frame
 				continue
 			}
-			var query protocol.VscreenQuery
+			var query protocol.MirrorSourcesQuery
 			if err := json.Unmarshal(frame.Payload, &query); err != nil {
 				daemonErrors <- err
 				return
 			}
-			source := protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "virtual"}, NativeEpoch: "native", Generation: "display"}, Name: "Virtual screen", Width: 1920, Height: 1080, Scale: 1, GeometryRevision: 1}
-			if version == 1 {
-				source.Source = protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "primary"}
-				source.Primary = true
-			}
-			raw, err := json.Marshal(protocol.VscreenQueryResult{VscreenEnvelope: query.VscreenEnvelope, Sources: []protocol.VscreenSourceDescriptor{source}})
+			resource := protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501, DisplayID: 1}
+			source := protocol.MirrorSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: resource, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "display:primary"}, NativeEpoch: "native", Generation: "display", Primary: true}, DisplayID: 1, Name: "Primary display", Width: 1920, Height: 1080, Scale: 1, GeometryRevision: 1}
+			raw, err := json.Marshal(protocol.MirrorSourcesResult{RuntimeEnvelope: query.RuntimeEnvelope, Sources: []protocol.MirrorSourceDescriptor{source}})
 			if err != nil {
 				daemonErrors <- err
 				return
 			}
-			if err := conn.WriteJSON(protocol.Message{Type: protocol.EventVscreenQueryResult, Payload: raw}); err != nil {
+			if err := conn.WriteJSON(protocol.Message{Type: protocol.EventMirrorSourcesResult, Payload: raw}); err != nil {
 				daemonErrors <- err
 				return
 			}
@@ -72,7 +69,7 @@ func testVscreenManagedViewerRenewAndMemberRevocation(t *testing.T, version int)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := map[string]any{"viewer_id": "viewer", "offer": map[string]string{"type": "offer", "sdp": "offer-sdp"}, "protocol_version": 2, "transport": "video", "source": map[string]string{"kind": "virtual", "source_id": "virtual"}, "source_generation": "display"}
+	body := map[string]any{"viewer_id": "viewer", "offer": map[string]string{"type": "offer", "sdp": "offer-sdp"}, "protocol_version": 2, "transport": "video", "source": map[string]string{"kind": "physical", "source_id": "display:primary"}, "source_generation": "display"}
 	if version == 1 {
 		delete(body, "protocol_version")
 		delete(body, "transport")
@@ -104,7 +101,7 @@ func testVscreenManagedViewerRenewAndMemberRevocation(t *testing.T, version int)
 	if err := json.Unmarshal(offerFrame.Payload, &offer); err != nil {
 		t.Fatal(err)
 	}
-	if offer.ViewerGrant == nil || (version == 2 && (offer.Source == nil || offer.Source.Kind != protocol.MirrorSourceVirtual)) || (version == 1 && (offer.Source != nil || offer.ViewerGrant.Source.Kind != protocol.MirrorSourcePhysical)) {
+	if offer.ViewerGrant == nil || (version == 2 && (offer.Source == nil || offer.Source.Kind != protocol.MirrorSourcePhysical)) || (version == 1 && (offer.Source != nil || offer.ViewerGrant.Source.Kind != protocol.MirrorSourcePhysical)) {
 		t.Fatalf("missing source grant: %+v", offer)
 	}
 	if err := h.HandleDaemonMirrorViewer(context.Background(), daemonws.ClientIdentity{DaemonID: daemonID, WorkspaceID: testWorkspaceID, RuntimeIDs: []string{runtimeID}}, protocol.MirrorViewerPayload{WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, DaemonID: daemonID, ViewerID: "viewer", Active: true}); err != nil {

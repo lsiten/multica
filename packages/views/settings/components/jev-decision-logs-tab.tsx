@@ -1,22 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw, Search } from "@multica/ui/icons";
 import { api } from "@multica/core/api";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { useCurrentMember } from "@multica/core/permissions";
-import type { JevDecisionLogDetail, JevDecisionLogFilters } from "@multica/core/types";
+import type { JevDecisionLogDetail } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Badge } from "@multica/ui/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@multica/ui/components/ui/dialog";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@multica/ui/components/ui/table";
 import { useLocale, useT } from "../../i18n";
+import { useNavigation } from "../../navigation";
 import { SettingsTab } from "./settings-layout";
+import {
+  EMPTY_JEV_DECISION_LOG_FILTERS,
+  JEV_DECISION_LOG_PAGE_SIZES,
+  jevDecisionLogStateFromParams,
+  withJevDecisionLogState,
+  type JevDecisionLogFormFilters,
+  type JevDecisionLogQueryState,
+} from "./jev-decision-log-url-state";
 
-type LogFilters = { q: string; agent: string; source: string; result_class: string; from: string; to: string };
-const emptyFilters: LogFilters = { q: "", agent: "", source: "", result_class: "", from: "", to: "" };
 const selectClass = "h-9 min-w-0 rounded-md border bg-background px-2 text-caption";
 
 function formatLogTime(raw: string, locale: string): string {
@@ -37,35 +44,100 @@ export function JevDecisionLogsTab() {
 function JevDecisionLogs({ workspaceID }: { workspaceID: string }) {
   const { t } = useT("settings");
   const locale = useLocale();
-  const [draft, setDraft] = useState<LogFilters>(emptyFilters);
-  const [filters, setFilters] = useState<LogFilters>(emptyFilters);
-  const [page, setPage] = useState<{ offset: number; limit: number; generation: number; asOf?: string }>({ offset: 0, limit: 20, generation: 0 });
+  const navigation = useNavigation();
+  const urlState = useMemo(
+    () => jevDecisionLogStateFromParams(navigation.searchParams),
+    [navigation.searchParams],
+  );
+  const [draft, setDraft] = useState<JevDecisionLogFormFilters>(urlState.filters);
+  const [generation, setGeneration] = useState(0);
   const [selectedID, setSelectedID] = useState<string | null>(null);
   const [timeError, setTimeError] = useState(false);
-  const params: JevDecisionLogFilters = {
+  const filters = urlState.filters;
+  const params = {
     q: filters.q.trim(), agent: filters.agent.trim(), source: filters.source, result_class: filters.result_class,
     from: filters.from ? new Date(`${filters.from}T00:00:00`).toISOString() : undefined,
     to: filters.to ? new Date(`${filters.to}T23:59:59.999`).toISOString() : undefined,
-    offset: page.offset, limit: page.limit, as_of: page.asOf,
   };
-  const query = useQuery({ queryKey: ["jev-decision-logs", workspaceID, params, page.generation], queryFn: () => api.listJevDecisionLogs(workspaceID, params), refetchInterval: 10_000 });
+  const query = useQuery({
+    queryKey: [
+      "jev-decision-logs",
+      workspaceID,
+      params,
+      urlState.offset,
+      urlState.limit,
+      urlState.asOf,
+      generation,
+    ],
+    queryFn: () =>
+      api.listJevDecisionLogs(workspaceID, {
+        ...params,
+        offset: urlState.offset,
+        limit: urlState.limit,
+        as_of: urlState.asOf || undefined,
+      }),
+    refetchInterval: 10_000,
+  });
   const data = query.data;
+  const replaceState = useCallback(
+    (next: JevDecisionLogQueryState) => {
+      const searchParams = withJevDecisionLogState(
+        navigation.searchParams,
+        next,
+      );
+      const queryString = searchParams.toString();
+      navigation.replace(
+        `${navigation.pathname}${queryString ? `?${queryString}` : ""}${navigation.hash}`,
+      );
+    },
+    [navigation],
+  );
   useEffect(() => {
-    if (data && page.offset > 0 && page.offset >= data.total) {
-      setPage((current) => ({ ...current, offset: Math.max(0, Math.ceil(data.total / current.limit) - 1) * current.limit, asOf: data.as_of }));
-    }
-  }, [data, page.offset]);
+    setDraft(urlState.filters);
+    setSelectedID(null);
+  }, [urlState.filters]);
+  useEffect(() => {
+    if (!data || urlState.offset === 0 || urlState.offset < data.total) return;
+    replaceState({
+      ...urlState,
+      offset:
+        Math.max(0, Math.ceil(data.total / urlState.limit) - 1) *
+        urlState.limit,
+      asOf: data.as_of,
+    });
+  }, [data, replaceState, urlState]);
   const sourceLabels: Record<string, string> = { local: t(($) => $.jev.local), remote: t(($) => $.jev.remote), agent_context: t(($) => $.jev.agent_context), system_one: t(($) => $.jev_logs.native_protocol), unknown: t(($) => $.jev_logs.unknown) };
   const resultLabels: Record<string, string> = { running: t(($) => $.jev_logs.running), success: t(($) => $.jev_logs.success), error: t(($) => $.jev_logs.error), rejected: t(($) => $.jev_logs.rejected), unknown: t(($) => $.jev_logs.unknown) };
   const apply = () => {
     if (draft.from && draft.to && draft.from > draft.to) { setTimeError(true); return; }
-    setTimeError(false); setFilters(draft); setPage({ offset: 0, limit: page.limit, generation: page.generation + 1 }); setSelectedID(null);
+    setTimeError(false);
+    replaceState({
+      filters: draft,
+      offset: 0,
+      limit: urlState.limit,
+      asOf: "",
+    });
+    setGeneration((value) => value + 1);
+    setSelectedID(null);
   };
-  const pages = Math.max(1, Math.ceil((data?.total ?? 0) / page.limit));
-  const currentPage = Math.floor(page.offset / page.limit) + 1;
-  const goToPage = (next: number) => setPage({ ...page, offset: (next - 1) * page.limit, asOf: data?.as_of ?? page.asOf });
-  const updateDraft = (patch: Partial<LogFilters>) => { setDraft((current) => ({ ...current, ...patch })); setTimeError(false); };
-  const refresh = () => { setPage({ offset: 0, limit: page.limit, generation: page.generation + 1 }); setSelectedID(null); };
+  const pages = Math.max(1, Math.ceil((data?.total ?? 0) / urlState.limit));
+  const currentPage = Math.floor(urlState.offset / urlState.limit) + 1;
+  const goToPage = (next: number) =>
+    replaceState({
+      ...urlState,
+      offset: (next - 1) * urlState.limit,
+      asOf: data?.as_of ?? urlState.asOf,
+    });
+  const updateDraft = (patch: Partial<JevDecisionLogFormFilters>) => { setDraft((current) => ({ ...current, ...patch })); setTimeError(false); };
+  const refresh = () => {
+    replaceState({
+      ...urlState,
+      offset: 0,
+      asOf: "",
+    });
+    setGeneration((value) => value + 1);
+    setSelectedID(null);
+  };
 
   return <Dialog open={selectedID !== null} onOpenChange={(open) => { if (!open) setSelectedID(null); }}>
     <div className="space-y-4">
@@ -80,7 +152,18 @@ function JevDecisionLogs({ workspaceID }: { workspaceID: string }) {
           <label><span className="mb-1 block text-caption">{t(($) => $.jev_logs.from)}</span><Input type="date" value={draft.from} onChange={(event) => updateDraft({ from: event.target.value })} /></label>
           <label><span className="mb-1 block text-caption">{t(($) => $.jev_logs.to)}</span><Input type="date" min={draft.from || undefined} value={draft.to} onChange={(event) => updateDraft({ to: event.target.value })} /></label>
           <Button type="submit" size="sm" disabled={query.isFetching}><Search />{t(($) => $.jev_logs.apply)}</Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => { setDraft(emptyFilters); setFilters(emptyFilters); setTimeError(false); refresh(); }}>{t(($) => $.jev_logs.clear)}</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => {
+            setDraft(EMPTY_JEV_DECISION_LOG_FILTERS);
+            setTimeError(false);
+            replaceState({
+              filters: EMPTY_JEV_DECISION_LOG_FILTERS,
+              offset: 0,
+              limit: urlState.limit,
+              asOf: "",
+            });
+            setGeneration((value) => value + 1);
+            setSelectedID(null);
+          }}>{t(($) => $.jev_logs.clear)}</Button>
           <Button type="button" variant="outline" size="sm" className="ml-auto" disabled={query.isFetching} onClick={refresh}><RefreshCw />{t(($) => $.jev_logs.refresh)}</Button>
         </div>
         {timeError && <p role="alert" className="text-caption text-destructive">{t(($) => $.jev_logs.time_invalid)}</p>}
@@ -102,7 +185,7 @@ function JevDecisionLogs({ workspaceID }: { workspaceID: string }) {
         </div>
         <div className="flex flex-wrap items-center gap-3 text-caption">
           <span role="status" className="text-muted-foreground">{t(($) => $.jev_logs.total, { count: data?.total ?? 0 })}</span>
-          <label className="flex items-center gap-2">{t(($) => $.jev_logs.page_size)}<select className={selectClass} value={page.limit} onChange={(event) => setPage({ ...page, offset: 0, limit: Number(event.target.value), asOf: data?.as_of })}>{[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+          <label className="flex items-center gap-2">{t(($) => $.jev_logs.page_size)}<select className={selectClass} value={urlState.limit} onChange={(event) => replaceState({ ...urlState, offset: 0, limit: Number(event.target.value), asOf: "" })}>{JEV_DECISION_LOG_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
           <div className="ml-auto flex items-center gap-2"><Button size="sm" variant="outline" disabled={currentPage <= 1 || query.isFetching} onClick={() => goToPage(currentPage - 1)}>{t(($) => $.jev_logs.previous)}</Button><span className="tabular-nums">{t(($) => $.jev_logs.page, { page: currentPage, pages })}</span><Button size="sm" variant="outline" disabled={currentPage >= pages || query.isFetching} onClick={() => goToPage(currentPage + 1)}>{t(($) => $.jev_logs.next)}</Button></div>
         </div>
       </>}

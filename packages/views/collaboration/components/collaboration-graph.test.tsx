@@ -79,7 +79,7 @@ describe("CollaborationGraphCanvas", () => {
     fireEvent.click(node);
     expect(onNodeClick).toHaveBeenCalledWith(nodes[0]);
     expect(node.querySelector("rect")).toHaveAttribute("x", "30");
-    const svg = screen.getByRole("img");
+    const svg = screen.getByRole("group");
     fireEvent.pointerDown(svg, { clientX: 500, clientY: 200, button: 0 });
     fireEvent.pointerMove(svg, { clientX: 550, clientY: 225 });
     fireEvent.pointerUp(svg);
@@ -110,7 +110,7 @@ describe("CollaborationGraphCanvas", () => {
 
   it("zooms on wheel input and restores the transform on reset", () => {
     const { container } = renderWithI18n(<CollaborationGraphCanvas nodes={nodes} edges={edges} emptyLabel="No activity" />);
-    const svg = screen.getByRole("img");
+    const svg = screen.getByRole("group");
     const transform = () => container.querySelector("g[transform]")?.getAttribute("transform");
     expect(transform()).toContain("scale(1)");
     fireEvent.wheel(svg, { deltaY: -100 });
@@ -130,7 +130,7 @@ describe("CollaborationGraphCanvas", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: "Coordinator" }), { key: "Enter" });
     expect(onNodeClick).toHaveBeenCalledWith(nodes[0]);
     fireEvent.keyDown(screen.getByRole("button", { name: "Zoom in" }), { key: "Enter" });
-    expect(screen.getByRole("img")).toBeInTheDocument();
+    expect(screen.getByRole("group")).toBeInTheDocument();
   });
 
   it("shows active-over-total counts for aggregate project relations", () => {
@@ -146,7 +146,7 @@ describe("CollaborationGraphCanvas", () => {
       status: "working",
     }));
     renderWithI18n(<CollaborationGraphCanvas nodes={manyNodes} edges={[]} emptyLabel="No activity" />);
-    const viewBox = screen.getByRole("img").getAttribute("viewBox") ?? "";
+    const viewBox = screen.getByRole("group").getAttribute("viewBox") ?? "";
     expect(Number(viewBox.split(" ")[2])).toBeGreaterThan(760);
   });
   it("uses distinct curved paths for bidirectional relations and supports fit/reset", () => {

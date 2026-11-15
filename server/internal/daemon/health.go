@@ -531,8 +531,6 @@ func (d *Daemon) shutdownHandler() http.HandlerFunc {
 // Blocks until ctx is cancelled.
 func (d *Daemon) serveHealth(ctx context.Context, ln net.Listener, startedAt time.Time) {
 	mux := http.NewServeMux()
-	cleanupDesktop := d.registerVscreenDesktop(ctx, mux, startedAt)
-	defer cleanupDesktop()
 	mux.HandleFunc("/health", d.healthHandler(startedAt))
 	mux.HandleFunc("/applications/local", d.localApplicationsHandler())
 	mux.HandleFunc("/mcp/readiness", d.mcpReadinessHandler())

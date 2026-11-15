@@ -47,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from "@multica/ui/components/ui/dropdown-menu";
 import { cn } from "@multica/ui/lib/utils";
-import { useT, useTimeAgo } from "../../i18n";
+import { useLocale, useT, useTimeAgo } from "../../i18n";
 import { useStatusLabel } from "../utils/status-label";
 import { StatusIcon } from "./status-icon";
 import { PULL_REQUEST_STATE_ICON } from "./pull-request-chips";
@@ -297,7 +297,7 @@ function AutoCompleteLine({
     case "not_merged": {
       if (named.length === 0) return null;
       const only = named.length === 1 ? named[0] : undefined;
-      icon = <TriangleAlert className="text-amber-600 dark:text-amber-400" />;
+      icon = <TriangleAlert className="text-warning" />;
       body = (
         <>
           {t(($) => $.pr_automation.not_merged, { prs: list })}
@@ -347,9 +347,9 @@ type VerdictTone = "red" | "amber" | "green" | "violet" | "muted";
 // 11px copy on a 10% tint keeps AA contrast. Merged is a pull request state,
 // so it follows the theme's --pr-merged.
 const TONE_CLASS: Record<VerdictTone, string> = {
-  red: "bg-rose-600/10 text-rose-700 dark:bg-rose-400/15 dark:text-rose-400",
-  amber: "bg-amber-600/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-400",
-  green: "bg-emerald-600/10 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-400",
+  red: "bg-destructive/10 text-destructive",
+  amber: "bg-warning/10 text-warning",
+  green: "bg-success/10 text-success",
   violet: "bg-pr-merged/10 text-pr-merged-text dark:bg-pr-merged-dark/15 dark:text-pr-merged-dark",
   muted: "bg-muted text-muted-foreground",
 };
@@ -382,6 +382,7 @@ function PullRequestRow({
   actions: RowActions | null;
 }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const timeAgo = useTimeAgo();
   const cfg = PULL_REQUEST_STATE_ICON[pr.state] ?? { icon: GitPullRequest, className: "" };
   const StateIcon = cfg.icon;
@@ -413,8 +414,8 @@ function PullRequestRow({
   } else if (showStats) {
     meta = (
       <span>
-        <span className="text-emerald-600 dark:text-emerald-400">+{formatPullRequestDiffCount(pr.additions ?? 0)}</span>{" "}
-        <span className="text-rose-600 dark:text-rose-400">−{formatPullRequestDiffCount(pr.deletions ?? 0)}</span>
+        <span className="text-success">+{formatPullRequestDiffCount(pr.additions ?? 0)}</span>{" "}
+        <span className="text-destructive">−{formatPullRequestDiffCount(pr.deletions ?? 0)}</span>
       </span>
     );
   }
@@ -470,7 +471,7 @@ function PullRequestRow({
           </span>
           {showStats ? (
             <span className="text-muted-foreground tabular-nums">
-              +{(pr.additions ?? 0).toLocaleString()} −{(pr.deletions ?? 0).toLocaleString()} ·{" "}
+              +{(pr.additions ?? 0).toLocaleString(locale)} −{(pr.deletions ?? 0).toLocaleString(locale)} ·{" "}
               {t(($) => $.detail.pull_request_card_files_count, { count: pr.changed_files ?? 0 })}
             </span>
           ) : null}
@@ -543,7 +544,7 @@ function PullRequestProblems({
   const { t } = useT("issues");
   const items = [
     ...(verdict.conflicting
-      ? [{ key: "conflict", icon: TriangleAlert, className: "text-amber-600 dark:text-amber-400", label: t(($) => $.detail.pull_request_merge_conflicting) }]
+      ? [{ key: "conflict", icon: TriangleAlert, className: "text-warning", label: t(($) => $.detail.pull_request_merge_conflicting) }]
       : []),
     ...verdict.names.map((name) => ({ key: `check:${name}`, icon: XCircle, className: "text-rose-600 dark:text-rose-400", label: name })),
   ];

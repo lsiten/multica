@@ -111,6 +111,7 @@ test("release ignores duplicate builder diagnostics while preserving distributab
     const calls = join(directory, "github-calls");
     const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", `
 gh() { printf '%s\\n' "$2" >> "$GH_TEST_LOG"; [[ "$2" != view ]]; }
+node() { [[ "$1" == scripts/stage-agent-desktop-release.mjs ]]; mkdir -p release-assets; touch release-assets/agent-desktop-fixture.tar.gz; }
 ${stepScript("Publish complete desktop release")}
 `], {
       cwd: directory,
@@ -163,6 +164,7 @@ gh() {
   printf '%s\\n' "$2" >> "$GH_TEST_LOG"
   if [[ "$2" == view ]]; then printf '%s\\n' "$GH_TEST_DRAFT"; fi
 }
+node() { [[ "$1" == scripts/stage-agent-desktop-release.mjs ]]; mkdir -p release-assets; touch release-assets/agent-desktop-fixture.tar.gz; }
 ${stepScript("Publish complete desktop release")}
 `], {
       cwd: directory,

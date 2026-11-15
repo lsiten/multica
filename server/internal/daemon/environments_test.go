@@ -200,7 +200,7 @@ func doEnvironmentRequest(handler http.HandlerFunc, path, token, body string) *h
 func TestEnvironmentFocusRefusesBrowsersAndUnknownApps(t *testing.T) {
 	s, _ := newTestEnvironmentService(t)
 	s.detected = []localenv.Environment{detectedEnv("task-a", "detected:server")}
-	d := &Daemon{environmentServiceOwner:true, logger: s.logger, environments: s}
+	d := &Daemon{environmentServiceOwner: true, logger: s.logger, environments: s}
 	focus := func(body string, header map[string]string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/environments/focus", strings.NewReader(body))
 		for k, v := range header {
@@ -240,7 +240,7 @@ func TestEnvironmentReportCarriesTheKind(t *testing.T) {
 
 func TestEnvironmentHandlersRequireATaskCredential(t *testing.T) {
 	s, _ := newTestEnvironmentService(t)
-	d := &Daemon{environmentServiceOwner:true, logger: s.logger, environments: s}
+	d := &Daemon{environmentServiceOwner: true, logger: s.logger, environments: s}
 	for path, handler := range map[string]http.HandlerFunc{
 		"/environments/start": d.environmentStartHandler(),
 		"/environments/stop":  d.environmentStopHandler(),

@@ -324,6 +324,14 @@ install_cli() {
   fi
 }
 
+install_agent_desktop() {
+  info "Installing pinned agent-desktop..."
+  if ! multica agent-desktop install; then
+    fail "Failed to install agent-desktop. Desktop automation will be unavailable until the pinned release is installed."
+  fi
+  ok "agent-desktop is ready"
+}
+
 # ---------------------------------------------------------------------------
 # Docker check
 # ---------------------------------------------------------------------------
@@ -448,6 +456,7 @@ run_default() {
 
   detect_os
   install_cli
+  install_agent_desktop
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
@@ -478,6 +487,7 @@ run_with_server() {
   check_docker
   setup_server
   install_cli
+  install_agent_desktop
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"

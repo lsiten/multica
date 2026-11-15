@@ -4,6 +4,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { agentTaskSnapshotOptions } from "@multica/core/agents";
+import { ApiClient, setApiInstance } from "@multica/core/api";
 import { runtimeProfileListOptions } from "@multica/core/runtimes";
 import { runtimeListOptions } from "@multica/core/runtimes/queries";
 import type { AgentRuntime } from "@multica/core/types";
@@ -102,6 +103,22 @@ function renderPage({
   /** `null` leaves the runtime list unseeded, so the page renders loading. */
   runtimes?: AgentRuntime[] | null;
 } = {}) {
+  setApiInstance(new ApiClient("https://api.example.test"));
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    platform: "macos",
+    version: "1.3.1",
+    permissions: {
+      accessibility: "denied",
+      screen_recording: "granted",
+      automation: "unknown",
+    },
+    surface_count: 0,
+    ready: false,
+    reason: "accessibility_denied",
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })));
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -186,6 +203,37 @@ describe("RuntimeDetailPage", () => {
 
     expect(within(screen.getByRole("banner")).getByRole("button", { name: "Open mirror" }))
       .toHaveAttribute("href", "/runtimes/rt-claude/mirror");
+  });
+
+  it("shows cached agent-desktop readiness and its repair reason", () => {
+    renderPage({
+      runtimes: [
+        makeRuntime({
+          metadata: {
+            cli_version: "0.3.17",
+            agent_desktop: {
+              platform: "macos",
+              version: "1.3.1",
+              permissions: {
+                accessibility: "denied",
+                screen_recording: "granted",
+                automation: "unknown",
+              },
+              surface_count: 0,
+              ready: false,
+              reason: "accessibility_denied",
+            },
+          },
+        }),
+      ],
+    });
+
+    expect(screen.getByText("Desktop control")).toBeInTheDocument();
+    expect(screen.getByText("agent-desktop 1.3.1")).toBeInTheDocument();
+    expect(screen.getByText("Denied")).toBeInTheDocument();
+    expect(
+      screen.getByText("Allow Accessibility for the runtime."),
+    ).toBeInTheDocument();
   });
 
   it("moves Rename machine into the ⋯ menu", async () => {

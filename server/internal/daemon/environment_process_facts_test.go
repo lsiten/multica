@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -76,6 +77,55 @@ func TestEnvironmentFactsUseFreshTypedCallbacks(t *testing.T) {
 	}
 	if calls.Load() != 3 {
 		t.Fatal("directory report did not reach backend")
+	}
+}
+
+func TestEnvironmentFactsPreserveReviewBindingProof(t *testing.T) {
+	const (
+		runtimeID       = "runtime"
+		taskID          = "task"
+		directoryTaskID = "owner"
+		repositoryPath  = "/Users/test/repository"
+	)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/daemon/runtimes/runtime/tasks/task/review-binding" {
+			t.Errorf("unexpected backend operation %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected", http.StatusBadRequest)
+			return
+		}
+		if r.URL.Query().Get("directory_task_id") != directoryTaskID || r.URL.Query().Get("path") != repositoryPath {
+			t.Errorf("review binding proof lost: %s", r.URL.RawQuery)
+			http.Error(w, "proof lost", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(protocol.LocalReviewRuntimeBinding{
+			WorkspaceID: "workspace",
+			TaskID:      directoryTaskID,
+			RuntimeID:   runtimeID,
+			AgentID:     "agent",
+		})
+	}))
+	defer backend.Close()
+	parent := NewClient(backend.URL)
+	parent.token = "parent-only"
+	callback, err := newEnvironmentFactCallback(&Daemon{client: parent}, "environment-instance", "private-callback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callback.close()
+	client := NewClient("http://physical-facts.invalid")
+	transport := &http.Transport{Proxy: nil}
+	defer transport.CloseIdleConnections()
+	client.client = &http.Client{Transport: &environmentFactTransport{address: callback.address, instanceID: "environment-instance", token: "private-callback", http: &http.Client{Transport: transport}}}
+
+	var binding protocol.LocalReviewRuntimeBinding
+	query := "?directory_task_id=" + directoryTaskID + "&path=" + url.QueryEscape(repositoryPath)
+	if err := client.getJSON(context.Background(), "/api/daemon/runtimes/"+runtimeID+"/tasks/"+taskID+"/review-binding"+query, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if binding.TaskID != directoryTaskID || binding.RuntimeID != runtimeID {
+		t.Fatalf("unexpected review binding: %+v", binding)
 	}
 }
 

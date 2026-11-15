@@ -27,13 +27,13 @@ func TestVoiceAudioValidation(t *testing.T) {
 }
 
 func TestVoiceResultValidation(t *testing.T) {
-	e := VscreenEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "gen", RequestID: "req"}
-	for _, r := range []VoiceResult{{VscreenEnvelope: e}, {VscreenEnvelope: e, Text: "  "}, {VscreenEnvelope: e, Text: strings.Repeat("a", 16385)}, {VscreenEnvelope: e, Text: "secret", Reason: "busy"}, {VscreenEnvelope: e, Reason: "unknown"}} {
+	e := RuntimeEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "gen", RequestID: "req"}
+	for _, r := range []VoiceResult{{RuntimeEnvelope: e}, {RuntimeEnvelope: e, Text: "  "}, {RuntimeEnvelope: e, Text: strings.Repeat("a", 16385)}, {RuntimeEnvelope: e, Text: "secret", Reason: "busy"}, {RuntimeEnvelope: e, Reason: "unknown"}} {
 		if r.Valid() {
 			t.Fatal("accepted invalid response")
 		}
 	}
-	if !(VoiceResult{VscreenEnvelope: e, Text: "transcript"}).Valid() {
+	if !(VoiceResult{RuntimeEnvelope: e, Text: "transcript"}).Valid() {
 		t.Fatal("rejected valid transcript")
 	}
 }

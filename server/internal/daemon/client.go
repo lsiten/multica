@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multica-ai/multica/server/internal/agentdesktop"
 	"github.com/multica-ai/multica/server/internal/daemon/localenv"
 	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/pkg/agent"
@@ -187,15 +188,10 @@ func (c *Client) setIdentityHeaders(req *http.Request) {
 		req.Header.Set("X-Client-OS", c.os)
 	}
 	capabilities := daemonHTTPClientCapabilities()
-	// The virtual-screen capabilities need the native host; the control
-	// capability is independent of it, so advertise the two separately.
 	if c.managedVscreen {
-		if managed := managedVscreenCapabilities(); len(managed) > 0 {
+		if managed := managedMirrorCapabilities(); len(managed) > 0 {
 			capabilities += "," + strings.Join(managed, ",")
 		}
-	}
-	if control := managedScreenControlCapabilities(); len(control) > 0 {
-		capabilities += "," + strings.Join(control, ",")
 	}
 	req.Header.Set("X-Client-Capabilities", capabilities)
 }
@@ -237,6 +233,9 @@ func daemonCommonCapabilities() []string {
 	}
 	if mirror.NativeCaptureSupported() {
 		capabilities = append(capabilities, protocol.DaemonCapabilityScreenMirrorV1)
+	}
+	if agentdesktop.Ready() {
+		capabilities = append(capabilities, protocol.DaemonCapabilityAgentDesktopV1)
 	}
 	return capabilities
 }

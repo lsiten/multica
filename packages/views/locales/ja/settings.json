@@ -2935,6 +2935,20 @@
         "environment": "環境",
         "mirror": "ミラー"
       },
+      "states": {
+        "ready": "準備完了",
+        "running": "実行中",
+        "starting": "起動中",
+        "stopping": "停止中",
+        "stopped": "停止済み",
+        "failed": "失敗",
+        "unavailable": "利用不可",
+        "offline": "オフライン",
+        "disabled": "無効",
+        "downloaded": "ダウンロード済み",
+        "not_installed": "未インストール",
+        "unknown": "不明"
+      },
       "memory": "メモリ",
       "cpu": "CPU 時間",
       "usage": {

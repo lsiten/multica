@@ -15,6 +15,9 @@ _setup_sandbox() {
 
   cat >"$payload_dir/multica" <<'STUB'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "agent-desktop" && "${2:-}" == "install" ]]; then
+  exit 0
+fi
 echo "multica v0.3.2 (commit: test)"
 STUB
   chmod +x "$payload_dir/multica"

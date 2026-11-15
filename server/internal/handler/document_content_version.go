@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,7 @@ type DocumentContentVersionResponse struct {
 	ActorType     string  `json:"actor_type"`
 	ActorID       string  `json:"actor_id"`
 	Merged        bool    `json:"merged"`
+	SessionID     *string `json:"session_id,omitempty"`
 	Note          *string `json:"note,omitempty"`
 	CreatedAt     string  `json:"created_at"`
 }
@@ -50,7 +52,7 @@ func textPtr(t pgtype.Text) *string {
 	return &s
 }
 
-func documentContentVersionToResponse(v db.DocumentContentVersion, merged bool) DocumentContentVersionResponse {
+func documentContentVersionToResponse(v db.DocumentContentVersion) DocumentContentVersionResponse {
 	return DocumentContentVersionResponse{
 		ID:          uuidToString(v.ID),
 		OwnerType:   v.OwnerType,
@@ -62,7 +64,8 @@ func documentContentVersionToResponse(v db.DocumentContentVersion, merged bool) 
 		SizeBytes:   v.SizeBytes,
 		ActorType:   v.ActorType,
 		ActorID:     uuidToString(v.ActorID),
-		Merged:      merged,
+		Merged:      v.Merged,
+		SessionID:   textPtr(v.SessionID),
 		Note:        textPtr(v.Note),
 		CreatedAt:   timestampToString(v.CreatedAt),
 	}
@@ -82,6 +85,7 @@ type RecordDocumentContentVersionRequest struct {
 	Note             *string `json:"note,omitempty"`
 	ExpectedRevision *int64  `json:"expected_revision,omitempty"`
 	Merge            *bool   `json:"merge,omitempty"`
+	SessionID        *string `json:"session_id,omitempty"`
 }
 
 // recordContentVersionForIssue applies content to an issue's Markdown body and
@@ -102,6 +106,10 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 	hasURL := req.ContentURL != nil
 	if req.ContentType == "" {
 		writeError(w, http.StatusBadRequest, "content_type is required")
+		return
+	}
+	if req.SessionID != nil && (strings.TrimSpace(*req.SessionID) == "" || len(*req.SessionID) > 128) {
+		writeError(w, http.StatusBadRequest, "session_id is invalid")
 		return
 	}
 	if hasText == hasURL {
@@ -174,6 +182,10 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 	if req.Note != nil {
 		note = pgtype.Text{String: *req.Note, Valid: true}
 	}
+	var sessionID pgtype.Text
+	if req.SessionID != nil {
+		sessionID = pgtype.Text{String: *req.SessionID, Valid: true}
+	}
 	// Merge (D4): fold a consecutive same-actor edit into its latest version
 	// instead of appending, so a burst of edits stays one revision.
 	if req.Merge != nil && *req.Merge {
@@ -189,6 +201,8 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 				ActorType:   actorType,
 				ActorID:     actorUUID,
 				Note:        note,
+				Merged:      true,
+				SessionID:   sessionID,
 				OwnerType:   documentContentVersionOwnerType,
 				OwnerID:     issue.ID,
 				Revision:    latest.Revision,
@@ -203,7 +217,14 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 				return
 			}
 			h.publishDocumentContentVersion(merged)
-			writeJSON(w, http.StatusOK, documentContentVersionToResponse(merged, true))
+			response := documentContentVersionToResponse(merged)
+			if current, gerr := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
+				ID:          issue.ID,
+				WorkspaceID: issue.WorkspaceID,
+			}); gerr == nil {
+				response.OwnerRevision = &current.Revision
+			}
+			writeJSON(w, http.StatusOK, response)
 			return
 		}
 	}
@@ -225,6 +246,8 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 		ActorType:   actorType,
 		ActorID:     actorUUID,
 		Note:        note,
+		Merged:      req.Merge != nil && *req.Merge,
+		SessionID:   sessionID,
 	})
 	if err != nil {
 		// A unique-index race means another writer took the next revision
@@ -241,7 +264,14 @@ func (h *Handler) recordContentVersionForIssue(w http.ResponseWriter, r *http.Re
 	*/
 	h.maybeReopenRequirementOnEdit(r.Context(), issue)
 	h.publishDocumentContentVersion(row)
-	writeJSON(w, http.StatusCreated, documentContentVersionToResponse(row, false))
+	response := documentContentVersionToResponse(row)
+	if current, gerr := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
+		ID:          issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	}); gerr == nil {
+		response.OwnerRevision = &current.Revision
+	}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 // sameActor compares two actor UUIDs treating an invalid stored UUID as a
@@ -285,7 +315,7 @@ func (h *Handler) ListDocumentContentVersions(w http.ResponseWriter, r *http.Req
 	}
 	out := make([]DocumentContentVersionResponse, len(rows))
 	for i, row := range rows {
-		out[i] = documentContentVersionToResponse(row, false)
+		out[i] = documentContentVersionToResponse(row)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -317,7 +347,64 @@ func (h *Handler) GetDocumentContentVersion(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to load content version")
 		return
 	}
-	writeJSON(w, http.StatusOK, documentContentVersionToResponse(row, false))
+	writeJSON(w, http.StatusOK, documentContentVersionToResponse(row))
+}
+
+// DeleteDocumentContentVersion removes an older named checkpoint. Autosaves and
+// the current version remain part of the linear history.
+func (h *Handler) DeleteDocumentContentVersion(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	issue, ok := h.loadIssueForUser(w, r, id)
+	if !ok {
+		return
+	}
+	revision, ok := parsePositiveInt64Param(chi.URLParam(r, "revision"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "revision must be a positive integer")
+		return
+	}
+	target, err := h.Queries.GetDocumentContentVersion(r.Context(), db.GetDocumentContentVersionParams{
+		OwnerType:   documentContentVersionOwnerType,
+		OwnerID:     issue.ID,
+		Revision:    revision,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "content version not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load content version")
+		return
+	}
+	latest, err := h.Queries.GetLatestDocumentContentVersion(r.Context(), db.GetLatestDocumentContentVersionParams{
+		OwnerType:   documentContentVersionOwnerType,
+		OwnerID:     issue.ID,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current content version")
+		return
+	}
+	if target.Merged || target.Revision == latest.Revision {
+		writeError(w, http.StatusConflict, "only older named checkpoints can be deleted")
+		return
+	}
+	deleted, err := h.Queries.DeleteDocumentContentVersion(r.Context(), db.DeleteDocumentContentVersionParams{
+		OwnerType:   documentContentVersionOwnerType,
+		OwnerID:     issue.ID,
+		Revision:    revision,
+		WorkspaceID: issue.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete content version")
+		return
+	}
+	if deleted == 0 {
+		writeError(w, http.StatusConflict, "only older named checkpoints can be deleted")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // RollbackDocumentContentVersion restores an issue's Markdown body to a prior
@@ -414,6 +501,8 @@ func (h *Handler) RecordContentVersionFromIssueUpdate(ctx context.Context, issue
 				ActorType:   actorType,
 				ActorID:     actorUUID,
 				Note:        noteField,
+				Merged:      true,
+				SessionID:   pgtype.Text{},
 				OwnerType:   documentContentVersionOwnerType,
 				OwnerID:     issue.ID,
 				Revision:    latest.Revision,
@@ -446,6 +535,8 @@ func (h *Handler) RecordContentVersionFromIssueUpdate(ctx context.Context, issue
 		ActorType:   actorType,
 		ActorID:     actorUUID,
 		Note:        noteField,
+		Merged:      merge,
+		SessionID:   pgtype.Text{},
 	})
 	if err != nil {
 		return fmt.Errorf("insert content version: %w", err)
@@ -474,6 +565,10 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusBadRequest, "content_type is required")
 		return
 	}
+	if req.SessionID != nil && (strings.TrimSpace(*req.SessionID) == "" || len(*req.SessionID) > 128) {
+		writeError(w, http.StatusBadRequest, "session_id is invalid")
+		return
+	}
 	// Binary versions carry a blob reference, never inline text.
 	if req.ContentURL == nil {
 		writeError(w, http.StatusBadRequest, "content_url is required for a binary content version")
@@ -494,6 +589,10 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 	var note pgtype.Text
 	if req.Note != nil {
 		note = pgtype.Text{String: *req.Note, Valid: true}
+	}
+	var sessionID pgtype.Text
+	if req.SessionID != nil {
+		sessionID = pgtype.Text{String: *req.SessionID, Valid: true}
 	}
 	sizeBytes := req.SizeBytes
 	if sizeBytes == 0 {
@@ -523,6 +622,8 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 				ActorType:   actorType,
 				ActorID:     actorUUID,
 				Note:        note,
+				Merged:      true,
+				SessionID:   sessionID,
 				OwnerType:   documentContentVersionAttachmentType,
 				OwnerID:     att.ID,
 				Revision:    latest.Revision,
@@ -537,7 +638,7 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 				return
 			}
 			h.publishDocumentContentVersion(merged)
-			writeJSON(w, http.StatusOK, documentContentVersionToResponse(merged, true))
+			writeJSON(w, http.StatusOK, documentContentVersionToResponse(merged))
 			return
 		}
 	}
@@ -559,6 +660,8 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 		ActorType:   actorType,
 		ActorID:     actorUUID,
 		Note:        note,
+		Merged:      req.Merge != nil && *req.Merge,
+		SessionID:   sessionID,
 	})
 	if err != nil {
 		// A unique-index race means another writer took the next revision
@@ -571,7 +674,7 @@ func (h *Handler) recordContentVersionForAttachment(w http.ResponseWriter, r *ht
 		return
 	}
 	h.publishDocumentContentVersion(row)
-	writeJSON(w, http.StatusCreated, documentContentVersionToResponse(row, false))
+	writeJSON(w, http.StatusCreated, documentContentVersionToResponse(row))
 }
 
 // loadAttachmentForContentVersion loads the attachment behind an
@@ -613,7 +716,7 @@ func (h *Handler) ListDocumentContentVersionsForAttachment(w http.ResponseWriter
 	}
 	out := make([]DocumentContentVersionResponse, len(rows))
 	for i, row := range rows {
-		out[i] = documentContentVersionToResponse(row, false)
+		out[i] = documentContentVersionToResponse(row)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -644,7 +747,63 @@ func (h *Handler) GetDocumentContentVersionForAttachment(w http.ResponseWriter, 
 		writeError(w, http.StatusInternalServerError, "failed to load content version")
 		return
 	}
-	writeJSON(w, http.StatusOK, documentContentVersionToResponse(row, false))
+	writeJSON(w, http.StatusOK, documentContentVersionToResponse(row))
+}
+
+// DeleteDocumentContentVersionForAttachment removes an older named checkpoint
+// from a binary document while preserving autosaves and the current version.
+func (h *Handler) DeleteDocumentContentVersionForAttachment(w http.ResponseWriter, r *http.Request) {
+	att, ok := h.loadAttachmentForContentVersion(w, r)
+	if !ok {
+		return
+	}
+	revision, ok := parsePositiveInt64Param(chi.URLParam(r, "revision"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "revision must be a positive integer")
+		return
+	}
+	target, err := h.Queries.GetDocumentContentVersion(r.Context(), db.GetDocumentContentVersionParams{
+		OwnerType:   documentContentVersionAttachmentType,
+		OwnerID:     att.ID,
+		Revision:    revision,
+		WorkspaceID: att.WorkspaceID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "content version not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to load content version")
+		return
+	}
+	latest, err := h.Queries.GetLatestDocumentContentVersion(r.Context(), db.GetLatestDocumentContentVersionParams{
+		OwnerType:   documentContentVersionAttachmentType,
+		OwnerID:     att.ID,
+		WorkspaceID: att.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load current content version")
+		return
+	}
+	if target.Merged || target.Revision == latest.Revision {
+		writeError(w, http.StatusConflict, "only older named checkpoints can be deleted")
+		return
+	}
+	deleted, err := h.Queries.DeleteDocumentContentVersion(r.Context(), db.DeleteDocumentContentVersionParams{
+		OwnerType:   documentContentVersionAttachmentType,
+		OwnerID:     att.ID,
+		Revision:    revision,
+		WorkspaceID: att.WorkspaceID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete content version")
+		return
+	}
+	if deleted == 0 {
+		writeError(w, http.StatusConflict, "only older named checkpoints can be deleted")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // RollbackDocumentContentVersionForAttachment restores an attachment's binary
@@ -742,7 +901,7 @@ func (h *Handler) writeLatestContentVersion(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to load content version")
 		return
 	}
-	response := documentContentVersionToResponse(row, false)
+	response := documentContentVersionToResponse(row)
 	if issue != nil {
 		response.OwnerRevision = &issue.Revision
 		response.Content = textPtr(issue.Description)

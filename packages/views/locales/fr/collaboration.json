@@ -10,6 +10,11 @@
   "project_tab_graph": "Collaboration du projet",
   "project_title": "Collaboration du projet",
   "project_description": "Seules les relations avec une preuve d’exécution sont affichées.",
+  "view_graph": "Graphe",
+  "view_list": "Liste",
+  "accessible_nodes": "Agents et escouades",
+  "accessible_relations": "Relations",
+  "no_relations": "Aucune relation de collaboration à afficher.",
   "agents_count": "{{count}} agents",
   "refresh": "Actualiser",
   "load_failed": "Échec du chargement de la collaboration.",
@@ -124,5 +129,11 @@
     "failed": "Échec",
     "cancelled": "Annulée"
   },
+  "events": {
+    "task_started": "Tâche démarrée",
+    "task_finished": "Tâche terminée",
+    "task_failed": "Tâche échouée"
+  },
+  "runtime_event": "Événement d’exécution",
   "run_count": "{{count}} exécutions"
 }

@@ -1164,10 +1164,6 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to remove chat session agent label assignments")
 		return
 	}
-	if err := qtx.CancelVscreenInterventionsByAgent(r.Context(), session.AgentID); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to cancel interventions")
-		return
-	}
 	if err := qtx.DeleteSystemAgentByID(r.Context(), session.AgentID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to clean up chat session agent")
 		return
@@ -1370,24 +1366,23 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	var mirrorSource *protocol.MirrorSourceBinding
 	if req.MirrorSource != nil {
 		if !agent.RuntimeID.Valid || req.MirrorSource.Resource.RuntimeID != uuidToString(agent.RuntimeID) {
-			writeVscreenReason(w, http.StatusConflict, "source_unavailable")
+			writeMirrorReason(w, http.StatusConflict, "source_unavailable")
 			return
 		}
 		rt, _, runtimeOK := h.requireRuntimeReadAccess(w, r, "mirror_chat_source", uuidToString(agent.RuntimeID))
 		if !runtimeOK {
 			return
 		}
-		requested := createControlGrantRequest{
-			ViewerID:         "chat-" + sessionID,
-			Source:           &req.MirrorSource.Source,
-			SourceGeneration: req.MirrorSource.Generation,
+		if !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityAgentDesktopV1) {
+			writeMirrorReason(w, http.StatusConflict, "agent_desktop_unavailable")
+			return
 		}
-		resolved, _, resolvedOK := h.resolveControlSource(w, r, rt, requested)
+		resolved, _, resolvedOK := h.resolveMirrorSource(w, r, rt, req.MirrorSource.Source, req.MirrorSource.Generation)
 		if !resolvedOK {
 			return
 		}
 		if resolved != *req.MirrorSource {
-			writeVscreenReason(w, http.StatusConflict, "source_stale")
+			writeMirrorReason(w, http.StatusConflict, "source_stale")
 			return
 		}
 		mirrorSource = &resolved
@@ -1455,7 +1450,7 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrMirrorChatSourceChanged):
-			writeVscreenReason(w, http.StatusConflict, "source_stale")
+			writeMirrorReason(w, http.StatusConflict, "source_stale")
 		case errors.Is(err, service.ErrChatSubmissionConflict):
 			h.writeChatSubmissionError(w, err)
 		case submissionID.Valid && errors.Is(err, service.ErrChatSessionNotFound):

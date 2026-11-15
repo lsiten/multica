@@ -129,7 +129,9 @@ func (d *Daemon) executeLocalEnvironment(ctx context.Context, req localEnvironme
 }
 
 func (d *Daemon) trackLocalEnvironmentTask(ctx context.Context, root string, task localenv.Task) func() {
- if !d.environmentServiceOwner && !d.environmentProcessMode() { return func(){} }
+	if !d.environmentServiceOwner && !d.environmentProcessMode() {
+		return func() {}
+	}
 	if _, err := d.localEnvironmentCall(ctx, localEnvironmentRequest{Action: "track", Root: root, Task: task}); err != nil {
 		d.logger.Warn("track task environment", "task", task.TaskID, "error", err)
 	}

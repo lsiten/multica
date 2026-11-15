@@ -84,9 +84,6 @@ func TeardownRuntime(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID
 	if err := application.CleanupRuntime(ctx, qtx, runtime.WorkspaceID, runtimeID); err != nil {
 		return out, err
 	}
-	if err := qtx.CancelVscreenInterventionsByRuntime(ctx, runtimeID); err != nil {
-		return out, err
-	}
 	lockedAgents, err := qtx.ListUserAgentsByRuntimeForUpdate(ctx, runtimeID)
 	if err != nil {
 		return out, fmt.Errorf("lock runtime agents: %w", err)

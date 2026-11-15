@@ -283,8 +283,10 @@ func (s *environmentProcessService) mutate(ctx context.Context, request runtimep
 		if err != nil {
 			return environmentOperationResult(nil, err)
 		}
-		if input.Action == "claim" { ctx = s.life }
-  return environmentOperationResult(s.daemon.executeLocalEnvironment(ctx, input), nil)
+		if input.Action == "claim" {
+			ctx = s.life
+		}
+		return environmentOperationResult(s.daemon.executeLocalEnvironment(ctx, input), nil)
 	case "physical.recover_handoff":
 		var input environmentHandoffRecovery
 		if err := decodeEnvironmentPayload(request.Payload, &input); err != nil {

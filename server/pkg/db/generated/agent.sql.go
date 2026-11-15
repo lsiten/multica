@@ -1595,6 +1595,10 @@ WHERE id = (
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
+            AND (
+                COALESCE(atq.context->>'type', '') <> 'mirror_source_v1'
+                OR r.metadata->'capabilities' ? 'agent-desktop-v1'
+            )
       )
       AND NOT EXISTS (
           SELECT 1 FROM agent_task_queue active
@@ -6220,6 +6224,10 @@ WHERE atq.runtime_id = $1
             r.visibility = 'public'
             OR r.visibility = 'private'
         )
+        AND (
+            COALESCE(atq.context->>'type', '') <> 'mirror_source_v1'
+            OR r.metadata->'capabilities' ? 'agent-desktop-v1'
+        )
   )
 ORDER BY atq.priority DESC, atq.created_at ASC
 `
@@ -6329,6 +6337,10 @@ WHERE atq.runtime_id = ANY($1::uuid[])
         AND (
             r.visibility = 'public'
             OR r.visibility = 'private'
+        )
+        AND (
+            COALESCE(atq.context->>'type', '') <> 'mirror_source_v1'
+            OR r.metadata->'capabilities' ? 'agent-desktop-v1'
         )
   )
 ORDER BY atq.priority DESC, atq.created_at ASC
@@ -8280,6 +8292,10 @@ WHERE id = (
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
+            AND (
+                COALESCE(atq.context->>'type', '') <> 'mirror_source_v1'
+                OR r.metadata->'capabilities' ? 'agent-desktop-v1'
+            )
       )
     ORDER BY atq.priority DESC, atq.dispatched_at ASC
     LIMIT 1
@@ -8405,6 +8421,10 @@ WITH candidates AS MATERIALIZED (
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
+            AND (
+                COALESCE(atq.context->>'type', '') <> 'mirror_source_v1'
+                OR r.metadata->'capabilities' ? 'agent-desktop-v1'
+            )
       )
     ORDER BY atq.priority DESC, atq.dispatched_at ASC
     LIMIT $5::int

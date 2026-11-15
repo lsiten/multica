@@ -8,6 +8,9 @@ import { LocalReviewDialog } from "./local-review-dialog";
 import { readLocalReviewBranches } from "../../platform/local-review";
 import { readLocalIndex, readReviewCommits, readReviewFile, readReviewManifest, readReviewRepositories, renewReviewLease } from "../../platform/local-review-pages";
 
+vi.mock("../../editor", () => ({
+  CodeMirrorDiff: ({ modified }: { modified: string }) => <pre>{modified}</pre>,
+}));
 vi.mock("../../platform/local-review", () => ({ readLocalReviewBranches: vi.fn() }));
 vi.mock("@multica/core/auth", () => { const state = { user: { id: "viewer" } }; return { useAuthStore: Object.assign((select: (value: typeof state) => unknown) => select(state), { getState: () => state }) }; });
 vi.mock("../../platform/local-review-pages", () => ({ changeLocalIndex: vi.fn(), readLocalIndex: vi.fn(), readReviewManifest: vi.fn(), readReviewFile: vi.fn(), readReviewRepositories: vi.fn(), readReviewCommits: vi.fn(), renewReviewLease: vi.fn() }));
@@ -38,6 +41,20 @@ async function chooseTarget(branch: string) {
 }
 
 describe("paged local MR dialog", () => {
+  it("portals the full-window workspace outside transformed layout containers", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderWithI18n(
+      <QueryClientProvider client={client}>
+        <LocalReviewDialog request={{ task_id: "task", workspace_id: "ws", path: "/repo/feature", target: "main" }} onClose={() => {}} />
+      </QueryClientProvider>,
+      { locale: "zh-Hans", container },
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(dialog);
+  });
   it("renews the displayed version while open and stops on unmount", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mount();
@@ -97,10 +114,34 @@ describe("paged local MR dialog", () => {
     expect(screen.getByRole("combobox", { name: "目标分支" })).toBeEnabled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+  it("shows only the next review decisions and requires a reason to request changes", async () => {
+    mount();
+    await screen.findByText("+after");
+    expect(screen.getByRole("button", { name: "确认通过" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "请求修改" }))
+      .toHaveAccessibleDescription("请填写需要修改的内容。");
+    expect(screen.queryByRole("button", { name: "提交 MR" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "合并" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "审查意见" }), { target: { value: "请补充边界测试" } });
+    expect(screen.getByRole("button", { name: "请求修改" })).toBeEnabled();
+  });
+  it.each(["draft", "changes_requested"] as const)("shows only submit while a review is %s", async (state) => {
+    vi.mocked(readReviewManifest).mockImplementation(async (input) => {
+      const result = reviewManifestFixture(input);
+      result.review.state = state;
+      return result;
+    });
+    mount();
+    await screen.findByText("+after");
+    expect(screen.getByRole("button", { name: "提交 MR" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认通过" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "合并" })).not.toBeInTheDocument();
+  });
   it("approves the fixed version and merges only after separate confirmation", async () => {
     const client = mount();
     await screen.findByText("+after");
-    expect(screen.getByRole("button", { name: "合并" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "合并" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认通过" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "合并" })).toBeEnabled());
     expect(readReviewManifest).toHaveBeenLastCalledWith(expect.objectContaining({ action: "approve", version_id: "a".repeat(64), snapshot_id: "a".repeat(64) }));
@@ -121,6 +162,7 @@ describe("paged local MR dialog", () => {
     mount();
     await screen.findByText("+after");
     expect(readReviewCommits).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "审查记录" }));
     fireEvent.click(screen.getByText("本地提交"));
     await screen.findByText(/captured commit/);
     fireEvent.click(screen.getByRole("button", { name: "加载更多提交" }));
@@ -134,6 +176,7 @@ describe("paged local MR dialog", () => {
       return result;
     });
     mount();
+    fireEvent.click(await screen.findByRole("tab", { name: "审查记录" }));
     await screen.findByText(/审查者/);
     expect(screen.getByText(/审查者/)).toHaveTextContent("已合并");
     expect(screen.queryByText(/已请求合并/)).not.toBeInTheDocument();

@@ -8,10 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
-
-	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 const defaultMirrorPeerAttachTimeout = 30 * time.Second
@@ -56,7 +53,7 @@ func (c ICEConfig) Pion() webrtc.Configuration {
 }
 
 // SessionDescription is the JSON-safe SDP representation used by the daemon
-// control plane. Screen data never passes through this representation.
+// mirror signaling plane. Screen data never passes through this representation.
 type SessionDescription struct {
 	Type string `json:"type"`
 	SDP  string `json:"sdp"`
@@ -74,105 +71,18 @@ type RuntimeMirror struct {
 	source *Source
 	hub    *CaptureHub
 
-	mu                         sync.Mutex
-	closed                     bool
-	peers                      map[string]*mirrorPeer
-	closeDone                  chan struct{}
-	closeErr                   error
-	peerAttachTimeout          time.Duration
-	arbiter                    *Arbiter
-	controlBackend             ControlBackend
-	voiceTranscriber           VoiceTranscriber
-	authorizationHandler       func(context.Context, protocol.MirrorAuthorizationRequest, bool) error
-	authorizationPublisher     func(string, protocol.MirrorAuthorizationRequest)
-	authorizationMu            sync.Mutex
-	pendingAuthorizations      map[string]pendingAuthorization
-	controlMu                  sync.Mutex
-	controlStateHookGeneration uint64
-	controlStateHookFn         func(ControlStateChange)
-}
-
-// VoiceTranscriber runs on the daemon host. It must not persist audio or
-// transcripts; callers may forward the returned text to an existing agent
-// conversation without creating a new task.
-type VoiceTranscriber interface {
-	Transcribe(ctx context.Context, mimeType string, audio []byte) (string, error)
-}
-
-func (m *RuntimeMirror) SetVoiceTranscriber(transcriber VoiceTranscriber) {
-	m.mu.Lock()
-	m.voiceTranscriber = transcriber
-	m.mu.Unlock()
-}
-
-// SetAuthorizationHandler receives explicit viewer consent decisions. The
-// daemon owns the pending request and decides how to apply the result.
-func (m *RuntimeMirror) SetAuthorizationHandler(handler func(context.Context, protocol.MirrorAuthorizationRequest, bool) error) {
-	m.mu.Lock()
-	m.authorizationHandler = handler
-	m.mu.Unlock()
-}
-
-func (m *RuntimeMirror) SetAuthorizationPublisher(publisher func(string, protocol.MirrorAuthorizationRequest)) {
-	m.mu.Lock()
-	m.authorizationPublisher = publisher
-	m.mu.Unlock()
-}
-
-func (m *RuntimeMirror) publishAuthorization(viewerID, kind, title, message string) {
-	m.mu.Lock()
-	publisher := m.authorizationPublisher
-	m.mu.Unlock()
-	if publisher == nil {
-		return
-	}
-	publisher(viewerID, protocol.MirrorAuthorizationRequest{
-		Type: protocol.MirrorAuthorizationRequestType, RequestID: uuid.NewString(), Kind: kind,
-		Title: title, Message: message, ExpiresAt: time.Now().Add(2 * time.Minute),
-	})
-}
-
-// ControlBackend is supplied by the daemon. It resolves a granted source to a
-// shared arbitration resource, reports whether the host currently permits
-// remote human interaction (default off), and applies one accepted input.
-// DispatchInput returns "" when applied or a MirrorInput* nack reason.
-type ControlBackend interface {
-	ReleaseInput(grant protocol.MirrorControlGrant, gestureID string)
-	ResourceForInput(grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) (protocol.ResourceKey, bool)
-	InteractionEnabled() bool
-	DispatchInput(ctx context.Context, resource protocol.ResourceKey, grant protocol.MirrorControlGrant, msg protocol.MirrorInputMessage) string
-}
-
-// SetArbiter installs the daemon-shared FCFS arbiter so human input and agent
-// actions contend on the same per-resource locks.
-func (m *RuntimeMirror) SetArbiter(a *Arbiter) {
-	m.mu.Lock()
-	m.arbiter = a
-	m.mu.Unlock()
-}
-
-func (m *RuntimeMirror) Arbiter() *Arbiter {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.arbiter
-}
-
-// SetControlBackend installs the daemon-side host gate and input executor.
-func (m *RuntimeMirror) SetControlBackend(backend ControlBackend) {
-	m.mu.Lock()
-	m.controlBackend = backend
-	m.mu.Unlock()
+	mu                sync.Mutex
+	closed            bool
+	peers             map[string]*mirrorPeer
+	closeDone         chan struct{}
+	closeErr          error
+	peerAttachTimeout time.Duration
 }
 
 type mirrorPeer struct {
-	pc           *webrtc.PeerConnection
-	video        *videoPeer
-	voiceSeq     uint64
-	grant        *viewerGrant
-	controlGrant *controlGrant
-	input        *webrtc.DataChannel
-	inputClose   func()
-	inputLocks   map[string]string
+	pc    *webrtc.PeerConnection
+	video *videoPeer
+	grant *viewerGrant
 
 	mu                     sync.Mutex
 	attachTimer            *time.Timer
@@ -196,10 +106,9 @@ func newRuntimeMirror(capturer Capturer, interval, peerAttachTimeout time.Durati
 		peerAttachTimeout = defaultMirrorPeerAttachTimeout
 	}
 	return &RuntimeMirror{
-		source:                NewSource(capturer, interval),
-		peers:                 make(map[string]*mirrorPeer),
-		pendingAuthorizations: make(map[string]pendingAuthorization),
-		peerAttachTimeout:     peerAttachTimeout,
+		source:            NewSource(capturer, interval),
+		peers:             make(map[string]*mirrorPeer),
+		peerAttachTimeout: peerAttachTimeout,
 	}
 }
 
@@ -209,7 +118,7 @@ func (m *RuntimeMirror) SetCaptureFailureHandler(handler func(error)) {
 }
 
 // SetViewerStateHook observes shared source viewer transitions and replays
-// active viewers needed after a control connection reconnects.
+// active viewers needed after a mirror connection reconnects.
 func (m *RuntimeMirror) SetViewerStateHook(hook func(ViewerStateChange), generation uint64) bool {
 	return m.source.SetViewerStateHook(hook, generation)
 }
@@ -282,28 +191,17 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 		}
 	}
 	pc.OnDataChannel(func(channel *webrtc.DataChannel) {
-		if channel.Label() == "mirror-input" && channel.Ordered() {
-			m.bindInputChannel(viewerID, peer, channel, cleanup)
-			return
-		}
-		if channel.Label() == "mirror-voice" && channel.Ordered() {
-			m.bindVoiceChannel(viewerID, peer, channel)
-			return
-		}
 		if peer.video != nil {
-			if (channel.Label() == "mirror" || channel.Label() == "mirror-control") && channel.Ordered() {
+			if channel.Label() == "mirror-metadata" && channel.Ordered() {
 				peer.mu.Lock()
 				if !peer.closed {
-					peer.video.control = channel
+					peer.video.metadata = channel
 				}
 				peer.mu.Unlock()
 				channel.OnOpen(func() {
 					if err := m.sendVideoMetadata(peer, 0, true); err != nil {
 						_ = cleanup()
 					}
-				})
-				channel.OnMessage(func(message webrtc.DataChannelMessage) {
-					m.handleAuthorizationMessage(peer, message)
 				})
 				channel.OnClose(func() { _ = cleanup() })
 				return
@@ -315,7 +213,7 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 			_ = channel.Close()
 			return
 		}
-		sink := dataChannelSink{channel: channel}
+		sink := channelFrameSink{channel: channel}
 		channel.OnOpen(func() {
 			peer.attachOnce.Do(func() {
 				peer.mu.Lock()
@@ -408,7 +306,7 @@ func (m *RuntimeMirror) answer(ctx context.Context, viewerID string, offer Sessi
 }
 
 // Negotiation is a successfully created daemon answer that has not yet been
-// proven deliverable to its control WebSocket. Abandon closes only this exact
+// proven deliverable to its mirror WebSocket. Abandon closes only this exact
 // peer, never a replacement that reused the same viewer ID after reconnect.
 type Negotiation struct {
 	VideoQuality *VideoQuality `json:"video_quality,omitempty"`

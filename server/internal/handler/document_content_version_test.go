@@ -90,23 +90,49 @@ func TestDocumentContentVersionLifecycle(t *testing.T) {
 		t.Fatalf("issue body not applied: got %q want %q", desc, body1)
 	}
 	revAfterV1 := issueRevision(ctx, t, issueID)
+	if got.OwnerRevision == nil || *got.OwnerRevision != revAfterV1 {
+		t.Fatalf("record response owner_revision = %v, want %d", got.OwnerRevision, revAfterV1)
+	}
 
 	// v2 supersedes v1.
 	body2 := "second version body"
+	var gotV2 DocumentContentVersionResponse
 	testutil.Call(t, testHandler.RecordDocumentContentVersion,
 		withContentVersionURLParams(newRequest(http.MethodPost, "/api/issues/"+issueID+"/content-versions", RecordDocumentContentVersionRequest{
 			ContentType:      "text/markdown",
 			Content:          &body2,
 			ExpectedRevision: pInt64(revAfterV1),
 		}), issueID, "")).
-		Want(http.StatusCreated)
+		Want(http.StatusCreated).JSON(&gotV2)
+	revAfterV2 := issueRevision(ctx, t, issueID)
+	if gotV2.OwnerRevision == nil || *gotV2.OwnerRevision != revAfterV2 {
+		t.Fatalf("v2 record response owner_revision = %v, want %d", gotV2.OwnerRevision, revAfterV2)
+	}
+
+	body3 := "merged autosave body"
+	merge := true
+	sessionID := "session-doc-history"
+	var gotMerged DocumentContentVersionResponse
+	testutil.Call(t, testHandler.RecordDocumentContentVersion,
+		withContentVersionURLParams(newRequest(http.MethodPost, "/api/issues/"+issueID+"/content-versions", RecordDocumentContentVersionRequest{
+			ContentType:      "text/markdown",
+			Content:          &body3,
+			ExpectedRevision: pInt64(revAfterV2),
+			Merge:            &merge,
+			SessionID:        &sessionID,
+		}), issueID, "")).
+		Want(http.StatusOK).JSON(&gotMerged)
+	revAfterMerge := issueRevision(ctx, t, issueID)
+	if gotMerged.OwnerRevision == nil || *gotMerged.OwnerRevision != revAfterMerge {
+		t.Fatalf("merged record response owner_revision = %v, want %d", gotMerged.OwnerRevision, revAfterMerge)
+	}
 
 	// A stale expected_revision must conflict (409), not silently apply.
 	testutil.Call(t, testHandler.RecordDocumentContentVersion,
 		withContentVersionURLParams(newRequest(http.MethodPost, "/api/issues/"+issueID+"/content-versions", RecordDocumentContentVersionRequest{
 			ContentType:      "text/markdown",
 			Content:          &body2,
-			ExpectedRevision: pInt64(revAfterV1 + 100),
+			ExpectedRevision: pInt64(revAfterMerge + 100),
 		}), issueID, "")).
 		Want(http.StatusConflict)
 
@@ -120,6 +146,12 @@ func TestDocumentContentVersionLifecycle(t *testing.T) {
 	}
 	if list[0].Revision != 2 || list[1].Revision != 1 {
 		t.Fatalf("expected newest-first [2,1], got [%d,%d]", list[0].Revision, list[1].Revision)
+	}
+	if !list[0].Merged || list[1].Merged {
+		t.Fatalf("expected autosave/checkpoint distinction to survive a reload, got merged=[%t,%t]", list[0].Merged, list[1].Merged)
+	}
+	if list[0].SessionID == nil || *list[0].SessionID != sessionID {
+		t.Fatalf("expected session grouping to survive a reload, got %#v", list[0].SessionID)
 	}
 
 	// Fetch v1 by revision.
@@ -153,6 +185,24 @@ func TestDocumentContentVersionLifecycle(t *testing.T) {
 	}
 	if n := contentVersionCount(t, issueID); n != 3 {
 		t.Fatalf("expected 3 versions after rollback, got %d", n)
+	}
+
+	// Older named checkpoints can be deleted. The current version and merged
+	// autosaves stay in linear history.
+	testutil.Call(t, testHandler.DeleteDocumentContentVersion,
+		withContentVersionURLParams(newRequest(http.MethodDelete, "/api/issues/"+issueID+"/content-versions/1", nil), issueID, "1")).
+		Want(http.StatusNoContent)
+	testutil.Call(t, testHandler.GetDocumentContentVersion,
+		withContentVersionURLParams(newRequest(http.MethodGet, "/api/issues/"+issueID+"/content-versions/1", nil), issueID, "1")).
+		Want(http.StatusNotFound)
+	testutil.Call(t, testHandler.DeleteDocumentContentVersion,
+		withContentVersionURLParams(newRequest(http.MethodDelete, "/api/issues/"+issueID+"/content-versions/2", nil), issueID, "2")).
+		Want(http.StatusConflict)
+	testutil.Call(t, testHandler.DeleteDocumentContentVersion,
+		withContentVersionURLParams(newRequest(http.MethodDelete, "/api/issues/"+issueID+"/content-versions/3", nil), issueID, "3")).
+		Want(http.StatusConflict)
+	if n := contentVersionCount(t, issueID); n != 2 {
+		t.Fatalf("expected 2 versions after deleting one checkpoint, got %d", n)
 	}
 }
 
@@ -304,7 +354,6 @@ func TestIssueDescriptionUpdateRecordsContentVersion(t *testing.T) {
 	}
 }
 
-
 // attachmentContentVersionCount counts the version rows for one attachment.
 func attachmentContentVersionCount(t *testing.T, attachmentID string) int {
 	t.Helper()
@@ -425,6 +474,15 @@ func TestAttachmentDocumentContentVersionLifecycle(t *testing.T) {
 	if n := attachmentContentVersionCount(t, attID); n != 3 {
 		t.Fatalf("expected 3 versions after rollback, got %d", n)
 	}
+	testutil.Call(t, testHandler.DeleteDocumentContentVersionForAttachment,
+		withContentVersionURLParams(newRequest(http.MethodDelete, "/api/attachments/"+attID+"/content-versions/1", nil), attID, "1")).
+		Want(http.StatusNoContent)
+	testutil.Call(t, testHandler.DeleteDocumentContentVersionForAttachment,
+		withContentVersionURLParams(newRequest(http.MethodDelete, "/api/attachments/"+attID+"/content-versions/3", nil), attID, "3")).
+		Want(http.StatusConflict)
+	if n := attachmentContentVersionCount(t, attID); n != 2 {
+		t.Fatalf("expected 2 versions after deleting one checkpoint, got %d", n)
+	}
 }
 
 // TestAttachmentDocumentContentVersionMerge checks the D4 merge rule on the
@@ -486,7 +544,6 @@ func TestAttachmentDocumentContentVersionRejectsText(t *testing.T) {
 		}), attID, "")).
 		Want(http.StatusBadRequest)
 }
-
 
 // TestDocumentContentVersionLatest checks the read-path endpoint returns the
 // newest version (the current content an agent reads) and 404s before any

@@ -17,7 +17,6 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/modelservice"
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
-	"github.com/multica-ai/multica/server/internal/vscreen/smokefixture"
 	"github.com/multica-ai/multica/server/pkg/agent"
 )
 
@@ -137,54 +136,8 @@ func main() {
 		}
 		return
 	}
-	if handleInputQualificationEntrypoint() {
-		return
-	}
-	if len(os.Args) >= 3 && os.Args[1] == daemon.VscreenSmokeProviderCommand {
-		runtime.UnlockOSThread()
-		if err := daemon.RunVscreenSmokeProvider(context.Background(), os.Args[2], os.Args[3:], os.Stdin, os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) == 3 && os.Args[1] == daemon.VscreenTakeoverCoordinatorCommand {
-		if err := daemon.RunVscreenTakeoverSmokeChild(context.Background(), os.Args[2], version+"/"+commit, os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if smokefixture.IsFixtureExecutable() {
-		if err := smokefixture.Run(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" && os.Args[2] == "performance" {
-		if err := runVscreenPerformanceSmoke(os.Stdout, os.Args[3]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) == 4 && os.Args[1] == "internal-vscreen-smoke" {
-		if err := runVscreenSmoke(os.Stdout, os.Args[2], os.Args[3]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-diagnostics" {
-		if err := runVscreenDiagnostics(os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) == 2 && os.Args[1] == "internal-vscreen-host" {
-		if err := runVscreenHost(); err != nil {
+	if len(os.Args) == 2 && os.Args[1] == "internal-mirror-capture-host" {
+		if err := runMirrorCaptureHost(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

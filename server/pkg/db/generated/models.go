@@ -1016,6 +1016,8 @@ type DocumentContentVersion struct {
 	ActorID     pgtype.UUID        `json:"actor_id"`
 	Note        pgtype.Text        `json:"note"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Merged      bool               `json:"merged"`
+	SessionID   pgtype.Text        `json:"session_id"`
 }
 
 type ExecutionGrant struct {
@@ -1981,28 +1983,6 @@ type RuntimeSupervisor struct {
 	DaemonID    string      `json:"daemon_id"`
 	InstanceID  pgtype.UUID `json:"instance_id"`
 	Epoch       int64       `json:"epoch"`
-}
-
-type RuntimeVscreenIntervention struct {
-	ID                 pgtype.UUID        `json:"id"`
-	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
-	RuntimeID          pgtype.UUID        `json:"runtime_id"`
-	AgentID            pgtype.UUID        `json:"agent_id"`
-	SourceTaskID       pgtype.UUID        `json:"source_task_id"`
-	Reason             string             `json:"reason"`
-	State              string             `json:"state"`
-	NativeEpoch        string             `json:"native_epoch"`
-	DisplayGeneration  string             `json:"display_generation"`
-	GeometryRevision   int64              `json:"geometry_revision"`
-	ReturnReceiptID    string             `json:"return_receipt_id"`
-	LastActionID       string             `json:"last_action_id"`
-	HumanSummary       string             `json:"human_summary"`
-	CreatedByUserID    pgtype.UUID        `json:"created_by_user_id"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	ResolvedAt         pgtype.Timestamptz `json:"resolved_at"`
-	ContinuationTaskID pgtype.UUID        `json:"continuation_task_id"`
-	Version            int64              `json:"version"`
 }
 
 type SearchIndexChange struct {

@@ -7,6 +7,7 @@
   "board": "執行看板",
   "search": "搜尋應用",
   "all_projects": "所有專案",
+  "all_runtimes": "所有執行環境",
   "empty": "還沒有應用",
   "empty_help": "在專案中建立應用，啟動或登記服務。",
   "no_matches": "沒有匹配的應用",
@@ -19,6 +20,11 @@
   "service": "服務應用",
   "composition": "組合應用",
   "unknown": "未知",
+  "actor_types": {
+    "member": "成員",
+    "agent": "智能體",
+    "unknown": "未知"
+  },
   "mode": "服務管理方式",
   "managed": "啟動並託管",
   "external": "登記已有服務",

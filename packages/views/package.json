@@ -90,6 +90,12 @@
   },
   "dependencies": {
     "@base-ui/react": "catalog:",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/merge": "^6.12.3",
+    "@codemirror/search": "^6.7.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
     "@dnd-kit/core": "catalog:",
     "@dnd-kit/modifiers": "catalog:",
     "@dnd-kit/sortable": "catalog:",
@@ -120,6 +126,7 @@
     "@tiptap/starter-kit": "3.31.3",
     "@tiptap/suggestion": "3.31.3",
     "cmdk": "catalog:",
+    "codemirror": "^6.0.2",
     "hast-util-to-html": "^9.0.5",
     "katex": "catalog:",
     "lowlight": "^3.3.0",
@@ -137,7 +144,6 @@
     "react-resizable-panels": "catalog:",
     "react-virtuoso": "catalog:",
     "recharts": "catalog:",
-    "zod": "catalog:",
     "rehype-katex": "catalog:",
     "rehype-raw": "catalog:",
     "rehype-sanitize": "catalog:",
@@ -147,7 +153,8 @@
     "remark-math": "catalog:",
     "sonner": "catalog:",
     "unist-util-visit": "^5.1.0",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "zod": "catalog:"
   },
   "peerDependencies": {
     "@tanstack/react-query": "catalog:",

@@ -63,7 +63,7 @@ export function SourceContextCommentList({
               className={cn(
                 changeKind && "-my-1 -mr-2 rounded-md px-2 py-1.5",
                 changeKind === "added" && "bg-success/5",
-                changeKind === "changed" && "bg-amber-500/5",
+                changeKind === "changed" && "bg-warning/5",
                 changeKind === "deleted" && "bg-destructive/5",
               )}
               data-source-context-change-kind={changeKind ?? undefined}

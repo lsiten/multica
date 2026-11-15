@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
-	"github.com/multica-ai/multica/server/internal/vscreen/native/appcontrol"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -21,13 +20,44 @@ func grantKey(g protocol.MirrorViewerGrant) vscreenGrantKey {
 	return vscreenGrantKey{g.RuntimeID, g.SessionID, g.ViewerID, g.GrantID}
 }
 
+func (d *Daemon) mirrorEnvelopeCurrent(e protocol.RuntimeEnvelope, generation mirrorConnectionGeneration) bool {
+	if e.Validate() != nil {
+		return false
+	}
+	if _, err := d.vscreenResource(e.WorkspaceID, e.RuntimeID); err != nil {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return generation != 0 && generation == d.mirrorConnectionGeneration && d.vscreenServerGeneration != "" && e.DaemonGeneration == d.vscreenServerGeneration
+}
+
+func (d *Daemon) sendVscreen(enqueue func([]byte) (*wsOutbound, error), generation mirrorConnectionGeneration, event string, payload any) error {
+	if enqueue == nil || !d.mirrorConnectionCurrent(generation) {
+		return errWSRPCUnavailable
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	frame, err := json.Marshal(protocol.Message{Type: event, Payload: raw})
+	if err != nil {
+		return err
+	}
+	outbound, err := enqueue(frame)
+	if err == nil && !d.mirrorConnectionCurrent(generation) {
+		outbound.cancel()
+	}
+	return err
+}
+
 func (d *Daemon) handleManagedMirrorOffer(ctx context.Context, msg mirrorOfferMessage) {
 	var offer protocol.MirrorOfferPayload
 	if json.Unmarshal(msg.raw, &offer) != nil || offer.Validate() != nil || offer.ViewerGrant == nil {
 		return
 	}
-	envelope := protocol.VscreenEnvelope{WorkspaceID: offer.WorkspaceID, RuntimeID: offer.RuntimeID, RequestID: offer.SessionID, DaemonGeneration: offer.DaemonGeneration}
-	if !d.vscreenEnvelopeCurrent(envelope, msg.controlGeneration) || offer.DaemonID != d.cfg.DaemonID {
+	envelope := protocol.RuntimeEnvelope{WorkspaceID: offer.WorkspaceID, RuntimeID: offer.RuntimeID, RequestID: offer.SessionID, DaemonGeneration: offer.DaemonGeneration}
+	if !d.mirrorEnvelopeCurrent(envelope, msg.controlGeneration) || offer.DaemonID != d.cfg.DaemonID {
 		return
 	}
 	s := d.vscreenRuntime()
@@ -54,9 +84,6 @@ func (d *Daemon) handleManagedMirrorOffer(ctx context.Context, msg mirrorOfferMe
 		defer cancel()
 		s.mu.Lock()
 		err := d.startVscreenHost(answerCtx, s)
-		if err == nil {
-			err = d.requestVscreenPermissions(answerCtx, s, appcontrol.PermissionRequest{ScreenRecording: true})
-		}
 		s.mu.Unlock()
 		if err != nil {
 			d.managedMirrorFailure(msg, offer, err)
@@ -98,7 +125,7 @@ func (d *Daemon) handleManagedMirrorOffer(ctx context.Context, msg mirrorOfferMe
 		if offer.ProtocolVersion == 2 {
 			for _, source := range sources {
 				if source.Source == *offer.Source {
-					selection := mirror.EncodedSource{Binding: source.MirrorSourceBinding, GeometryRevision: source.GeometryRevision, DisplayID: source.DisplayID, Width: int(source.Width), Height: int(source.Height), FPS: 30, Bitrate: 8000000, ShowCursor: source.Source.Kind != protocol.MirrorSourceVirtual}
+					selection := mirrorVideoSelection(source, offer.VideoProfile)
 					answer, err = rm.AnswerVideo(answerCtx, offer.ViewerID, mirror.SessionDescription{Type: offer.Offer.Type, SDP: offer.Offer.SDP}, mirror.ICEConfigFromProtocol(offer.ICEConfig), selection, *offer.ViewerGrant, uint64(msg.controlGeneration))
 					break
 				}
@@ -116,7 +143,7 @@ func (d *Daemon) handleManagedMirrorOffer(ctx context.Context, msg mirrorOfferMe
 		}
 		s.grantMu.Lock()
 		entry, exists := s.grants[key]
-		allowed := exists && !entry.revoked && answerCtx.Err() == nil && d.vscreenEnvelopeCurrent(envelope, msg.controlGeneration)
+		allowed := exists && !entry.revoked && answerCtx.Err() == nil && d.mirrorEnvelopeCurrent(envelope, msg.controlGeneration)
 		if allowed {
 			answer.Commit()
 		}
@@ -139,10 +166,10 @@ func maxTime(a, b time.Time) time.Time {
 }
 func (d *Daemon) managedMirrorFailure(msg mirrorOfferMessage, offer protocol.MirrorOfferPayload, err error) {
 	reason := protocol.MirrorAnswerFailureCaptureUnavailable
-	if vscreenReason(err) == protocol.VscreenPermissionDenied {
+	if mirrorFailureReason(err) == "permission_denied" {
 		reason = protocol.MirrorAnswerFailurePermissionDenied
 	}
-	if d.mirrorControlGenerationIsCurrent(msg.controlGeneration) {
+	if d.mirrorConnectionCurrent(msg.controlGeneration) {
 		if err = d.sendMirrorAnswerFailure(msg.enqueue, offer, reason); err != nil {
 			d.logger.Debug("managed mirror failure dropped")
 		}
@@ -154,7 +181,7 @@ func (d *Daemon) handleVscreenViewerRevoke(msg mirrorOfferMessage) {
 		return
 	}
 	var p protocol.MirrorViewerRevokePayload
-	if json.Unmarshal(msg.raw, &p) != nil || p.GrantID == "" || p.SessionID == "" || p.ViewerID == "" || !d.vscreenEnvelopeCurrent(protocol.VscreenEnvelope{WorkspaceID: p.WorkspaceID, RuntimeID: p.RuntimeID, DaemonGeneration: p.DaemonGeneration, RequestID: p.GrantID}, msg.controlGeneration) {
+	if json.Unmarshal(msg.raw, &p) != nil || p.GrantID == "" || p.SessionID == "" || p.ViewerID == "" || !d.mirrorEnvelopeCurrent(protocol.RuntimeEnvelope{WorkspaceID: p.WorkspaceID, RuntimeID: p.RuntimeID, DaemonGeneration: p.DaemonGeneration, RequestID: p.GrantID}, msg.controlGeneration) {
 		return
 	}
 	s := d.vscreenRuntime()
@@ -183,7 +210,7 @@ func (d *Daemon) handleVscreenViewerRenew(msg mirrorOfferMessage) {
 		return
 	}
 	var p protocol.MirrorViewerRenewPayload
-	if json.Unmarshal(msg.raw, &p) != nil || !d.vscreenEnvelopeCurrent(protocol.VscreenEnvelope{WorkspaceID: p.Grant.WorkspaceID, RuntimeID: p.Grant.RuntimeID, DaemonGeneration: p.DaemonGeneration, RequestID: p.Grant.GrantID}, msg.controlGeneration) {
+	if json.Unmarshal(msg.raw, &p) != nil || !d.mirrorEnvelopeCurrent(protocol.RuntimeEnvelope{WorkspaceID: p.Grant.WorkspaceID, RuntimeID: p.Grant.RuntimeID, DaemonGeneration: p.DaemonGeneration, RequestID: p.Grant.GrantID}, msg.controlGeneration) {
 		return
 	}
 	s := d.vscreenRuntime()
@@ -199,10 +226,10 @@ func (d *Daemon) handleVscreenViewerRenew(msg mirrorOfferMessage) {
 	}
 }
 
-func (d *Daemon) existingManagedMirror(runtimeID string, g mirrorControlGeneration) *mirror.RuntimeMirror {
+func (d *Daemon) existingManagedMirror(runtimeID string, g mirrorConnectionGeneration) *mirror.RuntimeMirror {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if g == 0 || g != d.mirrorControlGeneration {
+	if g == 0 || g != d.mirrorConnectionGeneration {
 		return nil
 	}
 	return d.runtimeMirrors[runtimeID]

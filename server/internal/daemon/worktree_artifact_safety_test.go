@@ -1,7 +1,7 @@
 package daemon
 
 import (
- "context"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"

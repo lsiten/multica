@@ -1139,6 +1139,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 		return fmt.Errorf("resolve native host executable: %w", err)
 	}
 	cfg.NativeHostBuild = version + "/" + commit
+	cfg.AgentDesktopHeaded = os.Getenv("MULTICA_AGENT_DESKTOP_HEADED") == "1"
 	nativeProfileDir, err := cli.ProfileDir(cfg.Profile)
 	if err != nil {
 		return err

@@ -3009,6 +3009,20 @@
         "environment": "Environnement",
         "mirror": "Miroir"
       },
+      "states": {
+        "ready": "Prêt",
+        "running": "En cours",
+        "starting": "Démarrage",
+        "stopping": "Arrêt",
+        "stopped": "Arrêté",
+        "failed": "Échec",
+        "unavailable": "Indisponible",
+        "offline": "Hors ligne",
+        "disabled": "Désactivé",
+        "downloaded": "Téléchargé",
+        "not_installed": "Non installé",
+        "unknown": "Inconnu"
+      },
       "memory": "Mémoire",
       "cpu": "Temps CPU",
       "usage": {

@@ -9,9 +9,34 @@ import { LocalReviewError } from "./local-review-error";
 import { LocalReviewSelection } from "./local-review-selection";
 import { LocalReviewIndex } from "./local-review-index";
 import { readAllReviewPaths } from "../../platform/local-review-all-files";
+import type {
+  ReviewDiffLayout,
+  ReviewFileFilter,
+  ReviewFileView,
+} from "./local-review-workspace-state";
+import type { LocalReviewComment, ReviewCommentSide } from "./local-review-comments";
 
-export function LocalReviewStagingBrowser({ request, manifest, disabled: externallyDisabled, onBusyChange, onChanged, onSelectionBusy = onBusyChange, onSelectedMerged }: {
-  request: LocalReviewRequest; manifest: ReviewManifest; disabled: boolean; onBusyChange: (busy: boolean) => void; onChanged: () => void; onSelectionBusy?: (busy: boolean) => void; onSelectedMerged?: (commit: string) => void;
+export function LocalReviewStagingBrowser({ request, manifest, disabled: externallyDisabled, onBusyChange, onChanged, onSelectionBusy = onBusyChange, onSelectedMerged, selectedPath, onSelectPath, diffLayout, fileFilter, fileView, onFileFilterChange, onFileViewChange, comments, focusComment, commentSide, onCommentSideChange, onAddComment, onFindings }: {
+  request: LocalReviewRequest;
+  manifest: ReviewManifest;
+  disabled: boolean;
+  onBusyChange: (busy: boolean) => void;
+  onChanged: () => void;
+  onSelectionBusy?: (busy: boolean) => void;
+  onSelectedMerged?: (commit: string) => void;
+  selectedPath?: string;
+  onSelectPath?: (path: string) => void;
+  diffLayout?: ReviewDiffLayout;
+  fileFilter?: ReviewFileFilter;
+  fileView?: ReviewFileView;
+  onFileFilterChange?: (filter: ReviewFileFilter) => void;
+  onFileViewChange?: (view: ReviewFileView) => void;
+  comments?: readonly LocalReviewComment[];
+  focusComment?: LocalReviewComment | null;
+  commentSide?: ReviewCommentSide;
+  onCommentSideChange?: (side: ReviewCommentSide) => void;
+  onAddComment?: (comment: LocalReviewComment) => void;
+  onFindings?: (findings: readonly LocalReviewComment[]) => void;
 }) {
   const userId = useAuthStore((state) => state.user?.id);
   const client = useQueryClient();
@@ -67,7 +92,7 @@ export function LocalReviewStagingBrowser({ request, manifest, disabled: externa
   useEffect(() => { onBusyChange(pending); return () => onBusyChange(client.isMutating({ mutationKey: key }) > 0); }, [pending, onBusyChange, client, key]);
   return <>
     {actionError && <LocalReviewError error={actionError} id={errorId} />}
-    <LocalReviewFileBrowser request={request} manifest={manifest} selection={{ files: pendingPaths.map((path) => ({ path })), busy: disabled || pending || allFiles.isFetching, addAll: () => { void addAll(); }, removeAll: () => setPendingPaths([]), add: (file) => setPendingPaths((paths) => paths.includes(file.path) ? paths : [...paths, file.path]), remove: (path) => setPendingPaths((paths) => paths.filter((entry) => entry !== path)) }} staging={{ files: query.data?.status.files ?? [], preview: staged.data, previewError, workingPreview: unstaged.data, workingPreviewError, busy: disabled || pending || query.isFetching, reason: (query.error ?? leases.find((lease) => lease.error)?.error)?.message, change: (action, path) => mutation.mutate({ action, path }) }} />
+    <LocalReviewFileBrowser selectedPath={selectedPath} onSelectPath={onSelectPath} diffLayout={diffLayout} fileFilter={fileFilter} fileView={fileView} onFileFilterChange={onFileFilterChange} onFileViewChange={onFileViewChange} comments={comments} focusComment={focusComment} commentSide={commentSide} onCommentSideChange={onCommentSideChange} onAddComment={onAddComment} onFindings={onFindings} request={request} manifest={manifest} selection={{ files: pendingPaths.map((path) => ({ path })), busy: disabled || pending || allFiles.isFetching, addAll: () => { void addAll(); }, removeAll: () => setPendingPaths([]), add: (file) => setPendingPaths((paths) => paths.includes(file.path) ? paths : [...paths, file.path]), remove: (path) => setPendingPaths((paths) => paths.filter((entry) => entry !== path)) }} staging={{ files: query.data?.status.files ?? [], preview: staged.data, previewError, workingPreview: unstaged.data, workingPreviewError, busy: disabled || pending || query.isFetching, reason: (query.error ?? leases.find((lease) => lease.error)?.error)?.message, change: (action, path) => mutation.mutate({ action, path }) }} />
     {(!!pendingPaths.length || !!query.data?.status.files.length || !!query.error) && <section className="max-h-72 space-y-4 overflow-auto rounded-sm border p-3">
       {!!pendingPaths.length && <LocalReviewSelection embedded request={request} manifest={manifest} paths={pendingPaths} disabled={disabled || pending || allFiles.isFetching} onBusyChange={onSelectionBusy} onMerged={(commit) => { setPendingPaths([]); if (onSelectedMerged) onSelectedMerged(commit); else onChanged(); }} />}
       {(!!query.data?.status.files.length || !!query.error) && <LocalReviewIndex compact request={request} disabled={disabled || allFiles.isFetching} onBusyChange={onBusyChange} onChanged={onChanged} />}

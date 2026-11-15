@@ -1508,12 +1508,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// WS-first claim (MUL-4257): route daemon:rpc_request frames (e.g.
 	// tasks.claim) through the same handlers as the HTTP endpoints.
 	daemonHub.SetRPCHandler(h.DaemonRPCHandler)
-	daemonHub.SetVscreenInterventionHandler(h.DaemonVscreenIntervention)
-	daemonHub.SetVscreenDisabledHandler(h.DaemonVscreenDisabled)
 	daemonHub.SetMirrorAnswerHandler(h.HandleDaemonMirrorAnswer)
 	daemonHub.SetMirrorAnswerFailureHandler(h.HandleDaemonMirrorAnswerFailure)
 	daemonHub.SetMirrorViewerHandler(h.HandleDaemonMirrorViewer)
-	daemonHub.SetMirrorControlStateHandler(h.HandleDaemonMirrorControlState)
 	daemonHub.SetDisconnectHandler(h.HandleDaemonMirrorDisconnect)
 	health := newServerHealth(pool)
 
@@ -1704,7 +1701,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/runtimes/{runtimeId}/applications/observe", h.ReportRuntimeApplication)
 		r.Post("/runtimes/{runtimeId}/applications/steps/{stepId}/result", h.CompleteRuntimeApplication)
 		r.Post("/runtimes/{runtimeId}/applications/steps/{stepId}/lease", h.RenewRuntimeApplicationLease)
-		r.Post("/runtimes/{runtimeId}/vscreen/interventions", h.ReportVscreenIntervention)
 		// Canonical machine-level batch claim (MUL-4257). `/claim` is a
 		// transitional alias; the daemon coordinator targets the canonical
 		// path.
@@ -2243,6 +2239,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/content-versions", h.ListDocumentContentVersions)
 					r.Post("/content-versions", h.RecordDocumentContentVersion)
 					r.Get("/content-versions/{revision}", h.GetDocumentContentVersion)
+					r.Delete("/content-versions/{revision}", h.DeleteDocumentContentVersion)
 					r.Post("/content-versions/{revision}/rollback", h.RollbackDocumentContentVersion)
 					r.Get("/requirement", h.GetRequirement)
 					r.Get("/content-versions/current", h.GetDocumentContentVersionLatest)
@@ -2316,9 +2313,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Task messages (user-facing, not daemon auth)
 			r.Get("/api/tasks/{taskId}/messages", h.ListTaskMessagesByUser)
-			r.Get("/api/tasks/{taskId}/vscreen/interventions/{id}", h.GetVscreenIntervention)
-			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/vscreen/interventions/{id}/continue", h.ContinueVscreenIntervention)
-			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/vscreen/interventions/{id}/cancel", h.CancelVscreenIntervention)
 			r.Get("/api/tasks/{taskId}/context-receipt", h.GetTaskContextReceipt)
 			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/retry-source-context", h.RetrySourceContextQuickCreate)
 
@@ -2506,6 +2500,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/content-versions", h.ListDocumentContentVersionsForAttachment)
 				r.Post("/content-versions", h.RecordDocumentContentVersionForAttachment)
 				r.Get("/content-versions/{revision}", h.GetDocumentContentVersionForAttachment)
+				r.Delete("/content-versions/{revision}", h.DeleteDocumentContentVersionForAttachment)
 				r.Post("/content-versions/{revision}/rollback", h.RollbackDocumentContentVersionForAttachment)
 				r.Get("/content-versions/current", h.GetDocumentContentVersionLatestForAttachment)
 			})
@@ -2642,19 +2637,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/local-skills/import", h.InitiateImportLocalSkill)
 					r.Get("/local-skills/import/{requestId}", h.GetLocalSkillImportRequest)
 					r.Get("/mirror/config", h.GetMirrorICEConfig)
-					r.Get("/vscreen", h.GetVscreen)
-					r.Get("/vscreen/interventions", h.ListVscreenInterventions)
 					r.Get("/mirror/sources", h.GetMirrorSources)
-					r.Get("/mirror/control-state", h.GetMirrorControlState)
-					r.Post("/vscreen/commands", h.CreateVscreenCommand)
-					r.Get("/vscreen/commands/{commandId}", h.GetVscreenCommand)
+					r.Get("/agent-desktop/readiness", h.GetAgentDesktopReadiness)
+					r.Post("/agent-desktop/permissions/guide", h.OpenAgentDesktopPermissionGuide)
+					r.Get("/agent-desktop/control", h.GetAgentDesktopControl)
+					r.Post("/agent-desktop/control/request", h.RequestAgentDesktopControl)
+					r.Post("/agent-desktop/control/requests/{requestId}/approve", h.ApproveAgentDesktopControl)
+					r.Post("/agent-desktop/control/requests/{requestId}/deny", h.DenyAgentDesktopControl)
+					r.Post("/agent-desktop/control/input", h.SendAgentDesktopControlInput)
+					r.Delete("/agent-desktop/control", h.StopAgentDesktopControl)
 					r.Post("/mirror/sessions", h.CreateMirrorSession)
 					r.Post("/mirror/sessions/{sessionId}/renew", h.RenewMirrorSession)
 					r.Get("/mirror/sessions/{sessionId}", h.GetMirrorSession)
 					r.Delete("/mirror/sessions/{sessionId}", h.CloseMirrorSession)
-					r.Post("/mirror/control-grants", h.CreateMirrorControlGrant)
-					r.Post("/mirror/control-grants/renew", h.RenewMirrorControlGrant)
-					r.Delete("/mirror/control-grants/{viewerId}", h.RevokeMirrorControlGrant)
 					r.Delete("/", h.DeleteAgentRuntime)
 					// Confirmed variant of DELETE: unbind every agent bound to
 					// this runtime (they keep their configuration and chats and

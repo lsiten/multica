@@ -3,8 +3,9 @@ import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/
 import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import { isInternalWorkspacePath } from "@multica/core/types/local-review";
 import { useAuthStore } from "@multica/core/auth";
+import { defaultStorage } from "@multica/core/platform";
 import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
 import { readLocalIndex, changeLocalIndex, renewReviewLease } from "../../platform/local-review-pages";
 import { useT } from "../../i18n";
 import { LocalReviewError } from "./local-review-error";
@@ -26,8 +27,9 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, onInvalidBi
   const userId = useAuthStore((state) => state.user?.id);
   const client = useQueryClient();
   const key = useMemo(() => ["local-index", userId, request.workspace_id, request.task_id, request.project_resource_id, request.runtime_id, request.path], [userId, request.workspace_id, request.task_id, request.project_resource_id, request.runtime_id, request.path]);
+  const commitDraftKey = `multica_local_review_commit_draft:${request.workspace_id}:${request.task_id ?? request.project_resource_id}:${request.path}`;
   const writing = useIsMutating({ mutationKey: key }) > 0;
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() => defaultStorage.getItem(commitDraftKey) ?? "");
   const [confirm, setConfirm] = useState(false);
   const [visible, setVisible] = useState(100);
   const query = useQuery({ queryKey: key, queryFn: ({ signal }) => readLocalIndex({ ...request, action: "index" }, signal), networkMode: "always", retry: false, refetchOnWindowFocus: false });
@@ -47,11 +49,18 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, onInvalidBi
     },
     onSuccess: async (_result, action) => {
       setConfirm(false);
-      if (action.action === "commit") setMessage("");
+      if (action.action === "commit") {
+        setMessage("");
+        defaultStorage.removeItem(commitDraftKey);
+      }
       await client.invalidateQueries({ queryKey: key, exact: true });
       onChanged();
     },
   });
+  useEffect(() => {
+    if (message.trim()) defaultStorage.setItem(commitDraftKey, message);
+    else defaultStorage.removeItem(commitDraftKey);
+  }, [commitDraftKey, message]);
   useEffect(() => { onBusyChange(writing); return () => onBusyChange(client.isMutating({ mutationKey: key }) > 0); }, [writing, onBusyChange, client, key]);
   const data = query.data;
   const lease = useQuery({
@@ -68,6 +77,23 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, onInvalidBi
   const busy = disabled || query.isFetching || writing;
   const error = operation.error ?? query.error ?? lease.error;
   const invalidMessage = !message.trim() || new TextEncoder().encode(message).length > 8000;
+  useEffect(() => {
+    const commitWithKeyboard = (event: KeyboardEvent) => {
+      if (
+        !(event.metaKey || event.ctrlKey) ||
+        event.key !== "Enter" ||
+        busy ||
+        !staged.length ||
+        invalidMessage ||
+        staged.some((file) => file.conflicted || file.unsupported)
+      ) return;
+      event.preventDefault();
+      if (confirm) operation.mutate({ action: "commit" });
+      else setConfirm(true);
+    };
+    window.addEventListener("keydown", commitWithKeyboard);
+    return () => window.removeEventListener("keydown", commitWithKeyboard);
+  }, [busy, confirm, invalidMessage, operation, staged]);
   return <section className={compact ? "space-y-2 text-caption" : "space-y-2 rounded-sm border p-3 text-caption"}>
     <div className="flex items-center justify-between gap-2"><span className="break-all font-mono">{data?.status.branch}</span><Button variant="outline" disabled={busy} onClick={() => { setConfirm(false); void query.refetch(); }}>{t(($) => $.local_review.refresh)}</Button></div>
     {query.isPending && <p role="status">{t(($) => $.local_review.loading)}</p>}
@@ -83,7 +109,7 @@ export function LocalReviewIndex({ request, onChanged, onBusyChange, onInvalidBi
         </div>)}
       </div>}
       {!readOnly && <>
-      <Input aria-label={t(($) => $.local_review.commit_message)} placeholder={t(($) => $.local_review.commit_message)} value={message} disabled={busy || confirm} maxLength={8000} onChange={(event) => setMessage(event.target.value)} />
+      <Textarea aria-label={t(($) => $.local_review.commit_message)} placeholder={t(($) => $.local_review.commit_message)} value={message} disabled={busy || confirm} maxLength={8000} rows={3} className="min-h-20 resize-y" onChange={(event) => setMessage(event.target.value)} />
       {!confirm ? <Button disabled={busy || !staged.length || invalidMessage || staged.some((file) => file.conflicted || file.unsupported)} onClick={() => setConfirm(true)}>{t(($) => $.local_review.create_commit)}</Button> : <div className="flex flex-wrap gap-2"><Button disabled={busy} onClick={() => operation.mutate({ action: "commit" })}>{t(($) => $.local_review.confirm_commit, { count: staged.length })}</Button><Button variant="outline" disabled={busy} onClick={() => setConfirm(false)}>{t(($) => $.local_review.cancel_commit)}</Button></div>}
       </>}
     </>}

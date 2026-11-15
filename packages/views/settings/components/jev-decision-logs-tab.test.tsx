@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useCallback, useMemo, useState } from "react";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
 import { renderWithI18n } from "../../test/i18n";
+import { NavigationProvider } from "../../navigation";
+import type { NavigationAdapter } from "../../navigation";
 import { JevDecisionLogsTab } from "./jev-decision-logs-tab";
 
 const scope = vi.hoisted(() => ({ workspace: "workspace-1", role: "owner" }));
@@ -13,9 +16,25 @@ vi.mock("@multica/core/permissions", () => ({ useCurrentMember: () => ({ role: s
 vi.mock("@multica/core/api", () => ({ api: { listJevDecisionLogs: vi.fn(), getJevDecisionLog: vi.fn() } }));
 const summary = { id: "decision-1", workspace_id: "workspace-1", task_id: "task-1", agent_id: "agent-1", agent_name: "审核者", issue_identifier: "MUL-123", source: "local", tool: "multica_jev_systemone", model: "Mapika/decider-2b", result_class: "success", error_code: "", duration_ms: 123, started_at: "2026-10-03T12:00:00Z" } as const;
 const page = { items: [summary], total: 21, limit: 20, offset: 0, as_of: "2026-10-03T12:01:00Z" };
+function NavigationHarness({ children }: { readonly children: React.ReactNode }) {
+  const [search, setSearch] = useState("");
+  const replace = useCallback((path: string) => {
+    setSearch(new URL(path, "https://fixture.invalid").search.replace(/^\?/, ""));
+  }, []);
+  const value = useMemo<NavigationAdapter>(() => ({
+    pathname: "/dev/settings",
+    searchParams: new URLSearchParams(search),
+    hash: "",
+    push: vi.fn(),
+    replace,
+    back: vi.fn(),
+    getShareableUrl: (path) => path,
+  }), [replace, search]);
+  return <NavigationProvider value={value}><output aria-label="location-search">{search}</output>{children}</NavigationProvider>;
+}
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = <QueryClientProvider client={client}><JevDecisionLogsTab /></QueryClientProvider>;
+  const view = <QueryClientProvider client={client}><NavigationHarness><JevDecisionLogsTab /></NavigationHarness></QueryClientProvider>;
   return { ...renderWithI18n(view, { locale: "zh-Hans" }), client };
 }
 beforeEach(() => {
@@ -29,9 +48,13 @@ describe("Jev decision log page", () => {
     await screen.findByText("MUL-123");
     await user.click(screen.getByRole("button", { name: "下一页" }));
     await waitFor(() => expect(api.listJevDecisionLogs).toHaveBeenLastCalledWith("workspace-1", expect.objectContaining({ offset: 20, limit: 20, as_of: page.as_of })));
+    expect(screen.getByRole("status", { name: "location-search" })).toHaveTextContent("jev_offset=20");
     await user.type(screen.getByRole("searchbox", { name: "搜索" }), "report");
     await user.click(screen.getByRole("button", { name: "搜索" }));
     await waitFor(() => expect(api.listJevDecisionLogs).toHaveBeenLastCalledWith("workspace-1", expect.objectContaining({ q: "report", offset: 0 })));
+    const searchParams = screen.getByRole("status", { name: "location-search" }).textContent ?? "";
+    expect(searchParams).toContain("jev_q=report");
+    expect(searchParams).not.toContain("jev_offset");
   });
   it("applies result, source, Agent and date filters and clears them", async () => {
     const user = userEvent.setup(); mount(); await screen.findByText("MUL-123");
@@ -75,7 +98,7 @@ describe("Jev decision log page", () => {
     const user = userEvent.setup(); const view = mount(); await screen.findByText("MUL-123");
     await user.type(screen.getByRole("searchbox", { name: "搜索" }), "private workspace query");
     scope.workspace = "workspace-2";
-    view.rerender(<QueryClientProvider client={view.client}><JevDecisionLogsTab /></QueryClientProvider>);
+    view.rerender(<QueryClientProvider client={view.client}><NavigationHarness><JevDecisionLogsTab /></NavigationHarness></QueryClientProvider>);
     await waitFor(() => expect(api.listJevDecisionLogs).toHaveBeenLastCalledWith("workspace-2", expect.objectContaining({ q: "", offset: 0 })));
     expect(screen.getByRole("searchbox", { name: "搜索" })).toHaveValue("");
   });

@@ -2935,6 +2935,20 @@
         "environment": "环境",
         "mirror": "镜像"
       },
+      "states": {
+        "ready": "就绪",
+        "running": "运行中",
+        "starting": "启动中",
+        "stopping": "停止中",
+        "stopped": "已停止",
+        "failed": "失败",
+        "unavailable": "不可用",
+        "offline": "离线",
+        "disabled": "已停用",
+        "downloaded": "已下载",
+        "not_installed": "未安装",
+        "unknown": "未知"
+      },
       "memory": "内存",
       "cpu": "CPU 时间",
       "usage": {

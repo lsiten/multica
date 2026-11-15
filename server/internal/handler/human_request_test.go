@@ -82,6 +82,43 @@ func TestHumanRequestVersionedResponseAndOwnership(t *testing.T) {
 	}
 }
 
+func TestDesktopApprovalDoesNotEnqueueContinuation(t *testing.T) {
+	issue := dbfx.Issue(t, "desktop approval")
+	agent := dbfx.Agent(t, "desktop approval", testRuntimeID)
+	sourceID := dbfx.Task(t, agent, testutil.Cols{
+		"issue_id": issue, "runtime_id": testRuntimeID, "status": "running",
+		"originator_user_id": testUserID, "accountable_user_id": testUserID,
+	})
+	dbfx.Cleanup(t, "DELETE FROM human_request WHERE source_task_id=$1", sourceID)
+	source, err := testHandler.Queries.GetAgentTask(context.Background(), parseUUID(sourceID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := testHandler.TaskService.CreateHumanRequest(
+		auth.WithTrustedInternalTaskActor(context.Background()),
+		source,
+		parseUUID(testWorkspaceID),
+		service.HumanRequestInput{
+			Key: "desktop-approval", Kind: "confirmation", Title: "Approve desktop action",
+			ActionLabel: "Approve", Next: "I will perform this action once if approved.",
+			ResponseMode: "card_only", Purpose: "desktop_approval",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := withURLParam(
+		newRequest("POST", "/", service.HumanRequestAnswer{Revision: row.Revision, Decision: "approve"}),
+		"requestId",
+		uuidToString(row.ID),
+	)
+	var response humanRequestResponse
+	testutil.Call(t, testHandler.RespondHumanRequest, request).Want(http.StatusOK).JSON(&response)
+	if response.Status != "answered" || response.ResponseTaskID.Valid {
+		t.Fatalf("desktop approval = %+v, want a terminal answer without a continuation task", response)
+	}
+}
+
 func TestHumanRequestReadAndArchiveAreNotConsent(t *testing.T) {
 	issue := dbfx.Issue(t, "manual prerequisite")
 	agent := dbfx.Agent(t, "manual prerequisite", testRuntimeID)

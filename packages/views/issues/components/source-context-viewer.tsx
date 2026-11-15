@@ -273,7 +273,7 @@ export function SourceContextBadge({
             {current.display_state !== "unchanged" && (
               <div
                 data-slot="source-context-change-summary"
-                className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-caption"
+                className="flex gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-caption"
               >
                 <AlertTriangle className="size-4 shrink-0" aria-hidden />
                 <div className="min-w-0 flex-1 space-y-1.5">

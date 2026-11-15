@@ -11,7 +11,7 @@ import (
 
 type voicePending struct {
 	client   *client
-	envelope protocol.VscreenEnvelope
+	envelope protocol.RuntimeEnvelope
 	result   chan protocol.VoiceResult
 }
 
@@ -23,10 +23,10 @@ func (h *Hub) TranscribeVoice(ctx context.Context, workspaceID, runtimeID, daemo
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	h.mu.Lock()
-	c := h.vscreenClientLocked(workspaceID, runtimeID, daemonID)
+	c := h.mirrorClientLocked(workspaceID, runtimeID, daemonID)
 	if c == nil {
 		h.mu.Unlock()
-		return protocol.VoiceResult{}, ErrVscreenUnavailable
+		return protocol.VoiceResult{}, ErrMirrorUnavailable
 	}
 	count := 0
 	for _, p := range h.voicePending {
@@ -36,9 +36,9 @@ func (h *Hub) TranscribeVoice(ctx context.Context, workspaceID, runtimeID, daemo
 	}
 	if len(h.voicePending) >= 32 || count >= 2 {
 		h.mu.Unlock()
-		return protocol.VoiceResult{}, ErrVscreenCapacity
+		return protocol.VoiceResult{}, ErrMirrorCapacity
 	}
-	e := protocol.VscreenEnvelope{WorkspaceID: workspaceID, RuntimeID: runtimeID, DaemonGeneration: c.vscreenGeneration, RequestID: uuid.NewString()}
+	e := protocol.RuntimeEnvelope{WorkspaceID: workspaceID, RuntimeID: runtimeID, DaemonGeneration: c.vscreenGeneration, RequestID: uuid.NewString()}
 	p := &voicePending{client: c, envelope: e, result: make(chan protocol.VoiceResult, 1)}
 	if h.voicePending == nil {
 		h.voicePending = make(map[string]*voicePending)
@@ -47,9 +47,9 @@ func (h *Hub) TranscribeVoice(ctx context.Context, workspaceID, runtimeID, daemo
 	h.mu.Unlock()
 	defer func() { h.mu.Lock(); delete(h.voicePending, e.RequestID); h.mu.Unlock() }()
 	deadline, _ := ctx.Deadline()
-	frame := mustMarshalRaw(protocol.Message{Type: protocol.EventVoiceTranscribe, Payload: mustMarshalRaw(protocol.VoiceRequest{VscreenEnvelope: e, VoiceAudio: audio, Deadline: deadline})})
+	frame := mustMarshalRaw(protocol.Message{Type: protocol.EventVoiceTranscribe, Payload: mustMarshalRaw(protocol.VoiceRequest{RuntimeEnvelope: e, VoiceAudio: audio, Deadline: deadline})})
 	if !c.trySend(frame) {
-		return protocol.VoiceResult{}, ErrVscreenUnavailable
+		return protocol.VoiceResult{}, ErrMirrorUnavailable
 	}
 	select {
 	case result := <-p.result:
@@ -58,7 +58,7 @@ func (h *Hub) TranscribeVoice(ctx context.Context, workspaceID, runtimeID, daemo
 		c.trySend(mustMarshalRaw(protocol.Message{Type: protocol.EventVoiceCancel, Payload: mustMarshalRaw(e)}))
 		return protocol.VoiceResult{}, ctx.Err()
 	case <-c.ctx.Done():
-		return protocol.VoiceResult{}, ErrVscreenUnavailable
+		return protocol.VoiceResult{}, ErrMirrorUnavailable
 	}
 }
 
@@ -74,7 +74,7 @@ func (c *client) handleVoiceResult(raw json.RawMessage) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	p := h.voicePending[result.RequestID]
-	if p == nil || p.client != c || p.envelope != result.VscreenEnvelope || h.vscreenClientLocked(result.WorkspaceID, result.RuntimeID, c.identity.DaemonID) != c {
+	if p == nil || p.client != c || p.envelope != result.RuntimeEnvelope || h.mirrorClientLocked(result.WorkspaceID, result.RuntimeID, c.identity.DaemonID) != c {
 		return
 	}
 	select {

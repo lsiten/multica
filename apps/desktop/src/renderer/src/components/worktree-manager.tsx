@@ -111,7 +111,10 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
       default: return t(($) => $.desktop.worktrees.unavailable);
     }
   };
-  const blocked = !enabled || inventory.isError || cleanup.isPending || inventory.isFetching || cachePending;
+  // Background inventory refreshes must not disable actions. The daemon
+  // rechecks lifecycle safety when cleanup starts, so only a failed inventory,
+  // a mutation, or cache work is a real action barrier.
+  const blocked = !enabled || inventory.isError || cleanup.isPending || cachePending;
   return (
     <SettingsSection title={t(($) => $.desktop.worktrees.title)} description={t(($) => $.desktop.worktrees.description)}>
       <WorktreeInventorySummary rows={rows} />

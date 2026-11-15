@@ -652,7 +652,7 @@ func (s *ProjectSupervisionService) authorizeRun(ctx context.Context, q *db.Quer
 	if err != nil {
 		return row, db.AgentTaskQueue{}, ProjectSupervisionConfig{}, err
 	}
-	task, err := q.LockVscreenSourceTask(ctx, taskID)
+	task, err := q.LockTaskForExecution(ctx, taskID)
 	if err != nil {
 		return row, task, ProjectSupervisionConfig{}, err
 	}

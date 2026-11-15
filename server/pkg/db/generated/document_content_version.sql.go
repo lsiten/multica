@@ -78,8 +78,46 @@ func (q *Queries) ApplyIssueDescriptionForContentVersion(ctx context.Context, ar
 	return i, err
 }
 
+const deleteDocumentContentVersion = `-- name: DeleteDocumentContentVersion :execrows
+DELETE FROM document_content_version
+WHERE document_content_version.owner_type = $1
+  AND document_content_version.owner_id = $2
+  AND document_content_version.revision = $3
+  AND document_content_version.workspace_id = $4
+  AND document_content_version.merged = FALSE
+  AND document_content_version.revision < (
+    SELECT MAX(latest.revision)
+    FROM document_content_version latest
+    WHERE latest.owner_type = $1
+      AND latest.owner_id = $2
+      AND latest.workspace_id = $4
+  )
+`
+
+type DeleteDocumentContentVersionParams struct {
+	OwnerType   string      `json:"owner_type"`
+	OwnerID     pgtype.UUID `json:"owner_id"`
+	Revision    int64       `json:"revision"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Named checkpoints can be removed, but the latest row and autosaves cannot.
+// The latest guard keeps revision allocation above every historical number.
+func (q *Queries) DeleteDocumentContentVersion(ctx context.Context, arg DeleteDocumentContentVersionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDocumentContentVersion,
+		arg.OwnerType,
+		arg.OwnerID,
+		arg.Revision,
+		arg.WorkspaceID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getDocumentContentVersion = `-- name: GetDocumentContentVersion :one
-SELECT id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at FROM document_content_version
+SELECT id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at, merged, session_id FROM document_content_version
 WHERE owner_type = $1
   AND owner_id = $2
   AND revision = $3
@@ -115,12 +153,14 @@ func (q *Queries) GetDocumentContentVersion(ctx context.Context, arg GetDocument
 		&i.ActorID,
 		&i.Note,
 		&i.CreatedAt,
+		&i.Merged,
+		&i.SessionID,
 	)
 	return i, err
 }
 
 const getLatestDocumentContentVersion = `-- name: GetLatestDocumentContentVersion :one
-SELECT id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at FROM document_content_version
+SELECT id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at, merged, session_id FROM document_content_version
 WHERE owner_type = $1
   AND owner_id = $2
   AND workspace_id = $3
@@ -151,6 +191,8 @@ func (q *Queries) GetLatestDocumentContentVersion(ctx context.Context, arg GetLa
 		&i.ActorID,
 		&i.Note,
 		&i.CreatedAt,
+		&i.Merged,
+		&i.SessionID,
 	)
 	return i, err
 }
@@ -158,10 +200,11 @@ func (q *Queries) GetLatestDocumentContentVersion(ctx context.Context, arg GetLa
 const insertDocumentContentVersion = `-- name: InsertDocumentContentVersion :one
 INSERT INTO document_content_version (
     workspace_id, owner_type, owner_id, revision, content_type,
-    content, content_url, size_bytes, actor_type, actor_id, note
+    content, content_url, size_bytes, actor_type, actor_id, note, merged,
+    session_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at, merged, session_id
 `
 
 type InsertDocumentContentVersionParams struct {
@@ -176,6 +219,8 @@ type InsertDocumentContentVersionParams struct {
 	ActorType   string      `json:"actor_type"`
 	ActorID     pgtype.UUID `json:"actor_id"`
 	Note        pgtype.Text `json:"note"`
+	Merged      bool        `json:"merged"`
+	SessionID   pgtype.Text `json:"session_id"`
 }
 
 // Appends one committed content state. The unique (owner_type, owner_id,
@@ -194,6 +239,8 @@ func (q *Queries) InsertDocumentContentVersion(ctx context.Context, arg InsertDo
 		arg.ActorType,
 		arg.ActorID,
 		arg.Note,
+		arg.Merged,
+		arg.SessionID,
 	)
 	var i DocumentContentVersion
 	err := row.Scan(
@@ -210,12 +257,14 @@ func (q *Queries) InsertDocumentContentVersion(ctx context.Context, arg InsertDo
 		&i.ActorID,
 		&i.Note,
 		&i.CreatedAt,
+		&i.Merged,
+		&i.SessionID,
 	)
 	return i, err
 }
 
 const listDocumentContentVersions = `-- name: ListDocumentContentVersions :many
-SELECT id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at FROM document_content_version
+SELECT id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at, merged, session_id FROM document_content_version
 WHERE owner_type = $1
   AND owner_id = $2
   AND workspace_id = $3
@@ -254,6 +303,8 @@ func (q *Queries) ListDocumentContentVersions(ctx context.Context, arg ListDocum
 			&i.ActorID,
 			&i.Note,
 			&i.CreatedAt,
+			&i.Merged,
+			&i.SessionID,
 		); err != nil {
 			return nil, err
 		}
@@ -273,12 +324,14 @@ SET content      = $1,
     actor_type   = $4,
     actor_id     = $5,
     note         = $6,
+    merged       = $7,
+    session_id   = $8,
     created_at   = now()
-WHERE owner_type = $7
-  AND owner_id = $8
-  AND revision = $9
-  AND workspace_id = $10
-RETURNING id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at
+WHERE owner_type = $9
+  AND owner_id = $10
+  AND revision = $11
+  AND workspace_id = $12
+RETURNING id, workspace_id, owner_type, owner_id, revision, content_type, content, content_url, size_bytes, actor_type, actor_id, note, created_at, merged, session_id
 `
 
 type UpdateDocumentContentVersionContentParams struct {
@@ -288,6 +341,8 @@ type UpdateDocumentContentVersionContentParams struct {
 	ActorType   string      `json:"actor_type"`
 	ActorID     pgtype.UUID `json:"actor_id"`
 	Note        pgtype.Text `json:"note"`
+	Merged      bool        `json:"merged"`
+	SessionID   pgtype.Text `json:"session_id"`
 	OwnerType   string      `json:"owner_type"`
 	OwnerID     pgtype.UUID `json:"owner_id"`
 	Revision    int64       `json:"revision"`
@@ -307,6 +362,8 @@ func (q *Queries) UpdateDocumentContentVersionContent(ctx context.Context, arg U
 		arg.ActorType,
 		arg.ActorID,
 		arg.Note,
+		arg.Merged,
+		arg.SessionID,
 		arg.OwnerType,
 		arg.OwnerID,
 		arg.Revision,
@@ -327,6 +384,8 @@ func (q *Queries) UpdateDocumentContentVersionContent(ctx context.Context, arg U
 		&i.ActorID,
 		&i.Note,
 		&i.CreatedAt,
+		&i.Merged,
+		&i.SessionID,
 	)
 	return i, err
 }

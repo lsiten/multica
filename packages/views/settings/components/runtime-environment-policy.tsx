@@ -5,7 +5,7 @@ import { environmentPolicySchema, type EnvironmentPolicyStatus } from "@multica/
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { Label } from "@multica/ui/components/ui/label";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 
 export function RuntimeEnvironmentPolicy({ workspaceId, runtimeId, userId, disabled }: { workspaceId: string; runtimeId: string; userId: string; disabled: boolean }) {
   const { t } = useT("settings");
@@ -33,6 +33,7 @@ export function RuntimeEnvironmentPolicy({ workspaceId, runtimeId, userId, disab
 
 function PolicyForm({ status, disabled, onSubmit }: { status: EnvironmentPolicyStatus; disabled: boolean; onSubmit: (data: FormData) => void }) {
   const { t } = useT("settings");
+  const locale = useLocale();
   const fields = [
     ...(status.task_retention_supported ? [] : [{ name: "archive", label: t(($) => $.environments.policy.archive_hours), value: status.policy.archive_after_hours, max: 87600, step: 1 }]),
     { name: "cache", label: t(($) => $.environments.policy.cache_hours), value: status.policy.cache_after_hours, max: 87600, step: 1 },
@@ -47,7 +48,7 @@ function PolicyForm({ status, disabled, onSubmit }: { status: EnvironmentPolicyS
     <p className="text-caption text-muted-foreground">{status.task_retention_supported ? t(($) => $.environments.policy.task_retention_help) : t(($) => $.environments.policy.retention_help)}</p>
     <div className="grid gap-3 sm:grid-cols-2">{fields.map((field) => <Label key={field.name} className="grid gap-1.5">{field.label}<Input name={field.name} type="number" required min={0} max={field.max} step={field.step} defaultValue={field.value} disabled={disabled} /></Label>)}</div>
     <p className="text-caption">{t(($) => $.environments.policy.pressure_status, { status: status.under_pressure ? t(($) => $.environments.policy.pressure) : t(($) => $.environments.policy.normal), free: status.free_bytes === null ? "—" : `${(status.free_bytes / 1024 ** 3).toFixed(1)} GiB` })}</p>
-    <p className="text-caption text-muted-foreground">{t(($) => $.environments.policy.last_scan, { time: status.last_scan_at ? new Date(status.last_scan_at).toLocaleString() : "—", count: status.idle_environments })}</p>
+    <p className="text-caption text-muted-foreground">{t(($) => $.environments.policy.last_scan, { time: status.last_scan_at ? new Date(status.last_scan_at).toLocaleString(locale) : "—", count: status.idle_environments })}</p>
     <Button size="sm" disabled={disabled} type="submit">{t(($) => $.environments.policy.save)}</Button>
   </form>;
 }

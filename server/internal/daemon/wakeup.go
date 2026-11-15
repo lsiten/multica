@@ -118,15 +118,10 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	// WS claims use the common capabilities plus scheduling hints that only the
 	// healthy-connection poller can consume.
 	capabilities := daemonClientCapabilities()
-	// The virtual-screen capabilities need the native host; the control
-	// capability is independent of it, so advertise the two separately.
 	if d.cfg.NativeHostExecutable != "" {
-		if managed := managedVscreenCapabilities(); len(managed) > 0 {
+		if managed := managedMirrorCapabilities(); len(managed) > 0 {
 			capabilities += "," + strings.Join(managed, ",")
 		}
-	}
-	if control := managedScreenControlCapabilities(); len(control) > 0 {
-		capabilities += "," + strings.Join(control, ",")
 	}
 	headers.Set("X-Client-Capabilities", capabilities)
 
@@ -220,11 +215,6 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 			return nil, errWSRPCWriteBufferFull
 		}
 	}
-	var vscreenReportBinding uint64
-	reporter, reporterErr := d.initVscreenReporter(ctx)
-	if reporterErr == nil {
-		vscreenReportBinding = reporter.Bind(response.Header.Get(protocol.DaemonGenerationHeader), enqueue)
-	}
 	wsRPCGeneration := d.wsRPC.attach(enqueue)
 	if d.mirrorProcessMode() {
 		if err := d.bindMirrorProcess(mirrorCtx, mirrorGeneration, enqueue); err != nil {
@@ -246,13 +236,11 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 
 	errCh := make(chan error, 1)
 	reader := taskWakeupReader{
-		vscreenReporter:         reporter,
-		vscreenReportBinding:    vscreenReportBinding,
-		conn:                    conn,
-		taskWakeups:             taskWakeups,
-		wsRPCGeneration:         wsRPCGeneration,
-		mirrorControlGeneration: mirrorGeneration,
-		enqueue:                 enqueue,
+		conn:                       conn,
+		taskWakeups:                taskWakeups,
+		wsRPCGeneration:            wsRPCGeneration,
+		mirrorConnectionGeneration: mirrorGeneration,
+		enqueue:                    enqueue,
 	}
 	go func() {
 		errCh <- d.readTaskWakeupMessagesForConnectionAndWriter(mirrorCtx, reader)
@@ -281,9 +269,6 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 		// Detach RPC (fails pending → HTTP fallback, now safe since the queued
 		// frame will be dropped), and flip the send-closed flag under sendMu so
 		// any in-flight guarded send finishes before we close writes.
-		if reporter != nil {
-			reporter.Unbind(vscreenReportBinding)
-		}
 		d.wsRPC.attach(nil)
 		// A healthy WS connection lets the claim poller use a longer fallback
 		// interval. Wake it as soon as the connection drops so it immediately
@@ -429,24 +414,22 @@ func (d *Daemon) readTaskWakeupMessages(conn *websocket.Conn, taskWakeups chan<-
 }
 
 type taskWakeupReader struct {
-	vscreenReporter         *vscreenReporter
-	vscreenReportBinding    uint64
-	conn                    *websocket.Conn
-	taskWakeups             chan<- taskWakeup
-	wsRPCGeneration         uint64
-	mirrorControlGeneration mirrorControlGeneration
-	enqueue                 func([]byte) (*wsOutbound, error)
+	conn                       *websocket.Conn
+	taskWakeups                chan<- taskWakeup
+	wsRPCGeneration            uint64
+	mirrorConnectionGeneration mirrorConnectionGeneration
+	enqueue                    func([]byte) (*wsOutbound, error)
 }
 
 func (d *Daemon) readTaskWakeupMessagesForConnection(conn *websocket.Conn, taskWakeups chan<- taskWakeup, wsRPCGeneration uint64) error {
 	d.mu.Lock()
-	mirrorGeneration := d.mirrorControlGeneration
+	mirrorGeneration := d.mirrorConnectionGeneration
 	d.mu.Unlock()
 	return d.readTaskWakeupMessagesForConnectionAndWriter(context.Background(), taskWakeupReader{
-		conn:                    conn,
-		taskWakeups:             taskWakeups,
-		wsRPCGeneration:         wsRPCGeneration,
-		mirrorControlGeneration: mirrorGeneration,
+		conn:                       conn,
+		taskWakeups:                taskWakeups,
+		wsRPCGeneration:            wsRPCGeneration,
+		mirrorConnectionGeneration: mirrorGeneration,
 	})
 }
 
@@ -456,7 +439,7 @@ func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Contex
 	conn := reader.conn
 	taskWakeups := reader.taskWakeups
 	wsRPCGeneration := reader.wsRPCGeneration
-	mirrorGeneration := reader.mirrorControlGeneration
+	mirrorGeneration := reader.mirrorConnectionGeneration
 	enqueue := reader.enqueue
 	d.configureTaskWakeupReadLiveness(conn)
 	for {
@@ -542,24 +525,40 @@ func (d *Daemon) readTaskWakeupMessagesForConnectionAndWriter(ctx context.Contex
 			d.handleVscreenViewerRenew(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventMirrorViewerRevoke:
 			d.handleVscreenViewerRevoke(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
-		case protocol.EventMirrorControlGrant:
-			d.handleMirrorControlGrant(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
-		case protocol.EventMirrorControlRevoke:
-			d.handleMirrorControlRevoke(mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
-		case protocol.EventVscreenInterventionAck:
-			if reader.vscreenReporter != nil {
-				reader.vscreenReporter.OnAck(reader.vscreenReportBinding, msg.Payload)
+		case protocol.EventMirrorSourcesQuery:
+			var query protocol.MirrorSourcesQuery
+			if json.Unmarshal(msg.Payload, &query) == nil {
+				go d.handleMirrorSourcesQuery(ctx, query, enqueue, mirrorGeneration)
 			}
-		case protocol.EventVscreenResult:
-			d.handleVscreenCleanupAck(mirrorOfferMessage{raw: msg.Payload, controlGeneration: mirrorGeneration})
-		case protocol.EventVscreenQuery:
-			d.handleVscreenQuery(ctx, mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
+		case protocol.EventAgentDesktopReadinessQuery:
+			var query protocol.AgentDesktopReadinessQuery
+			if json.Unmarshal(msg.Payload, &query) == nil {
+				go d.handleAgentDesktopReadinessQuery(ctx, query, enqueue, mirrorGeneration)
+			}
+		case protocol.EventAgentDesktopPermissionGuideQuery:
+			var query protocol.AgentDesktopPermissionGuideQuery
+			if json.Unmarshal(msg.Payload, &query) == nil {
+				go d.handleAgentDesktopPermissionGuideQuery(ctx, query, enqueue, mirrorGeneration)
+			}
+		case protocol.EventAgentDesktopControlStartQuery:
+			var query protocol.AgentDesktopControlStartQuery
+			if json.Unmarshal(msg.Payload, &query) == nil {
+				go d.handleAgentDesktopControlStartQuery(ctx, query, enqueue, mirrorGeneration)
+			}
+		case protocol.EventAgentDesktopControlInputQuery:
+			var query protocol.AgentDesktopControlInputQuery
+			if json.Unmarshal(msg.Payload, &query) == nil {
+				go d.handleAgentDesktopControlInputQuery(ctx, query, enqueue, mirrorGeneration)
+			}
+		case protocol.EventAgentDesktopControlStopQuery:
+			var query protocol.AgentDesktopControlStopQuery
+			if json.Unmarshal(msg.Payload, &query) == nil {
+				go d.handleAgentDesktopControlStopQuery(ctx, query, enqueue, mirrorGeneration)
+			}
 		case protocol.EventVoiceTranscribe:
 			voice.handle(msg.Payload)
 		case protocol.EventVoiceCancel:
 			voice.cancel(msg.Payload)
-		case protocol.EventVscreenCommand:
-			d.handleVscreenCommand(ctx, mirrorOfferMessage{raw: msg.Payload, enqueue: enqueue, controlGeneration: mirrorGeneration})
 		case protocol.EventMirrorOffer:
 			d.handleMirrorOffer(ctx, mirrorOfferMessage{
 				raw:               msg.Payload,

@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/mirror"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -21,13 +20,13 @@ type voiceRequests struct {
 	reader taskWakeupReader
 }
 
-func (d *Daemon) voiceEnvelopeCurrent(e protocol.VscreenEnvelope, generation mirrorControlGeneration) bool {
+func (d *Daemon) voiceEnvelopeCurrent(e protocol.RuntimeEnvelope, generation mirrorConnectionGeneration) bool {
 	if e.Validate() != nil {
 		return false
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if generation == 0 || generation != d.mirrorControlGeneration || e.DaemonGeneration != d.vscreenServerGeneration {
+	if generation == 0 || generation != d.mirrorConnectionGeneration || e.DaemonGeneration != d.vscreenServerGeneration {
 		return false
 	}
 	if _, ok := d.runtimeIndex[e.RuntimeID]; !ok {
@@ -53,8 +52,8 @@ func (v *voiceRequests) close() {
 }
 
 func (v *voiceRequests) cancel(raw json.RawMessage) {
-	var e protocol.VscreenEnvelope
-	if json.Unmarshal(raw, &e) != nil || !v.d.voiceEnvelopeCurrent(e, v.reader.mirrorControlGeneration) {
+	var e protocol.RuntimeEnvelope
+	if json.Unmarshal(raw, &e) != nil || !v.d.voiceEnvelopeCurrent(e, v.reader.mirrorConnectionGeneration) {
 		return
 	}
 	v.mu.Lock()
@@ -69,7 +68,7 @@ func (v *voiceRequests) handle(raw json.RawMessage) {
 		return
 	}
 	var request protocol.VoiceRequest
-	if json.Unmarshal(raw, &request) != nil || !v.d.voiceEnvelopeCurrent(request.VscreenEnvelope, v.reader.mirrorControlGeneration) {
+	if json.Unmarshal(raw, &request) != nil || !v.d.voiceEnvelopeCurrent(request.RuntimeEnvelope, v.reader.mirrorConnectionGeneration) {
 		return
 	}
 	v.mu.Lock()
@@ -79,7 +78,7 @@ func (v *voiceRequests) handle(raw json.RawMessage) {
 	}
 	if len(v.active) >= 2 {
 		v.mu.Unlock()
-		v.reply(protocol.VoiceResult{VscreenEnvelope: request.VscreenEnvelope, Reason: "busy"})
+		v.reply(protocol.VoiceResult{RuntimeEnvelope: request.RuntimeEnvelope, Reason: "busy"})
 		return
 	}
 	deadline := request.Deadline
@@ -105,19 +104,20 @@ func (v *voiceRequests) handle(raw json.RawMessage) {
 }
 
 func (v *voiceRequests) reply(result protocol.VoiceResult) {
-	if err := v.d.sendVscreen(v.reader.enqueue, v.reader.mirrorControlGeneration, protocol.EventVoiceTranscript, result); err != nil {
+	frame := marshalRaw(protocol.Message{Type: protocol.EventVoiceTranscript, Payload: marshalRaw(result)})
+	if _, err := v.reader.enqueue(frame); err != nil {
 		v.d.logger.Debug("voice transcription reply dropped")
 	}
 }
 
 func transcribeVoiceRequest(ctx context.Context, request protocol.VoiceRequest, executable string) protocol.VoiceResult {
-	result := protocol.VoiceResult{VscreenEnvelope: request.VscreenEnvelope}
+	result := protocol.VoiceResult{RuntimeEnvelope: request.RuntimeEnvelope}
 	audio, err := request.VoiceAudio.Decode()
 	if err != nil {
 		result.Reason = "invalid_audio"
 		return result
 	}
-	transcriber, err := mirror.NewCommandVoiceTranscriber(executable)
+	transcriber, err := newCommandVoiceTranscriber(executable)
 	if err != nil {
 		result.Reason = "transcriber_unavailable"
 		return result

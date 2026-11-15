@@ -3,7 +3,7 @@ import { ZoomIn, ZoomOut, Expand, RotateCcw } from "@multica/ui/icons";
 import { cn } from "@multica/ui/lib/utils";
 import { Button } from "@multica/ui/components/ui/button";
 import type { CollaborationGraphEdge, CollaborationGraphNode } from "@multica/core/types";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 
 export interface CollaborationGraphCanvasProps {
  readonly nodes: readonly CollaborationGraphNode[];
@@ -33,6 +33,7 @@ type GraphDrag = {
 };
 export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,coverageReasons,asOf,className,showEvidence=true,showAggregateCounts=false,ariaLabel,footer,onNodeClick,onEdgeClick,onSelectionClear}:CollaborationGraphCanvasProps){
  const {t}=useT("collaboration");
+ const locale=useLocale();
  const markerId=useId().replace(/:/g,"");
  const canvasRef=useRef<HTMLDivElement>(null);
  const drag=useRef<GraphDrag|null>(null);
@@ -118,7 +119,7 @@ export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,covera
     <Button size="icon-sm" variant="ghost" aria-label={t($=>$.fit_canvas)} onClick={fit}><Expand/></Button>
     <Button size="icon-sm" variant="ghost" aria-label={t($=>$.reset_canvas)} onClick={()=>{setPan({x:0,y:0});setZoom(1);setNodePositions(new Map());suppressClick.current=false;clear()}}><RotateCcw/></Button>
    </div>
-   <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel ?? t($=>$.evidence_title)} className="touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={cancel} onClickCapture={event=>{if(suppressClick.current){suppressClick.current=false;event.preventDefault();event.stopPropagation()}}}>
+   <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={ariaLabel ?? t($=>$.evidence_title)} className="touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={cancel} onClickCapture={event=>{if(suppressClick.current){suppressClick.current=false;event.preventDefault();event.stopPropagation()}}}>
     <defs><marker id={markerId} markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="context-stroke"/></marker></defs>
     <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
      {edges.map(edge=>{
@@ -159,6 +160,6 @@ export function CollaborationGraphCanvas({nodes,edges,emptyLabel,coverage,covera
   </div>
   {aggregate&&<p className="text-caption text-muted-foreground">{t($=>$.graph_legend)}</p>}
   {showEvidence && selectedNode && <p className="text-caption text-muted-foreground">{t($=>$.evidence_count,{count:edges.filter(e=>e.from===selectedNode||e.to===selectedNode).reduce((n,e)=>n+e.evidence_count,0)})}</p>}
-  <div className="flex flex-wrap justify-between gap-2 text-caption text-muted-foreground"><span>{footer??t($=>$.footer)}</span>{asOf&&<time dateTime={asOf}>{new Date(asOf).toLocaleString()}</time>}</div>
+  <div className="flex flex-wrap justify-between gap-2 text-caption text-muted-foreground"><span>{footer??t($=>$.footer)}</span>{asOf&&<time dateTime={asOf}>{new Date(asOf).toLocaleString(locale)}</time>}</div>
  </div>;
 }

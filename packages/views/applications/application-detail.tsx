@@ -12,11 +12,12 @@ import { Button } from "@multica/ui/components/ui/button";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@multica/ui/components/ui/alert-dialog";
 import { cn } from "@multica/ui/lib/utils";
 import { openExternal } from "../platform/open-external";
-import { AppLink, useNavigation } from "../navigation";
-import { useT } from "../i18n";
+import { AppLink, useNavigation, useSearchState } from "../navigation";
+import { useLocale, useT } from "../i18n";
 import { CollectionPageHeader, CollectionPageState } from "../layout/collection-page";
 import { PAGE_GUTTER, PAGE_RAIL } from "../layout/page-header";
 import { ApplicationEditor } from "./application-editor";
+import { applicationTabFromParam } from "./application-view-state";
 import { ApplicationOperationDialog, useApplicationActionLabels } from "./application-operation-dialog";
 import { ApplicationRelations } from "./application-relations";
 import { ApplicationStatusBadge } from "./controls";
@@ -26,6 +27,7 @@ import { applicationRequestKey, type ApplicationRequestKey } from "./application
 
 function InstanceCard({ instance, application, board, workspaceId, runtimeLabel }: { instance: ApplicationInstance; application: Application; board: ApplicationBoard; workspaceId: string; runtimeLabel: string }) {
   const { t } = useT("applications");
+  const locale = useLocale();
   const labels = useApplicationActionLabels();
   const paths = useWorkspacePaths();
   const child = board.applications.find((app) => app.id === instance.application_id) ?? application;
@@ -42,7 +44,7 @@ function InstanceCard({ instance, application, board, workspaceId, runtimeLabel 
   return <div className="space-y-4 rounded-xl border p-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0"><h3 className="break-words text-body font-medium">{runtimeLabel}</h3>{child.id !== application.id && <AppLink href={paths.applicationDetail(child.id)} className="text-caption text-muted-foreground hover:underline">{child.name}</AppLink>}</div><ApplicationStatusBadge status={instance.status} /></div>
     <div className="grid gap-3 text-caption sm:grid-cols-3"><div><p className="mb-1 text-muted-foreground">{t(($) => $.process_state)}</p><ApplicationStatusBadge status={instance.process_state} /></div><div><p className="mb-1 text-muted-foreground">{t(($) => $.health_state)}</p><ApplicationStatusBadge status={instance.health_state} /></div><div><p className="mb-1 text-muted-foreground">{t(($) => $.connection_state)}</p><ApplicationStatusBadge status={instance.runtime_state} /></div></div>
-    <div className="flex flex-wrap gap-x-5 gap-y-2 text-caption text-muted-foreground"><span>{t(($) => $.revision)} {instance.observed_revision || instance.revision}</span>{instance.code_version && <span className="font-mono">{t(($) => $.code_version)} {instance.code_version.slice(0, 12)}</span>}{instance.dirty && <span className="text-warning">{t(($) => $.uncommitted)}</span>}{instance.observed_at && <span>{t(($) => $.last_seen)} {new Date(instance.observed_at).toLocaleString()}</span>}</div>
+    <div className="flex flex-wrap gap-x-5 gap-y-2 text-caption text-muted-foreground"><span>{t(($) => $.revision)} {instance.observed_revision || instance.revision}</span>{instance.code_version && <span className="font-mono">{t(($) => $.code_version)} {instance.code_version.slice(0, 12)}</span>}{instance.dirty && <span className="text-warning">{t(($) => $.uncommitted)}</span>}{instance.observed_at && <span>{t(($) => $.last_seen)} {new Date(instance.observed_at).toLocaleString(locale)}</span>}</div>
     {instance.revision !== child.revision && <p className="text-caption text-warning">{t(($) => $.pending_revision)}</p>}
     {instance.error && <p role="status" className="break-words text-caption text-destructive">{instance.error}</p>}
     {endpoints.map((endpoint) => <div key={endpoint.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 p-3"><span className="text-caption">{endpoint.state === "published" ? t(($) => $.published) : t(($) => $.unpublished)} · {endpoint.port}{endpoint.entry_path}</span><div className="flex gap-2">{endpoint.state === "published" && <Button variant="outline" size="xs" disabled={opening || instance.status !== "running"} onClick={() => void openEndpoint(endpoint.id)}>{opening && <Loader2 className="animate-spin" />}{t(($) => $.open)}</Button>}{endpoint.can_manage && endpoint.state === "published" && <ApplicationOperationDialog workspaceId={workspaceId} application={child} board={board} action="unpublish" initialRuntimeId={instance.runtime_id} trigger={<Button size="xs" variant="ghost"><X />{labels.unpublish}</Button>} />}</div></div>)}
@@ -94,12 +96,14 @@ function DeleteApplication({ workspaceId, application }: { workspaceId: string; 
 
 export function ApplicationDetail({ applicationId }: { applicationId: string }) {
   const { t } = useT("applications");
+  const locale = useLocale();
   const workspaceId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const applicationQuery = useQuery(applicationDetailOptions(workspaceId, applicationId));
   const boardQuery = useQuery(applicationBoardOptions(workspaceId));
   const runtimes = useQuery(runtimeListOptions(workspaceId));
-  const [tab, setTab] = useState<"instances" | "configuration" | "orchestration" | "activity" | "logs">("instances");
+  const [tabParam, setTab] = useSearchState("tab", "instances");
+  const tab = applicationTabFromParam(tabParam);
   const application = applicationQuery.data;
   const board = boardQuery.data;
   const labels = useApplicationActionLabels();
@@ -111,6 +115,11 @@ export function ApplicationDetail({ applicationId }: { applicationId: string }) 
   const names = new Map(board.applications.map((app) => [app.id, app.name]));
   const runtimeById = new Map((runtimes.data ?? []).map((runtime) => [runtime.id, runtime]));
   const tabs = [{ value: "instances", label: t(($) => $.instances) }, { value: "configuration", label: t(($) => $.configuration) }, { value: "orchestration", label: t(($) => $.orchestration) }, { value: "activity", label: t(($) => $.activity) }, { value: "logs", label: t(($) => $.logs) }] as const;
+  const actorTypeLabels = {
+    member: t(($) => $.actor_types.member),
+    agent: t(($) => $.actor_types.agent),
+    unknown: t(($) => $.actor_types.unknown),
+  };
 
   return <div className="flex min-h-0 flex-1 flex-col">
     <CollectionPageHeader icon={Server} title={application.name} actions={<><ApplicationEditor workspaceId={workspaceId} application={application} trigger={<Button size="sm" variant="outline"><Edit3 />{t(($) => $.edit)}</Button>} /><DeleteApplication workspaceId={workspaceId} application={application} /></>} />
@@ -120,7 +129,7 @@ export function ApplicationDetail({ applicationId }: { applicationId: string }) 
       {tab === "configuration" && <section className="max-w-3xl space-y-5 rounded-xl border p-5"><div className="flex items-center justify-between"><h2 className="text-body font-medium">{t(($) => $.configuration)}</h2><span className="text-caption text-muted-foreground">{t(($) => $.revision)} {application.revision}</span></div><dl className="grid gap-4 text-body sm:grid-cols-2"><div><dt className="text-caption text-muted-foreground">{t(($) => $.kind)}</dt><dd className="mt-1">{application.kind === "composition" ? t(($) => $.composition) : t(($) => $.service)}</dd></div>{application.kind === "service" && <><div><dt className="text-caption text-muted-foreground">{t(($) => $.mode)}</dt><dd className="mt-1">{application.config.mode === "external" ? t(($) => $.external) : t(($) => $.managed)}</dd></div><div><dt className="text-caption text-muted-foreground">{t(($) => $.port)}</dt><dd className="mt-1 font-mono">{application.config.port}</dd></div><div><dt className="text-caption text-muted-foreground">{t(($) => $.health)}</dt><dd className="mt-1">{application.config.health.kind === "http" ? t(($) => $.health_http) : application.config.health.kind === "tcp" ? t(($) => $.health_tcp) : t(($) => $.health_none)}</dd></div><div className="sm:col-span-2"><dt className="text-caption text-muted-foreground">{t(($) => $.program)}</dt><dd className="mt-1 overflow-x-auto rounded-lg bg-muted p-3 font-mono text-caption">{JSON.stringify(application.config.command)}</dd></div>{application.config.work_dir && <div><dt className="text-caption text-muted-foreground">{t(($) => $.work_dir)}</dt><dd className="mt-1 break-words font-mono text-caption">{application.config.work_dir}</dd></div>}{application.config.ref && <div><dt className="text-caption text-muted-foreground">{t(($) => $.ref)}</dt><dd className="mt-1 break-words font-mono text-caption">{application.config.ref}</dd></div>}</>}</dl></section>}
       {tab === "orchestration" && <ApplicationRelations key={application.id} workspaceId={workspaceId} application={application} board={board} />}
       {tab === "logs" && <ApplicationLogs key={application.id} workspaceId={workspaceId} application={application} board={board} />}
-      {tab === "activity" && <section className="space-y-4"><h2 className="text-body font-medium">{t(($) => $.activity)}</h2>{!operations.length && <p className="rounded-xl border p-8 text-center text-caption text-muted-foreground">{t(($) => $.no_activity)}</p>}{operations.map((operation) => <details key={operation.id} className="rounded-xl border p-4" open={operation.state === "running" || operation.state === "queued" || operation.state === "cancelling" || operation.state === "partial" || operation.steps.some((step) => step.state === "blocked" || step.state === "failed")}><summary className="cursor-pointer"><span className="inline-flex flex-wrap items-center gap-3 text-body"><span>{operation.action === "unknown" ? t(($) => $.unknown) : labels[operation.action]}</span><ApplicationStatusBadge status={operation.state} /><span className="text-caption text-muted-foreground">{new Date(operation.created_at).toLocaleString()}</span><span className="text-caption text-muted-foreground">{operation.actor_type}</span></span></summary><ApplicationCancelOperation workspaceId={workspaceId} operation={operation} />
+      {tab === "activity" && <section className="space-y-4"><h2 className="text-body font-medium">{t(($) => $.activity)}</h2>{!operations.length && <p className="rounded-xl border p-8 text-center text-caption text-muted-foreground">{t(($) => $.no_activity)}</p>}{operations.map((operation) => <details key={operation.id} className="rounded-xl border p-4" open={operation.state === "running" || operation.state === "queued" || operation.state === "cancelling" || operation.state === "partial" || operation.steps.some((step) => step.state === "blocked" || step.state === "failed")}><summary className="cursor-pointer"><span className="inline-flex flex-wrap items-center gap-3 text-body"><span>{operation.action === "unknown" ? t(($) => $.unknown) : labels[operation.action]}</span><ApplicationStatusBadge status={operation.state} /><span className="text-caption text-muted-foreground">{new Date(operation.created_at).toLocaleString(locale)}</span><span className="text-caption text-muted-foreground">{actorTypeLabels[operation.actor_type]}</span></span></summary><ApplicationCancelOperation workspaceId={workspaceId} operation={operation} />
           {(operation.state === "partial" || operation.steps.some((step) => step.state === "blocked" || step.state === "failed")) && (
             <div className="mt-3 space-y-3">
               <p className="text-caption text-muted-foreground">{t(($) => $.review_incomplete_help)}</p>

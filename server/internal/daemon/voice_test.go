@@ -36,12 +36,12 @@ func TestVoiceTranscriptionWithoutMirror(t *testing.T) {
 
 func TestVoiceRuntimeScopeDoesNotRequireDisplay(t *testing.T) {
 	d := &Daemon{
-		workspaces:              map[string]*workspaceState{"ws": {runtimeIDs: []string{"rt"}}},
-		runtimeIndex:            map[string]Runtime{"rt": {ID: "rt"}},
-		mirrorControlGeneration: 1,
-		vscreenServerGeneration: "generation",
+		workspaces:                 map[string]*workspaceState{"ws": {runtimeIDs: []string{"rt"}}},
+		runtimeIndex:               map[string]Runtime{"rt": {ID: "rt"}},
+		mirrorConnectionGeneration: 1,
+		vscreenServerGeneration:    "generation",
 	}
-	e := protocol.VscreenEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "generation", RequestID: "request"}
+	e := protocol.RuntimeEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "generation", RequestID: "request"}
 	if !d.voiceEnvelopeCurrent(e, 1) {
 		t.Fatal("valid voice scope required a display")
 	}

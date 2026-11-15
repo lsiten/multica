@@ -1,5 +1,5 @@
 import type { WorktreeAction, WorktreeLifecycle as Lifecycle } from "@multica/core/types/worktree-lifecycle";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { isBuiltInIssueStatus } from "@multica/core/issue-statuses";
 
 export function WorktreeActionLabel({ action }: { readonly action: WorktreeAction }) {
@@ -9,6 +9,7 @@ export function WorktreeActionLabel({ action }: { readonly action: WorktreeActio
 
 export function WorktreeLifecycle({ row }: { readonly row: Lifecycle }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const runLabels: Record<string, string> = {
     queued: t(($) => $.execution_log.status_queued), deferred: t(($) => $.execution_log.status_queued),
     dispatched: t(($) => $.execution_log.status_dispatched), running: t(($) => $.execution_log.status_running),
@@ -22,8 +23,8 @@ export function WorktreeLifecycle({ row }: { readonly row: Lifecycle }) {
     {row.stale && <p className="text-warning">{t(($) => $.worktree_lifecycle.stale)}</p>}
     {row.issueId && <p className="break-all" title={row.issueStatus}>{t(($) => $.worktree_lifecycle.issue, { id: row.issueId, status: issueStatus || "—" })}</p>}
     {row.runStatus && <p title={row.runStatus}>{t(($) => $.worktree_lifecycle.run, { status: runLabels[row.runStatus] ?? row.runStatus })}</p>}
-    {row.completedAt && <p>{t(($) => $.worktree_lifecycle.completed)} <time dateTime={row.completedAt}>{new Date(row.completedAt).toLocaleString()}</time></p>}
-    {row.lastActivityAt && <p>{t(($) => $.worktree_lifecycle.activity)} <time dateTime={row.lastActivityAt}>{new Date(row.lastActivityAt).toLocaleString()}</time></p>}
+    {row.completedAt && <p>{t(($) => $.worktree_lifecycle.completed)} <time dateTime={row.completedAt}>{new Date(row.completedAt).toLocaleString(locale)}</time></p>}
+    {row.lastActivityAt && <p>{t(($) => $.worktree_lifecycle.activity)} <time dateTime={row.lastActivityAt}>{new Date(row.lastActivityAt).toLocaleString(locale)}</time></p>}
   </div>;
 }
 

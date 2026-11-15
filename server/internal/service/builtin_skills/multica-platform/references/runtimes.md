@@ -104,45 +104,35 @@ absent, you are not in the normal agent checkout path. When a project
 ref by default for the current task; an explicit
 `repo checkout <url> --ref <branch-or-sha>` overrides it.
 
-## Managed virtual screen
+## Desktop operation
 
-A supported, enabled runtime owns one virtual screen across runs. Only one GUI
-transaction controls it at a time; other runs queue. Closing a mirror viewer does
-not disable the display. The viewer is read-only, and choosing a physical screen
-as a viewing source never grants agent input authority over it.
+The runtime mirror is read-only. It shows a physical or system display but never
+accepts pointer, keyboard, takeover, window-selection, or continuation input.
 
-Use the injected task-local `multica-vscreen` MCP for GUI work. Its current tools
-are `vscreen_status`, `vscreen_acquire`, `vscreen_release`,
-`vscreen_list_apps`, `vscreen_launch_app`, `vscreen_observe`, `vscreen_click`, `vscreen_drag`,
-`vscreen_scroll`, `vscreen_type`, and `vscreen_key`. Read each tool's schema rather
-than inventing arguments. Identity comes from the active task binding, not a
-caller-supplied workspace, runtime, task, PID, or display ID.
+For GUI work, use the injected `agent-desktop` MCP tools. Their native names are
+`desktop_snapshot`, `desktop_find`, `desktop_click`, `desktop_type`,
+`desktop_set_value`, `desktop_press`, `desktop_scroll`, `desktop_launch`, and
+the other `desktop_*` tools exposed by the server. Read each tool's schema
+instead of inventing arguments. Call `desktop_skills_get` with `desktop` before
+the first action and with `platform` for the current OS.
 
-1. Check status and acquire a transaction before app operations. Wait for a
-   queued acquisition; never replace it with global desktop automation.
-2. Discover installed bundle IDs with `vscreen_list_apps`, then launch through
-   the managed tool and observe its returned window handle. Discovery covers
-   standard Applications folders and does not certify background input. Running
-   apps require explicit local-owner window selection during intervention.
-   Observations can contain screenshots and Accessibility content sent to the
-   AI provider. Do not claim screen content never reaches a model.
-3. Use the current snapshot revision, action ID, sequence, and transaction.
-   Reobserve after changes. A dispatched action is not a verified outcome.
-4. Release when finished. Never replay an uncertain action, reuse a stale
-   snapshot, or target an arbitrary PID to bypass a refusal.
+1. Take a fresh snapshot before acting, then use semantic refs from that
+   snapshot. Refs become stale when the UI changes; take another snapshot after
+   an action or when the result is uncertain.
+2. Use the tool error's disposition to decide whether a retry is safe. Never
+   replay an uncertain action or fall back to raw coordinates.
+3. Keep trace and screenshot artifacts local unless the user explicitly asks to
+   attach them. Snapshot and accessibility content may be sent to the AI
+   provider.
+4. If `agent-desktop` is missing, the pinned version or checksum fails,
+   permissions are denied, or no supported accessibility surface exists,
+   report desktop work as unavailable. Do not use AppleScript, PowerShell,
+   `osascript`, `xdotool`, `ydotool`, `pyautogui`, shell GUI automation, another
+   MCP, or a direct input implementation as a fallback.
 
-Background Accessibility actions depend on the app. PID-directed input is only
-allowed for certified app/action/OS combinations; no universal app support or
-OS-wide isolation is implied. If the tools are missing, permissions are denied,
-or native capability is unavailable, report GUI work as unavailable. Coding and
-text work may continue; shell or other MCP automation is not a GUI fallback.
-
-Human intervention freezes GUI actions and stops the source run. Only the local
-owner explicitly takes over and returns control. A verified return allows one
-linked continuation run; it does not restart the old run. The continuation must
-observe fresh state before acting. Remote viewing does not authorize local
-handoff. Disabling the screen waits for quiescence and disposal; a timeout or
-uncertain cleanup is a failure, not permission to start new input.
+Only one task may operate a runtime's desktop at a time. The daemon owns that
+runtime-level lease and closes the agent-desktop session when the task finishes,
+fails, or is cancelled.
 
 ## Task CLI boundary
 

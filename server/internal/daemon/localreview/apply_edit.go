@@ -128,4 +128,3 @@ func randHex() string {
 	}
 	return hex.EncodeToString(b[:])
 }
-

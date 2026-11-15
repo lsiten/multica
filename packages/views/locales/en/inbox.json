@@ -99,8 +99,6 @@
     "autopilot_quota_exceeded": "Autopilot run limit reached",
     "runtime_mirror_viewer_started": "Screen mirroring started",
     "runtime_mirror_viewer_stopped": "Screen mirroring ended",
-    "runtime_mirror_control_started": "Remote screen control started",
-    "runtime_mirror_control_stopped": "Remote screen control ended",
     "human_action_requested": "Action needed",
     "issue_created": "New issue",
     "app_action_requested": "Needs your confirmation",
@@ -123,9 +121,7 @@
     "autopilot_quota_blocked": "Run blocked because the limit was reached",
     "children_done_stage": "Stage {{stage}}'s sub-issues finished",
     "mirror_viewing_started": "{{runtime}} is being viewed.",
-    "mirror_viewing_stopped": "Screen mirroring for {{runtime}} has ended.",
-    "mirror_control_started": "{{name}} is controlling {{runtime}}.",
-    "mirror_control_stopped": "Remote control for {{runtime}} has ended."
+    "mirror_viewing_stopped": "Screen mirroring for {{runtime}} has ended."
   },
   "toasts": {
     "source_context_retry_started": "Retry started with the original context",

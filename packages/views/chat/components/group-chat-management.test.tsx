@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@multica/core/chat/mutations", () => ({
-  useUpdateChatSession: () => ({ mutate: mocks.update, isPending: false }),
+  useUpdateChatSession: () => ({ mutate: mocks.update, mutateAsync: mocks.update, isPending: false }),
   useAddChatGroupParticipant: () => ({ mutate: mocks.add, mutateAsync: mocks.add, isPending: false }),
   useRemoveChatGroupParticipant: () => ({ mutate: mocks.remove, isPending: false }),
 }));
@@ -51,7 +51,7 @@ function renderManagement() {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <I18nProvider locale="en" resources={{ en: { chat: enChat } }}>
-        <GroupChatManagement session={session} agents={[agent("agent-lead", "Lead"), agent("agent-two", "Second"), agent("agent-three", "Third")]} />
+        <GroupChatManagement session={session} agents={[agent("agent-lead", "Lead"), agent("agent-two", "Second"), agent("agent-three", "Third"), agent("agent-four", "Fourth")]} />
       </I18nProvider>
     </QueryClientProvider>,
   );
@@ -82,5 +82,21 @@ describe("GroupChatManagement", () => {
     fireEvent.click(screen.getByRole("button", { name: /Third/ }));
     fireEvent.click(screen.getByRole("button", { name: /Add selected/ }));
     expect(mocks.add).toHaveBeenCalledWith({ sessionId: "session-1", memberId: "agent-three" });
+  });
+
+  it("keeps only failed agents selected when a batch add partially succeeds", async () => {
+    mocks.add.mockImplementation(async ({ memberId }: { memberId: string }) => {
+      if (memberId === "agent-four") throw new Error("add failed");
+      return { member_type: "agent", member_id: memberId, joined_at: "" };
+    });
+    renderManagement();
+    fireEvent.click(screen.getByRole("button", { name: "Add agents" }));
+    fireEvent.click(screen.getByRole("button", { name: /Third/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Fourth/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Add selected/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("1 remain selected for retry");
+    expect(screen.getByRole("button", { name: /Third/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /Fourth/ })).toHaveAttribute("aria-pressed", "true");
   });
 });

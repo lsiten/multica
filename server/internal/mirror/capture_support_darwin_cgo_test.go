@@ -18,8 +18,8 @@ func TestDarwinCapturePermissionFailure(t *testing.T) {
 	if !errors.Is(err, ErrCapturePermissionDenied) {
 		t.Fatalf("permission error = %v, want %v", err, ErrCapturePermissionDenied)
 	}
-	if got := ControlReasonFromError(err); got != ControlReasonPermissionDenied {
-		t.Fatalf("control reason = %q, want %q", got, ControlReasonPermissionDenied)
+	if got := CaptureReasonFromError(err); got != CaptureReasonPermissionDenied {
+		t.Fatalf("control reason = %q, want %q", got, CaptureReasonPermissionDenied)
 	}
 }
 

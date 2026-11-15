@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
-import type { VscreenSourceDescriptor } from "@multica/core/types";
+import { fireEvent, screen } from "@testing-library/react";
+import type { MirrorSourceDescriptor } from "@multica/core/types";
 import { renderWithI18n } from "../../../test/i18n";
 import { MirrorSourcePicker, mirrorSourceKey } from "./mirror-source-picker";
-const source: VscreenSourceDescriptor = {
+const source: MirrorSourceDescriptor = {
   resource: {
     backendIdentity: "https://fixture.test",
     workspaceId: "ws-1",
     runtimeId: "runtime-1",
     uid: 501,
   },
-  source: { kind: "virtual", sourceId: "private-native-source-id" },
+  source: { kind: "physical", sourceId: "private-native-source-id" },
   nativeEpoch: "native-1",
   generation: "capture-1",
   primary: false,
@@ -37,10 +37,12 @@ describe("MirrorSourcePicker full labels", () => {
       />,
     );
     // Then
-    expect(screen.getByRole("combobox")).toHaveAttribute(
+    const trigger = screen.getByRole("button", { name: "Screen source" });
+    expect(trigger).toHaveAttribute(
       "title",
       expect.stringContaining(source.name),
     );
+    fireEvent.click(trigger);
     expect(
       screen.getByRole("option", { name: new RegExp(source.name) }),
     ).toHaveAttribute("title", expect.stringContaining(source.name));
@@ -59,8 +61,9 @@ describe("MirrorSourcePicker full labels", () => {
       />,
     );
     // Then
-    expect(screen.getByRole("combobox").getAttribute("title")).toMatch(/1$/);
-    expect(screen.getByRole("combobox").getAttribute("title")).not.toContain(
+    const trigger = screen.getByRole("button", { name: "Screen source" });
+    expect(trigger.getAttribute("title")).toMatch(/1$/);
+    expect(trigger.getAttribute("title")).not.toContain(
       source.source.sourceId,
     );
   });

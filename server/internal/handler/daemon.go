@@ -349,12 +349,13 @@ type DaemonRegisterRequest struct {
 	// may have registered under before switching to a persistent UUID. The
 	// handler merges any matching runtime rows into the new row so agents
 	// and tasks keep working without manual intervention.
-	LegacyDaemonIDs    []string `json:"legacy_daemon_ids"`
-	DeviceName         string   `json:"device_name"`
-	CLIVersion         string   `json:"cli_version"` // multica CLI version
-	LaunchedBy         string   `json:"launched_by"` // "desktop" when spawned by the Electron app
-	ServerURL          string   `json:"server_url"`
-	MaxConcurrentTasks int      `json:"max_concurrent_tasks"`
+	LegacyDaemonIDs    []string                        `json:"legacy_daemon_ids"`
+	DeviceName         string                          `json:"device_name"`
+	CLIVersion         string                          `json:"cli_version"` // multica CLI version
+	LaunchedBy         string                          `json:"launched_by"` // "desktop" when spawned by the Electron app
+	ServerURL          string                          `json:"server_url"`
+	MaxConcurrentTasks int                             `json:"max_concurrent_tasks"`
+	AgentDesktop       *protocol.AgentDesktopReadiness `json:"agent_desktop,omitempty"`
 	Runtimes           []struct {
 		Name        string `json:"name"`
 		RuntimeMode string `json:"runtime_mode,omitempty"`
@@ -809,7 +810,7 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 		// live request — the resource-save gate and the UI — decide from the
 		// same signal the claim path uses, instead of re-deriving it from a
 		// version string (MUL-5707).
-		metadata, _ := json.Marshal(map[string]any{
+		metadataDocument := map[string]any{
 			"version":         runtime.Version,
 			"cli_version":     req.CLIVersion,
 			"client_os":       strings.TrimSpace(r.Header.Get("X-Client-OS")),
@@ -817,7 +818,11 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 			"server_url":      util.RuntimeAPIURL(req.ServerURL),
 			"capabilities":    requestClientCapabilities(r),
 			"execution_slots": req.MaxConcurrentTasks,
-		})
+		}
+		if req.AgentDesktop != nil {
+			metadataDocument["agent_desktop"] = req.AgentDesktop
+		}
+		metadata, _ := json.Marshal(metadataDocument)
 
 		var registered db.AgentRuntime
 		var inserted bool
@@ -1055,7 +1060,7 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 				// worktree gates read the newest row. Omitting them made a failed
 				// profile look, for that window, like a daemon that advertises
 				// nothing (and now like a capability-blind server).
-				metadata, _ := json.Marshal(map[string]any{
+				metadataDocument := map[string]any{
 					"version":                            "",
 					"cli_version":                        req.CLIVersion,
 					"client_os":                          strings.TrimSpace(r.Header.Get("X-Client-OS")),
@@ -1065,7 +1070,11 @@ func (h *Handler) DaemonRegister(w http.ResponseWriter, r *http.Request) {
 					"runtime_profile_registration_error": true,
 					"runtime_profile_failure_reason":     reason,
 					"command_name":                       resolvedCommandName,
-				})
+				}
+				if req.AgentDesktop != nil {
+					metadataDocument["agent_desktop"] = req.AgentDesktop
+				}
+				metadata, _ := json.Marshal(metadataDocument)
 				return db.UpsertAgentRuntimeWithProfileParams{
 					WorkspaceID:     wsUUID,
 					DaemonID:        strToText(req.DaemonID),
@@ -4452,9 +4461,6 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
-	if err := h.applyInterventionClaim(r.Context(), *task, &resp); err != nil {
-		return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.rejectClaimSourceLoad(r.Context(), task, err, "intervention source", uuidToString(task.RerunOfTaskID))
-	}
 	if err := h.applyHumanResponseClaim(r.Context(), *task, &resp); err != nil {
 		if errors.Is(err, service.ErrHumanRequestConflict) || errors.Is(err, service.ErrHumanRequestForbidden) {
 			return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(r.Context(), task, "The request changed after your response. Ask the agent to send an updated request before continuing.", taskfailure.ReasonInvalidTaskIdentity, "human_request_changed", http.StatusConflict, "human request changed")

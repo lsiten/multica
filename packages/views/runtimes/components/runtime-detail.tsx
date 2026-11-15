@@ -62,6 +62,7 @@ import { DeleteRuntimeProfileDialog } from "./delete-runtime-profile-dialog";
 import { runtimeRowLabel } from "./runtime-machines";
 import { useT, useTimeAgo } from "../../i18n";
 import { TruncatedTooltip } from "@multica/ui/components/common/truncated-tooltip";
+import { AgentDesktopReadinessSection } from "./agent-desktop-readiness";
 
 function getCliVersion(metadata: Record<string, unknown>): string | null {
   if (
@@ -387,6 +388,10 @@ function RuntimeProperties({
           </ObjectProperty>
         )}
       </ObjectPanelSection>
+      <AgentDesktopReadinessSection
+        runtime={runtime}
+        canRepair={canEditRuntime}
+      />
       <ObjectPanelSection title={t(($) => $.detail.diagnostics_visibility)}>
         <div className="pr-0.5 pt-1">
           {canEditVisibility ? (

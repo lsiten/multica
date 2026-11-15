@@ -71,7 +71,7 @@ func (c WorkspaceJevConfig) Validate() error {
 }
 
 type JevOperation struct {
-	VscreenEnvelope
+	RuntimeEnvelope
 	Action    string    `json:"action"`
 	ModelID   string    `json:"model_id,omitempty"`
 	Revision  string    `json:"revision,omitempty"`
@@ -80,7 +80,7 @@ type JevOperation struct {
 	Deadline  time.Time `json:"deadline"`
 }
 type JevResult struct {
-	VscreenEnvelope
+	RuntimeEnvelope
 	Data   json.RawMessage `json:"data,omitempty"`
 	Reason string          `json:"reason,omitempty"`
 }

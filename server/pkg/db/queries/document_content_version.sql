@@ -4,9 +4,10 @@
 -- caller computes the next revision and retries on conflict.
 INSERT INTO document_content_version (
     workspace_id, owner_type, owner_id, revision, content_type,
-    content, content_url, size_bytes, actor_type, actor_id, note
+    content, content_url, size_bytes, actor_type, actor_id, note, merged,
+    session_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING *;
 
 -- name: ListDocumentContentVersions :many
@@ -61,9 +62,28 @@ SET content      = sqlc.narg('content'),
     actor_type   = sqlc.arg('actor_type'),
     actor_id     = sqlc.arg('actor_id'),
     note         = sqlc.narg('note'),
+    merged       = sqlc.arg('merged'),
+    session_id   = sqlc.narg('session_id'),
     created_at   = now()
 WHERE owner_type = sqlc.arg('owner_type')
   AND owner_id = sqlc.arg('owner_id')
   AND revision = sqlc.arg('revision')
   AND workspace_id = sqlc.arg('workspace_id')
 RETURNING *;
+
+-- name: DeleteDocumentContentVersion :execrows
+-- Named checkpoints can be removed, but the latest row and autosaves cannot.
+-- The latest guard keeps revision allocation above every historical number.
+DELETE FROM document_content_version
+WHERE document_content_version.owner_type = sqlc.arg('owner_type')
+  AND document_content_version.owner_id = sqlc.arg('owner_id')
+  AND document_content_version.revision = sqlc.arg('revision')
+  AND document_content_version.workspace_id = sqlc.arg('workspace_id')
+  AND document_content_version.merged = FALSE
+  AND document_content_version.revision < (
+    SELECT MAX(latest.revision)
+    FROM document_content_version latest
+    WHERE latest.owner_type = sqlc.arg('owner_type')
+      AND latest.owner_id = sqlc.arg('owner_id')
+      AND latest.workspace_id = sqlc.arg('workspace_id')
+  );

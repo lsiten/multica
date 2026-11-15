@@ -6492,9 +6492,6 @@ func (s *TaskService) RecoverOrphanedTasksForRuntime(ctx context.Context, runtim
 // non-chat tasks keep their existing behavior.
 func (s *TaskService) CancelTasksForArchivedAgent(ctx context.Context, agentID pgtype.UUID) ([]db.AgentTaskQueue, error) {
 	cancelled, err := s.terminateTasksInTx(ctx, func(qtx *db.Queries) ([]db.AgentTaskQueue, error) {
-		if err := qtx.CancelVscreenInterventionsByAgent(ctx, agentID); err != nil {
-			return nil, err
-		}
 		return qtx.CancelAgentTasksByAgent(ctx, agentID)
 	})
 	if err != nil {

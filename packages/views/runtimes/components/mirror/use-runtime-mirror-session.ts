@@ -21,15 +21,15 @@ export type RuntimeMirrorTransportState =
   | "failed"
   | "closed";
 
-type MirrorControlReason =
+type MirrorErrorMessageReason =
   | "permission-denied"
   | "unsupported"
   | "no-display"
   | "capture-unavailable";
 
-interface MirrorControlMessage {
+interface MirrorErrorMessage {
   readonly type: "mirror:error";
-  readonly reason: MirrorControlReason;
+  readonly reason: MirrorErrorMessageReason;
 }
 
 class MirrorConnectionError extends Error {
@@ -53,7 +53,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function parseControlMessage(data: string): MirrorControlMessage | null {
+function parseMirrorErrorMessage(data: string): MirrorErrorMessage | null {
   try {
     const raw: unknown = JSON.parse(data);
     if (!isRecord(raw) || raw.type !== "mirror:error") return null;
@@ -166,10 +166,10 @@ export function useRuntimeMirrorSession({
         channel.onmessage = async (event: MessageEvent<unknown>) => {
           if (disposed || failed) return;
           if (typeof event.data === "string") {
-            const control = parseControlMessage(event.data);
-            if (control) {
+            const mirrorError = parseMirrorErrorMessage(event.data);
+            if (mirrorError) {
               peer?.close();
-              fail(new MirrorConnectionError(control.reason));
+              fail(new MirrorConnectionError(mirrorError.reason));
             }
             return;
           }

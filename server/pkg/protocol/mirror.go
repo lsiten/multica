@@ -12,6 +12,8 @@ const (
 	EventMirrorAnswer        = "mirror:answer"
 	EventMirrorAnswerFailure = "mirror:answer-failed"
 	EventMirrorViewer        = "mirror:viewer"
+	EventMirrorViewerRenew   = "mirror:viewer-renew"
+	DaemonGenerationHeader   = "X-Daemon-Generation"
 
 	InboxTypeRuntimeMirrorViewerStarted = "runtime_mirror_viewer_started"
 	InboxTypeRuntimeMirrorViewerStopped = "runtime_mirror_viewer_stopped"
@@ -37,6 +39,22 @@ const (
 	MirrorAnswerFailureCaptureUnavailable = "capture-unavailable"
 	MirrorAnswerFailureNegotiation        = "negotiation-failed"
 )
+
+const (
+	MirrorVideoProfileAuto   = "auto"
+	MirrorVideoProfileClear  = "clear"
+	MirrorVideoProfileSmooth = "smooth"
+	MirrorVideoProfileSaver  = "saver"
+)
+
+func validMirrorVideoProfile(profile string) bool {
+	switch profile {
+	case "", MirrorVideoProfileAuto, MirrorVideoProfileClear, MirrorVideoProfileSmooth, MirrorVideoProfileSaver:
+		return true
+	default:
+		return false
+	}
+}
 
 // MirrorSessionDescription is the only protocol type that carries WebRTC SDP.
 // It is bounded at the protocol boundary and must never be logged or persisted
@@ -81,6 +99,7 @@ type MirrorOfferPayload struct {
 	Source           *MirrorSource            `json:"source,omitempty"`
 	SourceGeneration string                   `json:"source_generation,omitempty"`
 	NativeEpoch      string                   `json:"native_epoch,omitempty"`
+	VideoProfile     string                   `json:"video_profile,omitempty"`
 	ViewerGrant      *MirrorViewerGrant       `json:"viewer_grant,omitempty"`
 	SessionID        string                   `json:"session_id"`
 	WorkspaceID      string                   `json:"workspace_id"`
@@ -137,6 +156,9 @@ type MirrorViewerPayload struct {
 }
 
 func (p MirrorOfferPayload) Validate() error {
+	if !validMirrorVideoProfile(p.VideoProfile) {
+		return fmt.Errorf("%w: unknown mirror video profile", ErrInvalidMirrorDescription)
+	}
 	if err := p.validateSourceContract(); err != nil {
 		return err
 	}

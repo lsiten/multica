@@ -67,6 +67,7 @@ vi.mock("./updater-preferences", () => ({
 vi.mock("./cli-bootstrap", () => ({
   managedCliPath: () => "/review-only/managed-cli",
   ensureManagedCli: vi.fn(async () => "/review-only/managed-cli"),
+  prepareAgentDesktop: vi.fn(),
 }));
 
 vi.mock("fs", () => ({

@@ -14,7 +14,7 @@ import (
 
 type videoPeer struct {
 	source       EncodedSource
-	control      *webrtc.DataChannel
+	metadata     *webrtc.DataChannel
 	lastMetadata time.Time
 	track        *webrtc.TrackLocalStaticSample
 	sender       *webrtc.RTPSender
@@ -25,7 +25,7 @@ type videoPeer struct {
 func (m *RuntimeMirror) SetCaptureHub(hub *CaptureHub) { m.mu.Lock(); m.hub = hub; m.mu.Unlock() }
 
 // AnswerVideo negotiates H264 using a source and grant already authorized by the
-// authenticated daemon control boundary. Media never enters signaling payloads.
+// authenticated daemon signaling boundary. Media never enters signaling payloads.
 func (m *RuntimeMirror) AnswerVideo(ctx context.Context, viewerID string, offer SessionDescription, ice ICEConfig, source EncodedSource, grant protocol.MirrorViewerGrant, generation uint64) (Negotiation, error) {
 	if err := source.validate(); err != nil {
 		return Negotiation{}, err

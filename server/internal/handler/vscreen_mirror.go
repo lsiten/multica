@@ -12,39 +12,75 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
+func (h *Handler) resolveMirrorSource(
+	w http.ResponseWriter,
+	r *http.Request,
+	rt db.AgentRuntime,
+	source protocol.MirrorSource,
+	generation string,
+) (protocol.MirrorSourceBinding, string, bool) {
+	catalog, err := h.DaemonHub.QueryMirrorSources(r.Context(), uuidToString(rt.WorkspaceID), uuidToString(rt.ID), rt.DaemonID.String)
+	if err != nil {
+		writeMirrorError(w, err)
+		return protocol.MirrorSourceBinding{}, "", false
+	}
+	if catalog.Reason != "" {
+		writeMirrorReason(w, http.StatusConflict, string(catalog.Reason))
+		return protocol.MirrorSourceBinding{}, "", false
+	}
+	stale := false
+	for _, descriptor := range catalog.Sources {
+		binding := descriptor.MirrorSourceBinding
+		if binding.Source != source {
+			continue
+		}
+		if generation != "" && binding.Generation != generation {
+			stale = true
+			continue
+		}
+		return binding, catalog.DaemonGeneration, true
+	}
+	if stale {
+		writeMirrorReason(w, http.StatusConflict, "stale_generation")
+	} else {
+		writeMirrorReason(w, http.StatusConflict, "source_unavailable")
+	}
+	return protocol.MirrorSourceBinding{}, "", false
+}
+
 func (h *Handler) configureMirrorGrant(w http.ResponseWriter, r *http.Request, rt db.AgentRuntime, req createMirrorSessionRequest, payload *protocol.MirrorOfferPayload) (string, bool) {
 	managed := runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityMirrorViewerGrantV1)
 	if !managed {
 		if req.ProtocolVersion > 1 || req.Source != nil || req.Transport != "" || req.SourceGeneration != "" {
-			writeVscreenReason(w, http.StatusNotImplemented, "upgrade_required")
+			writeMirrorReason(w, http.StatusNotImplemented, "upgrade_required")
 			return "", false
 		}
 		return "", true
 	}
 	credential, ok := middleware.ViewerCredentialFromContext(r.Context())
 	if !ok || credential.UserID != payload.UserID {
-		writeVscreenReason(w, http.StatusForbidden, "viewer_credential_required")
+		writeMirrorReason(w, http.StatusForbidden, "viewer_credential_required")
 		return "", false
 	}
 	if req.ProtocolVersion != 0 && req.ProtocolVersion != 1 && req.ProtocolVersion != 2 {
-		writeVscreenReason(w, http.StatusBadRequest, "invalid_mirror_protocol")
+		writeMirrorReason(w, http.StatusBadRequest, "invalid_mirror_protocol")
 		return "", false
 	}
 	if req.ProtocolVersion == 2 && (req.Transport != "video" || req.Source == nil || !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityScreenMirrorVideoV2)) {
-		writeVscreenReason(w, http.StatusBadRequest, "invalid_mirror_protocol")
+		writeMirrorReason(w, http.StatusBadRequest, "invalid_mirror_protocol")
 		return "", false
 	}
 	if req.ProtocolVersion != 2 && (req.Source != nil || req.Transport != "" || req.SourceGeneration != "") {
-		writeVscreenReason(w, http.StatusBadRequest, "invalid_mirror_protocol")
+		writeMirrorReason(w, http.StatusBadRequest, "invalid_mirror_protocol")
 		return "", false
 	}
-	catalog, err := h.DaemonHub.QueryVscreen(r.Context(), payload.WorkspaceID, payload.RuntimeID, payload.DaemonID, "sources")
+	catalog, err := h.DaemonHub.QueryMirrorSources(r.Context(), payload.WorkspaceID, payload.RuntimeID, payload.DaemonID)
 	if err != nil {
-		writeVscreenError(w, err)
+		writeMirrorError(w, err)
 		return "", false
 	}
 	if catalog.Reason != "" {
-		writeVscreenReason(w, http.StatusConflict, string(catalog.Reason))
+		writeMirrorReason(w, http.StatusConflict, string(catalog.Reason))
 		return "", false
 	}
 	var selected *protocol.MirrorSourceBinding
@@ -59,17 +95,17 @@ func (h *Handler) configureMirrorGrant(w http.ResponseWriter, r *http.Request, r
 				selected = &binding
 				break
 			}
-		} else if binding.Primary && binding.Source.Kind != protocol.MirrorSourceVirtual {
+		} else if binding.Primary {
 			selected = &binding
 			break
 		}
 	}
 	if selected == nil {
 		if staleGeneration {
-			writeVscreenReason(w, http.StatusConflict, "stale_generation")
+			writeMirrorReason(w, http.StatusConflict, "stale_generation")
 			return "", false
 		}
-		writeVscreenReason(w, http.StatusConflict, "source_unavailable")
+		writeMirrorReason(w, http.StatusConflict, "source_unavailable")
 		return "", false
 	}
 	now := time.Now()
@@ -80,7 +116,7 @@ func (h *Handler) configureMirrorGrant(w http.ResponseWriter, r *http.Request, r
 	grant := protocol.MirrorViewerGrant{GrantID: uuid.NewString(), SessionID: payload.SessionID, WorkspaceID: payload.WorkspaceID, RuntimeID: payload.RuntimeID, UserID: payload.UserID, ViewerID: payload.ViewerID, NativeEpoch: selected.NativeEpoch, Source: selected.Source, SourceGeneration: selected.Generation, ExpiresAt: expiry}
 	record := mirror.ViewerGrantRecord{Grant: grant, DaemonID: payload.DaemonID, DaemonGeneration: catalog.DaemonGeneration, CredentialHash: credential.Hash, CredentialKind: credential.Kind, CredentialExpiry: credential.ExpiresAt, Legacy: req.ProtocolVersion != 2}
 	if err := h.refreshViewerCredential(r.Context(), &record); err != nil {
-		writeVscreenReason(w, http.StatusForbidden, "viewer_revoked")
+		writeMirrorReason(w, http.StatusForbidden, "viewer_revoked")
 		return "", false
 	}
 	if !record.CredentialExpiry.IsZero() && record.CredentialExpiry.Before(grant.ExpiresAt) {
@@ -116,13 +152,13 @@ func (h *Handler) RenewMirrorSession(w http.ResponseWriter, r *http.Request) {
 	}
 	credential, ok := middleware.ViewerCredentialFromContext(r.Context())
 	if !ok || credential.Hash != record.CredentialHash || credential.UserID != record.Grant.UserID || !record.Active {
-		writeVscreenReason(w, http.StatusForbidden, "viewer_not_active")
+		writeMirrorReason(w, http.StatusForbidden, "viewer_not_active")
 		return
 	}
 	renewed, err := h.renewViewerGrant(r.Context(), record)
 	if err != nil {
 		h.revokeViewerGrant(record)
-		writeVscreenReason(w, http.StatusForbidden, "viewer_revoked")
+		writeMirrorReason(w, http.StatusForbidden, "viewer_revoked")
 		return
 	}
 	writeJSON(w, http.StatusOK, renewed.Grant)
@@ -133,7 +169,6 @@ func (h *Handler) revokeViewerGrant(record mirror.ViewerGrantRecord) {
 		return
 	}
 	h.sendViewerRevoke(record)
-	h.revokeControlGrantViewer(record.Grant.RuntimeID, record.Grant.ViewerID)
 }
 
 func (h *Handler) sendViewerRevoke(record mirror.ViewerGrantRecord) {

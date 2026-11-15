@@ -32,8 +32,6 @@ func isolatedMirrorViewerHandler(t *testing.T) *Handler {
 	h := *testHandler
 	h.Bus = events.New()
 	h.MirrorViewers = mirror.NewViewerTracker()
-	h.MirrorControlStates = mirror.NewControlStateTracker()
-	h.MirrorControlGrants = mirror.NewControlGrantStore()
 	h.DaemonHub = daemonws.NewHub()
 	return &h
 }
@@ -345,11 +343,9 @@ func TestHandleDaemonMirrorDisconnectClosesPendingSignalingSessions(t *testing.T
 		t.Fatalf("consume mirror offer: %v", err)
 	}
 	h := &Handler{
-		DaemonHub:           daemonws.NewHub(),
-		MirrorSessions:      sessions,
-		MirrorViewers:       mirror.NewViewerTracker(),
-		MirrorControlGrants: mirror.NewControlGrantStore(),
-		MirrorControlStates: mirror.NewControlStateTracker(),
+		DaemonHub:      daemonws.NewHub(),
+		MirrorSessions: sessions,
+		MirrorViewers:  mirror.NewViewerTracker(),
 	}
 	daemonIdentity := daemonws.ClientIdentity{
 		DaemonID:     sessionIdentity.DaemonID,

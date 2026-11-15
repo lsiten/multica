@@ -13,7 +13,7 @@ import { issueStatusListOptions } from "@multica/core/issue-statuses";
 import type { Project, ProjectSupervisionConfig } from "@multica/core/types/project";
 import { Button } from "@multica/ui/components/ui/button";
 import { AppLink, useNavigationGuard } from "../../navigation";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { useStatusLabel } from "../../issues/utils/status-label";
 
 type Category="ready"|"unassigned"|"executing"|"review"|"blocked"|"paused"|"stalled";
@@ -21,7 +21,7 @@ const categories:Category[]=["ready","unassigned","executing","review","blocked"
 const numericFields=["max_in_flight","batch_size","scan_interval_seconds","stale_after_seconds","no_progress_limit"] as const;
 
 export function ProjectSupervisionPanel({project,canManage}:{project:Project;canManage:boolean}){
- const {t}=useT("projects");const wsId=useWorkspaceId();const paths=useWorkspacePaths();const qc=useQueryClient();
+ const {t}=useT("projects");const locale=useLocale();const wsId=useWorkspaceId();const paths=useWorkspacePaths();const qc=useQueryClient();
  const query=useQuery(projectSupervisionOptions(wsId,project.id));
  const statuses=useQuery(issueStatusListOptions(wsId));
  const statusLabel=useStatusLabel(wsId);
@@ -53,7 +53,7 @@ export function ProjectSupervisionPanel({project,canManage}:{project:Project;can
   <div className="flex flex-wrap gap-2">{categories.map(category=><button key={category} type="button" aria-pressed={filter===category} className={`rounded-md border px-2 py-1 ${filter===category?"bg-accent font-medium":"hover:bg-accent/50"}`} onClick={()=>setFilter(filter===category?null:category)}>{labels[category]} {view.snapshot.counts[category]}</button>)}</div>
   {requests.data?.filter(request=>request.status==="pending").map(request=><HumanRequestCard key={request.id} requestId={request.id} />)}
   {reason==="needs_human"&&hasPendingRequests ? <details><summary className="cursor-pointer">{t($=>$.supervision.request_details)}</summary><p className="mt-2 whitespace-pre-wrap break-words">{view.last_result.summary}</p>{view.last_result.wait_reason&&<p className="mt-1 break-words text-muted-foreground">{view.last_result.wait_reason}</p>}</details> : <>{view.last_result.summary&&<p className="break-words">{view.last_result.summary}</p>}{view.last_result.wait_reason&&<p className="break-words text-muted-foreground">{view.last_result.wait_reason}</p>}</>}
-  <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">{view.last_checked_at&&<span>{t($=>$.supervision.last_check)} {new Date(view.last_checked_at).toLocaleString()}</span>}{view.enabled&&view.next_check_at&&<span>{t($=>$.supervision.next_check)} {new Date(view.next_check_at).toLocaleString()}</span>}{view.dirty_version>view.handled_version&&<span>{t($=>$.supervision.pending)}</span>}</div>
+  <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">{view.last_checked_at&&<span>{t($=>$.supervision.last_check)} {new Date(view.last_checked_at).toLocaleString(locale)}</span>}{view.enabled&&view.next_check_at&&<span>{t($=>$.supervision.next_check)} {new Date(view.next_check_at).toLocaleString(locale)}</span>}{view.dirty_version>view.handled_version&&<span>{t($=>$.supervision.pending)}</span>}</div>
   {check.isError&&<p role="alert">{t($=>$.supervision.check_failed)}</p>}
   {filter&&<div className="max-h-48 space-y-1 overflow-y-auto">{view.snapshot.issues.filter(issue=>issue.category===filter).map(issue=><AppLink key={issue.id} href={paths.issueDetail(issue.identifier||issue.id)} className="block truncate rounded-sm px-2 py-1 hover:bg-accent">{issue.identifier} · {issue.title}</AppLink>)}</div>}
   {canManage&&<details><summary className="cursor-pointer font-medium">{t($=>$.supervision.configure)}</summary><div className="mt-3 space-y-3">

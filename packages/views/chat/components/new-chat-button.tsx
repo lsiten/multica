@@ -232,7 +232,7 @@ function AgentPickerItem({
       />
       <span className="truncate flex-1">{agent.name}</span>
       {!runtimeBound && (
-        <span className="shrink-0 text-micro text-amber-600 dark:text-amber-400">
+        <span className="shrink-0 text-micro text-warning">
           {t(($) => $.window.agent_needs_runtime)}
         </span>
       )}

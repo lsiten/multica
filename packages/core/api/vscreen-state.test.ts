@@ -1,70 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { scope, envelope, sourceWire, stateWire } from "./vscreen-fixtures";
-import {
-  parseVscreenReceipt,
-  parseVscreenSources,
-  parseVscreenState,
-} from "./vscreen-state";
+import { envelope, scope, sourceWire } from "./vscreen-fixtures";
+import { parseVscreenSources } from "./vscreen-state";
 
-describe("Vscreen response identity", () => {
-  it.each([
-    { ...stateWire, runtime_id: "foreign" },
-    { ...stateWire, workspace_id: "foreign" },
-    { ...stateWire, state: { ...stateWire.state, runtime_id: "foreign" } },
-    {
-      ...stateWire,
-      state: {
-        ...stateWire.state,
-        state_revision: Number.MAX_SAFE_INTEGER + 1,
-      },
-    },
-    { ...stateWire, state: { ...stateWire.state, geometry_revision: 0 } },
-    { ...stateWire, state: { ...stateWire.state, active_task_id: null } },
-    { ...stateWire, state: { ...stateWire.state, control_state: "human" } },
-    { state: stateWire.state },
-  ])(
-    "rejects foreign or malformed state when the native contract is invalid: %j",
-    (raw) => {
-      // Given / When
-      const result = parseVscreenState(raw, scope);
-      // Then
-      expect(result).toBeNull();
-    },
-  );
-
-  it("degrades unknown authority enums and missing permission observations when the backend evolves", () => {
-    // Given
-    const raw = {
-      ...stateWire,
-      state: {
-        ...stateWire.state,
-        state: "new_state",
-        control_state: "new_control",
-        permissions: undefined,
-      },
-    };
-    // When
-    const result = parseVscreenState(raw, scope);
-    // Then
-    expect(result?.state).toMatchObject({
-      state: "unknown",
-      controlState: "unknown",
-      permissions: { accessibility: "unknown", screenRecording: "unknown" },
-    });
-  });
-
-  it("ignores additive backend fields when parsing a valid snapshot", () => {
-    // Given / When
-    const result = parseVscreenState(
-      { ...stateWire, new_feature: { enabled: true } },
-      scope,
-    );
-    // Then
-    expect(result).not.toHaveProperty("new_feature");
-    expect(result?.state.state).toBe("ready");
-  });
-
+describe("mirror source catalog", () => {
   it.each([
     {
       ...sourceWire,
@@ -81,88 +20,42 @@ describe("Vscreen response identity", () => {
       ...sourceWire,
       resource: { ...sourceWire.resource, workspace_id: "foreign" },
     },
-    { ...sourceWire, source: { ...sourceWire.source, kind: "future" } },
+    { ...sourceWire, source: { ...sourceWire.source, kind: "virtual" } },
     { ...sourceWire, generation: "" },
     { ...sourceWire, width: -1 },
-  ])(
-    "rejects foreign or malformed sources when the catalog cannot bind them: %j",
-    (source) => {
-      // Given / When
-      const result = parseVscreenSources(
-        { ...envelope, sources: [source] },
-        scope,
-      );
-      // Then
-      expect(result).toBeNull();
-    },
-  );
-
-  it("rejects duplicate source identities when the catalog is ambiguous", () => {
-    // Given / When
-    const result = parseVscreenSources(
-      { ...envelope, sources: [sourceWire, sourceWire] },
-      scope,
-    );
-    // Then
-    expect(result).toBeNull();
+  ])("rejects an unbound or input-capable source: %j", (source) => {
+    expect(
+      parseVscreenSources({ ...envelope, sources: [source] }, scope),
+    ).toBeNull();
   });
 
-  it("maps physical viewing independently from the active AI task when sources differ", () => {
-    // Given
+  it("rejects duplicate source identities", () => {
+    expect(
+      parseVscreenSources(
+        { ...envelope, sources: [sourceWire, sourceWire] },
+        scope,
+      ),
+    ).toBeNull();
+  });
+
+  it("retains distinct physical and system sources for read-only viewing", () => {
     const physical = {
       ...sourceWire,
-      source: { kind: "physical", source_id: "physical-1" },
+      source: { kind: "physical", source_id: "display:1" },
+      primary: true,
     };
-    // When
+    const system = {
+      ...sourceWire,
+      source: { kind: "system", source_id: "display:2" },
+      primary: false,
+    };
     const result = parseVscreenSources(
-      { ...envelope, sources: [sourceWire, physical] },
+      { ...envelope, sources: [physical, system] },
       scope,
     );
-    // Then
     expect(result?.sources.map((source) => source.source.kind)).toEqual([
-      "virtual",
       "physical",
+      "system",
     ]);
-    expect(parseVscreenState(stateWire, scope)?.state.activeTaskId).toBe(
-      "task-1",
-    );
   });
-
-  it.each(["running", "pending", "succeeded"])(
-    "preserves receipt state %s without promoting HTTP acceptance",
-    (state) => {
-      // Given / When
-      const result = parseVscreenReceipt(
-        { ...envelope, command_id: "cmd-1", receipt_id: "receipt-1", state },
-        scope,
-        "cmd-1",
-      );
-      // Then
-      expect(result?.state).toBe(state);
-    },
-  );
-
-  it.each([
-    { state: "succeeded", reason: "permission_denied" },
-    { state: "future" },
-    { state: "failed" },
-    { state: "pending", command_id: "foreign" },
-  ])(
-    "rejects invalid receipt outcomes when identity or state contradicts: %j",
-    (fields) => {
-      // Given / When
-      const result = parseVscreenReceipt(
-        {
-          ...envelope,
-          command_id: "cmd-1",
-          receipt_id: "receipt-1",
-          ...fields,
-        },
-        scope,
-        "cmd-1",
-      );
-      // Then
-      expect(result).toBeNull();
-    },
-  );
 });

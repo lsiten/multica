@@ -1,10 +1,6 @@
-import { createVscreenInterventionsApi } from "./vscreen-interventions";
 import type {
-  MirrorControlGrant,
-  MirrorSource,
-  RuntimeMirrorControlState,
   MirrorSourceBinding,
-  VscreenCommand,
+  AgentDesktopControlInput,
   VscreenMirrorRequest,
   VscreenScope,
   VscreenViewerSession,
@@ -18,18 +14,13 @@ import {
   parseVscreenMirrorSession,
 } from "./vscreen-mirror";
 import {
-  MirrorControlGrantSchema,
-  RuntimeMirrorControlStateSchema,
-  VscreenCommandSchema,
+  parseAgentDesktopReadiness,
+  AgentDesktopControlInputResultSchema,
+  AgentDesktopControlStatusSchema,
   VscreenReasonSchema,
   VscreenScopeSchema,
 } from "./vscreen-schemas";
-import {
-  matchesVscreenScope,
-  parseVscreenReceipt,
-  parseVscreenSources,
-  parseVscreenState,
-} from "./vscreen-state";
+import { matchesVscreenScope, parseVscreenSources } from "./vscreen-state";
 
 export class VscreenScopeError extends Error {
   constructor() {
@@ -100,7 +91,6 @@ export function createVscreenApi(
   }
   return {
     legacy: createVscreenLegacyApi(identity, request),
-    interventions: createVscreenInterventionsApi(identity, request),
     async getIceConfig(signal?: AbortSignal) {
       const result = parseWithFallback<MirrorICEConfig | null>(
         await request("/mirror/config", { signal }),
@@ -115,37 +105,67 @@ export function createVscreenApi(
           }
         : null;
     },
-    async getState(signal?: AbortSignal) {
-      return parseVscreenState(await request("/vscreen", { signal }), identity);
-    },
     async getSources(signal?: AbortSignal) {
       return parseVscreenSources(
         await request("/mirror/sources", { signal }),
         identity,
       );
     },
-    async createCommand(command: VscreenCommand) {
-      const input = VscreenCommandSchema.parse(command);
-      return parseVscreenReceipt(
-        await request("/vscreen/commands", {
-          method: "POST",
-          body: JSON.stringify({
-            command_id: input.commandId,
-            kind: input.kind,
-          }),
-        }),
-        identity,
-        input.commandId,
+    async getAgentDesktopReadiness(signal?: AbortSignal) {
+      return parseAgentDesktopReadiness(
+        await request("/agent-desktop/readiness", { signal }),
       );
     },
-    async getCommand(commandId: string, signal?: AbortSignal) {
-      return parseVscreenReceipt(
-        await request(`/vscreen/commands/${encodeURIComponent(commandId)}`, {
-          signal,
-        }),
-        identity,
-        commandId,
+    async openAgentDesktopPermissionGuide() {
+      return parseAgentDesktopReadiness(
+        await request("/agent-desktop/permissions/guide", { method: "POST" }),
       );
+    },
+    async getAgentDesktopControl(signal?: AbortSignal) {
+      const raw = await request("/agent-desktop/control", { signal });
+      return AgentDesktopControlStatusSchema.parse(raw);
+    },
+    async requestAgentDesktopControl() {
+      const raw = await request("/agent-desktop/control/request", { method: "POST" });
+      return AgentDesktopControlStatusSchema.parse(raw);
+    },
+    async approveAgentDesktopControl(requestId: string) {
+      const raw = await request(
+        `/agent-desktop/control/requests/${encodeURIComponent(requestId)}/approve`,
+        { method: "POST" },
+      );
+      return AgentDesktopControlStatusSchema.parse(raw);
+    },
+    async denyAgentDesktopControl(requestId: string) {
+      await request(
+        `/agent-desktop/control/requests/${encodeURIComponent(requestId)}/deny`,
+        { method: "POST" },
+      );
+    },
+    async sendAgentDesktopControlInput(input: AgentDesktopControlInput) {
+      const raw = await request("/agent-desktop/control/input", {
+        method: "POST",
+        body: JSON.stringify({
+          source: {
+            kind: input.source.kind,
+            source_id: input.source.sourceId,
+          },
+          action: input.action,
+          x: input.x,
+          y: input.y,
+          x2: input.x2,
+          y2: input.y2,
+          dx: input.dx,
+          dy: input.dy,
+          button: input.button,
+          key: input.key,
+          text: input.text,
+        }),
+      });
+      return AgentDesktopControlInputResultSchema.parse(raw);
+    },
+    async stopAgentDesktopControl() {
+      await request("/agent-desktop/control", { method: "DELETE", keepalive: true });
     },
     async createMirrorSession(input: VscreenMirrorRequest) {
       requireBinding(input.binding);
@@ -161,6 +181,7 @@ export function createVscreenApi(
             source_id: input.binding.source.sourceId,
           },
           source_generation: input.binding.generation,
+          video_profile: input.videoProfile,
         }),
       });
       return parseVscreenMirrorSession(raw, identity, input);
@@ -194,93 +215,7 @@ export function createVscreenApi(
         { method: "DELETE", keepalive: true },
       );
     },
-    async createMirrorControlGrant(
-      viewer: Pick<VscreenViewerSession, "viewerId">,
-      source: MirrorSource,
-      sourceGeneration: string,
-      signal?: AbortSignal,
-    ): Promise<MirrorControlGrant> {
-      const raw = await request("/mirror/control-grants", {
-        method: "POST",
-        signal,
-        body: JSON.stringify({
-          viewer_id: viewer.viewerId,
-          source: {
-            kind: source.kind,
-            source_id: source.sourceId,
-          },
-          source_generation: sourceGeneration,
-        }),
-      });
-      return parseMirrorControlGrant(raw, identity);
-    },
-    async getMirrorControlState(signal?: AbortSignal): Promise<RuntimeMirrorControlState> {
-      const raw = await request("/mirror/control-state", { signal });
-      const state = parseWithFallback<RuntimeMirrorControlState | null>(
-        raw,
-        RuntimeMirrorControlStateSchema,
-        null,
-        { endpoint: "GET /api/runtimes/:runtimeId/mirror/control-state" },
-      );
-      if (
-        !state ||
-        state.workspaceId !== identity.workspaceId ||
-        state.runtimeId !== identity.runtimeId
-      ) {
-        throw new VscreenContractError();
-      }
-      return state;
-    },
-
-    async renewMirrorControlGrant(
-      viewer: Pick<VscreenViewerSession, "viewerId">,
-      source: MirrorSource,
-      sourceGeneration: string,
-      signal?: AbortSignal,
-    ): Promise<MirrorControlGrant> {
-      const raw = await request("/mirror/control-grants/renew", {
-        method: "POST",
-        signal,
-        body: JSON.stringify({
-          viewer_id: viewer.viewerId,
-          source: {
-            kind: source.kind,
-            source_id: source.sourceId,
-          },
-          source_generation: sourceGeneration,
-        }),
-      });
-      return parseMirrorControlGrant(raw, identity);
-    },
-    async revokeMirrorControlGrant(viewerId: string): Promise<void> {
-      await request(
-        `/mirror/control-grants/${encodeURIComponent(viewerId)}`,
-        { method: "DELETE" },
-      );
-    },
   };
-}
-
-function parseMirrorControlGrant(
-  raw: unknown,
-  scope: VscreenScope,
-): MirrorControlGrant {
-  const grant = parseWithFallback<MirrorControlGrant | null>(
-    raw,
-    MirrorControlGrantSchema,
-    null,
-    { endpoint: "POST /api/runtimes/:runtimeId/mirror/control-grants" },
-  );
-  if (
-    !grant ||
-    grant.workspaceId !== scope.workspaceId ||
-    grant.runtimeId !== scope.runtimeId ||
-    grant.userId !== scope.accountId ||
-    Date.parse(grant.expiresAt) <= Date.now()
-  ) {
-    throw new VscreenContractError();
-  }
-  return grant;
 }
 
 

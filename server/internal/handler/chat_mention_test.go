@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-
 	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -142,4 +141,3 @@ func TestNotifyGroupChatMentions(t *testing.T) {
 func mentionMarkdown(mentionType, id, label string) string {
 	return "[" + label + "](mention://" + mentionType + "/" + id + ")"
 }
-

@@ -165,14 +165,14 @@ export type LocalRuntimeProbe =
   | { probeResult: "error" };
 
 export const DAEMON_STATE_COLORS: Record<DaemonState, string> = {
-  running: "bg-emerald-500",
+  running: "bg-success",
   stopped: "bg-muted-foreground/40",
-  starting: "bg-amber-500 animate-pulse",
-  stopping: "bg-amber-500 animate-pulse",
-  installing_cli: "bg-sky-500 animate-pulse",
-  cli_not_found: "bg-red-500",
-  recovery_paused: "bg-amber-500",
-  auth_expired: "bg-red-500",
+  starting: "bg-warning animate-pulse",
+  stopping: "bg-warning animate-pulse",
+  installing_cli: "bg-info animate-pulse",
+  cli_not_found: "bg-destructive",
+  recovery_paused: "bg-warning",
+  auth_expired: "bg-destructive",
 };
 
 export function formatUptime(uptime?: string): string {

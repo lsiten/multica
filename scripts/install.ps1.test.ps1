@@ -226,6 +226,7 @@ function Invoke-WebRequest {
 
 # The CLI install itself is out of scope for the port contract.
 function Install-Cli { }
+function Install-AgentDesktop { }
 function Test-Docker { }
 
 Start-LocalInstall

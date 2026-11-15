@@ -85,18 +85,17 @@ type Task struct {
 	HumanResponsePrompt          string                           `json:"human_response_prompt,omitempty"`
 	ProjectSupervisionPrompt     string                           `json:"project_supervision_prompt,omitempty"`
 	// StartClaimSupported gates retries when talking to older servers.
-	StartClaimSupported  bool                                 `json:"start_claim_supported,omitempty"`
-	DispatchedAt         string                               `json:"dispatched_at,omitempty"`
-	ID                   string                               `json:"id"`
-	AgentID              string                               `json:"agent_id"`
-	RuntimeID            string                               `json:"runtime_id"`
-	MirrorSource         *protocol.MirrorSourceBinding        `json:"mirror_source,omitempty"`
-	IssueID              string                               `json:"issue_id"`
-	WorkspaceID          string                               `json:"workspace_id"`
-	WorkspaceSlug        string                               `json:"workspace_slug,omitempty"`
-	IssueIdentifier      string                               `json:"issue_identifier,omitempty"`
-	RemoteMCPConnections []remotemcp.Connection               `json:"remote_mcp_connections,omitempty"`
-	VscreenContinuation  *protocol.VscreenContinuationContext `json:"vscreen_intervention,omitempty"`
+	StartClaimSupported  bool                          `json:"start_claim_supported,omitempty"`
+	DispatchedAt         string                        `json:"dispatched_at,omitempty"`
+	ID                   string                        `json:"id"`
+	AgentID              string                        `json:"agent_id"`
+	RuntimeID            string                        `json:"runtime_id"`
+	MirrorSource         *protocol.MirrorSourceBinding `json:"mirror_source,omitempty"`
+	IssueID              string                        `json:"issue_id"`
+	WorkspaceID          string                        `json:"workspace_id"`
+	WorkspaceSlug        string                        `json:"workspace_slug,omitempty"`
+	IssueIdentifier      string                        `json:"issue_identifier,omitempty"`
+	RemoteMCPConnections []remotemcp.Connection        `json:"remote_mcp_connections,omitempty"`
 	// RemoteMCPDaemonToken stays inside the daemon and authenticates the local
 	// broker's credential-resolution calls. It must never enter agent env/config.
 	RemoteMCPDaemonToken string `json:"remote_mcp_daemon_token,omitempty"`

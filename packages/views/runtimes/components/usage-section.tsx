@@ -249,8 +249,9 @@ function WhenChart({
   days: TimeRange;
   tz: string;
 }) {
-  const { t } = useT("runtimes");
+  const { t, i18n } = useT("runtimes");
   const { t: tUsage } = useT("usage");
+  const locale = i18n.resolvedLanguage ?? i18n.language;
   const allowedDims = dimsForDays(days);
   const [dim, setDim] = useState<Dim>("daily");
   // Derived, never written back: 7d and 180d each draw the one grain they
@@ -275,8 +276,8 @@ function WhenChart({
   // aggregate surfaced old populated weeks instead of in-range empty ones.
   const weekCount = Math.max(1, Math.ceil(days / 7));
   const { weeklyTokens, weeklyCostStack } = useMemo(
-    () => aggregateByWeek(usage, tz, weekCount),
-    [usage, tz, weekCount, pricings],
+    () => aggregateByWeek(usage, tz, weekCount, locale),
+    [usage, tz, weekCount, locale, pricings],
   );
 
   const metricToggleVisible = !showHeatmap;

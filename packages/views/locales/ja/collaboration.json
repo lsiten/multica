@@ -10,6 +10,11 @@
   "project_tab_graph": "プロジェクト協働",
   "project_title": "プロジェクト協働",
   "project_description": "実行証拠のある Agent 関係のみ表示します。",
+  "view_graph": "グラフ",
+  "view_list": "リスト",
+  "accessible_nodes": "エージェントとスクワッド",
+  "accessible_relations": "関係",
+  "no_relations": "表示できるコラボレーション関係はありません。",
   "agents_count": "Agent {{count}} 件",
   "refresh": "更新",
   "load_failed": "プロジェクト協働の読み込みに失敗しました。",
@@ -124,5 +129,11 @@
     "failed": "失敗",
     "cancelled": "キャンセル"
   },
+  "events": {
+    "task_started": "タスク開始",
+    "task_finished": "タスク完了",
+    "task_failed": "タスク失敗"
+  },
+  "runtime_event": "実行イベント",
   "run_count": "実行 {{count}} 件"
 }

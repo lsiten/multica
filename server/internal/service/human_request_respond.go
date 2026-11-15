@@ -48,16 +48,24 @@ func (s *TaskService) respondHumanRequest(ctx context.Context, before db.HumanRe
 	if before.RecipientID != memberID {
 		return result, ErrHumanRequestForbidden
 	}
-	prepared, err := s.PrepareChatTaskEnqueue(ctx, before.AgentID, memberID)
-	if err != nil {
+	var requestBefore HumanRequestInput
+	if err := json.Unmarshal(before.Payload, &requestBefore); err != nil {
 		return result, err
+	}
+	var prepared PreparedChatTaskEnqueue
+	if requestBefore.Purpose != "desktop_approval" {
+		var err error
+		prepared, err = s.PrepareChatTaskEnqueue(ctx, before.AgentID, memberID)
+		if err != nil {
+			return result, err
+		}
 	}
 	var task db.AgentTaskQueue
 	var comment db.Comment
 	var message db.ChatMessage
 	replayed := false
-	err = s.runInTx(ctx, func(q *db.Queries) error {
-		if _, err := q.LockVscreenWorkspace(ctx, before.WorkspaceID); err != nil {
+	err := s.runInTx(ctx, func(q *db.Queries) error {
+		if _, err := q.LockWorkspaceForChatSessionCreate(ctx, before.WorkspaceID); err != nil {
 			return err
 		}
 		if _, err := q.LockActiveMember(ctx, db.LockActiveMemberParams{UserID: memberID, WorkspaceID: before.WorkspaceID}); err != nil {
@@ -78,17 +86,13 @@ func (s *TaskService) respondHumanRequest(ctx context.Context, before db.HumanRe
 		if agent.WorkspaceID != before.WorkspaceID || agent.ArchivedAt.Valid || !agent.RuntimeID.Valid {
 			return ErrHumanRequestForbidden
 		}
-		allowed, err := interventionInvokeAllowed(ctx, q, agent, memberID)
-		if err != nil {
-			return err
-		}
-		if !allowed {
+		if !CanMemberInvokeAgent(ctx, q, agent, memberID, before.WorkspaceID) {
 			return ErrHumanRequestForbidden
 		}
 		if err := lockHumanRequestAutopilot(ctx, q, snapshot, before.WorkspaceID); err != nil {
 			return err
 		}
-		source, err := q.LockVscreenSourceTask(ctx, before.SourceTaskID)
+		source, err := q.LockTaskForExecution(ctx, before.SourceTaskID)
 		if err != nil {
 			return err
 		}
@@ -138,6 +142,27 @@ func (s *TaskService) respondHumanRequest(ctx context.Context, before db.HumanRe
 		}
 		if !row.ExpiresAt.Time.After(time.Now()) {
 			return ErrHumanRequestConflict
+		}
+		if input.Purpose == "desktop_approval" {
+			raw, err := json.Marshal(struct {
+				HumanRequestAnswer
+				Origin *HumanReplyOrigin `json:"origin,omitempty"`
+			}{answer, origin})
+			if err != nil {
+				return err
+			}
+			status := "answered"
+			if answer.Decision == "reject" {
+				status = "declined"
+			}
+			result, err = q.RespondHumanRequest(ctx, db.RespondHumanRequestParams{
+				ID:          row.ID,
+				WorkspaceID: row.WorkspaceID,
+				Revision:    row.Revision,
+				Status:      status,
+				Response:    raw,
+			})
+			return err
 		}
 		text := humanAnswerText(input, answer)
 		displayText := text

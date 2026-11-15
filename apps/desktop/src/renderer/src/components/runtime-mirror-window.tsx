@@ -166,7 +166,7 @@ function FloatingMirrorContent({
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {runtime && scope ? (
-          <MirrorPlatformProvider value={{ localControl: (scope, operation) => bridge.vscreenDesktop({ scope, operation }) }}><MirrorSurface
+          <MirrorPlatformProvider value={{}}><MirrorSurface
             key={JSON.stringify(scope)}
             scope={scope}
             runtime={runtime}

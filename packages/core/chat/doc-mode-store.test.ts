@@ -1,7 +1,11 @@
+// @vitest-environment jsdom
+
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  documentDraftKey,
   selectActiveDocument,
   selectDiffView,
+  selectDocumentDraft,
   selectWorking,
   useDocModeStore,
 } from "./doc-mode-store";
@@ -11,6 +15,7 @@ beforeEach(() => {
     activeBySession: {},
     workingBySession: {},
     diffViewBySession: {},
+    draftsByDocument: {},
   });
 });
 
@@ -53,6 +58,71 @@ describe("useDocModeStore.closeDoc", () => {
 
     expect(selectActiveDocument("session-a")(useDocModeStore.getState())).toBeNull();
     expect(selectWorking("session-a")(useDocModeStore.getState())).toBe(false);
+  });
+
+  it("keeps unsaved document drafts when the active document closes", () => {
+    const doc = { kind: "issue" as const, id: "issue-1" };
+    const { openDoc, closeDoc, setDocumentDraft } = useDocModeStore.getState();
+    openDoc("session-a", doc);
+    setDocumentDraft(doc, {
+      kind: "version",
+      content: "# Draft",
+      baseContent: "# Original",
+      baseRevision: 7,
+      contentType: "text/markdown",
+    });
+
+    closeDoc("session-a");
+
+    expect(selectActiveDocument("session-a")(useDocModeStore.getState())).toBeNull();
+    expect(selectDocumentDraft(doc)(useDocModeStore.getState())).toMatchObject({
+      content: "# Draft",
+      baseRevision: 7,
+    });
+  });
+});
+
+describe("document drafts", () => {
+  it("isolates drafts by full document identity and clears only the requested draft", () => {
+    const first = { kind: "workspace_file" as const, id: "task-1:src/app.ts", taskId: "task-1", relativePath: "src/app.ts" };
+    const second = { ...first, taskId: "task-2" };
+    const { setDocumentDraft, clearDocumentDraft } = useDocModeStore.getState();
+    setDocumentDraft(first, { kind: "workspace_file", content: "first draft", baseContent: "first" });
+    setDocumentDraft(second, { kind: "workspace_file", content: "second draft", baseContent: "second" });
+
+    expect(documentDraftKey(first)).not.toBe(documentDraftKey(second));
+    clearDocumentDraft(first);
+
+    expect(selectDocumentDraft(first)(useDocModeStore.getState())).toBeUndefined();
+    expect(selectDocumentDraft(second)(useDocModeStore.getState())).toMatchObject({ content: "second draft" });
+  });
+
+  it("rehydrates a draft after the store is recreated from persisted state", async () => {
+    const doc = { kind: "issue" as const, id: "issue-reload" };
+    const { openDoc, closeDoc, setDocumentDraft } = useDocModeStore.getState();
+    openDoc("session-a", doc);
+    setDocumentDraft(doc, {
+      kind: "version",
+      content: "# Recovered",
+      baseContent: "# Original",
+      baseRevision: 3,
+      contentType: "text/markdown",
+    });
+    closeDoc("session-a");
+    const persisted = localStorage.getItem("multica_doc_mode");
+    expect(persisted).toContain("Recovered");
+
+    useDocModeStore.setState({
+      activeBySession: {},
+      draftsByDocument: {},
+    });
+    localStorage.setItem("multica_doc_mode", persisted!);
+    await useDocModeStore.persist.rehydrate();
+
+    expect(selectDocumentDraft(doc)(useDocModeStore.getState())).toMatchObject({
+      content: "# Recovered",
+      baseRevision: 3,
+    });
   });
 });
 

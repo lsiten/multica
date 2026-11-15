@@ -2,8 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/url"
 	"os"
 	"path"
@@ -12,69 +10,20 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
-	"github.com/multica-ai/multica/server/internal/vscreen"
-	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
-	"github.com/multica-ai/multica/server/internal/vscreen/native"
-	"github.com/multica-ai/multica/server/internal/vscreen/native/globalinput"
+	"github.com/multica-ai/multica/server/internal/mirror/nativecapture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-// VscreenInputHandler supplies actual checked input and a native quiescence barrier.
-// Implementations must never fall back to global keyboard/mouse dispatch.
-type VscreenInputHandler interface {
-	Act(context.Context, vscreen.Action) (vscreen.ActionResult, error)
-	Quiesce(context.Context, vscreen.ResourceKey) error
-	Dispose(context.Context, vscreen.ResourceKey) error
-}
-
-// VscreenTakeoverHandler coordinates intervention persistence and provider cancellation.
-type VscreenTakeoverHandler func(context.Context, protocol.VscreenCommand, *vscreen.Actor) error
-
 type vscreenRuntime struct {
-	interventions                    vscreenInterventions
-	excludedWindows                  []uint32
-	commandMu                        sync.Mutex
-	commands                         map[string]vscreenCachedCommand
-	grantClosed                      bool
-	grantBlockedUntil                time.Time
-	grantWG                          sync.WaitGroup
-	runCancel                        context.CancelFunc
-	runDone                          chan struct{}
-	grantMu                          sync.Mutex
-	grants                           map[vscreenGrantKey]vscreenGrantEntry
-	mu                               sync.Mutex
-	client                           *hostclient.Client
-	screenPermissionRequested        bool
-	accessibilityPermissionRequested bool
-	manager                          *vscreen.Manager
-	driver                           *vscreenNativeDriver
-	hub                              *mirror.CaptureHub
-	enabled                          map[protocol.ResourceKey]bool
-	revisions                        map[string]uint64
-	closed                           bool
-}
-
-// SetVscreenInputHandler installs a local trusted input implementation before GUI work.
-func (d *Daemon) SetVscreenInputHandler(handler VscreenInputHandler) {
-	if d.mirrorProcessMode() {
-		return
-	}
-	d.vscreenMu.Lock()
-	defer d.vscreenMu.Unlock()
-	d.vscreenInput = handler
-	if d.vscreen != nil {
-		d.vscreen.driver.setInput(handler)
-	}
-}
-
-// SetVscreenTakeoverHandler installs the intervention coordinator; absence fails closed.
-func (d *Daemon) SetVscreenTakeoverHandler(handler VscreenTakeoverHandler) {
-	if d.mirrorProcessMode() {
-		return
-	}
-	d.vscreenMu.Lock()
-	defer d.vscreenMu.Unlock()
-	d.vscreenTakeover = handler
+	grantClosed       bool
+	grantBlockedUntil time.Time
+	grantWG           sync.WaitGroup
+	grantMu           sync.Mutex
+	grants            map[vscreenGrantKey]vscreenGrantEntry
+	mu                sync.Mutex
+	client            *nativecapture.Client
+	hub               *mirror.CaptureHub
+	closed            bool
 }
 
 func (d *Daemon) vscreenResource(workspaceID, runtimeID string) (protocol.ResourceKey, error) {
@@ -92,7 +41,7 @@ func (d *Daemon) vscreenResource(workspaceID, runtimeID string) (protocol.Resour
 	}
 	d.mu.Unlock()
 	if !tracked || !belongs {
-		return protocol.ResourceKey{}, &vscreen.Error{Reason: protocol.VscreenSourceGone}
+		return protocol.ResourceKey{}, nativecapture.ErrUnavailable
 	}
 	u, err := url.Parse(d.cfg.ServerBaseURL)
 	if err != nil {
@@ -120,77 +69,32 @@ func (d *Daemon) vscreenRuntime() *vscreenRuntime {
 	d.vscreenMu.Lock()
 	defer d.vscreenMu.Unlock()
 	if d.vscreen == nil {
-		driver := &vscreenNativeDriver{displays: make(map[protocol.ResourceKey]vscreen.Display), input: d.vscreenInput, arbiter: d.inputArbiter}
-		d.vscreen = &vscreenRuntime{commands: make(map[string]vscreenCachedCommand), grants: make(map[vscreenGrantKey]vscreenGrantEntry), driver: driver, manager: vscreen.NewManager(driver, vscreen.SystemClock{}), enabled: make(map[protocol.ResourceKey]bool), revisions: make(map[string]uint64)}
-		d.loadVscreenInterventions(d.vscreen)
-		if d.cfg.NativeVscreenPreferencesPath != "" {
-			raw, err := os.ReadFile(d.cfg.NativeVscreenPreferencesPath)
-			if err == nil && len(raw) <= 65536 {
-				var keys []protocol.ResourceKey
-				if json.Unmarshal(raw, &keys) == nil {
-					for _, key := range keys {
-						if key.Validate() == nil {
-							d.vscreen.enabled[key] = true
-						}
-					}
-				}
-			}
-		}
-
+		d.vscreen = &vscreenRuntime{grants: make(map[vscreenGrantKey]vscreenGrantEntry)}
 	}
 	return d.vscreen
 }
 
 func (d *Daemon) startVscreenHost(ctx context.Context, s *vscreenRuntime) error {
 	if s.closed {
-		return hostclient.ErrClosed
+		return nativecapture.ErrClosed
 	}
 	if s.client != nil {
 		return nil
 	}
 	if d.cfg.NativeHostExecutable == "" || d.cfg.NativeHostBuild == "" {
-		return native.ErrUnavailable
+		return nativecapture.ErrUnavailable
 	}
-	client, err := hostclient.Start(ctx, hostclient.Config{Executable: d.cfg.NativeHostExecutable, Build: d.cfg.NativeHostBuild, Media: true, AppControl: true})
+	client, err := nativecapture.Start(ctx, nativecapture.Config{Executable: d.cfg.NativeHostExecutable, Build: d.cfg.NativeHostBuild})
 	if err != nil {
-		return err
-	}
-	if err := client.UpdateExclusions(ctx, s.excludedWindows); err != nil {
-		client.Close()
 		return err
 	}
 	if d.mirrorChild != nil && !d.mirrorChild.watchNative(client) {
 		client.Close()
-		return hostclient.ErrClosed
+		return nativecapture.ErrClosed
 	}
 	s.client = client
-	s.driver.setClient(client)
-	if d.vscreenInput == nil {
-		s.driver.setInput(&vscreenAppInput{client: client})
-	}
-	s.hub = mirror.NewCaptureHub(VscreenCaptureProvider{Client: client})
-	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	s.runCancel = cancel
-	s.runDone = make(chan struct{})
-	go func() {
-		defer close(s.runDone)
-		if err := s.manager.Run(runCtx); err != nil && !errors.Is(err, context.Canceled) {
-			d.logger.Warn("virtual screen authority stopped")
-		}
-	}()
+	s.hub = mirror.NewCaptureHub(MirrorCaptureProvider{Client: client})
 	return nil
-}
-
-// VscreenActor returns the runtime-owned actor; obtaining it does not create a display.
-func (d *Daemon) VscreenActor(workspaceID, runtimeID string) (*vscreen.Actor, error) {
-	if d.mirrorProcessMode() {
-		return nil, errors.New("GUI actors belong to the mirror process")
-	}
-	key, err := d.vscreenResource(workspaceID, runtimeID)
-	if err != nil {
-		return nil, err
-	}
-	return d.vscreenRuntime().manager.For(key)
 }
 
 func (d *Daemon) closeVscreenRuntime(runtimeID string) {
@@ -208,11 +112,7 @@ func (d *Daemon) closeVscreenRuntime(runtimeID string) {
 	if s == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := d.removeVscreenRuntime(ctx, s, runtimeID); err != nil {
-		d.logger.Warn("virtual screen cleanup failed", "runtime_id", runtimeID)
-	}
+	d.removeVscreenRuntime(s, runtimeID)
 }
 
 func (d *Daemon) closeVscreens() {
@@ -244,62 +144,45 @@ func (d *Daemon) closeVscreensResult() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closed = true
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if s.runCancel != nil {
-		s.runCancel()
-		<-s.runDone
-	}
-	err := s.manager.Close(ctx)
+	var err error
 	if s.client != nil {
-		err = errors.Join(err, s.client.Close())
+		err = s.client.Close()
 	}
 	return err
 }
 
-// managedVscreenCapabilities advertises the capabilities that require the
-// native virtual-display selectors: the managed virtual screen itself, its
-// H264 video feed, and the read-only viewer grant. The human input (control)
-// capability is advertised separately (see managedScreenControlCapabilities)
-// because it does not depend on the virtual screen.
-func managedVscreenCapabilities() []string {
-	if !native.Supported() {
+func (d *Daemon) removeVscreenRuntime(s *vscreenRuntime, runtimeID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d.mu.Lock()
+	runtimeMirror := d.runtimeMirrors[runtimeID]
+	delete(d.runtimeMirrors, runtimeID)
+	d.mu.Unlock()
+	if runtimeMirror != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := runtimeMirror.CloseUnattachedPeers(ctx); err != nil && d.logger != nil {
+			d.logger.Debug("close removed runtime mirror peers", "runtime_id", runtimeID, "error", err)
+		}
+	}
+}
+
+// managedMirrorCapabilities advertises the read-only video feed and its grant.
+func managedMirrorCapabilities() []string {
+	if !nativecapture.Supported() {
 		return nil
 	}
-	return []string{protocol.DaemonCapabilityVirtualScreenV1, protocol.DaemonCapabilityScreenMirrorVideoV2, protocol.DaemonCapabilityMirrorViewerGrantV1}
+	return []string{protocol.DaemonCapabilityScreenMirrorVideoV2, protocol.DaemonCapabilityMirrorViewerGrantV1}
 }
 
-// managedScreenControlCapabilities requires the managed catalog and viewer-grant
-// path as well as a usable global injector.
-func managedScreenControlCapabilities() []string {
-	if !native.Supported() || !globalInputAvailable() {
-		return nil
-	}
-	return []string{protocol.DaemonCapabilityScreenControlV1}
-}
-
-// globalInputAvailable reuses a probe instance across capability advertisements.
-// In process mode actual input is owned and dispatched by the mirror child.
-var (
-	globalInputProbeOnce sync.Once
-	globalInputProbeInst globalinput.Injector
-)
-
-func globalInputAvailable() bool {
-	globalInputProbeOnce.Do(func() {
-		globalInputProbeInst = globalinput.New()
-	})
-	return globalInputProbeInst.Available()
-}
-
-func (d *Daemon) suspendVscreens(g mirrorControlGeneration) {
+func (d *Daemon) suspendVscreens(g mirrorConnectionGeneration) {
 	if d.mirrorProcessMode() {
 		if client, err := d.currentMirrorProcess(); err == nil {
 			client.unbind(uint64(g))
 		}
 		return
 	}
-	if !d.mirrorControlGenerationIsCurrent(g) {
+	if !d.mirrorConnectionCurrent(g) {
 		return
 	}
 	d.vscreenMu.Lock()
@@ -308,21 +191,7 @@ func (d *Daemon) suspendVscreens(g mirrorControlGeneration) {
 	if s == nil {
 		return
 	}
-	s.mu.Lock()
-	keys := make([]protocol.ResourceKey, 0, len(s.enabled))
-	for k := range s.enabled {
-		keys = append(keys, k)
-	}
-	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	for _, key := range keys {
-		if a, err := s.manager.For(key); err == nil {
-			if err = a.Suspend(ctx); err != nil {
-				d.logger.Warn("virtual screen suspension incomplete")
-			}
-		}
-	}
+	d.closeRuntimeMirrors()
 }
 
 func (d *Daemon) pruneVscreens() {
@@ -336,15 +205,19 @@ func (d *Daemon) pruneVscreens() {
 	if s == nil {
 		return
 	}
-	s.mu.Lock()
-	keys := make([]protocol.ResourceKey, 0, len(s.enabled))
-	for key := range s.enabled {
-		keys = append(keys, key)
-	}
-	s.mu.Unlock()
-	for _, key := range keys {
-		if _, err := d.vscreenResource(key.WorkspaceID, key.RuntimeID); err != nil {
-			d.closeVscreenRuntime(key.RuntimeID)
+	d.closeMissingRuntimeMirrors()
+}
+
+func (d *Daemon) closeMissingRuntimeMirrors() {
+	d.mu.Lock()
+	detached := make([]*mirror.RuntimeMirror, 0)
+	for runtimeID, runtimeMirror := range d.runtimeMirrors {
+		if _, tracked := d.runtimeIndex[runtimeID]; tracked {
+			continue
 		}
+		delete(d.runtimeMirrors, runtimeID)
+		detached = append(detached, runtimeMirror)
 	}
+	d.mu.Unlock()
+	d.closeDetachedRuntimeMirrors(detached)
 }

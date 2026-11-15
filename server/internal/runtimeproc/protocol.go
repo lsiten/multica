@@ -19,7 +19,12 @@ const ProtocolVersion = 1
 
 // Entrypoint bypasses normal CLI profile and account loading.
 const Entrypoint = "internal-runtime-service"
-const maxBody = 256 << 10
+
+// Worker bind payloads include the prepared task, execution context, and
+// built-in platform skill. The platform skill alone is about 188 KiB and is
+// projected more than once, so the private authenticated worker channel needs
+// headroom above 256 KiB while retaining a strict local request bound.
+const maxBody = 1 << 20
 const maxJournal = 8 << 20
 const maxOperations = 128
 

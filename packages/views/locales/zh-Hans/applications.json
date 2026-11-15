@@ -7,6 +7,7 @@
   "board": "运行看板",
   "search": "搜索应用",
   "all_projects": "所有项目",
+  "all_runtimes": "所有运行时",
   "empty": "还没有应用",
   "empty_help": "在项目中创建应用，启动或登记服务。",
   "no_matches": "没有匹配的应用",
@@ -19,6 +20,11 @@
   "service": "服务应用",
   "composition": "组合应用",
   "unknown": "未知",
+  "actor_types": {
+    "member": "成员",
+    "agent": "智能体",
+    "unknown": "未知"
+  },
   "mode": "服务管理方式",
   "managed": "启动并托管",
   "external": "登记已有服务",

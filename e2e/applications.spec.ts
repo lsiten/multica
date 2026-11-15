@@ -58,10 +58,16 @@ test.describe("Applications module", () => {
     const runtimeId = "44444444-4444-4444-8444-444444444444";
     let state = "queued";
     let receipt: Record<string, unknown>;
+    const applicationRecord = await (
+      await api.applicationRequest(`/${serviceId}`)
+    ).json() as { workspace_id: string; created_by: string };
     await page.route("**/api/applications/board", async (route) => {
       const response = await route.fetch();
       const board = await response.json();
-      const application = board.applications.find((app: { id: string }) => app.id === serviceId);
+      const application =
+        board.applications.find(
+          (app: { id: string }) => app.id === serviceId,
+        ) ?? applicationRecord;
       receipt = { id: operationId, workspace_id: application.workspace_id, application_id: serviceId, action: "start", actor_type: "member", actor_id: application.created_by,
         state, created_at: "2026-10-07T01:00:00Z", cancel_requested_at: state === "queued" ? null : "2026-10-07T01:01:00Z",
         cancel_actor_type: "member", cancel_actor_id: state === "queued" ? "" : application.created_by,
@@ -104,10 +110,16 @@ test.describe("Applications module", () => {
 	  application.config = { ...application.config, mode: "managed", command: ["node", "server.js"] };
 	  await route.fulfill({ response, json: application });
 	});
+	const applicationRecord = await (
+	  await api.applicationRequest(`/${serviceId}`)
+	).json() as { workspace_id: string; created_by: string };
 	await page.route("**/api/applications/board", async (route) => {
 	  const response = await route.fetch();
 	  const board = await response.json();
-	  const application = board.applications.find((app: { id: string }) => app.id === serviceId);
+	  const application =
+	    board.applications.find(
+	      (app: { id: string }) => app.id === serviceId,
+	    ) ?? applicationRecord;
 	  board.instances = [{ id: instanceId, workspace_id: application.workspace_id, application_id: serviceId,
 	    runtime_id: "44444444-4444-4444-8444-444444444444", revision: 1, generation: 1, observed_generation: 1,
 	    observed_revision: 1, desired_state: "stopped", process_state: "stopped", health_state: "unknown",

@@ -194,7 +194,11 @@ func (h *Handler) BindTaskExecution(w http.ResponseWriter, r *http.Request) {
 		writeExecutionAuthorityError(w, lookupErr)
 		return
 	}
-	if task.Status != "dispatched" && task.Status != "waiting_local_directory" {
+	// The daemon records StartTask after preparing the environment and before
+	// the per-execution worker binds. A running task without an execution row
+	// therefore still needs its first bind; an existing execution is handled
+	// above and remains locked to its original worker.
+	if task.Status != "dispatched" && task.Status != "waiting_local_directory" && task.Status != "running" {
 		writeExecutionAuthorityError(w, pgx.ErrNoRows)
 		return
 	}

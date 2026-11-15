@@ -2007,15 +2007,15 @@ func TestBuildPromptMirrorChatPrioritizesBoundScreenAction(t *testing.T) {
 	}
 
 	out := BuildPrompt(task, "codex")
-	if !strings.HasPrefix(out, "You are operating the authenticated screen selected in the mirror view.") {
+	if !strings.HasPrefix(out, "You are performing a desktop task requested from the read-only mirror.") {
 		t.Fatalf("mirror screen directive was not first in the prompt:\n%s", out)
 	}
-	for _, marker := range []string{"workspace=\"workspace\"", "runtime=\"runtime\"", "source_kind=\"physical\"", "source_id=\"display:2\"", "acquiring a transaction", "observing this bound screen"} {
+	for _, marker := range []string{"workspace=\"workspace\"", "runtime=\"runtime\"", "source_kind=\"physical\"", "source_id=\"display:2\"", "agent-desktop", "desktop_snapshot"} {
 		if !strings.Contains(out, marker) {
 			t.Fatalf("mirror prompt missing bound-screen marker %q:\n%s", marker, out)
 		}
 	}
-	if strings.Index(out, "observing this bound screen") > strings.Index(out, task.ChatMessage) {
+	if strings.Index(out, "desktop_snapshot") > strings.Index(out, task.ChatMessage) {
 		t.Fatal("user action appeared before the bound-screen operating directive")
 	}
 }

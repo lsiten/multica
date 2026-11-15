@@ -24,7 +24,7 @@ const (
 // changeReviewDecision is one lead decision for one sub-issue.
 type changeReviewDecision struct {
 	SubIssueID pgtype.UUID `json:"sub_issue_id"`
-	Action      string      `json:"action"`
+	Action     string      `json:"action"`
 }
 
 // applyRequirementChangeReview applies the lead's change-impact decisions to the

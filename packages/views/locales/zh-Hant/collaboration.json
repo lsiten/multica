@@ -10,6 +10,11 @@
   "project_tab_graph": "專案協作實況",
   "project_title": "專案協作實況",
   "project_description": "只顯示有執行證據的 Agent 關係。",
+  "view_graph": "關係圖",
+  "view_list": "清單",
+  "accessible_nodes": "智慧體與小隊",
+  "accessible_relations": "協作關係",
+  "no_relations": "暫無可顯示的協作關係。",
   "agents_count": "{{count}} 個 Agent",
   "refresh": "重新整理",
   "load_failed": "專案協作實況載入失敗。",
@@ -124,5 +129,11 @@
     "failed": "失敗",
     "cancelled": "已取消"
   },
+  "events": {
+    "task_started": "任務開始",
+    "task_finished": "任務完成",
+    "task_failed": "任務失敗"
+  },
+  "runtime_event": "執行事件",
   "run_count": "{{count}} 次執行"
 }

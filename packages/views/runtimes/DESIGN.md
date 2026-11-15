@@ -21,10 +21,11 @@ identifiers. Do not introduce new fonts or raw font sizes.
 ## 4. Spacing and layout
 
 Spacing follows the shared 4px scale. Runtime detail owns its single vertical
-scroll container. A mirror page uses the existing page shell: breadcrumb and
-actions are fixed by the shell; the media frame is the only scrollable body
-region and keeps a bounded aspect ratio. At narrow widths it remains one
-column and never creates horizontal scrolling for primary content.
+scroll container. A mirror page behaves as a full-window workbench: the session
+bar fixes status, source, quality, inspector, and fullscreen controls; the
+canvas owns the remaining height. Session details move into an Inspector rather
+than stacking above the media. At narrow widths the Inspector becomes a bottom
+sheet and the page never creates horizontal scrolling for primary content.
 
 ## 5. Components and states
 
@@ -38,12 +39,29 @@ column and never creates horizontal scrolling for primary content.
 
 ### Mirror frame
 
-- **Structure:** labelled media region with a bounded image canvas and a
-  connection-status region.
-- **States:** idle, negotiating, streaming, unavailable, capture permission
-  denied, and transport failure.
+- **Structure:** labelled media canvas with an overlaid control dock, source
+  popover, and one primary live-status announcement.
+- **States:** permission check, daemon connection, session creation, ICE,
+  decoding, streaming, reconnecting, and terminal failure.
+- **Interaction:** Fit, 100%, Fill, zoom, pan, fullscreen, automatic quality,
+  diagnostics, and an explicit human-control request live outside the media
+  content.
 - **Accessibility:** the frame has a text alternative describing the live
-  runtime source; state changes use `role=status` or `role=alert`.
+  runtime source; state changes use one `role=status`; errors use
+  `role=alert`.
+
+### Human takeover
+
+- **Structure:** control state, current controller, lease expiry, keyboard
+  capture, clipboard direction, pointer mode, text fallback, AI handoff, and
+  emergency stop live in the Inspector.
+- **States:** view only, waiting for approval, approval pending, controlling,
+  another controller active, and ended.
+- **Authority:** runtime owners and workspace admins may approve a request or
+  force-end another controller's lease.
+- **Execution:** every pointer, keyboard, text, and clipboard action is sent
+  through the approved lease to `agent-desktop`. The browser never applies
+  desktop input directly.
 
 ### Hold-to-talk voice composer
 
@@ -69,6 +87,11 @@ Reuse existing button/link hover, active, and focus behaviour. No decorative
 motion is added. A still frame is replaced only when a complete newer frame is
 received, so partial network data never flashes on screen.
 
+Touch tap clicks, one-finger movement scrolls the remote surface, and a
+400 ms press followed by movement starts a drag. Two fingers pan and pinch the
+local video viewport. Mouse and pen keep immediate press/drag. Esc always
+releases the active control lease.
+
 ## 7. Depth and surface
 
 Use the repository's existing border-separated card surfaces. Do not add a
@@ -76,26 +99,16 @@ second elevation or shadow system for mirror media.
 
 ## 8. Composer states
 
-The external composer remains available while viewing so a selected bound agent can receive a chat instruction without taking control of the screen. Screen injection controls remain gated by an active human control grant. Sending is serialized, reports a localized error, and preserves the draft for retry; Enter does not submit during IME composition.
+The AI Inspector can create a chat bound to the exact current runtime source so
+a selected agent receives an instruction with the same source identity.
+Sending reports a localized error and preserves the draft for retry; Enter does
+not submit during IME composition. Human input remains unavailable until a
+runtime owner or administrator approves a control lease.
 
 ## 9. Accessibility and accepted debt
 
 Target WCAG 2.2 AA: all controls are keyboard reachable, focus remains
-visible, and state text has sufficient contrast. Initial native capture uses
-the primary display; source selection and audio are intentionally out of scope
-for this first capability.
-
-### Direct screen gestures
-
-The remote desktop uses direct manipulation: touch tap clicks, one-finger swipe
-scrolls in the finger's direction, and holding for 350 ms starts a drag. An 8 CSS
-pixel slop separates tap from scroll regardless of display resolution. Mouse
-and pen keep immediate press/drag. Additional fingers do not steal a gesture.
-This remote-input mechanism is specific to mirroring; the beui swipeable-list
-reference informs interruptibility, not local movement of the video pixels.
-
-Movement is coalesced to one update per animation frame (latest drag position,
-summed scroll distance). Release flushes pending movement; cancellation,
-blur, source changes and unmount release held input and discard pending work.
-Wheel listeners are non-passive so remote scrolling does not scroll the page.
-No decorative or simulated screen animation is used, including reduced motion.
+visible, and state text has sufficient contrast. Native capture supports
+physical and system displays; application-window and audio sources are
+intentionally out of scope. No decorative or simulated screen animation is
+used, including reduced motion.

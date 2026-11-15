@@ -2678,6 +2678,20 @@
         "environment": "환경",
         "mirror": "미러"
       },
+      "states": {
+        "ready": "준비됨",
+        "running": "실행 중",
+        "starting": "시작 중",
+        "stopping": "중지 중",
+        "stopped": "중지됨",
+        "failed": "실패",
+        "unavailable": "사용 불가",
+        "offline": "오프라인",
+        "disabled": "사용 안 함",
+        "downloaded": "다운로드됨",
+        "not_installed": "설치되지 않음",
+        "unknown": "알 수 없음"
+      },
       "memory": "메모리",
       "cpu": "CPU 시간",
       "usage": {

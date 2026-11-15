@@ -7,6 +7,7 @@
   "board": "Tableau des exécutions",
   "search": "Rechercher des applications",
   "all_projects": "Tous les projets",
+  "all_runtimes": "Tous les environnements d’exécution",
   "empty": "Aucune application",
   "empty_help": "Créez une application dans un projet pour lancer ou enregistrer un service.",
   "no_matches": "Aucune application correspondante",
@@ -19,6 +20,11 @@
   "service": "Application de service",
   "composition": "Application composée",
   "unknown": "Inconnu",
+  "actor_types": {
+    "member": "Membre",
+    "agent": "Agent",
+    "unknown": "Inconnu"
+  },
   "mode": "Gestion du service",
   "managed": "Lancer et gérer",
   "external": "Enregistrer un service existant",

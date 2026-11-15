@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, FolderKanban, LayoutGrid, Loader2, Plus, RefreshCw, Search, Server } from "@multica/ui/icons";
 import { applicationBoardOptions, applicationServiceIds, applicationStatus, topLevelApplications, type Application, type ApplicationBoard } from "@multica/core/applications";
@@ -11,11 +11,12 @@ import { useWorkspacePaths } from "@multica/core/paths";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
 import { cn } from "@multica/ui/lib/utils";
-import { AppLink } from "../navigation";
+import { AppLink, useSearchState } from "../navigation";
 import { useT } from "../i18n";
 import { CollectionPageHeader, CollectionPageState } from "../layout/collection-page";
 import { PAGE_GUTTER, PAGE_RAIL } from "../layout/page-header";
 import { ApplicationEditor } from "./application-editor";
+import { applicationViewFromParam } from "./application-view-state";
 import { ApplicationSelect, ApplicationStatusBadge } from "./controls";
 
 function ApplicationCard({ application, board }: { application: Application; board: ApplicationBoard }) {
@@ -49,15 +50,20 @@ export function ApplicationsPage({ projectId: presetProjectId, runtimeId: preset
   const boardQuery = useQuery(applicationBoardOptions(workspaceId));
   const projects = useQuery(projectListOptions(workspaceId));
   const runtimes = useQuery(runtimeListOptions(workspaceId));
-  const [view, setView] = useState<"projects" | "runtimes" | "board">(presetRuntimeId || presetRuntimeIds ? "runtimes" : "projects");
-  const [search, setSearch] = useState("");
-  const [projectFilter, setProjectFilter] = useState(presetProjectId ?? "all");
+  const defaultView = presetRuntimeId || presetRuntimeIds ? "runtimes" : "projects";
+  const [viewParam, setViewParam] = useSearchState("view", defaultView);
+  const view = applicationViewFromParam(viewParam);
+  const setView = (next: "projects" | "runtimes" | "board") => setViewParam(next);
+  const [search, setSearch] = useSearchState("q");
+  const [projectFilter, setProjectFilter] = useSearchState("project", presetProjectId ?? "all");
+  const [runtimeFilter, setRuntimeFilter] = useSearchState("runtime", "all");
   const board = boardQuery.data;
   const applications = useMemo(() => (board?.applications ?? []).filter((application) => (projectFilter === "all" || application.project_id === projectFilter) && (!search.trim() || application.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))), [board?.applications, projectFilter, search]);
   const filteredIds = new Set(applications.map((app) => app.id));
-  const selectedRuntimeIds = presetRuntimeIds ?? (presetRuntimeId ? [presetRuntimeId] : null);
-  const instances = (board?.instances ?? []).filter((instance) => filteredIds.has(instance.application_id) && (!selectedRuntimeIds || selectedRuntimeIds.includes(instance.runtime_id)));
   const runtimeById = new Map((runtimes.data ?? []).map((runtime) => [runtime.id, runtime]));
+  const standaloneRuntimeFilter = runtimeById.has(runtimeFilter) ? runtimeFilter : "all";
+  const selectedRuntimeIds = presetRuntimeIds ?? (presetRuntimeId ? [presetRuntimeId] : standaloneRuntimeFilter !== "all" ? [standaloneRuntimeFilter] : null);
+  const instances = (board?.instances ?? []).filter((instance) => filteredIds.has(instance.application_id) && (!selectedRuntimeIds || selectedRuntimeIds.includes(instance.runtime_id)));
   const summaryCards = board ? [
     { label: t(($) => $.services_count), value: board.summary.services }, { label: t(($) => $.compositions_count), value: board.summary.compositions },
     { label: t(($) => $.running_count), value: board.summary.running }, { label: t(($) => $.unhealthy_count), value: board.summary.unhealthy },
@@ -76,6 +82,7 @@ export function ApplicationsPage({ projectId: presetProjectId, runtimeId: preset
         <div role="group" aria-label={t(($) => $.title)} className="flex rounded-lg bg-muted p-1">{viewOptions.map(({ value, label, icon: Icon }) => <Button key={value} size="sm" variant="ghost" aria-pressed={view === value} onClick={() => setView(value)} className={cn("gap-1.5", view === value && "bg-background text-foreground shadow-xs hover:bg-background")}><Icon className="size-3.5" /><span className="hidden sm:inline">{label}</span><span className="sr-only sm:hidden">{label}</span></Button>)}</div>
         <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2 sm:flex-none">
           {!presetProjectId && <div className="min-w-36"><ApplicationSelect value={projectFilter} onChange={setProjectFilter} label={t(($) => $.project)} items={[{ value: "all", label: t(($) => $.all_projects) }, ...(projects.data ?? []).map((project) => ({ value: project.id, label: project.title }))]} /></div>}
+          {view === "runtimes" && !presetRuntimeId && !presetRuntimeIds && <div className="min-w-40"><ApplicationSelect value={standaloneRuntimeFilter} onChange={setRuntimeFilter} label={t(($) => $.runtime)} items={[{ value: "all", label: t(($) => $.all_runtimes) }, ...(runtimes.data ?? []).map((runtime) => ({ value: runtime.id, label: runtimeDisplayLabel(runtime) }))]} /></div>}
           <div className="relative min-w-40 flex-1 sm:w-56"><Search aria-hidden className="pointer-events-none absolute left-2 top-2 size-4 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} aria-label={t(($) => $.search)} placeholder={t(($) => $.search)} className="pl-8" /></div>
         </div>
       </div>

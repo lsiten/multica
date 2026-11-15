@@ -110,6 +110,20 @@ describe("worktree management", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  it("keeps cleanup available while the inventory refreshes in the background", async () => {
+    listWorktrees.mockResolvedValueOnce([row("a", "/clean")]);
+    mount();
+    await screen.findAllByTitle("/clean");
+    const cleanupButton = screen.getByRole("button", { name: "清理可回收项" });
+    expect(cleanupButton).toBeEnabled();
+
+    listWorktrees.mockImplementationOnce(() => new Promise(() => {}));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(listWorktrees).toHaveBeenCalledTimes(2));
+
+    expect(cleanupButton).toBeEnabled();
+  });
+
   it("requires an explicit discard choice and shows inventory failures", async () => {
     listWorktrees.mockResolvedValue([{ ...row("a", "/dirty"), nextAction: "retained", protectionReason: "dirty" }]);
     cleanupWorktrees.mockResolvedValue({ removedPaths: ["/dirty"], retained: {} });

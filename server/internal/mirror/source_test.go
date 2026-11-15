@@ -62,7 +62,7 @@ func (c *countingCapturer) Count() int {
 
 type testSink struct {
 	frames chan Frame
-	errors chan ControlMessage
+	errors chan CaptureErrorMessage
 }
 
 func (s testSink) SendFrame(frame Frame) error {
@@ -70,7 +70,7 @@ func (s testSink) SendFrame(frame Frame) error {
 	return nil
 }
 
-func (s testSink) SendControl(message ControlMessage) error {
+func (s testSink) SendCaptureError(message CaptureErrorMessage) error {
 	if s.errors != nil {
 		s.errors <- message
 	}
@@ -85,7 +85,7 @@ func TestSourceReportsTerminalCaptureErrorToViewers(t *testing.T) {
 	)
 	sink := testSink{
 		frames: make(chan Frame, 1),
-		errors: make(chan ControlMessage, 1),
+		errors: make(chan CaptureErrorMessage, 1),
 	}
 	// Exercise this single broadcast without a concurrent automatic capture.
 	source.viewers["viewer-1"] = &sourceViewer{sink: sink}
@@ -99,7 +99,7 @@ func TestSourceReportsTerminalCaptureErrorToViewers(t *testing.T) {
 	}
 	select {
 	case message := <-sink.errors:
-		if message.Type != ControlMessageTypeError || message.Reason != ControlReasonPermissionDenied {
+		if message.Type != CaptureErrorMessageType || message.Reason != CaptureReasonPermissionDenied {
 			t.Fatalf("control = %+v, want mirror:error permission-denied", message)
 		}
 	case <-time.After(time.Second):
@@ -119,7 +119,7 @@ func TestSourceReportsCaptureFailureToHandler(t *testing.T) {
 	source := NewSource(testCapturer{err: cause}, time.Hour)
 	failures := make(chan error, 1)
 	source.SetCaptureFailureHandler(func(err error) { failures <- err })
-	sink := testSink{frames: make(chan Frame, 1), errors: make(chan ControlMessage, 1)}
+	sink := testSink{frames: make(chan Frame, 1), errors: make(chan CaptureErrorMessage, 1)}
 	source.AddViewer("viewer-1", sink)
 
 	// When
@@ -131,8 +131,8 @@ func TestSourceReportsCaptureFailureToHandler(t *testing.T) {
 	}
 	select {
 	case got := <-failures:
-		if !errors.Is(got, cause) || ControlReasonFromError(got) != ControlReasonPermissionDenied {
-			t.Fatalf("failure callback error = %v, reason = %q", got, ControlReasonFromError(got))
+		if !errors.Is(got, cause) || CaptureReasonFromError(got) != CaptureReasonPermissionDenied {
+			t.Fatalf("failure callback error = %v, reason = %q", got, CaptureReasonFromError(got))
 		}
 	case <-time.After(time.Second):
 		t.Fatal("capture failure handler was not invoked")
@@ -147,7 +147,7 @@ func TestSourceDoesNotReportContextCancellationAsCaptureError(t *testing.T) {
 	)
 	sink := testSink{
 		frames: make(chan Frame, 1),
-		errors: make(chan ControlMessage, 1),
+		errors: make(chan CaptureErrorMessage, 1),
 	}
 	// Exercise the cancelled call without a concurrent background capture.
 	source.viewers["viewer-1"] = &sourceViewer{sink: sink}

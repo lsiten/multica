@@ -151,7 +151,6 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"squad_collaboration_graph":          workspaceDelete,
 	"squad_collaboration_history":        workspaceDelete,
 	"quick_action":                       workspaceDelete,
-	"runtime_vscreen_intervention":       workspaceDelete,
 	"runtime_mirror_event":               workspaceDelete,
 	"runtime_profile":                    workspaceDelete,
 	"runtime_supervisor":                 workspaceDelete,

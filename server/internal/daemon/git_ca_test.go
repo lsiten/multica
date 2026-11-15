@@ -82,6 +82,10 @@ func TestApplyGitCACertsLogsPersistentFailureOnce(t *testing.T) {
 	}
 }
 
-func (c *caRecordingCache) CreateWorktreeContext(_ context.Context, params repocache.WorktreeParams) (*repocache.WorktreeResult,error) { return c.CreateWorktree(params) }
+func (c *caRecordingCache) CreateWorktreeContext(_ context.Context, params repocache.WorktreeParams) (*repocache.WorktreeResult, error) {
+	return c.CreateWorktree(params)
+}
 
-func (c *caRecordingCache) SyncContext(_ context.Context, workspaceID string, repos []repocache.RepoInfo) error { return c.Sync(workspaceID,repos) }
+func (c *caRecordingCache) SyncContext(_ context.Context, workspaceID string, repos []repocache.RepoInfo) error {
+	return c.Sync(workspaceID, repos)
+}

@@ -44,8 +44,20 @@ func (c *Client) BindTaskExecution(ctx context.Context, runtimeID, taskID string
 	if err != nil {
 		return nil, err
 	}
-	if response.TaskID != taskID || response.RuntimeID != runtimeID || response.WorkerID != request.WorkerID || !response.DispatchedAt.Equal(request.DispatchedAt) || uuid.Validate(response.ExecutionID) != nil {
-		return nil, errInvalidResponseBody
+	responseWorker, responseWorkerErr := uuid.Parse(response.WorkerID)
+	requestWorker, requestWorkerErr := uuid.Parse(request.WorkerID)
+	if response.TaskID != taskID || response.RuntimeID != runtimeID || responseWorkerErr != nil || requestWorkerErr != nil || responseWorker != requestWorker || !response.DispatchedAt.Equal(request.DispatchedAt) || uuid.Validate(response.ExecutionID) != nil {
+		return nil, fmt.Errorf(
+			"%w: task=%q runtime=%q worker=%q/%q dispatched=%s/%s execution=%q",
+			errInvalidResponseBody,
+			response.TaskID,
+			response.RuntimeID,
+			response.WorkerID,
+			request.WorkerID,
+			response.DispatchedAt.Format(time.RFC3339Nano),
+			request.DispatchedAt.Format(time.RFC3339Nano),
+			response.ExecutionID,
+		)
 	}
 	return &response, nil
 }

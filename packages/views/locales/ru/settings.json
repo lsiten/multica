@@ -1579,6 +1579,20 @@
         "environment": "Environment",
         "mirror": "Mirror"
       },
+      "states": {
+        "ready": "Готово",
+        "running": "Работает",
+        "starting": "Запуск",
+        "stopping": "Остановка",
+        "stopped": "Остановлено",
+        "failed": "Ошибка",
+        "unavailable": "Недоступно",
+        "offline": "Не в сети",
+        "disabled": "Отключено",
+        "downloaded": "Загружено",
+        "not_installed": "Не установлено",
+        "unknown": "Неизвестно"
+      },
       "memory": "Memory",
       "cpu": "CPU time",
       "usage": {

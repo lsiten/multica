@@ -369,6 +369,15 @@ function Install-Cli {
     }
 }
 
+function Install-AgentDesktop {
+    Write-Info "Installing pinned agent-desktop..."
+    & multica agent-desktop install
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Failed to install agent-desktop. Desktop automation will be unavailable until the pinned release is installed."
+    }
+    Write-Ok "agent-desktop is ready"
+}
+
 # ---------------------------------------------------------------------------
 # Docker check
 # ---------------------------------------------------------------------------
@@ -487,6 +496,7 @@ function Start-DefaultInstall {
     Write-Host ""
 
     Install-Cli
+    Install-AgentDesktop
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green
@@ -515,6 +525,7 @@ function Start-LocalInstall {
     Test-Docker
     Install-Server
     Install-Cli
+    Install-AgentDesktop
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green

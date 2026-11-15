@@ -196,7 +196,7 @@ it("loads file metadata and selected patches separately, and keeps only one patc
   vi.mocked(readReviewFile).mockImplementation(async (input) => ({ version_id: id, path: input.file_path ?? "", preview: "text", page: { lines: [{ text: input.offset ? "+second page" : "+first page", kind: "add", new_line: input.offset ? 2 : 1 }], next_line: input.offset ? 2 : 1, has_more: !input.offset } }));
   renderWithI18n(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><LocalReviewFileBrowser request={request} manifest={manifest} /></QueryClientProvider>, { locale: "zh-Hans" });
   await screen.findByText("+first page");
-  const initialScroller = screen.getByText("+first page").closest("pre")?.parentElement;
+  const initialScroller = screen.getByText("+first page").closest("[data-review-diff-scroll]");
   if (!initialScroller) throw new Error("Missing patch scroll container");
   initialScroller.scrollTop = 400;
   expect(readReviewFile).toHaveBeenCalledTimes(1);
@@ -205,7 +205,7 @@ it("loads file metadata and selected patches separately, and keeps only one patc
   expect(readReviewFile).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "下一段" }));
   await screen.findByText("+second page");
-  expect(screen.getByText("+second page").closest("pre")?.parentElement?.scrollTop).toBe(0);
+  expect(screen.getByText("+second page").closest("[data-review-diff-scroll]")?.scrollTop).toBe(0);
   expect(screen.queryByText("+first page")).not.toBeInTheDocument();
   expect(readReviewFile).toHaveBeenLastCalledWith(expect.objectContaining({ version_id: id, file_path: "a.ts", offset: 1 }), expect.any(AbortSignal));
   fireEvent.click(screen.getByRole("button", { name: "上一段" }));

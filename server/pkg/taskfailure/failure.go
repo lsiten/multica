@@ -110,9 +110,6 @@ const (
 	// system error.
 	ReasonAgentBlocked Reason = "agent_blocked"
 
-	// ReasonGUIHumanIntervention stops execution until an explicit verified continuation.
-	ReasonGUIHumanIntervention Reason = "gui_human_intervention"
-
 	// ReasonAPIInvalidRequest: the upstream LLM API rejected the
 	// request body with a 400 invalid_request_error (oversized image,
 	// malformed payload, etc.). The conversation history itself is
@@ -301,7 +298,6 @@ var allReasons = []Reason{
 	ReasonProcessCleanupBlocked,
 	ReasonIterationLimit,
 	ReasonAgentBlocked,
-	ReasonGUIHumanIntervention,
 	ReasonAPIInvalidRequest,
 	ReasonSkillBundleUnavailable,
 	ReasonRuntimeCLITimeout,

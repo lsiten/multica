@@ -81,8 +81,8 @@ func (h *Handler) confirmRequirement(ctx context.Context, issueID, workspaceID, 
 	return h.Queries.ConfirmRequirement(ctx, db.ConfirmRequirementParams{
 		ConfirmedRevision: pgtype.Int8{Int64: revision, Valid: true},
 		ConfirmedBy:       confirmedBy,
-		IssueID:         issueID,
-		WorkspaceID:     workspaceID,
+		IssueID:           issueID,
+		WorkspaceID:       workspaceID,
 	})
 }
 
@@ -218,4 +218,3 @@ func (h *Handler) currentDocumentRevision(ctx context.Context, issueID, workspac
 	}
 	return latest.Revision, nil
 }
-

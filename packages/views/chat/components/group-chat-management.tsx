@@ -32,6 +32,8 @@ export function GroupChatManagement({ session, agents }: { session: ChatSession;
   const [addOpen, setAddOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [addError, setAddError] = useState("");
+  const [titleError, setTitleError] = useState("");
   const participantsQuery = useQuery({
     queryKey: ["chat-group-participants", session.id],
     queryFn: () => api.listChatGroupParticipants(session.id),
@@ -65,22 +67,37 @@ export function GroupChatManagement({ session, agents }: { session: ChatSession;
 
   if (session.kind !== "group") return null;
 
-  const saveTitle = () => {
+  const saveTitle = async () => {
     const next = title.trim();
     if (!next || next === session.title) {
       setTitle(session.title ?? "");
       setEditingTitle(false);
       return;
     }
-    updateSession.mutate({ sessionId: session.id, title: next });
-    setEditingTitle(false);
+    setTitleError("");
+    try {
+      await updateSession.mutateAsync({ sessionId: session.id, title: next });
+      setEditingTitle(false);
+    } catch {
+      setTitleError(t(($) => $.group.save_name_failed));
+    }
   };
 
   const addSelected = async () => {
-    for (const memberId of selectedIds) {
-      await addParticipant.mutateAsync({ sessionId: session.id, memberId });
+    setAddError("");
+    const results = await Promise.allSettled(
+      selectedIds.map((memberId) =>
+        addParticipant.mutateAsync({ sessionId: session.id, memberId }),
+      ),
+    );
+    const failedIds = selectedIds.filter((_memberId, index) =>
+      results[index]?.status === "rejected",
+    );
+    setSelectedIds(failedIds);
+    if (failedIds.length > 0) {
+      setAddError(t(($) => $.group.add_selected_partial, { count: failedIds.length }));
+      return;
     }
-    setSelectedIds([]);
     setFilter("");
     setAddOpen(false);
   };
@@ -123,7 +140,14 @@ export function GroupChatManagement({ session, agents }: { session: ChatSession;
             <Input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              onKeyDown={(event) => { if (event.key === "Enter") saveTitle(); if (event.key === "Escape") { setTitle(session.title ?? ""); setEditingTitle(false); } }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void saveTitle();
+                if (event.key === "Escape") {
+                  setTitle(session.title ?? "");
+                  setTitleError("");
+                  setEditingTitle(false);
+                }
+              }}
               aria-label={t(($) => $.group.group_name)}
               autoFocus
               className="h-8 min-w-0"
@@ -132,7 +156,7 @@ export function GroupChatManagement({ session, agents }: { session: ChatSession;
             <p className="min-w-0 flex-1 truncate text-body font-semibold" title={session.title}>{session.title || t(($) => $.window.untitled)}</p>
           )}
           {editingTitle ? (
-            <Button type="button" size="icon-sm" variant="ghost" onClick={saveTitle} disabled={updateSession.isPending} aria-label={t(($) => $.group.save_name)}>
+            <Button type="button" size="icon-sm" variant="ghost" onClick={() => void saveTitle()} disabled={updateSession.isPending} aria-label={t(($) => $.group.save_name)}>
               <Save className="size-4" />
             </Button>
           ) : (
@@ -144,6 +168,7 @@ export function GroupChatManagement({ session, agents }: { session: ChatSession;
         <p className="mt-1 text-caption text-muted-foreground">
           {t(($) => $.group.lead_agent)} · {getActorName("agent", session.agent_id)}
         </p>
+        {titleError && <p role="alert" className="mt-2 text-caption text-destructive">{titleError}</p>}
       </div>
 
       <section className="px-3 py-3" aria-labelledby="group-members-heading">
@@ -163,13 +188,14 @@ export function GroupChatManagement({ session, agents }: { session: ChatSession;
         )}
       </section>
 
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog open={addOpen} onOpenChange={(open) => { setAddOpen(open); if (!open) setAddError(""); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t(($) => $.group.add_agents)}</DialogTitle>
             <DialogDescription>{t(($) => $.group.select_agents)}</DialogDescription>
           </DialogHeader>
           <Input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t(($) => $.window.agent_filter_placeholder)} aria-label={t(($) => $.window.agent_filter_placeholder)} />
+          {addError && <p role="alert" className="text-caption text-destructive">{addError}</p>}
           <div className="max-h-72 space-y-1 overflow-y-auto">
             {availableAgents.length === 0 ? (
               <p className="py-4 text-body text-muted-foreground">{t(($) => $.group.no_available_agents)}</p>

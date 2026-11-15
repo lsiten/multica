@@ -8,6 +8,12 @@ export {
   type TitleEditorProps,
   type TitleEditorRef,
 } from "./title-editor";
+export { CodeMirrorEditor } from "./code-mirror-editor";
+export {
+  CodeMirrorDiff,
+  type CodeMirrorDiffHandle,
+  type DiffAnnotationMarker,
+} from "./code-mirror-diff";
 export { ReadonlyContent } from "./readonly-content";
 export { useFileDropZone } from "./use-file-drop-zone";
 export { useUploadGate, type UploadGate } from "./use-upload-gate";

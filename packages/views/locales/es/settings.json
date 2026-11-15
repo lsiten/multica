@@ -1549,6 +1549,20 @@
         "environment": "Environment",
         "mirror": "Mirror"
       },
+      "states": {
+        "ready": "Listo",
+        "running": "En ejecución",
+        "starting": "Iniciando",
+        "stopping": "Deteniendo",
+        "stopped": "Detenido",
+        "failed": "Fallido",
+        "unavailable": "No disponible",
+        "offline": "Sin conexión",
+        "disabled": "Desactivado",
+        "downloaded": "Descargado",
+        "not_installed": "No instalado",
+        "unknown": "Desconocido"
+      },
       "memory": "Memory",
       "cpu": "CPU time",
       "usage": {

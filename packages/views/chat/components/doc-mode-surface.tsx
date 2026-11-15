@@ -1,6 +1,6 @@
 "use client";
 
-import { X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye, FilePlus } from "@multica/ui/icons";
+import { AlertTriangle, Check, X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye, FilePlus } from "@multica/ui/icons";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { autoUpdate, computePosition, flip, hide, offset, shift } from "@floating-ui/dom";
@@ -11,31 +11,52 @@ import {
   selectActiveDocument,
   selectWorking,
   selectDiffView,
+  documentDraftKey,
 } from "@multica/core/chat";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import {
   useDocumentContentVersionCurrent,
   useDocumentContentVersions,
+  useDeleteDocumentContentVersion,
   useRecordDocumentContentVersion,
   useRollbackDocumentContentVersion,
 } from "@multica/core/chat/document-content-version-queries";
 import { DocVersionHistory } from "./doc-version-history";
+import {
+  useDocumentAutosave,
+  type DocumentSaveStatus,
+} from "./use-document-autosave";
 import { RichContent } from "../../rich-content";
 import { Attachment } from "../../editor/attachment";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { applyReviewFileEdit, requestReviewPage } from "../../platform/local-review-pages";
 import { canOpenLocalPath, openLocalPath } from "../../platform";
 import { createSafeId } from "@multica/core/utils";
-import { api, ApiError } from "@multica/core/api";
+import { api } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
+import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
 import { useCreateIssue } from "@multica/core/issues/mutations";
 import { toast } from "sonner";
-import { FileViewer } from "../../skills/components/file-viewer";
 import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
+import { Input } from "@multica/ui/components/ui/input";
 import { CodeBlockStatic } from "../../editor/code-block-static";
-import { ContentEditor } from "../../editor";
+import { CodeMirrorEditor, ContentEditor } from "../../editor";
 import { languageForPath } from "../../common/task-transcript/diff-highlight";
 import type { Attachment as AttachmentRecord } from "@multica/core/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@multica/ui/components/ui/alert-dialog";
+import {
+  mergeDocumentVersions,
+  renderMergedDocument,
+} from "./document-merge";
 
 // A ref with an empty id keeps the content-versions hooks disabled (see their
 // `enabled: !!ref.id` guard) so they can be called unconditionally even when no
@@ -66,6 +87,29 @@ function localFilePath(root: string, relativePath: string): string | null {
   const normalized = relativePath.replaceAll("\\", "/").replace(/^\.\//, "");
   if (!normalized || normalized.startsWith("/") || normalized.split("/").some((part) => part === "..")) return null;
   return `${root.replace(/[\\/]+$/, "")}/${normalized}`;
+}
+
+function documentOutline(content: string): readonly {
+  readonly level: number;
+  readonly title: string;
+}[] {
+  return [...content.matchAll(/^(#{1,3})\s+(.+?)\s*#*\s*$/gm)]
+    .map((match) => ({
+      level: match[1]?.length ?? 1,
+      title: match[2]?.trim() ?? "",
+    }))
+    .filter((entry) => entry.title.length > 0);
+}
+
+function documentCounts(content: string): {
+  readonly words: number;
+  readonly characters: number;
+} {
+  const normalized = content.trim();
+  const words = normalized
+    ? normalized.match(/[\p{L}\p{N}_]+|[\u3400-\u9fff]/gu)?.length ?? 0
+    : 0;
+  return { words, characters: [...content].length };
 }
 
 /**
@@ -285,30 +329,77 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   const diffView = useDocModeStore(selectDiffView(sessionId));
   const closeDoc = useDocModeStore((s) => s.closeDoc);
   const setDiffView = useDocModeStore((s) => s.setDiffView);
+  const setDocumentDraft = useDocModeStore((s) => s.setDocumentDraft);
+  const clearDocumentDraft = useDocModeStore((s) => s.clearDocumentDraft);
   const record = useRecordDocumentContentVersion(wsId);
+  const deleteVersion = useDeleteDocumentContentVersion(wsId);
   const user = useAuthStore((s) => s.user);
+  const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const actorLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const member of members) labels[member.user_id] = member.name;
+    for (const agent of agents) labels[agent.id] = agent.name;
+    return labels;
+  }, [agents, members]);
   const [editing, setEditing] = useState(false);
   const [edited, setEdited] = useState("");
   const [editBase, setEditBase] = useState<{ readonly content: string; readonly revision: number; readonly contentType: string } | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [workspaceEditing, setWorkspaceEditing] = useState(false);
   const [workspaceEdited, setWorkspaceEdited] = useState("");
   const [workspaceEditBase, setWorkspaceEditBase] = useState("");
   const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
+  const [workspaceFullContent, setWorkspaceFullContent] = useState<string | null>(null);
+  const [workspaceFullLoading, setWorkspaceFullLoading] = useState(false);
+  const [workspaceFullError, setWorkspaceFullError] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
+  const [mergeChoices, setMergeChoices] = useState<Readonly<Record<string, "local" | "remote">>>({});
+  const [mergeSaving, setMergeSaving] = useState(false);
+  const [mergeError, setMergeError] = useState(false);
+  const [checkpointOpen, setCheckpointOpen] = useState(false);
+  const [checkpointNote, setCheckpointNote] = useState("");
+  const [cursor, setCursor] = useState({ line: 1, column: 1 });
 
-  const documentIdentity = `${doc?.sessionId ?? sessionId}:${doc?.kind ?? "none"}:${doc?.id ?? ""}:${doc?.taskId ?? ""}:${doc?.relativePath ?? ""}`;
+  const documentIdentity = `${doc?.sessionId ?? sessionId}:${doc?.kind ?? "none"}:${doc?.id ?? ""}:${doc?.taskId ?? ""}:${doc?.projectResourceId ?? ""}:${doc?.relativePath ?? ""}`;
+  const documentDraftId = doc ? documentDraftKey(doc) : null;
   useEffect(() => {
-    // The surface is reused across file/session switches. Local editor state
-    // must never survive onto the next document while its query is resolving.
-    setEditing(false);
-    setEdited("");
-    setEditBase(null);
-    setSaveError(null);
-    setWorkspaceEditing(false);
-    setWorkspaceEdited("");
+    // Restore a durable draft before the next document's queries settle.
+    const draft = documentDraftId
+      ? useDocModeStore.getState().draftsByDocument[documentDraftId]
+      : undefined;
+    setEditing(draft?.kind === "version");
+    setEdited(draft?.kind === "version" ? draft.content : "");
+    setEditBase(draft?.kind === "version" ? {
+      content: draft.baseContent,
+      revision: draft.baseRevision,
+      contentType: draft.contentType,
+    } : null);
+    setWorkspaceEditing(draft?.kind === "workspace_file");
+    setWorkspaceEdited(draft?.kind === "workspace_file" ? draft.content : "");
+    setWorkspaceEditBase(draft?.kind === "workspace_file" ? draft.baseContent : "");
     setWorkspaceSaveError(null);
-  }, [documentIdentity]);
+    setWorkspaceFullContent(null);
+    setWorkspaceFullLoading(false);
+    setWorkspaceFullError(false);
+    setConflictOpen(false);
+    setMergeChoices({});
+    setMergeError(false);
+    setCursor({ line: 1, column: 1 });
+  }, [documentDraftId, documentIdentity]);
+
+  const workspaceDirty = workspaceEditing && workspaceEdited !== workspaceEditBase;
+  const versionDirty = editing && edited !== editBase?.content;
+
+  useEffect(() => {
+    if (!workspaceDirty && !versionDirty) return;
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [versionDirty, workspaceDirty]);
 
   // Hooks must run unconditionally; the empty id disables the queries below.
   const activeRef = doc ?? EMPTY_DOC;
@@ -385,22 +476,74 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     enabled: !!workspaceRequest,
     staleTime: 60_000,
   });
-  const workspaceContentText =
+  const workspaceContentPage =
     workspaceRequest &&
     !workspaceContent.isFetching &&
     workspaceContent.data &&
     "path" in workspaceContent.data &&
     workspaceContent.data.path === workspaceRequest.relative_path
-      ? fileContentText(workspaceContent.data)
+      ? workspaceContent.data
       : null;
+  const workspaceContentText =
+    workspaceContentPage &&
+    "content" in workspaceContentPage &&
+    !workspaceContentPage.content.has_more
+      ? fileContentText(workspaceContentPage)
+      : null;
+  const workspaceReadableContent = workspaceFullContent ?? workspaceContentText;
+
+  const loadFullWorkspaceContent = useCallback(async () => {
+    if (!workspaceRequest) return;
+    setWorkspaceFullLoading(true);
+    setWorkspaceFullError(false);
+    try {
+      const chunks: string[] = [];
+      let offset = 0;
+      for (;;) {
+        const page = await requestReviewPage({
+          ...workspaceRequest,
+          offset,
+          limit: 64 * 1024,
+        });
+        if (
+          !("content" in page) ||
+          page.path !== workspaceRequest.relative_path
+        ) {
+          throw new Error("workspace full-content response mismatch");
+        }
+        chunks.push(page.content.text);
+        if (!page.content.has_more) break;
+        if (page.content.next_offset <= offset || chunks.length >= 1024) {
+          throw new Error("workspace full-content pagination did not advance");
+        }
+        offset = page.content.next_offset;
+      }
+      setWorkspaceFullContent(chunks.join(""));
+    } catch (error) {
+      if (error instanceof Error) setWorkspaceFullError(true);
+      else throw error;
+    } finally {
+      setWorkspaceFullLoading(false);
+    }
+  }, [workspaceRequest]);
 
   const openWorkspaceEdit = useCallback(() => {
-    if (workspaceContentText === null) return;
-    setWorkspaceEdited(workspaceContentText);
-    setWorkspaceEditBase(workspaceContentText);
+    if (workspaceReadableContent === null) return;
+    setWorkspaceEdited(workspaceReadableContent);
+    setWorkspaceEditBase(workspaceReadableContent);
     setWorkspaceSaveError(null);
     setWorkspaceEditing(true);
-  }, [workspaceContentText]);
+  }, [workspaceReadableContent]);
+
+  const updateWorkspaceDraft = useCallback((content: string) => {
+    setWorkspaceEdited(content);
+    if (!doc || doc.kind !== "workspace_file") return;
+    setDocumentDraft(doc, {
+      kind: "workspace_file",
+      content,
+      baseContent: workspaceEditBase,
+    });
+  }, [doc, setDocumentDraft, workspaceEditBase]);
 
   const saveWorkspaceEdit = useCallback(async () => {
     if (!doc || doc.kind !== "workspace_file" || !workspacePath || !workspaceRuntimeId || !workspaceRequest) return;
@@ -424,46 +567,365 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         await workspaceContent.refetch();
         return;
       }
+      clearDocumentDraft(doc);
       setWorkspaceEditing(false);
+      setWorkspaceEdited("");
+      setWorkspaceEditBase("");
       await workspaceContent.refetch();
     } catch {
       setWorkspaceSaveError("save_failed");
     } finally {
       setWorkspaceSaving(false);
     }
-  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEditBase, workspaceEdited]);
+  }, [clearDocumentDraft, doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEditBase, workspaceEdited]);
 
   const openEdit = useCallback(() => {
     if (current.data?.content == null) return;
-    setEditBase({ content: current.data.content, revision: current.data.owner_revision ?? current.data.revision, contentType: current.data.content_type ?? "text/markdown" });
-    setEdited(current.data.content);
-    setSaveError(null);
+    const editSnapshot = {
+      content: current.data.content,
+      revision: current.data.owner_revision ?? current.data.revision,
+      contentType: current.data.content_type ?? "text/markdown",
+    };
+    setEditBase(editSnapshot);
+    setEdited(editSnapshot.content);
     setEditing(true);
     setDiffView(sessionId, false);
   }, [current.data, setDiffView, sessionId]);
 
-  const save = useCallback(async () => {
-    if (!doc || !editBase || saveError === "changed_reload") return;
-    try {
-      await record.mutateAsync({
+  const updateVersionDraft = useCallback((content: string) => {
+    setEdited(content);
+    if (!doc || !editBase) return;
+    setDocumentDraft(doc, {
+      kind: "version",
+      content,
+      baseContent: editBase.content,
+      baseRevision: editBase.revision,
+      contentType: editBase.contentType,
+    });
+  }, [doc, editBase, setDocumentDraft]);
+
+  const persistVersion = useCallback(
+    async ({
+      content,
+      revision,
+      contentType,
+      merge,
+      note,
+    }: {
+      readonly content: string;
+      readonly revision: number;
+      readonly contentType: string;
+      readonly merge: boolean;
+      readonly note?: string;
+    }) => {
+      if (!doc) throw new Error("document unavailable");
+      return record.mutateAsync({
         ref: doc,
         input: {
-          content_type: editBase.contentType,
-          content: edited,
-          expected_revision: editBase.revision,
+          content_type: contentType,
+          content,
+          expected_revision: revision,
+          merge,
+          session_id: sessionId,
+          ...(note ? { note } : {}),
         },
       });
-      setEditing(false);
-      setSaveError(null);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        current.refetch();
-        setSaveError("changed_reload");
-      } else {
-        setSaveError("save_failed");
-      }
+    },
+    [doc, record, sessionId],
+  );
+  const openConflict = useCallback(() => {
+    setConflictOpen(true);
+    void current.refetch();
+  }, [current]);
+  const autosave = useDocumentAutosave({
+    enabled: editing && doc?.kind === "issue" && !!editBase,
+    content: edited,
+    base: editBase,
+    save: persistVersion,
+    onBaseChange: setEditBase,
+    onSaved: (next) => {
+      if (!doc) return;
+      clearDocumentDraft(doc);
+      setEditBase(next);
+    },
+    onConflict: openConflict,
+  });
+  useEffect(() => {
+    if (!editing) {
+      autosave.resetStatus("saved");
+      return;
     }
-  }, [record, doc, edited, current, editBase, saveError]);
+    const draft = doc ? useDocModeStore.getState().draftsByDocument[documentDraftKey(doc)] : undefined;
+    autosave.resetStatus(draft?.kind === "version" ? "dirty" : "saved");
+    // The document identity owns this status, not the previous document.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentIdentity, editing]);
+  const save = useCallback(() => {
+    void autosave.saveNow(true);
+  }, [autosave]);
+  const createCheckpoint = useCallback(() => {
+    setCheckpointNote("");
+    setCheckpointOpen(true);
+  }, []);
+  const finishEditing = useCallback(async () => {
+    if (!editing) return;
+    const saved = await autosave.saveNow(true);
+    if (saved || !versionDirty) {
+      setEditing(false);
+      setDiffView(sessionId, false);
+    }
+  }, [autosave, editing, sessionId, setDiffView, versionDirty]);
+  const leaveEditor = useCallback(() => {
+    if (versionDirty) void autosave.saveNow(true);
+    setEditing(false);
+    setDiffView(sessionId, false);
+  }, [autosave, sessionId, setDiffView, versionDirty]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const onShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      if (event.shiftKey && event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        setDiffView(sessionId, !diffView);
+      } else if (event.shiftKey && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        createCheckpoint();
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        void finishEditing();
+      }
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [
+    createCheckpoint,
+    diffView,
+    editing,
+    finishEditing,
+    sessionId,
+    setDiffView,
+  ]);
+  const closeDocument = () => {
+    setEditing(false);
+    setEdited("");
+    setEditBase(null);
+    setWorkspaceEditing(false);
+    setWorkspaceEdited("");
+    setWorkspaceEditBase("");
+    closeDoc(sessionId);
+  };
+  const latestContent = current.data?.content ?? null;
+  const latestBase = latestContent !== null && current.data
+    ? {
+        content: latestContent,
+        revision: current.data.owner_revision ?? current.data.revision,
+        contentType: current.data.content_type ?? editBase?.contentType ?? "text/markdown",
+      }
+    : null;
+  const conflictMerge = editBase && latestBase && conflictOpen
+    ? mergeDocumentVersions({
+        base: editBase.content,
+        local: edited,
+        remote: latestBase.content,
+      })
+    : null;
+  const mergedConflictContent = conflictMerge
+    ? renderMergedDocument(conflictMerge, mergeChoices)
+    : null;
+  const unresolvedConflicts = conflictMerge
+    ? conflictMerge.segments.filter(
+        (segment) => segment.kind === "conflict" && !mergeChoices[segment.id],
+      ).length
+    : 0;
+  useEffect(() => {
+    setMergeChoices({});
+    setMergeError(false);
+    setMergeSaving(false);
+  }, [latestBase?.revision]);
+  const keepLocalDraft = () => {
+    if (!latestBase) return;
+    setEditBase(latestBase);
+    autosave.rebase(latestBase);
+    setConflictOpen(false);
+    void autosave.saveNow(true);
+  };
+  const loadLatestVersion = () => {
+    if (!latestBase || !doc) return;
+    clearDocumentDraft(doc);
+    setEdited(latestBase.content);
+    setEditBase(latestBase);
+    setConflictOpen(false);
+    autosave.resetStatus("saved");
+  };
+  const saveMergedDraft = async () => {
+    if (!latestBase || !mergedConflictContent || !doc) return;
+    setMergeSaving(true);
+    setMergeError(false);
+    try {
+      const saved = await persistVersion({
+        content: mergedConflictContent,
+        revision: latestBase.revision,
+        contentType: latestBase.contentType,
+        merge: false,
+        note: t(($) => $.doc_mode.merge_resolution_note),
+      });
+      const nextBase = {
+        content: mergedConflictContent,
+        revision: saved.owner_revision ?? saved.revision,
+        contentType: latestBase.contentType,
+      };
+      setEdited(mergedConflictContent);
+      setEditBase(nextBase);
+      clearDocumentDraft(doc);
+      setConflictOpen(false);
+      autosave.resetStatus("saved");
+    } catch (error) {
+      if (error instanceof Error) setMergeError(true);
+      else throw error;
+    } finally {
+      setMergeSaving(false);
+    }
+  };
+  const conflictDialog = (
+    <AlertDialog open={conflictOpen} onOpenChange={setConflictOpen}>
+      <AlertDialogContent className="w-[calc(100vw-2rem)] !max-w-6xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t(($) => $.doc_mode.conflict_title)}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t(($) => $.doc_mode.merge_conflict_description)}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="grid max-h-[58dvh] gap-3 overflow-y-auto md:grid-cols-3">
+          <section className="min-w-0 rounded-md border bg-muted/30 p-3">
+            <h3 className="mb-2 text-caption font-medium">{t(($) => $.doc_mode.your_draft)}</h3>
+            <pre className="whitespace-pre-wrap break-words font-mono text-caption">{edited}</pre>
+          </section>
+          <section className="min-w-0 rounded-md border bg-muted/30 p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-caption font-medium">{t(($) => $.doc_mode.merge_result)}</h3>
+              <span className={`text-caption ${unresolvedConflicts ? "text-warning" : "text-success"}`}>
+                {unresolvedConflicts
+                  ? t(($) => $.doc_mode.merge_conflicts_remaining, {
+                      count: unresolvedConflicts,
+                    })
+                  : t(($) => $.doc_mode.merge_ready)}
+              </span>
+            </div>
+            {conflictMerge ? (
+              <div className="space-y-1 font-mono text-caption">
+                {conflictMerge.segments.map((segment) =>
+                  segment.kind === "lines" ? (
+                    <pre key={segment.id} className="whitespace-pre-wrap break-words">{segment.lines.join("\n")}</pre>
+                  ) : (
+                    <section
+                      key={segment.id}
+                      aria-label={t(($) => $.doc_mode.merge_conflict_block)}
+                      className="rounded-md border border-warning/40 bg-warning/5 p-2"
+                    >
+                      <div className="flex items-start gap-1.5 text-warning">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                        <span>{t(($) => $.doc_mode.merge_conflict_block)}</span>
+                      </div>
+                      {mergeChoices[segment.id] ? (
+                        <pre className="mt-2 whitespace-pre-wrap break-words">
+                          {(mergeChoices[segment.id] === "local" ? segment.local : segment.remote).join("\n")}
+                        </pre>
+                      ) : (
+                        <p className="mt-2 text-muted-foreground">{t(($) => $.doc_mode.merge_choose_side)}</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <Button
+                          size="xs"
+                          variant={mergeChoices[segment.id] === "local" ? "secondary" : "outline"}
+                          aria-pressed={mergeChoices[segment.id] === "local"}
+                          onClick={() => setMergeChoices((current) => ({ ...current, [segment.id]: "local" }))}
+                        >
+                          {mergeChoices[segment.id] === "local" && <Check aria-hidden="true" />}
+                          {t(($) => $.doc_mode.use_local_block)}
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant={mergeChoices[segment.id] === "remote" ? "secondary" : "outline"}
+                          aria-pressed={mergeChoices[segment.id] === "remote"}
+                          onClick={() => setMergeChoices((current) => ({ ...current, [segment.id]: "remote" }))}
+                        >
+                          {mergeChoices[segment.id] === "remote" && <Check aria-hidden="true" />}
+                          {t(($) => $.doc_mode.use_server_block)}
+                        </Button>
+                      </div>
+                    </section>
+                  ),
+                )}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">{t(($) => $.doc_mode.loading_latest)}</p>
+            )}
+          </section>
+          <section className="min-w-0 rounded-md border bg-muted/30 p-3">
+            <h3 className="mb-2 text-caption font-medium">{t(($) => $.doc_mode.latest_version)}</h3>
+            <pre className="whitespace-pre-wrap break-words font-mono text-caption">{latestContent ?? t(($) => $.doc_mode.loading_latest)}</pre>
+          </section>
+        </div>
+        {mergeError && (
+          <p role="alert" className="text-caption text-destructive">
+            {t(($) => $.doc_mode.merge_save_failed)}
+          </p>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t(($) => $.doc_mode.keep_editing)}</AlertDialogCancel>
+          <Button variant="outline" disabled={!latestBase} onClick={loadLatestVersion}>
+            {t(($) => $.doc_mode.load_latest)}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!mergedConflictContent || unresolvedConflicts > 0 || mergeSaving}
+            onClick={() => void saveMergedDraft()}
+          >
+            {mergeSaving ? <Loader2 className="animate-spin" aria-hidden="true" /> : <GitCompare aria-hidden="true" />}
+            {t(($) => $.doc_mode.save_merged)}
+          </Button>
+          <AlertDialogAction disabled={!latestBase} onClick={keepLocalDraft}>
+            {t(($) => $.doc_mode.keep_my_draft)}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+  const checkpointDialog = (
+    <AlertDialog open={checkpointOpen} onOpenChange={setCheckpointOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t(($) => $.doc_mode.checkpoint_title)}</AlertDialogTitle>
+          <AlertDialogDescription>{t(($) => $.doc_mode.checkpoint_description)}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <Input
+          autoFocus
+          aria-label={t(($) => $.doc_mode.checkpoint_note)}
+          value={checkpointNote}
+          maxLength={200}
+          onChange={(event) => setCheckpointNote(event.target.value)}
+          placeholder={t(($) => $.doc_mode.checkpoint_note)}
+        />
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t(($) => $.doc_mode.cancel)}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              setCheckpointOpen(false);
+              void autosave.saveNow(false, checkpointNote.trim() || undefined);
+            }}
+          >
+            {t(($) => $.doc_mode.save_checkpoint)}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+  const saveError = autosave.status === "conflict"
+    ? "changed_reload"
+    : autosave.status === "error"
+      ? "save_failed"
+      : null;
 
   if (!doc) return null;
 
@@ -484,7 +946,12 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     return (
       <div className="flex h-full flex-col min-h-0">
         <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-          <h2 className="max-w-full truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="max-w-full truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
+            <DocumentSaveIndicator
+              status={workspaceSaving ? "saving" : workspaceDirty ? "dirty" : "saved"}
+            />
+          </div>
         <div className="flex flex-wrap items-center gap-1">
           {officePath && canOpenLocalPath() && (
             <Button
@@ -497,19 +964,19 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
               {t(($) => $.doc_mode.open_in_office)}
             </Button>
           )}
-          {workspaceContentText !== null && !doc.projectResourceId && (
+          {workspaceReadableContent !== null && !doc.projectResourceId && (
             <Button variant={workspaceEditing ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={openWorkspaceEdit} disabled={workspaceEditing}>
               <Pencil className="h-4 w-4" />
               {t(($) => $.doc_mode.edit)}
             </Button>
           )}
-          {onAddToChat && workspaceContentText !== null && (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat(documentQuote(doc.relativePath ?? doc.label ?? "File", workspaceContentText))}>
+          {onAddToChat && workspaceReadableContent !== null && (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat(documentQuote(doc.relativePath ?? doc.label ?? "File", workspaceReadableContent))}>
               <MessageSquareQuote className="h-4 w-4" />
               {t(($) => $.doc_mode.add_to_chat)}
             </Button>
           )}
-          <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => closeDoc(sessionId)}>
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={closeDocument}>
             <X className="h-4 w-4" />
             {t(($) => $.doc_mode.close)}
           </Button>
@@ -519,32 +986,43 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         <DocEdit
           label={doc.relativePath ?? doc.label ?? "File"}
           content={workspaceEdited}
-          dirty={workspaceEdited !== workspaceEditBase}
           saving={workspaceSaving}
           error={workspaceSaveError}
-          onChange={setWorkspaceEdited}
+          onChange={updateWorkspaceDraft}
           onSave={() => void saveWorkspaceEdit()}
-          onCancel={() => { setWorkspaceEditing(false); setWorkspaceSaveError(null); }}
+          onCancel={() => {
+            setWorkspaceEditing(false);
+            setWorkspaceEdited("");
+            setWorkspaceEditBase("");
+            setWorkspaceSaveError(null);
+          }}
           markdown={/\.mdx?$/i.test(doc.relativePath ?? doc.label ?? "")}
-          saveLabel={t(($) => $.doc_mode.save)}
+          saveLabel={t(($) => $.doc_mode.apply_to_workspace)}
           savingLabel={t(($) => $.doc_mode.saving)}
-          discardLabel={t(($) => $.doc_mode.discard)}
+          doneLabel={t(($) => $.doc_mode.done)}
           changeLabel={t(($) => $.doc_mode.changed_reload)}
           failLabel={t(($) => $.doc_mode.save_failed)}
+          saveShortcutLabel={t(($) => $.doc_mode.save_shortcut)}
+          onCursorChange={setCursor}
+          preserveDraftOnCancel
         />
       ) : (
         <WorkspaceFileBody
           loading={workspaceContent.isLoading || (!!doc.taskId && !sessionFiles && !workspacePath)}
           error={workspaceContent.isError || !workspacePath || !workspaceRuntimeId}
           onRetry={() => { void workspaceContent.refetch(); }}
-          content={fileContent?.text ?? null}
-          truncated={fileContent?.has_more ?? false}
+          content={workspaceFullContent ?? fileContent?.text ?? null}
+          truncated={workspaceFullContent === null && (fileContent?.has_more ?? false)}
           total={fileContent?.size ?? 0}
+          fullLoading={workspaceFullLoading}
+          fullError={workspaceFullError}
+          onLoadFull={() => void loadFullWorkspaceContent()}
           label={doc.relativePath ?? doc.label ?? "File"}
           path={doc.relativePath ?? doc.label ?? "File"}
           onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(doc.relativePath ?? doc.label ?? "File", selection)) : undefined}
         />
       )}
+      {conflictDialog}
       </div>
     );
   }
@@ -562,9 +1040,15 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   return (
     <div className="flex h-full flex-col min-h-0">
       <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-        <h2 className="max-w-full truncate text-body font-semibold">
-          {doc.label ?? (doc.kind === "issue" ? t(($) => $.doc_mode.issue) : t(($) => $.doc_mode.attachment))}
-        </h2>
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="max-w-full truncate text-body font-semibold">
+            {doc.label ?? (doc.kind === "issue" ? t(($) => $.doc_mode.issue) : t(($) => $.doc_mode.attachment))}
+          </h2>
+          <DocumentSaveIndicator
+            status={autosave.status}
+            lastSavedAt={autosave.lastSavedAt}
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-1">
           {canEdit && (
             <Button
@@ -591,13 +1075,13 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
             onClick={() => setDiffView(sessionId, !diffView)}
           >
             <GitCompare className="h-4 w-4" />
-            {t(($) => $.doc_mode.diff)}
+            {t(($) => $.doc_mode.history)}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             className="gap-1.5"
-            onClick={() => closeDoc(sessionId)}
+            onClick={closeDocument}
           >
             <X className="h-4 w-4" />
             {t(($) => $.doc_mode.close)}
@@ -605,58 +1089,91 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {editing ? (
-          <DocEdit
-            label={doc.label ?? "Document"}
-            content={edited}
-            dirty={edited !== editBase?.content}
-            saving={record.isPending}
-            error={saveError}
-            onChange={setEdited}
-            onSave={save}
-            onCancel={() => {
-              setEditing(false);
-              setSaveError(null);
-            }}
-            markdown={isText && (doc.contentType?.toLowerCase().split(";", 1)[0] === "text/markdown" || /\.mdx?$/i.test(doc.label ?? ""))}
-            saveLabel={t(($) => $.doc_mode.save)}
-            savingLabel={t(($) => $.doc_mode.saving)}
-            discardLabel={t(($) => $.doc_mode.discard)}
-            changeLabel={t(($) => $.doc_mode.changed_reload)}
-            failLabel={t(($) => $.doc_mode.save_failed)}
-          />
-        ) : diffView ? (
-          <DocVersionHistory
-            versions={versions.data ?? []}
-            current={current.data}
-            diffLabel={t(($) => $.doc_mode.diff)}
-            loading={versions.isLoading}
-            onRollback={(revision) => rollback.mutate({ ref: doc, revision })}
-            rollbackLabel={t(($) => $.doc_mode.rollback)}
-          />
-        ) : (
-          <DocBody
-            loading={isTextAttachment ? attachmentTextContent.isLoading : binaryAttachment && attachmentRecord ? false : current.isLoading}
-            error={isTextAttachment ? attachmentTextContent.isError : binaryAttachment && attachmentRecord ? false : current.isError}
-            onRetry={() => { void (isTextAttachment ? attachmentTextContent.refetch() : current.refetch()); }}
-            content={bodyContent}
-            contentUrl={current.data?.content_url ?? null}
-            attachment={attachmentRecord}
-            contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
-            isText={isText}
-            label={doc.label ?? "Document"}
-            onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(doc.label ?? "Document", selection)) : undefined}
-            parentIssueId={doc.kind === "issue" ? doc.id : undefined}
-          />
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1">
+          {doc.kind === "issue" && (
+            <aside className="hidden w-52 shrink-0 overflow-y-auto border-r bg-muted/10 p-3 xl:block" aria-label={t(($) => $.doc_mode.outline)}>
+              <DocOutline content={editing ? edited : bodyContent ?? ""} />
+            </aside>
+          )}
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            {editing ? (
+              <DocEdit
+                label={doc.label ?? "Document"}
+                content={edited}
+                saving={autosave.status === "saving"}
+                error={saveError}
+                onChange={updateVersionDraft}
+                onAutosave={save}
+                onSave={createCheckpoint}
+                onSaveAndRead={() => void finishEditing()}
+                onCancel={leaveEditor}
+                onCursorChange={setCursor}
+                markdown={isText && (doc.contentType?.toLowerCase().split(";", 1)[0] === "text/markdown" || /\.mdx?$/i.test(doc.label ?? ""))}
+                saveLabel={t(($) => $.doc_mode.save_checkpoint)}
+                savingLabel={t(($) => $.doc_mode.saving)}
+                doneLabel={t(($) => $.doc_mode.done)}
+                changeLabel={t(($) => $.doc_mode.changed_reload)}
+                failLabel={t(($) => $.doc_mode.save_failed)}
+                saveShortcutLabel={t(($) => $.doc_mode.save_shortcut)}
+                preserveDraftOnCancel
+              />
+            ) : (
+            <DocBody
+              loading={isTextAttachment ? attachmentTextContent.isLoading : binaryAttachment && attachmentRecord ? false : current.isLoading}
+              error={isTextAttachment ? attachmentTextContent.isError : binaryAttachment && attachmentRecord ? false : current.isError}
+              onRetry={() => { void (isTextAttachment ? attachmentTextContent.refetch() : current.refetch()); }}
+              content={bodyContent}
+              contentUrl={current.data?.content_url ?? null}
+              attachment={attachmentRecord}
+              contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
+              isText={isText}
+              label={doc.label ?? "Document"}
+              onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(doc.label ?? "Document", selection)) : undefined}
+              parentIssueId={doc.kind === "issue" ? doc.id : undefined}
+            />
+            )}
+          </div>
+        </div>
+        {diffView && (
+          <aside className="absolute inset-0 z-10 flex w-full shrink-0 flex-col overflow-hidden border-l bg-card md:static md:w-80">
+            <div className="flex items-center justify-between border-b px-3 py-2">
+              <h3 className="text-caption font-semibold">{t(($) => $.doc_mode.history)}</h3>
+              <Button size="icon-xs" variant="ghost" aria-label={t(($) => $.doc_mode.close_history)} onClick={() => setDiffView(sessionId, false)}>
+                <X aria-hidden="true" />
+              </Button>
+            </div>
+            <DocVersionHistory
+              versions={versions.data ?? []}
+              current={current.data}
+              actorLabels={actorLabels}
+              diffLabel={t(($) => $.doc_mode.diff)}
+              loading={versions.isLoading}
+              onRollback={(revision) => rollback.mutate({ ref: doc, revision })}
+              onDelete={(revision) => deleteVersion.mutateAsync({ ref: doc, revision })}
+              onAddToChat={onAddToChat ? (content) => onAddToChat(documentQuote(doc.label ?? "Document", content)) : undefined}
+              rollbackLabel={t(($) => $.doc_mode.rollback)}
+              rollbackConfirmTitle={t(($) => $.doc_mode.rollback_confirm_title)}
+              rollbackConfirmDescription={t(($) => $.doc_mode.rollback_confirm_description)}
+              cancelLabel={t(($) => $.doc_mode.cancel)}
+            />
+          </aside>
         )}
       </div>
 
+      <DocumentStatusBar
+        content={editing ? edited : bodyContent ?? ""}
+        cursor={cursor}
+        draft={versionDirty || workspaceDirty}
+        editing={editing || workspaceEditing}
+      />
       <FloatingWorkingIndicator
         working={working}
         label={doc.label ?? "Document"}
         workingLabel={t(($) => $.doc_mode.working)}
       />
+      {conflictDialog}
+      {checkpointDialog}
     </div>
   );
 }
@@ -738,6 +1255,131 @@ function DocBody({
   );
 }
 
+function DocumentSaveIndicator({
+  status,
+  lastSavedAt,
+}: {
+  readonly status: DocumentSaveStatus;
+  readonly lastSavedAt?: number | null;
+}) {
+  const { t } = useT("chat");
+  const locale = useLocale();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status !== "saved" || lastSavedAt === null || lastSavedAt === undefined) {
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [lastSavedAt, status]);
+  const elapsed = lastSavedAt ? Math.max(0, Math.floor((now - lastSavedAt) / 1_000)) : 0;
+  const label =
+    status === "saving"
+      ? t(($) => $.doc_mode.saving)
+      : status === "offline"
+        ? t(($) => $.doc_mode.offline_draft)
+        : status === "conflict"
+          ? t(($) => $.doc_mode.conflict_short)
+          : status === "error"
+            ? t(($) => $.doc_mode.save_failed)
+            : status === "dirty"
+              ? t(($) => $.doc_mode.local_draft)
+              : lastSavedAt === null || lastSavedAt === undefined
+                ? t(($) => $.doc_mode.saved)
+                : elapsed < 5
+                  ? t(($) => $.doc_mode.auto_saved)
+                  : elapsed < 60
+                    ? t(($) => $.doc_mode.saved_seconds_ago, { count: elapsed })
+                    : t(($) => $.doc_mode.saved_minutes_ago, { count: Math.floor(elapsed / 60) })
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      title={
+        status === "saved" && lastSavedAt
+          ? new Date(lastSavedAt).toLocaleTimeString(locale)
+          : undefined
+      }
+      className={
+        status === "conflict" || status === "error"
+          ? "shrink-0 text-caption text-destructive"
+          : status === "offline"
+            ? "shrink-0 text-caption text-warning"
+            : "shrink-0 text-caption text-muted-foreground"
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
+function DocOutline({ content }: { readonly content: string }) {
+  const { t } = useT("chat");
+  const headings = documentOutline(content);
+  return (
+    <div>
+      <h3 className="mb-3 text-caption font-semibold text-muted-foreground">
+        {t(($) => $.doc_mode.outline)}
+      </h3>
+      {headings.length ? (
+        <ol className="space-y-1">
+          {headings.map((heading, index) => (
+            <li
+              key={`${heading.level}:${heading.title}:${index}`}
+              className="break-words text-caption text-muted-foreground"
+              style={{ paddingInlineStart: `${(heading.level - 1) * 0.75}rem` }}
+            >
+              {heading.title}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-caption text-faint-foreground">
+          {t(($) => $.doc_mode.no_outline)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DocumentStatusBar({
+  content,
+  cursor,
+  draft,
+  editing,
+}: {
+  readonly content: string;
+  readonly cursor: { readonly line: number; readonly column: number };
+  readonly draft: boolean;
+  readonly editing: boolean;
+}) {
+  const { t } = useT("chat");
+  const counts = useMemo(() => documentCounts(content), [content]);
+  return (
+    <footer className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-t px-3 py-1 text-caption text-muted-foreground">
+      {editing && (
+        <span className="tabular-nums">
+          {t(($) => $.doc_mode.cursor_position, cursor)}
+        </span>
+      )}
+      <span className="tabular-nums">
+        {t(($) => $.doc_mode.word_count, { count: counts.words })}
+      </span>
+      <span className="tabular-nums">
+        {t(($) => $.doc_mode.character_count, { count: counts.characters })}
+      </span>
+      {draft && (
+        <span className="text-warning">{t(($) => $.doc_mode.local_draft)}</span>
+      )}
+      {editing && (
+        <span className="ml-auto hidden md:inline">
+          {t(($) => $.doc_mode.editor_shortcuts)}
+        </span>
+      )}
+    </footer>
+  );
+}
+
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
@@ -752,6 +1394,9 @@ function WorkspaceFileBody({
   content,
   truncated,
   total,
+  fullLoading,
+  fullError,
+  onLoadFull,
   label,
   onAddToChat,
   path,
@@ -762,6 +1407,9 @@ function WorkspaceFileBody({
   content: string | null;
   truncated: boolean;
   total: number;
+  fullLoading?: boolean;
+  fullError?: boolean;
+  onLoadFull?: () => void;
   label: string;
   onAddToChat?: (selection: string) => void;
   path: string;
@@ -801,9 +1449,16 @@ function WorkspaceFileBody({
       </div>
       {bubble}
       {truncated && (
-        <p className="border-t px-6 py-2 text-caption text-muted-foreground">
-          {t(($) => $.doc_mode.truncated, { total: formatBytes(total) })}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t px-6 py-2 text-caption text-muted-foreground">
+          <span>{t(($) => $.doc_mode.truncated, { total: formatBytes(total) })}</span>
+          {onLoadFull && (
+            <Button size="xs" variant="outline" disabled={fullLoading} onClick={onLoadFull}>
+              {fullLoading && <Loader2 className="animate-spin" aria-hidden="true" />}
+              {t(($) => $.doc_mode.load_full_content)}
+            </Button>
+          )}
+          {fullError && <span role="alert" className="text-destructive">{t(($) => $.doc_mode.load_full_failed)}</span>}
+        </div>
       )}
     </div>
   );
@@ -833,46 +1488,83 @@ function FloatingWorkingIndicator({
 }
 
 // Scope 1: a human edits the requirement document's Markdown body in place. The
-// editor is the same FileViewer the skill pages use (a raw text/code editor,
-// "codex-like"). Save commits a new content version; the server appends it and
+// editor is a CodeMirror source surface shared with code-oriented views. Save
+// creates a named content checkpoint; the server appends it and
 // a confirmed requirement is auto-reopened to change (maybeReopenRequirementOnEdit).
 // The draft is never clobbered by a concurrent current-version change: on a 409
 // conflict the user sees the message and reloads, rather than losing their edits.
 function DocEdit({
   label,
   content,
-  dirty,
   saving,
   error,
   onChange,
+  onAutosave,
   onSave,
+  onSaveAndRead,
   onCancel,
+  onCursorChange,
   saveLabel,
   savingLabel,
-  discardLabel,
+  doneLabel,
   changeLabel,
   failLabel,
+  saveShortcutLabel,
   markdown = false,
+  preserveDraftOnCancel = false,
 }: {
   label: string;
   content: string;
-  dirty: boolean;
   saving: boolean;
   error: string | null;
   onChange: (content: string) => void;
+  onAutosave?: () => void;
   onSave: () => void;
+  onSaveAndRead?: () => void;
   onCancel: () => void;
+  onCursorChange?: (position: {
+    readonly line: number;
+    readonly column: number;
+  }) => void;
   saveLabel: string;
   savingLabel: string;
-  discardLabel: string;
+  doneLabel: string;
   changeLabel: string;
   failLabel: string;
+  saveShortcutLabel: string;
   markdown?: boolean;
+  preserveDraftOnCancel?: boolean;
 }) {
   const { t } = useT("chat");
   const [mode, setMode] = useState<"source" | "preview">("source");
+  useEffect(() => {
+    if (!preserveDraftOnCancel) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && mode === "preview") {
+        event.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mode, onCancel, preserveDraftOnCancel]);
   return (
-    <div className="flex h-full flex-col min-h-0">
+    <div
+      className="flex h-full flex-col min-h-0"
+      onKeyDown={(event) => {
+        if (!markdown || mode !== "preview") return;
+        if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          onSave();
+        } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          onAutosave?.();
+        } else if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          onSaveAndRead?.();
+        }
+      }}
+    >
       {markdown && (
         <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
           <Button
@@ -897,7 +1589,7 @@ function DocEdit({
           </Button>
         </div>
       )}
-      <div className="min-h-0 flex-1">
+      <div className="mx-auto min-h-0 w-full max-w-3xl flex-1">
         {markdown && mode === "preview" ? (
           <ContentEditor
             value={content}
@@ -906,13 +1598,16 @@ function DocEdit({
             showBubbleMenu
           />
         ) : (
-          <FileViewer
+          <CodeMirrorEditor
             path={label || "document"}
-            content={content}
-            mode="raw"
-            readOnly={false}
-            autoFocus
+            label={label || t(($) => $.doc_mode.source)}
+            value={content}
             onChange={onChange}
+            onSave={onAutosave ?? onSave}
+            onCheckpoint={onSave}
+            onExit={onCancel}
+            onCursorChange={onCursorChange}
+            autoFocus
           />
         )}
       </div>
@@ -926,13 +1621,19 @@ function DocEdit({
         </div>
       ) : null}
       <div className="flex items-center justify-between gap-2 border-t px-4 py-2">
-        <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
-          {discardLabel}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onCancel}
+          disabled={saving}
+        >
+          {doneLabel}
         </Button>
         <Button
           size="sm"
           onClick={onSave}
-          disabled={!dirty || saving || error === "changed_reload"}
+          disabled={saving || error === "changed_reload"}
+          title={saveShortcutLabel}
         >
           {saving ? savingLabel : saveLabel}
         </Button>

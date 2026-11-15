@@ -35,7 +35,7 @@ func (s *TaskService) AcceptProgressReview(ctx context.Context, issue db.Issue, 
 		return accepted, err
 	}
 	err := s.runInTx(ctx, func(q *db.Queries) error {
-		if _, err := q.LockVscreenWorkspace(ctx, issue.WorkspaceID); err != nil {
+		if _, err := q.LockWorkspaceForChatSessionCreate(ctx, issue.WorkspaceID); err != nil {
 			return err
 		}
 		if _, err := q.LockActiveMember(ctx, db.LockActiveMemberParams{UserID: memberID, WorkspaceID: issue.WorkspaceID}); err != nil {
@@ -254,7 +254,7 @@ func (s *TaskService) PerformProgressAction(ctx context.Context, issue db.Issue,
 	replayed := false
 	var reply db.Comment
 	err = s.runInTx(ctx, func(q *db.Queries) error {
-		if _, err := q.LockVscreenWorkspace(ctx, issue.WorkspaceID); err != nil {
+		if _, err := q.LockWorkspaceForChatSessionCreate(ctx, issue.WorkspaceID); err != nil {
 			return err
 		}
 		if _, err := q.LockActiveMember(ctx, db.LockActiveMemberParams{UserID: memberID, WorkspaceID: issue.WorkspaceID}); err != nil {

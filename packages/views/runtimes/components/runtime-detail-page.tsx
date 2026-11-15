@@ -48,6 +48,7 @@ import {
 } from "./runtime-machines";
 import { RenameMachineDialog } from "./rename-machine-dialog";
 import { MachineMirrorAction } from "./runtime-mirror-action";
+import { AgentDesktopReadinessSection } from "./agent-desktop-readiness";
 import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
 import { pendingRuntimesForProfiles } from "./pending-runtime";
 import {
@@ -300,7 +301,15 @@ export function RuntimeDetailPage({
             )}
           </>
         }
-        panel={<MachineProperties machine={machine} members={members} />}
+        panel={
+          <MachineProperties
+            machine={machine}
+            members={members}
+            canRepairDesktop={isAdmin || machine.runtimes.some(
+              (runtime) => runtime.owner_id === currentUserId,
+            )}
+          />
+        }
       >
         <div className={cn(OBJECT_PAGE_BODY, "space-y-8")}>
           <ObjectIdentity
@@ -427,9 +436,11 @@ function MachineActionsMenu({ onRename }: { onRename: () => void }) {
 function MachineProperties({
   machine,
   members,
+  canRepairDesktop,
 }: {
   machine: RuntimeMachine;
   members: MemberWithUser[];
+  canRepairDesktop: boolean;
 }) {
   const { t } = useT("runtimes");
   const { t: tLayout } = useT("layout");
@@ -439,63 +450,74 @@ function MachineProperties({
   const owner = ownerId
     ? members.find((member) => member.user_id === ownerId) ?? null
     : null;
+  const desktopRuntime = machine.runtimes.find(
+    (runtime) => runtime.runtime_mode === "local",
+  );
   const busy = machine.runningCount + machine.queuedCount > 0;
   const daemonShort = shortDaemonId(machine.daemonId);
 
   return (
-    <ObjectPanelSection title={tLayout(($) => $.object_page.properties)}>
-      <ObjectProperty label={t(($) => $.page.columns.status)}>
-        <HealthIcon health={machine.health} />
-        <span className="truncate">
-          {healthLabel(machine.health)}
-          {machine.lastSeenAt && machine.health !== "online"
-            ? ` · ${timeAgo(machine.lastSeenAt)}`
-            : null}
-        </span>
-      </ObjectProperty>
-      <ObjectProperty label={t(($) => $.detail.fact_owner)}>
-        {owner ? (
-          <>
-            <ActorAvatar
-              actorType="member"
-              actorId={owner.user_id}
-              size="xs"
-              enableHoverCard
-            />
-            <span className="truncate">{owner.name}</span>
-          </>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </ObjectProperty>
-      <ObjectProperty label={t(($) => $.detail.fact_device)}>
-        <span className={machine.deviceSummary ? "truncate" : "text-muted-foreground"}>
-          {machine.deviceSummary ?? "—"}
-        </span>
-      </ObjectProperty>
-      <ObjectProperty label={t(($) => $.page.columns.harness)}>
-        {machine.providerNames.length > 0 ? (
-          <ProviderIconStack providers={machine.providerNames} />
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </ObjectProperty>
-      <ObjectProperty label={t(($) => $.page.columns.workload)}>
-        <span className={busy ? "truncate tabular-nums" : "text-muted-foreground"}>
-          {busy
-            ? t(($) => $.machine.metrics.workload_hint, {
-                running: machine.runningCount,
-                queued: machine.queuedCount,
-              })
-            : t(($) => $.machine.metrics.workload_idle)}
-        </span>
-      </ObjectProperty>
-      {daemonShort && (
-        <ObjectProperty label={t(($) => $.detail.fact_daemon_id)}>
-          <span className="truncate font-mono">{daemonShort}</span>
+    <div className="space-y-5">
+      <ObjectPanelSection title={tLayout(($) => $.object_page.properties)}>
+        <ObjectProperty label={t(($) => $.page.columns.status)}>
+          <HealthIcon health={machine.health} />
+          <span className="truncate">
+            {healthLabel(machine.health)}
+            {machine.lastSeenAt && machine.health !== "online"
+              ? ` · ${timeAgo(machine.lastSeenAt)}`
+              : null}
+          </span>
         </ObjectProperty>
+        <ObjectProperty label={t(($) => $.detail.fact_owner)}>
+          {owner ? (
+            <>
+              <ActorAvatar
+                actorType="member"
+                actorId={owner.user_id}
+                size="xs"
+                enableHoverCard
+              />
+              <span className="truncate">{owner.name}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </ObjectProperty>
+        <ObjectProperty label={t(($) => $.detail.fact_device)}>
+          <span className={machine.deviceSummary ? "truncate" : "text-muted-foreground"}>
+            {machine.deviceSummary ?? "—"}
+          </span>
+        </ObjectProperty>
+        <ObjectProperty label={t(($) => $.page.columns.harness)}>
+          {machine.providerNames.length > 0 ? (
+            <ProviderIconStack providers={machine.providerNames} />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </ObjectProperty>
+        <ObjectProperty label={t(($) => $.page.columns.workload)}>
+          <span className={busy ? "truncate tabular-nums" : "text-muted-foreground"}>
+            {busy
+              ? t(($) => $.machine.metrics.workload_hint, {
+                  running: machine.runningCount,
+                  queued: machine.queuedCount,
+                })
+              : t(($) => $.machine.metrics.workload_idle)}
+          </span>
+        </ObjectProperty>
+        {daemonShort && (
+          <ObjectProperty label={t(($) => $.detail.fact_daemon_id)}>
+            <span className="truncate font-mono">{daemonShort}</span>
+          </ObjectProperty>
+        )}
+      </ObjectPanelSection>
+      {desktopRuntime && (
+        <AgentDesktopReadinessSection
+          runtime={desktopRuntime}
+          canRepair={canRepairDesktop}
+        />
       )}
-    </ObjectPanelSection>
+    </div>
   );
 }
 

@@ -1,0 +1,87 @@
+package daemon
+
+import (
+	"context"
+	"time"
+
+	"github.com/multica-ai/multica/server/internal/mirror"
+)
+
+type mirrorConnectionGeneration uint64
+
+func (d *Daemon) beginMirrorControlConnection(parent context.Context) (mirrorConnectionGeneration, context.Context, context.CancelFunc) {
+	d.mu.Lock()
+	cancelPrevious := d.mirrorConnectionCancel
+	existingMirrors := make([]*mirror.RuntimeMirror, 0, len(d.runtimeMirrors))
+	for _, runtimeMirror := range d.runtimeMirrors {
+		existingMirrors = append(existingMirrors, runtimeMirror)
+	}
+	d.mirrorConnectionGeneration++
+	generation := d.mirrorConnectionGeneration
+	ctx, cancel := context.WithCancel(parent)
+	d.mirrorConnectionCancel = cancel
+	d.mu.Unlock()
+	if cancelPrevious != nil {
+		cancelPrevious()
+	}
+	closeCtx, closeCancel := context.WithTimeout(parent, 5*time.Second)
+	defer closeCancel()
+	for _, runtimeMirror := range existingMirrors {
+		if err := runtimeMirror.CloseUnattachedPeers(closeCtx); err != nil {
+			d.logger.Debug("close unattached mirror peers failed", "error", err)
+		}
+	}
+	return generation, ctx, cancel
+}
+
+func (d *Daemon) mirrorConnectionCurrent(generation mirrorConnectionGeneration) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.mirrorConnectionGeneration == generation
+}
+
+func (d *Daemon) replayActiveMirrorViewerStates(enqueue func([]byte) (*wsOutbound, error), generation mirrorConnectionGeneration) {
+	if enqueue == nil {
+		return
+	}
+	for _, tracked := range d.trackedRuntimeMirrors() {
+		runtimeID := tracked.runtimeID
+		workspaceID := tracked.workspaceID
+		d.bindMirrorStateHooks(tracked.mirror, enqueue, workspaceID, runtimeID, generation)
+	}
+}
+
+func (d *Daemon) runtimeMirror(runtimeID string) (*mirror.RuntimeMirror, bool) {
+	d.mu.Lock()
+	generation := d.mirrorConnectionGeneration
+	d.mu.Unlock()
+	runtimeMirror, _, ok := d.runtimeMirrorForOffer(runtimeID, generation)
+	return runtimeMirror, ok
+}
+
+func (d *Daemon) runtimeMirrorForOffer(runtimeID string, generation mirrorConnectionGeneration) (*mirror.RuntimeMirror, bool, bool) {
+	if d.mirrorProcessMode() {
+		return nil, false, false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if generation == 0 || d.mirrorConnectionGeneration != generation {
+		return nil, false, false
+	}
+	if _, tracked := d.runtimeIndex[runtimeID]; !tracked {
+		return nil, false, false
+	}
+	if runtimeMirror, ok := d.runtimeMirrors[runtimeID]; ok {
+		return runtimeMirror, false, true
+	}
+	runtimeMirror := mirror.NewRuntimeMirror(mirror.NativeCapturer{}, 500*time.Millisecond)
+	runtimeMirror.SetCaptureFailureHandler(func(err error) {
+		d.logger.Warn("runtime mirror capture unavailable",
+			"runtime_id", runtimeID,
+			"reason", mirror.CaptureReasonFromError(err),
+			"error", err,
+		)
+	})
+	d.runtimeMirrors[runtimeID] = runtimeMirror
+	return runtimeMirror, true, true
+}

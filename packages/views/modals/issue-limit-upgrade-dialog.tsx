@@ -88,6 +88,21 @@ export function IssueLimitUpgradeDialog() {
     setPortalFailed(false);
   }, [visible, wsId]);
 
+  useEffect(() => {
+    if (!visible) return;
+    // Recovery and create can be sibling Dialog roots rather than nested Base UI
+    // dialogs. Capture Escape here so the active recovery dismisses first and
+    // the create draft underneath cannot also consume the same key press.
+    const dismissRecovery = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      dismiss();
+    };
+    window.addEventListener("keydown", dismissRecovery, true);
+    return () => window.removeEventListener("keydown", dismissRecovery, true);
+  }, [dismiss, visible]);
+
   const closeForBillingAction = () => {
     dismiss();
 
@@ -149,12 +164,6 @@ export function IssueLimitUpgradeDialog() {
       <DialogContent
         className="gap-0 overflow-hidden p-0 sm:max-w-lg"
         showCloseButton={false}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.preventDefault();
-          event.stopPropagation();
-          dismiss();
-        }}
       >
         <div className="px-6 pb-7 pt-8 text-center sm:px-10 sm:pb-8 sm:pt-10">
           <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">

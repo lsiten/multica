@@ -167,7 +167,7 @@ func (d *Daemon) flushJevDecisionReports(ctx context.Context) error {
 			continue
 		}
 		var report pendingJevDecision
-		if err := strictVscreenJSON(raw, &report); err != nil {
+		if err := strictJSON(raw, &report); err != nil {
 			if err := quarantineJevDecisionReport(dir, entry.Name()); err != nil {
 				return err
 			}

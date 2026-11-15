@@ -120,6 +120,7 @@ describe("ApiClient document content versions", () => {
       content: "# merged",
       expected_revision: 3,
       merge: true,
+      session_id: "session-1",
     });
     expect(version.revision).toBe(4);
     const init = fetchMock.mock.calls[0]?.[1] as {
@@ -131,6 +132,7 @@ describe("ApiClient document content versions", () => {
       content_type: "text/markdown",
       expected_revision: 3,
       merge: true,
+      session_id: "session-1",
     });
   });
 
@@ -151,6 +153,27 @@ describe("ApiClient document content versions", () => {
     expect(version.revision).toBe(3);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.example.test/api/attachments/att-1/content-versions/2/rollback",
+    );
+  });
+
+  it("deletes an older issue checkpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    await client.deleteIssueContentVersion("issue-1", 2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/issues/issue-1/content-versions/2",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "DELETE" });
+  });
+
+  it("deletes an older attachment checkpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    await client.deleteAttachmentContentVersion("att-1", 2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/attachments/att-1/content-versions/2",
     );
   });
 

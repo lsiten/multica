@@ -836,7 +836,7 @@ func TestSendDirectChatMessageUsesCurrentlyBoundRuntime(t *testing.T) {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE chat_session_id = $1`, created.SessionID)
 	})
 
-	source := &protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "https://fixture.invalid", WorkspaceID: testWorkspaceID, RuntimeID: testRuntimeID, UID: 501}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourceVirtual, SourceID: "display:original"}, NativeEpoch: "native", Generation: "display"}
+	source := &protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "https://fixture.invalid", WorkspaceID: testWorkspaceID, RuntimeID: testRuntimeID, UID: 501, DisplayID: 1}, Source: protocol.MirrorSource{Kind: protocol.MirrorSourcePhysical, SourceID: "display:original"}, NativeEpoch: "native", Generation: "display"}
 	_, mirrorErr := testHandler.TaskService.SendDirectChatMessage(ctx, session, staleAgent, parseUUID(testUserID), "operate the original display", nil, "member", parseUUID(testUserID), source)
 	if mirrorErr == nil {
 		t.Fatal("mirror send followed a runtime rebind instead of rejecting its original source")

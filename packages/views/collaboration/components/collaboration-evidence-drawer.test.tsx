@@ -11,7 +11,7 @@ import { CollaborationEvidenceDrawer } from "./collaboration-evidence-drawer";
 vi.mock("@multica/core/hooks",()=>({useWorkspaceId:()=>"ws"}));
 vi.mock("@multica/core/api",()=>({api:{getProjectCollaborationEvidence:vi.fn(),getAttachmentBlob:vi.fn()}}));
 vi.mock("@multica/core/paths",()=>({useWorkspacePaths:()=>({issueDetail:(id:string)=>"/qa/issues/"+id})}));
-const run:ProjectCollaborationEvidence={task_id:"run",source_task_id:"source",agent_id:"b",agent_name:"乙",source_agent_id:"a",relation_type:"delegated",status:"completed",issue_id:"child",issue_title:"子任务",issue_key:"QA-2",squad_id:null,trigger_comment_id:null,created_at:"2020-01-01T00:00:00Z",started_at:null,completed_at:null,event_count:0};
+const run:ProjectCollaborationEvidence={task_id:"run",source_task_id:"source",agent_id:"b",agent_name:"乙",source_agent_id:"a",relation_type:"delegated",status:"completed",issue_id:"child",issue_title:"子任务",issue_key:"QA-2",squad_id:null,trigger_comment_id:null,created_at:"2020-01-01T00:00:00Z",started_at:null,completed_at:null,event_count:1,events:[{id:"event",event_type:"task_finished",created_at:"2020-01-01T00:00:00Z"}]};
 const response:ProjectCollaborationEvidenceResponse={project_id:"project",evidence:[run],total:2,limit:1,offset:0,has_more:true,next_cursor:"next",as_of:"2026-10-02T00:00:00Z",truncated:false};
 function mount(){return renderWithI18n(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><NavigationProvider value={{pathname:"/qa/projects/project",searchParams:new URLSearchParams(),hash:"",push:vi.fn(),replace:vi.fn(),back:vi.fn(),getShareableUrl:path=>path}}><CollaborationEvidenceDrawer projectId="project" filters={{activity:"active",agent_id:"a"}} selection={{node:{id:"agent:b",type:"agent",label:"乙"}}} onClose={vi.fn()}/></NavigationProvider></QueryClientProvider>,{locale:"zh-Hans"})}
 
@@ -34,5 +34,11 @@ describe("collaboration evidence",()=>{
   fireEvent.click(screen.getByRole("button",{name:"查看来源运行"}));
   expect(await screen.findByRole("link",{name:"QA-1 · 来源任务"})).toHaveAttribute("href","/qa/issues/QA-1");
   expect(api.getProjectCollaborationEvidence).toHaveBeenLastCalledWith("project",{activity:"all",run_id:"source",limit:1});
+ });
+ it("labels known runtime events without exposing the stored event key",async()=>{
+  mount();await screen.findByText("QA-2 · 子任务");
+  fireEvent.click(await screen.findByText(/乙 · 已完成/));
+  expect(await screen.findByText("任务完成")).toBeInTheDocument();
+  expect(screen.queryByText("task_finished")).not.toBeInTheDocument();
  });
 });

@@ -514,7 +514,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             {progressOpen && <div className="pl-2 flex items-center gap-3">
               <div className="relative h-2 flex-1 rounded-full bg-muted overflow-hidden">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-emerald-500 transition-all"
+                  className="absolute inset-y-0 left-0 rounded-full bg-success transition-all"
                   style={{ width: `${pct}%` }}
                 />
               </div>

@@ -28,7 +28,14 @@ vi.mock("@multica/core/auth", () => ({
 }));
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-fixture" }));
 vi.mock("@multica/core/paths", () => ({ useWorkspacePaths: () => ({ applications: () => "/applications", applicationDetail: (id: string) => `/applications/${id}` }) }));
-vi.mock("../navigation", () => ({ AppLink: ({ children }: { children: React.ReactNode }) => <span>{children}</span>, useNavigation: () => ({ push: vi.fn() }) }));
+vi.mock("../navigation", async () => {
+  const { useState } = await vi.importActual<typeof import("react")>("react");
+  return {
+    AppLink: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+    useNavigation: () => ({ push: vi.fn() }),
+    useSearchState: (_key: string, defaultValue = "") => useState(defaultValue),
+  };
+});
 vi.mock("./application-editor", () => ({ ApplicationEditor: () => null }));
 
 const id = "11111111-1111-4111-8111-111111111111";

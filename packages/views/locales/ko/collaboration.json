@@ -10,6 +10,11 @@
   "project_tab_graph": "프로젝트 협업",
   "project_title": "프로젝트 협업",
   "project_description": "실행 증거가 있는 Agent 관계만 표시합니다.",
+  "view_graph": "그래프",
+  "view_list": "목록",
+  "accessible_nodes": "에이전트 및 스쿼드",
+  "accessible_relations": "관계",
+  "no_relations": "표시할 협업 관계가 없습니다.",
   "agents_count": "Agent {{count}}명",
   "refresh": "새로 고침",
   "load_failed": "프로젝트 협업을 불러오지 못했습니다.",
@@ -124,5 +129,11 @@
     "failed": "실패",
     "cancelled": "취소"
   },
+  "events": {
+    "task_started": "작업 시작됨",
+    "task_finished": "작업 완료됨",
+    "task_failed": "작업 실패함"
+  },
+  "runtime_event": "실행 이벤트",
   "run_count": "실행 {{count}}개"
 }

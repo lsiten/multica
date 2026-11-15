@@ -22,8 +22,8 @@ func TestRequirementLifecycle(t *testing.T) {
 	dbfx.Cleanup(t, "DELETE FROM requirement WHERE issue_id=$1", issueID)
 	if _, err := testHandler.Queries.CreateRequirement(context.Background(), db.CreateRequirementParams{
 		WorkspaceID:       parseUUID(testWorkspaceID),
-		IssueID:         parseUUID(issueID),
-		LifecycleStatus: "pending_confirm",
+		IssueID:           parseUUID(issueID),
+		LifecycleStatus:   "pending_confirm",
 		UnconfirmedChange: false,
 	}); err != nil {
 		t.Fatalf("create requirement: %v", err)

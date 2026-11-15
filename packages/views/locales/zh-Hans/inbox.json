@@ -97,8 +97,6 @@
     "autopilot_quota_exceeded": "自动化执行次数已用完",
     "runtime_mirror_viewer_started": "屏幕镜像已开始",
     "runtime_mirror_viewer_stopped": "屏幕镜像已结束",
-    "runtime_mirror_control_started": "远程屏幕控制已开始",
-    "runtime_mirror_control_stopped": "远程屏幕控制已结束",
     "human_action_requested": "需要你处理",
     "issue_created": "新任务",
     "app_action_requested": "等待你确认",
@@ -121,9 +119,7 @@
     "autopilot_quota_blocked": "执行已被阻止：额度已用完",
     "children_done_stage": "第 {{stage}} 阶段的子任务已全部结束",
     "mirror_viewing_started": "正在查看 {{runtime}} 的屏幕。",
-    "mirror_viewing_stopped": "{{runtime}} 的屏幕镜像已结束。",
-    "mirror_control_started": "{{name}} 正在控制 {{runtime}}。",
-    "mirror_control_stopped": "{{runtime}} 的远程控制已结束。"
+    "mirror_viewing_stopped": "{{runtime}} 的屏幕镜像已结束。"
   },
   "toasts": {
     "source_context_retry_started": "已使用原始上下文开始重试",

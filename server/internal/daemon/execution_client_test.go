@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
 	"net/http"
@@ -12,6 +13,40 @@ import (
 
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
+
+func TestBindTaskExecutionAcceptsEquivalentWorkerUUIDFormatting(t *testing.T) {
+	taskID := uuid.NewString()
+	runtimeID := uuid.NewString()
+	workerID := uuid.NewString()
+	dispatchedAt := time.Now().UTC().Truncate(time.Microsecond)
+	identity := protocol.ExecutionIdentity{
+		TaskID:       taskID,
+		RuntimeID:    runtimeID,
+		WorkerID:     workerID,
+		ExecutionID:  uuid.NewString(),
+		DispatchedAt: dispatchedAt,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(identity)
+	}))
+	defer server.Close()
+
+	got, err := NewClient(server.URL).BindTaskExecution(
+		context.Background(),
+		runtimeID,
+		taskID,
+		protocol.BindExecutionRequest{
+			WorkerID:     strings.ReplaceAll(workerID, "-", ""),
+			DispatchedAt: dispatchedAt,
+		},
+	)
+	if err != nil {
+		t.Fatalf("bind equivalent worker UUID: %v", err)
+	}
+	if got.ExecutionID != identity.ExecutionID {
+		t.Fatalf("execution id = %q, want %q", got.ExecutionID, identity.ExecutionID)
+	}
+}
 
 func TestExecutionCapabilityOldAndSupportedServers(t *testing.T) {
 	for _, tc := range []struct {

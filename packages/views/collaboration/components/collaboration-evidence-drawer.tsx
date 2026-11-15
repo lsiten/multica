@@ -9,12 +9,14 @@ import type { CollaborationGraphNode, CollaborationGraphEdge, ProjectCollaborati
 import { Button } from "@multica/ui/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@multica/ui/components/ui/sheet";
 import { AppLink } from "../../navigation";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
+import { useStatusLabel } from "../../issues/utils/status-label";
 
 type Issue = NonNullable<ProjectCollaborationEvidenceResponse["issues"]>[number];
 export function CollaborationEvidenceDrawer({projectId,filters,selection,graph,onClose}:{projectId:string;filters:ProjectCollaborationFilters;selection:{node?:CollaborationGraphNode;edge?:CollaborationGraphEdge};graph?:ProjectCollaborationGraphResponse;onClose:()=>void}){
  const {t}=useT("collaboration");
  const wsId=useWorkspaceId();const paths=useWorkspacePaths();
+ const statusLabel=useStatusLabel(wsId);
  const [sort,setSort]=useState<"newest"|"oldest">("newest");
  const [status,setStatus]=useState("");
  const edge=selection.edge;const node=selection.node;
@@ -36,7 +38,7 @@ export function CollaborationEvidenceDrawer({projectId,filters,selection,graph,o
   const children=[...issues.values()].filter(i=>i.parent_issue_id===issue.id).sort((a,b)=>compareIssues(a,b));
   const runs=byIssue.get(issue.id)??[];
   return <details key={issue.id} open className="rounded-md border p-3">
-   <summary className={"cursor-pointer text-caption font-medium"+(issue.context_only?" text-muted-foreground":"")}><span>{issue.key} · {issue.title}</span> <span className="text-muted-foreground">{issue.status}</span>{issue.context_only&&<span className="ml-2 text-muted-foreground">{t($=>$.context_task)}</span>}</summary>
+   <summary className={"cursor-pointer text-caption font-medium"+(issue.context_only?" text-muted-foreground":"")}><span>{issue.key} · {issue.title}</span> <span className="text-muted-foreground">{issue.status?statusLabel(issue.status):""}</span>{issue.context_only&&<span className="ml-2 text-muted-foreground">{t($=>$.context_task)}</span>}</summary>
    <div className="mt-2 space-y-2"><AppLink className="text-caption underline" href={paths.issueDetail(issue.key||issue.id)}>{t($=>$.open_task)}</AppLink>
     {runs.map(run=><CollaborationRun key={run.task_id} projectId={projectId} run={run}/>)}
     {children.length>0&&<div className="ml-3 space-y-2 border-l pl-3">{children.map(child=>renderIssue(child,path))}</div>}
@@ -78,8 +80,9 @@ export function CollaborationEvidenceDrawer({projectId,filters,selection,graph,o
  </Sheet>;
 }
 function CollaborationRun({run,projectId,allowSource=true}:{run:ProjectCollaborationEvidence;projectId:string;allowSource?:boolean}){
- const {t}=useT("collaboration");const paths=useWorkspacePaths();
+ const {t}=useT("collaboration");const locale=useLocale();const paths=useWorkspacePaths();
  const statusLabels:Record<string,string>={queued:t($=>$.run_statuses.queued),dispatched:t($=>$.run_statuses.dispatched),running:t($=>$.run_statuses.running),waiting_local_directory:t($=>$.run_statuses.waiting_local_directory),completed:t($=>$.run_statuses.completed),failed:t($=>$.run_statuses.failed),cancelled:t($=>$.run_statuses.cancelled)};
+ const eventLabels:Record<string,string>={task_started:t($=>$.events.task_started),task_finished:t($=>$.events.task_finished),task_failed:t($=>$.events.task_failed)};
  const relationLabels:Record<string,string>={parent_child:t($=>$.parent_child),delegated:t($=>$.delegated),retry:t($=>$.retry),rerun:t($=>$.rerun),root:t($=>$.root)};
  const [error,setError]=useState(false);const [downloading,setDownloading]=useState(false);
  const download=async(id:string,name:string)=>{setDownloading(true);setError(false);try{const blob=await api.getAttachmentBlob(id);const url=URL.createObjectURL(blob);const anchor=document.createElement("a");anchor.href=url;anchor.download=name;anchor.click();URL.revokeObjectURL(url)}catch{setError(true)}finally{setDownloading(false)}};
@@ -87,12 +90,12 @@ function CollaborationRun({run,projectId,allowSource=true}:{run:ProjectCollabora
   <summary className="cursor-pointer text-caption">{run.agent_name||run.agent_id} · {statusLabels[run.status]??run.status} · {run.task_id.slice(0,8)}</summary>
   <div className="mt-2 space-y-2 break-words text-caption text-muted-foreground">
    <p>{t($=>$.task_events,{id:run.task_id,count:run.event_count})}</p>
-   <p>{t($=>$.started)} {run.started_at?new Date(run.started_at).toLocaleString():"—"} · {t($=>$.finished)} {run.completed_at?new Date(run.completed_at).toLocaleString():"—"}</p>
+   <p>{t($=>$.started)} {run.started_at?new Date(run.started_at).toLocaleString(locale):"—"} · {t($=>$.finished)} {run.completed_at?new Date(run.completed_at).toLocaleString(locale):"—"}</p>
    {run.source_task_id?<><p>{t($=>$.source_task,{id:run.source_task_id})} · {run.source_agent_name} · {relationLabels[run.relation_type]??run.relation_type}</p>{allowSource&&<SourceRunPreview projectId={projectId} runId={run.source_task_id}/>}</>:run.relation_type==="unknown"?<p>{t($=>$.source_missing)}</p>:null}
    {run.source_issue_id&&<AppLink className="underline" href={paths.issueDetail(run.source_issue_id)}>{t($=>$.open_task)} · {run.source_agent_name}</AppLink>}
    {run.issue_id&&run.trigger_comment_id&&<AppLink className="underline" href={paths.issueDetail(run.issue_key||run.issue_id)+"#comment-"+run.trigger_comment_id}>{t($=>$.open_trigger)}</AppLink>}
    {(run.artifacts??[]).map(artifact=><Button key={artifact.id} variant="outline" size="sm" disabled={downloading} onClick={()=>void download(artifact.id,artifact.filename)}>{artifact.filename}</Button>)}
-   {(run.events??[]).map(event=><p key={event.id}>{event.event_type} · {new Date(event.created_at).toLocaleString()}</p>)}
+   {(run.events??[]).map(event=><p key={event.id}><span title={event.event_type}>{eventLabels[event.event_type]??t($=>$.runtime_event)}</span> · {new Date(event.created_at).toLocaleString(locale)}</p>)}
    {error&&<p role="alert" className="text-destructive">{t($=>$.download_failed)}</p>}
   </div>
  </details>;

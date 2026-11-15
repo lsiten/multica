@@ -46,7 +46,7 @@ describe("worker process panel", () => {
     getWorkerProcesses.mockResolvedValue([worker({ provider: "codex", task_id: "task-42" })]);
     mount({ state: "running" });
     expect(await screen.findByText("codex")).toBeInTheDocument();
-    expect(screen.getByText("ready")).toBeInTheDocument();
+    expect(screen.getByText("就绪")).toBeInTheDocument();
     expect(screen.getByText(/task-42/)).toBeInTheDocument();
     expect(screen.getByText(/exec-1/)).toBeInTheDocument();
   });

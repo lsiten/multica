@@ -13,6 +13,7 @@ export type {
   ClientUsageRequest,
 } from "./client";
 export { parseWithFallback, setSchemaLogger } from "./schema";
+export { parseAgentDesktopReadiness } from "./vscreen-schemas";
 export { parseDaemonJevModel, parseDaemonJevModels, parseBuiltinMcpServices } from "./daemon-jev";
 export type { DaemonJevModel, DaemonJevModels, BuiltinMcpServices } from "./daemon-jev";
 export type { ParseOptions } from "./schema";
@@ -63,5 +64,3 @@ export const api = new Proxy({} as ApiClientType, {
 export { VscreenContractError, VscreenScopeError, vscreenErrorReason } from "./vscreen";
 export type { VscreenApi } from "./vscreen";
 export { parseVscreenVideoMetadata, matchesMirrorBinding } from "./vscreen-mirror";
-
-export type { VscreenIntervention } from "./vscreen-interventions";

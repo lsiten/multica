@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, Loader2 } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
-import { useT } from "@multica/views/i18n";
+import { useLocale, useT } from "@multica/views/i18n";
 import { invalidateWorktreeInventory } from "@multica/views/platform";
 import type { ManagedWorktree } from "@multica/core/types/managed-worktree";
 import type { WorktreeArchiveResult, WorktreeArchiveSummary } from "@multica/core/types/worktree-archives";
@@ -22,6 +22,7 @@ export function WorktreeArchiveManager({ rows, enabled, disabled, queryKey, filt
   onPendingChange: (pending: boolean) => void;
 }) {
   const { t } = useT("settings");
+  const locale = useLocale();
   const client = useQueryClient();
   const workspaceId = filters.workspace || undefined;
   const [open, setOpen] = useState(false);
@@ -108,7 +109,7 @@ export function WorktreeArchiveManager({ rows, enabled, disabled, queryKey, filt
           <div className="min-w-0 flex-1">
             <p className="break-words font-medium">{row.taskName} · {row.agentName || row.taskId}</p>
             <p className="break-all font-mono text-muted-foreground">{row.originalPath}</p>
-            <p className="text-muted-foreground"><time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString()}</time> · {formatBytes(row.archiveBytes)}</p>
+            <p className="text-muted-foreground"><time dateTime={row.createdAt}>{new Date(row.createdAt).toLocaleString(locale)}</time> · {formatBytes(row.archiveBytes)}</p>
             {row.restoreReason && <p className="text-muted-foreground">{reasonLabel(row.restoreReason)}</p>}
           </div>
           <Button variant="outline" size="sm" disabled={disabled || !enabled || pending || !!row.restoreReason} onClick={() => { restore.reset(); setRestoreTarget(row); }}>{t(($) => $.desktop.worktrees.restore_archive)}</Button>

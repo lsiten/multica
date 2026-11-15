@@ -17,6 +17,7 @@ export interface HumanRequestPayload {
   verification?: string;
   details?: string;
   response_mode?: "card_only" | "chat_or_card";
+  purpose?: "desktop_approval";
 }
 
 export interface HumanRequestAnswer {

@@ -11,29 +11,30 @@ import {
   DialogTitle,
 } from "@multica/ui/components/ui/dialog";
 import { SettingsCard, SettingsSection } from "@multica/views/settings";
-import { useT } from "@multica/views/i18n";
+import { useLocale, useT } from "@multica/views/i18n";
 import { toast } from "sonner";
 import type { DaemonStatus, DaemonWorkerProcess } from "../../../shared/daemon-types";
 
-function formatStartedAt(iso: string): string {
+function formatStartedAt(iso: string, locale: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso || "—";
-  return date.toLocaleString();
+  return date.toLocaleString(locale);
 }
 
 // A live worker's probe state maps to a colored dot, matching the daemon
 // diagnostics row. "ready" is the healthy terminal; "unavailable" means the
 // owner's health probe failed so it is suspect, not stopped.
 function stateDotClass(row: DaemonWorkerProcess): string {
-  if (row.ready) return "bg-emerald-500";
-  if (row.state === "unavailable") return "bg-red-500";
-  return "bg-amber-500";
+  if (row.ready) return "bg-success";
+  if (row.state === "unavailable") return "bg-destructive";
+  return "bg-warning";
 }
 
 // Local-only panel: it reads the daemon's /runtimes/processes endpoint and
 // never reports worker state to the server.
 export function WorkerProcessManager({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
+  const locale = useLocale();
   const queryKey = ["desktop-worker-processes", status.profile, status.daemonId];
   const enabled = status.state === "running";
   const query = useQuery({
@@ -59,6 +60,22 @@ export function WorkerProcessManager({ status }: { status: DaemonStatus }) {
   });
   const rows = query.data ?? [];
   const busy = query.isPending || query.isFetching || stop.isPending;
+  const stateLabels = {
+    ready: t(($) => $.desktop.processes.states.ready),
+    running: t(($) => $.desktop.processes.states.running),
+    starting: t(($) => $.desktop.processes.states.starting),
+    stopping: t(($) => $.desktop.processes.states.stopping),
+    stopped: t(($) => $.desktop.processes.states.stopped),
+    failed: t(($) => $.desktop.processes.states.failed),
+    unavailable: t(($) => $.desktop.processes.states.unavailable),
+    offline: t(($) => $.desktop.processes.states.offline),
+    disabled: t(($) => $.desktop.processes.states.disabled),
+    downloaded: t(($) => $.desktop.processes.states.downloaded),
+    not_installed: t(($) => $.desktop.processes.states.not_installed),
+    unknown: t(($) => $.desktop.processes.states.unknown),
+  };
+  const stateLabel = (state: string) =>
+    stateLabels[state as keyof typeof stateLabels] ?? state;
 
   return (
     <SettingsSection
@@ -99,7 +116,7 @@ export function WorkerProcessManager({ status }: { status: DaemonStatus }) {
                 <span className="text-body font-medium">{row.provider}</span>
                 <span className="inline-flex items-center gap-1.5 text-caption text-muted-foreground">
                   <span className={`size-1.5 rounded-full ${stateDotClass(row)}`} />
-                  {row.state}
+                  {stateLabel(row.state)}
                 </span>
               </div>
               <p className="mt-1 truncate text-caption text-muted-foreground" title={row.task_id}>
@@ -107,7 +124,7 @@ export function WorkerProcessManager({ status }: { status: DaemonStatus }) {
               </p>
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.desktop.worker_processes.exec_id)} {row.exec_id} ·{" "}
-                {t(($) => $.desktop.worker_processes.started)} {formatStartedAt(row.started_at)}
+                {t(($) => $.desktop.worker_processes.started)} {formatStartedAt(row.started_at, locale)}
               </p>
               {row.capabilities && row.capabilities.length > 0 && (
                 <p className="mt-1 flex flex-wrap gap-1">

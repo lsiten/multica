@@ -20,63 +20,12 @@ export interface VscreenEnvelope {
   readonly requestId: string;
 }
 
-export interface VscreenEpoch {
-  readonly nativeEpoch: string;
-  readonly displayGeneration: string;
-  readonly geometryRevision: number;
-}
-
-export type VscreenState =
-  | "disabled"
-  | "creating"
-  | "ready"
-  | "suspended"
-  | "stopping"
-  | "unavailable"
-  | "unknown";
-export type VscreenControlState =
-  | "idle"
-  | "agent"
-  | "awaiting_takeover"
-  | "human"
-  | "stopping"
-  | "unknown";
-export type VscreenPermission =
-  | "unknown"
-  | "granted"
-  | "denied"
-  | "restricted"
-  | "not_determined";
-export type VscreenCommandKind =
-  | "enable"
-  | "disable"
-  | "request_takeover"
-  | "enable_interaction"
-  | "disable_interaction"
-  | "emergency_stop";
-
-export interface VscreenStateSnapshot extends VscreenEpoch {
-  readonly runtimeId: string;
-  readonly state: VscreenState;
-  readonly controlState: VscreenControlState;
-  readonly activeTaskId: string | null;
-  readonly interventionId: string | null;
-  readonly permissions: {
-    readonly screenRecording: VscreenPermission;
-    readonly accessibility: VscreenPermission;
-  };
-  readonly stateRevision: number;
-  readonly humanInteraction: boolean;
-}
-
-export interface VscreenStateResponse extends VscreenEnvelope {
-  readonly state: VscreenStateSnapshot;
-}
-
 export interface MirrorSource {
-  readonly kind: "virtual" | "physical" | "system";
+  readonly kind: "physical" | "system";
   readonly sourceId: string;
 }
+
+export type MirrorVideoProfile = "auto" | "clear" | "smooth" | "saver";
 
 export interface MirrorSourceBinding {
   readonly resource: VscreenResource;
@@ -87,7 +36,7 @@ export interface MirrorSourceBinding {
   readonly displayId?: number;
 }
 
-export interface VscreenSourceDescriptor extends MirrorSourceBinding {
+export interface MirrorSourceDescriptor extends MirrorSourceBinding {
   readonly name: string;
   readonly width: number;
   readonly height: number;
@@ -100,90 +49,74 @@ export interface VscreenSourceDescriptor extends MirrorSourceBinding {
 }
 
 export interface VscreenSourcesResponse extends VscreenEnvelope {
-  readonly sources: readonly VscreenSourceDescriptor[];
+  readonly sources: readonly MirrorSourceDescriptor[];
 }
 
-export interface VscreenCommand {
-  readonly commandId: string;
-  readonly kind: VscreenCommandKind;
+export type AgentDesktopPermissionState =
+  | "granted"
+  | "denied"
+  | "unknown"
+  | "not_required"
+  | "not_determined";
+
+export type AgentDesktopControlState =
+  | "view_only"
+  | "waiting_for_approval"
+  | "approval_pending"
+  | "controlling"
+  | "other_controller"
+  | "ended";
+
+export interface AgentDesktopControlStatus {
+  readonly state: AgentDesktopControlState;
+  readonly controlId?: string;
+  readonly requestId?: string;
+  readonly controllerId?: string;
+  readonly requesterId?: string;
+  readonly leaseExpiresAt?: string;
+  readonly leaseMaxExpiresAt?: string;
 }
 
-export interface VscreenCommandReceipt extends VscreenEnvelope {
-  readonly commandId: string;
-  readonly receiptId: string;
-  readonly state: "pending" | "running" | "succeeded" | "failed" | "unknown";
+export type AgentDesktopControlAction =
+  | "move"
+  | "move_relative"
+  | "click"
+  | "double_click"
+  | "right_click"
+  | "mouse_down"
+  | "mouse_up"
+  | "drag"
+  | "scroll"
+  | "press"
+  | "text"
+  | "clipboard_get"
+  | "clipboard_set";
+
+export interface AgentDesktopControlInput {
+  readonly source: MirrorSource;
+  readonly action: AgentDesktopControlAction;
+  readonly x?: number;
+  readonly y?: number;
+  readonly x2?: number;
+  readonly y2?: number;
+  readonly dx?: number;
+  readonly dy?: number;
+  readonly button?: "left" | "right" | "middle";
+  readonly key?: string;
+  readonly text?: string;
+}
+
+export interface AgentDesktopReadiness {
+  readonly platform: string;
+  readonly version: string;
+  readonly permissions: {
+    readonly accessibility: AgentDesktopPermissionState;
+    readonly screenRecording: AgentDesktopPermissionState;
+    readonly automation: AgentDesktopPermissionState;
+  };
+  readonly surfaceCount: number;
+  readonly ready: boolean;
   readonly reason?: string;
-  readonly epoch?: VscreenEpoch;
-}
-
-
-export interface RuntimeMirrorController {
-  readonly viewerId: string;
-  readonly userId: string;
-  readonly source: MirrorSource;
-}
-
-export interface RuntimeMirrorControlState {
-  readonly workspaceId: string;
-  readonly runtimeId: string;
-  readonly controllers: readonly RuntimeMirrorController[];
-}
-
-/** Explicit capability to send pointer/keyboard input over mirror-input. */
-export interface MirrorControlGrant {
-  readonly grantId: string;
-  readonly sessionId: string;
-  readonly workspaceId: string;
-  readonly runtimeId: string;
-  readonly userId: string;
-  readonly viewerId: string;
-  readonly nativeEpoch: string;
-  readonly source: MirrorSource;
-  readonly sourceGeneration: string;
-  readonly expiresAt: string;
-}
-
-export type MirrorInputKind =
-  | "pointer:down"
-  | "pointer:up"
-  | "pointer:move"
-  | "wheel"
-  | "key:down"
-  | "key:up"
-  | "type";
-
-export type MirrorPointerButton = "left" | "middle" | "right";
-
-export interface MirrorInputMessage {
-  readonly kind: MirrorInputKind;
-  readonly grantId: string;
-  readonly gestureId: string;
-  readonly seq: number;
-  readonly nativeEpoch: string;
-  readonly displayGeneration: string;
-  readonly geometryRevision: number;
-  readonly pointer?: {
-    readonly button?: MirrorPointerButton;
-    readonly x: number;
-    readonly y: number;
-    readonly delta_x?: number;
-    readonly delta_y?: number;
-  };
-  readonly key?: {
-    readonly key: string;
-    readonly modifiers?: readonly ("shift" | "control" | "alt" | "meta")[];
-  };
-  readonly text?: {
-    readonly text: string;
-  };
-}
-
-export interface MirrorInputAck {
-  readonly type: "mirror-input:ack" | "mirror-input:nack";
-  readonly kind: string;
-  readonly gestureId: string;
-  readonly seq: number;
-  readonly reason?: "busy" | "stale" | "denied" | "unsupported";
 }
 
 /** Viewing metadata cannot authorize input or resume an AI task. */
@@ -204,6 +137,7 @@ export interface VscreenMirrorRequest {
   readonly viewerId: string;
   readonly offer: { readonly type: "offer"; readonly sdp: string };
   readonly binding: MirrorSourceBinding;
+  readonly videoProfile?: MirrorVideoProfile;
 }
 
 export interface VscreenViewerSession {
@@ -259,5 +193,3 @@ export interface VscreenVideoMetadata {
     readonly maxLevelIdc: number;
   };
 }
-
-export type { VscreenDesktopAction as VscreenLocalOperation, VscreenDesktopResult as VscreenLocalResult } from "./vscreen-desktop";

@@ -32,6 +32,7 @@ vi.mock("child_process", () => ({ execFile: fixture.exec }));
 vi.mock("./cli-bootstrap", () => ({
   managedCliPath: () => join(fixture.root, "fixture-cli"),
   ensureManagedCli: vi.fn(),
+  prepareAgentDesktop: vi.fn(),
 }));
 vi.mock("./daemon-port", () => ({ probeProfileHealth: vi.fn(async (_profile: string, probe: (port: number) => Promise<unknown>) => probe(19515)), readDaemonPortRecord: vi.fn(async () => null) }));
 

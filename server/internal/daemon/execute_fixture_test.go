@@ -22,8 +22,12 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 
 func executeFixtureProvider(d *Daemon, ctx context.Context, backend agent.Backend, prompt string, opts agent.ExecOptions, taskLog *slog.Logger, taskID, codexHome string, msgSeq *atomic.Int32) (finalResult agent.Result, finalTools int32, finalErr error) {
 
- defer func(){ if finalResult.Status == "cleanup_unconfirmed" { d.cleanupUnconfirmed.Store(true) } }()
- taskOutputObserverFromContext(ctx).begin()
+	defer func() {
+		if finalResult.Status == "cleanup_unconfirmed" {
+			d.cleanupUnconfirmed.Store(true)
+		}
+	}()
+	taskOutputObserverFromContext(ctx).begin()
 	budget := taskBudgetFromContext(ctx)
 	source := ""
 	if budget != nil {
@@ -54,9 +58,6 @@ func executeFixtureProvider(d *Daemon, ctx context.Context, backend agent.Backen
 		// cmd.Start() failure arrives here, so diagnosing ENOEXEC at this point
 		// covers claude, opencode and any CLI added later without a wrap in
 		// each backend (MUL-6164).
-		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-			return agent.Result{}, 0, errors.Join(errVscreenStopUnconfirmed, err)
-		}
 		err = agent.ExplainExecError(err)
 		taskLog.Debug("backend execute returned error", "error", err)
 		return agent.Result{}, 0, err

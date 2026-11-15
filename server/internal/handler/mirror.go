@@ -21,6 +21,7 @@ type createMirrorSessionRequest struct {
 	Transport        string                            `json:"transport,omitempty"`
 	Source           *protocol.MirrorSource            `json:"source,omitempty"`
 	SourceGeneration string                            `json:"source_generation,omitempty"`
+	VideoProfile     string                            `json:"video_profile,omitempty"`
 	Offer            protocol.MirrorSessionDescription `json:"offer"`
 }
 
@@ -67,6 +68,13 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	switch req.VideoProfile {
+	case "", protocol.MirrorVideoProfileAuto, protocol.MirrorVideoProfileClear,
+		protocol.MirrorVideoProfileSmooth, protocol.MirrorVideoProfileSaver:
+	default:
+		writeError(w, http.StatusBadRequest, "invalid video profile")
+		return
+	}
 	identity := mirror.SessionIdentity{
 		WorkspaceID: uuidToString(rt.WorkspaceID),
 		RuntimeID:   uuidToString(rt.ID),
@@ -96,7 +104,7 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 	payload := protocol.MirrorOfferPayload{
 		SessionID: session.ID, WorkspaceID: session.WorkspaceID, RuntimeID: session.RuntimeID,
 		UserID: session.UserID, DaemonID: session.DaemonID, ViewerID: session.ViewerID,
-		Offer: offer, ICEConfig: icePlan.Protocol(), ExpiresAt: session.ExpiresAt,
+		Offer: offer, VideoProfile: req.VideoProfile, ICEConfig: icePlan.Protocol(), ExpiresAt: session.ExpiresAt,
 	}
 	generation, configured := h.configureMirrorGrant(w, r, rt, req, &payload)
 	if !configured {

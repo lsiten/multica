@@ -19,12 +19,18 @@ import {
 import { Switch } from "@multica/ui/components/ui/switch";
 import { SettingsCard, SettingsSection } from "@multica/views/settings";
 import { useT } from "@multica/views/i18n";
+import { useSearchState } from "@multica/views/navigation";
 import { toast } from "sonner";
 import {
   daemonStatusAlive,
   type DaemonProcessOverviewTotal,
   type DaemonStatus,
 } from "../../../shared/daemon-types";
+import {
+  PROCESS_CATEGORIES,
+  processCategoryFromParam,
+  type ProcessCategory,
+} from "./processes-overview-state";
 
 // Unified process overview: the daemon supervises several long-lived child
 // processes (AI, application, gateway, environment, mirror) plus per-execution
@@ -33,17 +39,6 @@ import {
 // state dot and a stop action for the categories that support it. Child
 // processes carry best-effort CPU/memory usage; brokered services (MCP / JEV)
 // are status-only and their resource usage is not metered.
-
-type ProcessCategory =
-  | "daemon"
-  | "task_worker"
-  | "ai"
-  | "application"
-  | "gateway"
-  | "environment"
-  | "mirror"
-  | "mcp"
-  | "jev";
 
 type UnifiedProcess = {
   category: ProcessCategory;
@@ -84,26 +79,12 @@ function formatCpu(ms: number | undefined): string {
 }
 
 function dotClass(ready: boolean, state: string): string {
-  if (ready) return "bg-emerald-500";
+  if (ready) return "bg-success";
   if (state === "unavailable" || state === "offline" || state === "failed") {
-    return "bg-red-500";
+    return "bg-destructive";
   }
-  return "bg-amber-500";
+  return "bg-warning";
 }
-
-// The daemon's own process is first; the rest follow the order the overview
-// endpoint returns them so a category header never reorders its own rows.
-const KNOWN_CATEGORIES: ProcessCategory[] = [
-  "daemon",
-  "task_worker",
-  "ai",
-  "application",
-  "gateway",
-  "environment",
-  "mirror",
-  "mcp",
-  "jev",
-];
 
 // Child-process rows come from the daemon's unified /runtimes/processes/overview
 // endpoint. The category is validated against the known set; unknown categories
@@ -115,7 +96,7 @@ function normalizeOverview(raw: unknown): UnifiedProcess[] {
     if (!entry || typeof entry !== "object") continue;
     const item = entry as Record<string, unknown>;
     const category = item.category as string;
-    if (!KNOWN_CATEGORIES.includes(category as ProcessCategory)) continue;
+    if (!PROCESS_CATEGORIES.includes(category as ProcessCategory)) continue;
     out.push({
       category: category as ProcessCategory,
       id: typeof item.id === "string" ? item.id : "",
@@ -227,6 +208,8 @@ function normalizeJev(raw: unknown): UnifiedProcess[] {
 
 export function ProcessesOverview({ status }: { status: DaemonStatus }) {
   const { t } = useT("settings");
+  const [processViewParam, setProcessView] = useSearchState("process", "all");
+  const processView = processCategoryFromParam(processViewParam);
   // A daemon with a bound health port is queryable while child owners are
   // still starting or have failed. Keep diagnostics visible in that window;
   // hiding them behind the stricter "running" state made missing owners look
@@ -292,6 +275,21 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
   const failed =
     (overview.isError && !mcp.data && !jev.data) ||
     (mcp.isError && !overview.data && !jev.data);
+  const processStates: Record<string, string> = {
+    ready: t(($) => $.desktop.processes.states.ready),
+    running: t(($) => $.desktop.processes.states.running),
+    starting: t(($) => $.desktop.processes.states.starting),
+    stopping: t(($) => $.desktop.processes.states.stopping),
+    stopped: t(($) => $.desktop.processes.states.stopped),
+    failed: t(($) => $.desktop.processes.states.failed),
+    unavailable: t(($) => $.desktop.processes.states.unavailable),
+    offline: t(($) => $.desktop.processes.states.offline),
+    disabled: t(($) => $.desktop.processes.states.disabled),
+    downloaded: t(($) => $.desktop.processes.states.downloaded),
+    not_installed: t(($) => $.desktop.processes.states.not_installed),
+    unknown: t(($) => $.desktop.processes.states.unknown),
+  };
+  const processStateLabel = (state: string) => processStates[state] ?? state;
 
   // One row, rendered in both the "All" tab and each category tab. Resource
   // usage is always shown — formatBytes/formatCpu degrade to "—" when a
@@ -303,7 +301,7 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
           <span className="text-body font-medium">{row.name}</span>
           <span className="inline-flex items-center gap-1.5 text-caption text-muted-foreground">
             <span className={`size-1.5 rounded-full ${dotClass(row.ready, row.state)}`} />
-            {row.state}
+            {processStateLabel(row.state)}
           </span>
         </div>
         {row.detail && (
@@ -388,19 +386,19 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
         {enabled && !failed && rows.length > 0 && (
           <div className="flex flex-col">
             <ResourceUsageChart rows={rows} total={total} />
-          <Tabs defaultValue="all" className="w-full">
+          <Tabs value={processView} onValueChange={setProcessView} className="w-full">
             <TabsList variant="line" className="border-b border-border/60 px-3">
               <TabsTrigger value="all">
                 {t(($) => $.desktop.processes.all)}
               </TabsTrigger>
-              {KNOWN_CATEGORIES.filter((category) => grouped.has(category)).map((category) => (
+              {PROCESS_CATEGORIES.filter((category) => grouped.has(category)).map((category) => (
                 <TabsTrigger value={category} key={category}>
                   {t(($) => $.desktop.processes.category[category])}
                 </TabsTrigger>
               ))}
             </TabsList>
             <TabsContent value="all" className="px-0 pb-2">
-              {KNOWN_CATEGORIES.filter((category) => grouped.has(category)).map((category) => (
+              {PROCESS_CATEGORIES.filter((category) => grouped.has(category)).map((category) => (
                 <div key={category} className="border-t border-border/60 first:border-t-0">
                   <p className="px-4 pt-4 pb-1 text-caption font-medium uppercase tracking-wide text-muted-foreground">
                     {t(($) => $.desktop.processes.category[category])}
@@ -409,7 +407,7 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
                 </div>
               ))}
             </TabsContent>
-            {KNOWN_CATEGORIES.filter((category) => grouped.has(category)).map((category) => (
+            {PROCESS_CATEGORIES.filter((category) => grouped.has(category)).map((category) => (
               <TabsContent value={category} key={category} className="px-0 pb-2">
                 {grouped.get(category)!.map(renderRow)}
               </TabsContent>

@@ -64,7 +64,7 @@ func (h *Handler) TranscribeChatVoice(w http.ResponseWriter, r *http.Request) {
 	result, err := h.DaemonHub.TranscribeVoice(r.Context(), uuidToString(rt.WorkspaceID), uuidToString(rt.ID), rt.DaemonID.String, audio)
 	if err != nil {
 		switch {
-		case errors.Is(err, daemonws.ErrVscreenCapacity):
+		case errors.Is(err, daemonws.ErrMirrorCapacity):
 			writeError(w, http.StatusTooManyRequests, "voice_busy")
 		case errors.Is(err, context.DeadlineExceeded):
 			writeError(w, http.StatusGatewayTimeout, "voice_timeout")

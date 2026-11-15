@@ -95,8 +95,6 @@ func (m *RuntimeMirror) BindViewerGrant(viewerID string, grant protocol.MirrorVi
 		if !validVideoGrant(viewerID, peer.video.source, grant) {
 			return false
 		}
-	} else if grant.Source.Kind == protocol.MirrorSourceVirtual {
-		return false
 	}
 	peer.grant = &viewerGrant{value: grant, generation: generation}
 	m.armViewerGrant(viewerID, peer)

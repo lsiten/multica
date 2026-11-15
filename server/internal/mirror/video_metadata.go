@@ -21,12 +21,12 @@ type VideoFrameMetadata struct {
 func (m *RuntimeMirror) sendVideoMetadata(peer *mirrorPeer, pts int64, force bool) error {
 	peer.mu.Lock()
 	video := peer.video
-	if peer.closed || video == nil || video.control == nil || video.control.ReadyState() != webrtc.DataChannelStateOpen || video.control.BufferedAmount() > 64*1024 || !force && time.Since(video.lastMetadata) < time.Second {
+	if peer.closed || video == nil || video.metadata == nil || video.metadata.ReadyState() != webrtc.DataChannelStateOpen || video.metadata.BufferedAmount() > 64*1024 || !force && time.Since(video.lastMetadata) < time.Second {
 		peer.mu.Unlock()
 		return nil
 	}
 	video.lastMetadata = time.Now()
-	channel := video.control
+	channel := video.metadata
 	metadata := VideoFrameMetadata{Type: "mirror:video-meta", SourceBinding: video.source.Binding, GeometryRevision: video.source.GeometryRevision, PTSNanos: pts, Quality: video.source.videoQuality()}
 	peer.mu.Unlock()
 	encoded, err := json.Marshal(metadata)

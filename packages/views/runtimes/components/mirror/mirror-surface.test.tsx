@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { RuntimeDevice, VscreenScope } from "@multica/core/types";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestResources } from "../../../test/i18n";
-import { MirrorSurface } from "./mirror-surface";
+import { MirrorSurface, mirrorConnectionStage } from "./mirror-surface";
 
 const scope: VscreenScope = {
   backendIdentity: "https://fixture.invalid",
@@ -35,14 +34,15 @@ const runtime: RuntimeDevice = {
 
 const source = {
   resource: {
-    backendIdentity: "https://fixture.invalid",
-    workspaceId: "workspace",
-    runtimeId: "runtime",
+    backendIdentity: scope.backendIdentity,
+    workspaceId: scope.workspaceId,
+    runtimeId: scope.runtimeId,
     uid: 501,
   },
-  source: { kind: "virtual", sourceId: "display:1" },
+  source: { kind: "physical" as const, sourceId: "display:1" },
   nativeEpoch: "native",
   generation: "display",
+  primary: true,
   name: "Display 1",
   width: 1600,
   height: 900,
@@ -54,158 +54,149 @@ const source = {
   geometryRevision: 1,
 };
 
-const stopControl = vi.fn(async () => undefined);
-const startControl = vi.fn(async () => undefined);
-const invalidateQueries = vi.fn(async () => undefined);
-const commandMutate = vi.fn((_command, options) => {
-  void options?.onSuccess?.();
-});
-let controlBarProps: {
-  onCommand: (kind: "emergency_stop" | "enable_interaction") => void;
-  onAgentChange: (agentId: string) => void;
-};
-
-vi.mock("@multica/core/workspace", () => ({
-  agentListOptions: () => ({ queryKey: ["agents"], queryFn: async () => [{ id: "agent", name: "Mirror agent", runtime_id: "runtime" }] }),
+const sourceQuery = vi.fn(async () => ({ sources: [source] }));
+vi.mock("@multica/core/api", () => ({ vscreenErrorReason: () => null }));
+vi.mock("@multica/core/permissions", () => ({
+  useCurrentMember: () => ({ role: "owner" }),
 }));
-vi.mock("@multica/core/chat/queries", () => ({
-  chatSessionsOptions: () => ({ queryKey: ["sessions"], queryFn: async () => [{ id: "chat", agent_id: "agent", status: "active", updated_at: "2026-09-21" }] }),
-  chatMessagesOptions: () => ({ queryKey: ["messages"], queryFn: async () => [] }),
-  pendingChatTaskOptions: () => ({ queryKey: ["pending-task"], queryFn: async () => null }),
-}));
-vi.mock("./mirror-chat-overlay", () => ({
-  MirrorChatOverlay: () => <aside aria-label="Live conversation" className="absolute bottom-3 right-3">Conversation content</aside>,
-}));
-
-vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
-    "@tanstack/react-query",
-  );
-  return {
-    ...actual,
-    useQueryClient: () =>
-      ({ invalidateQueries }) as unknown as ReturnType<typeof actual.useQueryClient>,
-  };
-});
-
-vi.mock("@multica/core/api", () => ({
-  vscreenErrorReason: () => null,
-}));
-
 vi.mock("@multica/core/runtimes", () => ({
-  deriveVscreenAccess: () => ({ canRequestTakeover: false }),
   runtimeDisplayLabel: () => "Fixture runtime",
-  useVscreenCommand: () => ({ mutate: commandMutate, isPending: false }),
-  vscreenCommandOptions: () => ({
-    queryKey: ["command"],
-    queryFn: async () => null,
-    enabled: false,
-  }),
-  vscreenKeys: { all: () => ["vscreen"] },
-  vscreenStateOptions: () => ({
-    queryKey: ["state"],
-    queryFn: async () => ({
-      workspaceId: "workspace",
-      runtimeId: "runtime",
-      state: {
-        state: "ready",
-        permissions: { screenRecording: "granted", accessibility: "granted" },
-        humanInteraction: true,
-      },
-    }),
-  }),
   vscreenSourcesOptions: () => ({
     queryKey: ["sources"],
-    queryFn: async () => ({ sources: [source] }),
+    queryFn: sourceQuery,
+  }),
+  agentDesktopReadinessOptions: () => ({
+    queryKey: ["agent-desktop"],
+    queryFn: async () => ({
+      platform: "darwin",
+      version: "1",
+      permissions: {
+        accessibility: "granted",
+        screenRecording: "granted",
+        automation: "not_required",
+      },
+      surfaceCount: 1,
+      ready: true,
+    }),
   }),
 }));
-
 vi.mock("./use-video-session", () => ({
   useVideoSession: () => ({
     stream: null,
     state: "streaming",
-    control: { status: "inactive" },
     reason: null,
-    quality: { width: 1600, height: 900, fps: 30, bitrate: 4_000_000, max_level_idc: 31 },
+    quality: {
+      width: 1600,
+      height: 900,
+      fps: 30,
+      bitrate: 4_000_000,
+      maxLevelIdc: 31,
+    },
     metadata: null,
-    statistics: { framesPerSecond: 24, bitsPerSecond: 2_000_000, packetLossPercent: 0.5, roundTripTimeMs: 25 },
-    startControl,
-    stopControl,
-    sendInput: vi.fn(),
+    statistics: {
+      framesPerSecond: 24,
+      bitsPerSecond: 2_000_000,
+      packetLossPercent: 0.5,
+      roundTripTimeMs: 25,
+    },
     onFrame: vi.fn(),
+    retryNow: vi.fn(),
+    cancelAutoRetry: vi.fn(),
+    retryAt: null,
+    retryAttempt: 0,
   }),
 }));
-
 let platformOpenFloating:
   | ((scope: VscreenScope, title: string) => Promise<void>)
-  | undefined = undefined;
+  | undefined;
 vi.mock("./mirror-platform", () => ({
   useMirrorPlatform: () => ({ openFloating: platformOpenFloating }),
 }));
-
-vi.mock("./mirror-handoff", () => ({ MirrorHandoff: () => null }));
 vi.mock("./mirror-video", () => ({ MirrorVideo: () => null }));
-vi.mock("./interactive-mirror-video", () => ({
-  InteractiveMirrorVideo: () => null,
+const mirrorControl = vi.hoisted(() => ({
+  status: { state: "view_only" } as Record<string, unknown>,
+  pending: false,
+  error: false,
+  leaseSeconds: null as number | null,
+  request: vi.fn(),
+  approve: vi.fn(),
+  deny: vi.fn(),
+  send: vi.fn(),
+  stop: vi.fn(),
+  refetch: vi.fn(),
 }));
-vi.mock("./mirror-source-picker", () => ({
-  MirrorSourcePicker: () => null,
-  mirrorSourceKey: () => "display:1",
-}));
-vi.mock("./mirror-command-controls", () => ({
-  MirrorCommandControls: () => null,
-}));
-vi.mock("./mirror-controller-presence", () => ({
-  MirrorControllerPresence: () => null,
-}));
-vi.mock("./mirror-control-bar", () => ({
-  MirrorControlBar: (props: typeof controlBarProps) => {
-    controlBarProps = props;
-    return null;
-  },
+vi.mock("./use-mirror-control", () => ({
+  useMirrorControl: () => mirrorControl,
 }));
 
-describe("MirrorSurface emergency stop", () => {
-  it("shows measured receive statistics alongside negotiated quality", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<I18nProvider locale="en" resources={getTestResources()}>
+function renderSurface(compact = false) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <I18nProvider locale="en" resources={getTestResources()}>
       <QueryClientProvider client={queryClient}>
-        <MirrorSurface scope={scope} runtime={runtime} />
+        <MirrorSurface scope={scope} runtime={runtime} compact={compact} />
       </QueryClientProvider>
-    </I18nProvider>);
+    </I18nProvider>,
+  );
+  return queryClient;
+}
 
-    expect(await screen.findByText("1600 × 900 · 24 FPS · 2.0 Mbps · 25 ms RTT · 0.5% loss")).toBeInTheDocument();
+describe("MirrorSurface canvas-first viewing", () => {
+  beforeEach(() => {
+    mirrorControl.status = { state: "view_only" };
+    for (const method of [
+      mirrorControl.request,
+      mirrorControl.approve,
+      mirrorControl.deny,
+      mirrorControl.send,
+      mirrorControl.stop,
+      mirrorControl.refetch,
+    ]) method.mockClear();
   });
-
-  it("leaves local control mode after the host command is accepted", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={getTestResources()}>
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </I18nProvider>
+  it("only reaches the streaming stage after frames are decoded", () => {
+    const base = {
+      readable: true,
+      online: true,
+      sourcesPending: false,
+      hasSource: true,
+      reason: null,
+    } as const;
+    expect(mirrorConnectionStage({ ...base, videoState: "closed" })).toBe(2);
+    expect(mirrorConnectionStage({ ...base, videoState: "failed" })).toBe(2);
+    expect(mirrorConnectionStage({ ...base, videoState: "negotiating" })).toBe(3);
+    expect(mirrorConnectionStage({ ...base, videoState: "decoding" })).toBe(4);
+    expect(mirrorConnectionStage({ ...base, videoState: "streaming" })).toBe(5);
+  });
+  it("shows measured receive statistics and starts an explicit control request", async () => {
+    renderSurface();
+    expect(
+      await screen.findByText(
+        "1600 × 900 · 24 FPS · 2.0 Mbps · 25 ms RTT · 0.5% loss",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mirror inspector" }),
     );
-
-    render(<MirrorSurface scope={scope} runtime={runtime} />, { wrapper });
-
-    await waitFor(() => expect(controlBarProps).toBeDefined());
-    controlBarProps.onCommand("emergency_stop");
-
-    await waitFor(() => expect(stopControl).toHaveBeenCalledOnce());
-    expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["vscreen"],
-    });
+    fireEvent.click(screen.getByRole("tab", { name: "Control" }));
+    const requestButtons = screen.getAllByRole("button", { name: "Request control" });
+    expect(requestButtons.length).toBeGreaterThan(0);
+    fireEvent.click(requestButtons[0]!);
+    expect(mirrorControl.request).toHaveBeenCalledOnce();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
   });
-});
 
-describe("MirrorSurface interaction", () => {
-  it("keeps fullscreen toolbar actions operable and exits fullscreen", async () => {
+  it("keeps fullscreen and floating-window actions operable", async () => {
     const originalRequestFullscreen = HTMLElement.prototype.requestFullscreen;
-    const originalExitFullscreen = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
-    const originalFullscreenElement = Object.getOwnPropertyDescriptor(document, "fullscreenElement");
+    const originalExitFullscreen = Object.getOwnPropertyDescriptor(
+      document,
+      "exitFullscreen",
+    );
+    const originalFullscreenElement = Object.getOwnPropertyDescriptor(
+      document,
+      "fullscreenElement",
+    );
     let fullscreenElement: Element | null = null;
     const requestFullscreen = vi.fn(async () => {
       fullscreenElement = screen.getByRole("region", { name: "Runtime screen" });
@@ -216,151 +207,106 @@ describe("MirrorSurface interaction", () => {
       document.dispatchEvent(new Event("fullscreenchange"));
     });
     Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-      configurable: true, value: requestFullscreen,
+      configurable: true,
+      value: requestFullscreen,
     });
     Object.defineProperty(document, "fullscreenElement", {
-      configurable: true, get: () => fullscreenElement,
+      configurable: true,
+      get: () => fullscreenElement,
     });
     Object.defineProperty(document, "exitFullscreen", {
-      configurable: true, value: exitFullscreen,
+      configurable: true,
+      value: exitFullscreen,
     });
     platformOpenFloating = vi.fn(async () => undefined);
     try {
-      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-      render(<I18nProvider locale="en" resources={getTestResources()}>
-        <QueryClientProvider client={queryClient}>
-          <MirrorSurface scope={scope} runtime={runtime} />
-        </QueryClientProvider>
-      </I18nProvider>);
-      fireEvent.click(await screen.findByRole("button", { name: "Enter full screen" }));
+      renderSurface();
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Enter full screen" }),
+      );
       expect(requestFullscreen).toHaveBeenCalledOnce();
       await screen.findByRole("button", { name: "Exit full screen" });
-      await act(async () => fireEvent.click(screen.getByRole("button", { name: "Open presentation view" })));
-      expect(platformOpenFloating).toHaveBeenCalledWith(scope, "Fixture runtime");
-      fireEvent.click(screen.getByRole("button", { name: "Clear screen" }));
-      expect(screen.getByRole("button", { name: "Show chat" })).toHaveAttribute("aria-pressed", "true");
+      await act(async () =>
+        fireEvent.click(
+          screen.getByRole("button", { name: "Open presentation view" }),
+        ),
+      );
+      expect(platformOpenFloating).toHaveBeenCalledWith(
+        scope,
+        "Fixture runtime",
+      );
       fireEvent.click(screen.getByRole("button", { name: "Exit full screen" }));
-      await screen.findByRole("button", { name: "Enter full screen" });
       expect(exitFullscreen).toHaveBeenCalledOnce();
     } finally {
-      Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
-        configurable: true, value: originalRequestFullscreen,
-      });
-      if (originalExitFullscreen) Object.defineProperty(document, "exitFullscreen", originalExitFullscreen);
-      else Reflect.deleteProperty(document, "exitFullscreen");
-      if (originalFullscreenElement) Object.defineProperty(document, "fullscreenElement", originalFullscreenElement);
-      else Reflect.deleteProperty(document, "fullscreenElement");
-      platformOpenFloating = undefined;
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "requestFullscreen",
+        originalRequestFullscreen
+          ? { configurable: true, value: originalRequestFullscreen }
+          : { configurable: true, value: undefined },
+      );
+      if (originalExitFullscreen)
+        Object.defineProperty(
+          document,
+          "exitFullscreen",
+          originalExitFullscreen,
+        );
+      if (originalFullscreenElement)
+        Object.defineProperty(
+          document,
+          "fullscreenElement",
+          originalFullscreenElement,
+        );
     }
   });
 
-  it("toggles the video conversation overlay without deleting its session", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(<I18nProvider locale="en" resources={getTestResources()}>
-      <QueryClientProvider client={queryClient}>
-        <MirrorSurface scope={scope} runtime={runtime} />
-      </QueryClientProvider>
-    </I18nProvider>);
-    await waitFor(() => expect(queryClient.getQueryData(["sessions"])).toBeDefined());
-    act(() => controlBarProps.onAgentChange("agent"));
-    const overlay = await screen.findByRole("complementary", { name: "Live conversation" });
-    expect(overlay.parentElement).toHaveClass("aspect-video");
-    expect(overlay).toHaveClass("absolute", "bottom-3", "right-3");
-    fireEvent.click(screen.getByRole("button", { name: "Clear screen" }));
-    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show chat" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Show chat" }));
-    expect(screen.getByText("Conversation content")).toBeInTheDocument();
-    expect(queryClient.getQueryData(["sessions"])).toHaveLength(1);
-    act(() => controlBarProps.onAgentChange(""));
-    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+  it("releases human control when Escape is pressed", async () => {
+    mirrorControl.status = {
+      state: "controlling",
+      controlId: "control-1",
+      controllerId: "owner",
+      leaseExpiresAt: null,
+      leaseMaxExpiresAt: null,
+    };
+    renderSurface();
+    await waitFor(() => expect(screen.getByText("You are controlling")).toBeInTheDocument());
+    await screen.findByRole("button", { name: "Stop control" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(mirrorControl.stop).toHaveBeenCalledOnce());
   });
 
-  it("starts local screen control after enabling remote interaction", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+  it("lets a runtime owner force-end another controller's lease", async () => {
+    mirrorControl.status = {
+      state: "other_controller",
+      controlId: "control-2",
+      controllerId: "Alex",
+      leaseExpiresAt: null,
+      leaseMaxExpiresAt: null,
+    };
+    renderSurface();
+    expect(await screen.findByText("Alex is controlling Display 1")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mirror inspector" }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Control" }));
+    const takeBackButtons = screen.getAllByRole("button", {
+      name: "Take back control",
     });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={getTestResources()}>
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </I18nProvider>
-    );
-
-    render(<MirrorSurface scope={scope} runtime={runtime} />, { wrapper });
-
-    await waitFor(() => expect(controlBarProps).toBeDefined());
-    controlBarProps.onCommand("enable_interaction");
-
-    await waitFor(() => expect(startControl).toHaveBeenCalledOnce());
-  });
-});
-describe("MirrorSurface toolbar buttons", () => {
-  it("keeps the refresh button clickable and refetches sources", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={getTestResources()}>
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </I18nProvider>
-    );
-    render(<MirrorSurface scope={scope} runtime={runtime} />, { wrapper });
-    await waitFor(() =>
-      expect(queryClient.getQueryData(["state"])).toBeDefined(),
-    );
-    const refresh = screen.getByRole("button", { name: "Reconnect" });
-    expect(refresh).toBeEnabled();
-    fireEvent.click(refresh);
+    expect(takeBackButtons.length).toBeGreaterThan(0);
+    fireEvent.click(takeBackButtons.at(-1)!);
+    expect(mirrorControl.stop).toHaveBeenCalledOnce();
   });
 
-  it("clicks the float button and opens the floating window", async () => {
-    const openFloating = vi.fn(async () => undefined);
-    platformOpenFloating = openFloating;
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={getTestResources()}>
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </I18nProvider>
+  it("keeps refresh in compact mode and omits floating-window actions", async () => {
+    const queryClient = renderSurface(true);
+    await screen.findAllByRole("button", { name: "Reconnect" });
+    expect(
+      screen.queryByRole("button", { name: "Open presentation view" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Screen source" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Reconnect" })[0]!);
+    expect(queryClient.getQueryState(["sources"])?.fetchStatus).not.toBe(
+      "idle",
     );
-    render(<MirrorSurface scope={scope} runtime={runtime} />, { wrapper });
-    await waitFor(() =>
-      expect(queryClient.getQueryData(["state"])).toBeDefined(),
-    );
-    const float = screen.getByRole("button", { name: "Open presentation view" });
-    expect(float).toBeEnabled();
-    fireEvent.click(float);
-    await waitFor(() => expect(openFloating).toHaveBeenCalledOnce());
-    expect(openFloating).toHaveBeenCalledWith(
-      expect.objectContaining({ runtimeId: "runtime" }),
-      expect.any(String),
-    );
-    platformOpenFloating = undefined;
-  });
-
-  it("hides float and clear-screen in compact (floating window) mode but keeps refresh operable", async () => {
-    platformOpenFloating = vi.fn(async () => undefined);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <I18nProvider locale="en" resources={getTestResources()}>
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </I18nProvider>
-    );
-    render(
-      <MirrorSurface scope={scope} runtime={runtime} compact />,
-      { wrapper },
-    );
-    await waitFor(() =>
-      expect(queryClient.getQueryData(["state"])).toBeDefined(),
-    );
-    expect(screen.getByRole("button", { name: "Reconnect" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Open presentation view" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Clear screen" })).not.toBeInTheDocument();
-    platformOpenFloating = undefined;
   });
 });

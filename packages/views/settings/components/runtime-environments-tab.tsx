@@ -13,7 +13,7 @@ import { emptyWorktreeFilters, filterWorktreeInventory } from "@multica/core/typ
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@multica/ui/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
 import { RefreshCw } from "@multica/ui/icons";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 import { RuntimeEnvironmentResources } from "./runtime-environment-resources";
 import { RuntimeEnvironmentPolicy } from "./runtime-environment-policy";
@@ -33,6 +33,7 @@ export function RuntimeEnvironmentsTab() {
 
 export function RuntimeEnvironments({ workspaceId, workspaceSlug, userId }: { workspaceId: string; workspaceSlug: string; userId: string }) {
   const { t } = useT("settings");
+  const locale = useLocale();
   const client = useQueryClient();
   const [runtimeId, setRuntimeId] = useState("");
   const [filters, setFilters] = useState(emptyWorktreeFilters);
@@ -123,9 +124,9 @@ export function RuntimeEnvironments({ workspaceId, workspaceSlug, userId }: { wo
     {error && <p role="alert" className="break-words text-body text-destructive">{error.message}</p>}
     {ready && <>
       <RuntimeEnvironmentPolicy key={runtimeId} workspaceId={workspaceId} runtimeId={runtimeId} userId={userId} disabled={busy} />
-      {!!operations.data?.length && <Select disabled={start.isPending || pendingBatches.current.length > 0} items={[{ value: "", label: t(($) => $.environments.operation_history) }, ...operations.data.map((item) => ({ value: item.id, label: `${item.automatic ? t(($) => $.environments.automatic) : t(($) => $.environments.manual)} · ${new Date(item.startedAt).toLocaleString()} · ${item.completed}/${item.total}` }))]} value={selectedJobId} onValueChange={(value) => setJobId(value ?? "")}>
+      {!!operations.data?.length && <Select disabled={start.isPending || pendingBatches.current.length > 0} items={[{ value: "", label: t(($) => $.environments.operation_history) }, ...operations.data.map((item) => ({ value: item.id, label: `${item.automatic ? t(($) => $.environments.automatic) : t(($) => $.environments.manual)} · ${new Date(item.startedAt).toLocaleString(locale)} · ${item.completed}/${item.total}` }))]} value={selectedJobId} onValueChange={(value) => setJobId(value ?? "")}>
         <SelectTrigger aria-label={t(($) => $.environments.operation_history)}><SelectValue /></SelectTrigger>
-        <SelectContent><SelectItem value="">{t(($) => $.environments.operation_history)}</SelectItem>{operations.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.automatic ? t(($) => $.environments.automatic) : t(($) => $.environments.manual)} · {new Date(item.startedAt).toLocaleString()} · {item.completed}/{item.total}</SelectItem>)}</SelectContent>
+        <SelectContent><SelectItem value="">{t(($) => $.environments.operation_history)}</SelectItem>{operations.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.automatic ? t(($) => $.environments.automatic) : t(($) => $.environments.manual)} · {new Date(item.startedAt).toLocaleString(locale)} · {item.completed}/{item.total}</SelectItem>)}</SelectContent>
       </Select>}
       <WorktreeInventoryFilters rows={inventory.data ?? []} filters={filters} onChange={setFilters} disabled={busy} hideWorkspace />
       <div className="flex flex-wrap gap-2">

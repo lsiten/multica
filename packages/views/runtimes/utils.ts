@@ -1330,6 +1330,7 @@ export function aggregateByWeek(
   usage: readonly WeeklyAggregable[],
   tz: string,
   weekCount: number,
+  locale = "en",
 ): {
   weeklyTokens: WeeklyTokenData[];
   weeklyCostStack: WeeklyCostStackData[];
@@ -1395,8 +1396,8 @@ export function aggregateByWeek(
     return {
       weekStart,
       weekEnd,
-      label: formatShortDate(weekStart),
-      rangeLabel: `${formatShortDate(weekStart)} – ${formatShortDate(weekEnd)}`,
+      label: formatShortDate(weekStart, locale),
+      rangeLabel: `${formatShortDate(weekStart, locale)} – ${formatShortDate(weekEnd, locale)}`,
       partial,
       daysCovered: partial ? elapsedDays : 7,
     };
@@ -1499,10 +1500,10 @@ export function weekStartIso(iso: string): string {
 
 // "May 12" — short, locale-aware month/day for a YYYY-MM-DD string. Parsing
 // via UTC keeps the displayed day stable regardless of the browser's tz.
-export function formatShortDate(iso: string): string {
+export function formatShortDate(iso: string, locale = "en"): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1));
-  return dt.toLocaleString("en", {
+  return dt.toLocaleString(locale, {
     month: "short",
     day: "numeric",
     timeZone: "UTC",

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/mirror"
-	"github.com/multica-ai/multica/server/internal/vscreen/native"
+	"github.com/multica-ai/multica/server/internal/mirror/nativecapture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -16,7 +16,7 @@ const mirrorAnswerMargin = 2 * time.Second
 type mirrorOfferMessage struct {
 	raw               json.RawMessage
 	enqueue           func([]byte) (*wsOutbound, error)
-	controlGeneration mirrorControlGeneration
+	controlGeneration mirrorConnectionGeneration
 }
 
 func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessage) {
@@ -27,7 +27,7 @@ func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessa
 	// where the parent binary has no in-process native selectors (for example,
 	// Linux). The child host is the capability boundary in that mode, so do not
 	// reject its offers using the parent platform probe.
-	if d.cfg.NativeHostExecutable != "" && (native.Supported() || d.mirrorChild != nil) {
+	if d.cfg.NativeHostExecutable != "" && (nativecapture.Supported() || d.mirrorChild != nil) {
 		d.handleManagedMirrorOffer(ctx, message)
 		return
 	}
@@ -91,7 +91,7 @@ func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessa
 			}
 			return
 		}
-		if !d.mirrorControlGenerationIsCurrent(controlGeneration) {
+		if !d.mirrorConnectionCurrent(controlGeneration) {
 			if err := answer.Abandon(); err != nil {
 				d.logger.Debug("stale mirror peer close failed", "runtime_id", offer.RuntimeID, "error", err)
 			}
@@ -113,7 +113,7 @@ func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessa
 			}
 			return
 		}
-		if !d.mirrorControlGenerationIsCurrent(controlGeneration) {
+		if !d.mirrorConnectionCurrent(controlGeneration) {
 			if err := answer.Abandon(); err != nil {
 				d.logger.Debug("stale mirror peer close failed", "runtime_id", offer.RuntimeID, "error", err)
 			}
@@ -131,7 +131,7 @@ func (d *Daemon) handleMirrorOffer(ctx context.Context, message mirrorOfferMessa
 			d.logger.Debug("mirror answer dropped", "runtime_id", offer.RuntimeID, "error", err)
 			return
 		}
-		if !d.mirrorControlGenerationIsCurrent(controlGeneration) && outbound.cancel() {
+		if !d.mirrorConnectionCurrent(controlGeneration) && outbound.cancel() {
 			if err := answer.Abandon(); err != nil {
 				d.logger.Debug("stale mirror peer close failed", "runtime_id", offer.RuntimeID, "error", err)
 			}
@@ -143,13 +143,13 @@ func mirrorAnswerFailureReason(err error) string {
 	var captureErr *mirror.CaptureError
 	if errors.As(err, &captureErr) {
 		switch captureErr.Reason {
-		case mirror.ControlReasonPermissionDenied:
+		case mirror.CaptureReasonPermissionDenied:
 			return protocol.MirrorAnswerFailurePermissionDenied
-		case mirror.ControlReasonUnsupported:
+		case mirror.CaptureReasonUnsupported:
 			return protocol.MirrorAnswerFailureUnsupported
-		case mirror.ControlReasonNoDisplay:
+		case mirror.CaptureReasonNoDisplay:
 			return protocol.MirrorAnswerFailureNoDisplay
-		case mirror.ControlReasonCaptureUnavailable:
+		case mirror.CaptureReasonCaptureUnavailable:
 			return protocol.MirrorAnswerFailureCaptureUnavailable
 		}
 	}
@@ -206,53 +206,17 @@ func (d *Daemon) sendMirrorViewerState(
 	return enqueue(frame)
 }
 
-func (d *Daemon) sendMirrorControlState(
-	enqueue func([]byte) (*wsOutbound, error),
-	workspaceID string,
-	runtimeID string,
-	change mirror.ControlStateChange,
-) (*wsOutbound, error) {
-	if enqueue == nil {
-		return nil, errWSRPCUnavailable
-	}
-	payload := protocol.MirrorControlStatePayload{
-		WorkspaceID: workspaceID,
-		RuntimeID:   runtimeID,
-		DaemonID:    d.cfg.DaemonID,
-		ViewerID:    change.ViewerID,
-		UserID:      change.UserID,
-		Source:      change.Source,
-		Active:      change.Active,
-	}
-	if err := payload.Validate(); err != nil {
-		return nil, err
-	}
-	frame, err := json.Marshal(protocol.Message{Type: protocol.EventMirrorControlState, Payload: marshalRaw(payload)})
-	if err != nil {
-		return nil, err
-	}
-	return enqueue(frame)
-}
-
 func (d *Daemon) bindMirrorStateHooks(
 	runtimeMirror *mirror.RuntimeMirror,
 	enqueue func([]byte) (*wsOutbound, error),
 	workspaceID string,
 	runtimeID string,
-	generation mirrorControlGeneration,
+	generation mirrorConnectionGeneration,
 ) {
 	gen := uint64(generation)
 	runtimeMirror.SetViewerStateHook(func(change mirror.ViewerStateChange) {
 		if _, err := d.sendMirrorViewerState(enqueue, workspaceID, runtimeID, change.ViewerID, change.Active); err != nil {
 			d.logger.Debug("mirror viewer state dropped", "runtime_id", runtimeID, "error", err)
-		}
-	}, gen)
-	runtimeMirror.SetControlStateHook(func(change mirror.ControlStateChange) {
-		if !d.mirrorControlGenerationIsCurrent(generation) {
-			return
-		}
-		if _, err := d.sendMirrorControlState(enqueue, workspaceID, runtimeID, change); err != nil {
-			d.logger.Debug("mirror control state dropped", "runtime_id", runtimeID, "error", err)
 		}
 	}, gen)
 }

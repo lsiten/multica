@@ -16,17 +16,17 @@ func (s *Source) captureAndBroadcast(ctx context.Context) error {
 		if hook != nil {
 			hook(err)
 		}
-		s.broadcastControl(captureControlMessage(err))
+		s.broadcastCaptureError(captureCaptureErrorMessage(err))
 		return err
 	}
 	if image == nil {
-		s.broadcastControl(captureControlMessage(ErrCaptureUnavailable))
+		s.broadcastCaptureError(captureCaptureErrorMessage(ErrCaptureUnavailable))
 		return ErrCaptureUnavailable
 	}
 	var jpegData bytes.Buffer
 	if err := jpeg.Encode(&jpegData, image, &jpeg.Options{Quality: 60}); err != nil {
 		encodeErr := wrapCaptureError(err)
-		s.broadcastControl(captureControlMessage(encodeErr))
+		s.broadcastCaptureError(captureCaptureErrorMessage(encodeErr))
 		return encodeErr
 	}
 	bounds := image.Bounds()
@@ -58,7 +58,7 @@ func (s *Source) captureFailureHandler() func(error) {
 	return s.captureFailureHook
 }
 
-func (s *Source) broadcastControl(message ControlMessage) {
+func (s *Source) broadcastCaptureError(message CaptureErrorMessage) {
 	s.mu.Lock()
 	viewers := make(map[string]*sourceViewer, len(s.viewers))
 	for id, viewer := range s.viewers {
@@ -67,9 +67,9 @@ func (s *Source) broadcastControl(message ControlMessage) {
 	s.mu.Unlock()
 
 	for viewerID, viewer := range viewers {
-		controlSink, ok := viewer.sink.(ControlSink)
+		controlSink, ok := viewer.sink.(CaptureErrorSink)
 		if ok {
-			if err := controlSink.SendControl(message); err != nil {
+			if err := controlSink.SendCaptureError(message); err != nil {
 				s.removeViewer(viewerID, viewer)
 				continue
 			}

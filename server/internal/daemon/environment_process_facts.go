@@ -24,6 +24,8 @@ type environmentFact struct {
 	DirectoryStates []protocol.WorkDirectoryState `json:"directory_states,omitempty"`
 	RepoURL         string                        `json:"repo_url,omitempty"`
 	OwnerTaskID     string                        `json:"owner_task_id,omitempty"`
+	DirectoryTaskID string                        `json:"directory_task_id,omitempty"`
+	Path            string                        `json:"path,omitempty"`
 	Kind            string                        `json:"kind"`
 	WorkspaceID     string                        `json:"workspace_id,omitempty"`
 	RuntimeID       string                        `json:"runtime_id,omitempty"`
@@ -216,7 +218,14 @@ func (c *environmentFactCallback) fetch(ctx context.Context, fact environmentFac
 			return reject
 		}
 		var binding protocol.LocalReviewRuntimeBinding
-		err = c.daemon.client.getJSON(ctx, "/api/daemon/runtimes/"+url.PathEscape(fact.RuntimeID)+"/tasks/"+url.PathEscape(fact.ID)+"/review-binding", &binding)
+		path := "/api/daemon/runtimes/" + url.PathEscape(fact.RuntimeID) + "/tasks/" + url.PathEscape(fact.ID) + "/review-binding"
+		if fact.DirectoryTaskID != "" || fact.Path != "" {
+			query := url.Values{}
+			query.Set("directory_task_id", fact.DirectoryTaskID)
+			query.Set("path", fact.Path)
+			path += "?" + query.Encode()
+		}
+		err = c.daemon.client.getJSON(ctx, path, &binding)
 		value = binding
 	case "review_status":
 		if fact.ID == "" || fact.RuntimeID == "" || fact.ClaimToken == "" {
@@ -311,7 +320,7 @@ func (t *environmentFactTransport) fetch(parent context.Context, fact environmen
 
 func environmentFactFromRequest(request *http.Request) (environmentFact, error) {
 	invalid := errors.New("operation is outside physical fact scope")
-	if request.URL.Host != "physical-facts.invalid" || request.URL.RawQuery != "" {
+	if request.URL.Host != "physical-facts.invalid" {
 		return environmentFact{}, invalid
 	}
 	parts := strings.Split(strings.Trim(request.URL.Path, "/"), "/")
@@ -328,7 +337,22 @@ func environmentFactFromRequest(request *http.Request) (environmentFact, error) 
 		}
 	}
 	if request.Method == http.MethodGet && len(parts) == 7 && parts[2] == "runtimes" && parts[4] == "tasks" && parts[6] == "review-binding" {
-		return environmentFact{Kind: "review_binding", RuntimeID: parts[3], ID: parts[5]}, nil
+		query := request.URL.Query()
+		for key := range query {
+			if key != "directory_task_id" && key != "path" {
+				return environmentFact{}, invalid
+			}
+		}
+		return environmentFact{
+			Kind:            "review_binding",
+			RuntimeID:       parts[3],
+			ID:              parts[5],
+			DirectoryTaskID: query.Get("directory_task_id"),
+			Path:            query.Get("path"),
+		}, nil
+	}
+	if request.URL.RawQuery != "" {
+		return environmentFact{}, invalid
 	}
 	if request.Method == http.MethodPost && parts[2] == "workspaces" && parts[len(parts)-1] == "gc-check" {
 		var body struct {

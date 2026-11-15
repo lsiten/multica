@@ -313,7 +313,7 @@ func (s *llm2jevMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req pluginHookMCPRequest
-	if strictVscreenJSON(raw, &req) != nil || req.JSONRPC != "2.0" {
+	if strictJSON(raw, &req) != nil || req.JSONRPC != "2.0" {
 		writeLLM2JevMCPError(w, nil, -32600, "invalid request")
 		return
 	}
@@ -422,7 +422,7 @@ func (s *llm2jevMCPServer) handleCall(w http.ResponseWriter, r *http.Request, re
 		Arguments json.RawMessage `json:"arguments"`
 		Meta      json.RawMessage `json:"_meta,omitempty"`
 	}
-	if err := strictVscreenJSON(req.Params, &params); err != nil {
+	if err := strictJSON(req.Params, &params); err != nil {
 		writeLLM2JevMCPError(w, req.ID, -32602, "unknown or invalid tool parameters")
 		return
 	}
@@ -569,7 +569,7 @@ func jevSystemOneDescriptor() map[string]any {
 
 func (s *llm2jevMCPServer) evaluateSystemOne(ctx context.Context, raw json.RawMessage) ([]byte, error) {
 	var input llm2jev.SystemOneRequest
-	if err := strictVscreenJSON(raw, &input); err != nil {
+	if err := strictJSON(raw, &input); err != nil {
 		var fieldError *json.UnmarshalTypeError
 		if errors.As(err, &fieldError) && fieldError.Field == "questions" {
 			return nil, &llm2jev.InputError{Field: "questions", Expected: "provide an object mapping names to question objects, not an array"}
@@ -636,7 +636,7 @@ func (s *llm2jevMCPServer) requestSystemOne(ctx context.Context, body []byte) ([
 
 func (s *llm2jevMCPServer) evaluate(ctx context.Context, raw json.RawMessage) ([]byte, error) {
 	var input llm2jev.Request
-	if err := strictVscreenJSON(raw, &input); err != nil {
+	if err := strictJSON(raw, &input); err != nil {
 		return nil, errors.New("llm2jev: invalid decision request")
 	}
 	if err := llm2jev.ValidateRequest(input); err != nil {
@@ -725,7 +725,7 @@ func completionFieldError(raw json.RawMessage, decodeErr error) (field, expected
 
 func (s *llm2jevMCPServer) prepareCompletionInput(raw json.RawMessage) (completionInput, error) {
 	var input completionInput
-	if err := strictVscreenJSON(raw, &input); err != nil {
+	if err := strictJSON(raw, &input); err != nil {
 		if field, expected, ok := completionFieldError(raw, err); ok {
 			return input, &llm2jev.InputError{Field: field, Expected: expected}
 		}

@@ -120,8 +120,8 @@ func (s *Source) removeViewer(viewerID string, viewer *sourceViewer) {
 
 // SetViewerStateHook observes viewer attachments and detachments. It replays
 // one active event per current viewer while holding the source lock so
-// reconnecting a control connection cannot reorder replay against departure.
-// A hook from an older control connection can never replace the current hook.
+// reconnecting a mirror connection cannot reorder replay against departure.
+// A hook from an older mirror connection can never replace the current hook.
 func (s *Source) SetViewerStateHook(hook func(ViewerStateChange), generation uint64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

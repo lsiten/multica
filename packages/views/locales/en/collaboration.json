@@ -10,6 +10,11 @@
   "project_tab_graph": "Project collaboration",
   "project_title": "Project collaboration",
   "project_description": "Only Agent relations with runtime evidence are shown.",
+  "view_graph": "Graph",
+  "view_list": "List",
+  "accessible_nodes": "Agents and squads",
+  "accessible_relations": "Relations",
+  "no_relations": "No collaboration relations to show.",
   "agents_count": "{{count}} Agents",
   "refresh": "Refresh",
   "load_failed": "Failed to load project collaboration.",
@@ -124,5 +129,11 @@
     "failed": "Failed",
     "cancelled": "Cancelled"
   },
+  "events": {
+    "task_started": "Task started",
+    "task_finished": "Task finished",
+    "task_failed": "Task failed"
+  },
+  "runtime_event": "Runtime event",
   "run_count": "{{count}} runs"
 }

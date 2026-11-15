@@ -1301,13 +1301,6 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.LockTaskUsageRollupForWorkspaceDelete(ctx) },
 		},
 		{
-			// Bounded batches, after the rollup lock because it deletes
-			// task_usage. Replaces both the task-keyed arms of the old leaf
-			// data statement and the separate whole-workspace task delete.
-			name: "delete vscreen interventions",
-			run:  func() error { return qtx.DeleteVscreenInterventionsByWorkspace(ctx, requester.WorkspaceID) },
-		},
-		{
 			name: "delete tasks",
 			run:  func() error { return deleteWorkspaceTasks(ctx, qtx, requester.WorkspaceID) },
 		},

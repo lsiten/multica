@@ -385,8 +385,8 @@ export function DashboardPage() {
   // instead of being dropped (MUL-2382 weekly window scoping). Week
   // boundaries follow the viewer's timezone.
   const weekly = useMemo(
-    () => aggregateByWeek(dailyUsage, viewTZ, weekCount),
-    [dailyUsage, viewTZ, weekCount],
+    () => aggregateByWeek(dailyUsage, viewTZ, weekCount, locales),
+    [dailyUsage, viewTZ, weekCount, locales],
   );
   const weeklyCost = weekly.weeklyCostStack;
   const weeklyTokens = weekly.weeklyTokens;

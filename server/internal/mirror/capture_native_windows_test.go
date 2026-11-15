@@ -21,8 +21,8 @@ func TestWindowsGDIFailuresMapToCaptureUnavailable(t *testing.T) {
 			if !errors.Is(err, ErrCaptureUnavailable) {
 				t.Fatalf("classifyNativeCaptureError(%q) = %v, want %v", message, err, ErrCaptureUnavailable)
 			}
-			if got := ControlReasonFromError(err); got != ControlReasonCaptureUnavailable {
-				t.Fatalf("control reason = %q, want %q", got, ControlReasonCaptureUnavailable)
+			if got := CaptureReasonFromError(err); got != CaptureReasonCaptureUnavailable {
+				t.Fatalf("control reason = %q, want %q", got, CaptureReasonCaptureUnavailable)
 			}
 		})
 	}

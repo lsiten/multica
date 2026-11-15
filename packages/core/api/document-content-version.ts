@@ -32,6 +32,7 @@ export const DocumentContentVersionSchema = z.object({
   actor_id: z.string().uuid(),
   // True when this row is the D4 merge of consecutive same-actor edits.
   merged: z.boolean().default(false),
+  session_id: z.string().nullable().optional(),
   note: z.string().nullable().optional().default(null),
   created_at: z.string(),
 });
@@ -52,6 +53,7 @@ export const RecordDocumentContentVersionRequestSchema = z.object({
   expected_revision: z.number().int().positive().optional(),
   // Fold consecutive same-actor edits into the actor's latest version (D4).
   merge: z.boolean().optional(),
+  session_id: z.string().min(1).max(128).optional(),
 });
 
 export type DocumentContentVersion = z.infer<typeof DocumentContentVersionSchema>;

@@ -45,7 +45,7 @@ describe("Vscreen viewer bindings", () => {
     expect(result).toMatchObject({
       grantId: "grant-1",
       sourceGeneration: "capture-1",
-      source: { kind: "virtual", sourceId: "display-1" },
+      source: { kind: "physical", sourceId: "display-1" },
     });
   });
   it.each([

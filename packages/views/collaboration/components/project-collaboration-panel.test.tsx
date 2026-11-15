@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { useCallback, useMemo, useState } from "react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
 import type { ProjectCollaborationGraphResponse, ProjectCollaborationEvidenceResponse } from "@multica/core/types";
@@ -12,8 +13,18 @@ vi.mock("@multica/core/api",()=>({api:{getProjectCollaborationGraph:vi.fn(),getP
 vi.mock("@multica/core/paths",()=>({useWorkspacePaths:()=>({issueDetail:(id:string)=>"/qa/issues/"+id})}));
 const graph:ProjectCollaborationGraphResponse={project_id:"project",nodes:[{id:"agent:a",type:"agent",label:"甲",data:{task_count:1,active_count:1}},{id:"agent:b",type:"agent",label:"乙",data:{task_count:1,active_count:1}}],edges:[{id:"edge",from:"agent:a",to:"agent:b",type:"delegated",count:1,active_count:1,evidence_count:2,last_event_at:null}],summary:{task_count:1,active_count:1,agent_count:2,coverage:"complete"},as_of:"",limit:100,offset:0,has_more:false};
 const evidence:ProjectCollaborationEvidenceResponse={project_id:"project",evidence:[{task_id:"run",source_task_id:"parent-run",agent_id:"b",agent_name:"乙",source_agent_id:"a",source_agent_name:"甲",relation_type:"delegated",status:"failed",task_active:true,issue_id:"child",issue_key:"QA-2",issue_title:"审查子任务",issue_status:"in_review",squad_id:null,trigger_comment_id:"comment",created_at:"2026-10-02T00:00:00Z",started_at:null,completed_at:null,event_count:1,artifacts:[{id:"file",filename:"review.txt"}]}],issues:[{id:"parent",key:"QA-1",title:"父任务",status:"done",parent_issue_id:null,context_only:true},{id:"child",key:"QA-2",title:"审查子任务",status:"in_review",parent_issue_id:"parent",context_only:false}],total:1,limit:100,offset:0,has_more:false,as_of:"",truncated:false};
-const navigation:NavigationAdapter={pathname:"/qa/projects/project",searchParams:new URLSearchParams(),hash:"",push:vi.fn(),replace:vi.fn(),back:vi.fn(),getShareableUrl:path=>path};
-function mount(){const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});const view=renderWithI18n(<QueryClientProvider client={client}><NavigationProvider value={navigation}><ProjectCollaborationPanel projectId="project" agents={[]} squads={[]}/></NavigationProvider></QueryClientProvider>,{locale:"zh-Hans"});return {client,...view}}
+function NavigationHarness({children}:{readonly children:React.ReactNode}){
+ const [search,setSearch]=useState("");
+ const replace=useCallback((path:string)=>{
+  setSearch(new URL(path,"https://fixture.invalid").search.replace(/^\?/,""));
+ },[]);
+ const value=useMemo<NavigationAdapter>(()=>({
+  pathname:"/qa/projects/project",searchParams:new URLSearchParams(search),hash:"",
+  push:vi.fn(),replace,back:vi.fn(),getShareableUrl:path=>path,
+ }),[replace,search]);
+ return <NavigationProvider value={value}>{children}</NavigationProvider>;
+}
+function mount(){const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});const view=renderWithI18n(<QueryClientProvider client={client}><NavigationHarness><ProjectCollaborationPanel projectId="project" agents={[]} squads={[]}/></NavigationHarness></QueryClientProvider>,{locale:"zh-Hans"});return {client,...view}}
 describe("project collaboration interactions",()=>{
  beforeEach(()=>{vi.clearAllMocks();vi.mocked(api.getProjectCollaborationGraph).mockResolvedValue(graph);vi.mocked(api.getProjectCollaborationEvidence).mockResolvedValue(evidence)});
  it("combines unfinished task activity with run status and title search",async()=>{
@@ -41,6 +52,15 @@ describe("project collaboration interactions",()=>{
   expect(screen.queryByRole("button",{name:"甲"})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("checkbox",{name:"显示独立智能体"}));
   expect(await screen.findByRole("button",{name:"甲"})).toBeInTheDocument();
+ });
+ it("offers an equivalent keyboard-accessible list view",async()=>{
+  mount();await screen.findByRole("button",{name:"甲"});
+  fireEvent.click(screen.getByRole("button",{name:"列表"}));
+  const nodesHeading = await screen.findByRole("heading",{name:"智能体与小队"});
+  expect(within(nodesHeading.closest("section")!).getByRole("button",{name:/甲.*未完成 1 \/ 共 1/})).toBeInTheDocument();
+  const relationsHeading = screen.getByRole("heading",{name:"协作关系"});
+  fireEvent.click(within(relationsHeading.closest("section")!).getByRole("button",{name:/甲 → 乙 · 委派.*未完成 1 \/ 共 1/}));
+  await screen.findByRole("dialog");
  });
  it("clears a selected relation when it disappears on refresh",async()=>{
   const {client}=mount();

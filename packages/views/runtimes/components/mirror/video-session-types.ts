@@ -1,21 +1,9 @@
 import type { MirrorVideoStats } from "./video-stats";
 import type {
-  MirrorControlGrant,
-  MirrorInputAck,
-  MirrorInputMessage,
-  MirrorPointerButton,
   VscreenVideoMetadata,
   VscreenVideoQuality,
 } from "@multica/core/types";
-export interface MirrorAuthorizationRequest {
- readonly operation?: { readonly kind: "command" | "files" | "permissions" | "mcp" | "unknown"; readonly target: string; readonly location?: string; readonly reason?: string; readonly details: string; readonly permissions?: { readonly network_enabled?: boolean; readonly read_paths?: readonly string[]; readonly write_paths?: readonly string[] }; readonly files?: readonly { readonly path: string; readonly kind: "add" | "update" | "delete" | "unknown"; readonly move_path?: string }[] };
-  readonly type: "mirror-authorization:request";
-  readonly request_id: string;
-  readonly kind: "system" | "cli";
-  readonly title: string;
-  readonly message: string;
-  readonly expires_at: string;
-}
+
 export type MirrorVideoState =
   | "preparing"
   | "negotiating"
@@ -23,58 +11,18 @@ export type MirrorVideoState =
   | "streaming"
   | "failed"
   | "closed";
+
 export interface MirrorVideoCallbacks {
   readonly state: (state: MirrorVideoState, reason?: string) => void;
   readonly stream: (stream: MediaStream | null) => void;
   readonly quality?: (quality: VscreenVideoQuality | null) => void;
   readonly statistics?: (statistics: MirrorVideoStats | null) => void;
   readonly metadata: (metadata: VscreenVideoMetadata | null) => void;
-  readonly control?: (state: MirrorControlState) => void;
-  readonly transcript?: (text: string) => void;
-  readonly authorization?: (request: MirrorAuthorizationRequest) => void;
 }
+
 export class MirrorVideoError extends Error {
   constructor(readonly reason: string) {
     super(reason);
     this.name = "MirrorVideoError";
   }
-}
-
-
-export type MirrorControlStatus =
-  | "inactive"
-  | "requesting"
-  | "active"
-  | "failed";
-
-export interface MirrorControlState {
-  readonly status: MirrorControlStatus;
-  readonly grant?: MirrorControlGrant;
-  readonly reason?: string;
-  readonly lastAck?: MirrorInputAck;
-}
-
-export interface MirrorControlPointer {
-  readonly button?: MirrorPointerButton;
-  readonly x: number;
-  readonly y: number;
-  readonly deltaX?: number;
-  readonly deltaY?: number;
-}
-
-export interface MirrorControlKey {
-  readonly key: string;
-  readonly modifiers?: readonly ("shift" | "control" | "alt" | "meta")[];
-}
-
-export interface MirrorControlText {
-  readonly text: string;
-}
-
-export interface MirrorControlInput {
-  readonly kind: MirrorInputMessage["kind"];
-  readonly gestureId: string;
-  readonly pointer?: MirrorControlPointer;
-  readonly key?: MirrorControlKey;
-  readonly text?: MirrorControlText;
 }

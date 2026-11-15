@@ -29,7 +29,7 @@ func videoOffer(t *testing.T, kind webrtc.RTPCodecType, onMessage ...func(webrtc
 		t.Fatal(err)
 	}
 	if len(onMessage) > 0 {
-		channel, err := pc.CreateDataChannel("mirror-control", nil)
+		channel, err := pc.CreateDataChannel("mirror-metadata", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

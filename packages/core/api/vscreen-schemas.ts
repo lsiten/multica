@@ -29,7 +29,6 @@ export const VscreenScopeSchema = z.object({
   runtimeId: VscreenIdentitySchema,
 });
 const id = VscreenIdentitySchema;
-const revision = VscreenRevisionSchema;
 export const VscreenEnvelopeSchema = z
   .object({
     workspace_id: id,
@@ -42,17 +41,6 @@ export const VscreenEnvelopeSchema = z
     runtimeId: wire.runtime_id,
     daemonGeneration: wire.daemon_generation,
     requestId: wire.request_id,
-  }));
-export const VscreenEpochSchema = z
-  .object({
-    native_epoch: id,
-    display_generation: id,
-    geometry_revision: revision,
-  })
-  .transform((wire) => ({
-    nativeEpoch: wire.native_epoch,
-    displayGeneration: wire.display_generation,
-    geometryRevision: wire.geometry_revision,
   }));
 export const VscreenResourceSchema = z
   .object({
@@ -70,7 +58,7 @@ export const VscreenResourceSchema = z
     displayId: wire.display_id,
   }));
 export const MirrorSourceSchema = z
-  .object({ kind: z.enum(["virtual", "physical", "system"]), source_id: id })
+  .object({ kind: z.enum(["physical", "system"]), source_id: id })
   .transform((wire) => ({ kind: wire.kind, sourceId: wire.source_id }));
 export const MirrorSourceBindingSchema = z
   .object({
@@ -149,64 +137,83 @@ export const MirrorViewerGrantSchema = z
     expiresAt: wire.expires_at,
   }));
 
-export const MirrorControlGrantSchema = z
+const agentDesktopPermissionSchema = z
+  .enum(["granted", "denied", "unknown", "not_required", "not_determined"])
+  .catch("unknown");
+
+export const AgentDesktopReadinessSchema = z
   .object({
-    grant_id: id,
-    session_id: id,
-    workspace_id: id,
-    runtime_id: id,
-    user_id: id,
-    viewer_id: id,
-    native_epoch: id,
-    source: MirrorSourceSchema,
-    source_generation: id,
-    expires_at: z.iso.datetime({ offset: true }),
+    platform: z.string().max(32),
+    version: z.string().max(32),
+    permissions: z.object({
+      accessibility: agentDesktopPermissionSchema,
+      screen_recording: agentDesktopPermissionSchema,
+      automation: agentDesktopPermissionSchema,
+    }),
+    surface_count: z.number().int().min(0).max(256),
+    ready: z.boolean(),
+    reason: z.string().min(1).max(80).optional(),
   })
-  .transform((wire) => ({
-    grantId: wire.grant_id,
-    sessionId: wire.session_id,
-    workspaceId: wire.workspace_id,
-    runtimeId: wire.runtime_id,
-    userId: wire.user_id,
-    viewerId: wire.viewer_id,
-    nativeEpoch: wire.native_epoch,
-    source: wire.source,
-    sourceGeneration: wire.source_generation,
-    expiresAt: wire.expires_at,
+  .refine(
+    (readiness) =>
+      readiness.ready
+        ? readiness.platform.trim().length > 0 &&
+          readiness.version.trim().length > 0 &&
+          readiness.reason === undefined
+        : readiness.reason !== undefined,
+  )
+  .transform((readiness) => ({
+    platform: readiness.platform,
+    version: readiness.version,
+    permissions: {
+      accessibility: readiness.permissions.accessibility,
+      screenRecording: readiness.permissions.screen_recording,
+      automation: readiness.permissions.automation,
+    },
+    surfaceCount: readiness.surface_count,
+    ready: readiness.ready,
+    reason: readiness.reason,
   }));
 
+export function parseAgentDesktopReadiness(raw: unknown) {
+  const parsed = AgentDesktopReadinessSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
 
-export const RuntimeMirrorControllerSchema = z
-  .object({
-    viewer_id: id,
-    user_id: id,
-    source: MirrorSourceSchema,
-  })
-  .transform((wire) => ({
-    viewerId: wire.viewer_id,
-    userId: wire.user_id,
-    source: wire.source,
-  }));
-
-export const RuntimeMirrorControlStateSchema = z
-  .object({
-    workspace_id: id,
-    runtime_id: id,
-    controllers: z.array(RuntimeMirrorControllerSchema),
-  })
-  .transform((wire) => ({
-    workspaceId: wire.workspace_id,
-    runtimeId: wire.runtime_id,
-    controllers: wire.controllers,
-  }));
-
-export const VscreenCommandSchema = z.object({
-  commandId: id,
-  kind: z.enum(["enable", "disable", "request_takeover", "enable_interaction", "disable_interaction", "emergency_stop"]),
-});
 export const VscreenReasonSchema = z
   .object({ reason: id })
   .transform((wire) => wire.reason);
+
+export const AgentDesktopControlStatusSchema = z
+  .object({
+    state: z.enum([
+      "view_only",
+      "waiting_for_approval",
+      "approval_pending",
+      "controlling",
+      "other_controller",
+      "ended",
+    ]),
+    control_id: id.optional(),
+    request_id: id.optional(),
+    controller_id: id.optional(),
+    requester_id: id.optional(),
+    lease_expires_at: z.iso.datetime({ offset: true }).optional(),
+    lease_max_expires_at: z.iso.datetime({ offset: true }).optional(),
+  })
+  .transform((wire) => ({
+    state: wire.state,
+    controlId: wire.control_id,
+    requestId: wire.request_id,
+    controllerId: wire.controller_id,
+    requesterId: wire.requester_id,
+    leaseExpiresAt: wire.lease_expires_at,
+    leaseMaxExpiresAt: wire.lease_max_expires_at,
+  }));
+
+export const AgentDesktopControlInputResultSchema = z
+  .object({ clipboard: z.string().max(65536).nullable().optional().default(null) })
+  .transform((wire) => ({ clipboard: wire.clipboard }));
 
 export const VscreenVideoQualitySchema = z
   .object({

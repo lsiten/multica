@@ -47,19 +47,19 @@ func (v VoiceAudio) Decode() ([]byte, error) {
 
 // VoiceRequest uses the existing connection-scoped envelope but does not need a display or mirror session.
 type VoiceRequest struct {
-	VscreenEnvelope
+	RuntimeEnvelope
 	VoiceAudio
 	Deadline time.Time `json:"deadline"`
 }
 
 type VoiceResult struct {
-	VscreenEnvelope
+	RuntimeEnvelope
 	Text   string `json:"text,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
 
 func (v VoiceResult) Valid() bool {
-	if v.VscreenEnvelope.Validate() != nil {
+	if v.RuntimeEnvelope.Validate() != nil {
 		return false
 	}
 	if v.Reason == "" {

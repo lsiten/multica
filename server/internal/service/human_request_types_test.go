@@ -16,6 +16,13 @@ func TestHumanRequestActionableContract(t *testing.T) {
 		{"missing verification", func(r *HumanRequestInput) { r.Verification = "" }},
 		{"missing continuation", func(r *HumanRequestInput) { r.Next = "" }},
 		{"unknown kind", func(r *HumanRequestInput) { r.Kind = "automatic" }},
+		{"unknown purpose", func(r *HumanRequestInput) { r.Purpose = "background_control" }},
+		{"desktop approval must be a card", func(r *HumanRequestInput) {
+			r.Kind = "confirmation"
+			r.Steps = nil
+			r.Verification = ""
+			r.Purpose = "desktop_approval"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := valid

@@ -3009,6 +3009,20 @@
         "environment": "Environment",
         "mirror": "Mirror"
       },
+      "states": {
+        "ready": "Ready",
+        "running": "Running",
+        "starting": "Starting",
+        "stopping": "Stopping",
+        "stopped": "Stopped",
+        "failed": "Failed",
+        "unavailable": "Unavailable",
+        "offline": "Offline",
+        "disabled": "Disabled",
+        "downloaded": "Downloaded",
+        "not_installed": "Not installed",
+        "unknown": "Unknown"
+      },
       "memory": "Memory",
       "cpu": "CPU time",
       "usage": {

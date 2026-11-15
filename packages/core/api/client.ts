@@ -2182,6 +2182,13 @@ export class ApiClient {
     return version;
   }
 
+  async deleteIssueContentVersion(issueId: string, revision: number): Promise<void> {
+    await this.fetch<void>(
+      `/api/issues/${encodeURIComponent(issueId)}/content-versions/${revision}`,
+      { method: "DELETE" },
+    );
+  }
+
   async getRequirement(issueId: string, options?: { signal?: AbortSignal }): Promise<Requirement | null> {
     const raw = await this.fetch<unknown>(
       `/api/issues/${encodeURIComponent(issueId)}/requirement`,
@@ -2240,6 +2247,13 @@ export class ApiClient {
     });
     if (!version) throw new Error("Malformed document content version response");
     return version;
+  }
+
+  async deleteAttachmentContentVersion(attachmentId: string, revision: number): Promise<void> {
+    await this.fetch<void>(
+      `/api/attachments/${encodeURIComponent(attachmentId)}/content-versions/${revision}`,
+      { method: "DELETE" },
+    );
   }
 
   async rollbackAttachmentContentVersion(attachmentId: string, revision: number, input?: RecordDocumentContentVersionRequest): Promise<DocumentContentVersion> {

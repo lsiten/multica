@@ -123,6 +123,56 @@ describe("Vscreen viewer consumer boundary", () => {
       keepalive: true,
     });
   });
+  it("sends an explicit video profile when opening a mirror", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify(session), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await new ApiClient(scope.backendIdentity).vscreen(scope).createMirrorSession({
+      viewerId: "viewer-1",
+      offer: { type: "offer", sdp: "v=0" },
+      binding: viewer().binding,
+      videoProfile: "saver",
+    });
+
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      video_profile: "saver",
+      transport: "video",
+    });
+  });
+  it("parses control approval and sends normalized pointer input", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        state: "approval_pending",
+        request_id: "request-1",
+        requester_id: "member-1",
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ clipboard: null })));
+    vi.stubGlobal("fetch", fetch);
+    const control = new ApiClient(scope.backendIdentity).vscreen(scope);
+
+    const status = await control.getAgentDesktopControl();
+    await control.sendAgentDesktopControlInput({
+      source: { kind: "physical", sourceId: "display:1" },
+      action: "click",
+      x: 0.25,
+      y: 0.75,
+      button: "left",
+    });
+
+    expect(status).toMatchObject({
+      state: "approval_pending",
+      requestId: "request-1",
+      requesterId: "member-1",
+    });
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({
+      source: { kind: "physical", source_id: "display:1" },
+      action: "click",
+      x: 0.25,
+      y: 0.75,
+    });
+  });
 });
 
 describe("Legacy viewer scope", () => {

@@ -79,7 +79,7 @@ func (h *Handler) renewViewerGrant(ctx context.Context, record mirror.ViewerGran
 	if err := h.refreshViewerCredential(ctx, &record); err != nil {
 		return mirror.ViewerGrantRecord{}, err
 	}
-	catalog, err := h.DaemonHub.QueryVscreen(ctx, record.Grant.WorkspaceID, record.Grant.RuntimeID, record.DaemonID, "sources")
+	catalog, err := h.DaemonHub.QueryMirrorSources(ctx, record.Grant.WorkspaceID, record.Grant.RuntimeID, record.DaemonID)
 	if err != nil {
 		return mirror.ViewerGrantRecord{}, err
 	}
@@ -122,7 +122,6 @@ func (h *Handler) RunViewerGrantLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			h.sweepViewerGrants(ctx)
-			h.sweepControlGrants(ctx)
 		}
 	}
 }

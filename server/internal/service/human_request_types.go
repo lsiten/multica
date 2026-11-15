@@ -48,6 +48,7 @@ type HumanRequestInput struct {
 	Details          string               `json:"details,omitempty"`
 	ExpiresInSeconds int64                `json:"expires_in_seconds,omitempty"`
 	ResponseMode     string               `json:"response_mode,omitempty"`
+	Purpose          string               `json:"purpose,omitempty"`
 }
 
 // Validate rejects requests whose primary action would have to be inferred.
@@ -58,6 +59,12 @@ func (r HumanRequestInput) Validate() error {
 	}
 	if r.ResponseMode == "chat_or_card" && r.Kind != "choice" && r.Kind != "input" {
 		return fail("only ordinary choices and information may accept text replies")
+	}
+	if r.Purpose != "" && r.Purpose != "desktop_approval" {
+		return fail("invalid request purpose")
+	}
+	if r.Purpose == "desktop_approval" && (r.Kind != "confirmation" || r.ResponseMode != "card_only") {
+		return fail("desktop approval must be a card-only confirmation")
 	}
 	for _, field := range []struct {
 		name, value string

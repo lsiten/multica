@@ -111,6 +111,66 @@ func TestClaimDecisionDBClaimedRuntimePoll(t *testing.T) {
 	}
 }
 
+func TestDesktopTaskClaimRequiresAgentDesktopCapability(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		claim func(*claimDecisionFixture) ([]db.AgentTaskQueue, error)
+	}{
+		{
+			name: "runtime poll",
+			claim: func(f *claimDecisionFixture) ([]db.AgentTaskQueue, error) {
+				task, err := f.svc.ClaimTaskForRuntime(t.Context(), f.runtimeID)
+				if task == nil {
+					return nil, err
+				}
+				return []db.AgentTaskQueue{*task}, err
+			},
+		},
+		{
+			name: "batch poll",
+			claim: func(f *claimDecisionFixture) ([]db.AgentTaskQueue, error) {
+				return f.svc.ClaimTasksForRuntimes(t.Context(), []pgtype.UUID{f.runtimeID}, 8)
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			f := newClaimDecisionFixture(t, 5)
+			f.fx.Task(t, util.UUIDToString(f.agentID), testutil.Cols{
+				"runtime_id": util.UUIDToString(f.runtimeID),
+				"issue_id":   f.issueID,
+				"status":     "queued",
+				"context":    testutil.Raw(`'{"type":"mirror_source_v1"}'::jsonb`),
+			})
+			if _, err := f.pool.Exec(t.Context(),
+				`UPDATE agent_runtime SET metadata = '{"capabilities":[]}'::jsonb WHERE id = $1`,
+				f.runtimeID,
+			); err != nil {
+				t.Fatal(err)
+			}
+			claimed, err := testCase.claim(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(claimed) != 0 {
+				t.Fatalf("claimed %d desktop tasks without agent-desktop-v1", len(claimed))
+			}
+			if _, err := f.pool.Exec(t.Context(),
+				`UPDATE agent_runtime SET metadata = '{"capabilities":["agent-desktop-v1"]}'::jsonb WHERE id = $1`,
+				f.runtimeID,
+			); err != nil {
+				t.Fatal(err)
+			}
+			claimed, err = testCase.claim(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(claimed) != 1 {
+				t.Fatalf("claimed %d capable desktop tasks, want 1", len(claimed))
+			}
+		})
+	}
+}
+
 // TestClaimDecisionDBNoCapacity covers the concurrency cap: max_concurrent_tasks=0
 // leaves the task visible to the candidate list, so the claim attempt runs and
 // is rejected by the capacity check rather than by the queue being empty.

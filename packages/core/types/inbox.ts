@@ -34,8 +34,6 @@ export type InboxItemType =
   | "autopilot_quota_exceeded"
   | "runtime_mirror_viewer_started"
   | "runtime_mirror_viewer_stopped"
-  | "runtime_mirror_control_started"
-  | "runtime_mirror_control_stopped"
   // Sub-issues of an issue assigned to the recipient closed (the child_done
   // system rule notifies a member assignee instead of waking an agent).
   | "children_done"

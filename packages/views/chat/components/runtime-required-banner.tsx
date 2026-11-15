@@ -24,7 +24,7 @@ export function RuntimeRequiredBanner({
       <div
         className={cn(
           CHAT_COLUMN,
-          "flex items-center gap-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-caption text-amber-900 ring-1 ring-amber-200/60 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900/40",
+          "flex items-center gap-2 rounded-md bg-warning/10 px-2.5 py-1.5 text-caption text-warning ring-1 ring-warning/30",
         )}
       >
         <Server className="size-3.5 shrink-0" />

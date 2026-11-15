@@ -49,11 +49,23 @@ export function CodeReviewContextSection({ issueId }: { issueId: string }) {
   const unavailable = probes.some((probe) => probe.isError);
   const path = repositories.find((path) => path === repository) ?? repositories[0];
   const target = inventory.data?.find((row) => row.taskId === task?.id)?.repositoryDetails?.find((entry) => entry.path === path)?.target ?? "";
+  const taskStatusLabel = (status: string) => {
+    switch (status) {
+      case "queued": return t(($) => $.execution_log.status_queued);
+      case "dispatched": return t(($) => $.execution_log.status_dispatched);
+      case "waiting_local_directory": return t(($) => $.execution_log.status_waiting_local_directory);
+      case "running": return t(($) => $.execution_log.status_running);
+      case "completed": return t(($) => $.execution_log.status_completed);
+      case "failed": return t(($) => $.execution_log.status_failed);
+      case "cancelled": return t(($) => $.execution_log.status_cancelled);
+      default: return status;
+    }
+  };
   return <section className="space-y-2 rounded-lg border bg-card p-3">
     <h3 className="text-caption font-medium">{t(($) => $.local_review.title)}</h3>
     {inventory.isPending || checking ? <p role="status" className="text-caption text-muted-foreground">{t(($) => $.local_review.loading)}</p> : inventory.error ? <p role="alert" className="text-caption text-destructive">{inventory.error.message}</p> : !task ? <p role="status" className="text-caption text-muted-foreground">{unavailable ? t(($) => $.local_review.entry_failed) : t(($) => $.local_review.entry_empty)}</p> : <>
       <select aria-label={t(($) => $.local_review.run)} value={task.id} onChange={(event) => { setSelected(event.target.value); setOpen(false); }} className="w-full rounded-sm border bg-background p-1 text-caption">
-        {candidates.map((row) => <option key={row.id} value={row.id}>{row.branch_name || row.id.slice(0, 8)} · {row.status}</option>)}
+        {candidates.map((row) => <option key={row.id} value={row.id}>{row.branch_name || row.id.slice(0, 8)} · {taskStatusLabel(row.status)}</option>)}
       </select>
       <p className="break-all font-mono text-caption">{task.branch_name ?? "—"}</p>
       <p className="break-all text-caption text-muted-foreground">{task.work_dir || task.durable_work_dir}</p>

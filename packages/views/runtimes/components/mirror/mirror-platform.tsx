@@ -1,10 +1,9 @@
 "use client";
 import { createContext, useContext, type ReactNode } from "react";
-import type { VscreenScope, VscreenLocalOperation, VscreenLocalResult } from "@multica/core/types";
+import type { VscreenScope } from "@multica/core/types";
 
 export interface MirrorPlatform {
   readonly openFloating?: (scope: VscreenScope, title: string) => Promise<void>;
-  readonly localControl?: (scope: VscreenScope, operation: VscreenLocalOperation) => Promise<VscreenLocalResult>;
 }
 const MirrorPlatformContext = createContext<MirrorPlatform>({});
 export function MirrorPlatformProvider({

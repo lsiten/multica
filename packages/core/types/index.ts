@@ -468,6 +468,5 @@ export type { IssueWakeup, IssueWakeupInput, SystemWakeup, WorkspaceSystemWakeup
 export type { WorkspaceWakeup, WorkspaceWakeupPage, WorkspaceWakeupFilters, WakeupScope } from "./issue-wakeup";
 export * from "./vscreen";
 
-export type { RuntimeMirrorController, RuntimeMirrorControlState } from "./vscreen";
 
 export type { HumanRequest, HumanRequestPayload, HumanRequestAnswer, HumanRequestChoice } from "./human-request";

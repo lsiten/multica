@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
@@ -9,10 +9,24 @@ import enChat from "../../locales/en/chat.json";
 import { useDocModeStore } from "@multica/core/chat";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import { DocModeSurface } from "./doc-mode-surface";
-import { applyReviewFileEdit } from "../../platform/local-review-pages";
+import { applyReviewFileEdit, requestReviewPage } from "../../platform/local-review-pages";
 import { ApiError, setApiInstance } from "@multica/core/api";
 
 const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
+
+async function saveCheckpoint(note = "") {
+  fireEvent.click(screen.getByRole("button", { name: "Save checkpoint" }));
+  const dialog = await screen.findByRole("alertdialog");
+  if (note) {
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: "Checkpoint name" }),
+      { target: { value: note } },
+    );
+  }
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Save checkpoint" }),
+  );
+}
 
 // The doc-mode surface reads the session's task (to resolve the work_dir) and
 // then fetches the file body through the review transport. A hoisted mutable
@@ -54,8 +68,8 @@ vi.mock("../../platform/local-review-pages", async () => {
     // Only the "file_content" action is exercised for a workspace_file doc; the
     // content versions hooks are disabled (ref.kind !== "workspace_file"), so no
     // other review action is requested here.
-    requestReviewPage: (input: { relative_path?: string }) =>
-      Promise.resolve({ path: input.relative_path ?? ".", content: session.current.content }),
+    requestReviewPage: vi.fn((input: { relative_path?: string }) =>
+      Promise.resolve({ path: input.relative_path ?? ".", content: session.current.content })),
   };
 });
 
@@ -81,6 +95,7 @@ const cvs = vi.hoisted(() => ({
   // The record mutation's async fn: default resolves; a test overrides it to
   // reject (409) to drive the conflict path.
   record: null as null | ((input: Record<string, unknown>) => Promise<unknown>),
+  delete: null as null | ((input: Record<string, unknown>) => Promise<void>),
 }));
 vi.mock("@multica/core/chat/document-content-version-queries", () => ({
   documentContentVersionKeys: {
@@ -113,26 +128,46 @@ vi.mock("@multica/core/chat/document-content-version-queries", () => ({
   useRollbackDocumentContentVersion: () => ({
     mutate: () => Promise.resolve(),
   }),
+  useDeleteDocumentContentVersion: () => ({
+    mutateAsync: (input: Record<string, unknown>) =>
+      cvs.delete ? cvs.delete(input) : Promise.resolve(),
+  }),
 }));
 
-// FileViewer is the shared skill-page editor; stub it so the suite asserts the
-// doc-mode edit wiring (not the editor internals) and needs no "skills" i18n.
-vi.mock("../../skills/components/file-viewer", () => ({
-  FileViewer: ({
-    content,
+// CodeMirror owns a contenteditable surface. This harness keeps the test at the
+// doc-mode wiring boundary while exercising the same source-editor contract.
+vi.mock("../../editor", async () => {
+  const actual = await vi.importActual<typeof import("../../editor")>("../../editor");
+  return {
+    ...actual,
+    CodeMirrorEditor: ({
+    value,
+    label,
     onChange,
   }: {
-    content: string;
+    value: string;
+    label: string;
     onChange: (content: string) => void;
   }) => (
-    <textarea
+    <div
       data-testid="doc-edit-input"
-      value={content}
-      onChange={(e) => onChange(e.target.value)}
-    />
+      role="textbox"
+      aria-label={label}
+      contentEditable
+      suppressContentEditableWarning
+      onInput={(event) => onChange(event.currentTarget.textContent ?? "")}
+    >
+      {value}
+    </div>
   ),
-  isMarkdownPath: (path: string) => path.endsWith(".md") || path.endsWith(".mdx"),
-}));
+  };
+});
+
+function editDocument(value: string) {
+  const editor = screen.getByTestId("doc-edit-input");
+  editor.textContent = value;
+  fireEvent.input(editor);
+}
 
 function newClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -179,14 +214,19 @@ function renderSurface(client = newClient()) {
 
 beforeEach(() => {
   vi.mocked(applyReviewFileEdit).mockClear();
+  vi.mocked(requestReviewPage).mockImplementation((input) =>
+    Promise.resolve({ path: input.relative_path ?? ".", content: session.current.content }),
+  );
   cvs.current = null;
   cvs.versions = [];
   cvs.record = null;
+  cvs.delete = null;
   authState.user = null;
   useDocModeStore.setState({
     activeBySession: {},
     workingBySession: {},
     diffViewBySession: {},
+    draftsByDocument: {},
   });
   session.current = {
     files: {
@@ -218,16 +258,24 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
   });
 
   it("merges against the edit-start body after the workspace file refreshes", async () => {
+    session.current.content = {
+      ...session.current.content,
+      size: 5,
+      has_more: false,
+    };
     const client = newClient();
     openWorkspaceDoc();
     renderSurface(client);
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByTestId("doc-edit-input"), { target: { value: "my file draft" } });
-    session.current.content = { ...session.current.content, text: "other writer" };
+    editDocument("my file draft");
+    session.current.content = {
+      ...session.current.content,
+      text: "other writer",
+    };
     await act(async () => { await client.invalidateQueries({ queryKey: ["chat-workspace-file-content"] }); });
     act(() => useDocModeStore.getState().setWorking("session-1", true));
-    expect(screen.getByTestId("doc-edit-input")).toHaveValue("my file draft");
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByTestId("doc-edit-input")).toHaveTextContent("my file draft");
+    fireEvent.click(screen.getByRole("button", { name: "Apply to workspace file" }));
     await waitFor(() => expect(applyReviewFileEdit).toHaveBeenCalledWith(expect.objectContaining({
       edit_base: "hello", edit_new: "my file draft",
     })));
@@ -241,6 +289,7 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
     expect(
       screen.getByText(enChat.doc_mode.truncated.replace("{{total}}", "100 KB")),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
   });
 
   it("hides the truncation notice when the preview is complete", async () => {
@@ -251,6 +300,43 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
     expect(
       screen.queryByText(enChat.doc_mode.truncated.replace("{{total}}", "100 KB")),
     ).not.toBeInTheDocument();
+  });
+
+  it("loads every page before enabling full workspace editing", async () => {
+    session.current.content = {
+      text: "hello",
+      encoding: "utf8",
+      offset: 0,
+      next_offset: 5,
+      size: 11,
+      has_more: true,
+    };
+    vi.mocked(requestReviewPage).mockImplementation(async (input) => {
+      const offset = input.action === "file_content" ? input.offset ?? 0 : 0;
+      return {
+        path: input.relative_path ?? ".",
+        content: {
+          text: offset === 0 ? "hello" : " world",
+          encoding: "utf8",
+          offset,
+          next_offset: offset === 0 ? 5 : 11,
+          size: 11,
+          has_more: offset === 0,
+        },
+      } as Awaited<ReturnType<typeof requestReviewPage>>;
+    });
+    openWorkspaceDoc();
+    renderSurface();
+    await screen.findByText("hello");
+    fireEvent.click(screen.getByRole("button", { name: "Load full content" }));
+    await waitFor(() => {
+      expect(vi.mocked(requestReviewPage)).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "file_content", offset: 5 }),
+      );
+    });
+    expect(screen.queryByRole("button", { name: "Load full content" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByTestId("doc-edit-input")).toHaveTextContent("hello world");
   });
 
   it("renders source files with syntax highlighting", async () => {
@@ -332,6 +418,7 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     authState.user = { id: "u1" };
     cvs.versions = [];
     cvs.record = null;
+    cvs.delete = null;
     cvs.current = {
       id: "cv-1",
       owner_type: "issue",
@@ -395,16 +482,17 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     fireEvent.click(await screen.findByText("Edit"));
     await screen.findByTestId("doc-edit-input");
     // The editor starts from the current content, not an empty buffer.
-    expect(screen.getByTestId("doc-edit-input")).toHaveValue("# Original");
-    fireEvent.change(screen.getByTestId("doc-edit-input"), {
-      target: { value: "# Edited" },
-    });
-    fireEvent.click(screen.getByText("Save"));
+    expect(screen.getByTestId("doc-edit-input")).toHaveTextContent("# Original");
+    editDocument("# Edited");
+    await saveCheckpoint("Reviewed draft");
     await waitFor(() => expect(cvs.record).toHaveBeenCalled());
     expect(cvs.record).toHaveBeenCalledWith({
       content_type: "text/markdown",
       content: "# Edited",
       expected_revision: 1,
+      merge: false,
+      session_id: "session-1",
+      note: "Reviewed draft",
     });
   });
 
@@ -414,11 +502,37 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     openIssueDoc();
     renderSurface();
     fireEvent.click(await screen.findByText("Edit"));
-    fireEvent.change(screen.getByTestId("doc-edit-input"), { target: { value: "# Updated" } });
-    fireEvent.click(screen.getByText("Save"));
+    editDocument("# Updated");
+    await saveCheckpoint();
     await waitFor(() => expect(cvs.record).toHaveBeenCalledWith({
-      content_type: "text/markdown", content: "# Updated", expected_revision: 8,
+      content_type: "text/markdown", content: "# Updated", expected_revision: 8, merge: false, session_id: "session-1",
     }));
+  });
+
+  it("keeps an unsaved workspace-file draft across close and reopen", async () => {
+    session.current.content = {
+      ...session.current.content,
+      size: 5,
+      has_more: false,
+    };
+    openWorkspaceDoc();
+    const view = renderSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    editDocument("recoverable draft");
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(useDocModeStore.getState().activeBySession["session-1"]).toBeNull();
+    expect(Object.values(useDocModeStore.getState().draftsByDocument)).toContainEqual(
+      expect.objectContaining({ content: "recoverable draft", baseContent: "hello" }),
+    );
+
+    view.unmount();
+    openWorkspaceDoc();
+    renderSurface();
+    expect(await screen.findByTestId("doc-edit-input")).toHaveTextContent("recoverable draft");
   });
 
   it("keeps the edit-start revision when a refreshed document arrives before the first save", async () => {
@@ -426,13 +540,13 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     openIssueDoc();
     renderSurface();
     fireEvent.click(await screen.findByText("Edit"));
-    fireEvent.change(screen.getByTestId("doc-edit-input"), { target: { value: "# My draft" } });
+    editDocument("# My draft");
     cvs.current = { ...cvs.current, revision: 2, content: "# Other writer" };
     act(() => useDocModeStore.getState().setWorking("session-1", true));
-    expect(screen.getByTestId("doc-edit-input")).toHaveValue("# My draft");
-    fireEvent.click(screen.getByText("Save"));
+    expect(screen.getByTestId("doc-edit-input")).toHaveTextContent("# My draft");
+    await saveCheckpoint();
     await waitFor(() => expect(cvs.record).toHaveBeenCalledWith({
-      content_type: "text/markdown", content: "# My draft", expected_revision: 1,
+      content_type: "text/markdown", content: "# My draft", expected_revision: 1, merge: false, session_id: "session-1",
     }));
   });
 
@@ -441,12 +555,41 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     cvs.versions = [cvs.current, { ...cvs.current, id: "cv-2", revision: 2, content: "common\nprevious line" }, { ...cvs.current, id: "cv-1", revision: 1, content: "common\nfirst line" }];
     openIssueDoc();
     renderSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
     fireEvent.click(await screen.findByRole("button", { name: "Diff" }));
     expect(screen.getByText(/previous line/)).toHaveTextContent("- previous line");
-    expect(screen.getByText(/current line/)).toHaveTextContent("+ current line");
-    fireEvent.click(screen.getByRole("button", { name: "v1" }));
+    expect(
+      screen.getAllByText(/current line/).find((element) =>
+        element.textContent?.includes("+ current line")
+      ),
+    ).toHaveTextContent("+ current line");
+    fireEvent.click(screen.getByRole("button", { name: /^v1/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Diff" }));
     expect(screen.queryByText(/previous line/)).not.toBeInTheDocument();
-    expect(screen.getByText(/first line/)).toHaveTextContent("- first line");
+    expect(
+      screen.getAllByLabelText("Diff").find((element) => element.tagName === "PRE"),
+    ).toHaveTextContent("- first line");
+  });
+
+  it("confirms before deleting an older named checkpoint", async () => {
+    cvs.delete = vi.fn().mockResolvedValue(undefined);
+    cvs.current = { ...cvs.current, revision: 3, content: "current" };
+    cvs.versions = [
+      cvs.current,
+      { ...cvs.current, id: "cv-2", revision: 2, content: "older named version" },
+      { ...cvs.current, id: "cv-1", revision: 1, content: "autosave", merged: true },
+    ];
+    openIssueDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete checkpoint 2" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/Checkpoint 2 will be removed/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete checkpoint" }));
+    await waitFor(() => expect(cvs.delete).toHaveBeenCalledWith({
+      ref: expect.objectContaining({ id: "issue-1", kind: "issue" }),
+      revision: 2,
+    }));
   });
 
   it("surfaces a 409 conflict as a reload prompt without clobbering the draft", async () => {
@@ -457,15 +600,54 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     renderSurface();
     fireEvent.click(await screen.findByText("Edit"));
     await screen.findByTestId("doc-edit-input");
-    fireEvent.change(screen.getByTestId("doc-edit-input"), {
-      target: { value: "# Edited" },
-    });
-    fireEvent.click(screen.getByText("Save"));
+    editDocument("# Edited");
+    await saveCheckpoint();
     // A 409 keeps the draft open and prompts the user to reload (fail-closed).
-    await screen.findByText(enChat.doc_mode.changed_reload);
-    expect(screen.getByTestId("doc-edit-input")).toHaveValue("# Edited");
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText(enChat.doc_mode.conflict_title);
+    expect(screen.getByTestId("doc-edit-input")).toHaveTextContent("# Edited");
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(screen.getByRole("button", { name: "Save checkpoint" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save checkpoint" }));
     expect(cvs.record).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves a conflict block and saves the merged result", async () => {
+    let attempts = 0;
+    cvs.record = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new ApiError("conflict", 409, "Conflict");
+      return {
+        ...cvs.current,
+        revision: 2,
+        owner_revision: 2,
+        content: "# Local",
+      };
+    });
+    openIssueDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByText("Edit"));
+    editDocument("# Local");
+    cvs.current = {
+      ...cvs.current,
+      revision: 2,
+      owner_revision: 2,
+      content: "# Remote",
+    };
+    await saveCheckpoint("Reviewed draft");
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Conflict")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use my block" }));
+    expect(within(dialog).getByRole("button", { name: "Save merged" })).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save merged" }));
+    await waitFor(() => expect(cvs.record).toHaveBeenCalledTimes(2));
+    expect(cvs.record).toHaveBeenLastCalledWith({
+      content_type: "text/markdown",
+      content: "# Local",
+      expected_revision: 2,
+      merge: false,
+      session_id: "session-1",
+      note: "Resolved concurrent edits",
+    });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
   });
 });

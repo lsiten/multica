@@ -13,10 +13,10 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func TestVscreenHTTPSourceCatalogAndOwnerCommand(t *testing.T) {
+func TestMirrorHTTPSourceCatalogIsReadOnly(t *testing.T) {
 	// Given: database-backed runtime and a real authenticated daemon WebSocket.
 	const daemonID = "vscreen-http-daemon"
-	runtimeID := dbfx.Runtime(t, "Vscreen HTTP", testutil.Cols{"workspace_id": testWorkspaceID, "owner_id": testUserID, "daemon_id": daemonID, "provider": "vscreen-test", "device_info": "test", "visibility": "private", "status": "online", "metadata": testutil.Raw(`'{"capabilities":["virtual-screen-v1","mirror-viewer-grant-v1"]}'::jsonb`)})
+	runtimeID := dbfx.Runtime(t, "Vscreen HTTP", testutil.Cols{"workspace_id": testWorkspaceID, "owner_id": testUserID, "daemon_id": daemonID, "provider": "vscreen-test", "device_info": "test", "visibility": "private", "status": "online", "metadata": testutil.Raw(`'{"capabilities":["screen-mirror-video-v2","mirror-viewer-grant-v1"]}'::jsonb`)})
 	hub := daemonws.NewHub()
 	previous := testHandler.DaemonHub
 	testHandler.DaemonHub = hub
@@ -37,27 +37,27 @@ func TestVscreenHTTPSourceCatalogAndOwnerCommand(t *testing.T) {
 			daemonDone <- err
 			return
 		}
-		var query protocol.VscreenQuery
+		var query protocol.MirrorSourcesQuery
 		if err := json.Unmarshal(frame.Payload, &query); err != nil {
 			daemonDone <- err
 			return
 		}
-		sources := []protocol.VscreenSourceDescriptor{}
-		for _, kind := range []protocol.MirrorSourceKind{protocol.MirrorSourceVirtual, protocol.MirrorSourcePhysical} {
-			sources = append(sources, protocol.VscreenSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501}, Source: protocol.MirrorSource{Kind: kind, SourceID: string(kind)}, NativeEpoch: "native", Generation: "display", Primary: kind == protocol.MirrorSourcePhysical}, Name: string(kind), Width: 1920, Height: 1080, Scale: 1, GeometryRevision: 1})
+		sources := []protocol.MirrorSourceDescriptor{}
+		for _, kind := range []protocol.MirrorSourceKind{protocol.MirrorSourcePhysical, protocol.MirrorSourceSystem} {
+			sources = append(sources, protocol.MirrorSourceDescriptor{MirrorSourceBinding: protocol.MirrorSourceBinding{Resource: protocol.ResourceKey{BackendIdentity: "http://localhost:18234", WorkspaceID: testWorkspaceID, RuntimeID: runtimeID, UID: 501, DisplayID: uint32(len(sources) + 1)}, Source: protocol.MirrorSource{Kind: kind, SourceID: "display:" + string(kind)}, NativeEpoch: "native", Generation: "display", Primary: kind == protocol.MirrorSourcePhysical}, DisplayID: uint32(len(sources) + 1), Name: string(kind), Width: 1920, Height: 1080, Scale: 1, GeometryRevision: 1})
 		}
-		raw, err := json.Marshal(protocol.VscreenQueryResult{VscreenEnvelope: query.VscreenEnvelope, Sources: sources})
+		raw, err := json.Marshal(protocol.MirrorSourcesResult{RuntimeEnvelope: query.RuntimeEnvelope, Sources: sources})
 		if err != nil {
 			daemonDone <- err
 			return
 		}
-		daemonDone <- conn.WriteJSON(protocol.Message{Type: protocol.EventVscreenQueryResult, Payload: raw})
+		daemonDone <- conn.WriteJSON(protocol.Message{Type: protocol.EventMirrorSourcesResult, Payload: raw})
 	}()
 	// When: the runtime read gate queries a fresh source catalog.
 	req := withURLParam(newRequest(http.MethodGet, "/api/runtimes/"+runtimeID+"/mirror/sources", nil), "runtimeId", runtimeID)
-	var catalog protocol.VscreenQueryResult
+	var catalog protocol.MirrorSourcesResult
 	testutil.Call(t, testHandler.GetMirrorSources, req).Want(http.StatusOK).JSON(&catalog)
-	// Then: exact virtual and physical bindings reach the HTTP boundary.
+	// Then: only physical and system bindings reach the read-only HTTP boundary.
 	if err := <-daemonDone; err != nil {
 		t.Fatal(err)
 	}
@@ -69,16 +69,4 @@ func TestVscreenHTTPSourceCatalogAndOwnerCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("HTTP sources JSON: %s", raw)
-	commandReq := withURLParam(newRequest(http.MethodPost, "/api/runtimes/"+runtimeID+"/vscreen/commands", map[string]string{"command_id": "enable-1", "kind": "enable"}), "runtimeId", runtimeID)
-	var receipt protocol.VscreenCommandReceipt
-	testutil.Call(t, testHandler.CreateVscreenCommand, commandReq).Want(http.StatusAccepted).JSON(&receipt)
-	if receipt.State != protocol.VscreenReceiptPending {
-		t.Fatalf("premature success: %+v", receipt)
-	}
-	denied := withURLParam(newRequest(http.MethodPost, "/commands", map[string]string{"command_id": "physical-1", "kind": "move_to_physical"}), "runtimeId", runtimeID)
-	testutil.Call(t, testHandler.CreateVscreenCommand, denied).Want(http.StatusBadRequest)
-	machine := withURLParam(newRequest(http.MethodPost, "/commands", map[string]string{"command_id": "machine-1", "kind": "enable"}), "runtimeId", runtimeID)
-	machine.Header.Set("X-Actor-Source", "task_token")
-	testutil.Call(t, testHandler.CreateVscreenCommand, machine).Want(http.StatusForbidden)
-	t.Log("owner user identity with authoritative task_token actor source: HTTP 403")
 }

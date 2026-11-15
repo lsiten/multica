@@ -104,8 +104,6 @@
     "app_action_result": "Resultado de la acción de la aplicación",
     "runtime_mirror_viewer_started": "Screen mirroring started",
     "runtime_mirror_viewer_stopped": "Screen mirroring ended",
-    "runtime_mirror_control_started": "Remote screen control started",
-    "runtime_mirror_control_stopped": "Remote screen control ended",
     "human_action_requested": "Action needed"
   },
   "labels": {
@@ -123,9 +121,7 @@
     "autopilot_quota_blocked": "Ejecución bloqueada porque se alcanzó el límite",
     "children_done_stage": "Sub-tareas de la etapa {{stage}} finalizadas",
     "mirror_viewing_started": "{{runtime}} is being viewed.",
-    "mirror_viewing_stopped": "Screen mirroring for {{runtime}} has ended.",
-    "mirror_control_started": "{{name}} is controlling {{runtime}}.",
-    "mirror_control_stopped": "Remote control for {{runtime}} has ended."
+    "mirror_viewing_stopped": "Screen mirroring for {{runtime}} has ended."
   },
   "toasts": {
     "source_context_retry_started": "Reintento iniciado con el contexto original",

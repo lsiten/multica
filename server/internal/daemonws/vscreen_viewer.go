@@ -9,7 +9,7 @@ func (h *Hub) SendManagedMirrorOffer(runtimeID, generation string, payload proto
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	c := h.vscreenClientLocked(payload.WorkspaceID, runtimeID, payload.DaemonID)
+	c := h.mirrorClientLocked(payload.WorkspaceID, runtimeID, payload.DaemonID)
 	return c != nil && c.vscreenGeneration == generation && c.trySend(mustMarshalRaw(protocol.Message{Type: protocol.EventMirrorOffer, Payload: mustMarshalRaw(payload)}))
 }
 
@@ -17,7 +17,7 @@ func (h *Hub) SendManagedMirrorOffer(runtimeID, generation string, payload proto
 func (h *Hub) SendViewerRenew(daemonID string, payload protocol.MirrorViewerRenewPayload) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	c := h.vscreenClientLocked(payload.Grant.WorkspaceID, payload.Grant.RuntimeID, daemonID)
+	c := h.mirrorClientLocked(payload.Grant.WorkspaceID, payload.Grant.RuntimeID, daemonID)
 	return c != nil && c.vscreenGeneration == payload.DaemonGeneration && c.trySend(mustMarshalRaw(protocol.Message{Type: protocol.EventMirrorViewerRenew, Payload: mustMarshalRaw(payload)}))
 }
 
@@ -25,6 +25,6 @@ func (h *Hub) SendViewerRenew(daemonID string, payload protocol.MirrorViewerRene
 func (h *Hub) SendViewerRevoke(daemonID string, payload protocol.MirrorViewerRevokePayload) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	c := h.vscreenClientLocked(payload.WorkspaceID, payload.RuntimeID, daemonID)
+	c := h.mirrorClientLocked(payload.WorkspaceID, payload.RuntimeID, daemonID)
 	return c != nil && c.vscreenGeneration == payload.DaemonGeneration && c.trySend(mustMarshalRaw(protocol.Message{Type: protocol.EventMirrorViewerRevoke, Payload: mustMarshalRaw(payload)}))
 }

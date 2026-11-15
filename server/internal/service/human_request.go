@@ -51,7 +51,7 @@ func (s *TaskService) CreateHumanRequest(ctx context.Context, source db.AgentTas
 				returnErr = lockTaskActorClaim(ctx, q, *actorTask, workspaceID)
 			}
 		}()
-		if _, err := q.LockVscreenWorkspace(ctx, workspaceID); err != nil {
+		if _, err := q.LockWorkspaceForChatSessionCreate(ctx, workspaceID); err != nil {
 			return err
 		}
 		if _, err := q.LockActiveMember(ctx, db.LockActiveMemberParams{UserID: recipient, WorkspaceID: workspaceID}); err != nil {
@@ -70,7 +70,7 @@ func (s *TaskService) CreateHumanRequest(ctx context.Context, source db.AgentTas
 		if err := lockHumanRequestAutopilot(ctx, q, source, workspaceID); err != nil {
 			return err
 		}
-		current, err := q.LockVscreenSourceTask(ctx, source.ID)
+		current, err := q.LockTaskForExecution(ctx, source.ID)
 		if err != nil {
 			return err
 		}

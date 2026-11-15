@@ -17,7 +17,6 @@ import (
 // LOCALAPPDATA on Windows. Process-wide redirection isolates tests that forget
 // their own redirect; per-test t.Setenv overrides still take precedence.
 func TestMain(m *testing.M) {
-	daemonFixtureEntry(m)
 	if testutil.RunPiCleanupFixture() {
 		os.Exit(0)
 	}

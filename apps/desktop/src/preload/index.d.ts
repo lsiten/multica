@@ -1,5 +1,4 @@
 import type { LocalVoiceAPI } from "../shared/local-voice";
-import type { VscreenDesktopRequest, VscreenDesktopResult } from "../shared/vscreen-desktop";
 import type { RuntimeMirrorWindowRequest } from "../shared/runtime-mirror-window";
 import type { RuntimeMirrorPreloadAPI } from "./runtime-mirror";
 import { ElectronAPI } from "@electron-toolkit/preload";
@@ -44,7 +43,6 @@ interface DesktopAPI {
   saveRuntimeConfig: (config: RuntimeConfig) => Promise<RuntimeConfig>;
   pickAppIcon: () => Promise<string | null>;
   restartApp: () => Promise<void>;
-  vscreenDesktop: (request: VscreenDesktopRequest) => Promise<VscreenDesktopResult>;
   openRuntimeMirror: (request: RuntimeMirrorWindowRequest) => Promise<boolean>;
   /** App version + normalized OS, captured synchronously at preload time. */
   appInfo: {

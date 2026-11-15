@@ -14,7 +14,11 @@ vi.mock("electron", () => ({
 }));
 vi.mock("os", async (original) => ({ ...await original<typeof import("os")>(), homedir: () => fixture.root }));
 vi.mock("child_process", () => ({ execFile: fixture.exec }));
-vi.mock("./cli-bootstrap", () => ({ managedCliPath: () => join(fixture.root, "fixture-cli"), ensureManagedCli: vi.fn() }));
+vi.mock("./cli-bootstrap", () => ({
+  managedCliPath: () => join(fixture.root, "fixture-cli"),
+  ensureManagedCli: vi.fn(),
+  prepareAgentDesktop: vi.fn(),
+}));
 
 const profile = "desktop-ipc.test";
 const requests: { path: string; authorization?: string; profile?: string | string[] }[] = [];

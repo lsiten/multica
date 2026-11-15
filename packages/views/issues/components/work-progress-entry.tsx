@@ -14,7 +14,7 @@ import { AppLink } from "../../navigation";
 import { HumanRequestCard } from "../../common/human-request-card";
 import { AgentTranscriptDialog } from "../../common/task-transcript/agent-transcript-dialog";
 import { buildTimeline } from "../../common/task-transcript/build-timeline";
-import { useTimeAgo } from "../../i18n";
+import { useLocale, useTimeAgo } from "../../i18n";
 import { useStatusLabel } from "../utils/status-label";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useWorkProgressLabels } from "./work-progress-labels";
@@ -43,6 +43,7 @@ export function WorkProgressEntry({ entry, currentProjectId, requestLinksOnly = 
   const statusLabel = useStatusLabel(wsId);
   const { getActorName } = useActorName();
   const timeAgo = useTimeAgo();
+  const locale = useLocale();
   const [runOpen, setRunOpen] = useState(false);
   const fullPath = entry.path.length > 3;
   const path = fullPath ? entry.path.slice(-3) : entry.path;
@@ -61,12 +62,12 @@ export function WorkProgressEntry({ entry, currentProjectId, requestLinksOnly = 
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
       <span>{entry.assignee_id ? getActorName(entry.assignee_type, entry.assignee_id) : t($ => $.work_progress.no_assignee)}</span>
       {entry.stage != null && <span>{t($ => $.work_progress.stage, { stage: entry.stage })}</span>}
-      {entry.due_date && <span className={isPastDateOnly(entry.due_date) ? "text-destructive" : ""}>{t($ => $.work_progress.due, { date: formatDateOnly(entry.due_date) })}</span>}
+      {entry.due_date && <span className={isPastDateOnly(entry.due_date) ? "text-destructive" : ""}>{t($ => $.work_progress.due, { date: formatDateOnly(entry.due_date, undefined, locale) })}</span>}
       {crossProject && <span>{t($ => $.work_progress.other_project, { project: entry.issue.project_title || t($ => $.work_progress.no_project) })}</span>}
       {entry.waiting_children > 0 && <span>{t($ => $.work_progress.waiting_children, { count: entry.waiting_children })}</span>}
       {entry.blocked_issue_count > 0 && <span>{t($ => $.work_progress.blocks, { count: entry.blocked_issue_count })}</span>}
       {entry.affected_goal_count > 0 && <span>{t($ => $.work_progress.belongs_to, { count: entry.affected_goal_count })}</span>}
-      {entry.wait_since && <span title={new Date(entry.wait_since).toLocaleString()}>{t($ => $.work_progress.since, { time: timeAgo(entry.wait_since) })}</span>}
+      {entry.wait_since && <span title={new Date(entry.wait_since).toLocaleString(locale)}>{t($ => $.work_progress.since, { time: timeAgo(entry.wait_since) })}</span>}
     </div>
     {entry.direct_blockers.length > 0 && <div className="space-y-1 break-words">
       <p className="text-muted-foreground">{t($ => $.work_progress.direct_blockers)}</p>

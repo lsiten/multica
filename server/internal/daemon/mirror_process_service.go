@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/multica-ai/multica/server/internal/mirror"
-	"github.com/multica-ai/multica/server/internal/vscreen"
-	"github.com/multica-ai/multica/server/internal/vscreen/hostclient"
+	"github.com/multica-ai/multica/server/internal/mirror/nativecapture"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 	"io"
 	"log/slog"
@@ -30,7 +29,6 @@ type mirrorProcessService struct {
 	bindingContext   context.Context
 	cancelBinding    context.CancelFunc
 	jobs             map[string]*mirrorProcessJob
-	executions       map[string]*mirrorChildExecution
 	workers          sync.WaitGroup
 	stop             chan struct{}
 	stopped          chan struct{}
@@ -38,7 +36,6 @@ type mirrorProcessService struct {
 	shutdownErr      error
 	nativeWorkers    sync.WaitGroup
 	notifications    sync.WaitGroup
-	acquiring        map[string]bool
 }
 type mirrorProcessJob struct {
 	result     mirrorJobResult
@@ -46,16 +43,6 @@ type mirrorProcessJob struct {
 	cancel     context.CancelFunc
 	expires    time.Time
 	input      mirrorProcessRequest
-}
-type mirrorChildExecution struct {
-	claim               mirrorTaskClaim
-	execution           *vscreenExecution
-	broker              *vscreenMCP
-	config              json.RawMessage
-	cancel              context.CancelFunc
-	released            bool
-	releaseDone         chan struct{}
-	interventionPending bool
 }
 
 // RunMirrorService runs only mirror/native authority, never daemon control loops.
@@ -79,11 +66,9 @@ func RunMirrorService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	if err != nil {
 		return err
 	}
-	d := &Daemon{cfg: Config{ServerBaseURL: b.Identity.Scope.Backend, DaemonID: b.Identity.Scope.DaemonID, Profile: b.Identity.Scope.Profile, NativeHostExecutable: executable, NativeHostBuild: b.Identity.Build, NativeVscreenPreferencesPath: filepath.Join(filepath.Dir(b.Root), "vscreen-enabled.json")}, logger: slog.New(slog.NewTextHandler(io.Discard, nil)), workspaces: map[string]*workspaceState{}, runtimeIndex: map[string]Runtime{}, runtimeMirrors: map[string]*mirror.RuntimeMirror{}, inputArbiter: mirror.NewArbiter()}
-	s := &mirrorProcessService{daemon: d, bootstrap: b, acquiring: map[string]bool{}, jobs: map[string]*mirrorProcessJob{}, executions: map[string]*mirrorChildExecution{}, stop: make(chan struct{}), stopped: make(chan struct{})}
+	d := &Daemon{cfg: Config{ServerBaseURL: b.Identity.Scope.Backend, DaemonID: b.Identity.Scope.DaemonID, Profile: b.Identity.Scope.Profile, NativeHostExecutable: executable, NativeHostBuild: b.Identity.Build, NativeVscreenPreferencesPath: filepath.Join(filepath.Dir(b.Root), "vscreen-enabled.json")}, logger: slog.New(slog.NewTextHandler(io.Discard, nil)), workspaces: map[string]*workspaceState{}, runtimeIndex: map[string]Runtime{}, runtimeMirrors: map[string]*mirror.RuntimeMirror{}}
+	s := &mirrorProcessService{daemon: d, bootstrap: b, jobs: map[string]*mirrorProcessJob{}, stop: make(chan struct{}), stopped: make(chan struct{})}
 	d.mirrorChild = s
-	d.mirrorReportBridge = &mirrorChildReports{service: s}
-	d.SetVscreenLocalOwnerVerifier(func(_ context.Context, capability string) bool { return capability == "control-attested-local" })
 	process, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, Capabilities: []string{"mirror.bind", "mirror.unbind", "mirror.submit", "mirror.cancel_job", "mirror.consume_job"}, ReadCapabilities: []string{"mirror.endpoint", "mirror.job", "mirror.inventory"}, Handler: s.mutate, ReadHandler: s.read, Ready: s.ready, Shutdown: s.shutdown})
 	if err != nil {
 		return err
@@ -215,7 +200,7 @@ func (s *mirrorProcessService) mutate(ctx context.Context, request runtimeproc.R
 	}
 	return nil, mirrorIPCError(errors.New("unknown mirror operation"))
 }
-func (s *mirrorProcessService) bind(binding mirrorControlBinding) error {
+func (s *mirrorProcessService) bind(binding mirrorConnectionBinding) error {
 	if binding.Generation == 0 || binding.ServerGeneration == "" || len(binding.Resources) > 256 {
 		return errors.New("invalid control binding")
 	}
@@ -270,7 +255,7 @@ func (s *mirrorProcessService) bind(binding mirrorControlBinding) error {
 		}
 		ws.runtimeIDs = append(ws.runtimeIDs, resource.RuntimeID)
 	}
-	d.mirrorControlGeneration = mirrorControlGeneration(binding.Generation)
+	d.mirrorConnectionGeneration = mirrorConnectionGeneration(binding.Generation)
 	d.vscreenServerGeneration = binding.ServerGeneration
 	d.mu.Unlock()
 	for _, runtimeID := range removed {
@@ -279,7 +264,7 @@ func (s *mirrorProcessService) bind(binding mirrorControlBinding) error {
 			return err
 		}
 	}
-	d.replayActiveMirrorViewerStates(s.enqueue(binding.Generation), mirrorControlGeneration(binding.Generation))
+	d.replayActiveMirrorViewerStates(s.enqueue(binding.Generation), mirrorConnectionGeneration(binding.Generation))
 	return nil
 }
 func (s *mirrorProcessService) unbind(generation uint64) {
@@ -292,34 +277,12 @@ func (s *mirrorProcessService) unbind(generation uint64) {
 	if s.cancelBinding != nil {
 		s.cancelBinding()
 	}
-	executions := make([]*mirrorChildExecution, 0, len(s.executions))
-	for _, execution := range s.executions {
-		if !execution.released {
-			executions = append(executions, execution)
-		}
-	}
 	s.mu.Unlock()
 	s.events.setGeneration(generation, false)
 	d := s.daemon
 	d.mu.Lock()
-	d.mirrorControlGeneration = 0
-	backend := d.controlBackend
+	d.mirrorConnectionGeneration = 0
 	d.mu.Unlock()
-	if backend != nil {
-		backend.mu.Lock()
-		backend.catalog = map[string]cachedCatalog{}
-		backend.mu.Unlock()
-	}
-	for _, tracked := range d.trackedRuntimeMirrors() {
-		tracked.mirror.RevokeAllControl(generation)
-	}
-	d.suspendVscreens(0)
-	for _, execution := range executions {
-		execution.cancel()
-		if execution.execution.stopProvider != nil && (execution.execution.nativeGranted.Load() || execution.claim.Source != nil || execution.claim.Continuation != nil) {
-			execution.execution.stopProvider(&vscreen.Error{Reason: protocol.VscreenNativeUnavailable, Cause: errVscreenIntervention})
-		}
-	}
 }
 func (s *mirrorProcessService) submit(request runtimeproc.Request, input mirrorProcessRequest) (json.RawMessage, *runtimeproc.Error) {
 	s.mu.Lock()
@@ -347,7 +310,7 @@ func (s *mirrorProcessService) submit(request runtimeproc.Request, input mirrorP
 		job.result.Result = result
 		if err != nil {
 			job.result.Error = err.Error()
-			job.result.Reason = vscreenReason(err)
+			job.result.Reason = mirrorFailureReason(err)
 		}
 	}()
 	return marshalRaw(job.result), nil
@@ -357,7 +320,7 @@ func (s *mirrorProcessService) execute(ctx context.Context, input mirrorProcessR
 		return nil, err
 	}
 	d := s.daemon
-	g := mirrorControlGeneration(input.Generation)
+	g := mirrorConnectionGeneration(input.Generation)
 	switch input.Operation {
 	case "control":
 		var message protocol.Message
@@ -372,80 +335,15 @@ func (s *mirrorProcessService) execute(ctx context.Context, input mirrorProcessR
 			d.handleVscreenViewerRenew(msg)
 		case protocol.EventMirrorViewerRevoke:
 			d.handleVscreenViewerRevoke(msg)
-		case protocol.EventMirrorControlGrant:
-			d.handleMirrorControlGrant(msg)
-		case protocol.EventMirrorControlRevoke:
-			d.handleMirrorControlRevoke(msg)
-		case protocol.EventVscreenQuery:
-			d.handleVscreenQuery(ctx, msg)
-		case protocol.EventVscreenCommand:
-			d.handleVscreenCommand(ctx, msg)
-		case protocol.EventVscreenResult:
-			d.handleVscreenCleanupAck(msg)
 		default:
 			return nil, errors.New("unsupported mirror control event")
 		}
 		return marshalRaw(struct{}{}), nil
-	case "human_get":
-		return marshalRaw(map[string]bool{"enabled": d.HumanInteractionEnabled()}), nil
-	case "human_set":
-		var value struct {
-			Enabled bool `json:"enabled"`
-		}
-		if json.Unmarshal(input.Payload, &value) != nil {
-			return nil, errors.New("invalid interaction setting")
-		}
-		d.SetHumanInteractionEnabled(value.Enabled)
-		return marshalRaw(struct{}{}), nil
-	case "execute_command":
-		var command protocol.VscreenCommand
-		if json.Unmarshal(input.Payload, &command) != nil {
-			return nil, errors.New("invalid mirror command")
-		}
-		return marshalRaw(struct{}{}), d.executeVscreenCommand(ctx, command, g)
-	case "snapshot":
-		value, err := d.vscreenSnapshot(ctx, input.WorkspaceID, input.RuntimeID)
-		return marshalRaw(value), err
 	case "sources":
 		value, err := d.vscreenSources(ctx, input.WorkspaceID, input.RuntimeID)
 		return marshalRaw(value), err
 	case "remove":
 		return marshalRaw(struct{}{}), s.removeRuntime(ctx, input.RuntimeID)
-	case "acquire":
-		return s.acquireExecution(ctx, input)
-	case "cancel_execution":
-		s.mu.Lock()
-		execution := s.executions[input.ExecutionID]
-		if execution == nil || input.Claim == nil || !mirrorClaimsEqual(execution.claim, *input.Claim) {
-			s.mu.Unlock()
-			return nil, errors.New("GUI cancellation claim differs")
-		}
-		s.mu.Unlock()
-		execution.cancel()
-		return marshalRaw(struct{}{}), nil
-	case "release":
-		return s.releaseExecution(input)
-	case "provider_stopped":
-		return s.providerStopped(ctx, input)
-	case "local":
-		if input.Local == nil {
-			return nil, errors.New("local action required")
-		}
-		value, err := d.performMirrorLocal(ctx, *input.Local)
-		return marshalRaw(value), err
-	case "approval":
-		if input.Approval == nil {
-			return nil, errors.New("approval request required")
-		}
-		d.mu.Lock()
-		rm := d.runtimeMirrors[input.Approval.RuntimeID]
-		d.mu.Unlock()
-		if rm == nil {
-			return nil, errors.New("no mirror reviewer connected")
-		}
-		a := input.Approval
-		approved, err := rm.RequestCLIApproval(ctx, mirror.CLIApprovalAudience{WorkspaceID: a.WorkspaceID, RuntimeID: a.RuntimeID, UserID: a.UserID}, "Codex operation approval", a.Operation.Target, &a.Operation)
-		return marshalRaw(map[string]bool{"approved": approved}), err
 	}
 	return nil, errors.New("unknown mirror domain operation")
 }
@@ -481,7 +379,7 @@ func mirrorIPCError(err error) *runtimeproc.Error {
 	if err == nil {
 		return nil
 	}
-	return &runtimeproc.Error{Code: string(vscreenReason(err)), Message: err.Error()}
+	return &runtimeproc.Error{Code: "mirror_error", Message: err.Error()}
 }
 func (s *mirrorProcessService) shutdown(ctx context.Context) error {
 	s.mu.Lock()
@@ -499,21 +397,12 @@ func (s *mirrorProcessService) shutdown(ctx context.Context) error {
 	for _, job := range s.jobs {
 		job.cancel()
 	}
-	executions := make([]*mirrorChildExecution, 0, len(s.executions))
-	for _, execution := range s.executions {
-		executions = append(executions, execution)
-	}
 	s.mu.Unlock()
 	close(s.stop)
 	<-s.stopped
 	var result error
 	if s.events != nil {
 		result = errors.Join(result, s.events.close())
-	}
-	for _, execution := range executions {
-		execution.broker.Close()
-		execution.cancel()
-		execution.execution.Close()
 	}
 	s.workers.Wait()
 	d := s.daemon
@@ -535,7 +424,7 @@ func (s *mirrorProcessService) shutdown(ctx context.Context) error {
 	s.mu.Unlock()
 	return result
 }
-func (s *mirrorProcessService) watchNative(client *hostclient.Client) bool {
+func (s *mirrorProcessService) watchNative(client *nativecapture.Client) bool {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -563,22 +452,6 @@ func (s *mirrorProcessService) watchNative(client *hostclient.Client) bool {
 }
 
 func (s *mirrorProcessService) removeRuntime(ctx context.Context, runtimeID string) error {
-	s.mu.Lock()
-	executions := map[string]*mirrorChildExecution{}
-	for id, execution := range s.executions {
-		if execution.claim.RuntimeID == runtimeID {
-			executions[id] = execution
-		}
-	}
-	s.mu.Unlock()
-	for id, execution := range executions {
-		if execution.execution.stopProvider != nil {
-			execution.execution.stopProvider(&vscreen.Error{Reason: protocol.VscreenSourceGone, Cause: errVscreenIntervention})
-		}
-		if _, err := s.releaseExecution(mirrorProcessRequest{ExecutionID: id, Claim: &execution.claim}); err != nil {
-			return err
-		}
-	}
 	d := s.daemon
 	d.mu.Lock()
 	runtimeMirror := d.runtimeMirrors[runtimeID]
@@ -589,17 +462,11 @@ func (s *mirrorProcessService) removeRuntime(ctx context.Context, runtimeID stri
 			return err
 		}
 	}
-	d.vscreenMu.Lock()
-	runtime := d.vscreen
-	d.vscreenMu.Unlock()
-	if runtime != nil {
-		return d.removeVscreenRuntime(ctx, runtime, runtimeID)
-	}
 	return nil
 }
 func (s *mirrorProcessService) inventory() json.RawMessage {
 	s.mu.Lock()
-	bound, generation, count := s.bound, s.generation, len(s.executions)
+	bound, generation := s.bound, s.generation
 	s.mu.Unlock()
 	d := s.daemon
 	d.mu.Lock()
@@ -624,7 +491,7 @@ func (s *mirrorProcessService) inventory() json.RawMessage {
 			}
 		}
 	}
-	return marshalRaw(map[string]any{"pid": os.Getpid(), "instance_id": s.bootstrap.Identity.InstanceID, "bound": bound, "generation": generation, "executions": count, "mirrors": mirrors, "native_alive": nativeAlive})
+	return marshalRaw(map[string]any{"pid": os.Getpid(), "instance_id": s.bootstrap.Identity.InstanceID, "bound": bound, "generation": generation, "mirrors": mirrors, "native_alive": nativeAlive})
 }
 
 func (s *mirrorProcessService) cleanupJobResult(input mirrorProcessRequest, result json.RawMessage) error {
@@ -634,19 +501,11 @@ func (s *mirrorProcessService) cleanupJobResult(input mirrorProcessRequest, resu
 		if json.Unmarshal(input.Payload, &frame) == nil && frame.Type == protocol.EventMirrorOffer && json.Unmarshal(frame.Payload, &offer) == nil && offer.ViewerGrant != nil {
 			grant := offer.ViewerGrant
 			revoke := protocol.MirrorViewerRevokePayload{WorkspaceID: offer.WorkspaceID, RuntimeID: offer.RuntimeID, DaemonGeneration: offer.DaemonGeneration, SessionID: offer.SessionID, ViewerID: offer.ViewerID, GrantID: grant.GrantID}
-			s.daemon.handleVscreenViewerRevoke(mirrorOfferMessage{raw: marshalRaw(revoke), controlGeneration: mirrorControlGeneration(input.Generation)})
+			s.daemon.handleVscreenViewerRevoke(mirrorOfferMessage{raw: marshalRaw(revoke), controlGeneration: mirrorConnectionGeneration(input.Generation)})
 		}
 		return nil
 	}
-	if input.Operation != "acquire" {
-		return nil
-	}
-	var grant mirrorExecutionGrant
-	if json.Unmarshal(result, &grant) != nil || !grant.Active {
-		return nil
-	}
-	_, err := s.releaseExecution(mirrorProcessRequest{ExecutionID: grant.ExecutionID, Claim: input.Claim})
-	return err
+	return nil
 }
 
 func (s *mirrorProcessService) notifySafety(generation uint64, kind string, payload any) {

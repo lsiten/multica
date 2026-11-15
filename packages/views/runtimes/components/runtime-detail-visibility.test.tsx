@@ -67,6 +67,9 @@ vi.mock("@tanstack/react-query", async () => {
       if (key?.[0] === "workspaces" && key?.[2] === "members") {
         return { data: mockQueryData.members, isLoading: false };
       }
+      if (key?.[0] === "vscreen" && key.at(-1) === "agent-desktop") {
+        return { data: undefined, isLoading: false };
+      }
       return { data: [], isLoading: false };
     }),
   };

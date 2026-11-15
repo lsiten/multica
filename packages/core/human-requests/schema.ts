@@ -30,6 +30,7 @@ export const HumanRequestSchema = z.object({
     verification: z.string().optional(),
     details: z.string().optional(),
     response_mode: z.enum(["card_only", "chat_or_card"]).catch("card_only").optional().default("card_only"),
+    purpose: z.literal("desktop_approval").optional(),
   }),
   response: HumanRequestAnswerSchema.nullable().optional().default(null),
   response_task_id: z.string().nullable().default(null),

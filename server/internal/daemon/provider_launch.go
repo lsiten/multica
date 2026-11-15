@@ -358,12 +358,6 @@ func executePreparedProvider(
 	defer agentCancel()
 	session, err := backend.Execute(agentCtx, prompt, opts)
 	if err != nil {
-		// Mirror the provider launch-error boundary: an unconfirmed
-		// vscreen stop is reported as such, every other backend start failure
-		// is explained once here so the worker does not fabricate a result.
-		if errors.Is(context.Cause(ctx), errVscreenIntervention) {
-			return agent.Result{}, 0, errors.Join(errVscreenStopUnconfirmed, err)
-		}
 		taskLog.Debug("worker backend execute returned error", "error", err)
 		return agent.Result{}, 0, agent.ExplainExecError(err)
 	}

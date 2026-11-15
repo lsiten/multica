@@ -25,7 +25,7 @@ func TestSelectedNetworkGetterUsesActualPionTransportAndCloses(t *testing.T) {
 	if _, err = pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
 		t.Fatal(err)
 	}
-	dc, err := pc.CreateDataChannel("mirror-control", nil)
+	dc, err := pc.CreateDataChannel("mirror-metadata", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

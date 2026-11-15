@@ -115,7 +115,7 @@ function ProgressRing({ project }: { project: Project }) {
         <svg className="h-3.5 w-3.5 -rotate-90" viewBox="0 0 16 16">
           <circle className="text-muted" strokeWidth="2" stroke="currentColor" fill="none" r="6" cx="8" cy="8" />
           <circle
-            className="text-emerald-500"
+            className="text-success"
             strokeWidth="2"
             stroke="currentColor"
             fill="none"
@@ -194,7 +194,7 @@ function ProjectCard({
               <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
                 <circle className="text-muted" strokeWidth="2" stroke="currentColor" fill="none" r="6" cx="8" cy="8" />
                 <circle
-                  className="text-emerald-500"
+                  className="text-success"
                   strokeWidth="2"
                   stroke="currentColor"
                   fill="none"

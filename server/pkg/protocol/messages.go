@@ -31,6 +31,10 @@ const (
 	// and the mirror WebRTC offer/answer implementation. Linux stays unadvertised
 	// in the first version instead of failing during capture.
 	DaemonCapabilityScreenMirrorV1 = "screen-mirror-v1"
+	// DaemonCapabilityAgentDesktopV1 advertises a daemon that can preflight the
+	// pinned agent-desktop release in the user's graphical session. It is a
+	// task-dispatch gate, not part of the browser mirror capability set.
+	DaemonCapabilityAgentDesktopV1 = "agent-desktop-v1"
 	// DaemonCapabilityClaimPollHintsV1 advertises that the daemon understands
 	// the batch-claim response's safety-poll metadata. The server only performs
 	// the extra deferred-task lookup for clients that opt in, and an older

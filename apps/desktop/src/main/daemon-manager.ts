@@ -44,7 +44,11 @@ import {
 } from "./local-review-request";
 import { parseManagedWorktrees, parseManagedWorktreeCleanup } from "@multica/core/types/managed-worktree";
 import { parseDaemonHealth, type HealthPayload } from "./daemon-health";
-import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
+import {
+  ensureManagedCli,
+  managedCliPath,
+  prepareAgentDesktop,
+} from "./cli-bootstrap";
 import { decideVersionAction } from "./version-decision";
 import { createDaemonQuitHandler } from "./daemon-quit";
 import { quitConfirmationOptions, quitFailureOptions } from "./daemon-quit-dialogs";
@@ -603,6 +607,14 @@ async function probeCliBinary(
  * This function is idempotent and safe to call concurrently — in-flight
  * installs are de-duplicated via `cliResolvePromise`.
  */
+async function prepareAgentDesktopForCli(cliPath: string): Promise<void> {
+  try {
+    await prepareAgentDesktop(cliPath);
+  } catch (error) {
+    console.warn("[daemon] agent-desktop auto-install failed:", error);
+  }
+}
+
 async function resolveCliBinary(): Promise<string | null> {
   if (quitting) return cachedCliBinary ?? null;
   if (cachedCliBinary !== undefined) return cachedCliBinary;
@@ -613,6 +625,7 @@ async function resolveCliBinary(): Promise<string | null> {
     if (existsSync(bundled)) {
       const version = await probeCliBinary(bundled, "bundled");
       if (version) {
+        await prepareAgentDesktopForCli(bundled);
         console.log(`[daemon] using bundled CLI at ${bundled}`);
         cachedCliBinary = bundled;
         cachedCliBinaryVersion = version;
@@ -624,6 +637,7 @@ async function resolveCliBinary(): Promise<string | null> {
     if (existsSync(managed)) {
       const version = await probeCliBinary(managed, "managed");
       if (version) {
+        await prepareAgentDesktopForCli(managed);
         cachedCliBinary = managed;
         cachedCliBinaryVersion = version;
         return managed;
@@ -651,6 +665,7 @@ async function resolveCliBinary(): Promise<string | null> {
     if (onPath) {
       const version = await probeCliBinary(onPath, "path");
       if (version) {
+        await prepareAgentDesktopForCli(onPath);
         cachedCliBinary = onPath;
         cachedCliBinaryVersion = version;
         return onPath;
