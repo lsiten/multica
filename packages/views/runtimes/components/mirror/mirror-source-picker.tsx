@@ -86,13 +86,13 @@ export function MirrorSourcePicker({
                 className={`flex w-full items-start gap-2 rounded-md border px-2 py-2 text-left transition-colors ${current ? "border-primary/40 bg-accent" : "border-transparent hover:bg-accent/60"}`}
                 onClick={() => onSelect(key)}
               >
-                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded border bg-background">
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-sm border bg-background">
                   <Monitor className="size-4 text-muted-foreground" aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className="truncate text-caption font-medium">{entry.name.trim() || String(index + 1)}</span>
-                    {entry.primary && <span className="rounded bg-primary/10 px-1 py-0.5 text-micro text-primary">{t(($) => $.vscreen.primary_display)}</span>}
+                    {entry.primary && <span className="rounded-sm bg-primary/10 px-1 py-0.5 text-micro text-primary">{t(($) => $.vscreen.primary_display)}</span>}
                   </span>
                   <span className="block truncate text-caption text-muted-foreground">
                     {kindLabel(entry.source.kind)} · {entry.width} × {entry.height} · {Math.round(entry.scale * 100)}%

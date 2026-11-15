@@ -1295,7 +1295,7 @@ export function MirrorSurface({
               </Button>
             )}
           </div>
-          <div className="pointer-events-none absolute left-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-micro text-white/75 lg:hidden">
+          <div className="pointer-events-none absolute left-2 top-2 rounded-sm bg-black/55 px-1.5 py-0.5 text-micro text-white/75 lg:hidden">
             {t(($) => $.vscreen.rotate_hint)}
           </div>
         </div>

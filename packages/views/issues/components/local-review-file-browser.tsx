@@ -423,7 +423,7 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
               <button type="button" className="flex min-w-0 items-center gap-2 py-1.5 pl-2 pr-1 text-caption" title={path} onClick={() => selectFile(path)}>
                 <span className="truncate">{path.split("/").at(-1)}</span>
               </button>
-              <button type="button" className="mr-1 rounded p-0.5 hover:bg-accent focus-visible:ring-2" aria-label={t(($) => $.local_review.close_file_tab, { path })} onClick={() => closeTab(path)}>
+              <button type="button" className="mr-1 rounded-sm p-0.5 hover:bg-accent focus-visible:ring-2" aria-label={t(($) => $.local_review.close_file_tab, { path })} onClick={() => closeTab(path)}>
                 <X className="size-3" aria-hidden="true" />
               </button>
             </div>
@@ -672,7 +672,7 @@ function LocalReviewPatch({ request, manifest, filePath, navigation, layout, com
       {!!fileComments.length && (
         <div className="mx-2 mb-2 space-y-1 rounded-md border bg-card p-2 text-caption">
           {fileComments.map((comment) => (
-            <button key={comment.id} type="button" className="block w-full rounded px-1 py-0.5 text-left hover:bg-accent" onClick={() => { onCommentSideChange?.(comment.side); setCommentLine(comment.line); setCommentOpen(true); diffRef.current?.goToLine(comment.line, comment.side); }}>
+            <button key={comment.id} type="button" className="block w-full rounded-sm px-1 py-0.5 text-left hover:bg-accent" onClick={() => { onCommentSideChange?.(comment.side); setCommentLine(comment.line); setCommentOpen(true); diffRef.current?.goToLine(comment.line, comment.side); }}>
               <span className={`font-medium ${comment.resolved ? "line-through text-muted-foreground" : ""}`}>{t(($) => $.local_review.comment_on_line, { line: comment.line })} · {comment.side === "old" ? t(($) => $.local_review.side_old) : t(($) => $.local_review.side_new)}</span>
               <span className="ml-2 text-muted-foreground">{comment.body}</span>
             </button>
