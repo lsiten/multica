@@ -61,8 +61,6 @@ const TYPE_KEY: Record<InboxItemType, string> = {
   children_done: "type.children_done",
   runtime_mirror_viewer_started: "type.runtime_mirror_viewer_started",
   runtime_mirror_viewer_stopped: "type.runtime_mirror_viewer_stopped",
-  runtime_mirror_control_started: "type.runtime_mirror_control_started",
-  runtime_mirror_control_stopped: "type.runtime_mirror_control_stopped",
   app_action_requested: "type.app_action_requested",
   app_action_reminder: "type.app_action_reminder",
   app_connect_requested: "type.app_connect_requested",
