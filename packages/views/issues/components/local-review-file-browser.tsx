@@ -158,7 +158,7 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
   const activePath = effectiveSelected || filteredRows[0]?.path || allRows[0]?.path || "";
   useEffect(() => {
     if (!activePath) return;
-    rowRefs.current.get(activePath)?.scrollIntoView({ block: "nearest" });
+    rowRefs.current.get(activePath)?.scrollIntoView?.({ block: "nearest" });
   }, [activePath]);
   const branchPath = stagedSelection && indexFiles.get(stagedSelection)?.staged ? "" : pendingPaths.has(branchSelection) ? branchSelection : pendingPaths.has(activePath) && !indexFiles.get(activePath)?.unstaged ? activePath : "";
   const selectBranch = (path: string) => { selectFile(path); setStagedSelection(""); setBranchSelection(path); };
