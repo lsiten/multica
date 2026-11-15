@@ -59,7 +59,8 @@ func (h *Handler) CreateMirrorSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "runtime is offline")
 		return
 	}
-	if !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityScreenMirrorV1) {
+	if !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityScreenMirrorV1) &&
+		!runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityScreenMirrorVideoV2) {
 		writeError(w, http.StatusNotImplemented, "runtime daemon does not support screen mirroring")
 		return
 	}
