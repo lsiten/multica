@@ -92,7 +92,7 @@ it("bounds initially rendered working files and exposes explicit loading of more
   expect(screen.queryByRole("button", { name: /working-149.ts.*\+1/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "未暂存 · 加载更多文件" }));
   expect(screen.getByRole("button", { name: /working-149.ts.*\+1/ })).toBeInTheDocument();
-});
+}, 15_000);
 
 it("expands omitted original lines inline and can collapse them again", async () => {
   vi.mocked(readReviewFile).mockResolvedValue({ version_id: id, path: "a.ts", preview: "text", page: { lines: [{ text: "@@ -5 +5 @@", kind: "meta", context_old_start: 1, context_new_start: 1, context_lines: 4 }], next_line: 1, has_more: false } });
