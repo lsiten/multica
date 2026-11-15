@@ -271,8 +271,10 @@ describe("MirrorSurface canvas-first viewing", () => {
     renderSurface();
     await waitFor(() => expect(screen.getByText("You are controlling")).toBeInTheDocument());
     await screen.findByRole("button", { name: "Stop control" });
-    fireEvent.keyDown(window, { key: "Escape" });
-    await waitFor(() => expect(mirrorControl.stop).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(mirrorControl.stop).toHaveBeenCalledOnce();
+    });
   });
 
   it("lets a runtime owner force-end another controller's lease", async () => {
