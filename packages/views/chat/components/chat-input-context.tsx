@@ -32,7 +32,7 @@ export function ChatInputContext({ projects, projectId, squads, squadId, workspa
           <ClearablePillButton disabled={!enabled} aria-label={t(($) => $.input.change_project_context)} title={t(($) => $.input.change_project_context)} onClear={() => onProjectChange?.(null)} clearLabel={t(($) => $.input.remove_project_context)} className="h-6 max-w-full border-surface-border bg-surface-raised font-medium text-foreground" />
         } />
         {unsupported && <DeferredTooltip openOnFocus content={t(($) => $.input.project_context_unsupported)} trigger={
-          <span role="img" tabIndex={0} aria-label={t(($) => $.input.project_context_unsupported)} className="shrink-0 rounded p-1 text-warning focus-visible:ring-2 focus-visible:ring-ring"><TriangleAlert className="size-3.5" aria-hidden="true" /></span>
+          <span role="img" tabIndex={0} aria-label={t(($) => $.input.project_context_unsupported)} className="shrink-0 rounded-sm p-1 text-warning focus-visible:ring-2 focus-visible:ring-ring"><TriangleAlert className="size-3.5" aria-hidden="true" /></span>
         } />}
       </div>}
       {showSquads && <div className="flex min-w-0 items-center gap-1.5">

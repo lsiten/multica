@@ -887,7 +887,7 @@ export function ChatInput({
             {draftUploads.filter((upload) => upload.status === "failed" || upload.status === "uploading").map((upload) => (
               <div
                 key={upload.clientUploadId}
-                className="flex min-w-0 items-center gap-2 rounded px-1.5 py-1 text-caption"
+                className="flex min-w-0 items-center gap-2 rounded-sm px-1.5 py-1 text-caption"
               >
                 {upload.status === "uploading" && <Loader2 aria-hidden className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
                 <span className={cn("min-w-0 flex-1 truncate", upload.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
