@@ -94,6 +94,42 @@ func TestVersionFilePagesExcludePatchPayloads(t *testing.T) {
 	}
 }
 
+func TestListVersionSummariesReturnsValidatedMetadataOnly(t *testing.T) {
+	store, err := OpenBlobStore(t.TempDir(), 32<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	firstVersion := versionFixture()
+	first, err := store.SaveVersion(t.Context(), firstVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondVersion := versionFixture()
+	secondVersion.Header.TargetHead = strings.Repeat("4", 40)
+	second, err := store.SaveVersion(t.Context(), secondVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := store.ListVersionSummaries(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("summaries = %d, want 2", len(summaries))
+	}
+	seen := map[string]bool{}
+	for _, summary := range summaries {
+		seen[summary.ID] = true
+		if summary.Header.Repository != "/repo" || summary.Header.Target != "main" || summary.UpdatedAt.IsZero() {
+			t.Fatalf("invalid summary: %+v", summary)
+		}
+	}
+	if !seen[first] || !seen[second] {
+		t.Fatalf("missing version IDs in summaries: %+v", seen)
+	}
+}
+
 func TestVersionRejectsDuplicateOrEscapingFileNames(t *testing.T) {
 	store, err := OpenBlobStore(t.TempDir(), 1<<20)
 	if err != nil {

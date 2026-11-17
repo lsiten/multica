@@ -14,6 +14,7 @@
  * a second tap).
  */
 import { useCallback } from "react";
+import { paths } from "@multica/core/paths/paths";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -134,7 +135,7 @@ export default function ProjectDetail() {
           return;
         }
         if (action === "open_web" && wsUrl) {
-          Linking.openURL(`${wsUrl}/${wsSlug}/projects/${id}`);
+          if (wsSlug) Linking.openURL(`${wsUrl.replace(/\/+$/, "")}${paths.workspace(wsSlug).projectDetail(id)}`);
           return;
         }
         if (action === "delete" && canDelete) {

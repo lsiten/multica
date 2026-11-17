@@ -14,7 +14,7 @@ import type { IssueTarget, PaletteCommand, PaletteCommandGroup } from "./types";
 import type { AgentEntry } from "./use-actor-directory";
 import { useObjectSearch, type ObjectHits, type Scored } from "./use-object-search";
 import { useRecentItems, type RecentItem } from "./use-recent-items";
-import { useServerSearch, type SearchResults } from "./use-server-search";
+import { useServerSearch } from "./use-server-search";
 
 // The palette's Pages group is generated from WORKSPACE_PAGES, the same
 // registry the sidebar nav and the desktop tab bar read. It used to be a
@@ -81,7 +81,7 @@ export interface RootModel {
   commands: Scored<PaletteCommand>[];
   pages: Scored<NavPage>[];
   objects: ObjectHits;
-  server: { results: SearchResults; isLoading: boolean; stale: boolean };
+  server: ReturnType<typeof useServerSearch>;
   partitioned: ReturnType<typeof partitionAggregatedSearchResults>;
   liveIssueScore: number;
   liveProjectScore: number;

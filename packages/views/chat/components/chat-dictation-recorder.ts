@@ -1,6 +1,10 @@
+import { DictationAudioError } from "./chat-dictation-error";
+
 export interface DictationRecording {
   stop: () => void;
   promise: Promise<string>;
+  pause?: () => void;
+  resume?: () => void;
 }
 
 export function recordDictation(
@@ -15,7 +19,7 @@ export function recordDictation(
     ...(mimeType ? { mimeType } : {}),
   });
   const chunks: Blob[] = [];
-  const stop = () => { if (recorder.state === "recording") recorder.stop(); };
+  const stop = () => { if (recorder.state !== "inactive") recorder.stop(); };
   const promise = new Promise<string>((resolve, reject) => {
     const abort = () => {
       stop();
@@ -27,14 +31,14 @@ export function recordDictation(
     };
     recorder.onerror = () => {
       cleanup();
-      reject(new Error("Microphone recording failed"));
+      reject(new DictationAudioError("recording"));
     };
     recorder.onstop = () => {
       cleanup();
       if (signal.aborted) return;
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
       if (!blob.size || blob.size > 512 * 1024) {
-        reject(new Error("Empty or oversized recording"));
+        reject(new DictationAudioError("empty"));
         return;
       }
       void transcribe(blob, signal).then(resolve, reject);
@@ -47,5 +51,9 @@ export function recordDictation(
       reject(error);
     }
   });
-  return { stop, promise };
+  return {
+    stop, promise,
+    pause: () => { if (recorder.state === "recording") recorder.pause(); },
+    resume: () => { if (recorder.state === "paused") recorder.resume(); },
+  };
 }

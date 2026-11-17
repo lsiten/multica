@@ -16,7 +16,7 @@ import (
 )
 
 // All tests in this file require a working DB. testHandler / testWorkspaceID /
-// testUserID / testRuntimeID are wired in TestMain (handler_test.go) and
+// testUserID / testRuntimeID are wired in TestMain (handler_fixture_test.go) and
 // TestMain skips the suite if Postgres isn't reachable.
 
 // ── Fixture helpers ─────────────────────────────────────────────────────────
@@ -472,29 +472,6 @@ func requireAcceptedWebhookResponse(t *testing.T, w *httptest.ResponseRecorder) 
 		t.Fatalf("accepted response missing run_id: %#v", resp)
 	}
 	return deliveryID
-}
-
-func processQueuedWebhookDelivery(t *testing.T, deliveryID string) db.WebhookDelivery {
-	t.Helper()
-	ctx := context.Background()
-	for i := 0; i < 20; i++ {
-		delivery, err := testHandler.Queries.GetWebhookDelivery(ctx, parseUUID(deliveryID))
-		if err != nil {
-			t.Fatalf("load queued delivery: %v", err)
-		}
-		if delivery.Status != deliveryStatusQueued {
-			return delivery
-		}
-		worked, err := testHandler.WebhookDeliveryWorker.ProcessNext(ctx)
-		if err != nil {
-			t.Fatalf("process queued delivery: %v", err)
-		}
-		if !worked {
-			t.Fatalf("delivery %s remained queued with no claimable work", deliveryID)
-		}
-	}
-	t.Fatalf("delivery %s did not reach a terminal state", deliveryID)
-	return db.WebhookDelivery{}
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

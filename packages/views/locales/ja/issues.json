@@ -1859,6 +1859,11 @@
       "from_template": "From a template"
     },
     "editor": {
+      "discard_prompt": "保存していないワークフローの変更を破棄しますか？",
+      "discard_keep": "編集を続ける",
+      "discard_confirm": "変更を破棄",
+      "remote_changed": "ワークフローが別の場所で更新されました。編集中の内容は保持されています。",
+      "reload": "最新版を読み込む",
       "create_title": "New workflow",
       "edit_title": "Edit workflow",
       "name": "Name",

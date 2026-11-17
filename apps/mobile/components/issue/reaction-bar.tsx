@@ -5,14 +5,14 @@
  * counts-must-agree parity rule from apps/mobile/CLAUDE.md.
  *
  * Empty state: when there are zero reactions the bar renders nothing.
- * Adding a new reaction is intentionally NOT exposed here — that entry
- * point will be a long-press on the comment / issue body in a follow-up.
+ * Parents own the add entry and the full emoji picker.
  * Tapping an existing chip still toggles the current user's reaction
  * (add/remove) via `onToggle`.
  */
 import { Pressable, View } from "react-native";
 import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 interface ReactionItem {
   id: string;
@@ -59,6 +59,7 @@ export function ReactionBar({
   onToggle,
   className,
 }: Props) {
+  const { t } = useT("issues");
   const grouped = groupReactions(reactions, currentUserId);
   if (grouped.length === 0) return null;
 
@@ -70,8 +71,11 @@ export function ReactionBar({
         <Pressable
           key={g.emoji}
           onPress={() => onToggle(g.emoji)}
+          accessibilityRole="button"
+          accessibilityLabel={t("reactions.toggle", { emoji: g.emoji, count: g.count })}
+          accessibilityState={{ selected: g.reacted }}
           className={cn(
-            "flex-row items-center gap-1 rounded-full border px-2 py-0.5",
+            "min-h-11 min-w-11 flex-row items-center justify-center gap-1 rounded-md border px-2 py-0.5",
             g.reacted
               ? "border-brand/30 bg-brand/10"
               : "border-border bg-background",

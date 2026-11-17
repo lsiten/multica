@@ -91,6 +91,8 @@ type AppConfig struct {
 	LocalReviewPagingSupported        bool `json:"local_review_paging_supported"`
 	LocalReviewIndexSupported         bool `json:"local_review_index_supported"`
 	LocalReviewSelectedMergeSupported bool `json:"local_review_selected_merge_supported"`
+	WorkspaceFileOperationsSupported  bool `json:"workspace_file_operations_supported"`
+	WorkspaceFileSelectionSupported   bool `json:"workspace_file_selection_supported"`
 
 	// AgentConversationStartersSupported tells independently deployed clients
 	// that agent create/update persists conversation_starters. Older handlers
@@ -132,6 +134,8 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		LocalReviewPagingSupported:         true,
 		LocalReviewIndexSupported:          true,
 		LocalReviewSelectedMergeSupported:  true,
+		WorkspaceFileOperationsSupported:   true,
+		WorkspaceFileSelectionSupported:    true,
 		AgentConversationStartersSupported: true,
 		IssueCreatePropertiesSupported:     true,
 		CommentDeleteKeepRepliesSupported:  true,

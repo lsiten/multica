@@ -119,8 +119,8 @@
     "step2_label": "啟動守護程序"
   },
   "cloud_waitlist": {
-    "intro_main": "雲執行時尚未上線。留下信箱，上線時透過信件通知你。",
-    "intro_warning": "提示：未配置執行時，AI 代理就無法工作——如果現在跳過，在你回來安裝之前不會啟動任何執行。",
+    "intro_main": "目前的設定流程尚未提供獨立雲端電腦。留下信箱以接收開放通知。",
+    "intro_warning": "本機 AI 代理需要已連線的執行時。託管雲端 AI 代理是另一項能力：完成引導後，若部署已啟用雲端服務商，可在團隊中選擇。",
     "email_label": "信箱",
     "email_placeholder": "you@work.com",
     "reason_label": "為什麼選擇雲？",
@@ -187,7 +187,7 @@
     "empty_skip_subtitle": "連線執行時前，AI 代理無法執行。",
     "empty_skip_action": "跳過",
     "empty_waitlist_title": "使用雲電腦",
-    "empty_waitlist_subtitle": "我們會在雲上為你執行一臺電腦。尚未上線。",
+    "empty_waitlist_subtitle": "目前的設定流程尚未提供獨立雲端電腦。託管雲端 AI 代理可在團隊中另外設定。",
     "empty_waitlist_action": "即將推出",
     "skip": "暫時跳過",
     "refresh": "重新整理",
@@ -210,7 +210,7 @@
     "cli_subtitle": "連線一臺伺服器、遠端開發機或任意無頭電腦。需要終端。",
     "cli_action": "檢視步驟",
     "cloud_title": "使用雲電腦",
-    "cloud_subtitle": "我們會在雲上為你執行一臺電腦。尚未上線。",
+    "cloud_subtitle": "目前的設定流程尚未提供獨立雲端電腦。託管雲端 AI 代理可在團隊中另外設定。",
     "cloud_action": "即將推出",
     "cli_dialog_title": "透過終端連線",
     "cli_dialog_pick_hint": "在上方選一臺電腦。",

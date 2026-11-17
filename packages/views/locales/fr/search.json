@@ -133,6 +133,8 @@
     "assigned": "{{identifier}} assignée à {{name}}"
   },
   "empty": {
+    "search_failed": "La recherche a échoué. Réessayez.",
+    "retry": "Réessayer",
     "no_results": "Aucun résultat.",
     "no_labels": "Aucun libellé",
     "type_to_find_issue": "Tapez pour trouver une tâche",

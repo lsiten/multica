@@ -1,5 +1,6 @@
 {
   "supervision": {
+    "unsaved": "放弃未保存的监督配置并离开？",
     "title": "项目监督",
     "loading": "正在加载监督状态…",
     "unavailable": "暂时无法获取监督状态。",

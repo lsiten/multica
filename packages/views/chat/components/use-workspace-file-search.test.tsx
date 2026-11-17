@@ -54,3 +54,19 @@ it("cancels an in-flight scan when the files tab is hidden", async () => {
   rerender({enabled:false});
   await waitFor(() => expect(signal?.aborted).toBe(true));
 });
+
+it("pauses a large scan after one batch and continues without rereading prior results", async () => {
+  read.mockImplementation((_request, _term, cursor: { offset: number }) => Promise.resolve({
+    entries: [{ path: `match-${cursor.offset}.md` }],
+    next: cursor.offset < 21 ? { path: ".", offset: cursor.offset + 1 } : undefined,
+  }));
+  const { result } = renderHook(() => useWorkspaceFileSearch(request, ["bounded-files"], "match", true), { wrapper: createWrapper() });
+  await waitFor(() => expect(result.current.paused).toBe(true), { timeout: 2000 });
+  expect(result.current.entries.map((entry) => entry.path)).toEqual(Array.from({ length: 20 }, (_, index) => `match-${index}.md`));
+  expect(result.current.searching).toBe(false);
+
+  act(() => result.current.continueSearch());
+  await waitFor(() => expect(result.current.hasNextPage).toBe(false));
+  expect(result.current.entries.map((entry) => entry.path)).toEqual(Array.from({ length: 22 }, (_, index) => `match-${index}.md`));
+  expect(read).toHaveBeenCalledTimes(22);
+});

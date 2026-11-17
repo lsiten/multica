@@ -258,6 +258,44 @@ func TestListChatSessionFiles_ProjectReposWithoutTask(t *testing.T) {
 	}
 }
 
+func TestListChatSessionFiles_RequiresExplicitProjectSelection(t *testing.T) {
+	if testPool == nil {
+		t.Skip("test database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "MultiProjectSelectionAgent", []byte("[]"))
+	sessionID := createHandlerTestChatSession(t, agentID)
+	firstProjectID := dbfx.Project(t, "First selectable project")
+	secondProjectID := dbfx.Project(t, "Second selectable project")
+	firstIssueID := dbfx.Issue(t, "First project task")
+	secondIssueID := dbfx.Issue(t, "Second project task")
+	dbfx.Exec(t, `UPDATE issue SET project_id = $1 WHERE id = $2`, firstProjectID, firstIssueID)
+	dbfx.Exec(t, `UPDATE issue SET project_id = $1 WHERE id = $2`, secondProjectID, secondIssueID)
+	for _, fields := range []testutil.Cols{
+		{"chat_session_id": sessionID, "issue_id": firstIssueID, "work_dir": "/first-project"},
+		{"chat_session_id": sessionID, "issue_id": secondIssueID, "work_dir": "/second-project"},
+	} {
+		fields["runtime_id"] = handlerTestRuntimeID(t)
+		dbfx.Task(t, agentID, fields)
+	}
+
+	req := withChatTestWorkspaceCtx(t, withURLParam(newRequest("GET", "/api/chat/sessions/"+sessionID+"/files", nil), "sessionId", sessionID))
+	var response ChatSessionFilesResponse
+	testutil.Call(t, testHandler.ListChatSessionFiles, req).Want(http.StatusOK).JSON(&response)
+	if !response.SelectionRequired {
+		t.Fatalf("selection_required = false, want true: %+v", response)
+	}
+	if response.SelectedProjectID != nil {
+		t.Fatalf("selected_project_id = %v, want nil", response.SelectedProjectID)
+	}
+	if len(response.Projects) != 2 {
+		t.Fatalf("projects = %d, want 2: %+v", len(response.Projects), response.Projects)
+	}
+	if len(response.Directories) != 0 || len(response.ProjectTasks) != 0 {
+		t.Fatalf("project files leaked before selection: directories=%+v project_tasks=%+v", response.Directories, response.ProjectTasks)
+	}
+}
+
 // Direct chats can inherit a project from the lead agent's binding without
 // storing project_id on the session or its chat task. The file projection must
 // still surface the durable worktree when the user selects that project tab.

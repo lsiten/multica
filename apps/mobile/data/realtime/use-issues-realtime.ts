@@ -26,11 +26,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { issueKeys } from "@/data/queries/issue-keys";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
-import {
-  patchIssuesList,
-  prependToIssuesList,
-  removeFromIssuesList,
-} from "./issue-ws-updaters";
+import { refreshIssuePages } from "./issue-pages-refresh";
 
 export function useIssuesRealtime() {
   const qc = useQueryClient();
@@ -39,18 +35,17 @@ export function useIssuesRealtime() {
     (ws, wsId) => {
       const invalidateList = () =>
         qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
+      const refreshPages = () => { void refreshIssuePages(qc, wsId); };
 
       return [
-        ws.on("issue:created", (payload) => {
-          prependToIssuesList(qc, wsId, payload.issue);
-        }),
-        ws.on("issue:updated", (payload) => {
-          patchIssuesList(qc, wsId, payload.issue);
-        }),
-        ws.on("issue:deleted", (payload) => {
-          removeFromIssuesList(qc, wsId, payload.issue_id);
-        }),
-        ws.onReconnect(invalidateList),
+        ws.on("issue:created", refreshPages),
+        ws.on("issue:updated", refreshPages),
+        ws.on("issue:deleted", refreshPages),
+        ws.on("issue_labels:changed", refreshPages),
+        ws.on("project:updated", refreshPages),
+        ws.on("project:deleted", refreshPages),
+        ws.on("squad:updated", refreshPages),
+        ws.onReconnect(() => { void invalidateList(); refreshPages(); }),
       ];
     },
     [qc],

@@ -542,6 +542,10 @@
     "serving_count_other": "{{count}} 個智慧體",
     "diagnostics_title": "診斷",
     "desktop": {
+      "recheck": "重新檢查",
+      "offline": "請連線執行環境後檢查桌面權限。",
+      "checking": "正在檢查桌面權限…",
+      "unchecked": "尚未檢查桌面權限。",
       "title": "桌面操作",
       "version": "工具",
       "version_value": "agent-desktop {{version}}",
@@ -2451,6 +2455,10 @@
     }
   },
   "usage": {
+    "measurement": "{{tz}} · 取得於 {{time}}",
+    "billing_boundary": "美元費用根據已回報用量與模型費率計算。服務商點數在各次執行中獨立顯示，此處不換算為美元。本報表不是帳單。",
+    "load_failed": "無法重新整理用量，已顯示的數值來自上次成功取得。",
+    "retry": "重試",
     "period_label": "時間範圍",
     "kpi_cost_label": "費用 · {{days}} 天",
     "kpi_cost_delta": "{{sign}}{{pct}}% 對比上期",

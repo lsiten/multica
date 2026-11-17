@@ -51,6 +51,8 @@
     "assigned": "{{identifier}} asignada a {{name}}"
   },
   "empty": {
+    "search_failed": "La búsqueda falló. Inténtalo de nuevo.",
+    "retry": "Reintentar",
     "no_results": "No se encontraron resultados.",
     "no_labels": "Sin etiquetas",
     "type_to_find_issue": "Escribe para buscar una tarea",

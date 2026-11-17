@@ -191,6 +191,7 @@
     "./session-prompt": "./session-prompt/index.ts",
     "./star-prompt": "./star-prompt/index.ts",
     "./paths": "./paths/index.ts",
+    "./paths/paths": "./paths/paths.ts",
     "./hooks": "./hooks.tsx",
     "./hooks/*": "./hooks/*.ts",
     "./query-client": "./query-client.ts",

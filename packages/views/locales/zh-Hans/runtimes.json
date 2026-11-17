@@ -542,6 +542,10 @@
     "serving_count_other": "{{count}} 个智能体",
     "diagnostics_title": "诊断",
     "desktop": {
+      "recheck": "重新检查",
+      "offline": "请连接运行时后检查桌面权限。",
+      "checking": "正在检查桌面权限…",
+      "unchecked": "尚未检查桌面权限。",
       "title": "桌面操作",
       "version": "工具",
       "version_value": "agent-desktop {{version}}",
@@ -2451,6 +2455,10 @@
     }
   },
   "usage": {
+    "measurement": "{{tz}} · 获取于 {{time}}",
+    "billing_boundary": "美元费用根据已上报用量和模型费率计算。服务商积分在各次运行中单独展示，此处不折算为美元。本报表不是账单。",
+    "load_failed": "无法刷新用量，已显示的数值来自上次成功获取。",
+    "retry": "重试",
     "period_label": "时间范围",
     "kpi_cost_label": "费用 · {{days}} 天",
     "kpi_cost_delta": "{{sign}}{{pct}}% 对比上期",

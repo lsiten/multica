@@ -162,6 +162,8 @@
     "reply_stale": "請求已變化或結束，請核對最新版本。",
     "reply_unsupported": "當前服務端不支援文字提交，請使用原確認卡，草稿已保留。",
     "reply_no_match": "這條訊息與請求不匹配，無法作為答覆提交。請修改訊息，或作為普通訊息傳送。",
-    "reply_options": "選項"
+    "reply_options": "選項",
+    "open_issue": "開啟關聯工作項目",
+    "open_chat": "開啟關聯聊天"
   }
 }

@@ -9,7 +9,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 const stopTrack = vi.fn();
-const stream = { getTracks: () => [{ stop: stopTrack }] };
+const track = { stop: stopTrack, enabled: true };
+const stream = { getTracks: () => [track] };
 const getUserMedia = vi.fn(async () => stream);
 
 function setup() {
@@ -36,6 +37,7 @@ function setup() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  track.enabled = true;
   getUserMedia.mockResolvedValue(stream);
   vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
 });
@@ -103,11 +105,13 @@ describe("chat dictation lifecycle", () => {
     await act(() => view.result.current.start());
     expect(view.draft.cancel).toHaveBeenCalledOnce();
     expect(view.result.current.error).toBe(true);
+    expect(view.result.current.errorKind).toBe("permission");
     await act(() => view.result.current.start());
     expect(view.result.current.error).toBe(false);
     await act(async () => view.pending.resolve("  "));
     expect(view.draft.cancel).toHaveBeenCalledTimes(2);
     expect(view.draft.finish).not.toHaveBeenCalled();
+    expect(view.result.current.errorKind).toBe("empty");
   });
 
   it("cancels and aborts capture when disabled or unmounted", async () => {
@@ -124,12 +128,9 @@ describe("chat dictation lifecycle", () => {
     expect(view.signal()?.aborted).toBe(true);
   });
 
-  it("Escape cancels and recording automatically stops at one minute", async () => {
+  it("automatically stops at one minute and releases timed-out transcription", async () => {
     vi.useFakeTimers();
     const view = setup();
-    await act(() => view.result.current.start());
-    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
-    expect(view.draft.cancel).toHaveBeenCalledOnce();
     await act(() => view.result.current.start());
     act(() => vi.advanceTimersByTime(60_000));
     expect(view.result.current.phase).toBe("transcribing");
@@ -138,5 +139,41 @@ describe("chat dictation lifecycle", () => {
     expect(view.result.current.error).toBe(true);
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("pauses microphone input and excludes paused time from the recording limit", async () => {
+    vi.useFakeTimers();
+    const view = setup();
+    await act(() => view.result.current.start());
+    act(() => vi.advanceTimersByTime(20_000));
+    act(() => view.result.current.togglePause());
+    expect(track.enabled).toBe(false);
+    expect(view.result.current.phase).toBe("paused");
+    act(() => vi.advanceTimersByTime(90_000));
+    expect(view.result.current.seconds).toBe(20);
+    expect(view.stop).not.toHaveBeenCalled();
+    act(() => view.result.current.togglePause());
+    expect(track.enabled).toBe(true);
+    act(() => vi.advanceTimersByTime(39_000));
+    expect(view.result.current.seconds).toBe(59);
+    expect(view.result.current.phase).toBe("recording");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(view.result.current.phase).toBe("transcribing");
+  });
+
+  it.each(["recording", "paused", "transcribing"])("retains the final draft when backgrounded during %s", async (phase) => {
+    const view = setup();
+    await act(() => view.result.current.start());
+    act(() => view.partial("Recognized text"));
+    if (phase === "paused") act(() => view.result.current.togglePause());
+    if (phase === "transcribing") act(() => view.result.current.stop());
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(view.result.current.phase).toBe("transcribing");
+    await act(async () => view.pending.resolve("Final preserved text"));
+    expect(view.draft.update).toHaveBeenLastCalledWith("Final preserved text");
+    expect(view.draft.finish).toHaveBeenCalledOnce();
+    expect(view.draft.cancel).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 });

@@ -1859,6 +1859,11 @@
       "from_template": "From a template"
     },
     "editor": {
+      "discard_prompt": "저장하지 않은 워크플로 변경 사항을 삭제할까요?",
+      "discard_keep": "계속 편집",
+      "discard_confirm": "변경사항 버리기",
+      "remote_changed": "워크플로가 다른 곳에서 변경되었습니다. 편집 내용은 유지됩니다.",
+      "reload": "최신 버전 불러오기",
       "create_title": "New workflow",
       "edit_title": "Edit workflow",
       "name": "Name",

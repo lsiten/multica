@@ -23,6 +23,7 @@ import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSche
 import { archivedInboxQuery, type ArchivedInboxFilters } from "../inbox/filters";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { createVscreenApi, VscreenScopeError } from "./vscreen";
+import { createDocumentCommentsApi } from "./document-comments";
 import { VoiceTranscriptSchema, voiceAudioPayload } from "./voice";
 import type { MirrorSourceBinding, VscreenScope } from "../types/vscreen";
 import { parseQoderConnection, parseQoderCatalog, type QoderInput } from "../runtimes/qoder-schema";
@@ -967,6 +968,7 @@ function isLocalApplicationHost(hostname: string): boolean {
 }
 
 export class ApiClient {
+  readonly documentComments = createDocumentCommentsApi((path, options) => this.fetch<unknown>(path, options));
   async cancelApplicationOperation(workspaceId: string, id: string, operationId: string): Promise<ApplicationOperation> {
     const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/operations/${encodeURIComponent(operationId)}/cancel`, { method: "POST", headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
     const result = parseWithFallback<ApplicationOperation | null>(raw, applicationOperationSchema, null, { endpoint: "POST /api/applications/:id/operations/:operationId/cancel" });
@@ -1392,12 +1394,13 @@ export class ApiClient {
     const raw = await this.fetch<unknown>("/api/local-reviews/execute", {
       method: "POST", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       body: JSON.stringify({
-        task_id: request.task_id, project_resource_id: request.project_resource_id, runtime_id: request.runtime_id,
+        task_id: request.task_id, project_resource_id: request.project_resource_id, scope: request.scope, runtime_id: request.runtime_id,
         path: request.path, target: request.target, action: request.action, relative_path: request.relative_path, recursive: request.recursive,
         version_id: request.version_id, file_path: request.file_path, offset: request.offset, limit: request.limit,
         side: request.action === "content" ? request.side : undefined,
         snapshot_id: request.snapshot_id, command_id: request.command_id, comment: request.comment,
         index_id: request.index_id, branch: request.branch, head: request.head, paths: request.paths, message: request.message,
+        file_operation: request.file_operation, file_id: request.file_id,
       }),
     });
     if (!raw || typeof raw !== "object" || !("page" in raw)) throw new Error("Review page response missing");
@@ -1425,7 +1428,7 @@ export class ApiClient {
       method: "POST", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       body: JSON.stringify({
         task_id: command.task_id, path: command.path, target: command.target,
-        action: command.action, relative_path: command.relative_path, command_id: command.command_id,
+        action: command.action, relative_path: command.relative_path, command_id: command.command_id, file_id: command.file_id,
         edit_base_sha: command.edit_base_sha, edit_base: command.edit_base, edit_new: command.edit_new,
       }),
     });
@@ -4852,7 +4855,7 @@ export class ApiClient {
   }
 
   async getChatSession(id: string): Promise<ChatSession> {
-    const raw: unknown = await this.fetch(`/api/chat/sessions/${id}`);
+    const raw: unknown = await this.fetch(`/api/chat/sessions/${encodeURIComponent(id)}`);
     return parseWithFallback(raw, ChatSessionSchema, EMPTY_CHAT_SESSION, {
       endpoint: "GET /api/chat/sessions/:id",
     });
@@ -4957,7 +4960,7 @@ export class ApiClient {
 
   async updateChatSession(
     id: string,
-    data: { title: string } | { project_id?: string | null; squad_id?: string | null },
+    data: { title: string } | { project_id?: string | null; squad_id?: string | null } | { selected_project_id: string | null },
   ): Promise<ChatSession> {
     return this.fetch(`/api/chat/sessions/${id}`, {
       method: "PATCH",

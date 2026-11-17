@@ -1400,6 +1400,7 @@ export const AttachmentResponseSchema = z.object({
   filename: z.string(),
   chat_session_id: z.string().nullable().optional(),
   chat_message_id: z.string().nullable().optional(),
+  task_id: z.string().nullable().optional().default(null),
   // Image metadata is optional and degrades on its own: a malformed value
   // means "unknown dimensions", never a lost attachment.
   ...AttachmentImageFields,
@@ -1430,6 +1431,7 @@ export const EMPTY_ATTACHMENT: Attachment = {
   comment_id: null,
   chat_session_id: null,
   chat_message_id: null,
+  task_id: null,
   uploader_type: "",
   uploader_id: "",
   filename: "",
@@ -2908,6 +2910,7 @@ export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   agent_id: z.string().default(""),
   creator_id: z.string().default(""),
   project_id: z.string().nullable().optional(),
+  selected_project_id: z.string().nullable().optional(),
   squad_id: z.string().nullable().optional(),
   title: z.string().default(""),
   status: z.enum(["active", "archived"]).catch("active"),
@@ -2964,6 +2967,10 @@ const ChatSessionProjectSchema = z.object({
   icon: z.string().nullable().optional().catch(undefined),
   status: z.string().optional().catch(undefined),
   priority: z.string().optional().catch(undefined),
+  role: z.string().optional().catch(undefined),
+  reason: z.string().optional().catch(undefined),
+  has_files: z.boolean().optional().catch(false),
+  selectable: z.boolean().optional().catch(true),
 }).loose();
 
 const ChatSessionRepoSchema = z.object({
@@ -2986,6 +2993,8 @@ const ChatSessionDirectorySchema = z.object({
 export const ChatSessionFilesResponseSchema = z.object({
   workspace_id: z.string().default(""),
   project_id: z.string().nullable().optional(),
+  selected_project_id: z.string().nullable().optional(),
+  selection_required: z.boolean().default(false),
   projects: z.array(ChatSessionProjectSchema).default([]),
   attachments: z.array(AttachmentSchema).default([]),
   tasks: z.array(ChatSessionFileTaskSchema).default([]),
@@ -2999,6 +3008,8 @@ export const ChatSessionFilesResponseSchema = z.object({
 export const EMPTY_CHAT_SESSION_FILES_RESPONSE: ChatSessionFilesResponse = {
   workspace_id: "",
   project_id: null,
+  selected_project_id: null,
+  selection_required: false,
   projects: [],
   attachments: [],
   tasks: [],

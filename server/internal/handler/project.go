@@ -813,8 +813,8 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := qtx.ClearChatSessionProjectByProject(r.Context(), db.ClearChatSessionProjectByProjectParams{
-		ProjectID:   project.ID,
-		WorkspaceID: project.WorkspaceID,
+		SelectedProjectID: project.ID,
+		WorkspaceID:       project.WorkspaceID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to clear project chat context")
 		return
@@ -846,6 +846,14 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: project.WorkspaceID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete project subscribers")
+		return
+	}
+	if err := qtx.DeleteDocumentCommentsForProject(r.Context(), db.DeleteDocumentCommentsForProjectParams{WorkspaceID: project.WorkspaceID, ProjectID: project.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete document discussions")
+		return
+	}
+	if err := qtx.DeleteWorkspaceFileResourcesForProject(r.Context(), db.DeleteWorkspaceFileResourcesForProjectParams{WorkspaceID: project.WorkspaceID, ProjectID: project.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete project file identities")
 		return
 	}
 	if err := qtx.DeleteProject(r.Context(), db.DeleteProjectParams{

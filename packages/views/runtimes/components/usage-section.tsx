@@ -81,9 +81,10 @@ export function UsageSection({ runtime }: { runtime: AgentRuntime }) {
   // hourly rollup on the same `tz` we pass here, so every frontend window
   // calculation shares one axis with the server.
   const tz = useViewingTimezone();
-  const { data: usage = [], isLoading: loading } = useQuery(
+  const { data, isLoading: loading, error, refetch, isFetching, dataUpdatedAt } = useQuery(
     runtimeUsageOptions(runtimeId, 180, tz),
   );
+  const usage = data ?? [];
   const [days, setDays] = useState<TimeRange>(30);
   // Subscribe so the KPI cards (which call estimateCost at render-time, not
   // through a memo) re-evaluate when the user saves a custom rate. The
@@ -92,7 +93,16 @@ export function UsageSection({ runtime }: { runtime: AgentRuntime }) {
   useCustomPricingStore((s) => s.pricings);
 
   if (loading) return <UsageSkeleton />;
-  if (usage.length === 0) return <UsageEmpty />;
+  const reportContext = <div className="space-y-2 text-caption text-muted-foreground">
+    {error && <div role="alert" className="flex flex-wrap items-center gap-3 text-destructive">
+      <span>{t(($) => $.usage.load_failed)}</span>
+      <Button variant="outline" size="sm" disabled={isFetching} onClick={() => { void refetch(); }}>{t(($) => $.usage.retry)}</Button>
+    </div>}
+    {dataUpdatedAt > 0 && <p>{t(($) => $.usage.measurement, { tz, time: new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, { dateStyle: "short", timeStyle: "short", timeZone: tz }).format(new Date(dataUpdatedAt)) })}</p>}
+    <p>{t(($) => $.usage.billing_boundary)}</p>
+  </div>;
+  if (error && !data) return reportContext;
+  if (usage.length === 0) return <div className="space-y-5">{reportContext}<UsageEmpty /></div>;
 
   // Slice the cached 180-day window into the user's selected sub-window AND
   // the immediately prior window of equal length. The KPI delta ("+18% vs
@@ -117,6 +127,7 @@ export function UsageSection({ runtime }: { runtime: AgentRuntime }) {
 
   return (
     <div className="space-y-5">
+      {reportContext}
       {/* The section's only filter: the KPIs, the When chart's window and
           the cost-by aggregations all follow it. The heatmap view ignores
           it (always 26 weeks) and says so in its caption. */}

@@ -1668,6 +1668,11 @@
       "default_covers_no_project": "También se aplica a las tareas sin proyecto"
     },
     "editor": {
+      "discard_prompt": "¿Descartar los cambios del flujo de trabajo sin guardar?",
+      "discard_keep": "Seguir editando",
+      "discard_confirm": "Descartar cambios",
+      "remote_changed": "Este flujo cambió en otro lugar. Tus cambios se han conservado.",
+      "reload": "Cargar la última versión",
       "create_title": "Nuevo flujo de trabajo",
       "edit_title": "Editar flujo de trabajo",
       "name": "Nombre",

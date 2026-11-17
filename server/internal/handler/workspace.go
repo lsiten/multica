@@ -1343,6 +1343,18 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceComments(ctx, requester.WorkspaceID) },
 		},
 		{
+			name: "delete document comments",
+			run:  func() error { return qtx.DeleteDocumentCommentsForWorkspace(ctx, requester.WorkspaceID) },
+		},
+		{
+			name: "delete workspace file identities",
+			run:  func() error { return qtx.DeleteWorkspaceFileResourcesForWorkspace(ctx, requester.WorkspaceID) },
+		},
+		{
+			name: "delete workspace file coordination",
+			run:  func() error { return qtx.DeleteWorkspaceFileCoordinationForWorkspace(ctx, requester.WorkspaceID) },
+		},
+		{
 			// Teardown mode keeps the triggers from logging the deletes above
 			// and below; this clears what normal writes logged before.
 			name: "delete search index changes",

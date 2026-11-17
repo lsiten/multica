@@ -271,6 +271,7 @@
     "retry": "Повторить"
   },
   "supervision": {
+    "unsaved": "Отменить несохранённые настройки контроля и выйти?",
     "title": "Project supervision",
     "loading": "Loading supervision…",
     "unavailable": "Supervision is unavailable.",

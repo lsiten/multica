@@ -119,8 +119,8 @@
     "step2_label": "Démarrer le daemon"
   },
   "cloud_waitlist": {
-    "intro_main": "Les runtimes cloud ne sont pas encore actifs. Laissez votre adresse e-mail et nous vous préviendrons dès qu'ils le seront.",
-    "intro_warning": "Attention : les agents ne peuvent pas démarrer d'exécutions sans runtime. Si vous passez maintenant, rien ne s'exécutera tant que vous n'en aurez pas installé un.",
+    "intro_main": "Les ordinateurs cloud dédiés ne sont pas disponibles dans ce parcours. Laissez votre e-mail pour être informé de leur disponibilité.",
+    "intro_warning": "Les agents locaux nécessitent un runtime connecté. Les agents cloud gérés sont distincts : après la configuration, sélectionnez-en un dans Agents si votre déploiement a activé un fournisseur.",
     "email_label": "E-mail",
     "email_placeholder": "vous@entreprise.com",
     "reason_label": "Pourquoi le cloud ?",
@@ -187,7 +187,7 @@
     "empty_skip_subtitle": "Les agents ne peuvent pas travailler sans runtime connecté.",
     "empty_skip_action": "Ignorer",
     "empty_waitlist_title": "Utiliser un ordinateur cloud",
-    "empty_waitlist_subtitle": "Nous ferons tourner un ordinateur pour vous dans le cloud. Pas encore actif.",
+    "empty_waitlist_subtitle": "Les ordinateurs cloud dédiés ne sont pas disponibles dans ce parcours. Les agents cloud gérés se configurent séparément dans Agents.",
     "empty_waitlist_action": "Bientôt disponible",
     "skip": "Passer pour l'instant",
     "refresh": "Actualiser",
@@ -211,7 +211,7 @@
     "cli_subtitle": "Connectez un serveur, une machine de développement distante, ou tout ordinateur sans interface graphique. Terminal requis.",
     "cli_action": "Afficher les étapes",
     "cloud_title": "Utiliser un ordinateur cloud",
-    "cloud_subtitle": "Nous ferons tourner un ordinateur pour vous dans le cloud. Pas encore actif.",
+    "cloud_subtitle": "Les ordinateurs cloud dédiés ne sont pas disponibles dans ce parcours. Les agents cloud gérés se configurent séparément dans Agents.",
     "cloud_action": "Bientôt disponible",
     "cli_dialog_title": "Connecter depuis le terminal",
     "cli_dialog_pick_hint": "Choisissez un ordinateur ci-dessus.",

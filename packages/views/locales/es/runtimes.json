@@ -403,6 +403,10 @@
     "serving_count_other": "{{count}} agents",
     "diagnostics_title": "Diagnostics",
     "desktop": {
+      "recheck": "Volver a comprobar",
+      "offline": "Conecta el entorno de ejecución para comprobar el acceso al escritorio.",
+      "checking": "Comprobando el acceso al escritorio…",
+      "unchecked": "No se ha comprobado el acceso al escritorio.",
       "title": "Control del escritorio",
       "version": "Herramienta",
       "version_value": "agent-desktop {{version}}",
@@ -655,6 +659,10 @@
     }
   },
   "usage": {
+    "measurement": "{{tz}} · obtenido {{time}}",
+    "billing_boundary": "Los costes en USD se basan en el uso informado y las tarifas de los modelos. Los créditos del proveedor se muestran por ejecución, sin convertirlos a USD aquí. Este informe no es una factura.",
+    "load_failed": "No se pudo actualizar el uso. Los valores mostrados corresponden a la última consulta correcta.",
+    "retry": "Reintentar",
     "period_label": "Periodo",
     "kpi_cost_label": "Coste · {{days}}d",
     "kpi_cost_delta": "{{sign}}{{pct}}% vs anterior",

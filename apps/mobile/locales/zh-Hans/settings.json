@@ -65,6 +65,20 @@
     "save_failed_default": "无法保存你的个人资料。"
   },
   "email_fixed": "邮箱在注册时设置，无法在这里修改。",
+  "push": {
+    "title": "此设备的后台通知",
+    "checking": "正在检查通知投递…",
+    "unsupported": "原生推送适用于 iOS。",
+    "build_required": "此构建不支持 APNs。请在实体 iPhone 上安装已启用推送的构建。",
+    "server_unavailable": "服务器尚未为此应用和签名环境配置 APNs，请联系管理员配置。",
+    "permission_required": "允许通知后，Multica 在后台时也能收到更新。",
+    "permission_denied": "通知已在 iOS 设置中关闭。",
+    "registered": "此设备已注册，下方的工作区通知偏好决定发送哪些提醒。",
+    "error": "无法注册此设备，请检查网络后重试。",
+    "enable": "启用通知",
+    "open_settings": "打开 iOS 设置",
+    "check_again": "重新检查"
+  },
   "groups": {
     "assignments": "分配给我的",
     "assignments_description": "任务分配给我或取消分配给我时。",

@@ -130,6 +130,8 @@
     "assigned": "已把 {{identifier}} 指派給 {{name}}"
   },
   "empty": {
+    "search_failed": "搜尋失敗，請重試。",
+    "retry": "重試",
     "no_results": "未找到結果。",
     "no_labels": "沒有標籤",
     "type_to_find_issue": "輸入關鍵詞查找任務",

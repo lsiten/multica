@@ -1,4 +1,8 @@
 {
+  "reactions": {
+    "add": "Add reaction",
+    "toggle": "Toggle {{emoji}} reaction ({{count}})"
+  },
   "tabs": {
     "all": "All",
     "created": "Created",
@@ -47,6 +51,11 @@
     "due_date": "Due date"
   },
   "list": {
+    "loaded_section": "{{count}} loaded",
+    "loaded": "{{loaded}} of {{total}} issues",
+    "load_more": "Load more",
+    "next_page_failed": "Could not load more issues.",
+    "refresh_failed": "Could not refresh issues. Showing the previous results.",
     "empty": "No issues match your filters",
     "count_other": "{{count}} issues",
     "search_placeholder": "Search issues and projects"

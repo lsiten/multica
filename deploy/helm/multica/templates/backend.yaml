@@ -1,6 +1,7 @@
 {{- $backendImageTag := default .Chart.AppVersion .Values.images.backend.tag -}}
 {{- /* `helm upgrade --reuse-values` from a chart without extraCACerts carries no such key. */ -}}
 {{- $extraCACerts := (default dict .Values.backend.extraCACerts).configMap -}}
+{{- $apnsSecret := default "" .Values.backend.apnsCredentialsSecret -}}
 {{- if .Values.backend.uploads.persistence.enabled -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -54,6 +55,9 @@ spec:
         # rendered value there is a placeholder; on a real install/upgrade it
         # reflects the actual Secret and rolls pods on rotation.
         checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace .Values.existingSecret).data | toYaml | sha256sum }}
+        {{- if $apnsSecret }}
+        checksum/apns: {{ (lookup "v1" "Secret" .Release.Namespace $apnsSecret).data | toYaml | sha256sum }}
+        {{- end }}
         {{- if $extraCACerts }}
         # Same lookup pattern: the backend reads extra CAs only at startup.
         checksum/extra-ca-certs: {{ (lookup "v1" "ConfigMap" .Release.Namespace $extraCACerts).data | toYaml | sha256sum }}
@@ -88,8 +92,13 @@ spec:
               value: /etc/ssl/certs:/etc/multica/ca-certs
             {{- end }}
           {{- end }}
-          {{- if or .Values.backend.uploads.persistence.enabled $extraCACerts }}
+          {{- if or .Values.backend.uploads.persistence.enabled $extraCACerts $apnsSecret }}
           volumeMounts:
+            {{- if $apnsSecret }}
+            - name: apns-keys
+              mountPath: /etc/multica/apns
+              readOnly: true
+            {{- end }}
             {{- if .Values.backend.uploads.persistence.enabled }}
             - name: uploads
               mountPath: /app/data/uploads
@@ -136,8 +145,13 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.backend.uploads.persistence.enabled $extraCACerts }}
+      {{- if or .Values.backend.uploads.persistence.enabled $extraCACerts $apnsSecret }}
       volumes:
+        {{- if $apnsSecret }}
+        - name: apns-keys
+          secret:
+            secretName: {{ $apnsSecret }}
+        {{- end }}
         {{- if .Values.backend.uploads.persistence.enabled }}
         - name: uploads
           persistentVolumeClaim:

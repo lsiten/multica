@@ -30,6 +30,7 @@ export const ApplyRuntimeFileEditRequestSchema = z
     target: z.string().min(1),
     // Repository-relative path of the edited file (the daemon roots the write).
     relative_path: z.string().min(1).max(4096),
+    file_id: z.string().uuid().optional(),
     // Stable id so a retried / redelivered edit is not applied twice.
     command_id: z.string().min(1).max(128),
     action: z.enum(["edit", "merge_edit"]),
@@ -57,6 +58,9 @@ export type ApplyRuntimeFileEditRequest = z.infer<typeof ApplyRuntimeFileEditReq
 // content). An edit reports the new digest. new_content may be absent for a
 // compare-and-swap write.
 export const RuntimeFileEditResultSchema = z.object({
+  command_id: z.string().min(1).max(128).optional(),
+  operation_id: z.string().uuid().optional(),
+  file_id: z.string().uuid().optional(),
   file_path: z.string().min(1),
   // True when a three-way merge applied cleanly.
   merged: z.boolean().optional().default(false),
@@ -80,7 +84,7 @@ export type RuntimeFileEditResult = z.infer<typeof RuntimeFileEditResultSchema>;
 // the desktop direct path returns the result unwrapped. Accept either shape.
 export function parseRuntimeFileEditResult(raw: unknown): RuntimeFileEditResult | null {
   const candidate =
-    raw && typeof raw === "object" && "edit" in raw ? (raw as { edit?: unknown }).edit : raw;
+    raw && typeof raw === "object" && "edit" in raw ? raw.edit : raw;
   return parseWithFallback<RuntimeFileEditResult | null>(
     candidate,
     RuntimeFileEditResultSchema,

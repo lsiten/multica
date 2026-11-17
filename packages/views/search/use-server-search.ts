@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SearchIssueResult, SearchProjectResult } from "@multica/core/types";
 import { isLocalSearchReady, searchIssues, searchProjects } from "@multica/core/search-index";
 
@@ -25,6 +25,9 @@ export const NO_RESULTS: SearchResults = { query: "", issues: [], projects: [] }
 export function useServerSearch(query: string, options: { projects: boolean }) {
   const [results, setResults] = useState<SearchResults>(NO_RESULTS);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const withProjects = options.projects;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -33,6 +36,7 @@ export function useServerSearch(query: string, options: { projects: boolean }) {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (abortRef.current) abortRef.current.abort();
+    setError(null);
 
     if (!q) {
       setResults(NO_RESULTS);
@@ -52,23 +56,22 @@ export function useServerSearch(query: string, options: { projects: boolean }) {
           searchIssues({ q, limit: 20, include_closed: true, signal: controller.signal }),
           withProjects
             ? searchProjects({ q, limit: 10, include_closed: true, signal: controller.signal })
-            : Promise.resolve({ projects: [] as SearchProjectResult[] }),
+            : Promise.resolve({ projects: [] }),
         ]);
         if (!controller.signal.aborted) {
           setResults({ query: q, issues: issueRes.issues, projects: projectRes.projects });
           setIsLoading(false);
         }
-      } catch {
+      } catch (cause) {
+        if (!(cause instanceof Error)) throw cause;
         if (!controller.signal.aborted) {
-          // Drop the previous query's rows rather than leaving them on screen
-          // permanently greyed out: the request that would have replaced them
-          // is never coming. The list falls through to the empty state.
           setResults({ query: q, issues: [], projects: [] });
+          setError(cause);
           setIsLoading(false);
         }
       }
     }, delay);
-  }, [q, withProjects]);
+  }, [q, withProjects, attempt]);
 
   useEffect(
     () => () => {
@@ -84,5 +87,5 @@ export function useServerSearch(query: string, options: { projects: boolean }) {
   // valid item whenever the input changes, so a live stale row turns the next
   // Enter into a jump to a result the user has already typed past.
   const stale = results.query !== q;
-  return { results, isLoading, stale };
+  return { results, isLoading, stale, error, retry };
 }

@@ -1,4 +1,8 @@
 {
+  "discard_title": "변경 사항을 삭제할까요?",
+  "discard_help": "애플리케이션 설정이 저장되지 않았습니다.",
+  "keep_editing": "계속 편집",
+  "discard": "삭제",
   "title": "애플리케이션",
   "new": "새 애플리케이션",
   "edit": "애플리케이션 편집",

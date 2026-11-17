@@ -30,7 +30,12 @@ vi.mock("@multica/ui/lib/clipboard", () => ({
   copyText: mocks.copyText,
 }));
 
-vi.mock("./project-supervision-panel",()=>({ProjectSupervisionPanel:()=>null}));
+vi.mock("./project-supervision-panel",()=>({ProjectSupervisionPanel:()=><section aria-label="Project supervision" />}));
+vi.mock("../../issues/components/work-progress-panel", () => ({
+  WorkProgressPanel: ({ header }: { header?: React.ReactNode }) => <section aria-label="Attention items">{header}</section>,
+}));
+vi.mock("../../collaboration/components/project-collaboration-panel", () => ({ ProjectCollaborationPanel: () => <section aria-label="Project collaboration" /> }));
+vi.mock("../../applications", () => ({ ApplicationsPage: () => <section aria-label="Project applications" /> }));
 vi.mock("../../workflows/project-workflow-sheet", () => ({
   ProjectWorkflowMenuItem: () => null,
   ProjectWorkflowSheet: () => null,
@@ -181,9 +186,14 @@ vi.mock("./project-due-date-picker", () => ({
 vi.mock("../../issues/surface/issue-surface", () => ({
   IssueSurface: ({
     renderHeader,
+    renderBody,
   }: {
     renderHeader?: (ctx: { controller: unknown }) => React.ReactNode;
-  }) => <>{renderHeader?.({ controller: {} })}</>,
+    renderBody?: (content: React.ReactNode) => React.ReactNode;
+  }) => {
+    const content = <section aria-label="Project tasks" />;
+    return <>{renderHeader?.({ controller: {} })}{renderBody ? renderBody(content) : content}</>;
+  },
 }));
 
 vi.mock("../../issue-views/view-header", () => ({
@@ -309,6 +319,28 @@ describe("ProjectDetail rename", () => {
       modal: "project-rename",
       data: { projectId: "project-1", title: "Launch Plan" },
     });
+  });
+});
+
+describe("ProjectDetail content navigation", () => {
+  it("shows one task surface and replaces it with the selected project content", async () => {
+    const user = userEvent.setup();
+    renderProjectDetail();
+    expect(screen.getAllByRole("region", { name: "Project tasks" })).toHaveLength(1);
+    expect(screen.queryByRole("region", { name: "Project supervision" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Needs attention" }));
+    expect(screen.queryByRole("region", { name: "Project tasks" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Project supervision" })).toBeVisible();
+    expect(screen.getByRole("tabpanel", { name: "Needs attention" })).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Applications" }));
+    expect(screen.queryByRole("region", { name: "Project supervision" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Project tasks" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Project applications" })).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Tasks" }));
+    expect(screen.getAllByRole("region", { name: "Project tasks" })).toHaveLength(1);
   });
 });
 

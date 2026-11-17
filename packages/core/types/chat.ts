@@ -100,6 +100,8 @@ export interface ChatSession {
   /** Durable project context for every turn in this session. Null when the
    *  conversation uses workspace context only; optional for older servers. */
   project_id?: string | null;
+  /** User's current file-browser project selection; independent from execution context. */
+  selected_project_id?: string | null;
   /** Optional squad context for collaboration-aware sessions. */
   squad_id?: string | null;
   title: string;
@@ -149,6 +151,10 @@ export interface ChatSessionProject {
   icon?: string | null;
   status?: string;
   priority?: string;
+  role?: "selected" | "associated" | "available" | "unavailable" | (string & {});
+  reason?: "chat_context" | "issue_context" | "task_context" | "agent_binding" | "squad_binding" | (string & {});
+  has_files?: boolean;
+  selectable?: boolean;
 }
 
 /** A repository the chat's project is configured against (server-resolved). */
@@ -170,6 +176,8 @@ export interface ChatSessionDirectory {
 export interface ChatSessionFilesResponse {
   workspace_id: string;
   project_id?: string | null;
+  selected_project_id?: string | null;
+  selection_required?: boolean;
   projects?: ChatSessionProject[];
   attachments: import("./attachment").Attachment[];
   tasks: ChatSessionFileTask[];

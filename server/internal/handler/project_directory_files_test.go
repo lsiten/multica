@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/multica-ai/multica/server/internal/testutil"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 func TestChatProjectDirectoriesWithoutTasks(t *testing.T) {
@@ -48,6 +50,8 @@ func TestProjectDirectoryRelayRejectsInvalidScopes(t *testing.T) {
 		{"subdirectory path", "workspace_files", "/bound/sub", runtime, "", http.StatusBadRequest},
 		{"wrong runtime", "workspace_files", "/bound", other, "", http.StatusNotFound},
 		{"mutation", "edit", "/bound", runtime, "", http.StatusForbidden},
+		{"file operation", "file_operation", "/bound", runtime, "", http.StatusForbidden},
+		{"recoverable files", "workspace_trash", "/bound", runtime, "", http.StatusForbidden},
 		{"ambiguous scope", "workspace_files", "/bound", runtime, "task", http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -158,11 +162,36 @@ func TestProjectDirectoryRelayPreservesShallowPaging(t *testing.T) {
 				continue
 			}
 			commands <- *command
-			testHandler.localReviewRelay.complete(testWorkspaceID, runtime, command.ID, protocol.LocalReviewResult{ClaimToken: command.ClaimToken, Page: []byte(`{"path":"/bound","entries":[],"recursive":false,"next_offset":500,"has_more":false}`)})
+			testHandler.localReviewRelay.complete(testWorkspaceID, runtime, command.ID, protocol.LocalReviewResult{ClaimToken: command.ClaimToken, Page: []byte(`{"path":"/bound","entries":[{"path":"docs/notes.md","directory":false,"size":7,"file_id":"forged"}],"recursive":false,"next_offset":501,"has_more":false,"file_operations_supported":true,"file_operation_identity_supported":true}`)})
 			return
 		}
 	}()
-	testutil.Call(t, testHandler.ForwardLocalReview, request).Want(http.StatusOK)
+	var response struct {
+		Page struct {
+			FileOperationsSupported        bool   `json:"file_operations_supported"`
+			FileOperationIdentitySupported bool   `json:"file_operation_identity_supported"`
+			DirectoryID                    string `json:"directory_id"`
+			Entries                        []struct {
+				FileID string `json:"file_id"`
+			} `json:"entries"`
+		} `json:"page"`
+	}
+	testutil.Call(t, testHandler.ForwardLocalReview, request).Want(http.StatusOK).JSON(&response)
+	if response.Page.FileOperationsSupported || response.Page.FileOperationIdentitySupported {
+		t.Fatal("read-only project resource exposed file writes")
+	}
+	if len(response.Page.Entries) != 1 {
+		t.Fatalf("directory entries lost: %+v", response.Page)
+	}
+	fileID := response.Page.Entries[0].FileID
+	if _, err := uuid.Parse(fileID); err != nil {
+		t.Fatalf("relay did not assign a canonical file identity: %s", fileID)
+	}
+	dbfx.Cleanup(t, "DELETE FROM workspace_file_resource WHERE workspace_id=$1 AND id=$2", testWorkspaceID, fileID)
+	row, err := testHandler.Queries.GetWorkspaceFileResource(ctx, db.GetWorkspaceFileResourceParams{WorkspaceID: parseUUID(testWorkspaceID), DirectoryKey: response.Page.DirectoryID, ID: parseUUID(fileID)})
+	if err != nil || row.RelativePath != "docs/notes.md" {
+		t.Fatalf("relay returned an unbound file identity: %+v, %v", row, err)
+	}
 	select {
 	case command := <-commands:
 		if command.Recursive == nil || *command.Recursive || command.RelativePath != "docs" || command.Offset != 500 || command.Limit != 500 {

@@ -55,5 +55,7 @@ export function useCommentUploads(
     };
   }, [draftKey]);
 
-  return useCoordinatedUploads(binding, storeUploads, ctx, editorGate, editorRef);
+  return useCoordinatedUploads(binding, storeUploads, ctx, editorGate, editorRef, {
+    discardFailedUploads: true,
+  });
 }

@@ -1,25 +1,35 @@
 "use client";
 
 import { ChevronRight, Eye, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "@multica/ui/icons";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useDocModeStore, selectActiveDocument } from "@multica/core/chat";
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { documentDraftKey, useDocModeStore, selectActiveDocument } from "@multica/core/chat";
 import { useLocalDirectoryStore } from "@multica/core/chat/local-directory-store";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
-import { api } from "@multica/core/api";
+import { api, ApiError } from "@multica/core/api";
 import { projectDetailOptions, projectKeys } from "@multica/core/projects/queries";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import type { Agent, ChatSession, ChatSessionRepo, Issue } from "@multica/core/types";
 import { isInternalWorkspacePath } from "@multica/core/types/local-review";
 import { fileIcon } from "../../editor/utils/file-icon";
-import { LocalReviewIndex } from "../../issues/components/local-review-index";
+import { ChatChangesPanel } from "./chat-changes-panel";
+import { ChatProjectSelector } from "./chat-project-selector";
 import { GroupChatManagement } from "./group-chat-management";
 import { Button } from "@multica/ui/components/ui/button";
 import { IconButton } from "@multica/ui/components/common/icon-button";
 import { useChatFileDirectory } from "./use-chat-file-directory";
 import { ChatDirectorySelector } from "./chat-directory-selector";
+import { WorkspaceFileSearchStatus } from "./workspace-file-search-status";
+import { useWorkspaceContentSearch } from "./use-workspace-content-search";
+import { WorkspaceContentSearchResults, WorkspaceContentSearchStatus } from "./workspace-content-search-results";
+import { WorkspaceFileCreate } from "./workspace-file-create";
+import { WorkspaceFileActions } from "./workspace-file-actions";
+import { WorkspaceFilePending } from "./workspace-file-pending";
+import { WorkspaceFileTrash } from "./workspace-file-trash";
+import { WorkspaceFileOperationDialog, type WorkspaceFileChoice } from "./workspace-file-operation-dialog";
+import { chatKeys } from "@multica/core/chat/queries";
 
 // Files come from the selected project's bound directories and run worktrees.
 // The server projects their identities; the owning runtime reads the chosen
@@ -35,6 +45,8 @@ export interface DocumentListItem {
   runtimeId?: string;
   workDir?: string;
   relativePath?: string;
+  readonly fileId?: string;
+  readonly directoryId?: string;
   contentType?: string;
   directory?: boolean;
 }
@@ -91,16 +103,50 @@ function repoLabel(repo: ChatSessionRepo): string {
   return short || repo.url;
 }
 
-export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsId: string; sessionId?: string | null; session?: ChatSession | null; agents?: Agent[] }) {
+type FileListProps = { wsId: string; sessionId?: string | null; session?: ChatSession | null; agents?: Agent[] };
+type AttachmentScope = "outputs" | "references" | "all";
+
+export function DocModeFileList(props: FileListProps) {
+  const [choice, setChoice] = useState<WorkspaceFileChoice | null>(null);
+  return <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <WorkspaceFilePending wsId={props.wsId} onResume={(pending) => setChoice({ pending })} />
+    <DocModeFileListContent {...props} onChoose={setChoice} onProjectSwitch={() => setChoice(null)} />
+    {choice && <WorkspaceFileOperationDialog key={"pending" in choice ? choice.pending.commandId : JSON.stringify([choice.context, choice.operation])} choice={choice} onClose={() => setChoice(null)} />}
+  </div>;
+}
+
+function DocModeFileListContent({ wsId, sessionId, session, agents = [], onChoose, onProjectSwitch }: FileListProps & { readonly onChoose: (choice: WorkspaceFileChoice) => void; readonly onProjectSwitch: () => void }) {
   const { t } = useT("chat");
   const workspaceSlug = useWorkspaceSlug();
   const isGroupChat = session?.kind === "group";
-  const [activeTab, setActiveTab] = useState<"files" | "attachments" | "issues" | "group">(isGroupChat ? "group" : "files");
+  const [activeTab, setActiveTab] = useState<"files" | "changes" | "attachments" | "issues" | "group">(isGroupChat ? "group" : "files");
+  const [attachmentScope, setAttachmentScope] = useState<AttachmentScope>("all");
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
+  const queryClient = useQueryClient();
+  const selectedProjectMutation = useMutation({
+    mutationFn: (data: { sessionId: string; projectId: string | null }) => api.updateChatSession(data.sessionId, { selected_project_id: data.projectId }),
+    onMutate: () => ({ previousProjectId: selectedProjectId }),
+    onError: (error, _variables, context) => {
+      // A deleted/revoked project must not leave the drawer pinned to an
+      // invalid query key. Clear the selection so the server can re-derive
+      // the valid project set and the UI asks the user again.
+      if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+        setSelectedProjectId(undefined);
+        useLocalDirectoryStore.getState().clearCurrentDirectory(wsId);
+        if (sessionId) useDocModeStore.getState().selectChat(sessionId);
+        return;
+      }
+      if (context) setSelectedProjectId(context.previousProjectId);
+    },
+    onSettled: (_data, _error, variables) => {
+      void queryClient.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      void queryClient.invalidateQueries({ queryKey: [...chatKeys.all(wsId), "session-files", variables.sessionId] });
+    },
+  });
   const sessionFilesQuery = useQuery({
     ...chatSessionFilesOptions(wsId, sessionId ?? "", selectedProjectId, activeTab === "attachments"),
   });
-  const { data: sessionFiles, isLoading: sessionFilesLoading, isError: sessionFilesError, refetch: refetchSessionFiles } = sessionFilesQuery;
+  const { data: sessionFiles, isLoading: sessionFilesLoading, isError: sessionFilesError, error: sessionFilesQueryError, refetch: refetchSessionFiles } = sessionFilesQuery;
   // A session's project context is its own; switching sessions must not carry the
   // previous session's selected project into the new one (which would leave the
   // panel showing a stale project title). Reset the sticky selection whenever the
@@ -110,10 +156,20 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   }, [sessionId]);
   useEffect(() => {
     if (selectedProjectId === undefined && sessionFiles) {
-      setSelectedProjectId(sessionFiles.project_id ?? sessionFiles.projects?.[0]?.id);
+      setSelectedProjectId(
+        sessionFiles.selected_project_id ??
+          (sessionFiles.selection_required ? undefined : sessionFiles.project_id ?? undefined),
+      );
     }
   }, [selectedProjectId, sessionFiles]);
-  const projectID = selectedProjectId ?? sessionFiles?.project_id ?? "";
+  useEffect(() => {
+    if (!selectedProjectId || !(sessionFilesQueryError instanceof ApiError) || ![403, 404].includes(sessionFilesQueryError.status)) return;
+    setSelectedProjectId(undefined);
+    useLocalDirectoryStore.getState().clearCurrentDirectory(wsId);
+    if (sessionId) useDocModeStore.getState().selectChat(sessionId);
+  }, [selectedProjectId, sessionFilesQueryError, sessionId, wsId]);
+  const projectID = selectedProjectId ??
+    (sessionFiles?.selection_required ? "" : sessionFiles?.project_id ?? "");
   const activeDoc = useDocModeStore(selectActiveDocument(sessionId ?? ""));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
   const clearDirectory = useLocalDirectoryStore((state) => state.clearCurrentDirectory);
@@ -127,6 +183,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
   // across sessions while it is open).
   useEffect(() => {
     setActiveTab(isGroupChat ? "group" : "files");
+    setAttachmentScope("all");
   }, [sessionId, isGroupChat]);
   useEffect(() => {
     if (!activeDoc?.workDir || (!activeDoc.taskId && !activeDoc.projectResourceId) || !activeDoc.runtimeId) return;
@@ -145,7 +202,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     ...projectDetailOptions(wsId, projectID),
     enabled: !!projectID,
   });
-  const { data: projectIssues } = useQuery({
+  const projectIssuesQuery = useQuery({
     queryKey: [...projectKeys.all(wsId), "chat-open-issues", projectID],
     queryFn: () => api.listIssues({ project_id: projectID, open_only: true }),
     // The file list is the default tab; do not block its first paint on the
@@ -153,16 +210,37 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     enabled: !!projectID && activeTab === "issues",
     staleTime: 15_000,
   });
+  const projectIssues = projectIssuesQuery.data;
   const [filter, setFilter] = useState("");
+  const [searchMode, setSearchMode] = useState<"name" | "content">("name");
+  const searchModeId = useId();
   const searchTerm = filter.trim().toLowerCase();
   const [searchCollapsed, setSearchCollapsed] = useState<{scope: string; paths: Set<string>}>({scope:"", paths:new Set()});
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set());
-  const { entries: workspaceEntries, nestedQueries, directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, gitRequest, search, hasMore, loadMore, refresh: refreshDirectory } = useChatFileDirectory(
-    wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files", expandedDirs, searchTerm,
+  const { entries: workspaceEntries, nestedQueries, directories, selected: selectedDirectory, select: selectDirectory, query: workspaceFiles, request, directoryKey, gitRequest, search, hasMore, loadMore, refresh: refreshDirectory } = useChatFileDirectory(
+    wsId, sessionId, projectID, sessionFiles, activeDoc, activeTab === "files", expandedDirs, { term: searchTerm, mode: searchMode },
   );
+  const selectProject = useCallback((projectId: string | null) => {
+    onProjectSwitch();
+    setSelectedProjectId(projectId ?? undefined);
+    setActiveTab(isGroupChat ? "group" : "files");
+    setFilter("");
+    setSearchCollapsed({ scope: "", paths: new Set() });
+    setExpandedDirs(new Set());
+    clearCurrentDirectory();
+    if (sessionId) useDocModeStore.getState().selectChat(sessionId);
+    if (sessionId) selectedProjectMutation.mutate({ sessionId, projectId });
+  }, [clearCurrentDirectory, isGroupChat, onProjectSwitch, selectedProjectMutation, sessionId]);
+  const contentSearch = useWorkspaceContentSearch({ request, directoryKey, term: filter.trim(), enabled: activeTab === "files" && searchMode === "content" && !!sessionId });
   const openDoc = useDocModeStore((s) => s.openDoc);
   const searchScope = JSON.stringify([wsId, sessionId, projectID, selectedDirectory?.key, searchTerm]);
   const collapsedPaths = searchCollapsed.scope === searchScope ? searchCollapsed.paths : new Set<string>();
+  const resourceDirectoryId = workspaceFiles.data?.directory_id ?? search.data?.pages.find((page) => page.directoryId)?.directoryId;
+  const operationContext = selectedDirectory?.taskId && selectedDirectory.runtimeId && !selectedDirectory.projectResourceId
+    ? { workspace_id: wsId, task_id: selectedDirectory.taskId, runtime_id: selectedDirectory.runtimeId, path: selectedDirectory.path } : null;
+  const operationsSupported = workspaceFiles.data?.file_operations_supported === true && workspaceFiles.data.file_operation_identity_supported === true;
+  const fileActions = (doc: DocumentListItem | undefined) => operationContext && doc?.fileId && doc.relativePath
+    ? <WorkspaceFileActions context={operationContext} path={doc.relativePath} fileId={doc.fileId} directory={!!doc.directory} supported={operationsSupported} onChoose={onChoose} /> : null;
 
   const allDocuments = useMemo((): DocumentListItem[] => {
     if (!selectedDirectory) return [];
@@ -182,22 +260,31 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           runtimeId: selectedDirectory.runtimeId,
           workDir: selectedDirectory.path,
           relativePath,
+          fileId: entry.file_id,
+          directoryId: resourceDirectoryId,
         };
       });
-  }, [projectID, selectedDirectory, sessionId, workspaceEntries]);
+  }, [projectID, selectedDirectory, sessionId, workspaceEntries, resourceDirectoryId]);
 
   // The attachments tab is the union of the session's and the project's
   // attachments, de-duplicated by id so an attachment shared by both is not
   // listed twice.
-  const sessionAttachments = useMemo(() => {
+  const attachmentRows = useMemo(() => {
     const seen = new Set<string>();
-    const merged = [...(sessionFiles?.attachments ?? []), ...(sessionFiles?.project_attachments ?? [])];
-    return merged.filter((attachment) => {
+    const rows = [
+      ...(sessionFiles?.attachments ?? []).map((attachment) => ({ attachment, source: "output" as const })),
+      ...(sessionFiles?.project_attachments ?? []).map((attachment) => ({ attachment, source: "reference" as const })),
+    ];
+    return rows.filter(({ attachment }) => {
       if (seen.has(attachment.id)) return false;
       seen.add(attachment.id);
       return true;
     });
   }, [sessionFiles]);
+  const visibleAttachmentRows = useMemo(
+    () => attachmentRows.filter(({ source }) => attachmentScope === "all" || source === attachmentScope.slice(0, -1)),
+    [attachmentRows, attachmentScope],
+  );
 
   // Repository links are references only when no filesystem roots are bound.
   // They must never hide an unavailable or empty selected directory.
@@ -222,7 +309,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     return repoReferences.filter((repo) => repoLabel(repo).toLowerCase().includes(query));
   }, [repoReferences, filter]);
 
-  const hasContent = isGroupChat || !!project || directories.length > 0 || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || sessionAttachments.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
+  const hasContent = isGroupChat || !!project || directories.length > 0 || !!gitRequest || allDocuments.length > 0 || repoReferences.length > 0 || attachmentRows.length > 0 || (projectIssues?.issues.length ?? 0) > 0 || (sessionFiles?.projects?.length ?? 0) > 0;
 
   // A failed projection used to fall through to the empty state, which made a
   // network/daemon failure look like a chat with no files. Keep this state
@@ -265,16 +352,16 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
 
   // Only surface no-match when the filter actively excludes every openable row;
   // a bare project header (or repo references) with no files is not "no match".
-  const showNoMatch = !!searchTerm && !search.searching && !search.isError && visible.length === 0 && visibleRepoReferences.length === 0;
+  const showNoMatch = !!searchTerm && !search.searching && !search.hasNextPage && !search.isError && visible.length === 0 && visibleRepoReferences.length === 0;
   const displayedDirectory = selectedDirectory?.path;
   const renderTree = (nodes: FileTreeNode[], depth = 0): ReactNode[] => nodes.flatMap((node) => {
     if (node.directory) {
       const expanded = searchTerm ? !collapsedPaths.has(node.path) && node.children.length > 0 : expandedDirs.has(node.path);
       return [
-        <li key={`dir:${node.path}`}>
+        <li key={`dir:${node.path}`} className="flex min-w-0 items-center pr-1">
           <button
             type="button"
-            className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-body hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left text-body hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{ paddingLeft: `${8 + depth * 14}px` }}
             aria-expanded={expanded}
             onClick={() => {
@@ -297,6 +384,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{node.name}</span>
           </button>
+          {fileActions(node.document)}
         </li>,
         ...(expanded && !searchTerm && nestedQueries.get(node.path)?.isPending ? [<li key={`loading:${node.path}`} role="status" className="px-3 py-1.5 text-body text-muted-foreground">{t(($) => $.doc_file_list.loading)}</li>] : []),
         ...(expanded && !searchTerm && nestedQueries.get(node.path)?.isError ? [<li key={`error:${node.path}`} role="alert" className="px-3 py-1.5 text-body text-destructive">{t(($) => $.doc_file_list.load_failed)} <Button type="button" size="sm" variant="ghost" onClick={() => void nestedQueries.get(node.path)?.refetch()}>{t(($) => $.doc_file_list.retry)}</Button></li>] : []),
@@ -306,26 +394,36 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
     }
     const doc = node.document;
     if (!doc) return [];
-    const isActive = activeDoc?.id === doc.id && activeDoc?.kind === doc.kind;
+    const isActive = !!activeDoc && documentDraftKey(activeDoc) === documentDraftKey(doc);
     const Icon = doc.contentType ? fileIcon(doc.contentType, doc.label) : File;
     return [
-      <li key={`${doc.kind}:${doc.id}`}>
+      <li key={`${doc.kind}:${doc.id}`} className="flex min-w-0 items-center pr-1">
         <button
           type="button"
           onClick={() => openDoc(sessionId ?? "", { ...doc })}
           aria-current={isActive ? "true" : undefined}
-          className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-body transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isActive ? "bg-accent/10" : ""}`}
+          className={`flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-body transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isActive ? "bg-accent/10" : ""}`}
           style={{ paddingLeft: `${24 + depth * 14}px` }}
         >
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">{node.name}</span>
         </button>
+        {fileActions(doc)}
       </li>,
     ];
   });
 
+  const fileTabs: Array<"files" | "changes" | "attachments" | "issues" | "group"> = ["files"];
+  // Source Control is a first-class workspace tab even when the selected
+  // project/directory has no Git binding. The empty state belongs inside the
+  // tab; keeping it inline under Project files makes the desktop drawer look
+  // like Git is part of the file tree and prevents a stable tab target.
+  fileTabs.push("changes");
+  fileTabs.push("attachments", "issues");
+  if (isGroupChat) fileTabs.push("group");
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="border-b p-2">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -338,25 +436,28 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             className="w-full rounded-md border border-transparent bg-muted/50 py-1.5 pl-8 pr-2 text-body outline-none transition-colors focus:border-ring focus:bg-background"
           />
         </div>
+        {activeTab === "files" && selectedDirectory && <div className="flex items-center gap-2 pt-2 text-caption text-muted-foreground">
+          <label htmlFor={searchModeId}>{t(($) => $.doc_file_list.search_mode)}</label>
+          <select id={searchModeId} className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={searchMode} onChange={(event) => setSearchMode(event.target.value === "content" ? "content" : "name")}>
+            <option value="name">{t(($) => $.doc_file_list.name_search)}</option>
+            <option value="content">{t(($) => $.doc_file_list.content_search)}</option>
+          </select>
+        </div>}
+        {activeTab === "files" && searchTerm && searchMode === "name" && <WorkspaceFileSearchStatus search={search} />}
+        {activeTab === "files" && searchTerm && searchMode === "content" && !!request && <WorkspaceContentSearchStatus search={contentSearch} />}
       </div>
       {(sessionFiles?.projects ?? []).length > 0 && (
-        <div className="flex gap-1 overflow-x-auto border-b px-2 py-1.5" role="tablist" aria-label={t(($) => $.doc_file_list.projects_label)}>
-          {(sessionFiles?.projects ?? []).map((projectTab) => (
-            <button
-              key={projectTab.id}
-              type="button"
-              role="tab"
-              aria-selected={projectTab.id === projectID}
-              onClick={() => setSelectedProjectId(projectTab.id)}
-              className={"max-w-40 shrink-0 truncate rounded-md px-2 py-1 text-caption " + (projectTab.id === projectID ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50")}
-            >
-              {projectTab.title || projectTab.id}
-            </button>
-          ))}
+        <div className="border-b p-2">
+          <ChatProjectSelector
+            projects={sessionFiles?.projects ?? []}
+            selectedProjectId={projectID || null}
+            selectionRequired={sessionFiles?.selection_required === true && !projectID}
+            onSelect={selectProject}
+          />
         </div>
       )}
       <div className="flex border-b px-2 pt-2" role="tablist" aria-label={t(($) => $.doc_file_list.tabs_label)}>
-        {(["files", "attachments", "issues", ...(isGroupChat ? ["group" as const] : [])] as const).map((tab) => (
+        {fileTabs.map((tab) => (
           <button
             key={tab}
             type="button"
@@ -368,7 +469,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
               (activeTab === tab ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
             }
           >
-            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : tab === "issues" ? t(($) => $.doc_file_list.issues) : t(($) => $.group.management_tab)}
+            {tab === "files" ? t(($) => $.doc_file_list.project_files) : tab === "changes" ? t(($) => $.doc_file_list.git) : tab === "attachments" ? t(($) => $.doc_file_list.attachments) : tab === "issues" ? t(($) => $.doc_file_list.issues) : t(($) => $.group.management_tab)}
           </button>
         ))}
       </div>
@@ -376,7 +477,9 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
         <GroupChatManagement session={session} agents={agents} />
       ) : activeTab === "issues" ? (
         <div className="flex-1 overflow-y-auto">
-          {projectID && (projectIssues?.issues ?? []).length > 0 ? (
+          {projectID && projectIssuesQuery.isPending ? <div role="status" className="flex justify-center p-4"><Loader2 className="size-4 animate-spin" aria-label={t(($) => $.list.loading)} /></div>
+            : projectID && projectIssuesQuery.isError ? <div className="space-y-2 p-4"><p role="alert" className="text-body text-destructive">{t(($) => $.doc_file_list.load_failed)}</p><Button variant="outline" size="sm" onClick={() => void projectIssuesQuery.refetch()}>{t(($) => $.doc_mode.retry)}</Button></div>
+            : projectID && (projectIssues?.issues ?? []).length > 0 ? (
             <ul className="divide-y">
               {(projectIssues?.issues ?? []).map((issue: Issue) => (
                 <li key={issue.id} className="flex items-center pr-2">
@@ -406,11 +509,46 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             <p className="p-4 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_issues)}</p>
           )}
         </div>
+      ) : activeTab === "changes" ? (
+        <div className="flex-1 overflow-y-auto p-2">
+          {gitRequest ? (
+            <>
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 text-caption">
+                <span className="font-medium">{t(($) => $.doc_file_list.git)}</span>
+                <span className="text-muted-foreground">
+                  {gitRequest.task_id ? t(($) => $.doc_file_list.changes_scope_run) : t(($) => $.doc_file_list.changes_scope_directory)}
+                </span>
+              </div>
+              <ChatChangesPanel
+                key={`${gitRequest.task_id || gitRequest.project_resource_id}:${gitRequest.path}:changes`}
+                request={gitRequest}
+                onChanged={() => { void refreshDirectory(); }}
+                onInvalidBinding={clearCurrentDirectory}
+              />
+            </>
+          ) : (
+            <p className="p-2 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_git_checkout)}</p>
+          )}
+        </div>
       ) : activeTab === "attachments" ? (
         <div className="flex-1 overflow-y-auto">
-          {sessionAttachments.length > 0 ? (
+          <div className="flex gap-1 border-b px-2 py-1.5" role="tablist" aria-label={t(($) => $.doc_file_list.attachments)}>
+            {(["outputs", "references", "all"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                role="tab"
+                aria-selected={attachmentScope === scope}
+                onClick={() => setAttachmentScope(scope)}
+                className={"flex-1 rounded-md px-2 py-1 text-caption transition-colors " + (attachmentScope === scope ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
+              >
+                {scope === "outputs" ? t(($) => $.doc_file_list.attachment_outputs) : scope === "references" ? t(($) => $.doc_file_list.attachment_references) : t(($) => $.doc_file_list.attachment_all)}
+              </button>
+            ))}
+          </div>
+          {visibleAttachmentRows.length > 0 ? (
             <ul className="divide-y">
-              {sessionAttachments.map((attachment) => {
+              {visibleAttachmentRows.map(({ attachment, source }) => {
                 const name = attachment.filename || attachment.url;
                 const Icon = fileIcon(attachment.content_type, name);
                 return (
@@ -418,6 +556,13 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
                     <button type="button" onClick={() => openDoc(sessionId ?? "", { kind: "attachment", id: attachment.id, label: name, contentType: attachment.content_type, sessionId: sessionId ?? undefined })} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50">
                       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate text-body">{name}</span>
+                      <span className="shrink-0 text-caption text-muted-foreground">
+                        {attachment.task_id
+                          ? t(($) => $.doc_file_list.attachment_source_run, { id: attachment.task_id.slice(0, 8) })
+                          : source === "output"
+                            ? t(($) => $.doc_file_list.attachment_source_output)
+                            : t(($) => $.doc_file_list.attachment_source_reference)}
+                      </span>
                     </button>
                   </li>
                 );
@@ -429,6 +574,9 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {sessionFiles?.selection_required && !projectID && (
+            <p className="m-3 rounded-md border border-dashed p-3 text-body text-muted-foreground">{t(($) => $.doc_file_list.select_project_hint)}</p>
+          )}
           {project && (
             <div className="px-3 py-2">
               <h3 className="truncate text-body font-semibold">{project.title}</h3>
@@ -446,6 +594,21 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
                 </div>
               )}
               {selectedDirectory.projectResourceId && <p className="text-caption text-muted-foreground">{t(($) => $.doc_file_list.read_only)}</p>}
+              {operationContext && <div className="flex flex-wrap items-center gap-1"><WorkspaceFileCreate
+                key={JSON.stringify([wsId, selectedDirectory.runtimeId, selectedDirectory.path])}
+                supported={workspaceFiles.data?.file_operations_supported === true && workspaceFiles.data.file_operation_identity_supported === true}
+                context={operationContext}
+                onCreated={(result) => {
+                  void refreshDirectory();
+                  if (!result.directory) openDoc(sessionId ?? "", {
+                    kind: "workspace_file", id: `${selectedDirectory.taskId}:${result.path}`, label: result.path,
+                    sessionId: sessionId ?? undefined, projectId: projectID || undefined,
+                    taskId: selectedDirectory.taskId, runtimeId: selectedDirectory.runtimeId,
+                    workDir: selectedDirectory.path, relativePath: result.path,
+                    fileId: result.file_id, directoryId: result.directory_id, directoryRevision: result.directory_revision,
+                  });
+                }}
+              /><WorkspaceFileTrash context={operationContext} supported={operationsSupported} onChoose={onChoose} /></div>}
             </div>
           )}
           {activeTab === "files" && !searchTerm && workspaceFiles.isPending && selectedDirectory?.runtimeId && (
@@ -474,7 +637,7 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
           {activeTab === "files" && !searchTerm && selectedDirectory && workspaceFiles.isSuccess && allDocuments.length === 0 && (
             <p className="px-3 py-3 text-body text-muted-foreground">{t(($) => $.doc_file_list.directory_empty)}</p>
           )}
-          {visibleRepoReferences.length > 0 && (
+          {!(searchTerm && searchMode === "content") && visibleRepoReferences.length > 0 && (
             <ul className="divide-y" aria-label={t(($) => $.doc_file_list.git_repositories)}>
               {visibleRepoReferences.map((repo) => (
                 <li key={repo.url}>
@@ -489,7 +652,17 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
               ))}
             </ul>
           )}
-          {showNoMatch ? (
+          {searchTerm && searchMode === "content" ? <WorkspaceContentSearchResults search={contentSearch} onOpen={(match) => {
+            if (!selectedDirectory) return;
+            const relativePath = match.path;
+            openDoc(sessionId ?? "", {
+              kind: "workspace_file", id: `${selectedDirectory.taskId ?? selectedDirectory.key}:${relativePath}`, label: relativePath,
+              sessionId: sessionId ?? undefined, projectId: projectID || undefined, taskId: selectedDirectory.taskId,
+              projectResourceId: selectedDirectory.projectResourceId, runtimeId: selectedDirectory.runtimeId,
+              workDir: selectedDirectory.path, relativePath,
+              fileId: match.fileId, directoryId: match.directoryId,
+            }, match.location);
+          }} /> : showNoMatch ? (
             <div className="p-4 text-muted-foreground"><p className="text-body">{t(($) => $.doc_file_list.no_match)}</p></div>
           ) : visible.length > 0 ? (
             <ul className="flex-1 overflow-y-auto" aria-label={t(($) => $.doc_file_list.project_files)}>
@@ -499,27 +672,6 @@ export function DocModeFileList({ wsId, sessionId, session, agents = [] }: { wsI
             <div className="flex-1" />
           )}
           {!searchTerm && hasMore && <Button type="button" variant="ghost" size="sm" disabled={workspaceFiles.isFetching} onClick={() => void loadMore()}>{t(($) => $.doc_file_list.load_more)}</Button>}
-          {searchTerm && search.searching && <p role="status" className="flex items-center gap-2 px-3 py-2 text-body text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />{t(($) => $.doc_file_list.searching)}</p>}
-          {searchTerm && search.isError && <div role="alert" className="px-3 py-2 text-body text-destructive">{t(($) => $.doc_file_list.search_failed)} <Button type="button" variant="ghost" size="sm" onClick={() => void (search.data ? search.fetchNextPage() : search.refetch())}>{t(($) => $.doc_file_list.retry)}</Button></div>}
-          <section className="mt-2 border-t p-2" aria-label={t(($) => $.doc_file_list.git)}>
-            <div className="mb-2 flex items-center gap-2 text-caption font-medium text-muted-foreground">
-              <GitBranch className="h-3.5 w-3.5" />
-              {t(($) => $.doc_file_list.git)}
-            </div>
-            {gitRequest ? (
-              <LocalReviewIndex
-                key={`${gitRequest.task_id || gitRequest.project_resource_id}:${gitRequest.path}`}
-                request={gitRequest}
-                onChanged={() => {
-                  void refreshDirectory();
-                }}
-                onBusyChange={() => undefined}
-                onInvalidBinding={clearCurrentDirectory}
-              />
-            ) : (
-              <p className="p-2 text-body text-muted-foreground">{t(($) => $.doc_file_list.no_git_checkout)}</p>
-            )}
-          </section>
         </div>
       )}
     </div>

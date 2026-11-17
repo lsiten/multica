@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordDictation } from "./chat-dictation-recorder";
 
@@ -9,6 +10,8 @@ class Recorder {
   ondataavailable?: (event: { data: Blob }) => void;
   onstop?: () => void;
   start() { this.state = "recording"; }
+  pause() { this.state = "paused"; }
+  resume() { this.state = "recording"; }
   stop() {
     this.state = "inactive";
     this.ondataavailable?.({ data: state.data });
@@ -54,5 +57,14 @@ describe("dictation batch finalization", () => {
     capture.controller.abort();
     await expect(capture.promise).rejects.toMatchObject({ name: "AbortError" });
     expect(capture.transcribe).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("finalizes audio after pausing, resumed=%s", async (resume) => {
+    const capture = recording();
+    capture.pause?.();
+    if (resume) capture.resume?.();
+    capture.stop();
+    await expect(capture.promise).resolves.toBe("Transcript");
+    expect(capture.transcribe).toHaveBeenCalledOnce();
   });
 });

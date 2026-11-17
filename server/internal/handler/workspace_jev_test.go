@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -13,7 +14,17 @@ import (
 
 func jevTestHandler(t *testing.T) *Handler {
 	t.Helper()
-	tx, err := testPool.Begin(context.Background())
+	// Pooled prepared statements can still resolve this temporary table's name to public.
+	conn, err := pgx.ConnectConfig(t.Context(), testPool.Config().ConnConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(context.Background()); err != nil {
+			t.Errorf("close Jev fixture connection: %v", err)
+		}
+	})
+	tx, err := conn.Begin(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

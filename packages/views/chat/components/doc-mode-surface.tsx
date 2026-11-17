@@ -1,9 +1,7 @@
 "use client";
 
-import { AlertTriangle, Check, X, GitCompare, Loader2, Pencil, MessageSquareQuote, Code2, Eye, FilePlus } from "@multica/ui/icons";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { createPortal } from "react-dom";
-import { autoUpdate, computePosition, flip, hide, offset, shift } from "@floating-ui/dom";
+import { AlertTriangle, Check, X, GitCompare, Loader2, Pencil, MessageSquareQuote, MessageSquarePlus, Code2, Eye } from "@multica/ui/icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
 import {
@@ -12,16 +10,29 @@ import {
   selectWorking,
   selectDiffView,
   documentDraftKey,
+  useDocumentCurrentContent,
+  type DocumentReferenceInput,
+  type DocumentCommentAnchor,
+  useDocumentCommentDraftStore,
+  documentCommentScopeKey,
+  legacyDocumentDraftKey,
 } from "@multica/core/chat";
 import { chatSessionFilesOptions } from "@multica/core/chat/queries";
 import {
-  useDocumentContentVersionCurrent,
   useDocumentContentVersions,
   useDeleteDocumentContentVersion,
   useRecordDocumentContentVersion,
   useRollbackDocumentContentVersion,
 } from "@multica/core/chat/document-content-version-queries";
 import { DocVersionHistory } from "./doc-version-history";
+import { DocumentDockTitle } from "./document-dock-title";
+import { DocumentOutline } from "./document-outline";
+import { useDocumentReadingPosition } from "./use-document-reading-position";
+import { useWorkspaceFileDocumentIdentity } from "./use-workspace-file-document-identity";
+import { WorkspaceSearchSource } from "./workspace-search-source";
+import type { DocumentRef, DocumentTextLocation } from "@multica/core/chat";
+import { useDocSelectionBubble } from "./document-selection-bubble";
+import { DocumentCommentsPanel } from "./document-comments-panel";
 import {
   useDocumentAutosave,
   type DocumentSaveStatus,
@@ -29,14 +40,14 @@ import {
 import { RichContent } from "../../rich-content";
 import { Attachment } from "../../editor/attachment";
 import { useLocale, useT } from "../../i18n";
-import { applyReviewFileEdit, requestReviewPage } from "../../platform/local-review-pages";
+import { useNavigationGuard } from "../../navigation";
+import { confirmNavigation } from "../../platform/navigation-confirmation";
+import { requestReviewPage } from "../../platform/local-review-pages";
+import { saveWorkspaceFileDocument } from "./save-workspace-file-document";
 import { canOpenLocalPath, openLocalPath } from "../../platform";
-import { createSafeId } from "@multica/core/utils";
 import { api } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
-import { useCreateIssue } from "@multica/core/issues/mutations";
-import { toast } from "sonner";
 import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
 import { Input } from "@multica/ui/components/ui/input";
 import { CodeBlockStatic } from "../../editor/code-block-static";
@@ -71,14 +82,6 @@ function fileContentText(value: unknown): string | null {
   return content.text;
 }
 
-function textCodeBlock(content: string): string {
-  return ["```text", content, "```"].join("\n");
-}
-
-function documentQuote(label: string, content: string): string {
-  return [`> ${label}`, "", textCodeBlock(content)].join("\n");
-}
-
 function isOfficePath(path: string): boolean {
   return /\.(docx?|xlsx?|pptx?|odt|ods|odp|pages|numbers|key)$/i.test(path);
 }
@@ -87,18 +90,6 @@ function localFilePath(root: string, relativePath: string): string | null {
   const normalized = relativePath.replaceAll("\\", "/").replace(/^\.\//, "");
   if (!normalized || normalized.startsWith("/") || normalized.split("/").some((part) => part === "..")) return null;
   return `${root.replace(/[\\/]+$/, "")}/${normalized}`;
-}
-
-function documentOutline(content: string): readonly {
-  readonly level: number;
-  readonly title: string;
-}[] {
-  return [...content.matchAll(/^(#{1,3})\s+(.+?)\s*#*\s*$/gm)]
-    .map((match) => ({
-      level: match[1]?.length ?? 1,
-      title: match[2]?.trim() ?? "",
-    }))
-    .filter((entry) => entry.title.length > 0);
 }
 
 function documentCounts(content: string): {
@@ -112,219 +103,11 @@ function documentCounts(content: string): {
   return { words, characters: [...content].length };
 }
 
-/**
- * useDocSelectionBubble — a floating selection toolbar for the read-only
- * document surfaces (DocBody / WorkspaceFileBody).
- *
- * It mirrors issue-detail's EditorBubbleMenu behaviour for the read-only
- * RichContent / CodeBlock renderers (which have no Tiptap Editor to couple to):
- * a selection inside the container raises a floating toolbar above it,
- * positioned with @floating-ui/dom + a portal to document.body so it escapes
- * the scroll container. The actions reuse issue-detail's intent:
- *   - "Add sub-issue" -> useCreateIssue({ title, parent_issue_id }). Read-only:
- *     the selection is never rewritten, only a sub-issue is created under the
- *     in-scope parent issue (the same CreateSubIssueButton action as issue-detail).
- *   - "Add to chat"   -> the existing onAddToChat reference flow. The composer
- *     then shows the quoted selection, which can be commented on / changed — the
- *     "add to conversation" flow that replaces issue-detail's "add comment".
- */
-export function useDocSelectionBubble({
-  containerRef,
-  parentIssueId,
-  onAddToChat,
-}: {
-  containerRef: RefObject<HTMLDivElement | null>;
-  parentIssueId?: string;
-  onAddToChat?: (content: string) => void;
-}) {
-  const { t } = useT("chat");
-  const [range, setRange] = useState<Range | null>(null);
-  const bubbleRef = useRef<HTMLDivElement>(null);
-  const hasActions = !!parentIssueId || !!onAddToChat;
-
-  // Read a live, meaningful text selection that lives inside our container.
-  const detect = useCallback(() => {
-    if (!hasActions) return;
-    const container = containerRef.current;
-    if (!container) return;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-      setRange(null);
-      return;
-    }
-    const candidate = selection.getRangeAt(0);
-    const inside =
-      candidate.startContainer instanceof Node &&
-      candidate.endContainer instanceof Node &&
-      container.contains(candidate.startContainer) &&
-      container.contains(candidate.endContainer);
-    // A selection outside this container belongs to another surface; leave ours
-    // untouched instead of clearing it.
-    if (!inside) return;
-    if (selection.isCollapsed || !selection.toString().trim()) {
-      setRange(null);
-      return;
-    }
-    setRange(candidate);
-  }, [containerRef, hasActions]);
-
-  // Re-detect on pointer/keyboard selection anywhere in the document.
-  useEffect(() => {
-    document.addEventListener("mouseup", detect);
-    document.addEventListener("keyup", detect);
-    return () => {
-      document.removeEventListener("mouseup", detect);
-      document.removeEventListener("keyup", detect);
-    };
-  }, [detect]);
-
-  // Close when the user clicks anywhere outside the toolbar and the content.
-  useEffect(() => {
-    if (!range) return;
-    const handle = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (bubbleRef.current?.contains(target)) return;
-      if (containerRef.current?.contains(target)) return;
-      setRange(null);
-    };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [range, containerRef]);
-
-  // Anchor the portal above the selection; autoUpdate keeps it pinned while the
-  // content scrolls (mirrors EditorBubbleMenu / CommentSelectionBubble).
-  useEffect(() => {
-    if (!range) return;
-    const element = bubbleRef.current;
-    const container = containerRef.current;
-    if (!element || !container) return;
-    let active = true;
-    const anchor = {
-      contextElement: container,
-      getBoundingClientRect: () => range.getBoundingClientRect(),
-    };
-    const update = () => {
-      computePosition(anchor, element, {
-        strategy: "fixed",
-        placement: "top",
-        middleware: [
-          offset(8),
-          flip({ padding: 8, altBoundary: true }),
-          shift({ padding: 8, altBoundary: true }),
-          hide(),
-        ],
-      }).then(({ x, y, middlewareData }) => {
-        if (!active || !element.isConnected) return;
-        const rect = range.getBoundingClientRect();
-        const hidden =
-          !range.startContainer.isConnected ||
-          !container.isConnected ||
-          (rect.width === 0 && rect.height === 0) ||
-          middlewareData.hide?.referenceHidden;
-        element.style.visibility = hidden ? "hidden" : "visible";
-        element.style.left = `${x}px`;
-        element.style.top = `${y}px`;
-      });
-    };
-    const cleanup = autoUpdate(anchor, element, update);
-    update();
-    return () => {
-      active = false;
-      cleanup();
-    };
-  }, [range, containerRef]);
-
-  // Drop the native selection so a later mouseup cannot re-open the toolbar.
-  const clear = useCallback(() => {
-    window.getSelection()?.removeAllRanges();
-    setRange(null);
-  }, []);
-
-  const onAddToConversation = useCallback(() => {
-    if (!range) return;
-    const text = range.toString();
-    onAddToChat?.(text);
-    clear();
-  }, [range, onAddToChat, clear]);
-
-  if (!range) return { bubble: null };
-
-  return {
-    bubble: createPortal(
-      <div
-        ref={bubbleRef}
-        onMouseDown={(e) => e.preventDefault()}
-        className="doc-selection-bubble"
-        style={{ position: "fixed", zIndex: 50, width: "max-content", visibility: "hidden" }}
-      >
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md">
-          {parentIssueId && (
-            <DocSubIssueButton range={range} parentIssueId={parentIssueId} clear={clear} />
-          )}
-          {onAddToChat && (
-            <Button size="sm" variant="ghost" className="gap-1.5" onClick={onAddToConversation}>
-              <MessageSquareQuote className="h-3.5 w-3.5" />
-              {t(($) => $.doc_mode.add_to_chat)}
-            </Button>
-          )}
-        </div>
-      </div>,
-      document.body,
-    ),
-  };
-}
-
-/**
- * DocSubIssueButton — the "add sub-issue" action of the selection toolbar.
- *
- * Only mounts when a parent issue is in scope, so useCreateIssue() (which
- * resolves the workspace id via useWorkspaceId) is never called for surfaces
- * without a parent — e.g. workspace files — or in a workspace-less test
- * tree. Kept out of useDocSelectionBubble so that hook can run anywhere.
- */
-function DocSubIssueButton({
-  range,
-  parentIssueId,
-  clear,
-}: {
-  range: Range;
-  parentIssueId: string;
-  clear: () => void;
-}) {
-  const { t } = useT("chat");
-  const createIssue = useCreateIssue();
-  const [pending, setPending] = useState(false);
-  const handleClick = async () => {
-    if (pending) return;
-    // Title from the selection: collapse whitespace, cap length (issue-detail's
-    // CreateSubIssueButton caps the same way). Read-only, so we never rewrite it.
-    const title = range.toString().replace(/\s+/g, " ").trim().slice(0, 200);
-    if (!title) return;
-    setPending(true);
-    try {
-      const created = await createIssue.mutateAsync({ title, parent_issue_id: parentIssueId });
-      toast.success(t(($) => $.doc_mode.sub_issue_created, { identifier: created.identifier }));
-      clear();
-    } catch (err) {
-      toast.error(
-        err instanceof Error && err.message ? err.message : t(($) => $.doc_mode.sub_issue_failed),
-      );
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <Button size="sm" variant="ghost" className="gap-1.5" onClick={handleClick} disabled={pending}>
-      {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-3.5 w-3.5" />}
-      {t(($) => $.doc_mode.add_sub_issue)}
-    </Button>
-  );
-}
-
-/** Displays the selected document while the session conversation stays mounted. */
-export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string; sessionId: string; onAddToChat?: (content: string) => void }) {
+export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string; sessionId: string; onAddToChat?: (input: DocumentReferenceInput) => void }) {
   const { t } = useT("chat");
   const doc = useDocModeStore(selectActiveDocument(sessionId));
+  const requestedLocation = useDocModeStore((state) => state.locationBySession[sessionId]);
+  const clearLocation = useDocModeStore((state) => state.clearLocation);
   const working = useDocModeStore(selectWorking(sessionId));
   const diffView = useDocModeStore(selectDiffView(sessionId));
   const closeDoc = useDocModeStore((s) => s.closeDoc);
@@ -343,6 +126,9 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     return labels;
   }, [agents, members]);
   const [editing, setEditing] = useState(false);
+  const [outlineVisible, setOutlineVisible] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const sourceContainer = useRef<HTMLDivElement>(null);
   const [edited, setEdited] = useState("");
   const [editBase, setEditBase] = useState<{ readonly content: string; readonly revision: number; readonly contentType: string } | null>(null);
   const [workspaceEditing, setWorkspaceEditing] = useState(false);
@@ -361,9 +147,18 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   const [checkpointNote, setCheckpointNote] = useState("");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
 
-  const documentIdentity = `${doc?.sessionId ?? sessionId}:${doc?.kind ?? "none"}:${doc?.id ?? ""}:${doc?.taskId ?? ""}:${doc?.projectResourceId ?? ""}:${doc?.relativePath ?? ""}`;
   const documentDraftId = doc ? documentDraftKey(doc) : null;
+  const documentIdentity = `${doc?.sessionId ?? sessionId}:${documentDraftId ?? "none"}`;
+  const restoredDocument = useRef<{ readonly document: DocumentRef | null; readonly sessionId: string } | null>(null);
   useEffect(() => {
+    const previous = restoredDocument.current;
+    restoredDocument.current = { document: doc, sessionId };
+    if (previous?.sessionId === sessionId && previous.document && doc) {
+      if (documentDraftKey(previous.document) === documentDraftKey(doc)) return;
+      if (previous.document.kind === "workspace_file" && !previous.document.fileId && doc.fileId
+        && legacyDocumentDraftKey(previous.document) === legacyDocumentDraftKey(doc)
+        && previous.document.runtimeId === doc.runtimeId && previous.document.workDir === doc.workDir) return;
+    }
     // Restore a durable draft before the next document's queries settle.
     const draft = documentDraftId
       ? useDocModeStore.getState().draftsByDocument[documentDraftId]
@@ -386,20 +181,23 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     setMergeChoices({});
     setMergeError(false);
     setCursor({ line: 1, column: 1 });
-  }, [documentDraftId, documentIdentity]);
+  }, [documentDraftId, documentIdentity, doc, sessionId]);
 
   const workspaceDirty = workspaceEditing && workspaceEdited !== workspaceEditBase;
   const versionDirty = editing && edited !== editBase?.content;
-
-  useEffect(() => {
-    if (!workspaceDirty && !versionDirty) return;
-    const preventUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", preventUnload);
-    return () => window.removeEventListener("beforeunload", preventUnload);
-  }, [versionDirty, workspaceDirty]);
+  const documentPending = workspaceSaving || mergeSaving;
+  useNavigationGuard(
+    useCallback(() => {
+      if (documentPending) return false;
+      if (!workspaceDirty && !versionDirty) return true;
+      return confirmNavigation({
+        message: t(($) => $.doc_mode.leave_confirm),
+        cancelLabel: t(($) => $.doc_mode.keep_editing),
+        confirmLabel: t(($) => $.doc_mode.close_keep_draft),
+      });
+    }, [documentPending, t, versionDirty, workspaceDirty]),
+    workspaceDirty || versionDirty || documentPending,
+  );
 
   // Hooks must run unconditionally; the empty id disables the queries below.
   const activeRef = doc ?? EMPTY_DOC;
@@ -407,8 +205,8 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     doc.contentType?.startsWith("text/") ||
     /\.(md|mdx|txt|json|ya?ml|csv|log|py|ts|tsx|js|jsx|go|rs|java|css|html)$/i.test(doc.label ?? "")
   );
-  const current = useDocumentContentVersionCurrent(wsId, activeRef, { loadAttachments: !isTextAttachment || diffView });
-  const versions = useDocumentContentVersions(wsId, activeRef, { loadAttachments: diffView });
+  const current = useDocumentCurrentContent(wsId, activeRef, { loadAttachments: !isTextAttachment || diffView });
+  const versions = useDocumentContentVersions(wsId, activeRef, { loadAttachments: diffView, enabled: diffView });
   const attachmentTextContent = useQuery({
     queryKey: ["attachment-text-content", wsId, doc?.id],
     queryFn: ({ signal }) => api.getAttachmentTextContent(doc!.id, signal),
@@ -416,6 +214,21 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     staleTime: 60_000,
     retry: false,
   });
+  const readingScope = JSON.stringify([wsId, sessionId, documentDraftId]);
+  const legacyReadingScope = doc?.fileId ? JSON.stringify([wsId, sessionId, legacyDocumentDraftKey(doc)]) : undefined;
+  const readingContainer = useDocumentReadingPosition(readingScope, !editing && (isTextAttachment ? !!attachmentTextContent.data : !!current.data), legacyReadingScope);
+  const openComments = () => {
+    setCommentsOpen(true);
+    setOutlineVisible(false);
+    setDiffView(sessionId, false);
+  };
+  const addComment = (anchor: DocumentCommentAnchor) => {
+    if (!doc) return;
+    const scope = documentCommentScopeKey(wsId, doc);
+    const content = useDocumentCommentDraftStore.getState().drafts[scope]?.content ?? "";
+    useDocumentCommentDraftStore.getState().setDraft(scope, { content, anchor: { ...anchor, revision: doc.kind === "workspace_file" ? undefined : current.data?.revision } });
+    openComments();
+  };
   const rollback = useRollbackDocumentContentVersion(wsId);
   const { data: sessionFiles } = useQuery({
     ...chatSessionFilesOptions(wsId, doc?.sessionId ?? "", doc?.projectId, doc?.kind === "attachment"),
@@ -446,6 +259,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
           runtime_id: workspaceRuntimeId,
           path: workspacePath,
           action: "file_content" as const,
+          file_id: doc.fileId,
           relative_path: doc.relativePath,
           offset: 0,
           // Keep the client request within the API relay's bounded page size.
@@ -455,7 +269,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
           limit: 64 * 1024,
         }
       : null,
-    [doc?.kind, doc?.taskId, doc?.projectResourceId, doc?.relativePath, workspacePath, workspaceRuntimeId, wsId],
+    [doc?.kind, doc?.fileId, doc?.taskId, doc?.projectResourceId, doc?.relativePath, workspacePath, workspaceRuntimeId, wsId],
   );
   const workspaceContent = useQuery({
     queryKey: [
@@ -463,6 +277,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
       wsId,
       doc?.sessionId,
       doc?.id,
+      doc?.fileId,
       doc?.taskId,
       doc?.projectResourceId,
       workspaceRuntimeId,
@@ -481,19 +296,21 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     !workspaceContent.isFetching &&
     workspaceContent.data &&
     "path" in workspaceContent.data &&
-    workspaceContent.data.path === workspaceRequest.relative_path
+    (workspaceRequest.file_id ? "file_id" in workspaceContent.data && workspaceContent.data.file_id === workspaceRequest.file_id : workspaceContent.data.path === workspaceRequest.relative_path)
       ? workspaceContent.data
       : null;
+  useWorkspaceFileDocumentIdentity({ workspaceId: wsId, document: doc, page: workspaceContentPage, editing: workspaceEditing || workspaceSaving });
+  const workspaceIdentityAmbiguous = !doc?.fileId && workspaceContentPage && "file_identity_ambiguous" in workspaceContentPage && workspaceContentPage.file_identity_ambiguous === true;
   const workspaceContentText =
     workspaceContentPage &&
     "content" in workspaceContentPage &&
     !workspaceContentPage.content.has_more
       ? fileContentText(workspaceContentPage)
       : null;
-  const workspaceReadableContent = workspaceFullContent ?? workspaceContentText;
+  const workspaceReadableContent = workspaceIdentityAmbiguous ? null : workspaceFullContent ?? workspaceContentText;
 
   const loadFullWorkspaceContent = useCallback(async () => {
-    if (!workspaceRequest) return;
+    if (!workspaceRequest || workspaceIdentityAmbiguous) return;
     setWorkspaceFullLoading(true);
     setWorkspaceFullError(false);
     try {
@@ -507,7 +324,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         });
         if (
           !("content" in page) ||
-          page.path !== workspaceRequest.relative_path
+          (workspaceRequest.file_id ? !("file_id" in page) || page.file_id !== workspaceRequest.file_id : page.path !== workspaceRequest.relative_path)
         ) {
           throw new Error("workspace full-content response mismatch");
         }
@@ -525,15 +342,16 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     } finally {
       setWorkspaceFullLoading(false);
     }
-  }, [workspaceRequest]);
+  }, [workspaceRequest, workspaceIdentityAmbiguous]);
 
   const openWorkspaceEdit = useCallback(() => {
     if (workspaceReadableContent === null) return;
-    setWorkspaceEdited(workspaceReadableContent);
-    setWorkspaceEditBase(workspaceReadableContent);
+    const draft = doc ? useDocModeStore.getState().draftsByDocument[documentDraftKey(doc)] : undefined;
+    setWorkspaceEdited(draft?.kind === "workspace_file" ? draft.content : workspaceReadableContent);
+    setWorkspaceEditBase(draft?.kind === "workspace_file" ? draft.baseContent : workspaceReadableContent);
     setWorkspaceSaveError(null);
     setWorkspaceEditing(true);
-  }, [workspaceReadableContent]);
+  }, [workspaceReadableContent, doc]);
 
   const updateWorkspaceDraft = useCallback((content: string) => {
     setWorkspaceEdited(content);
@@ -546,44 +364,50 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   }, [doc, setDocumentDraft, workspaceEditBase]);
 
   const saveWorkspaceEdit = useCallback(async () => {
-    if (!doc || doc.kind !== "workspace_file" || !workspacePath || !workspaceRuntimeId || !workspaceRequest) return;
+    if (workspaceSaving || !doc || doc.kind !== "workspace_file" || !workspacePath || !workspaceRuntimeId || !workspaceRequest) return;
+    if (workspaceIdentityAmbiguous) { setWorkspaceSaveError("changed_reload"); return; }
     setWorkspaceSaving(true);
     setWorkspaceSaveError(null);
     try {
-      const result = await applyReviewFileEdit({
+      const result = await saveWorkspaceFileDocument({ document: doc, request: {
         task_id: workspaceRequest.task_id,
         workspace_id: workspaceRequest.workspace_id,
         runtime_id: workspaceRequest.runtime_id,
         path: workspaceRequest.path,
         target: "HEAD",
         relative_path: workspaceRequest.relative_path,
-        command_id: createSafeId(),
+        file_id: workspaceRequest.file_id,
         action: "merge_edit",
         edit_base: workspaceEditBase,
         edit_new: workspaceEdited,
-      });
-      if (result?.conflict) {
+      } });
+      if (result.kind === "conflict") {
         setWorkspaceSaveError("changed_reload");
         await workspaceContent.refetch();
         return;
       }
-      clearDocumentDraft(doc);
-      setWorkspaceEditing(false);
-      setWorkspaceEdited("");
-      setWorkspaceEditBase("");
+      if (result.kind === "continued") {
+        setWorkspaceEdited(result.content);
+        setWorkspaceEditBase(result.baseContent);
+      } else {
+        setWorkspaceEditing(false);
+        setWorkspaceEdited("");
+        setWorkspaceEditBase("");
+      }
       await workspaceContent.refetch();
     } catch {
       setWorkspaceSaveError("save_failed");
     } finally {
       setWorkspaceSaving(false);
     }
-  }, [clearDocumentDraft, doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEditBase, workspaceEdited]);
+  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEditBase, workspaceEdited, workspaceIdentityAmbiguous, workspaceSaving]);
 
   const openEdit = useCallback(() => {
-    if (current.data?.content == null) return;
+    const revision = current.data?.owner_revision;
+    if (current.data?.content == null || !revision) return;
     const editSnapshot = {
       content: current.data.content,
-      revision: current.data.owner_revision ?? current.data.revision,
+      revision,
       contentType: current.data.content_type ?? "text/markdown",
     };
     setEditBase(editSnapshot);
@@ -716,10 +540,11 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     closeDoc(sessionId);
   };
   const latestContent = current.data?.content ?? null;
-  const latestBase = latestContent !== null && current.data
+  const latestRevision = current.data?.owner_revision;
+  const latestBase = latestContent !== null && current.data && latestRevision
     ? {
         content: latestContent,
-        revision: current.data.owner_revision ?? current.data.revision,
+        revision: latestRevision,
         contentType: current.data.content_type ?? editBase?.contentType ?? "text/markdown",
       }
     : null;
@@ -933,21 +758,17 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
     // The content query only fetches the first page; a truncated file reports
     // has_more, so surface the full size instead of silently cutting the text.
     const fileContent =
-      workspaceContent.data &&
-      workspaceRequest &&
-      "path" in workspaceContent.data &&
-      workspaceContent.data.path === workspaceRequest.relative_path &&
-      "content" in workspaceContent.data
-        ? workspaceContent.data.content
+      !workspaceIdentityAmbiguous && workspaceContentPage && "content" in workspaceContentPage
+        ? workspaceContentPage.content
         : null;
     const officePath = doc.relativePath && workspacePath && isOfficePath(doc.relativePath)
       ? localFilePath(workspacePath, doc.relativePath)
       : null;
     return (
-      <div className="flex h-full flex-col min-h-0">
+      <div ref={sourceContainer} className="@container/document flex h-full flex-col min-h-0">
         <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
-            <h2 className="max-w-full truncate text-body font-semibold">{doc.relativePath ?? doc.label ?? "File"}</h2>
+            <DocumentDockTitle document={doc} wsId={wsId} sessionId={sessionId} />
             <DocumentSaveIndicator
               status={workspaceSaving ? "saving" : workspaceDirty ? "dirty" : "saved"}
             />
@@ -971,17 +792,19 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
             </Button>
           )}
           {onAddToChat && workspaceReadableContent !== null && (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat(documentQuote(doc.relativePath ?? doc.label ?? "File", workspaceReadableContent))}>
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat({ resource: doc, content: workspaceEditing ? workspaceEdited : workspaceReadableContent, state: workspaceDirty ? "draft" : "saved", extent: "document" })}>
               <MessageSquareQuote className="h-4 w-4" />
               {t(($) => $.doc_mode.add_to_chat)}
             </Button>
           )}
+          {user && <Button variant={commentsOpen ? "secondary" : "ghost"} size="sm" onClick={() => commentsOpen ? setCommentsOpen(false) : openComments()}><MessageSquarePlus className="size-4" />{t(($) => $.document_comments.title)}</Button>}
           <Button variant="ghost" size="sm" className="gap-1.5" onClick={closeDocument}>
             <X className="h-4 w-4" />
             {t(($) => $.doc_mode.close)}
           </Button>
         </div>
         </div>
+      <div className="relative flex min-h-0 flex-1 overflow-hidden"><div className="min-w-0 flex-1">
       {workspaceEditing ? (
         <DocEdit
           label={doc.relativePath ?? doc.label ?? "File"}
@@ -1008,20 +831,33 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         />
       ) : (
         <WorkspaceFileBody
-          loading={workspaceContent.isLoading || (!!doc.taskId && !sessionFiles && !workspacePath)}
-          error={workspaceContent.isError || !workspacePath || !workspaceRuntimeId}
+          location={requestedLocation?.documentKey === documentDraftId ? requestedLocation : undefined}
+          onClearLocation={() => clearLocation(sessionId)}
+          readingScope={readingScope}
+          legacyReadingScope={legacyReadingScope}
+          loading={workspaceContent.isFetching || (!!doc.taskId && !sessionFiles && !workspacePath)}
+          error={!!workspaceIdentityAmbiguous || workspaceContent.isError || !workspacePath || !workspaceRuntimeId}
           onRetry={() => { void workspaceContent.refetch(); }}
-          content={workspaceFullContent ?? fileContent?.text ?? null}
+          content={workspaceIdentityAmbiguous ? null : workspaceFullContent ?? fileContent?.text ?? null}
           truncated={workspaceFullContent === null && (fileContent?.has_more ?? false)}
           total={fileContent?.size ?? 0}
           fullLoading={workspaceFullLoading}
           fullError={workspaceFullError}
           onLoadFull={() => void loadFullWorkspaceContent()}
+          onOpenExternal={workspacePath && doc.relativePath && canOpenLocalPath()
+            ? () => { void openLocalPath(localFilePath(workspacePath, doc.relativePath!) ?? workspacePath); }
+            : undefined}
           label={doc.relativePath ?? doc.label ?? "File"}
           path={doc.relativePath ?? doc.label ?? "File"}
-          onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(doc.relativePath ?? doc.label ?? "File", selection)) : undefined}
+          onAddToChat={onAddToChat ? (selection) => onAddToChat({ resource: doc, content: selection, state: "saved", extent: "selection" }) : undefined}
+          onAddComment={user ? addComment : undefined}
         />
       )}
+      </div>
+      {commentsOpen && <aside data-chat-inspector className="absolute inset-0 z-10 w-full shrink-0 overflow-hidden border-l bg-card @3xl/document:static @3xl/document:w-80">
+        <DocumentCommentsPanel wsId={wsId} resource={doc} actorLabels={actorLabels} sourceContainer={sourceContainer} sourceReady={!workspaceEditing && workspaceReadableContent !== null} sourceVersion={workspaceReadableContent ?? undefined} onClose={() => setCommentsOpen(false)} />
+      </aside>}
+      </div>
       {conflictDialog}
       </div>
     );
@@ -1035,15 +871,13 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   // Editing is available for an issue's text document (the requirement doc) to
   // any workspace member — mirrors the backend, whose record handler gates on
   // requireUserID only. Workspace-file edits use the separate merge flow above.
-  const canEdit = !!user && doc.kind === "issue" && isText && current.data?.content != null;
+  const canEdit = !!user && doc.kind === "issue" && isText && current.data?.content != null && !!current.data.owner_revision;
 
   return (
-    <div className="flex h-full flex-col min-h-0">
+    <div ref={sourceContainer} className="@container/document flex h-full flex-col min-h-0">
       <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="max-w-full truncate text-body font-semibold">
-            {doc.label ?? (doc.kind === "issue" ? t(($) => $.doc_mode.issue) : t(($) => $.doc_mode.attachment))}
-          </h2>
+          <DocumentDockTitle document={doc} wsId={wsId} sessionId={sessionId} />
           <DocumentSaveIndicator
             status={autosave.status}
             lastSavedAt={autosave.lastSavedAt}
@@ -1063,16 +897,18 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
             </Button>
           )}
           {onAddToChat && bodyContent !== null && (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat(documentQuote(doc.label ?? "Document", bodyContent))}>
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onAddToChat({ resource: doc, content: editing ? edited : bodyContent, revision: current.data?.revision, state: versionDirty ? "draft" : "saved", extent: "document" })}>
               <MessageSquareQuote className="h-4 w-4" />
               {t(($) => $.doc_mode.add_to_chat)}
             </Button>
           )}
+          {user && <Button variant={commentsOpen ? "secondary" : "ghost"} size="sm" onClick={() => commentsOpen ? setCommentsOpen(false) : openComments()}><MessageSquarePlus className="size-4" />{t(($) => $.document_comments.title)}</Button>}
+          {doc.kind === "issue" && <Button variant={outlineVisible ? "secondary" : "ghost"} size="sm" aria-expanded={outlineVisible} onClick={() => { setCommentsOpen(false); setDiffView(sessionId, false); setOutlineVisible((visible) => !visible); }}>{t(($) => $.doc_mode.outline)}</Button>}
           <Button
             variant={diffView ? "secondary" : "ghost"}
             size="sm"
             className="gap-1.5"
-            onClick={() => setDiffView(sessionId, !diffView)}
+            onClick={() => { setCommentsOpen(false); setOutlineVisible(false); setDiffView(sessionId, !diffView); }}
           >
             <GitCompare className="h-4 w-4" />
             {t(($) => $.doc_mode.history)}
@@ -1091,12 +927,12 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1">
-          {doc.kind === "issue" && (
-            <aside className="hidden w-52 shrink-0 overflow-y-auto border-r bg-muted/10 p-3 xl:block" aria-label={t(($) => $.doc_mode.outline)}>
-              <DocOutline content={editing ? edited : bodyContent ?? ""} />
+          {doc.kind === "issue" && outlineVisible && (
+            <aside className="absolute inset-y-0 left-0 z-10 w-52 overflow-y-auto border-r bg-card p-3 md:static md:shrink-0">
+              <DocumentOutline content={editing ? edited : bodyContent ?? ""} readingContainer={readingContainer} />
             </aside>
           )}
-          <div className="min-w-0 flex-1 overflow-y-auto">
+          <div ref={readingContainer} className="min-w-0 flex-1 overflow-y-auto">
             {editing ? (
               <DocEdit
                 label={doc.label ?? "Document"}
@@ -1129,14 +965,15 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
               contentType={doc.contentType ?? current.data?.content_type ?? "text/markdown"}
               isText={isText}
               label={doc.label ?? "Document"}
-              onAddToChat={onAddToChat ? (selection) => onAddToChat(documentQuote(doc.label ?? "Document", selection)) : undefined}
+              onAddToChat={onAddToChat ? (selection) => onAddToChat({ resource: doc, content: selection, revision: current.data?.revision, state: "saved", extent: "selection" }) : undefined}
               parentIssueId={doc.kind === "issue" ? doc.id : undefined}
+              onAddComment={user ? addComment : undefined}
             />
             )}
           </div>
         </div>
         {diffView && (
-          <aside className="absolute inset-0 z-10 flex w-full shrink-0 flex-col overflow-hidden border-l bg-card md:static md:w-80">
+          <aside data-chat-inspector className="absolute inset-0 z-10 flex w-full shrink-0 flex-col overflow-hidden border-l bg-card @3xl/document:static @3xl/document:w-80">
             <div className="flex items-center justify-between border-b px-3 py-2">
               <h3 className="text-caption font-semibold">{t(($) => $.doc_mode.history)}</h3>
               <Button size="icon-xs" variant="ghost" aria-label={t(($) => $.doc_mode.close_history)} onClick={() => setDiffView(sessionId, false)}>
@@ -1145,13 +982,13 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
             </div>
             <DocVersionHistory
               versions={versions.data ?? []}
-              current={current.data}
+              current={versions.data?.[0] ? { ...versions.data[0], content: current.data?.content ?? null } : undefined}
               actorLabels={actorLabels}
               diffLabel={t(($) => $.doc_mode.diff)}
               loading={versions.isLoading}
-              onRollback={(revision) => rollback.mutate({ ref: doc, revision })}
+              onRollback={(revision) => rollback.mutateAsync({ ref: doc, revision })}
               onDelete={(revision) => deleteVersion.mutateAsync({ ref: doc, revision })}
-              onAddToChat={onAddToChat ? (content) => onAddToChat(documentQuote(doc.label ?? "Document", content)) : undefined}
+              onAddToChat={onAddToChat ? (content, revision) => onAddToChat({ resource: doc, content, revision, state: "saved", extent: "document" }) : undefined}
               rollbackLabel={t(($) => $.doc_mode.rollback)}
               rollbackConfirmTitle={t(($) => $.doc_mode.rollback_confirm_title)}
               rollbackConfirmDescription={t(($) => $.doc_mode.rollback_confirm_description)}
@@ -1159,6 +996,9 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
             />
           </aside>
         )}
+        {commentsOpen && <aside data-chat-inspector className="absolute inset-0 z-10 w-full shrink-0 overflow-hidden border-l bg-card @3xl/document:static @3xl/document:w-80">
+          <DocumentCommentsPanel wsId={wsId} resource={doc} actorLabels={actorLabels} sourceContainer={sourceContainer} sourceReady={!editing && bodyContent !== null} sourceVersion={bodyContent ?? undefined} onClose={() => setCommentsOpen(false)} />
+        </aside>}
       </div>
 
       <DocumentStatusBar
@@ -1190,6 +1030,7 @@ function DocBody({
   label,
   onAddToChat,
   parentIssueId,
+  onAddComment,
 }: {
   loading: boolean;
   error: boolean;
@@ -1202,13 +1043,14 @@ function DocBody({
   label: string;
   onAddToChat?: (content: string) => void;
   parentIssueId?: string;
+  onAddComment?: (anchor: DocumentCommentAnchor) => void;
 }) {
   const { t } = useT("chat");
   // The selection toolbar anchors to this content container. It only raises for
   // the read-only text (RichContent) branch; the binary/attachment branches
   // have nothing selectable, so the container ref is never attached there.
   const containerRef = useRef<HTMLDivElement>(null);
-  const { bubble } = useDocSelectionBubble({ containerRef, parentIssueId, onAddToChat });
+  const { bubble } = useDocSelectionBubble({ containerRef, parentIssueId, onAddToChat, onAddComment });
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -1248,7 +1090,7 @@ function DocBody({
     );
   }
   return (
-    <div ref={containerRef} className="mx-auto max-w-3xl p-6">
+    <div ref={containerRef} data-document-readable data-comment-content="document-body" data-annotation-thread="document-body" className="mx-auto max-w-3xl p-6">
       <RichContent content={content ?? ""} className="doc-mode-body" />
       {bubble}
     </div>
@@ -1313,35 +1155,6 @@ function DocumentSaveIndicator({
   );
 }
 
-function DocOutline({ content }: { readonly content: string }) {
-  const { t } = useT("chat");
-  const headings = documentOutline(content);
-  return (
-    <div>
-      <h3 className="mb-3 text-caption font-semibold text-muted-foreground">
-        {t(($) => $.doc_mode.outline)}
-      </h3>
-      {headings.length ? (
-        <ol className="space-y-1">
-          {headings.map((heading, index) => (
-            <li
-              key={`${heading.level}:${heading.title}:${index}`}
-              className="break-words text-caption text-muted-foreground"
-              style={{ paddingInlineStart: `${(heading.level - 1) * 0.75}rem` }}
-            >
-              {heading.title}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="text-caption text-faint-foreground">
-          {t(($) => $.doc_mode.no_outline)}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function DocumentStatusBar({
   content,
   cursor,
@@ -1388,6 +1201,10 @@ function formatBytes(bytes: number): string {
 }
 
 function WorkspaceFileBody({
+  location,
+  onClearLocation,
+  readingScope,
+  legacyReadingScope,
   loading,
   error,
   onRetry,
@@ -1397,10 +1214,16 @@ function WorkspaceFileBody({
   fullLoading,
   fullError,
   onLoadFull,
+  onOpenExternal,
   label,
   onAddToChat,
+  onAddComment,
   path,
 }: {
+  location?: DocumentTextLocation;
+  onClearLocation: () => void;
+  readingScope: string;
+  legacyReadingScope?: string;
   loading: boolean;
   error: boolean;
   onRetry: () => void;
@@ -1410,28 +1233,30 @@ function WorkspaceFileBody({
   fullLoading?: boolean;
   fullError?: boolean;
   onLoadFull?: () => void;
+  onOpenExternal?: () => void;
   label: string;
   onAddToChat?: (selection: string) => void;
+  onAddComment?: (anchor: DocumentCommentAnchor) => void;
   path: string;
 }) {
   const { t } = useT("chat");
   // A selected passage raises a floating toolbar above it (mirroring
   // issue-detail) instead of a fixed bottom bar. The container ref is the
   // scrollable content area the selection is detected within.
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { bubble } = useDocSelectionBubble({ containerRef, onAddToChat });
+  const containerRef = useDocumentReadingPosition(readingScope, !loading && !error && content !== null, legacyReadingScope);
+  const { bubble } = useDocSelectionBubble({ containerRef, onAddToChat, onAddComment });
   const markdown = /\.mdx?$/i.test(path);
   const language = languageForPath(path);
   if (loading) {
     return <div className="flex h-full items-center justify-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   }
   if (error || content === null) {
-    return <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><p className="text-body">{label}</p><Button variant="outline" size="sm" onClick={onRetry}>{t(($) => $.doc_mode.retry)}</Button></div>;
+    return <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground"><p className="text-body">{label}</p><div className="flex flex-wrap items-center justify-center gap-2"><Button variant="outline" size="sm" onClick={onRetry}>{t(($) => $.doc_mode.retry)}</Button>{onOpenExternal && <Button variant="ghost" size="sm" onClick={onOpenExternal}>{t(($) => $.doc_mode.open_original)}</Button>}</div></div>;
   }
   return (
     <div className="flex h-full flex-col min-h-0">
-      <div ref={containerRef} className="min-h-0 flex-1 overflow-auto p-6">
-        {markdown ? (
+      <div ref={containerRef} data-document-readable data-comment-content="document-body" data-annotation-thread="document-body" className="min-h-0 flex-1 overflow-auto p-6">
+        {location ? <WorkspaceSearchSource content={content} location={location} onPreview={onClearLocation} /> : markdown ? (
           <div className="mx-auto max-w-3xl">
             <RichContent content={content} className="doc-mode-body" />
           </div>
@@ -1457,6 +1282,7 @@ function WorkspaceFileBody({
               {t(($) => $.doc_mode.load_full_content)}
             </Button>
           )}
+          {onOpenExternal && <Button size="xs" variant="ghost" onClick={onOpenExternal}>{t(($) => $.doc_mode.open_original)}</Button>}
           {fullError && <span role="alert" className="text-destructive">{t(($) => $.doc_mode.load_full_failed)}</span>}
         </div>
       )}

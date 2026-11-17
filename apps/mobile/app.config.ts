@@ -13,6 +13,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const env = process.env.APP_ENV ?? "development";
   const isProd = env === "production";
   const isStaging = env === "staging";
+  const nativeAPNs = process.env.EXPO_ENABLE_APNS === "1";
 
   return {
     ...config,
@@ -67,6 +68,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-image",
       "expo-localization",
       "expo-secure-store",
+      ...(nativeAPNs ? ["expo-notifications"] : []),
       "@react-native-community/datetimepicker",
       "react-native-enriched-markdown",
       [
@@ -94,6 +96,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
     ],
-    extra: { APP_ENV: env },
+    extra: {
+      ...config.extra,
+      APP_ENV: env,
+      nativeAPNs,
+      ...(process.env.EXPO_EAS_PROJECT_ID ? { eas: { projectId: process.env.EXPO_EAS_PROJECT_ID } } : {}),
+    },
   };
 };

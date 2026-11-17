@@ -201,9 +201,10 @@ export function AgentConfigurationPanel({
             />
           </DraftFieldRow>
           {qoderRuntime ? (
-            <p className="px-4 py-3 text-caption text-muted-foreground">
-              {t(($) => $.creation_studio.cloud_fields_note)}
-            </p>
+            <div className="space-y-2 px-4 py-3 text-caption text-muted-foreground">
+              <p>{t(($) => $.creation_studio.cloud_fields_note)}</p>
+              <p>{t(($) => $.creation_studio.cloud_run_limits)}</p>
+            </div>
           ) : (
             <div className="px-4 py-4">
               <SkillMultiSelect

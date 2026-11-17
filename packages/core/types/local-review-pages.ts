@@ -2,25 +2,30 @@ import { z } from "zod";
 import { localReviewEventSchema } from "./local-review";
 import { selectedMergeResultSchema, type SelectedMergeResult } from "./local-review-selection";
 import { isLocalIndexAction, isLocalIndexMutation, parseLocalIndexResponse, type LocalIndexView, type LocalIndexResult } from "./local-review-index";
+import { workspaceFileOperationSchema, parseWorkspaceFileOperationResult, parseWorkspaceTrashPage, type WorkspaceTrashPage, type WorkspaceFileOperationResult } from "./workspace-file-operation";
 
 const digest = z.string().regex(/^[0-9a-f]{64}$/);
 const count = z.number().int().nonnegative().safe();
 const blob = z.object({ id: digest, size: count });
 const preview = z.enum(["text", "binary", "too_large", "uncached", "unsupported"]).catch("unsupported");
 export const pagedReviewCapabilitySchema = z.object({ local_review_paging_supported: z.boolean().optional().catch(false) });
+export const reviewScopeSchema = z.enum(["run", "directory", "version"]);
 
 export function isPagedReviewDecision(action: string): boolean {
-  return ["submit", "approve", "request_changes", "merge", "merge_selected"].includes(action) || isLocalIndexMutation(action);
+  return ["file_operation", "submit", "approve", "request_changes", "merge", "merge_selected"].includes(action) || isLocalIndexMutation(action);
 }
 
 export const pagedReviewRequestSchema = z.object({
   task_id: z.string().default(""), project_resource_id: z.string().min(1).optional(),
+  scope: reviewScopeSchema.optional(),
   workspace_id: z.string().min(1), runtime_id: z.string().optional(),
   path: z.string().min(1).max(4096), target: z.string().max(250).default(""),
-  action: z.enum(["merge_selected", "index", "stage", "unstage", "commit", "repositories", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
+  action: z.enum(["workspace_trash", "file_operation", "merge_selected", "index", "stage", "unstage", "commit", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
+  file_operation: workspaceFileOperationSchema.optional(),
   index_id: digest.optional(), head: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(), branch: z.string().max(250).optional(),
   paths: z.array(z.string().min(1).max(4096)).max(10000).optional(), message: z.string().max(8000).optional(),
   version_id: digest.optional(), file_path: z.string().min(1).max(4096).optional(), relative_path: z.string().max(4096).optional(),
+  file_id: z.string().uuid().optional(),
   recursive: z.boolean().optional(),
   side: z.enum(["old", "new"]).default("new"),
   offset: count.default(0), limit: count.min(1).max(65536).default(100),
@@ -28,13 +33,18 @@ export const pagedReviewRequestSchema = z.object({
   comment: z.string().max(8000).optional(),
 }).superRefine((request, context) => {
   if (!!request.task_id === !!request.project_resource_id) context.addIssue({ code: "custom", message: "Exactly one run or project directory is required" });
+  if (request.scope === "run" && !request.task_id) context.addIssue({ code: "custom", message: "Run scope requires a task" });
+  if (request.scope === "directory" && !request.project_resource_id) context.addIssue({ code: "custom", message: "Directory scope requires a project resource" });
+  if (request.scope === "version" && !request.version_id) context.addIssue({ code: "custom", message: "Version scope requires a review version" });
   if (request.project_resource_id && !["workspace_files", "file_content", "index", "lease"].includes(request.action)) context.addIssue({ code: "custom", message: "Project directory browsing is read-only" });
-  if (!["index", "repositories", "workspace_files", "file_content"].includes(request.action) && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
-  if (!["index", "manifest", "repositories", "workspace_files", "file_content"].includes(request.action) && !request.version_id) context.addIssue({ code: "custom", message: "Review version required" });
+  if (!["workspace_trash", "file_operation", "index", "repositories", "versions", "workspace_files", "file_content"].includes(request.action) && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
+  if (!["workspace_trash", "file_operation", "index", "manifest", "repositories", "versions", "workspace_files", "file_content"].includes(request.action) && !request.version_id) context.addIssue({ code: "custom", message: "Review version required" });
+  if (request.action === "file_operation" && (!request.file_operation || !request.command_id)) context.addIssue({ code: "custom", message: "File operation and operation identity required" });
+  if (request.action === "workspace_trash" && request.limit > 100) context.addIssue({ code: "custom", message: "Trash page limit exceeded" });
   if ((request.action === "file" || request.action === "context" || request.action === "content") && !request.file_path) context.addIssue({ code: "custom", message: "Review file required" });
-  if (request.action === "file_content" && !request.relative_path) context.addIssue({ code: "custom", message: "Workspace file required" });
+  if (request.action === "file_content" && !request.relative_path && !request.file_id) context.addIssue({ code: "custom", message: "Workspace file required" });
   if (!["content", "file_content"].includes(request.action) && request.limit > 500) context.addIssue({ code: "custom", message: "Review page limit exceeded" });
-  if (isPagedReviewDecision(request.action) && (!request.command_id || request.snapshot_id !== request.version_id)) context.addIssue({ code: "custom", message: "Matching reviewed version and operation identity required" });
+  if (request.action !== "file_operation" && isPagedReviewDecision(request.action) && (!request.command_id || request.snapshot_id !== request.version_id)) context.addIssue({ code: "custom", message: "Matching reviewed version and operation identity required" });
   if (isLocalIndexMutation(request.action)) {
     if ((request.paths?.length ?? 0) > 1000) context.addIssue({ code: "custom", message: "Index selection limit exceeded" });
     if (!request.index_id || !request.head || !request.branch) context.addIssue({ code: "custom", message: "Reviewed index identity required" });
@@ -80,17 +90,25 @@ export const reviewFilePageSchema = z.object({
 export type PagedReviewInput = z.input<typeof pagedReviewRequestSchema>;
 export const reviewRepositoriesSchema = z.object({ repositories: z.array(z.string()).max(1000), runtime_id: z.string().optional() });
 export const reviewCommitsSchema = z.object({ version_id: digest, runtime_id: z.string().optional(), commits: z.array(z.object({ sha: z.string(), subject: z.string() })).max(100), next_offset: count, has_more: z.boolean() });
+export const reviewVersionsSchema = z.object({ versions: z.array(z.object({ version_id: digest, header: reviewVersionHeaderSchema, updated_at: z.string().datetime() })).max(500) });
 export const reviewContentSchema = z.object({
   version_id: digest, runtime_id: z.string().optional(), path: z.string(), side: z.enum(["old", "new"]),
   content: z.object({ text: z.string().max(262144), encoding: z.enum(["utf8", "hex"]), offset: count, next_offset: count, size: count, has_more: z.boolean() }),
 });
 export const workspaceFileListSchema = z.object({
+	file_operations_supported: z.boolean().optional().catch(false).default(false),
+  file_operation_identity_supported: z.boolean().optional().catch(false),
+  file_edit_identity_supported: z.boolean().optional().catch(false),
+  directory_id: digest.optional(),
+  directory_revision: count.optional(),
   path: z.string(),
-  entries: z.array(z.object({ path: z.string(), size: count, directory: z.boolean() })).max(5000),
+  entries: z.array(z.object({ path: z.string(), size: count, directory: z.boolean(), file_id: z.string().uuid().optional() })).max(5000),
   truncated: z.boolean().default(false),
   recursive: z.boolean().optional(), next_offset: count.optional(), has_more: z.boolean().optional(),
 });
 export const workspaceFileContentSchema = z.object({
+  file_id: z.string().uuid().optional(), directory_id: digest.optional(),
+  directory_revision: count.optional(), file_identity_ambiguous: z.boolean().optional().catch(true),
   path: z.string(),
   content: z.object({ text: z.string().max(262144), encoding: z.literal("utf8"), offset: count, next_offset: count, size: count, has_more: z.boolean() }),
 });
@@ -98,9 +116,11 @@ export const reviewLeaseSchema = z.object({ version_id: digest, runtime_id: z.st
 export type PagedReviewRequest = z.infer<typeof pagedReviewRequestSchema>;
 export type ReviewManifest = z.infer<typeof reviewManifestSchema>;
 export type ReviewFilePage = z.infer<typeof reviewFilePageSchema>;
-export type PagedReviewResponse = SelectedMergeResult | LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof workspaceFileListSchema> | z.infer<typeof workspaceFileContentSchema> | z.infer<typeof reviewLeaseSchema>;
+export type PagedReviewResponse = WorkspaceTrashPage | WorkspaceFileOperationResult | SelectedMergeResult | LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewVersionsSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof workspaceFileListSchema> | z.infer<typeof workspaceFileContentSchema> | z.infer<typeof reviewLeaseSchema>;
 
 export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unknown): PagedReviewResponse {
+  if (request.action === "workspace_trash") return parseWorkspaceTrashPage(request, raw);
+  if (request.action === "file_operation") return parseWorkspaceFileOperationResult(request, raw);
   if (request.action === "merge_selected") {
     const result = selectedMergeResultSchema.parse(raw);
     if (result.version_id !== request.version_id || result.target !== request.target || JSON.stringify([...result.paths].sort()) !== JSON.stringify([...(request.paths ?? [])].sort()) || (request.runtime_id && result.runtime_id && request.runtime_id !== result.runtime_id)) throw new Error("Selected merge identity mismatch");
@@ -130,7 +150,7 @@ export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unkno
   }
   if (request.action === "file_content") {
     const result = workspaceFileContentSchema.parse(raw);
-    if (result.path !== request.relative_path) throw new Error("Workspace file identity mismatch");
+    if (request.file_id ? result.file_id !== request.file_id : result.path !== request.relative_path) throw new Error("Workspace file identity mismatch");
     const content = result.content;
     const bytes = content.next_offset - content.offset;
     if (content.offset !== request.offset || bytes < 0 || bytes > request.limit + 3 || content.next_offset > content.size || content.has_more !== (content.next_offset < content.size) || (content.has_more && bytes === 0)) throw new Error("Invalid workspace file pagination");
@@ -138,6 +158,7 @@ export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unkno
     return result;
   }
   if (request.action === "repositories") return reviewRepositoriesSchema.parse(raw);
+  if (request.action === "versions") return reviewVersionsSchema.parse(raw);
   if (request.action === "commits") {
     const result = reviewCommitsSchema.parse(raw);
     if (result.version_id !== request.version_id || result.next_offset !== request.offset + result.commits.length || (result.has_more && result.commits.length === 0)) throw new Error("Invalid review commit pagination");

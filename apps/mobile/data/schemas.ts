@@ -565,7 +565,7 @@ export const PinnedItemSchema: z.ZodType<PinnedItem> = z.object({
 export const PinListSchema = z.array(PinnedItemSchema).default([]);
 export const EMPTY_PIN_LIST: PinnedItem[] = [];
 
-const InboxItemSchema: z.ZodType<InboxItem> = z.object({
+export const InboxItemSchema: z.ZodType<InboxItem> = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
   // Recipient is always a real actor in the dataset, but defend against

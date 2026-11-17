@@ -148,6 +148,8 @@
     "in_progress": "Envoi…",
     "interrupted": "Envoi interrompu — le fichier n'a pas été enregistré. Joignez-le de nouveau.",
     "remove": "Supprimer",
+    "cancel": "Annuler l’envoi",
+    "retry": "Réessayer l’envoi",
     "uploading_label": "Envoi de {{filename}}…",
     "failed_label": "Impossible d'envoyer {{filename}}"
   },

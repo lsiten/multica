@@ -27,6 +27,7 @@ import { usePalette } from "../palette-context";
 import { PaletteGroup, ROW_CLASS, ROW_ICON_CLASS, RowCheck } from "../rows";
 import { IssueResultRow } from "../result-rows";
 import { useServerSearch } from "../use-server-search";
+import { SearchFailure } from "../search-failure";
 
 type ThemeValue = "light" | "dark" | "system";
 
@@ -150,7 +151,7 @@ export function AgentAssignIssuePage({ agent, query }: { agent: Agent; query: st
   const updateIssue = useUpdateIssue();
   const { entryOf } = useIssueStatuses(wsId);
   const openModal = useModalStore((s) => s.open);
-  const { results, isLoading, stale } = useServerSearch(query, { projects: false });
+  const { results, isLoading, stale, error, retry } = useServerSearch(query, { projects: false });
   const newIssueLabel = t(($) => $.agent.new_issue, { name: agent.name });
   const q = query.trim().toLowerCase();
 
@@ -207,7 +208,8 @@ export function AgentAssignIssuePage({ agent, query }: { agent: Agent; query: st
           ))}
         </PaletteGroup>
       )}
-      {!isLoading && !stale && q && results.issues.length === 0 && (
+      {error && <SearchFailure retry={retry} />}
+      {!isLoading && !error && !stale && q && results.issues.length === 0 && (
         <div className="py-8 text-center text-body text-muted-foreground">{t(($) => $.empty.no_results)}</div>
       )}
     </>

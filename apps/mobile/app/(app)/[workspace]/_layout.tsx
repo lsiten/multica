@@ -238,6 +238,7 @@ export default function WorkspaceLayout() {
           name="issue/[id]/comment/[commentId]/emoji-picker"
           options={SHEET_OPTIONS}
         />
+        <Stack.Screen name="issue/[id]/emoji-picker" options={SHEET_OPTIONS} />
         {/* Project-detail formSheet pickers. */}
         <Stack.Screen
           name="project/[id]/picker/status"

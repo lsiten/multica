@@ -39,6 +39,7 @@ import (
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/mirror"
+	"github.com/multica-ai/multica/server/internal/mobilepush"
 	"github.com/multica-ai/multica/server/internal/notificationbot"
 	"github.com/multica-ai/multica/server/internal/realtime"
 	"github.com/multica-ai/multica/server/internal/seatcapacity"
@@ -241,6 +242,7 @@ type Handler struct {
 	// Query snapshots shallow-copy Handler, so relay state and its mutex must stay shared.
 	localReviewRelay          *localReviewRelay
 	NotificationBots          *notificationbot.Worker
+	MobilePush                *mobilepush.Worker
 	Queries                   *db.Queries
 	ReadSelector              *dbreader.Selector
 	DB                        dbExecutor

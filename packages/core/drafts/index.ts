@@ -11,6 +11,8 @@ export {
 } from "./cleanup-registry";
 export {
   startUpload,
+  canRetryUpload,
+  retryUpload,
   abortUpload,
   abortAll,
   type StartUploadArgs,

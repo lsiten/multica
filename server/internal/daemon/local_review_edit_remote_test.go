@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/daemon/localreview"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
@@ -56,7 +55,7 @@ func TestRemoteReviewRelaysEditAndMergeEdit(t *testing.T) {
 	if res.Error != "" {
 		t.Fatalf("edit failed: %s", res.Error)
 	}
-	var applied localreview.EditWorkingFileResult
+	var applied protocol.WorkspaceFileEditResult
 	if err := json.Unmarshal(res.Edit, &applied); err != nil {
 		t.Fatalf("edit result undecodable: %v", err)
 	}
@@ -82,7 +81,7 @@ func TestRemoteReviewRelaysEditAndMergeEdit(t *testing.T) {
 	if res.Error != "" {
 		t.Fatalf("merge_edit fast path failed: %s", res.Error)
 	}
-	var merged localreview.MergeWorkingFileResult
+	var merged protocol.WorkspaceFileEditResult
 	if err := json.Unmarshal(res.Edit, &merged); err != nil {
 		t.Fatalf("merge result undecodable: %v", err)
 	}

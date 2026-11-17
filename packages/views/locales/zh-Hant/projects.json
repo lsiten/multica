@@ -1,5 +1,6 @@
 {
   "supervision": {
+    "unsaved": "放棄未儲存的監督設定並離開？",
     "title": "專案監督",
     "loading": "正在載入監督狀態…",
     "unavailable": "暫時無法獲取監督狀態。",

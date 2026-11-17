@@ -1,4 +1,8 @@
 {
+  "discard_title": "Отменить изменения?",
+  "discard_help": "Конфигурация приложения не сохранена.",
+  "keep_editing": "Продолжить редактирование",
+  "discard": "Отменить изменения",
   "title": "Applications",
   "new": "New application",
   "edit": "Edit application",

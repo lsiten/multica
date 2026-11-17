@@ -37,7 +37,7 @@ import {
   Platform,
   View,
 } from "react-native";
-import { router, useFocusEffect, useIsFocused } from "expo-router";
+import { router, useFocusEffect, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Agent,
@@ -120,6 +120,11 @@ export default function ChatTab() {
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const { session: notificationSession } = useLocalSearchParams<{ session?: string }>();
+  const [appliedNotificationSession, setAppliedNotificationSession] = useState<string>();
+  useEffect(() => {
+    if (notificationSession && notificationSession === appliedNotificationSession) router.setParams({ session: undefined });
+  }, [notificationSession, appliedNotificationSession]);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
 
   // Bridge to the chat-sessions formSheet route. Mirror local
@@ -149,6 +154,13 @@ export default function ChatTab() {
   if (wsId && hydratedWs !== wsId) {
     setHydratedWs(wsId);
     if (sessions.length > 0) setActiveSessionId(sessions[0].id);
+  }
+  if (notificationSession !== appliedNotificationSession) {
+    setAppliedNotificationSession(notificationSession);
+    if (notificationSession) {
+      setActiveSessionId(notificationSession);
+      setSelectedAgentId(null);
+    }
   }
   const { data: messages = [], isLoading: messagesLoading } = useQuery(
     chatMessagesOptions(activeSessionId),

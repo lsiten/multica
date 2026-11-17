@@ -149,6 +149,9 @@ A free Apple ID signs builds for **7 days only**, Debug and Release both. After 
 
 ## Pointing at a different backend
 
+For native APNs setup, TestFlight distribution, signed-binary updates, and the
+required real-device checks, see [Push and release](docs/push-and-release.md).
+
 Edit `EXPO_PUBLIC_API_URL` in `.env.staging`, `.env.production.local`, or `.env.development.local` (whichever variant you're running). Then:
 
 - For an installed **Debug build**: restart Metro (`pnpm dev:mobile:staging`) so the next JS bundle picks up the new value.

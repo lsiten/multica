@@ -63,6 +63,7 @@ import type { InputHistoryDirection } from "./extensions/input-history";
 import {
   uploadAndInsertFile,
   insertUploadPlaceholder,
+  removeUploadNode,
   settleUploadNode,
 } from "./extensions/file-upload";
 import { configStore } from "@multica/core/config";
@@ -327,6 +328,8 @@ interface ContentEditorRef {
     filename: string;
     size?: number;
   }) => boolean;
+  /** Remove an in-flight placeholder immediately when the user cancels it. */
+  removeUploadPlaceholder: (uploadId: string) => boolean;
   /**
    * Turn a placeholder into the finished attachment, in place. False when this
    * document holds no node for the id — the caller then falls back to
@@ -997,6 +1000,10 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       insertUploadPlaceholder: (upload) => {
         if (!editor || editor.isDestroyed) return false;
         return insertUploadPlaceholder(editor, upload);
+      },
+      removeUploadPlaceholder: (uploadId) => {
+        if (!editor || editor.isDestroyed) return false;
+        return removeUploadNode(editor, uploadId);
       },
       settleUploadPlaceholder: (uploadId, result) => {
         if (!editor || editor.isDestroyed) return false;

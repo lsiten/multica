@@ -58,11 +58,15 @@ type AttachmentResponse struct {
 	CommentID     *string `json:"comment_id"`
 	ChatSessionID *string `json:"chat_session_id"`
 	ChatMessageID *string `json:"chat_message_id"`
-	UploaderType  string  `json:"uploader_type"`
-	UploaderID    string  `json:"uploader_id"`
-	Filename      string  `json:"filename"`
-	URL           string  `json:"url"`
-	DownloadURL   string  `json:"download_url"`
+	// TaskID ties chat/project output files back to the run that produced them.
+	// It is optional because reference uploads and older rows may not have a
+	// task owner.
+	TaskID       *string `json:"task_id,omitempty"`
+	UploaderType string  `json:"uploader_type"`
+	UploaderID   string  `json:"uploader_id"`
+	Filename     string  `json:"filename"`
+	URL          string  `json:"url"`
+	DownloadURL  string  `json:"download_url"`
 	// AttachmentDownloadURL is a credential-free URL that forces a
 	// Content-Disposition: attachment across every storage mode, for the
 	// download BUTTON — unlike DownloadURL, which is load-intent and keeps
@@ -205,6 +209,10 @@ func (h *Handler) attachmentToResponse(a db.Attachment, mode attachmentURLMode) 
 	if a.ChatMessageID.Valid {
 		s := uuidToString(a.ChatMessageID)
 		resp.ChatMessageID = &s
+	}
+	if a.TaskID.Valid {
+		s := uuidToString(a.TaskID)
+		resp.TaskID = &s
 	}
 	return resp
 }
@@ -1527,6 +1535,9 @@ func (h *Handler) DeleteAttachment(w http.ResponseWriter, r *http.Request) {
 	var deleted db.DeleteAttachmentRow
 	deleteParams := db.DeleteAttachmentParams{ID: att.ID, WorkspaceID: att.WorkspaceID}
 	err = h.withAttachmentOwnerLock(r.Context(), att, func(qtx *db.Queries) error {
+		if err := qtx.DeleteDocumentCommentsForResource(r.Context(), db.DeleteDocumentCommentsForResourceParams{WorkspaceID: att.WorkspaceID, ResourceKey: "attachment:" + uuidToString(att.ID)}); err != nil {
+			return err
+		}
 		var deleteErr error
 		deleted, deleteErr = qtx.DeleteAttachment(r.Context(), deleteParams)
 		return deleteErr

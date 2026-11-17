@@ -11,6 +11,7 @@
  * lands so the navigation bar shows `MUL-123` (Linear-style).
  */
 import { useCallback, useEffect } from "react";
+import { paths } from "@multica/core/paths/paths";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -117,7 +118,7 @@ export default function IssueDetail() {
     if (!issue || !wsSlug) return;
     const webUrl = process.env.EXPO_PUBLIC_WEB_URL;
     const issueLink = webUrl
-      ? `${webUrl}/${wsSlug}/issue/${issue.identifier}`
+      ? `${webUrl.replace(/\/+$/, "")}${paths.workspace(wsSlug).issueDetail(issue.identifier)}`
       : null;
     const actions = ["cancel", "pin"];
     if (isPinned) actions[1] = "unpin";

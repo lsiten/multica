@@ -44,6 +44,8 @@ import { api } from "@multica/core/api";
 import {
   startUpload,
   abortUpload,
+  canRetryUpload,
+  retryUpload as retryCoordinatedUpload,
   hasUploadingDraft,
   attachmentToDraftUpload,
   type DraftUpload,
@@ -219,6 +221,10 @@ export interface CoordinatedUploads {
   handleUpload: (file: File, uploadId?: string) => Promise<UploadResult | null>;
   /** Drop a placeholder (dismiss a failure / interrupted). */
   removeUpload: (clientUploadId: string) => void;
+  /** Retry a failed upload while its original File is still held in memory. */
+  retryUpload: (clientUploadId: string) => boolean;
+  /** Whether the failed upload still has an in-memory File to retry. */
+  canRetryUpload: (clientUploadId: string) => boolean;
   /**
    * The submit gate for this composer. Combines the editor gate (this mount's
    * in-document uploads) with the coordinator-owned placeholders in the draft:
@@ -246,6 +252,13 @@ export function useCoordinatedUploads(
   editorRef: RefObject<ContentEditorRef | null>,
   opts?: {
     /**
+     * Discard failed uploads for surfaces that do not expose a retry affordance.
+     * The coordinator keeps the in-memory file by default so chat can retry;
+     * comment composers only show a toast and must not leave an unreachable
+     * failed row in their persisted draft.
+     */
+    discardFailedUploads?: boolean;
+    /**
      * Resolve the binding a NEW upload should target, snapshotted at pick
      * time. For composers whose single editor instance can hold a DIFFERENT
      * draft than the selected one (chat pins the document while an upload is
@@ -264,10 +277,12 @@ export function useCoordinatedUploads(
   },
 ): CoordinatedUploads {
   const { t } = useT("editor");
+  const discardFailedUploads = opts?.discardFailedUploads ?? false;
   const [localUploads, setLocalUploads] = useState<DraftUpload[]>([]);
   // Latest-value ref: handleUpload snapshots the target at invocation time.
   const resolveUploadTargetRef = useRef(opts?.resolveUploadTarget);
   resolveUploadTargetRef.current = opts?.resolveUploadTarget;
+  const retryingUploadIdsRef = useRef<Set<string>>(new Set());
 
   // Liveness of THIS mount, read by settle closures it created: while true,
   // the editor that started the upload will do the inline swap itself; once
@@ -419,6 +434,7 @@ export function useCoordinatedUploads(
           ctx: { issueId, commentId, chatSessionId },
           onSettled: (outcome) => {
             if (outcome.status === "uploaded") {
+              const wasRetried = retryingUploadIdsRef.current.delete(clientUploadId);
               if (target) {
                 // Generation guard: only write if the draft still tracks it.
                 if (target.getUploads().some((u) => u.clientUploadId === clientUploadId)) {
@@ -430,7 +446,7 @@ export function useCoordinatedUploads(
                   // mount is alive: resolving the promise below drives the
                   // normal inline blob→URL swap, and a placeholder the user
                   // deleted mid-upload must stay deleted.
-                  if (!mountedRef.current) {
+                  if (!mountedRef.current || wasRetried) {
                     deliverFinishedUpload(target, clientUploadId, outcome.attachment);
                   }
                 }
@@ -442,24 +458,22 @@ export function useCoordinatedUploads(
                       : u,
                   ),
                 );
+                if (wasRetried) {
+                  editorRef.current?.insertMarkdownAtEnd(attachmentMarkdown(outcome.attachment));
+                }
               }
               resolve(toUploadResult(outcome.attachment));
             } else {
+              retryingUploadIdsRef.current.delete(clientUploadId);
               const reason = outcome.error.message;
-              // A failure leaves NOTHING behind. The toast below has already
-              // said it, at the moment it happened, and the file is still on
-              // disk — a chip adds no information and cannot retry (the bytes
-              // were never persisted). Keeping one costs more than it gives:
-              // it survives reload and reopen until dismissed by hand, and
-              // `isMeaningful` counts it, so a single flaky request keeps an
-              // otherwise-empty draft alive for the full 30-day TTL.
-              //
-              // Legacy `interrupted` records still get a chip for the reason
-              // this one does not: they are discovered a session later, when
-              // the user no longer remembers attaching anything.
               if (target) {
                 if (target.getUploads().some((u) => u.clientUploadId === clientUploadId)) {
-                  target.removeUpload(clientUploadId);
+                  if (pastedText !== undefined || discardFailedUploads) {
+                    if (discardFailedUploads) abortUpload(clientUploadId);
+                    target.removeUpload(clientUploadId);
+                  } else {
+                    target.failUpload(clientUploadId, reason);
+                  }
                   // Paste-as-file has no on-disk copy to re-attach from, so
                   // its text goes back into the composer.
                   if (pastedText !== undefined) {
@@ -467,9 +481,14 @@ export function useCoordinatedUploads(
                   }
                 }
               } else {
-                setLocalUploads((prev) =>
-                  prev.filter((u) => u.clientUploadId !== clientUploadId),
-                );
+                if (discardFailedUploads) abortUpload(clientUploadId);
+                setLocalUploads((prev) => pastedText !== undefined || discardFailedUploads
+                  ? prev.filter((u) => u.clientUploadId !== clientUploadId)
+                  : prev.map((u) =>
+                    u.clientUploadId === clientUploadId
+                      ? { ...u, status: "failed", error: reason }
+                      : u,
+                  ));
                 if (pastedText !== undefined) {
                   deliverPastedTextBack(undefined, editorRef, pastedText);
                 }
@@ -481,22 +500,67 @@ export function useCoordinatedUploads(
         });
       });
     },
-    [binding, editorRef, issueId, commentId, chatSessionId, t],
+    [binding, discardFailedUploads, editorRef, issueId, commentId, chatSessionId, t],
   );
 
   const removeUpload = useCallback(
     (clientUploadId: string) => {
       // Defensive cancel for a placeholder removed while still in flight: its
       // request has no destination left, so don't let it run to completion.
-      // Today's chips expose ✕ only for failed/interrupted entries, so this
-      // fires only if a future caller removes an `uploading` one. Guarded on
-      // OUR tracking so a stray id can never abort another surface's upload.
+      // Also clears an in-memory retry handle when a failed row is dismissed.
+      // Guarded on OUR tracking so a stray id can never abort another surface's upload.
       const tracked = binding ? binding.getUploads() : localUploadsRef.current;
-      if (tracked.some((u) => u.clientUploadId === clientUploadId && u.status === "uploading")) {
+      if (tracked.some((u) =>
+        u.clientUploadId === clientUploadId && (u.status === "uploading" || u.status === "failed")
+      )) {
         abortUpload(clientUploadId);
       }
+      editorRef.current?.removeUploadPlaceholder(clientUploadId);
       if (binding) binding.removeUpload(clientUploadId);
       else setLocalUploads((prev) => prev.filter((u) => u.clientUploadId !== clientUploadId));
+    },
+    [binding, editorRef],
+  );
+
+  const retryUpload = useCallback(
+    (clientUploadId: string) => {
+      const tracked = binding ? binding.getUploads() : localUploadsRef.current;
+      const failed = tracked.find(
+        (u) => u.clientUploadId === clientUploadId && u.status === "failed",
+      );
+      if (!failed || !canRetryUpload(clientUploadId)) return false;
+
+      const pending: DraftUpload = {
+        clientUploadId: failed.clientUploadId,
+        status: "uploading",
+        filename: failed.filename,
+        size: failed.size,
+        contentType: failed.contentType,
+      };
+      if (binding) {
+        binding.removeUpload(clientUploadId);
+        binding.addUpload(pending);
+      } else {
+        setLocalUploads((prev) => prev.map((u) =>
+          u.clientUploadId === clientUploadId ? pending : u,
+        ));
+      }
+      retryingUploadIdsRef.current.add(clientUploadId);
+      if (retryCoordinatedUpload(clientUploadId)) return true;
+      retryingUploadIdsRef.current.delete(clientUploadId);
+
+      // The request may have been cleared between the capability check and
+      // the retry call (logout / explicit removal). Restore the visible error.
+      const restored: DraftUpload = { ...failed, status: "failed" };
+      if (binding) {
+        binding.removeUpload(clientUploadId);
+        binding.addUpload(restored);
+      } else {
+        setLocalUploads((prev) => prev.map((u) =>
+          u.clientUploadId === clientUploadId ? restored : u,
+        ));
+      }
+      return false;
     },
     [binding],
   );
@@ -518,5 +582,22 @@ export function useCoordinatedUploads(
       hasUploadingDraft(binding ? binding.getUploads() : localUploadsRef.current),
   };
 
-  return { uploads, attachments, handleUpload, removeUpload, gate };
+  const canRetry = useCallback(
+    (clientUploadId: string) => {
+      const tracked = binding ? binding.getUploads() : localUploadsRef.current;
+      return tracked.some((u) => u.clientUploadId === clientUploadId && u.status === "failed") &&
+        canRetryUpload(clientUploadId);
+    },
+    [binding],
+  );
+
+  return {
+    uploads,
+    attachments,
+    handleUpload,
+    removeUpload,
+    retryUpload,
+    canRetryUpload: canRetry,
+    gate,
+  };
 }

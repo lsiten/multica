@@ -140,6 +140,21 @@ var pgBigmOperatorClass = extensionOperatorClass{
 // they are still pending: a fresh self-hosted install, which is exactly where an
 // interrupted build would otherwise leave a permanently unusable index.
 var concurrentIndexCleanups = map[string]string{
+	"900592_workspace_file_host_key":              "workspace_file_host_key",
+	"900593_workspace_file_operation_id":          "workspace_file_operation_id",
+	"900594_workspace_file_operation_command":     "workspace_file_operation_command",
+	"900595_workspace_file_operation_pending":     "workspace_file_operation_pending",
+	"900589_workspace_file_resource_id":           "workspace_file_resource_id",
+	"900590_workspace_file_resource_location":     "workspace_file_resource_location",
+	"900586_document_comment_id":                  "document_comment_id",
+	"900587_document_comment_resource":            "document_comment_resource",
+	"900584_mobile_push_chat_key":                 "mobile_push_chat_key",
+	"900578_mobile_push_device_id":                "mobile_push_device_id",
+	"900579_mobile_push_device_token":             "mobile_push_device_token",
+	"900580_mobile_push_delivery_id":              "mobile_push_delivery_id",
+	"900581_mobile_push_delivery_key":             "mobile_push_delivery_key",
+	"900582_mobile_push_delivery_ready":           "mobile_push_delivery_ready",
+	"900583_mobile_push_device_user":              "mobile_push_device_user",
 	"900504_application_id":                       "application_id",
 	"900505_application_revision_id":              "application_revision_id",
 	"900506_application_relation_id":              "application_relation_id",

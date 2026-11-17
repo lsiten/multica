@@ -130,6 +130,8 @@
     "assigned": "{{identifier}} を {{name}} に割り当てました"
   },
   "empty": {
+    "search_failed": "検索できませんでした。もう一度お試しください。",
+    "retry": "再試行",
     "no_results": "結果が見つかりません。",
     "no_labels": "ラベルがありません",
     "type_to_find_issue": "入力してタスクを検索",

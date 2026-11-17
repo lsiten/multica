@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type FormEvent, type ReactNode, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Plus, Trash2 } from "@multica/ui/icons";
 import { toast } from "sonner";
@@ -11,7 +11,11 @@ import { Input } from "@multica/ui/components/ui/input";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { Switch } from "@multica/ui/components/ui/switch";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@multica/ui/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@multica/ui/components/ui/alert-dialog";
 import { useT } from "../i18n";
+import { useNavigationGuard } from "../navigation";
+import { runGuardedNavigation } from "@multica/core/platform";
+import { confirmNavigation } from "../platform/navigation-confirmation";
 import { ApplicationSelect } from "./controls";
 
 function FormField({ label, children, help }: { label: string; children: ReactNode; help?: string }) {
@@ -19,8 +23,9 @@ function FormField({ label, children, help }: { label: string; children: ReactNo
 }
 
 interface PreparationDraft { program: string; arguments: string; timeout: number }
+interface EditorState { readonly dirty: boolean; readonly pending: boolean }
 
-function EditorForm({ workspaceId, initial, projectId: presetProjectId, onSaved }: { workspaceId: string; initial?: Application; projectId?: string; onSaved: (application: Application) => void }) {
+function EditorForm({ workspaceId, initial, projectId: presetProjectId, onSaved, onStateChange }: { workspaceId: string; initial?: Application; projectId?: string; onSaved: (application: Application) => void; onStateChange: (state: EditorState) => void }) {
   const { t } = useT("applications");
   const formId = useId();
   const [baseline] = useState(initial);
@@ -40,6 +45,11 @@ function EditorForm({ workspaceId, initial, projectId: presetProjectId, onSaved 
   const create = useCreateApplication(workspaceId);
   const update = useUpdateApplication(workspaceId, initial?.id ?? "");
   const pending = create.isPending || update.isPending;
+  const draftKey = JSON.stringify({ name, projectId, kind, config, program, argumentsText, environmentText, localEnvText, prepare });
+  const [initialDraftKey] = useState(draftKey);
+  const dirty = draftKey !== initialDraftKey;
+  useNavigationGuard(useCallback(() => !pending && (!dirty || confirmNavigation({ message: `${t(($) => $.discard_title)}\n${t(($) => $.discard_help)}`, cancelLabel: t(($) => $.keep_editing), confirmLabel: t(($) => $.discard) })), [dirty, pending, t]), dirty || pending);
+  useEffect(() => onStateChange({ dirty, pending }), [dirty, pending, onStateChange]);
   const set = <K extends keyof ApplicationConfig>(key: K, value: ApplicationConfig[K]) => setConfig((current) => ({ ...current, [key]: value }));
 
   const save = async (event: FormEvent) => {
@@ -131,11 +141,26 @@ function EditorForm({ workspaceId, initial, projectId: presetProjectId, onSaved 
 export function ApplicationEditor({ workspaceId, application, projectId, trigger, onSaved }: { workspaceId: string; application?: Application; projectId?: string; trigger: ReactElement; onSaved?: (application: Application) => void }) {
   const { t } = useT("applications");
   const [open, setOpen] = useState(false);
-  return <Dialog open={open} onOpenChange={setOpen}>
+  const [state, setState] = useState<EditorState>({ dirty: false, pending: false });
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const changeOpen = (next: boolean) => {
+    if (next) { setState({ dirty: false, pending: false }); setOpen(true); return; }
+    if (state.pending) return;
+    if (state.dirty) { setDiscardOpen(true); return; }
+    setOpen(false);
+  };
+  return <><Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger render={trigger} />
     <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-2xl" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{application ? t(($) => $.edit) : t(($) => $.new)}</DialogTitle></DialogHeader>
-      {open && <EditorForm workspaceId={workspaceId} initial={application} projectId={projectId} onSaved={(saved) => { setOpen(false); onSaved?.(saved); }} />}
+      {open && <EditorForm workspaceId={workspaceId} initial={application} projectId={projectId} onStateChange={setState} onSaved={(saved) => runGuardedNavigation(() => { setOpen(false); onSaved?.(saved); }, true)} />}
     </DialogContent>
-  </Dialog>;
+  </Dialog>
+    <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>{t(($) => $.discard_title)}</AlertDialogTitle><AlertDialogDescription>{t(($) => $.discard_help)}</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel>{t(($) => $.keep_editing)}</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { setDiscardOpen(false); setOpen(false); }}>{t(($) => $.discard)}</AlertDialogAction></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>;
 }

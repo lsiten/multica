@@ -180,5 +180,10 @@ export function useUpdateNotificationPreferences() {
     variables: mutation.variables?.preferences,
     mutate,
     mutateAsync,
+    retry: () => {
+      if (mutation.isError && mutation.variables?.workspaceId === wsId) {
+        mutation.mutate(mutation.variables);
+      }
+    },
   };
 }

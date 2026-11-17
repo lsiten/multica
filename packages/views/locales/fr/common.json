@@ -162,6 +162,8 @@
     "reply_stale": "La demande a changé ou est close. Vérifiez sa dernière version.",
     "reply_unsupported": "Le serveur ne prend pas en charge les réponses textuelles. Utilisez la carte ; votre brouillon est conservé.",
     "reply_no_match": "Ce message ne correspond pas à la demande et ne la répondra pas. Modifiez-le ou envoyez-le comme message ordinaire.",
-    "reply_options": "Options"
+    "reply_options": "Options",
+    "open_issue": "Ouvrir le ticket associé",
+    "open_chat": "Ouvrir le chat associé"
   }
 }

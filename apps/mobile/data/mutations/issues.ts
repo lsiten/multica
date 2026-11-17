@@ -688,6 +688,7 @@ export function useCreateIssue() {
   return useMutation({
     mutationFn: (body: CreateIssueRequest) => api.createIssue(body),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: issueKeys.pages(wsId) });
       qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
       qc.invalidateQueries({ queryKey: inboxKeys.all(wsId) });
     },

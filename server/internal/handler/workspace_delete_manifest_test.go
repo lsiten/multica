@@ -50,6 +50,7 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"agent_to_label":                     workspaceDelete,
 	"attachment":                         workspaceDelete,
 	"document_content_version":           workspaceDelete,
+	"document_comment":                   workspaceDelete,
 	"autopilot":                          workspaceDelete,
 	"autopilot_collaborator":             workspaceDelete,
 	"autopilot_quota_period":             workspaceDelete,
@@ -129,6 +130,8 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"lark_user_binding":                  workspaceDelete,
 	"maintenance_job":                    workspaceDeleteKeep, // Global maintenance audit history, not workspace-owned.
 	"member":                             workspaceDelete,
+	"mobile_push_device":                 workspaceDeleteKeep, // Account registration shared by all workspaces.
+	"mobile_push_delivery":               workspaceDelete,     // Owned through its inbox item or chat message.
 	"member_delegation_day":              workspaceDeleteKeep, // user-scoped telemetry ledger, no workspace_id
 	"agent_mcp_server":                   workspaceDelete,
 	"workspace_mcp_server":               workspaceDelete,
@@ -196,6 +199,9 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"issue_environment_command":          workspaceDelete,
 	"issue_environment_config":           workspaceDelete,
 	"workspace_app_setting":              workspaceDelete,
+	"workspace_file_host_state":          workspaceDelete,
+	"workspace_file_operation":           workspaceDelete,
+	"workspace_file_resource":            workspaceDelete,
 	"app_tool_class_override":            workspaceDelete,
 	"workspace":                          workspaceDelete,
 	"workspace_invitation":               workspaceDelete,

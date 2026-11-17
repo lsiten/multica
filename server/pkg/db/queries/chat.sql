@@ -1,6 +1,6 @@
 -- name: CreateChatSession :one
-INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, squad_id, id)
-VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, sqlc.narg('project_id'), sqlc.narg('squad_id'), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()))
+INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, selected_project_id, squad_id, id)
+VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, sqlc.narg('project_id'), sqlc.narg('project_id'), sqlc.narg('squad_id'), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()))
 RETURNING *;
 
 -- name: AgentMayUseProject :one
@@ -55,6 +55,7 @@ WHERE id = $1 AND workspace_id = $2;
 -- name: UpdateChatSessionContext :one
 UPDATE chat_session
 SET project_id = sqlc.narg('project_id'),
+    selected_project_id = sqlc.narg('project_id'),
     squad_id = sqlc.narg('squad_id'),
     session_id = CASE
         WHEN project_id IS DISTINCT FROM sqlc.narg('project_id')::uuid
@@ -77,8 +78,16 @@ RETURNING *;
 -- history while removing the context selection when a project is deleted.
 -- Do not touch updated_at: context cleanup is not chat activity.
 UPDATE chat_session
-SET project_id = NULL
+SET project_id = NULL,
+    selected_project_id = CASE WHEN selected_project_id = $1 THEN NULL ELSE selected_project_id END
 WHERE project_id = $1 AND workspace_id = $2;
+
+-- name: UpdateChatSessionSelectedProject :one
+UPDATE chat_session
+SET selected_project_id = sqlc.narg('selected_project_id'),
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING *;
 
 -- name: GetChatSession :one
 SELECT * FROM chat_session
@@ -1118,6 +1127,69 @@ WHERE project.workspace_id = $2
       AND binding.active
   )
 ORDER BY project.updated_at DESC, project.id;
+
+-- name: ListChatSessionProjectLinks :many
+-- Keep project provenance separate from the project payload. Explicit chat or
+-- task context is associated; agent/squad bindings are merely available until
+-- the user selects them. A saved selection always wins the role calculation.
+WITH session_context AS (
+  SELECT chat_session.id, chat_session.workspace_id, chat_session.project_id, chat_session.selected_project_id, chat_session.agent_id, chat_session.squad_id
+  FROM chat_session
+  WHERE chat_session.id = $1 AND chat_session.workspace_id = $2
+), candidates AS (
+  SELECT session_context.project_id AS candidate_project_id, 'chat_context'::text AS reason, 1 AS rank
+  FROM session_context WHERE session_context.project_id IS NOT NULL
+  UNION ALL
+  SELECT issue.project_id AS candidate_project_id, 'task_context'::text, 2
+  FROM agent_task_queue AS task
+  JOIN session_context AS session ON session.id = task.chat_session_id
+  JOIN issue ON issue.id = task.issue_id
+  WHERE issue.project_id IS NOT NULL
+  UNION ALL
+  SELECT lead_project.id AS candidate_project_id, 'agent_binding'::text, 3
+  FROM project AS lead_project
+  JOIN session_context AS session ON session.agent_id = lead_project.lead_id
+  WHERE lead_project.workspace_id = $2 AND lead_project.lead_type = 'agent'
+  UNION ALL
+  SELECT binding.project_id AS candidate_project_id, 'agent_binding'::text, 3
+  FROM agent_project_binding AS binding
+  JOIN session_context AS session ON session.agent_id = binding.agent_id
+  WHERE binding.active
+  UNION ALL
+  SELECT binding.project_id AS candidate_project_id, 'squad_binding'::text, 4
+  FROM squad_project_binding AS binding
+  JOIN session_context AS session ON session.squad_id = binding.squad_id
+  WHERE binding.active
+  UNION ALL
+  SELECT lead_project.id AS candidate_project_id, 'squad_binding'::text, 4
+  FROM project AS lead_project
+  JOIN session_context AS session ON session.squad_id IS NOT NULL
+  JOIN squad ON squad.id = session.squad_id AND squad.leader_id = lead_project.lead_id
+  WHERE lead_project.workspace_id = $2 AND lead_project.lead_type = 'agent'
+  UNION ALL
+  SELECT binding.project_id AS candidate_project_id, 'squad_binding'::text, 4
+  FROM squad_project_binding AS binding
+  JOIN squad_member AS member ON member.squad_id = binding.squad_id AND member.member_type = 'agent'
+  JOIN session_context AS session ON session.agent_id = member.member_id
+  WHERE binding.active
+)
+SELECT candidates.candidate_project_id,
+       CASE WHEN candidates.candidate_project_id = session.selected_project_id THEN 'selected'
+            WHEN min(candidates.rank) <= 2 THEN 'associated'
+            ELSE 'available' END AS role,
+       CASE min(candidates.rank)
+         WHEN 1 THEN 'chat_context'
+         WHEN 2 THEN 'task_context'
+         WHEN 3 THEN 'agent_binding'
+         ELSE 'squad_binding'
+       END AS reason
+FROM candidates
+JOIN session_context AS session ON true
+JOIN project ON project.id = candidates.candidate_project_id AND project.workspace_id = $2
+GROUP BY candidates.candidate_project_id, session.selected_project_id
+ORDER BY CASE WHEN candidates.candidate_project_id = session.selected_project_id THEN 0
+              WHEN min(candidates.rank) <= 2 THEN 1 ELSE 2 END,
+         candidates.candidate_project_id;
 
 -- name: ListChatTaskInputOwners :many
 -- Retry children keep the original direct-chat input owner in

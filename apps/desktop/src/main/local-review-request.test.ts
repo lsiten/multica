@@ -1,10 +1,16 @@
 // @vitest-environment node
 import { createServer } from "node:http";
 import { expect, it, vi } from "vitest";
-import { requestLocalReview } from "./local-review-request";
+import { requestLocalReview, requestLocalReviewPage } from "./local-review-request";
 
 const input = { task_id: "task", workspace_id: "ws", runtime_id: "runtime", path: "/repo", target: "main", action: "approve", snapshot_id: "snapshot", command_id: "operation" };
 const snapshot = { id: "snapshot", path: "/repo", branch: "feature", target: "main", head: "head", target_head: "base", base: "base", dirty: false, branches: [], commits: "", files: [], review: { snapshot_id: "snapshot", state: "approved", comment: "", merged_commit: "" } };
+
+it.each(["file_operation", "workspace_trash"] as const)("requires server member authority for %s before local dispatch", async (action) => {
+  const review = vi.fn();
+  await expect(requestLocalReviewPage({ task_id: "task", workspace_id: "ws", path: "/repo", action, command_id: "create-1", ...(action === "file_operation" ? { file_operation: { kind: "create_file", path: "new.md" } } : {}) }, { resolveProfile: async () => null, health: async () => ({}), review })).rejects.toThrow("require_server_authorization");
+  expect(review).not.toHaveBeenCalled();
+});
 
 it("pins one profile across health and the authenticated local HTTP request", async () => {
   const received: string[] = [];

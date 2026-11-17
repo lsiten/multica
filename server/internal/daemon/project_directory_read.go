@@ -39,13 +39,13 @@ func (d *Daemon) runProjectDirectoryRead(ctx context.Context, command protocol.L
 	}
 	key := fmt.Sprintf("%x", sha256.Sum256([]byte(command.WorkspaceID+"\x00"+command.RuntimeID+"\x00"+command.ProjectResourceID+"\x00"+path)))
 	root := filepath.Join(d.cfg.WorkspacesRoot, ".project-directory-reviews", key)
-	if command.Action == "index" {
+	if command.Action == "index" || command.Action == "versions" || command.Action == "manifest" || command.Action == "files" || command.Action == "file" || command.Action == "context" || command.Action == "content" || command.Action == "commits" {
 		if err := os.MkdirAll(root, 0700); err != nil {
 			result.Error = "cannot create project directory cache"
 			return result
 		}
 	}
-	request := worktreeReviewRequest{Action: command.Action, Path: command.Path, Target: command.Target, WorkspaceID: command.WorkspaceID, RuntimeID: command.RuntimeID, RelativePath: command.RelativePath, Recursive: command.Recursive, VersionID: command.VersionID, Offset: command.Offset, Limit: command.Limit}
+	request := worktreeReviewRequest{Action: command.Action, Path: command.Path, Target: command.Target, WorkspaceID: command.WorkspaceID, RuntimeID: command.RuntimeID, RelativePath: command.RelativePath, Recursive: command.Recursive, VersionID: command.VersionID, Offset: command.Offset, Limit: command.Limit, Scope: command.Scope}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/project-directory/read", nil)
 	if err != nil {
 		result.Error = err.Error()

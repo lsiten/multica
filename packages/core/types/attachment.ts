@@ -13,6 +13,8 @@ export interface Attachment {
   comment_created_at?: string;
   chat_session_id: string | null;
   chat_message_id: string | null;
+  /** Run that produced the file, when the server can establish one. */
+  task_id?: string | null;
   uploader_type: string;
   uploader_id: string;
   filename: string;

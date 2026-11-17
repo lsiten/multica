@@ -36,6 +36,9 @@
     "title": "Title"
   },
   "states": {
+    "save_failed": "Changes were not saved. Try again.",
+    "load_failed": "Could not load this record. Try again.",
+    "record_unavailable": "This record was deleted or you no longer have access.",
     "loading": "Loading...",
     "saving": "Saving...",
     "sending": "Sending...",

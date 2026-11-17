@@ -119,8 +119,8 @@
     "step2_label": "데몬 시작"
   },
   "cloud_waitlist": {
-    "intro_main": "클라우드 런타임은 아직 제공되지 않습니다. 이메일을 남겨주시면 준비되는 대로 연락드리겠습니다.",
-    "intro_warning": "주의: 런타임이 없으면 에이전트가 실행을 시작할 수 없습니다. 지금 건너뛰면 다시 돌아와 설치하기 전까지 아무것도 실행되지 않습니다.",
+    "intro_main": "이 설정 과정에서는 전용 클라우드 컴퓨터를 아직 사용할 수 없습니다. 제공 소식을 받으려면 이메일을 남겨 주세요.",
+    "intro_warning": "로컬 에이전트에는 연결된 런타임이 필요합니다. 관리형 클라우드 에이전트는 별도 기능이며, 배포 환경에서 공급자를 활성화한 경우 설정 후 에이전트 화면에서 선택할 수 있습니다.",
     "email_label": "이메일",
     "email_placeholder": "you@work.com",
     "reason_label": "클라우드를 원하는 이유",
@@ -187,7 +187,7 @@
     "empty_skip_subtitle": "런타임에 연결하기 전에는 에이전트를 실행할 수 없습니다.",
     "empty_skip_action": "건너뛰기",
     "empty_waitlist_title": "클라우드 컴퓨터 사용",
-    "empty_waitlist_subtitle": "클라우드에서 컴퓨터를 실행해 드립니다. 아직 제공되지 않습니다.",
+    "empty_waitlist_subtitle": "이 설정 과정에서는 전용 클라우드 컴퓨터를 아직 사용할 수 없습니다. 관리형 클라우드 에이전트는 에이전트 화면에서 별도로 설정합니다.",
     "empty_waitlist_action": "준비 중",
     "skip": "지금은 건너뛰기",
     "refresh": "새로고침",
@@ -210,7 +210,7 @@
     "cli_subtitle": "서버, 원격 개발 환경, headless 컴퓨터를 연결합니다. 터미널이 필요합니다.",
     "cli_action": "단계 보기",
     "cloud_title": "클라우드 컴퓨터 사용",
-    "cloud_subtitle": "클라우드에서 컴퓨터를 실행해 드립니다. 아직 제공되지 않습니다.",
+    "cloud_subtitle": "이 설정 과정에서는 전용 클라우드 컴퓨터를 아직 사용할 수 없습니다. 관리형 클라우드 에이전트는 에이전트 화면에서 별도로 설정합니다.",
     "cloud_action": "준비 중",
     "cli_dialog_title": "터미널에서 연결",
     "cli_dialog_pick_hint": "위에서 컴퓨터를 선택하세요.",

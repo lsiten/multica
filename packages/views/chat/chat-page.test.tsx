@@ -5,8 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WorkspaceSlugProvider } from "@multica/core/paths";
-import { useDocModeStore } from "@multica/core/chat";
+import { useDocModeStore, composeChatReferences, useChatReferenceDraftStore } from "@multica/core/chat";
 import { documentContentVersionKeys } from "@multica/core/chat/document-content-version-queries";
+import { issueKeys } from "@multica/core/issues/queries";
 import type { ChatReference } from "./components/chat-input";
 import type { Agent, ChatPendingTask } from "@multica/core/types";
 import { I18nProvider } from "@multica/core/i18n/react";
@@ -29,7 +30,7 @@ vi.mock("./components/chat-message-list", () => ({
   ChatMessageSkeleton: () => <div>chat-message-skeleton</div>,
 }));
 vi.mock("./components/chat-input", () => ({
-  ChatInput: ({ references = [] }: { references?: ChatReference[] }) => <div>chat-input{references.map((reference) => <span key={reference.id}>{reference.content}</span>)}</div>,
+  ChatInput: ({ references = [] }: { references?: ChatReference[] }) => <div>chat-input{references.map((reference) => <span key={reference.id}>{composeChatReferences("", [reference])}</span>)}</div>,
 }));
 vi.mock("./components/chat-thread-list", () => ({
   ChatThreadList: ({
@@ -237,9 +238,8 @@ function renderPage(search: string, { strict = false } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   qc.setQueryDefaults(["workspaces", "list"], { staleTime: Infinity });
   qc.setQueryData(["workspaces", "list"], [{ id: "ws-1", slug: "acme" }]);
-  qc.setQueryData(documentContentVersionKeys.current("ws-1", { kind: "issue", id: "issue-doc" }), {
-    id: "version-1", owner_type: "issue", owner_id: "issue-doc", revision: 1,
-    content: "Document passage", content_type: "text/markdown", content_url: null,
+  qc.setQueryData(issueKeys.detail("ws-1", "issue-doc"), {
+    id: "issue-doc", revision: 1, description: "Document passage",
   });
   qc.setQueryData(documentContentVersionKeys.list("ws-1", { kind: "issue", id: "issue-doc" }), []);
   const makeUi = () => {
@@ -274,6 +274,7 @@ function renderPage(search: string, { strict = false } = {}) {
 }
 
 beforeEach(() => {
+  useChatReferenceDraftStore.setState({ byScope: {} });
   vi.clearAllMocks();
   window.getSelection()?.removeAllRanges();
   useDocModeStore.setState({ activeBySession: {}, workingBySession: {}, diffViewBySession: {} });
@@ -477,6 +478,23 @@ describe("ChatPage ?agent= deep link", () => {
 
 describe("ChatPage responsive layout", () => {
   const SELECT_PROMPT = "Pick a conversation, or start a new one with +";
+
+  it.each([
+    { width: DESKTOP, previousSession: null },
+    { width: FOLD_INNER_PORTRAIT, previousSession: null },
+    { width: DESKTOP, previousSession: "previous-chat" },
+  ])("restores a quoted new-discussion draft on a fresh page: %j", ({ width, previousSession }) => {
+    layout.width = width;
+    storeRef.current = { activeSessionId: previousSession };
+    useChatReferenceDraftStore.getState().add(JSON.stringify(["ws-1", null]), {
+      id: "new-discussion-reference", label: "Original answer", content: "Original continuation snapshot",
+      messageSource: { workspaceId: "ws-1", sessionId: "original-chat", messageId: "original-message", role: "assistant", createdAt: "2026-11-15T13:00:00Z" },
+    });
+    renderPage("");
+    expect(screen.getByText("chat-input")).toBeVisible();
+    expect(screen.getByText(/Original continuation snapshot/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "select-thread" }) !== null).toBe(width === DESKTOP);
+  });
 
   it("folds to a single column on a foldable's inner screen held upright", () => {
     // Below the compact breakpoint, with nothing open, the page spends the

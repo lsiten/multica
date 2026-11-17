@@ -7,6 +7,7 @@ export { createWorkspaceAwareStorage, setCurrentWorkspace, getCurrentSlug, getCu
 export { clearWorkspaceStorage } from "./storage-cleanup";
 export { clearClientSessionData } from "./session-cleanup";
 export { registerNavigationGuard, mayLeaveNavigation, runGuardedNavigation } from "./navigation-guards";
+export type { NavigationConfirmation } from "./navigation-confirmation";
 export {
   registerSystemNotificationClickHandler,
   isWebNotificationSupported,

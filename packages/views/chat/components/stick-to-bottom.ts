@@ -169,10 +169,13 @@ export function useStickToBottom(
   pinToLiveEnd: () => void,
   active = true,
   revealKey: string | null = null,
+  startAtHistory = false,
 ): StickToBottom {
   const followRef = useRef<LiveEndFollow | null>(null);
   if (followRef.current === null) {
     followRef.current = createLiveEndFollow();
+    followRef.current.setActive(active);
+    if (startAtHistory) followRef.current.disengage();
   }
   const follow = followRef.current;
   // followOutput reads this latch in the same render, so an effect would update
@@ -192,7 +195,7 @@ export function useStickToBottom(
   // rows that a measuring pass is about to unmount again, and neither fires
   // on the frame the correcting scroll lands. A frame loop that stops as soon
   // as the list holds still costs a handful of rect reads at open.
-  const [hasReachedLiveEnd, setHasReachedLiveEnd] = useState(false);
+  const [hasReachedLiveEnd, setHasReachedLiveEnd] = useState(startAtHistory);
   // Read once at mount: the registry is bookkeeping, not render state.
   const [settleMs] = useState(() =>
     revealKey !== null && revealedLists.has(revealKey) ? 0 : LIVE_END_SETTLE_MS,

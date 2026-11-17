@@ -1859,6 +1859,11 @@
       "from_template": "從模板建立"
     },
     "editor": {
+      "discard_prompt": "放棄尚未儲存的工作流程變更？",
+      "discard_keep": "繼續編輯",
+      "discard_confirm": "放棄變更",
+      "remote_changed": "工作流程已在其他位置更新，你的變更已保留。",
+      "reload": "載入最新版本",
       "create_title": "新建工作流",
       "edit_title": "編輯工作流",
       "name": "名稱",

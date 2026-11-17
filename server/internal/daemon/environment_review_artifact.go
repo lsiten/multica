@@ -31,6 +31,9 @@ type reviewRunResponse struct {
 // A transport or namespace failure is returned, never a silent local fallback.
 func (s *environmentProcessService) reviewRunResult(ctx context.Context, request runtimeproc.Request, command protocol.LocalReviewCommand) (json.RawMessage, *runtimeproc.Error) {
 	result := s.daemon.runRemoteReview(ctx, command)
+	if result.EffectsUnknown {
+		return nil, &runtimeproc.Error{Code: runtimeproc.CodeEffectsUnknown, Message: "file operation effects remain unconfirmed"}
+	}
 	return s.encodeReviewRunResult(request, &result)
 }
 

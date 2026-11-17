@@ -542,6 +542,10 @@
     "serving_count_other": "エージェント {{count}} 個",
     "diagnostics_title": "診断",
     "desktop": {
+      "recheck": "再確認",
+      "offline": "ランタイムに接続してデスクトップへのアクセスを確認してください。",
+      "checking": "デスクトップへのアクセスを確認中…",
+      "unchecked": "デスクトップへのアクセスは未確認です。",
       "title": "デスクトップ操作",
       "version": "ツール",
       "version_value": "agent-desktop {{version}}",
@@ -2451,6 +2455,10 @@
     }
   },
   "usage": {
+    "measurement": "{{tz}} · 取得日時 {{time}}",
+    "billing_boundary": "USD 費用は報告された使用量とモデル料金に基づきます。プロバイダーのクレジットは実行ごとに別途表示され、ここでは USD に換算しません。このレポートは請求書ではありません。",
+    "load_failed": "使用量を更新できませんでした。表示中の数値は前回の取得結果です。",
+    "retry": "再試行",
     "period_label": "期間",
     "kpi_cost_label": "コスト · {{days}} 日",
     "kpi_cost_delta": "前期比 {{sign}}{{pct}}%",

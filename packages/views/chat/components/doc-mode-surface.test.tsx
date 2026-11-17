@@ -6,13 +6,14 @@ import { I18nProvider } from "@multica/core/i18n/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import enCommon from "../../locales/en/common.json";
 import enChat from "../../locales/en/chat.json";
-import { useDocModeStore } from "@multica/core/chat";
+import { useDocModeStore, useWorkspaceFileEditStore } from "@multica/core/chat";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import { DocModeSurface } from "./doc-mode-surface";
 import { applyReviewFileEdit, requestReviewPage } from "../../platform/local-review-pages";
 import { ApiError, setApiInstance } from "@multica/core/api";
 
 const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
+beforeEach(() => useWorkspaceFileEditStore.setState({ pending: {} }));
 
 async function saveCheckpoint(note = "") {
   fireEvent.click(screen.getByRole("button", { name: "Save checkpoint" }));
@@ -97,6 +98,15 @@ const cvs = vi.hoisted(() => ({
   record: null as null | ((input: Record<string, unknown>) => Promise<unknown>),
   delete: null as null | ((input: Record<string, unknown>) => Promise<void>),
 }));
+vi.mock("@multica/core/chat", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@multica/core/chat")>(),
+  useDocumentCurrentContent: () => ({
+    data: cvs.current ? { ...cvs.current, owner_revision: cvs.current.owner_revision ?? cvs.current.revision } : undefined,
+    isLoading: false,
+    isError: false,
+    refetch: () => {},
+  }),
+}));
 vi.mock("@multica/core/chat/document-content-version-queries", () => ({
   documentContentVersionKeys: {
     all: (wsId: string) => ["document-content-versions", wsId] as const,
@@ -107,12 +117,6 @@ vi.mock("@multica/core/chat/document-content-version-queries", () => ({
     single: (wsId: string, ref: { id: string; kind: string }, revision: number) =>
       ["document-content-versions", wsId, ref.kind, ref.id, revision] as const,
   },
-  useDocumentContentVersionCurrent: () => ({
-    data: cvs.current,
-    isLoading: false,
-    isError: false,
-    refetch: () => {},
-  }),
   useDocumentContentVersions: () => ({
     data: cvs.versions,
     isLoading: false,
@@ -214,6 +218,7 @@ function renderSurface(client = newClient()) {
 
 beforeEach(() => {
   vi.mocked(applyReviewFileEdit).mockClear();
+  Object.defineProperty(window, "desktopAPI", { configurable: true, value: undefined });
   vi.mocked(requestReviewPage).mockImplementation((input) =>
     Promise.resolve({ path: input.relative_path ?? ".", content: session.current.content }),
   );
@@ -250,6 +255,49 @@ beforeEach(() => {
 });
 
 describe("DocModeSurface (workspace_file body + truncation notice)", () => {
+  it("retains text entered while a workspace save is pending and rebases its next save on the submitted draft", async () => {
+    session.current.content = { ...session.current.content, has_more: false };
+    let finish: () => void = () => { throw new Error("Save not started"); };
+    vi.mocked(applyReviewFileEdit).mockImplementationOnce(() => new Promise((resolve) => {
+      finish = () => resolve({ file_path: "src/app.ts", merged: true, conflict: false, bytes: 10, new_content: "submitted draft" });
+    }));
+    openWorkspaceDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    editDocument("submitted draft");
+    fireEvent.click(screen.getByRole("button", { name: "Apply to workspace file" }));
+    editDocument("newer unpublished draft");
+
+    await act(async () => finish());
+
+    expect(screen.getByTestId("doc-edit-input")).toHaveTextContent("newer unpublished draft");
+    expect(Object.values(useDocModeStore.getState().draftsByDocument)).toContainEqual({ kind: "workspace_file", content: "newer unpublished draft", baseContent: "submitted draft" });
+  });
+  it("reveals the exact body-search occurrence in source and returns to preview", async () => {
+    session.current.content = { ...session.current.content, text: "hello\nhello second", has_more: false };
+    openWorkspaceDoc();
+    const doc = useDocModeStore.getState().activeBySession["session-1"];
+    if (!doc) throw new Error("Expected the opened fixture");
+    useDocModeStore.getState().openDoc("session-1", doc, { offset: 6, text: "hello", line: 2 });
+    const view = renderSurface();
+    const mark = await screen.findByText("hello", { selector: "mark" });
+    expect(mark.previousSibling?.textContent).toBe("hello\n");
+    expect(mark.nextSibling?.textContent).toBe(" second");
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(view.container.querySelector("mark")).toBeNull());
+  });
+
+  it("reports a changed source instead of highlighting a different occurrence", async () => {
+    session.current.content = { ...session.current.content, text: "hello\nchanged second", has_more: false };
+    openWorkspaceDoc();
+    const doc = useDocModeStore.getState().activeBySession["session-1"];
+    if (!doc) throw new Error("Expected the opened fixture");
+    useDocModeStore.getState().openDoc("session-1", doc, { offset: 6, text: "hello", line: 2 });
+    const view = renderSurface();
+    expect(await screen.findByRole("alert")).toHaveTextContent(enChat.doc_file_list.content_changed);
+    expect(view.container.querySelector("mark")).toBeNull();
+  });
+
   it("renders the file body resolved from the session task's work_dir", async () => {
     openWorkspaceDoc();
     renderSurface();
@@ -290,6 +338,16 @@ describe("DocModeSurface (workspace_file body + truncation notice)", () => {
       screen.getByText(enChat.doc_mode.truncated.replace("{{total}}", "100 KB")),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("offers the original local file when the desktop path bridge is available", async () => {
+    const openPath = vi.fn().mockResolvedValue({ ok: true });
+    Object.defineProperty(window, "desktopAPI", { configurable: true, value: { openPath } });
+    openWorkspaceDoc();
+    renderSurface();
+    await screen.findByText("hello");
+    fireEvent.click(screen.getByRole("button", { name: "Open original file" }));
+    expect(openPath).toHaveBeenCalledWith("/work/src/app.ts");
   });
 
   it("hides the truncation notice when the preview is complete", async () => {
@@ -522,6 +580,9 @@ describe("DocModeSurface (requirement-doc human edit)", () => {
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
     expect(beforeUnload.defaultPrevented).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByTestId("doc-edit-input")).toHaveTextContent("recoverable draft");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(useDocModeStore.getState().activeBySession["session-1"]).toBeNull();

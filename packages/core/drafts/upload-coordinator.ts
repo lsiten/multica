@@ -52,6 +52,10 @@ export interface StartUploadArgs {
 }
 
 const controllers = new Map<string, AbortController>();
+// Keep the original request arguments after a non-abort failure so the same
+// draft placeholder can retry without asking the user to pick the file again.
+// The File object remains in memory only; a reload still requires a new pick.
+const requests = new Map<string, StartUploadArgs>();
 
 /**
  * Start an upload owned by this module. Returns immediately; the outcome is
@@ -67,6 +71,13 @@ export function startUpload({
   onSettled,
 }: StartUploadArgs): void {
   const controller = new AbortController();
+  requests.set(clientUploadId, {
+    clientUploadId,
+    file,
+    api,
+    ctx,
+    onSettled,
+  });
   controllers.set(clientUploadId, controller);
 
   void (async () => {
@@ -80,6 +91,7 @@ export function startUpload({
         },
         controller.signal,
       );
+      requests.delete(clientUploadId);
       onSettled({ clientUploadId, status: "uploaded", attachment });
     } catch (err) {
       // An abort is not a failure: leave the placeholder untouched. It stays
@@ -87,6 +99,7 @@ export function startUpload({
       // load. Every other error surfaces.
       if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
         logger.info("upload aborted", { clientUploadId });
+        requests.delete(clientUploadId);
         return;
       }
       onSettled({
@@ -107,9 +120,23 @@ export function startUpload({
 /** Abort a single tracked upload, if present. */
 export function abortUpload(clientUploadId: string): void {
   const controller = controllers.get(clientUploadId);
+  requests.delete(clientUploadId);
   if (!controller) return;
   controllers.delete(clientUploadId);
   controller.abort();
+}
+
+/** True while a failed upload still has its in-memory File available to retry. */
+export function canRetryUpload(clientUploadId: string): boolean {
+  return requests.has(clientUploadId) && !controllers.has(clientUploadId);
+}
+
+/** Retry a failed upload with the same file and client upload id. */
+export function retryUpload(clientUploadId: string): boolean {
+  const request = requests.get(clientUploadId);
+  if (!request || controllers.has(clientUploadId)) return false;
+  startUpload(request);
+  return true;
 }
 
 /**
@@ -123,6 +150,7 @@ export function abortAll(): void {
     controller.abort();
   }
   controllers.clear();
+  requests.clear();
 }
 
 /** Test-only: number of uploads currently tracked. */

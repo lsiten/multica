@@ -574,6 +574,10 @@
     "serving_count_other": "{{count}} agents",
     "diagnostics_title": "Diagnostics",
     "desktop": {
+      "recheck": "Vérifier à nouveau",
+      "offline": "Connectez le runtime pour vérifier l’accès au bureau.",
+      "checking": "Vérification de l’accès au bureau…",
+      "unchecked": "L’accès au bureau n’a pas été vérifié.",
       "title": "Contrôle du bureau",
       "version": "Outil",
       "version_value": "agent-desktop {{version}}",
@@ -2531,6 +2535,10 @@
     }
   },
   "usage": {
+    "measurement": "{{tz}} · récupéré le {{time}}",
+    "billing_boundary": "Les coûts en USD reposent sur l’usage déclaré et les tarifs des modèles. Les crédits fournisseur sont affichés par exécution, sans conversion en USD ici. Ce rapport n’est pas une facture.",
+    "load_failed": "Impossible d’actualiser l’usage. Les valeurs affichées proviennent de la dernière récupération réussie.",
+    "retry": "Réessayer",
     "period_label": "Période",
     "kpi_cost_label": "Coût · {{days}} j",
     "kpi_cost_delta": "{{sign}}{{pct}} % vs préc.",

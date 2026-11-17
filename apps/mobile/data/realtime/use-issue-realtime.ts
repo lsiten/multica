@@ -47,7 +47,6 @@ import {
   invalidateIssueOwnerProjections,
   patchIssueDetail,
   patchIssueLabels,
-  patchIssuesList,
   patchMyIssuesList,
   replaceCommentTimelineEntry,
   removeCommentCascade,
@@ -108,7 +107,6 @@ export function useIssueRealtime(
           if (payload.issue.id !== issueId) return;
           patchIssueDetail(qc, wsId, payload.issue);
           patchMyIssuesList(qc, wsId, payload.issue);
-          patchIssuesList(qc, wsId, payload.issue);
         }),
         ws.on("issue:deleted", (payload) => {
           if (payload.issue_id !== issueId) return;

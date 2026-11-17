@@ -32,6 +32,8 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { stripChannelMediaMarkers } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
+import { ApiError } from "@/data/api";
 import { DescriptionField } from "@/components/issue/description-field";
 import { MentionSuggestionBar } from "@/components/issue/mention-suggestion-bar";
 import { MOBILE_PLACEHOLDER_COLOR } from "@/components/ui/input-tokens";
@@ -82,6 +84,7 @@ export default function EditIssue() {
     seeded && title.trim().length > 0 && dirty && !update.isPending;
 
   const onCancel = useCallback(() => {
+    if (update.isPending) return;
     if (!dirty) {
       router.back();
       return;
@@ -98,7 +101,7 @@ export default function EditIssue() {
         },
       ],
     );
-  }, [dirty, t]);
+  }, [dirty, t, update.isPending]);
 
   const onSave = useCallback(() => {
     if (!canSave) return;
@@ -146,7 +149,7 @@ export default function EditIssue() {
 
   return (
     <>
-      <Stack.Screen options={{ headerLeft, headerRight }} />
+      <Stack.Screen options={{ headerLeft, headerRight, gestureEnabled: !dirty && !update.isPending }} />
       <KeyboardAvoidingView
         className="flex-1 bg-background"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -156,7 +159,14 @@ export default function EditIssue() {
           contentContainerClassName="px-4 pt-4 pb-6 gap-4"
           keyboardShouldPersistTaps="handled"
         >
-          {!detail.data ? (
+          {!detail.data && detail.isError ? (
+            <View className="gap-3">
+              <Text accessibilityRole="alert" className="text-sm text-destructive">
+                {detail.error instanceof ApiError && (detail.error.status === 403 || detail.error.status === 404) ? t("common:states.record_unavailable") : t("common:states.load_failed")}
+              </Text>
+              <Button variant="outline" onPress={() => { void detail.refetch(); }} disabled={detail.isFetching}><Text>{t("common:actions.retry")}</Text></Button>
+            </View>
+          ) : !detail.data ? (
             <Text className="text-sm text-muted-foreground">
               {t("common:states.loading")}
             </Text>

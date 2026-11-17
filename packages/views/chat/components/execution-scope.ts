@@ -127,8 +127,12 @@ export function resolveChatExecutionScope({
   );
   const defaultSquadId =
     activeSquad?.id ?? null;
-  const defaultProjectId = hasAgentNarrowScope
-    ? (availableProjects[0]?.id ?? null)
+  // A binding narrows what the agent may use, but it does not mean the user
+  // chose one of several projects. Only a single available project is safe to
+  // infer; multiple projects must remain explicit so array ordering cannot
+  // silently select the wrong workspace context.
+  const defaultProjectId = availableProjects.length === 1
+    ? availableProjects[0]?.id ?? null
     : null;
 
   return {

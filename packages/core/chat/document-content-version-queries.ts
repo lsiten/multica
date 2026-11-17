@@ -7,6 +7,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
+import { issueKeys } from "../issues/queries";
 import {
   type DocumentContentVersion,
   type DocumentContentVersionList,
@@ -70,7 +71,7 @@ export function useDocumentContentVersionCurrent(wsId: string, ref: DocumentRef,
 export function documentContentVersionsOptions(
   wsId: string,
   ref: DocumentRef,
-  options?: { loadAttachments?: boolean },
+  options?: { loadAttachments?: boolean; enabled?: boolean },
 ) {
   return queryOptions({
     queryKey: documentContentVersionKeys.list(wsId, ref),
@@ -78,12 +79,12 @@ export function documentContentVersionsOptions(
       ref.kind === "attachment"
         ? api.listAttachmentContentVersions(ref.id, signal)
         : api.listIssueContentVersions(ref.id, signal),
-    enabled: !!ref.id && !!wsId && ref.kind !== "workspace_file" && (ref.kind !== "attachment" || options?.loadAttachments !== false),
+    enabled: options?.enabled !== false && !!ref.id && !!wsId && ref.kind !== "workspace_file" && (ref.kind !== "attachment" || options?.loadAttachments !== false),
     staleTime: 10_000,
   });
 }
 
-export function useDocumentContentVersions(wsId: string, ref: DocumentRef, options?: { loadAttachments?: boolean }) {
+export function useDocumentContentVersions(wsId: string, ref: DocumentRef, options?: { loadAttachments?: boolean; enabled?: boolean }) {
   return useQuery(documentContentVersionsOptions(wsId, ref, options));
 }
 
@@ -129,6 +130,7 @@ export function useRecordDocumentContentVersion(wsId: string) {
     },
     onSuccess: (_result, { ref }) => {
       client.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, ref) });
+      if (ref.kind === "issue") client.invalidateQueries({ queryKey: issueKeys.detail(wsId, ref.id) });
       if (ref.kind === "attachment") {
         client.invalidateQueries({ queryKey: ["attachment-text-content", wsId, ref.id] });
       }
@@ -158,6 +160,7 @@ export function useRollbackDocumentContentVersion(wsId: string) {
     },
     onSuccess: (_result, { ref }) => {
       client.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, ref) });
+      if (ref.kind === "issue") client.invalidateQueries({ queryKey: issueKeys.detail(wsId, ref.id) });
       if (ref.kind === "attachment") {
         client.invalidateQueries({ queryKey: ["attachment-text-content", wsId, ref.id] });
       }

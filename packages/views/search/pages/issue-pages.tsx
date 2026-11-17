@@ -34,6 +34,7 @@ import { PaletteGroup, ROW_CLASS, ROW_ICON_CLASS, RowCheck, RowHint } from "../r
 import { AgentPresenceText, ActorRow, IssueResultRow } from "../result-rows";
 import { useActorDirectory } from "../use-actor-directory";
 import { useServerSearch } from "../use-server-search";
+import { SearchFailure } from "../search-failure";
 import type { IssueTarget } from "../types";
 import { paletteColor } from "@multica/core/appearance";
 
@@ -480,7 +481,7 @@ export function IssueParentPage({ target, query }: { target: IssueTarget; query:
   const palette = usePalette();
   const writer = useIssueTargetWriter(target);
   const selectedIds = useMemo(() => new Set(writer.issues.map((issue) => issue.id)), [writer.issues]);
-  const { results, isLoading, stale } = useServerSearch(query, { projects: false });
+  const { results, isLoading, stale, error, retry } = useServerSearch(query, { projects: false });
   const candidates = results.issues.filter((issue) => !selectedIds.has(issue.id));
   const hasParent = writer.issues.some((issue) => !!issue.parent_issue_id);
 
@@ -522,7 +523,8 @@ export function IssueParentPage({ target, query }: { target: IssueTarget; query:
           ))}
         </PaletteGroup>
       )}
-      {!isLoading && !stale && query.trim() && candidates.length === 0 && (
+      {error && <SearchFailure retry={retry} />}
+      {!isLoading && !error && !stale && query.trim() && candidates.length === 0 && (
         <div className="py-8 text-center text-body text-muted-foreground">{t(($) => $.empty.no_results)}</div>
       )}
     </>

@@ -28,15 +28,17 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowUpRight,
-  Copy,
   RotateCw,
 } from "@multica/ui/icons";
 import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@multica/core/chat/queries";
-import { canContinueChatFailure } from "@multica/core/chat";
+import { canContinueChatFailure, useChatReadingPositionStore } from "@multica/core/chat";
+import { chatReadingScope, type ChatReadingContext } from "./chat-reading-position";
+import { useChatReadingTarget } from "./use-chat-reading-target";
+import { useChatReadingCapture } from "./use-chat-reading-capture";
+import { ChatReadingStatus } from "./chat-reading-status";
 import { RichContent } from "../../rich-content";
 import { RichContentScrollRootProvider } from "../../rich-content/scroll-root";
-import { copyText } from "@multica/ui/lib/clipboard";
 import { AttachmentList } from "../../issues/components/comment-card";
 import { PreviewSequenceProvider, collectPreviewSequence } from "../../editor";
 import type { AgentAvailability } from "@multica/core/agents";
@@ -56,20 +58,28 @@ import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { FOLLOW_EDGE_THRESHOLD } from "../../common/task-transcript/transcript-follow";
 import { LIVE_END_ROW_ATTR, useStickToBottom } from "./stick-to-bottom";
 import { JumpToLiveEndButton, useJumpToLiveEnd } from "./jump-to-live-end";
-import { formatElapsedMs } from "../lib/format";
 import {
   canonicalAnswerText,
-  extractCopyText,
   splitTimeline,
 } from "../lib/copy-text";
 import { stripChatQuickActionsProtocol } from "../lib/quick-actions";
 import { useT } from "../../i18n";
 import { GroupMessageAuthor } from "./group-message-author";
 import { isAnnotatableChatMessage, type ChatAnnotations } from "./use-chat-annotations";
+import { useChatSearchMatch, type ChatSearchMatch } from "./use-chat-search-match";
+import { SentReferenceSources } from "./sent-reference-sources";
+import { ChatMessageActions, type ChatMessageActionCallbacks } from "./chat-message-actions";
+import { ChatMessageFooter, ElapsedCaption } from "./chat-message-footer";
+import type { SentDocumentReference, SentMessageReference } from "@multica/core/chat";
 
 // ─── Public component ────────────────────────────────────────────────────
 
-interface ChatMessageListProps {
+interface ChatMessageListProps extends ChatMessageActionCallbacks {
+  readonly readingContext?: ChatReadingContext;
+  referenceWorkspaceId?: string;
+  onOpenDocumentReference?: (reference: SentDocumentReference) => void;
+  onOpenMessageReference?: (reference: SentMessageReference) => void;
+  searchMatch?: ChatSearchMatch;
   /** Pause bottom-stick effects while a closing floating window fades out. */
   active?: boolean;
   /**
@@ -199,7 +209,14 @@ const LIST_COMPONENTS: Components<ChatRenderItem, ChatListContext> = {
 };
 
 export function ChatMessageList({
+  referenceWorkspaceId,
+  onOpenDocumentReference,
+  onOpenMessageReference,
+  onQuoteMessage,
+  onStartDiscussion,
+  searchMatch,
   active = true,
+  readingContext,
   revealKey = null,
   onRevealed,
   messages,
@@ -225,6 +242,8 @@ export function ChatMessageList({
     setScrollContainerEl(node);
   }, []);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const readingScope = chatReadingScope(readingContext);
+  const [initialReading] = useState(() => readingScope ? useChatReadingPositionStore.getState().positions[readingScope] : undefined);
   // The bottom-stick corrects through Virtuoso, never by writing `scrollTop`
   // on the container: `scrollHeight` is an estimate over the unrendered rows,
   // so the pixel bottom moves as Virtuoso measures (see stick-to-bottom.ts).
@@ -236,10 +255,8 @@ export function ChatMessageList({
     pinToLiveEnd,
     active,
     revealKey,
+    initialReading?.kind === "message" || !!searchMatch,
   );
-  useEffect(() => {
-    if (active && hasReachedLiveEnd) onRevealed?.();
-  }, [active, hasReachedLiveEnd, onRevealed]);
   // Soft edge fade hinting more content above/below. Kept small so it barely
   // grazes full-bleed previews (image / HTML) at the edges.
   const fadeStyle = useScrollFade(scrollRef, 16);
@@ -320,17 +337,31 @@ export function ChatMessageList({
   }, [messages, hasLive, pendingTaskId]);
 
   const revealSourceRef = annotations?.revealSourceRef;
+  const readingRows = useMemo(() => renderItems.flatMap((item, index) => item.kind === "message" ? [{ messageId: item.message.id, createdAt: item.message.created_at, index }] : []), [renderItems]);
+  const reading = useChatReadingTarget({ context: readingContext, initial: initialReading, rows: readingRows, container: scrollContainerEl, list: virtuosoRef, active, explicitNavigation: searchMatch, disengage, pin: pinToLiveEnd });
+  const cancelReadingRestore = reading.cancel;
+  const followReadingLive = reading.followLatest;
+  const takeReadingOwnership = useChatReadingCapture({ scope: readingScope, container: scrollContainerEl, active, ready: hasReachedLiveEnd && reading.ready, rows: readingRows, following: isFollowing, onVisible: reading.restore, onNavigate: reading.cancel });
+  const navigateToMessage = useCallback(() => { cancelReadingRestore(); takeReadingOwnership(); disengage(); }, [cancelReadingRestore, takeReadingOwnership, disengage]);
+  useEffect(() => { if (active && hasReachedLiveEnd && reading.ready) onRevealed?.(); }, [active, hasReachedLiveEnd, reading.ready, onRevealed]);
+  useChatSearchMatch({
+    target: searchMatch,
+    index: renderItems.findIndex((item) => item.kind === "message" && item.message.id === searchMatch?.messageId),
+    container: scrollContainerEl,
+    list: virtuosoRef,
+    disengage: navigateToMessage,
+  });
   useEffect(() => {
     if (!revealSourceRef) return;
     revealSourceRef.current = (messageId) => {
       const index = renderItems.findIndex((item) => item.kind === "message" && item.message.id === messageId);
       if (index < 0) return false;
-      disengage();
+      navigateToMessage();
       virtuosoRef.current?.scrollToIndex({ index, align: "center" });
       return true;
     };
     return () => { revealSourceRef.current = null; };
-  }, [revealSourceRef, renderItems, disengage]);
+  }, [revealSourceRef, renderItems, navigateToMessage]);
 
   const firstIndex = renderItems.length > 0 ? firstItemIndex : 0;
   const tailItem = renderItems[renderItems.length - 1];
@@ -344,6 +375,8 @@ export function ChatMessageList({
     tailKey,
     tailIsReply: tailItem?.kind === "live" || tailItem?.message.role === "assistant",
   });
+  const jumpToEnd = jumpToLiveEnd.jump;
+  const jumpToLatest = useCallback(() => { followReadingLive(); jumpToEnd(); }, [followReadingLive, jumpToEnd]);
 
   const listContext: ChatListContext = {
     isFetchingOlderMessages,
@@ -378,6 +411,7 @@ export function ChatMessageList({
      *  pinned above the composer instead of scrolling with the rows. */}
     <div ref={annotations?.cardRef} {...annotations?.captureProps} className="relative flex min-h-0 flex-1 flex-col">
     {annotations?.popup}
+    <ChatReadingStatus pending={!reading.ready} failed={reading.failed} onRetry={reading.retry} onLatest={jumpToLatest} />
     <div
       ref={setScrollContainerRef}
       data-tab-scroll-root
@@ -389,7 +423,7 @@ export function ChatMessageList({
       // container paints nothing for that whole window anyway — the rows are
       // not measured yet — so this costs no visible time and spares the
       // reader a frame of the wrong messages (see stick-to-bottom.ts).
-      className={cn("flex-1 overflow-y-auto", CHAT_GUTTER, !hasReachedLiveEnd && "invisible")}
+      className={cn("flex-1 overflow-y-auto", CHAT_GUTTER, (!hasReachedLiveEnd || !reading.ready) && "invisible")}
     >
       {/* Already inside the gutter + column, so this pre-mount frame renders the
        *  skeleton BODY rather than <ChatMessageSkeleton>, which brings its own
@@ -408,16 +442,9 @@ export function ChatMessageList({
         customScrollParent={scrollContainerEl}
         data={renderItems}
         firstItemIndex={firstIndex}
-        // Open pinned to the newest message. The list is remounted per session
-        // (`key={activeSessionId}` upstream), so this initial position is
-        // re-applied on every session switch. Without it a fresh Virtuoso
-        // renders from the top and the only thing that can scroll it down is
-        // `followOutput`, which reacts to post-mount data growth — leaving the
-        // landing spot racy: cached sessions resolve synchronously and stick at
-        // the top, while fetched ones sometimes catch a growth tick and land at
-        // the bottom. `align: "end"` bottom-aligns even a last message taller
-        // than the viewport, so switching sessions always shows the latest reply.
-        initialTopMostItemIndex={{ index: "LAST", align: "end" }}
+        // Start near the saved anchor before measured restoration corrects it.
+        // A conversation without a bookmark opens at the newest message.
+        initialTopMostItemIndex={initialReading?.kind === "message" ? { index: Math.max(0, readingRows.find((row) => row.messageId === initialReading.messageId)?.index ?? 0), align: "start", offset: initialReading.offset } : { index: "LAST", align: "end" }}
         increaseViewportBy={{ top: 400, bottom: 600 }}
         atBottomThreshold={FOLLOW_EDGE_THRESHOLD}
         // Follow rapid streamed output only while Virtuoso says the reader is
@@ -445,9 +472,11 @@ export function ChatMessageList({
           <div
             className={cn(CHAT_COLUMN, "py-2")}
             data-mc="chat-message"
+            data-chat-message-id={item.kind === "message" ? item.message.id : undefined}
             data-role={item.kind === "live" ? "assistant" : item.message.role}
             {...(item.key === liveEndKey ? { [LIVE_END_ROW_ATTR]: "" } : {})}
           >
+            {item.kind === "message" && item.message.role === "user" && <SentReferenceSources content={item.message.content} workspaceId={referenceWorkspaceId} onOpen={onOpenDocumentReference} onOpenMessage={onOpenMessageReference} />}
             <MessageBubble
               item={item}
               isPending={!!pendingTaskId && item.taskId === pendingTaskId}
@@ -464,17 +493,20 @@ export function ChatMessageList({
                 ? inputMessageByTaskId.get(item.message.input_task_id ?? item.message.task_id)
                 : undefined}
               annotatable={!!annotations}
+              onQuoteMessage={onQuoteMessage}
+              onStartDiscussion={onStartDiscussion}
             />
+            {item.kind === "message" && item.message.role === "user" && (!pendingTaskId || item.taskId !== pendingTaskId) && <ChatMessageActions message={item.message} onQuoteMessage={onQuoteMessage} onStartDiscussion={onStartDiscussion} />}
           </div>
         )}
       />
       </RichContentScrollRootProvider>
       )}
     </div>
-    {jumpToLiveEnd.visible && (
+    {reading.ready && jumpToLiveEnd.visible && (
       <JumpToLiveEndButton
         hasNewReply={jumpToLiveEnd.hasNewReply}
-        onClick={jumpToLiveEnd.jump}
+        onClick={jumpToLatest}
         className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2"
       />
     )}
@@ -541,6 +573,8 @@ const MessageBubble = memo(function MessageBubble({
   failureActionsDisabled,
   failureInput,
   annotatable,
+  onQuoteMessage,
+  onStartDiscussion,
 }: {
   item: ChatRenderItem;
   isPending: boolean;
@@ -555,6 +589,8 @@ const MessageBubble = memo(function MessageBubble({
   failureActionsDisabled: boolean;
   failureInput?: ChatMessage;
   annotatable: boolean;
+  onQuoteMessage?: ChatMessageActionCallbacks["onQuoteMessage"];
+  onStartDiscussion?: ChatMessageActionCallbacks["onStartDiscussion"];
 }) {
   // The live row and the persisted assistant row both land here under one key,
   // and both render <AssistantMessage> — same component type, same position —
@@ -622,6 +658,8 @@ const MessageBubble = memo(function MessageBubble({
       failureActionsDisabled={failureActionsDisabled}
       failureInput={failureInput}
       sourceId={annotatable && isAnnotatableChatMessage(message) ? message.id : undefined}
+      onQuoteMessage={onQuoteMessage}
+      onStartDiscussion={onStartDiscussion}
     />
   );
 });
@@ -658,6 +696,8 @@ function AssistantMessage({
   failureActionsDisabled,
   failureInput,
   sourceId,
+  onQuoteMessage,
+  onStartDiscussion,
 }: {
   taskId: string | null;
   message?: ChatMessage;
@@ -675,6 +715,8 @@ function AssistantMessage({
   failureInput?: ChatMessage;
   /** Annotation source id for the settled answer text. */
   sourceId?: string;
+  onQuoteMessage?: ChatMessageActionCallbacks["onQuoteMessage"];
+  onStartDiscussion?: ChatMessageActionCallbacks["onStartDiscussion"];
 }) {
   const canFetchTaskMessages = isTaskMessageTaskId(taskId);
 
@@ -763,11 +805,13 @@ function AssistantMessage({
             attachments={message.attachments}
             content={settledContent ?? message.content}
           />
-          <MessageFooter
+          <ChatMessageFooter
             message={message}
             timeline={timeline}
             isPending={isPending}
             transformContent={transformContent}
+            onQuoteMessage={onQuoteMessage}
+            onStartDiscussion={onStartDiscussion}
           />
           {onQuickAction && showStarterCards ? (
             // The opening's starter cards own this turn's suggestion strip
@@ -981,106 +1025,6 @@ function NoResponseNotice() {
   );
 }
 
-// Inline footer row beneath the assistant reply: "Replied in 38s · [Copy]".
-// Action icons live here (not as a hover-floating overlay) so they're
-// discoverable on first read and don't shift content. Buttons stay quiet
-// (muted) until hover. Copy is suppressed during streaming because the
-// final text is still being appended.
-function MessageFooter({
-  message,
-  timeline,
-  isPending,
-  transformContent,
-}: {
-  message: ChatMessage;
-  timeline: ChatTimelineItem[];
-  isPending: boolean;
-  transformContent?: (content: string) => string;
-}) {
-  // A no_response turn has nothing to copy, and its caption uses a neutral
-  // "Finished in Xs" instead of "Replied in Xs" (MUL-4351).
-  const isNoResponse = message.message_kind === "no_response";
-  const copyContent = extractCopyText(message, timeline, transformContent);
-  const showCopy = !isPending && !isNoResponse && copyContent.trim().length > 0;
-  if (message.elapsed_ms == null && !showCopy) return null;
-  return (
-    <div className="flex items-center gap-1.5">
-      {message.elapsed_ms != null && (
-        <ElapsedCaption
-          variant={isNoResponse ? "finished" : "replied"}
-          elapsedMs={message.elapsed_ms}
-        />
-      )}
-      {showCopy && (
-        <MessageCopyButton content={copyContent} />
-      )}
-    </div>
-  );
-}
-
-function MessageCopyButton({
-  content,
-}: {
-  content: string;
-}) {
-  const { t } = useT("chat");
-  const handleCopy = async () => {
-    if (await copyText(content)) {
-      toast.success(t(($) => $.message_list.copied_toast));
-    } else {
-      toast.error(t(($) => $.message_list.copy_failed_toast));
-    }
-  };
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="text-faint-foreground hover:text-foreground"
-            onClick={handleCopy}
-            aria-label={t(($) => $.message_list.copy_action)}
-          />
-        }
-      >
-        <Copy />
-      </TooltipTrigger>
-      <TooltipContent side="top">
-        {t(($) => $.message_list.copy_action)}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-// Persisted "Replied in 38s" / "Failed after 12s" line under the assistant
-// bubble. Reads `elapsed_ms` straight off the chat_message — server computes
-// it once at task completion, so this caption is identical across reloads
-// and devices. Skipped silently when null (legacy messages predating
-// migration 063 + user messages).
-function ElapsedCaption({
-  variant,
-  elapsedMs,
-  className,
-}: {
-  variant: "replied" | "failed" | "finished";
-  elapsedMs: number;
-  className?: string;
-}) {
-  const { t } = useT("chat");
-  const elapsed = formatElapsedMs(elapsedMs);
-  const text =
-    variant === "replied"
-      ? t(($) => $.message_list.replied_in, { elapsed })
-      : variant === "finished"
-        ? t(($) => $.message_list.finished_in, { elapsed })
-        : t(($) => $.message_list.failed_after, { elapsed });
-  return (
-    <div className={cn("text-caption text-muted-foreground", className)}>
-      {text}
-    </div>
-  );
-}
 
 function FailureBubble({
   reason,

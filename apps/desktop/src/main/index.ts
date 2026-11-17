@@ -28,6 +28,8 @@ import { devToolbarPreferencesPath, installDevToolbarToggle } from "./dev-toolba
 import { handleAppShortcut } from "./keyboard-shortcuts";
 import { installNavigationGestures } from "./navigation-gestures";
 import { installNavigationGuard } from "./navigation-guard";
+import { installNavigationConfirmation } from "./navigation-confirmation";
+import { installWindowCloseGuard, installWindowCloseIPC } from "./window-close-guard";
 import { installWindowForegroundEvents, windowForeground } from "./window-foreground";
 import { createRendererWebPreferences } from "./renderer-web-preferences";
 import { getAppVersion } from "./app-version";
@@ -523,6 +525,7 @@ function createMainWindow(saved: WindowState = {}): BrowserWindow {
     // macOS Dock click) reopens it; closing any other window forgets it.
     if (mainWindows.size === 1) saveWindowSession();
   });
+  installWindowCloseGuard(window);
 
   window.on("closed", () => {
     mainWindows.remove(window);
@@ -861,6 +864,12 @@ if (!gotTheLock) {
     ipcMain.on("window:close", (event) => {
       BrowserWindow.fromWebContents(event.sender)?.close();
     });
+    installNavigationConfirmation();
+    installWindowCloseIPC({ platform: process.platform, onCloseDeclined: () => {
+      if (!windowSessionFrozen) return;
+      windowSessionFrozen = false;
+      saveWindowSession();
+    } });
 
     ipcMain.handle("window:open-issue", (event, request: unknown) => {
       if (!BrowserWindow.fromWebContents(event.sender)) {

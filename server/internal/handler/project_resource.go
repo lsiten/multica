@@ -943,6 +943,18 @@ func (h *Handler) DeleteProjectResource(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "detach this resource from application configurations and stop its running instances before deleting", "code": "application_resource_in_use", "project_id": uuidToString(project.ID), "resource_id": uuidToString(resource.ID)})
 		return
 	}
+	if _, err := qtx.LockDocumentCommentProjectResourceForDelete(r.Context(), db.LockDocumentCommentProjectResourceForDeleteParams{ID: resource.ID, WorkspaceID: resource.WorkspaceID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to lock project resource")
+		return
+	}
+	if err := qtx.DeleteDocumentCommentsForProjectResource(r.Context(), db.DeleteDocumentCommentsForProjectResourceParams{WorkspaceID: resource.WorkspaceID, ResourceID: resource.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete document discussions")
+		return
+	}
+	if err := qtx.DeleteWorkspaceFileResourcesForOwner(r.Context(), db.DeleteWorkspaceFileResourcesForOwnerParams{WorkspaceID: resource.WorkspaceID, OwnerKind: "project_resource", OwnerID: resource.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete project directory file identities")
+		return
+	}
 	if err := qtx.DeleteProjectResource(r.Context(), resource.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete project resource")
 		return

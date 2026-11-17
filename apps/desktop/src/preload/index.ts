@@ -3,6 +3,9 @@ declare global { interface Window { localVoiceAPI?: LocalVoiceAPI } }
 import { exposeRuntimeMirrorAPI } from "./runtime-mirror";
 import { RUNTIME_MIRROR_ARGUMENT, RUNTIME_MIRROR_CHANNEL, type RuntimeMirrorWindowRequest } from "../shared/runtime-mirror-window";
 import { contextBridge, ipcRenderer } from "electron";
+import { NAVIGATION_CONFIRM_CHANNEL } from "../shared/navigation-confirmation";
+import { installWindowCloseCheck } from "./window-close";
+import type { NavigationConfirmation } from "@multica/core/platform";
 import { electronAPI } from "@electron-toolkit/preload";
 import type { RuntimeConfig, RuntimeConfigResult } from "../shared/runtime-config";
 import type { FreezeBreadcrumb } from "../shared/freeze-breadcrumb";
@@ -276,6 +279,8 @@ const desktopAPI = {
   /** Open the OS folder picker and return the chosen absolute path. */
   pickDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick", defaultPath),
+  confirmNavigation: (request: NavigationConfirmation) =>
+    ipcRenderer.sendSync(NAVIGATION_CONFIRM_CHANNEL, request) === true,
   /** Validate that a path is an existing readable+writable directory. */
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),
@@ -535,6 +540,7 @@ const updaterAPI = {
     ipcRenderer.invoke("updater:check"),
 };
 
+if (!process.argv.some((argument) => argument.startsWith(RUNTIME_MIRROR_ARGUMENT))) installWindowCloseCheck();
 if (process.argv.some((argument) => argument.startsWith(RUNTIME_MIRROR_ARGUMENT))) {
   exposeRuntimeMirrorAPI();
 } else if (process.contextIsolated) {

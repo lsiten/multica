@@ -1,6 +1,7 @@
 import { infiniteQueryOptions, queryOptions, useQuery, type QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { api } from "../api";
+import { workspaceFileOperationsCapabilitySchema } from "../types/workspace-file-operation";
 import type { TaskMessagePayload } from "../types/events";
 import type {
   ChatQuickActionsFailureState,
@@ -22,6 +23,10 @@ import type {
  * failure, then silently swap the pills in afterwards.
  */
 export const QUICK_ACTIONS_PENDING_TIMEOUT_MS = 12_000;
+
+export function workspaceFileOperationCapabilitiesOptions() {
+  return queryOptions({ queryKey: ["workspace-file-operations-capability"], queryFn: async () => workspaceFileOperationsCapabilitySchema.parse(await api.getConfig()), staleTime: 60_000, retry: false });
+}
 
 // Reconcile pending-task state even when the realtime connection or a daemon
 // terminal report is temporarily unavailable. This is intentionally short

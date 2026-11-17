@@ -92,6 +92,16 @@ func (s *environmentProcessService) reviewMutationScope(ctx context.Context, inp
 	}
 	scope.addPath(path)
 	scope.addPath(root)
+	if input.Action == "file_operation" || input.FileOperationID != "" {
+		namespace := workspaceFileStorageNamespace(input.WorkspaceID, path)
+		scope.addKey("file-operations:" + namespace)
+		storage := filepath.Join(s.daemon.cfg.WorkspacesRoot, namespace)
+		if _, err := os.Lstat(storage); err == nil {
+			scope.addPath(storage)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			scope.Global = true
+		}
+	}
 	scope.addDirectoryBindings(root)
 	for _, supplied := range input.Paths {
 		if filepath.IsAbs(supplied) {

@@ -5,6 +5,7 @@ import {
   type NavigationAdapter,
 } from "@multica/views/navigation";
 import { useAuthStore } from "@multica/core/auth";
+import { runGuardedNavigation } from "@multica/core/platform";
 import { workspaceSlugForPath, paths } from "@multica/core/paths";
 import {
   useTabStore,
@@ -138,15 +139,13 @@ export function routeIssueDeepLinkPath(path: string): void {
   const store = useTabStore.getState();
   const slug = workspaceSlugForPath(path);
   if (!slug) return;
-  if (slug !== store.activeWorkspaceSlug) {
-    if (handOffToWorkspaceWindow(slug, path, { navigate: true })) return;
-    store.switchWorkspace(slug, path);
-  } else {
-    store.openTab(path, "", { activate: true });
-  }
-  // Ordinary opens restore a reused tab's view. A deep link must also apply
-  // this address after deduplication, through the session's history flow.
-  useTabStore.getState().navigateActiveSession(path);
+  if (slug !== store.activeWorkspaceSlug && handOffToWorkspaceWindow(slug, path, { navigate: true })) return;
+  runGuardedNavigation(() => {
+    if (slug !== store.activeWorkspaceSlug) store.switchWorkspace(slug, path);
+    else store.openTab(path, "", { activate: true });
+    // Apply the address after deduplication, including a new comment target.
+    useTabStore.getState().navigateActiveSession(path);
+  });
 }
 
 /**

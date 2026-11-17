@@ -8,8 +8,13 @@ import { agentListOptions, memberListOptions } from "@multica/core/workspace/que
 import { projectListOptions } from "@multica/core/projects/queries";
 import { renderWithI18n } from "../test/i18n";
 import { WorkflowEditorPage } from "./workflow-editor-page";
+import type { IssueWorkflow } from "@multica/core/types";
+import { runGuardedNavigation } from "@multica/core/platform";
+import { NavigationProvider, type NavigationAdapter } from "../navigation";
 
-const { createWorkflow } = vi.hoisted(() => ({ createWorkflow: vi.fn() }));
+const { createWorkflow, fixture } = vi.hoisted(() => ({ createWorkflow: vi.fn(), fixture: { workflows: new Array<IssueWorkflow>() } }));
+
+const adapter: NavigationAdapter = { push: () => {}, replace: () => {}, back: () => {}, pathname: "/acme/settings", searchParams: new URLSearchParams(), hash: "", getShareableUrl: (path) => path };
 
 vi.mock("@multica/core/api", () => ({ api: {}, ApiError: class extends Error {}, clientErrorMessage: () => null }));
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
@@ -18,7 +23,7 @@ vi.mock("@multica/core/issue-statuses/hooks", () => ({ useIssueStatuses: () => b
 vi.mock("@multica/core/workspace/hooks", () => ({ useActorName: () => ({ getActorName: () => "Builder" }) }));
 vi.mock("@multica/core/issue-workflows", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/issue-workflows")>()),
-  useIssueWorkflows: () => ({ workflows: [], isLoaded: true }),
+  useIssueWorkflows: () => ({ workflows: fixture.workflows, isLoaded: true }),
   useCreateIssueWorkflow: () => ({ mutateAsync: createWorkflow, isPending: false }),
   useUpdateIssueWorkflow: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteIssueWorkflow: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -41,10 +46,57 @@ function renderEditor(props: { template?: "content"; canCreateStatus?: boolean }
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   createWorkflow.mockReset();
+  fixture.workflows = [];
 });
 
 describe("WorkflowEditorPage", () => {
+  it("allows the committed create to navigate without a discard confirmation", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    createWorkflow.mockResolvedValue({ id: "created-workflow" });
+    const opened = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(projectListOptions("ws-1").queryKey, { projects: [], total: 0 });
+    renderWithI18n(<NavigationProvider value={adapter}><QueryClientProvider client={client}><WorkflowEditorPage workflowId={null} seed={null} canEdit onBack={() => {}} onOpen={(target) => { runGuardedNavigation(() => opened(target)); }} /></QueryClientProvider></NavigationProvider>);
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Release" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(opened).toHaveBeenCalledExactlyOnceWith({ id: "created-workflow" }));
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+    client.clear();
+  });
+  it.each(["Workflows", "Duplicate as new workflow"])("confirms a dirty %s navigation only once", (button) => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const workflow: IssueWorkflow = { id: "wf-1", workspace_id: "ws-1", name: "Original", description: "", is_default: false, owner_id: "member-1", steps: ["todo", "done", "cancelled"].map((status_key) => ({ status_key, handler: { type: "none" }, instructions: "" })), project_ids: [], created_at: "2026-11-15T00:00:00Z", updated_at: "2026-11-15T00:00:00.100Z" };
+    fixture.workflows = [workflow];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(projectListOptions("ws-1").queryKey, { projects: [], total: 0 });
+    const navigated = vi.fn();
+    const navigate = () => runGuardedNavigation(navigated);
+    renderWithI18n(<NavigationProvider value={adapter}><QueryClientProvider client={client}><WorkflowEditorPage workflowId="wf-1" seed={null} canEdit onBack={navigate} onOpen={navigate} /></QueryClientProvider></NavigationProvider>);
+    fireEvent.change(screen.getByRole("textbox", { name: "Description" }), { target: { value: "Unsaved" } });
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    expect(navigated).toHaveBeenCalledOnce();
+    expect(confirm).toHaveBeenCalledOnce();
+    confirm.mockRestore();
+    client.clear();
+  });
+  it("preserves an unsaved draft when another editor updates the workflow", () => {
+    const workflow: IssueWorkflow = { id: "wf-1", workspace_id: "ws-1", name: "Original", description: "", is_default: false, owner_id: "member-1", steps: ["todo", "in_progress", "done", "cancelled"].map((status_key) => ({ status_key, handler: { type: "none" }, instructions: "" })), project_ids: [], created_at: "2026-11-15T00:00:00Z", updated_at: "2026-11-15T00:00:00.100Z" };
+    fixture.workflows = [workflow];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(projectListOptions("ws-1").queryKey, { projects: [], total: 0 });
+    const editor = () => <QueryClientProvider client={client}><WorkflowEditorPage workflowId="wf-1" seed={null} canEdit onBack={() => {}} onOpen={() => {}} /></QueryClientProvider>;
+    const view = renderWithI18n(editor());
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Local draft" } });
+
+    fixture.workflows = [{ ...workflow, name: "Remote change", updated_at: "2026-11-15T00:00:00.200Z" }];
+    view.rerender(editor());
+
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Local draft");
+    client.clear();
+  });
   it("edits a new status step's handoff before the save (MUL-8118)", async () => {
     createWorkflow.mockResolvedValue({ id: "wf-1" });
     renderEditor();

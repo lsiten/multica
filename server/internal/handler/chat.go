@@ -412,15 +412,21 @@ type ChatSessionProjectResponse struct {
 	Icon        *string `json:"icon"`
 	Status      string  `json:"status"`
 	Priority    string  `json:"priority"`
+	Role        string  `json:"role"`
+	Reason      string  `json:"reason"`
+	HasFiles    bool    `json:"has_files"`
+	Selectable  bool    `json:"selectable"`
 }
 
 type ChatSessionFilesResponse struct {
-	Directories []ChatProjectDirectoryResponse `json:"directories,omitempty"`
-	WorkspaceID string                         `json:"workspace_id"`
-	ProjectID   *string                        `json:"project_id,omitempty"`
-	Projects    []ChatSessionProjectResponse   `json:"projects,omitempty"`
-	Attachments []AttachmentResponse           `json:"attachments"`
-	Tasks       []ChatSessionFileTaskResponse  `json:"tasks"`
+	Directories       []ChatProjectDirectoryResponse `json:"directories,omitempty"`
+	WorkspaceID       string                         `json:"workspace_id"`
+	ProjectID         *string                        `json:"project_id,omitempty"`
+	SelectedProjectID *string                        `json:"selected_project_id,omitempty"`
+	SelectionRequired bool                           `json:"selection_required"`
+	Projects          []ChatSessionProjectResponse   `json:"projects,omitempty"`
+	Attachments       []AttachmentResponse           `json:"attachments"`
+	Tasks             []ChatSessionFileTaskResponse  `json:"tasks"`
 	// ProjectAttachments and ProjectTasks are additive projections for the
 	// selected project's durable file browser. The existing attachments/tasks
 	// fields remain scoped to the current chat for older clients.
@@ -480,26 +486,63 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list chat projects")
 		return
 	}
-	selectedProjectID := session.ProjectID
-	if rawProjectID := strings.TrimSpace(r.URL.Query().Get("project_id")); rawProjectID != "" {
-		projectID, parseErr := parseUUIDLoose(rawProjectID)
+	projectLinks, err := h.Queries.ListChatSessionProjectLinks(r.Context(), db.ListChatSessionProjectLinksParams{
+		ID: session.ID, WorkspaceID: workspaceUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list chat project links")
+		return
+	}
+	projectLinkByID := make(map[string]db.ListChatSessionProjectLinksRow, len(projectLinks))
+	for _, link := range projectLinks {
+		projectLinkByID[uuidToString(link.CandidateProjectID)] = link
+	}
+	selectedProjectID := pgtype.UUID{}
+	if session.SelectedProjectID.Valid {
+		if _, allowed := projectLinkByID[uuidToString(session.SelectedProjectID)]; allowed {
+			selectedProjectID = session.SelectedProjectID
+		}
+	}
+	if !selectedProjectID.Valid && session.ProjectID.Valid {
+		if _, allowed := projectLinkByID[uuidToString(session.ProjectID)]; allowed {
+			selectedProjectID = session.ProjectID
+		}
+	}
+	if !selectedProjectID.Valid {
+		associated := make([]pgtype.UUID, 0)
+		available := make([]pgtype.UUID, 0)
+		for _, link := range projectLinks {
+			switch link.Role {
+			case "associated":
+				associated = append(associated, link.CandidateProjectID)
+			case "available":
+				available = append(available, link.CandidateProjectID)
+			}
+		}
+		if len(associated) == 1 {
+			selectedProjectID = associated[0]
+		} else if len(associated) == 0 && len(available) == 1 {
+			selectedProjectID = available[0]
+		}
+	}
+	rawSelectedProjectID := strings.TrimSpace(r.URL.Query().Get("selected_project_id"))
+	if rawSelectedProjectID == "" {
+		rawSelectedProjectID = strings.TrimSpace(r.URL.Query().Get("project_id"))
+	}
+	if rawSelectedProjectID != "" {
+		projectID, parseErr := parseUUIDLoose(rawSelectedProjectID)
 		if parseErr != nil {
 			writeError(w, http.StatusBadRequest, parseErr.Error())
 			return
 		}
-		allowed := false
-		for _, project := range associatedProjects {
-			if project.ID == projectID {
-				allowed = true
-				break
-			}
-		}
+		_, allowed := projectLinkByID[uuidToString(projectID)]
 		if !allowed {
 			writeError(w, http.StatusNotFound, "project is not associated with this chat")
 			return
 		}
 		selectedProjectID = projectID
 	}
+	selectionRequired := !selectedProjectID.Valid && len(projectLinks) > 1
 	tasks, err := h.Queries.ListChatSessionFileTasks(r.Context(), db.ListChatSessionFileTasksParams{
 		ChatSessionID: session.ID,
 		WorkspaceID:   workspaceUUID,
@@ -609,6 +652,9 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	projectResponses := make([]ChatSessionProjectResponse, 0, len(associatedProjects))
 	for _, project := range associatedProjects {
+		projectID := uuidToString(project.ID)
+		link := projectLinkByID[projectID]
+		hasFiles := selectedProjectID.Valid && project.ID == selectedProjectID && (len(projectTaskResponses) > 0 || len(projectAttachmentResponses) > 0)
 		projectResponses = append(projectResponses, ChatSessionProjectResponse{
 			ID:          uuidToString(project.ID),
 			WorkspaceID: uuidToString(project.WorkspaceID),
@@ -617,6 +663,10 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 			Icon:        textToPtr(project.Icon),
 			Status:      project.Status,
 			Priority:    project.Priority,
+			Role:        link.Role,
+			Reason:      link.Reason,
+			HasFiles:    hasFiles,
+			Selectable:  true,
 		})
 	}
 	var directories []ChatProjectDirectoryResponse
@@ -640,7 +690,9 @@ func (h *Handler) ListChatSessionFiles(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ChatSessionFilesResponse{
 		Directories:        directories,
 		WorkspaceID:        workspaceID,
-		ProjectID:          uuidToPtr(selectedProjectID),
+		ProjectID:          uuidToPtr(session.ProjectID),
+		SelectedProjectID:  uuidToPtr(selectedProjectID),
+		SelectionRequired:  selectionRequired,
 		Projects:           projectResponses,
 		Attachments:        attachmentResponses,
 		Tasks:              taskResponses,
@@ -693,9 +745,10 @@ func (h *Handler) chatTaskIssueKind(ctx context.Context, task db.AgentTaskQueue,
 }
 
 type UpdateChatSessionRequest struct {
-	Title     *string         `json:"title"`
-	ProjectID json.RawMessage `json:"project_id"`
-	SquadID   json.RawMessage `json:"squad_id"`
+	Title             *string         `json:"title"`
+	ProjectID         json.RawMessage `json:"project_id"`
+	SelectedProjectID json.RawMessage `json:"selected_project_id"`
+	SquadID           json.RawMessage `json:"squad_id"`
 }
 
 // UpdateChatSession updates one user-editable field on a chat session. Title
@@ -718,8 +771,9 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 	hasTitle := req.Title != nil
 	hasProjectID := req.ProjectID != nil
+	hasSelectedProjectID := req.SelectedProjectID != nil
 	hasSquadID := req.SquadID != nil
-	if hasTitle == (hasProjectID || hasSquadID) {
+	if (hasTitle && (hasProjectID || hasSelectedProjectID || hasSquadID)) || (!hasTitle && !hasProjectID && !hasSelectedProjectID && !hasSquadID) || (hasSelectedProjectID && (hasProjectID || hasSquadID)) {
 		writeError(w, http.StatusBadRequest, "exactly one of title or execution context is required")
 		return
 	}
@@ -748,6 +802,33 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 			ID:    session.ID,
 			Title: title,
 		})
+	} else if hasSelectedProjectID {
+		selectedProjectID, parsedOK := parseOptionalUUIDField(w, req.SelectedProjectID, "selected_project_id")
+		if !parsedOK {
+			return
+		}
+		links, linkErr := h.Queries.ListChatSessionProjectLinks(r.Context(), db.ListChatSessionProjectLinksParams{ID: session.ID, WorkspaceID: session.WorkspaceID})
+		if linkErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list chat project links")
+			return
+		}
+		if selectedProjectID.Valid {
+			allowed := false
+			for _, link := range links {
+				if link.CandidateProjectID == selectedProjectID {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				writeError(w, http.StatusNotFound, "project is not associated with this chat")
+				return
+			}
+		}
+		updated, err = h.Queries.UpdateChatSessionSelectedProject(r.Context(), db.UpdateChatSessionSelectedProjectParams{
+			ID: session.ID, WorkspaceID: session.WorkspaceID, SelectedProjectID: selectedProjectID,
+		})
+		contextChanged = true
 	} else {
 		projectID := session.ProjectID
 		squadID := session.SquadID
@@ -820,10 +901,17 @@ func (h *Handler) UpdateChatSession(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:     timestampToString(updated.UpdatedAt),
 	}
 	if contextChanged {
-		projectID := uuidToPtr(updated.ProjectID)
-		payload.ProjectID = &projectID
-		squadID := uuidToPtr(updated.SquadID)
-		payload.SquadID = &squadID
+		if hasSelectedProjectID {
+			selectedProjectID := uuidToPtr(updated.SelectedProjectID)
+			payload.SelectedProjectID = &selectedProjectID
+		} else {
+			projectID := uuidToPtr(updated.ProjectID)
+			payload.ProjectID = &projectID
+			squadID := uuidToPtr(updated.SquadID)
+			payload.SquadID = &squadID
+			selectedProjectID := uuidToPtr(updated.SelectedProjectID)
+			payload.SelectedProjectID = &selectedProjectID
+		}
 	}
 	h.publishChat(protocol.EventChatSessionUpdated, workspaceID, "member", userID, resolvedSessionID, payload)
 
@@ -1139,6 +1227,14 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := qtx.DeleteChatDraftRestoresBySession(r.Context(), session.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete chat session draft restores")
+		return
+	}
+	if err := qtx.DeleteDocumentCommentsForFileOwner(r.Context(), db.DeleteDocumentCommentsForFileOwnerParams{WorkspaceID: session.WorkspaceID, OwnerKind: "chat", OwnerID: session.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete chat file discussions")
+		return
+	}
+	if err := qtx.DeleteWorkspaceFileResourcesForOwner(r.Context(), db.DeleteWorkspaceFileResourcesForOwnerParams{WorkspaceID: session.WorkspaceID, OwnerKind: "chat", OwnerID: session.ID}); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete chat file identities")
 		return
 	}
 
@@ -2451,16 +2547,17 @@ func (h *Handler) CancelTaskByUser(w http.ResponseWriter, r *http.Request) {
 // Response types & helpers
 
 type ChatSessionResponse struct {
-	ID               string  `json:"id"`
-	WorkspaceID      string  `json:"workspace_id"`
-	AgentID          string  `json:"agent_id"`
-	CreatorID        string  `json:"creator_id"`
-	ProjectID        *string `json:"project_id"`
-	SquadID          *string `json:"squad_id"`
-	Title            string  `json:"title"`
-	Status           string  `json:"status"`
-	Kind             string  `json:"kind,omitempty"`
-	IsProjectDefault bool    `json:"is_project_default,omitempty"`
+	ID                string  `json:"id"`
+	WorkspaceID       string  `json:"workspace_id"`
+	AgentID           string  `json:"agent_id"`
+	CreatorID         string  `json:"creator_id"`
+	ProjectID         *string `json:"project_id"`
+	SelectedProjectID *string `json:"selected_project_id"`
+	SquadID           *string `json:"squad_id"`
+	Title             string  `json:"title"`
+	Status            string  `json:"status"`
+	Kind              string  `json:"kind,omitempty"`
+	IsProjectDefault  bool    `json:"is_project_default,omitempty"`
 	// Only populated by list endpoints — single-session fetches return 0/false/nil.
 	// HasUnread is kept as a convenience (== UnreadCount > 0) for existing consumers.
 	HasUnread   bool             `json:"has_unread"`
@@ -2577,19 +2674,20 @@ type ChatMessageResponse struct {
 
 func chatSessionToResponse(s db.ChatSession) ChatSessionResponse {
 	return ChatSessionResponse{
-		ID:               uuidToString(s.ID),
-		WorkspaceID:      uuidToString(s.WorkspaceID),
-		AgentID:          uuidToString(s.AgentID),
-		CreatorID:        uuidToString(s.CreatorID),
-		ProjectID:        uuidToPtr(s.ProjectID),
-		SquadID:          uuidToPtr(s.SquadID),
-		Title:            s.Title,
-		Status:           s.Status,
-		Kind:             s.Kind,
-		IsProjectDefault: s.IsProjectDefault,
-		Pinned:           s.PinnedAt.Valid,
-		CreatedAt:        timestampToString(s.CreatedAt),
-		UpdatedAt:        timestampToString(s.UpdatedAt),
+		ID:                uuidToString(s.ID),
+		WorkspaceID:       uuidToString(s.WorkspaceID),
+		AgentID:           uuidToString(s.AgentID),
+		CreatorID:         uuidToString(s.CreatorID),
+		ProjectID:         uuidToPtr(s.ProjectID),
+		SelectedProjectID: uuidToPtr(s.SelectedProjectID),
+		SquadID:           uuidToPtr(s.SquadID),
+		Title:             s.Title,
+		Status:            s.Status,
+		Kind:              s.Kind,
+		IsProjectDefault:  s.IsProjectDefault,
+		Pinned:            s.PinnedAt.Valid,
+		CreatedAt:         timestampToString(s.CreatedAt),
+		UpdatedAt:         timestampToString(s.UpdatedAt),
 	}
 }
 

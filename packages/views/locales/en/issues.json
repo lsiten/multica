@@ -1921,6 +1921,11 @@
       "from_template": "From a template"
     },
     "editor": {
+      "discard_prompt": "Discard your unsaved workflow changes?",
+      "discard_keep": "Keep editing",
+      "discard_confirm": "Discard changes",
+      "remote_changed": "This workflow changed elsewhere. Your edits have been kept.",
+      "reload": "Load latest version",
       "create_title": "New workflow",
       "edit_title": "Edit workflow",
       "name": "Name",

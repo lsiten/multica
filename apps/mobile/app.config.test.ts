@@ -9,6 +9,22 @@ import createConfig from "./app.config";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("iOS scene lifecycle configuration", () => {
+  it("keeps APNs opt-in for personal signing and preserves the EAS project binding", () => {
+    vi.stubEnv("EXPO_ENABLE_APNS", undefined);
+    vi.stubEnv("EXPO_EAS_PROJECT_ID", undefined);
+    const context: ConfigContext = {
+      projectRoot: import.meta.dirname, staticConfigPath: null, packageJsonPath: null,
+      config: { extra: { eas: { projectId: "existing-project" } } },
+    };
+    const personal = createConfig(context);
+    expect(personal.plugins).not.toContain("expo-notifications");
+    expect(personal.extra).toMatchObject({ nativeAPNs: false, eas: { projectId: "existing-project" } });
+    vi.stubEnv("EXPO_ENABLE_APNS", "1");
+    vi.stubEnv("EXPO_EAS_PROJECT_ID", "release-project");
+    const release = createConfig(context);
+    expect(release.plugins).toContain("expo-notifications");
+    expect(release.extra).toMatchObject({ nativeAPNs: true, eas: { projectId: "release-project" } });
+  });
   it("resolves native presenters from the foregrounded scene", () => {
     const requireFromTest = createRequire(import.meta.url);
     const requireFromExpo = createRequire(requireFromTest.resolve("expo/package.json"));

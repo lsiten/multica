@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY workspace_file_host_key;

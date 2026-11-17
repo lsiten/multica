@@ -91,6 +91,23 @@ describe("resolveChatExecutionScope", () => {
     expect(scope.availableProjects.map((item) => item.id)).toEqual(["p-2"]);
   });
 
+  it("does not infer the first project when a binding leaves multiple choices", () => {
+    const projects = [project("p-1", "agent-1"), project("p-2")];
+    const scope = resolveChatExecutionScope({
+      projects,
+      squads: [],
+      bindingsByProject: new Map([
+        ["p-1", { agent_ids: [], squad_ids: [] }],
+        ["p-2", { agent_ids: ["agent-1"], squad_ids: [] }],
+      ]),
+      agent,
+      selectedSquadId: null,
+    });
+
+    expect(scope.availableProjects.map((item) => item.id)).toEqual(["p-1", "p-2"]);
+    expect(scope.defaultProjectId).toBeNull();
+  });
+
   it("does not narrow an agent because another agent has a project binding", () => {
     const projects = [project("p-1"), project("p-2")];
     const scope = resolveChatExecutionScope({

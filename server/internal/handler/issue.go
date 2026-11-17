@@ -3925,7 +3925,7 @@ func refreshUntouchedNullableIssueParams(params *db.UpdateIssueParams, current d
 
 var errIssueFieldConflict = errors.New("issue text field conflict")
 
-func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.UUID, params db.UpdateIssueParams, rawFields map[string]json.RawMessage, titleBase, descriptionBase *string, attachmentIDs []pgtype.UUID, statusKey string, workflowAssignee bool) (db.Issue, db.Issue, bool, error) {
+func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.UUID, params db.UpdateIssueParams, rawFields map[string]json.RawMessage, titleBase, descriptionBase *string, attachmentIDs []pgtype.UUID, statusKey string, workflowAssignee bool, actorType, actorID string) (db.Issue, db.Issue, bool, error) {
 	if h.TxStarter == nil {
 		return db.Issue{}, db.Issue{}, false, errors.New("atomic issue update requires transaction starter")
 	}
@@ -4024,8 +4024,19 @@ func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.
 			}
 		}
 	}
+	var contentVersion *db.DocumentContentVersion
+	if current.Description != issue.Description {
+		version, versionErr := h.recordIssueBodyChangeInTx(ctx, qtx, current, issue, actorType, actorID)
+		if versionErr != nil {
+			return db.Issue{}, current, false, versionErr
+		}
+		contentVersion = &version
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return db.Issue{}, current, false, fmt.Errorf("commit atomic issue update: %w", err)
+	}
+	if contentVersion != nil {
+		h.publishDocumentContentVersion(*contentVersion)
 	}
 	h.broadcastCancelledWakeups(ctx, workspaceID, cancelledWakeups)
 	return issue, current, attachmentsChanged, nil
@@ -4276,7 +4287,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// workflow, and hand the issue off when it enters a step with a handler.
 	// A handoff assignee passes the same gate as a hand-picked one.
 	// An agent's run may only move the issue from the step it works on.
-	callerType, _ := h.resolveActor(r, userID, workspaceID)
+	callerType, callerID := h.resolveActor(r, userID, workspaceID)
 	callerRun := h.agentRunOnIssue(r, callerType, prevIssue)
 	handoff, err := h.applyIssueWorkflow(r.Context(), prevIssue, &params, req.Status != nil, touchedType || touchedID, req.EnterWorkflowStep, callerRun)
 	if err != nil {
@@ -4320,7 +4331,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	if req.Description != nil || req.TitleBase != nil || req.DescriptionBase != nil || len(attachmentIDs) > 0 {
 		var lockedPrev db.Issue
 		issue, lockedPrev, attachmentsChanged, err = h.updateIssueAtomically(
-			writeCtx, prevIssue.WorkspaceID, params, rawFields, req.TitleBase, req.DescriptionBase, attachmentIDs, statusKeyForGuard, handoff != nil,
+			writeCtx, prevIssue.WorkspaceID, params, rawFields, req.TitleBase, req.DescriptionBase, attachmentIDs, statusKeyForGuard, handoff != nil, callerType, callerID,
 		)
 		if lockedPrev.ID.Valid {
 			prevIssue = lockedPrev
@@ -4377,17 +4388,6 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	prevDueDate := dateToPtr(prevIssue.DueDate)
 	dueDateChanged := prevDueDate != resp.DueDate && (prevDueDate == nil) != (resp.DueDate == nil) ||
 		(prevDueDate != nil && resp.DueDate != nil && *prevDueDate != *resp.DueDate)
-
-	// A Markdown body edit is a content change: record it as a content version so
-	// the diff/rollback history is populated by ordinary issue edits, not only the
-	// dedicated content-version endpoint. Best effort — a version-log failure must
-	// not fail a real edit, so it is logged and a later edit retries it.
-	if descriptionChanged {
-		if err := h.RecordContentVersionFromIssueUpdate(r.Context(), issue, "", actorType, actorID, false); err != nil {
-			slog.Warn("record content version on issue update failed",
-				append(logger.RequestAttrs(r), "issue_id", id, "workspace_id", workspaceID, "error", err)...)
-		}
-	}
 
 	// A workflow handoff (MUL-7420) is decided before the event goes out so
 	// the timeline can record it as one entry: the status change, who the
@@ -4756,6 +4756,12 @@ func (h *Handler) deleteIssuesAndCollectAttachmentURLs(ctx context.Context, issu
 			return issueDeleteResult{}, fmt.Errorf("list issue attachment URLs: %w", err)
 		}
 		result.AttachmentURLs = append(result.AttachmentURLs, attachmentURLs...)
+		if err := qtx.DeleteDocumentCommentsForIssue(ctx, db.DeleteDocumentCommentsForIssueParams{WorkspaceID: issue.WorkspaceID, IssueID: issue.ID}); err != nil {
+			return issueDeleteResult{}, fmt.Errorf("delete document discussions: %w", err)
+		}
+		if err := qtx.DeleteWorkspaceFileResourcesForOwner(ctx, db.DeleteWorkspaceFileResourcesForOwnerParams{WorkspaceID: issue.WorkspaceID, OwnerKind: "issue", OwnerID: issue.ID}); err != nil {
+			return issueDeleteResult{}, fmt.Errorf("delete issue file identities: %w", err)
+		}
 		if sourceContext, contextErr := qtx.GetIssueSourceContextByIssue(ctx, db.GetIssueSourceContextByIssueParams{WorkspaceID: issue.WorkspaceID, IssueID: issue.ID}); contextErr == nil {
 			contextAttachments, listErr := qtx.ListAttachmentsBySourceContext(ctx, db.ListAttachmentsBySourceContextParams{
 				WorkspaceID: issue.WorkspaceID, SourceContextID: sourceContext.ID,
@@ -5120,7 +5126,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// Project workflow (MUL-7420), per issue: an issue whose workflow does
 		// not list the batch status is skipped like the other per-item guards;
 		// entering a handoff step reassigns this issue to the step's handler.
-		callerType, _ := h.resolveActor(r, userID, workspaceID)
+		callerType, callerID := h.resolveActor(r, userID, workspaceID)
 		callerRun := h.agentRunOnIssue(r, callerType, prevIssue)
 		handoff, err := h.applyIssueWorkflow(r.Context(), prevIssue, &params, req.Updates.Status != nil, batchTouchedType || batchTouchedID, false, callerRun)
 		if err != nil {
@@ -5144,7 +5150,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			// legacy single-update clients that omit description_base.
 			var lockedPrev db.Issue
 			issue, lockedPrev, _, err = h.updateIssueAtomically(
-				writeCtx, prevIssue.WorkspaceID, params, rawUpdates, nil, nil, nil, issueStatusGuard, handoff != nil,
+				writeCtx, prevIssue.WorkspaceID, params, rawUpdates, nil, nil, nil, issueStatusGuard, handoff != nil, callerType, callerID,
 			)
 			if err == nil {
 				prevIssue = lockedPrev

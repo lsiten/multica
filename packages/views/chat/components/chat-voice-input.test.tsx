@@ -44,6 +44,8 @@ class Recorder {
   ondataavailable?: (event: { data: Blob }) => void;
   onstop?: () => void;
   start() { this.state = "recording"; }
+  pause() { this.state = "paused"; }
+  resume() { this.state = "recording"; }
   stop() {
     this.state = "inactive";
     this.ondataavailable?.({ data: new Blob(["synthetic recording"]) });
@@ -62,16 +64,16 @@ describe("ChatVoiceInput", () => {
   it("one click starts live dictation, Done keeps final text in the draft", async () => {
     render(view());
     fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));
-    await screen.findByText("Listening · speech preview is editable after Done");
+    await screen.findByText("Listening");
     expect(getUserMedia).toHaveBeenCalledOnce();
     act(() => partial("live text"));
     expect(draft.update).toHaveBeenCalledWith("live text");
-    fireEvent.click(screen.getByRole("button", { name: "Stop and transcribe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.getByText("Finishing transcription...")).toBeInTheDocument();
     await act(async () => resolve("Final text"));
     expect(draft.update).toHaveBeenLastCalledWith("Final text");
     expect(draft.finish).toHaveBeenCalledOnce();
-    expect(screen.getByRole("button", { name: "Start dictation" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Start dictation" })).not.toHaveFocus();
     expect(activeChange.mock.calls).toEqual([[true], [false]]);
   });
 
@@ -80,11 +82,11 @@ describe("ChatVoiceInput", () => {
     render(view());
     screen.getByRole("button", { name: "Start dictation" }).focus();
     await user.keyboard("{Enter}");
-    await screen.findByRole("button", { name: "Stop and transcribe" });
+    await screen.findByRole("button", { name: "Done" });
     await user.keyboard("{Escape}");
     expect(draft.cancel).toHaveBeenCalledOnce();
     await user.keyboard(" ");
-    await screen.findByRole("button", { name: "Stop and transcribe" });
+    await screen.findByRole("button", { name: "Done" });
     await user.click(screen.getByRole("button", { name: "Cancel dictation (Esc)" }));
     expect(draft.cancel).toHaveBeenCalledTimes(2);
   });
@@ -107,10 +109,51 @@ describe("ChatVoiceInput", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));
     await screen.findByText("Recording · text appears after Done");
     expect(mocks.mutateAsync).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Stop and transcribe" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(draft.finish).toHaveBeenCalledOnce());
     expect(mocks.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ agentId: "agent", recording: expect.any(Blob), signal: expect.any(AbortSignal) }));
     expect(draft.update).toHaveBeenCalledWith("Batch result");
     expect(stopTrack).toHaveBeenCalled();
+  });
+
+  it("offers retry of a failed batch without recording again", async () => {
+    mocks.local = { adapter: null, status: null };
+    mocks.mutateAsync.mockRejectedValueOnce(new Error("network failed")).mockResolvedValueOnce("Recovered text");
+    render(view());
+    fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));
+    await screen.findByText("Recording · text appears after Done");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const retry = await screen.findByRole("button", { name: "Retry transcription" });
+    const audio = mocks.mutateAsync.mock.calls[0]?.[0].recording;
+    fireEvent.click(retry);
+    await waitFor(() => expect(draft.finish).toHaveBeenCalledOnce());
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    expect(mocks.mutateAsync.mock.calls[1]?.[0].recording).toBe(audio);
+    expect(draft.update).toHaveBeenLastCalledWith("Recovered text");
+  });
+
+  it("starts and finishes with the composer shortcut and ignores key repeats", async () => {
+    render(view());
+    const microphone = screen.getByRole("button", { name: "Start dictation" });
+    fireEvent.keyDown(microphone, { key: "M", ctrlKey: true, shiftKey: true });
+    await screen.findByText("Listening");
+    const done = screen.getByRole("button", { name: "Done" });
+    fireEvent.keyDown(done, { key: "M", ctrlKey: true, shiftKey: true, repeat: true });
+    expect(streamStop).not.toHaveBeenCalled();
+    fireEvent.keyDown(done, { key: "M", ctrlKey: true, shiftKey: true });
+    expect(screen.getByText("Finishing transcription...")).toBeInTheDocument();
+    await act(async () => resolve("Shortcut draft"));
+    expect(draft.finish).toHaveBeenCalledOnce();
+  });
+
+  it.each(["outside", "handled"])("does not cancel dictation for an %s Escape event", async (target) => {
+    render(<><div data-chat-composer>{view()}</div><input aria-label="Other input" /></>);
+    fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));
+    await screen.findByText("Listening");
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    if (target === "handled") event.preventDefault();
+    fireEvent(target === "outside" ? screen.getByLabelText("Other input") : screen.getByRole("button", { name: "Done" }), event);
+    expect(draft.cancel).not.toHaveBeenCalled();
+    expect(screen.getByText("Listening")).toBeInTheDocument();
   });
 });

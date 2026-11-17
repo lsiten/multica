@@ -219,6 +219,43 @@ func TestUpdateChatSession_UpdatesProjectContext(t *testing.T) {
 		t.Fatalf("project switch retained old resume pointers: session=%v work_dir=%v", resumedSession, resumedWorkDir)
 	}
 
+	selectProject := func(projectID any) *httptest.ResponseRecorder {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req := withURLParam(
+			withChatTestWorkspaceCtx(t, newRequest(http.MethodPatch, "/api/chat/sessions/"+sessionID, map[string]any{
+				"selected_project_id": projectID,
+			})),
+			"sessionId",
+			sessionID,
+		)
+		testHandler.UpdateChatSession(w, req)
+		return w
+	}
+
+	selected := selectProject(replacementProjectID)
+	if selected.Code != http.StatusOK {
+		t.Fatalf("select project: expected 200, got %d: %s", selected.Code, selected.Body.String())
+	}
+	response = ChatSessionResponse{}
+	if err := json.NewDecoder(selected.Body).Decode(&response); err != nil {
+		t.Fatalf("decode selected project response: %v", err)
+	}
+	if response.SelectedProjectID == nil || *response.SelectedProjectID != replacementProjectID {
+		t.Fatalf("selected_project_id = %v, want %s", response.SelectedProjectID, replacementProjectID)
+	}
+	cleared := selectProject(nil)
+	if cleared.Code != http.StatusOK {
+		t.Fatalf("clear selected project: expected 200, got %d: %s", cleared.Code, cleared.Body.String())
+	}
+	response = ChatSessionResponse{}
+	if err := json.NewDecoder(cleared.Body).Decode(&response); err != nil {
+		t.Fatalf("decode cleared selected project response: %v", err)
+	}
+	if response.SelectedProjectID != nil {
+		t.Fatalf("selected_project_id = %v, want null", response.SelectedProjectID)
+	}
+
 	var foreignWorkspaceID string
 	if err := testPool.QueryRow(context.Background(), `
 		INSERT INTO workspace (name, slug) VALUES ('Foreign chat update', $1) RETURNING id

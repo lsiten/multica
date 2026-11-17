@@ -62,6 +62,9 @@ export function ChatDirectorySelector({ directories, selected, onSelect }: {
                       <span className="max-w-full break-words font-medium">
                         {directory.label || directory.branchName || t(($) => $.doc_file_list.run_directory)}
                       </span>
+                      <span className="text-caption text-muted-foreground">
+                        {directory.readOnly ? t(($) => $.doc_file_list.read_only) : t(($) => $.doc_file_list.editable_directory)}
+                      </span>
                       <span className="max-w-full break-all font-mono text-caption text-muted-foreground" dir="ltr">
                         {directory.path}
                       </span>

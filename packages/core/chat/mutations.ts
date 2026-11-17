@@ -346,6 +346,33 @@ export function useSetChatSessionProject() {
   });
 }
 
+/** Persist the file-browser project without changing the execution context. */
+export function useSetChatSessionSelectedProject() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+
+  return useMutation({
+    mutationFn: (data: { sessionId: string; projectId: string | null }) =>
+      api.updateChatSession(data.sessionId, { selected_project_id: data.projectId }),
+    onMutate: async ({ sessionId, projectId }) => {
+      await qc.cancelQueries({ queryKey: chatKeys.sessions(wsId) });
+      const previous = qc.getQueryData<ChatSession[]>(chatKeys.sessions(wsId));
+      qc.setQueryData<ChatSession[]>(chatKeys.sessions(wsId), (old) =>
+        old?.map((session) => session.id === sessionId ? { ...session, selected_project_id: projectId } : session),
+      );
+      return { previous };
+    },
+    onError: (error, vars, context) => {
+      logger.error("setChatSessionSelectedProject.error.rollback", { sessionId: vars.sessionId, error });
+      if (context?.previous) qc.setQueryData(chatKeys.sessions(wsId), context.previous);
+    },
+    onSettled: (_data, _error, vars) => {
+      qc.invalidateQueries({ queryKey: chatKeys.sessions(wsId) });
+      qc.invalidateQueries({ queryKey: chatKeys.sessionFiles(wsId, vars.sessionId) });
+    },
+  });
+}
+
 /** Update both execution-context dimensions atomically. */
 export function useSetChatSessionContext() {
   const qc = useQueryClient();

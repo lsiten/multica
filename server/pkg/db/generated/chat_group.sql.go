@@ -53,7 +53,7 @@ func (q *Queries) ArchiveProjectDefaultGroup(ctx context.Context, projectID pgty
 const createGroupChatSession = `-- name: CreateGroupChatSession :one
 INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, squad_id, kind, is_project_default, id)
 VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, $7, $8, 'group', $6, COALESCE($9::uuid, gen_random_uuid()))
-RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id, kind, is_project_default
+RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id, kind, is_project_default, selected_project_id
 `
 
 type CreateGroupChatSessionParams struct {
@@ -107,13 +107,14 @@ func (q *Queries) CreateGroupChatSession(ctx context.Context, arg CreateGroupCha
 		&i.SquadID,
 		&i.Kind,
 		&i.IsProjectDefault,
+		&i.SelectedProjectID,
 	)
 	return i, err
 }
 
 const getProjectDefaultGroup = `-- name: GetProjectDefaultGroup :one
 
-SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id, kind, is_project_default FROM chat_session
+SELECT id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id, explicitly_created_at, squad_id, kind, is_project_default, selected_project_id FROM chat_session
 WHERE project_id = $1 AND kind = 'group' AND is_project_default = true
 LIMIT 1
 `
@@ -143,6 +144,7 @@ func (q *Queries) GetProjectDefaultGroup(ctx context.Context, projectID pgtype.U
 		&i.SquadID,
 		&i.Kind,
 		&i.IsProjectDefault,
+		&i.SelectedProjectID,
 	)
 	return i, err
 }

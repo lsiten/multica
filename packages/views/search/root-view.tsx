@@ -16,6 +16,7 @@ import { ProjectIcon } from "../projects/components/project-icon";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
 import { useT } from "../i18n";
 import { HighlightText } from "./highlight-text";
+import { SearchFailure } from "./search-failure";
 import { useIssueTargetWriter } from "./issue-target";
 import { usePalette } from "./palette-context";
 import { CommandGroupView, CommandRow, PaletteGroup, ROW_CLASS, ROW_ICON_CLASS, RowHint } from "./rows";
@@ -393,7 +394,8 @@ export function RootView({ model, rawQuery }: { model: RootModel; rawQuery: stri
       {server.isLoading && nothing && <LoadingRow />}
       {/* A plain div, not cmdk's Empty: the hand-to-agent row below is an
           item, so cmdk never considers this list empty. */}
-      {!server.isLoading && nothing && (
+      {server.error && <SearchFailure retry={server.retry} />}
+      {!server.isLoading && !server.error && nothing && (
         <div className="py-10 text-center text-body text-muted-foreground">{t(($) => $.empty.no_results)}</div>
       )}
       {model.handToAgent && <HandToAgentRow seed={model.handToAgent} disabled={server.stale} />}

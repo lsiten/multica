@@ -83,9 +83,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     // below is async, so until it lands a concurrent read still returns the
     // token being removed — the epoch is what makes this instant.
     invalidateSessionEpoch();
+    set({ user: null });
     await clearToken();
     api.setToken(null);
-    set({ user: null });
   },
 
   setUser: (user) => set({ user }),

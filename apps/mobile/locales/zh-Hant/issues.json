@@ -1,4 +1,8 @@
 {
+  "reactions": {
+    "add": "新增回應",
+    "toggle": "切換 {{emoji}} 回應，共 {{count}} 個"
+  },
   "tabs": {
     "all": "全部",
     "created": "我建立的",
@@ -47,6 +51,11 @@
     "due_date": "截止日期"
   },
   "list": {
+    "loaded_section": "已載入 {{count}} 個",
+    "loaded": "已載入 {{loaded}} / {{total}} 個任務",
+    "load_more": "載入更多",
+    "next_page_failed": "未能載入更多任務。",
+    "refresh_failed": "重新整理失敗，目前顯示上次的結果。",
     "empty": "沒有符合篩選條件的任務",
     "count_other": "{{count}} 個任務",
     "search_placeholder": "搜尋任務和專案"

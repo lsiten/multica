@@ -1859,6 +1859,11 @@
       "from_template": "从模板创建"
     },
     "editor": {
+      "discard_prompt": "放弃尚未保存的工作流修改？",
+      "discard_keep": "继续编辑",
+      "discard_confirm": "放弃修改",
+      "remote_changed": "工作流已在其他位置更新，你的修改已保留。",
+      "reload": "加载最新版本",
       "create_title": "新建工作流",
       "edit_title": "编辑工作流",
       "name": "名称",

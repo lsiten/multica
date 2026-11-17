@@ -1,4 +1,8 @@
 {
+  "discard_title": "Abandonner les modifications ?",
+  "discard_help": "La configuration de l’application n’a pas été enregistrée.",
+  "keep_editing": "Continuer à modifier",
+  "discard": "Abandonner",
   "title": "Applications",
   "new": "Nouvelle application",
   "edit": "Modifier l’application",

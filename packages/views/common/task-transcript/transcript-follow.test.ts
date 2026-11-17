@@ -83,6 +83,16 @@ describe("createLiveEndFollow", () => {
     expect(follow.onScroll(100)).toBe(false);
   });
 
+  it("accepts browser pixel rounding while confirming wheel movement", () => {
+    const { follow } = makeFollow();
+    follow.input(37.439998626708984);
+    expect(follow.onScroll(37.5)).toBe(false);
+    follow.endInputFrame();
+    follow.input(89.27999877929688);
+    expect(follow.onScroll(126.5)).toBe(false);
+    expect(follow.isFollowing()).toBe(false);
+  });
+
   it("confirms a second notch that arrives while the first is still animating", () => {
     // The overlapping claim is confirmed by this same-direction scroll; without
     // folding it into the carry, endInputFrame() dropped it and the rest of the

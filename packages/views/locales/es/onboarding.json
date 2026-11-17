@@ -119,8 +119,8 @@
     "step2_label": "Inicia el daemon"
   },
   "cloud_waitlist": {
-    "intro_main": "Los runtimes en la nube aún no están disponibles. Deja tu correo y te avisaremos cuando lo estén.",
-    "intro_warning": "Aviso: los agentes no pueden iniciar ejecuciones sin un runtime. Si saltas ahora, nada se ejecutará hasta que vuelvas e instales uno.",
+    "intro_main": "Los ordenadores dedicados en la nube no están disponibles en este proceso. Deja tu correo para recibir novedades.",
+    "intro_warning": "Los agentes locales necesitan un runtime conectado. Los agentes gestionados en la nube son una función distinta: tras la configuración, elige uno en Agentes si tu despliegue tiene un proveedor habilitado.",
     "email_label": "Correo electrónico",
     "email_placeholder": "tu@trabajo.com",
     "reason_label": "¿Por qué la nube?",
@@ -188,7 +188,7 @@
     "empty_skip_subtitle": "Los agentes no pueden ejecutarse hasta que se conecte un runtime.",
     "empty_skip_action": "Saltar",
     "empty_waitlist_title": "Usar un ordenador en la nube",
-    "empty_waitlist_subtitle": "Pondremos un ordenador en la nube a tu disposición. Aún no está disponible.",
+    "empty_waitlist_subtitle": "Los ordenadores dedicados en la nube no están disponibles en este proceso. Los agentes gestionados se configuran por separado en Agentes.",
     "empty_waitlist_action": "Muy pronto",
     "skip": "Saltar por ahora",
     "refresh": "Actualizar",
@@ -211,7 +211,7 @@
     "cli_subtitle": "Conecta un servidor, una máquina de desarrollo remota o cualquier ordenador sin pantalla. Requiere terminal.",
     "cli_action": "Mostrar pasos",
     "cloud_title": "Usar un ordenador en la nube",
-    "cloud_subtitle": "Pondremos un ordenador en la nube a tu disposición. Aún no está disponible.",
+    "cloud_subtitle": "Los ordenadores dedicados en la nube no están disponibles en este proceso. Los agentes gestionados se configuran por separado en Agentes.",
     "cloud_action": "Muy pronto",
     "cli_dialog_title": "Conectar desde la terminal",
     "cli_dialog_pick_hint": "Elige un ordenador de arriba.",

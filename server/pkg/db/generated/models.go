@@ -846,6 +846,7 @@ type ChatSession struct {
 	SquadID             pgtype.UUID        `json:"squad_id"`
 	Kind                string             `json:"kind"`
 	IsProjectDefault    bool               `json:"is_project_default"`
+	SelectedProjectID   pgtype.UUID        `json:"selected_project_id"`
 }
 
 type ChatSubmissionReceipt struct {
@@ -1000,6 +1001,22 @@ type DingtalkGroupRoute struct {
 	Revision          int64              `json:"revision"`
 	DiscoveredAt      pgtype.Timestamptz `json:"discovered_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type DocumentComment struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ResourceKey string             `json:"resource_key"`
+	ResourceRef []byte             `json:"resource_ref"`
+	ParentID    pgtype.UUID        `json:"parent_id"`
+	Anchor      []byte             `json:"anchor"`
+	Content     string             `json:"content"`
+	AuthorID    pgtype.UUID        `json:"author_id"`
+	ResolvedAt  pgtype.Timestamptz `json:"resolved_at"`
+	ResolvedBy  pgtype.UUID        `json:"resolved_by"`
+	Revision    int64              `json:"revision"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type DocumentContentVersion struct {
@@ -1683,6 +1700,28 @@ type Member struct {
 type MemberDelegationDay struct {
 	UserID       pgtype.UUID `json:"user_id"`
 	ActivityDate pgtype.Date `json:"activity_date"`
+}
+
+type MobilePushDelivery struct {
+	ID            pgtype.UUID        `json:"id"`
+	DeviceID      pgtype.UUID        `json:"device_id"`
+	InboxID       pgtype.UUID        `json:"inbox_id"`
+	ChatMessageID pgtype.UUID        `json:"chat_message_id"`
+	Attempts      int32              `json:"attempts"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	CompletedAt   pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type MobilePushDevice struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Token       string             `json:"token"`
+	Topic       string             `json:"topic"`
+	Environment string             `json:"environment"`
+	ActiveSince pgtype.Timestamptz `json:"active_since"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type NotificationBot struct {
@@ -2475,6 +2514,46 @@ type WorkspaceComposioConnection struct {
 	LastUsedAt         pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WorkspaceFileHostState struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	HostKey     string      `json:"host_key"`
+	Revision    int64       `json:"revision"`
+}
+
+type WorkspaceFileOperation struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	HostKey         string             `json:"host_key"`
+	PhysicalKey     string             `json:"physical_key"`
+	DirectoryKey    string             `json:"directory_key"`
+	RootPath        string             `json:"root_path"`
+	CommandID       string             `json:"command_id"`
+	ActorID         pgtype.UUID        `json:"actor_id"`
+	RequestHash     string             `json:"request_hash"`
+	Operation       []byte             `json:"operation"`
+	BindingRef      []byte             `json:"binding_ref"`
+	Resources       []byte             `json:"resources"`
+	State           string             `json:"state"`
+	Result          []byte             `json:"result"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	DispatchStarted bool               `json:"dispatch_started"`
+}
+
+type WorkspaceFileResource struct {
+	ID           pgtype.UUID        `json:"id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	DirectoryKey string             `json:"directory_key"`
+	PathKey      string             `json:"path_key"`
+	RelativePath string             `json:"relative_path"`
+	Directory    bool               `json:"directory"`
+	BindingRef   []byte             `json:"binding_ref"`
+	State        string             `json:"state"`
+	RecoveryID   pgtype.Text        `json:"recovery_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WorkspaceInvitation struct {

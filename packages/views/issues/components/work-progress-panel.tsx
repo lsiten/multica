@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
@@ -20,7 +20,7 @@ import { useLocale } from "../../i18n";
 
 const FILTERS: ProgressFilter[] = ["all", "blocked", "review", "follow_up", "ready", "awaiting_agent", "other_member", "prerequisites"];
 
-export function WorkProgressPanel({ scope, currentProjectId, showSummary = true }: { scope: ProgressScope; currentProjectId?: string | null; showSummary?: boolean }) {
+export function WorkProgressPanel({ scope, currentProjectId, showSummary = true, header }: { scope: ProgressScope; currentProjectId?: string | null; showSummary?: boolean; header?: ReactNode }) {
   const { t } = useWorkProgressLabels();
   const locale = useLocale();
   const workspaceId = useWorkspaceId();
@@ -84,6 +84,7 @@ export function WorkProgressPanel({ scope, currentProjectId, showSummary = true 
   }, [entries]);
   const filterLabels: Record<ProgressFilter, string> = { all: t($ => $.work_progress.filters.all), blocked: t($ => $.work_progress.filters.blocked), review: t($ => $.work_progress.filters.review), follow_up: t($ => $.work_progress.filters.follow_up), ready: t($ => $.work_progress.filters.ready), awaiting_agent: t($ => $.work_progress.filters.awaiting_agent), other_member: t($ => $.work_progress.filters.other_member), prerequisites: t($ => $.work_progress.filters.prerequisites) };
   return <section ref={setScrollContainer} data-tab-scroll-root={scope.type === "project" ? scrollKey : undefined} className={`min-h-0 space-y-4 ${scope.type === "project" ? "flex-1 overflow-y-auto" : ""}`} aria-label={scope.type === "project" ? t($ => $.work_progress.attention) : t($ => $.work_progress.remaining)}>
+    {header}
     <div className="flex flex-wrap items-center gap-2" aria-label={t($ => $.work_progress.filters_label)}>
       {FILTERS.map(value => <Button key={value} size="sm" variant={filter === value ? "secondary" : "ghost"} aria-pressed={filter === value} onClick={() => updateFilter("work_filter", value === "all" ? "" : value)}>{filterLabels[value]}</Button>)}
       <label className="flex min-w-0 items-center gap-2 text-caption"><span>{t($ => $.work_progress.assignee)}</span><select className="h-[var(--button-height-sm)] max-w-48 rounded-md border bg-background px-2 text-caption focus-visible:outline focus-visible:outline-ring" value={assignee} onChange={event => updateFilter("work_assignee", event.target.value)}><option value="">{t($ => $.work_progress.all_assignees)}</option><optgroup label={t($ => $.work_progress.members)}>{members.data?.map(member => <option key={member.user_id} value={`member:${member.user_id}`}>{member.name}</option>)}</optgroup><optgroup label={t($ => $.work_progress.agents)}>{agents.data?.map(agent => <option key={agent.id} value={`agent:${agent.id}`}>{agent.name}</option>)}</optgroup><optgroup label={t($ => $.work_progress.squads)}>{squads.data?.map(squad => <option key={squad.id} value={`squad:${squad.id}`}>{squad.name}</option>)}</optgroup></select></label>

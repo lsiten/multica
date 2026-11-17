@@ -542,6 +542,10 @@
     "serving_count_other": "에이전트 {{count}}개",
     "diagnostics_title": "진단",
     "desktop": {
+      "recheck": "다시 확인",
+      "offline": "데스크톱 접근을 확인하려면 런타임에 연결하세요.",
+      "checking": "데스크톱 접근 확인 중…",
+      "unchecked": "데스크톱 접근이 확인되지 않았습니다.",
       "title": "데스크톱 제어",
       "version": "도구",
       "version_value": "agent-desktop {{version}}",
@@ -2451,6 +2455,10 @@
     }
   },
   "usage": {
+    "measurement": "{{tz}} · 조회 {{time}}",
+    "billing_boundary": "USD 비용은 보고된 사용량과 모델 요금에 기반합니다. 공급자 크레딧은 실행별로 별도 표시하며 여기서 USD로 환산하지 않습니다. 이 보고서는 청구서가 아닙니다.",
+    "load_failed": "사용량을 새로 고칠 수 없습니다. 표시된 값은 마지막으로 조회한 결과입니다.",
+    "retry": "다시 시도",
     "period_label": "기간",
     "kpi_cost_label": "비용 · {{days}}일",
     "kpi_cost_delta": "이전 대비 {{sign}}{{pct}}%",

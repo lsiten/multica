@@ -1,4 +1,8 @@
 {
+  "discard_title": "放弃修改？",
+  "discard_help": "应用配置尚未保存。",
+  "keep_editing": "继续编辑",
+  "discard": "放弃修改",
   "title": "应用",
   "new": "新建应用",
   "edit": "编辑应用",

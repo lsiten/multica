@@ -162,6 +162,8 @@
     "reply_stale": "This request changed or ended. Review its latest version.",
     "reply_unsupported": "Text replies are not supported by this server. Use the original card; your draft is retained.",
     "reply_no_match": "This message doesn't match the request, so it won't answer it. Fix the message or send it as an ordinary message.",
-    "reply_options": "Options"
+    "reply_options": "Options",
+    "open_issue": "Open linked issue",
+    "open_chat": "Open linked chat"
   }
 }

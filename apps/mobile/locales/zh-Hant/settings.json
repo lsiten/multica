@@ -65,6 +65,20 @@
     "save_failed_default": "無法儲存你的個人資料。"
   },
   "email_fixed": "信箱在註冊時設定，無法在這裡修改。",
+  "push": {
+    "title": "此裝置的背景通知",
+    "checking": "正在檢查通知傳送…",
+    "unsupported": "原生推播適用於 iOS。",
+    "build_required": "此版本不支援 APNs。請在實體 iPhone 上安裝已啟用推播的版本。",
+    "server_unavailable": "伺服器尚未為此應用程式和簽署環境設定 APNs，請聯絡管理員設定。",
+    "permission_required": "允許通知後，Multica 在背景執行時也能收到更新。",
+    "permission_denied": "通知已在 iOS 設定中關閉。",
+    "registered": "此裝置已註冊，下方的工作區通知偏好決定傳送哪些提醒。",
+    "error": "無法註冊此裝置，請檢查網路後重試。",
+    "enable": "啟用通知",
+    "open_settings": "開啟 iOS 設定",
+    "check_again": "重新檢查"
+  },
   "groups": {
     "assignments": "分配給我的",
     "assignments_description": "任務分配給我或取消分配給我時。",

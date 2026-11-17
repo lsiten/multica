@@ -267,6 +267,7 @@
     "retry": "Reintentar"
   },
   "supervision": {
+    "unsaved": "¿Descartar la configuración de supervisión sin guardar y salir?",
     "title": "Project supervision",
     "loading": "Loading supervision…",
     "unavailable": "Supervision is unavailable.",

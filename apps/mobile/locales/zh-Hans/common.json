@@ -36,6 +36,9 @@
     "title": "标题"
   },
   "states": {
+    "save_failed": "修改未保存，请重试。",
+    "load_failed": "加载失败，请重试。",
+    "record_unavailable": "记录已删除，或你已没有访问权限。",
     "loading": "加载中...",
     "saving": "保存中...",
     "sending": "发送中...",

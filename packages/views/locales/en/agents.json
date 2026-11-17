@@ -401,6 +401,7 @@
     "runtime_loading": "Loading runtime…",
     "runtime_missing": "This runtime is no longer available.",
     "cloud_fields_note": "Skills, MCP and conversation starters are only available on local and remote runtimes.",
+    "cloud_run_limits": "Configure models and tools in Qoder. Interactive tool approvals and files returned from issue runs are not supported by this connection.",
     "done": {
       "loading": "Finishing up…",
       "title": "{{name}} is ready",

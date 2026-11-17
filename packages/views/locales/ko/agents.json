@@ -945,6 +945,7 @@
     "section_columns": "열"
   },
   "creation_studio": {
+    "cloud_run_limits": "모델과 도구는 Qoder에서 설정하세요. 이 연결은 대화형 도구 승인과 이슈 실행에서 생성한 파일 반환을 지원하지 않습니다.",
     "title": "에이전트 만들기",
     "squad_title": "이 스쿼드용 에이전트 만들기",
     "duplicate_title": "{{name}} 복제",

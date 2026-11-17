@@ -32,5 +32,5 @@ export async function readWorkspaceSearchPage(input: PagedReviewInput, term: str
       if (entry.directory && !isInternalWorkspacePath(entry.path)) next = { path: entry.path, offset: 0, next };
     }
   }
-  return { entries: page.entries.filter((entry) => !isInternalWorkspacePath(entry.path) && entry.path.toLowerCase().includes(term)), next };
+  return { entries: page.entries.filter((entry) => !isInternalWorkspacePath(entry.path) && entry.path.toLowerCase().includes(term)), next, directoryId: page.directory_id };
 }

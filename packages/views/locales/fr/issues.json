@@ -1921,6 +1921,11 @@
       "usage_default_one": "{{count}} project + no-project issues"
     },
     "editor": {
+      "discard_prompt": "Abandonner les modifications non enregistrées du workflow ?",
+      "discard_keep": "Continuer à modifier",
+      "discard_confirm": "Abandonner les modifications",
+      "remote_changed": "Ce workflow a été modifié ailleurs. Vos modifications sont conservées.",
+      "reload": "Charger la dernière version",
       "create_title": "New workflow",
       "edit_title": "Edit workflow",
       "name": "Name",

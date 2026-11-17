@@ -30,6 +30,7 @@ func TestIsNotifMutedGroupSplit(t *testing.T) {
 		// Other groups are unaffected by the split.
 		{"assignments group intact", map[string]string{"assignments": "muted"}, "issue_assigned", true},
 		{"status group intact", map[string]string{"status_changes": "muted"}, "status_changed", true},
+		{"new issue group intact", map[string]string{"new_issues": "muted"}, "issue_created", true},
 		{"muting comments leaves assignments alone", map[string]string{"comments": "muted"}, "issue_assigned", false},
 
 		// Types outside the map are always delivered.

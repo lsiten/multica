@@ -133,6 +133,8 @@
     "assigned": "Assigned {{identifier}} to {{name}}"
   },
   "empty": {
+    "search_failed": "Search failed. Try again.",
+    "retry": "Retry",
     "no_results": "No results found.",
     "no_labels": "No labels",
     "type_to_find_issue": "Type to find an issue",

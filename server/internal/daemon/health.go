@@ -58,6 +58,7 @@ type HealthResponse struct {
 	LocalReviewPagingSupported        bool   `json:"local_review_paging_supported"`
 	LocalReviewIndexSupported         bool   `json:"local_review_index_supported"`
 	LocalReviewSelectedMergeSupported bool   `json:"local_review_selected_merge_supported"`
+	WorkspaceFileOperationsSupported  bool   `json:"workspace_file_operations_supported"`
 	// LaunchedBy is "desktop" when the Electron app spawned this daemon, empty
 	// for a standalone one. Already reported to the server on registration;
 	// surfaced here so `daemon status` can say who manages the daemon instead
@@ -431,6 +432,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 			LocalReviewPagingSupported:        true,
 			LocalReviewIndexSupported:         true,
 			LocalReviewSelectedMergeSupported: true,
+			WorkspaceFileOperationsSupported:  d.environmentServiceOwner || d.environmentProcessMode(),
 			ActiveTaskCount:                   d.activeTasks.Load(),
 			RunningTaskCount:                  d.runningTasks.Load(),
 			ResourceWaitTaskCount:             d.resourceWaitTasks.Load(),

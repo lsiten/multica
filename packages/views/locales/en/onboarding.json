@@ -119,8 +119,8 @@
     "step2_label": "Start the daemon"
   },
   "cloud_waitlist": {
-    "intro_main": "Cloud runtimes aren't live yet. Leave your email and we'll reach out when they are.",
-    "intro_warning": "Heads-up: agents can't start runs without a runtime — if you hit Skip now, nothing will run until you come back and install one.",
+    "intro_main": "Dedicated cloud computers are not available in this setup. Leave your email for availability updates.",
+    "intro_warning": "Local agents need a connected runtime. Managed cloud agents are separate: after setup, choose one in Agents if your deployment has enabled a provider.",
     "email_label": "Email",
     "email_placeholder": "you@work.com",
     "reason_label": "Why cloud?",
@@ -188,7 +188,7 @@
     "empty_skip_subtitle": "Agents can't run until a runtime is connected.",
     "empty_skip_action": "Skip",
     "empty_waitlist_title": "Use a cloud computer",
-    "empty_waitlist_subtitle": "We'll run a computer for you in the cloud. Not live yet.",
+    "empty_waitlist_subtitle": "A dedicated cloud computer is not available in this setup. Managed cloud agents are configured separately in Agents.",
     "empty_waitlist_action": "Coming soon",
     "skip": "Skip for now",
     "refresh": "Refresh",
@@ -211,7 +211,7 @@
     "cli_subtitle": "Connect a server, remote dev box, or any headless computer. Terminal required.",
     "cli_action": "Show steps",
     "cloud_title": "Use a cloud computer",
-    "cloud_subtitle": "We'll run a computer for you in the cloud. Not live yet.",
+    "cloud_subtitle": "A dedicated cloud computer is not available in this setup. Managed cloud agents are configured separately in Agents.",
     "cloud_action": "Coming soon",
     "cli_dialog_title": "Connect from the terminal",
     "cli_dialog_pick_hint": "Pick a computer above.",

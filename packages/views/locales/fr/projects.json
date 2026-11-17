@@ -1,5 +1,6 @@
 {
   "supervision": {
+    "unsaved": "Abandonner les paramètres de supervision non enregistrés et quitter ?",
     "title": "Supervision du projet",
     "loading": "Chargement de la supervision…",
     "unavailable": "Supervision indisponible.",

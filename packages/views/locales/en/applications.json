@@ -1,4 +1,8 @@
 {
+  "discard_title": "Discard changes?",
+  "discard_help": "Your application configuration has not been saved.",
+  "keep_editing": "Keep editing",
+  "discard": "Discard",
   "title": "Applications",
   "new": "New application",
   "edit": "Edit application",

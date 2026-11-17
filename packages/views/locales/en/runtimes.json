@@ -580,6 +580,10 @@
     "serving_count_other": "{{count}} agents",
     "diagnostics_title": "Diagnostics",
     "desktop": {
+      "recheck": "Check again",
+      "offline": "Connect the runtime to check desktop access.",
+      "checking": "Checking desktop access…",
+      "unchecked": "Desktop access has not been checked.",
       "title": "Desktop control",
       "version": "Tool",
       "version_value": "agent-desktop {{version}}",
@@ -2533,6 +2537,10 @@
     }
   },
   "usage": {
+    "measurement": "{{tz}} · fetched {{time}}",
+    "billing_boundary": "USD costs use reported usage and model rates. Provider credits are shown separately per run and are not converted to USD here. This report is not an invoice.",
+    "load_failed": "Could not refresh usage. Any displayed figures are from the last successful fetch.",
+    "retry": "Retry",
     "period_label": "Period",
     "kpi_cost_label": "Cost · {{days}}D",
     "kpi_cost_delta": "{{sign}}{{pct}}% vs prev",

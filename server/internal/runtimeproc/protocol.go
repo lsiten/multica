@@ -17,6 +17,8 @@ import (
 // ProtocolVersion is the incompatible-contract version of the private transport.
 const ProtocolVersion = 1
 
+const CodeEffectsUnknown = "effects_unknown"
+
 // Entrypoint bypasses normal CLI profile and account loading.
 const Entrypoint = "internal-runtime-service"
 

@@ -66,7 +66,12 @@ vi.mock("@multica/core/runtimes/custom-pricing-store", () => {
 
 // Lets a test swap in its own usage rows (e.g. an unpriced model) without
 // re-mocking the whole query layer. `null` keeps the default fixture.
-const usageOverride = vi.hoisted(() => ({ rows: null as unknown[] | null }));
+const usageOverride = vi.hoisted(() => ({ rows: null as unknown[] | null, error: null as Error | null, retainData: false, refetch: vi.fn() }));
+beforeEach(() => {
+  usageOverride.error = null;
+  usageOverride.retainData = false;
+  usageOverride.refetch.mockClear();
+});
 
 // useQuery is mocked so the component renders synchronously with canned
 // data — the `kind` tag on each query-options object routes the response.
@@ -105,8 +110,12 @@ vi.mock("@tanstack/react-query", async () => {
   return {
     ...actual,
     useQuery: (opts: { kind?: string }) => ({
-      data: opts?.kind === "usage" ? (usageOverride.rows ?? usageRows) : [],
+      data: opts?.kind === "usage" ? (usageOverride.error && !usageOverride.retainData ? undefined : usageOverride.rows ?? usageRows) : [],
       isLoading: false,
+      error: opts?.kind === "usage" ? usageOverride.error : null,
+      dataUpdatedAt: Date.parse("2026-11-15T10:00:00Z"),
+      refetch: usageOverride.refetch,
+      isFetching: false,
     }),
   };
 });
@@ -156,6 +165,25 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("UsageSection — Viewing timezone wiring", () => {
+  it("shows initial failure with retry instead of claiming there is no usage", () => {
+    usageOverride.error = new Error("Offline");
+    render(<UsageSection runtime={RUNTIME} />, { wrapper: Wrapper });
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not refresh usage");
+    expect(screen.queryByText("No usage data yet")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(usageOverride.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("retains reported data with its fetch time and units when refresh fails", () => {
+    usageOverride.rows = null;
+    usageOverride.error = new Error("Offline");
+    usageOverride.retainData = true;
+    render(<UsageSection runtime={RUNTIME} />, { wrapper: Wrapper });
+    expect(screen.getByRole("alert")).toHaveTextContent("last successful fetch");
+    expect(screen.getByText(/Asia\/Tokyo · fetched/)).toBeInTheDocument();
+    expect(screen.getByText(/Provider credits are shown separately/)).toBeInTheDocument();
+    expect(document.querySelector('number-flow-react[aria-label="3K"]')).toBeInTheDocument();
+  });
   beforeEach(() => {
     runtimeUsageOptions.mockClear();
     runtimeUsageByAgentOptions.mockClear();

@@ -144,6 +144,8 @@
     "in_progress": "上传中…",
     "interrupted": "上传已中断——文件未保存。请重新添加。",
     "remove": "移除",
+    "cancel": "取消上传",
+    "retry": "重试上传",
     "uploading_label": "正在上传 {{filename}}…",
     "failed_label": "{{filename}} 上传失败"
   },

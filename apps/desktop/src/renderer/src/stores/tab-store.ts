@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { arrayMove } from "@dnd-kit/sortable";
 import { defaultStorage } from "@multica/core/platform";
+import { guardTabActions } from "./tab-navigation-guards";
 import {
   createWindowTabStorage,
   type WindowTabStorage,
@@ -147,7 +148,7 @@ export interface WorkspaceTabGroup {
   issueAliases?: Record<string, string>;
 }
 
-interface TabStore {
+export interface TabStore {
   /**
    * The workspace currently visible in the TabBar / TabContent. Null in three
    * cases:
@@ -824,7 +825,7 @@ let tabStorage = null as WindowTabStorage | null;
 
 export const useTabStore = create<TabStore>()(
   persist(
-    (set, get) => ({
+    (set, get) => guardTabActions({
       activeWorkspaceSlug: null,
       byWorkspace: {},
       mountGeneration: 0,
@@ -1433,7 +1434,7 @@ export const useTabStore = create<TabStore>()(
           tabAttention: null,
         });
       },
-    }),
+    }, get, findTabForUrl),
     {
       name: TAB_STORE_KEY,
       version: 5,

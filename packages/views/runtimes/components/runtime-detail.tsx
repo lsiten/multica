@@ -174,7 +174,7 @@ export function RuntimeDetail({
         segments={[
           { href: paths.runtimes(), label: t(($) => $.page.title) },
           ...(machineHref && machineLabel
-            ? [{ href: machineHref, label: machineLabel }]
+            ? [{ href: machineHref, label: machineLabel, className: "min-w-0 max-w-48 truncate" }]
             : []),
         ]}
         leaf={

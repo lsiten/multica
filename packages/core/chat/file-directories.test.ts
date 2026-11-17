@@ -27,3 +27,15 @@ it("keeps current chat ownership when a run also appears in the project projecti
   const directories = chatFileDirectories({ workspace_id: "ws", attachments: [], repos: [], tasks: [task], project_tasks: [task, { ...task, id: "peer", work_dir: "/peer" }] });
   expect(directories.map((directory) => directory.scope)).toEqual(["current_chat", "project_task"]);
 });
+
+it("does not expose worktrees before a multi-project chat is selected", () => {
+  const directories = chatFileDirectories({
+    workspace_id: "ws",
+    selection_required: true,
+    attachments: [],
+    repos: [],
+    tasks: [{ id: "chat-run", runtime_id: "rt", work_dir: "/project-a", created_at: "" }],
+    project_tasks: [{ id: "project-run", project_id: "project-a", runtime_id: "rt", work_dir: "/project-a", created_at: "" }],
+  });
+  expect(directories).toEqual([]);
+});

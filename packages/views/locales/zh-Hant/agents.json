@@ -298,6 +298,7 @@
     "page_navigation_aria": "智慧體頁面"
   },
   "creation_studio": {
+    "cloud_run_limits": "模型與工具請在 Qoder 中設定。此連線尚不支援互動式工具審批和任務執行產出檔案的回傳。",
     "title": "建立 AI 代理",
     "squad_title": "為小隊建立 AI 代理",
     "duplicate_title": "複製 {{name}}",

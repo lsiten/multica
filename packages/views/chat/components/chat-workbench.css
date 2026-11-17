@@ -1,0 +1,59 @@
+[data-slot="chat-workbench"] {
+  --chat-overlay-available-width: calc(100% - var(--chat-inspector-width, 0px));
+  --chat-overlay-width: min(28rem, calc(var(--chat-overlay-available-width) - 2rem));
+  --chat-overlay-height: min(36rem, calc(var(--chat-workbench-height, 100dvh) - 3rem));
+}
+
+[data-slot="chat-workbench"][data-floating="true"]:has([data-chat-inspector]) {
+  --chat-inspector-width: 20rem;
+}
+
+::highlight(chat-message-search) {
+  background: color-mix(in srgb, var(--brand) 25%, transparent);
+}
+
+[data-slot="chat-workbench"][data-overlay-collapsed="true"] {
+  --chat-overlay-height: 2.5rem;
+}
+
+[data-slot="chat-workbench"][data-floating="true"] [data-chat-pane="conversation"] {
+  position: absolute;
+  z-index: 20;
+  inset-inline-start: clamp(0px, var(--chat-overlay-x, calc(var(--chat-overlay-available-width) - 29rem)), calc(var(--chat-overlay-available-width) - var(--chat-overlay-width)));
+  inset-block-start: clamp(0px, var(--chat-overlay-y, calc(100% - var(--chat-overlay-height) - 1rem)), calc(100% - var(--chat-overlay-height)));
+  inline-size: var(--chat-overlay-width) !important;
+  block-size: var(--chat-overlay-height) !important;
+  overflow: hidden !important;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--background);
+  box-shadow: var(--floating-shadow);
+}
+
+[data-slot="chat-workbench"][data-floating="true"] [data-chat-pane="conversation"] > div {
+  display: flex;
+  min-block-size: 0;
+  flex-direction: column;
+}
+
+[data-slot="chat-workbench"][data-floating="true"]:not(:has([data-chat-composer-editor]:focus-within)) [data-chat-transcript] {
+  display: none;
+}
+
+[data-slot="chat-workbench"][data-floating="true"][data-overlay-collapsed="false"]:not(:has([data-chat-composer-editor]:focus-within)) [data-chat-pane="conversation"] {
+  block-size: fit-content !important;
+  max-block-size: var(--chat-overlay-height);
+}
+
+[data-slot="chat-workbench"][data-floating="true"][data-overlay-collapsed="false"]:not(:has([data-chat-composer-editor]:focus-within)) [data-chat-pane="conversation"] > div {
+  block-size: auto;
+}
+
+[data-slot="chat-workbench"][data-floating="true"] [data-chat-composer] {
+  flex-shrink: 0;
+  max-block-size: min(24rem, calc(var(--chat-overlay-height) - 4rem));
+}
+
+[data-slot="chat-workbench"][data-floating="true"] [data-chat-composer-editor] {
+  min-block-size: 3rem;
+}

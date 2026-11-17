@@ -1,11 +1,39 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiClient } from "./client";
+import { z } from "zod";
 
 afterEach(() => vi.unstubAllGlobals());
 const id = "a".repeat(64);
 const request = { task_id: "task", workspace_id: "ws", path: "/repo", target: "main", action: "file", version_id: id, file_path: "file.txt" } as const;
 const page = { version_id: id, path: "file.txt", preview: "text", page: { lines: [], next_line: 0, has_more: false } };
+
+it("reads the same file at its moved path through the HTTP client's identity contract", async () => {
+  const fileId = "66f46490-15d2-43ca-bdbb-89a18617dd9e";
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+    if (typeof init?.body !== "string") throw new Error("Missing JSON request");
+    const input = z.object({ file_id: z.string().optional() }).parse(JSON.parse(init.body));
+    if (input.file_id !== fileId) return new Response(JSON.stringify({ error: "Old path missing" }), { status: 404 });
+    return new Response(JSON.stringify({ page: { file_id: fileId, path: "moved.md", content: { text: "Retained body", encoding: "utf8", offset: 0, next_offset: 13, size: 13, has_more: false } } }), { status: 200 });
+  }));
+
+  const result = await new ApiClient("https://api.example.test").executePagedLocalReview({ task_id: "task", workspace_id: "ws", path: "/root", action: "file_content", relative_path: "old.md", file_id: fileId });
+
+  expect(result).toMatchObject({ file_id: fileId, path: "moved.md", content: { text: "Retained body" } });
+});
+
+it("preserves a file operation and its receipt across the HTTP relay contract", async () => {
+  let body: unknown;
+  const receipt = { kind: "file_operation", command_id: "create-once", operation: "create_file", path: "created.md", directory: false };
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+    if (typeof init?.body !== "string") throw new Error("Missing JSON request");
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify({ page: receipt }), { status: 200 });
+  }));
+  const result = await new ApiClient("https://api.example.test").executePagedLocalReview({ task_id: "task", workspace_id: "ws", path: "/root", action: "file_operation", command_id: "create-once", file_operation: { kind: "create_file", path: "created.md", content: "new body" } });
+  expect(body).toMatchObject({ action: "file_operation", command_id: "create-once", file_operation: { kind: "create_file", path: "created.md", content: "new body" } });
+  expect(result).toEqual(receipt);
+});
 
 it("forwards the project resource and relative file path for taskless directory previews", async () => {
   let body: unknown;
@@ -27,6 +55,23 @@ it("requests one pinned file page through the relay", async () => {
   expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/local-reviews/execute", expect.objectContaining({
     method: "POST", body: JSON.stringify({ task_id: "task", path: "/repo", target: "main", action: "file", version_id: id, file_path: "file.txt", offset: 0, limit: 100 }),
   }));
+});
+
+it("requests saved review versions without a target branch", async () => {
+  const versions = { versions: [{ version_id: id, updated_at: "2026-11-16T10:00:00.000Z", header: { repository: "/repo", branch: "feature", target: "main", head: "b".repeat(40), target_head: "c".repeat(40), base: "d".repeat(40), dirty: true, committed: false } }] };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ page: versions }), { status: 200 })));
+  const result = await new ApiClient("https://api.example.test").executePagedLocalReview({ task_id: "task", workspace_id: "ws", path: "/repo", action: "versions" });
+  expect(result).toEqual(versions);
+});
+
+it("forwards the explicit review scope without changing legacy payloads", async () => {
+  let body: unknown;
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ page }), { status: 200 });
+  }));
+  await new ApiClient("https://api.example.test").executePagedLocalReview({ ...request, scope: "run" });
+  expect(body).toMatchObject({ scope: "run", task_id: "task" });
 });
 
 it("rejects a mismatched page returned by the relay", async () => {

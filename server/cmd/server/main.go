@@ -792,6 +792,9 @@ func main() {
 	if h.NotificationBots != nil {
 		go h.NotificationBots.Run(sweepCtx)
 	}
+	if h.MobilePush != nil {
+		go h.MobilePush.Run(sweepCtx)
+	}
 	if h.SeatCapacityWorker != nil {
 		go h.SeatCapacityWorker.Run(sweepCtx)
 	}
@@ -969,6 +972,13 @@ func main() {
 			}
 			if h.NotificationBots != nil && !h.NotificationBots.Wait(5*time.Second) {
 				slog.Warn("notification bot worker did not exit within shutdown timeout")
+			}
+			if h.MobilePush != nil {
+				pushCtx, pushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := h.MobilePush.Wait(pushCtx); err != nil {
+					slog.Warn("mobile push worker did not exit within shutdown timeout")
+				}
+				pushCancel()
 			}
 			if h.WebhookDeliveryWorker != nil && !h.WebhookDeliveryWorker.WaitWithTimeout(5*time.Second) {
 				slog.Warn("webhook delivery worker did not exit within shutdown timeout")

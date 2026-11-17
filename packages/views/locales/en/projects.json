@@ -1,5 +1,6 @@
 {
   "supervision": {
+    "unsaved": "Discard unsaved supervision settings and leave?",
     "title": "Project supervision",
     "loading": "Loading supervision…",
     "unavailable": "Supervision is unavailable.",

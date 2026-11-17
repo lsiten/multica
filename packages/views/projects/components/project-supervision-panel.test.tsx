@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "@multica/core/api";
 import { WorkspaceSlugProvider } from "@multica/core/paths";
@@ -8,6 +8,7 @@ import type { Project, ProjectSupervision } from "@multica/core/types/project";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { renderWithI18n } from "../../test/i18n";
 import { ProjectSupervisionPanel } from "./project-supervision-panel";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("@multica/core/realtime",()=>({useWSEvent:vi.fn(),useWSReconnect:vi.fn()}));
 vi.mock("@multica/core/hooks",()=>({useWorkspaceId:()=>"ws"}));
@@ -20,8 +21,51 @@ function mount(canManage=true){
  renderWithI18n(<QueryClientProvider client={client}><WorkspaceSlugProvider slug="qa"><NavigationProvider value={navigation}><ProjectSupervisionPanel project={project} canManage={canManage}/></NavigationProvider></WorkspaceSlugProvider></QueryClientProvider>,{locale:"zh-Hans"});return client;
 }
 describe("project supervision controls",()=>{
+ afterEach(()=>vi.restoreAllMocks());
  beforeEach(()=>{vi.clearAllMocks();vi.mocked(api.getProjectSupervision).mockResolvedValue(view);vi.mocked(api.listIssueStatuses).mockResolvedValue({statuses:[],categories:["unstarted","started","done","closed"],total:0});vi.mocked(api.checkProjectSupervision).mockResolvedValue(view)});
- it("shows active coordination, pending facts and issue filters with collapsed settings",async()=>{mount();expect(await screen.findByText("正在协调")).toBeVisible();expect(screen.getByText("有待处理的新变化")).toBeVisible();expect(screen.getByText("监督配置").parentElement).not.toHaveAttribute("open");fireEvent.click(screen.getByRole("button",{name:"可执行 1"}));expect(screen.getByRole("link",{name:"PRJ-1 · Ready issue"})).toHaveAttribute("href","/qa/issues/PRJ-1");fireEvent.click(screen.getByRole("button",{name:"立即检查"}));await waitFor(()=>expect(api.checkProjectSupervision).toHaveBeenCalledWith("p"))});
+ it("shows active coordination, pending facts and nonzero issue filters with settings closed",async()=>{mount();expect(await screen.findByText("正在协调")).toBeVisible();expect(screen.getByText("有待处理的新变化")).toBeVisible();expect(screen.queryByRole("dialog")).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"未分配 0"})).not.toBeInTheDocument();fireEvent.click(screen.getByRole("button",{name:"可执行 1"}));expect(screen.getByRole("link",{name:"PRJ-1 · Ready issue"})).toHaveAttribute("href","/qa/issues/PRJ-1");fireEvent.click(screen.getByRole("button",{name:"立即检查"}));await waitFor(()=>expect(api.checkProjectSupervision).toHaveBeenCalledWith("p"))});
  it("retains the draft and original revision through refresh and failed save",async()=>{const client=mount();await screen.findByText("监督配置");fireEvent.click(screen.getByText("监督配置"));fireEvent.click(screen.getByRole("checkbox",{name:"自动推进满足条件的阶段"}));await act(async()=>{client.setQueryData(["project_supervision","ws","p"],{...view,revision:7})});vi.mocked(api.saveProjectSupervision).mockRejectedValue(new Error("conflict"));fireEvent.click(screen.getByRole("button",{name:"保存"}));expect(await screen.findByRole("alert")).toHaveTextContent("草稿已保留");expect(api.saveProjectSupervision).toHaveBeenCalledWith("p",expect.objectContaining({revision:1,config:expect.objectContaining({auto_advance:true})}));expect(screen.getByRole("checkbox",{name:"自动推进满足条件的阶段"})).toBeChecked()});
  it("keeps policy and manual checks out of member controls",async()=>{mount(false);await screen.findByText("项目监督");expect(screen.queryByText("监督配置")).not.toBeInTheDocument();expect(screen.queryByRole("button",{name:"立即检查"})).not.toBeInTheDocument()});
+ it("shows only the disabled state and configuration action before supervision is enabled",async()=>{
+  vi.mocked(api.getProjectSupervision).mockResolvedValue({...view,enabled:false});
+  mount();
+  expect(await screen.findByText("未启用")).toBeVisible();
+  expect(screen.getByRole("button",{name:"监督配置"})).toBeEnabled();
+  expect(screen.queryByRole("button",{name:"立即检查"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("button",{name:"可执行 1"})).not.toBeInTheDocument();
+  expect(screen.queryByText("有待处理的新变化")).not.toBeInTheDocument();
+ });
+ it("saves the draft before closing the settings sheet and restores focus to its trigger",async()=>{
+  const user=userEvent.setup();mount();
+  vi.mocked(api.saveProjectSupervision).mockResolvedValue({...view,enabled:false,revision:2});
+  const trigger=await screen.findByRole("button",{name:"监督配置"});
+  await user.click(trigger);
+  const dialog=screen.getByRole("dialog",{name:"监督配置"});
+  await user.click(within(dialog).getByRole("switch",{name:"启用项目监督"}));
+  await user.click(within(dialog).getByRole("button",{name:"保存"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(screen.getByText("未启用")).toBeVisible();
+  await waitFor(()=>expect(trigger).toHaveFocus());
+ });
+ it("discards cancelled edits and reopens with saved settings",async()=>{
+  const user=userEvent.setup();mount();
+  await user.click(await screen.findByRole("button",{name:"监督配置"}));
+  await user.click(screen.getByRole("checkbox",{name:"自动推进满足条件的阶段"}));
+  await user.click(screen.getByRole("button",{name:"取消"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await user.click(screen.getByRole("button",{name:"监督配置"}));
+  expect(screen.getByRole("checkbox",{name:"自动推进满足条件的阶段"})).not.toBeChecked();
+  expect(screen.getByRole("button",{name:"保存"})).toBeDisabled();
+  expect(api.saveProjectSupervision).not.toHaveBeenCalled();
+ });
+ it("keeps the draft when Escape dismissal is declined",async()=>{
+  const confirm=vi.spyOn(window,"confirm").mockReturnValue(false);
+  const user=userEvent.setup();mount();
+  await user.click(await screen.findByRole("button",{name:"监督配置"}));
+  await user.click(screen.getByRole("checkbox",{name:"自动推进满足条件的阶段"}));
+  await user.keyboard("{Escape}");
+  expect(confirm).toHaveBeenCalled();
+  expect(screen.getByRole("dialog",{name:"监督配置"})).toBeVisible();
+  expect(screen.getByRole("checkbox",{name:"自动推进满足条件的阶段"})).toBeChecked();
+ });
 });

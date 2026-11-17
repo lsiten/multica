@@ -50,6 +50,26 @@ describe("API session ownership", () => {
 // The real store pulls in expo-secure-store; the client only needs the slug.
 vi.mock("@/data/workspace-store", () => ({ getCurrentSlug: () => null }));
 
+describe("native notification API boundaries", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("treats malformed configuration as unavailable and never accepts a malformed registration", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ enabled: "yes", topics: [42] })));
+    await expect(api.getMobilePushConfiguration()).resolves.toEqual({ enabled: false, topics: [], environments: [] });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ registered: "yes" })));
+    await expect(api.registerMobilePushDevice({ token: "abcd", topic: "test.app", environment: "sandbox" })).rejects.toThrow("Push registration failed");
+  });
+
+  it("marks a push's source workspace read and rejects a malformed read receipt", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ id: "inbox-1", workspace_id: "workspace-2", type: "mentioned" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(api.markInboxRead("inbox-1", "other-workspace")).resolves.toMatchObject({ workspace_id: "workspace-2", id: "inbox-1" });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/inbox/inbox-1/read"), expect.objectContaining({ headers: expect.objectContaining({ "X-Workspace-Slug": "other-workspace" }) }));
+    fetchMock.mockResolvedValueOnce(Response.json({ id: 42 }));
+    await expect(api.markInboxRead("inbox-1", "other-workspace")).rejects.toThrow("Inbox read response invalid");
+  });
+});
+
 describe("api.listAgents", () => {
   afterEach(() => vi.unstubAllGlobals());
 

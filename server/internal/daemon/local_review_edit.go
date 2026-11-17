@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/multica-ai/multica/server/internal/daemon/localreview"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // reviewEdit applies a human or agent file edit to a working file. It is reached
@@ -21,7 +22,7 @@ func (d *Daemon) reviewEdit(w http.ResponseWriter, r *http.Request, scope pagedR
 		return
 	}
 	defer repo.Close()
-	var result any
+	result := protocol.WorkspaceFileEditResult{CommandID: request.CommandID, FilePath: request.RelativePath}
 	switch request.Action {
 	case "edit":
 		res, e := localreview.ApplyWorkingFileEdit(r.Context(), repo, localreview.EditWorkingFileRequest{
@@ -33,7 +34,7 @@ func (d *Daemon) reviewEdit(w http.ResponseWriter, r *http.Request, scope pagedR
 			http.Error(w, e.Error(), http.StatusConflict)
 			return
 		}
-		result = res
+		result.PreviousSHA256, result.NewSHA256, result.Bytes = res.PreviousSHA256, res.NewSHA256, res.Bytes
 	case "merge_edit":
 		res, e := localreview.MergeWorkingFile(r.Context(), repo, localreview.MergeWorkingFileRequest{
 			FilePath: request.RelativePath,
@@ -44,7 +45,9 @@ func (d *Daemon) reviewEdit(w http.ResponseWriter, r *http.Request, scope pagedR
 			http.Error(w, e.Error(), http.StatusConflict)
 			return
 		}
-		result = res
+		content := string(res.NewContent)
+		result.Merged, result.Conflict, result.NewContent, result.Bytes = res.Merged, res.Conflict, &content, res.Bytes
+		result.PreviousSHA256, result.CurrentSHA256 = res.PreviousSHA256, res.CurrentSHA256
 	default:
 		http.Error(w, "unsupported edit action", http.StatusBadRequest)
 		return

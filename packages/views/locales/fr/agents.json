@@ -309,6 +309,7 @@
     "page_navigation_aria": "Page de l'agent"
   },
   "creation_studio": {
+    "cloud_run_limits": "Configurez les modèles et outils dans Qoder. Cette connexion ne prend pas en charge l’approbation interactive des outils ni le retour de fichiers issus des exécutions de tickets.",
     "title": "Créer un agent",
     "squad_title": "Créer un agent pour ce squad",
     "duplicate_title": "Dupliquer {{name}}",

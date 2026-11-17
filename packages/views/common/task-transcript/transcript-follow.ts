@@ -110,11 +110,10 @@ export function createLiveEndFollow(now: () => number = () => Date.now()): LiveE
   const inputFresh = () => now() - lastInputAt < MOTION_SETTLE_WINDOW_MS;
   const motionFresh = () => now() - lastMotionAt < MOTION_SETTLE_WINDOW_MS;
 
-  // Carry is spent in fractional steps, so its running total drifts from the
-  // surface's own arithmetic by a few ulps. Scaled to the amount at hand, a
-  // gap this small is rounding — the system moving the viewport is pixels.
-  const withinCarry = (amount: number) =>
-    amount <= motionCarry + Math.max(1, motionCarry) * 1e-9;
+  // Browsers quantize scroll positions independently of fractional wheel
+  // deltas. Allow one CSS pixel of rounding when confirming that input.
+  const withinBudget = (amount: number, budget: number) =>
+    budget > 0 && amount <= budget + Math.max(1, budget * 1e-9);
 
   const pinVerdict = (distance: number): boolean =>
     following && !mouseHeld && !scrollbarDrag && !touchHeld && distance > 0;
@@ -205,7 +204,7 @@ export function createLiveEndFollow(now: () => number = () => Date.now()): LiveE
           motionCarry += awayBudget;
           awayBudget = 0;
         }
-        if (motionSource === "touch" || withinCarry(moved)) {
+        if (motionSource === "touch" || withinBudget(moved, motionCarry)) {
           if (motionSource !== "touch") motionCarry = Math.max(0, motionCarry - moved);
           awayTaken += moved;
           lastMotionAt = now();
@@ -217,7 +216,7 @@ export function createLiveEndFollow(now: () => number = () => Date.now()): LiveE
           motionCarry += towardBudget;
           towardBudget = 0;
         }
-        if (motionSource === "touch" || withinCarry(-moved)) {
+        if (motionSource === "touch" || withinBudget(-moved, motionCarry)) {
           if (motionSource !== "touch") motionCarry = Math.max(0, motionCarry + moved);
           awayTaken = Math.max(0, awayTaken + moved);
           lastMotionAt = now();
@@ -237,7 +236,7 @@ export function createLiveEndFollow(now: () => number = () => Date.now()): LiveE
         const attributed = Math.min(awayBudget, moved);
         awayBudget -= attributed;
         // Touch displacement need not match finger travel pixel-for-pixel.
-        if (touchHeld || attributed === moved) {
+        if (touchHeld || withinBudget(moved, attributed)) {
           awayTaken += moved;
           motionDirection = 1;
           motionSource = touchHeld ? "touch" : "input";
@@ -251,7 +250,7 @@ export function createLiveEndFollow(now: () => number = () => Date.now()): LiveE
       } else if (moved < 0 && inputFresh() && towardBudget > 0) {
         const attributed = Math.min(towardBudget, -moved);
         towardBudget -= attributed;
-        if (touchHeld || attributed === -moved) {
+        if (touchHeld || withinBudget(-moved, attributed)) {
           awayTaken = Math.max(0, awayTaken + moved);
           motionDirection = -1;
           motionSource = touchHeld ? "touch" : "input";

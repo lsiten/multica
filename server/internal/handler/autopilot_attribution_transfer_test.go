@@ -15,7 +15,7 @@ import (
 // UpdateAutopilotTrigger rather than calling SetAutopilotTriggerPublisher* directly,
 // because the bug Elon flagged lived in the handler's decision of WHEN to call the
 // setter, not in the setter itself. testHandler / testUserID / testWorkspaceID /
-// testPool are wired in TestMain (handler_test.go).
+// testPool are wired in TestMain (handler_fixture_test.go).
 
 // seedTransferMember inserts a workspace member distinct from testUserID, modeling the
 // CREATOR of an automation whose responsibility a later editor (testUserID) inherits.

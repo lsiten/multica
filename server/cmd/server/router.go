@@ -1402,6 +1402,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	}
 
 	configureNotificationBots(h)
+	configureMobilePush(h)
 
 	// VCS at-rest encryption: the box encrypts per-workspace access tokens and
 	// webhook secrets for token-based providers (Forgejo / Gitea / GitLab).
@@ -1808,6 +1809,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Get("/api/theme-store/themes/{themeId}/screenshots/{mode}", h.GetStoreThemeScreenshot)
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		registerMobilePushRoutes(r, h)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
@@ -2486,6 +2488,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Attachments
+			r.Post("/api/document-comments/query", h.QueryDocumentComments)
+			r.With(handler.RequireHumanActor).Post("/api/document-comments", h.CreateDocumentComment)
+			r.With(handler.RequireHumanActor).Patch("/api/document-comments/{id}", h.UpdateDocumentCommentResolution)
 			r.Get("/api/attachments/{id}", h.GetAttachmentByID)
 			// /api/attachments/{id}/download is registered in the
 			// outer Auth-only group above so it can be loaded as a

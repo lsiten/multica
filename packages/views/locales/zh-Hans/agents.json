@@ -298,6 +298,7 @@
     "page_navigation_aria": "智能体页面"
   },
   "creation_studio": {
+    "cloud_run_limits": "模型和工具请在 Qoder 中配置。此连接暂不支持交互式工具审批和任务运行产出文件的回传。",
     "title": "创建智能体",
     "squad_title": "为小队创建智能体",
     "duplicate_title": "复制 {{name}}",

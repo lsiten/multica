@@ -137,6 +137,8 @@
     "in_progress": "アップロード中…",
     "interrupted": "アップロードが中断されました—ファイルは保存されていません。もう一度添付してください。",
     "remove": "削除",
+    "cancel": "アップロードをキャンセル",
+    "retry": "アップロードを再試行",
     "uploading_label": "{{filename}} をアップロード中…",
     "failed_label": "{{filename}} をアップロードできませんでした"
   },

@@ -6,10 +6,8 @@
  * `packages/views/issues/components/issues-page.tsx:32-94`), while
  * My Issues has its own `assigned / created / agents` scopes.
  *
- * The `scope` filter is **client-side** on `assignee_type` — see
- * `more/issues.tsx`'s `scopedIssues` derivation. Server param stays unset
- * so the cache key (`issueKeys.list(wsId)`) and WS realtime invalidation
- * (`useIssuesRealtime`) don't have to know about scope.
+ * Scope, status and priority become server-side filters on paginated queries.
+ * The workspace list prefix still owns realtime invalidation.
  *
  * `IssuesScope` is defined locally rather than imported from
  * `@multica/core/issues/stores/issues-scope-store` — mobile only

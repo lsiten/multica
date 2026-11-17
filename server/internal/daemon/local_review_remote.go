@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -38,6 +39,10 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	if command.Action == "environment" || command.Environment != nil {
 		return d.runRemoteEnvironment(ctx, command)
 	}
+	if (command.Action == "file_operation" || command.FileOperationID != "") && !d.environmentServiceOwner && !d.environmentProcessMode() {
+		result.Error = "file operations require the managed environment service"
+		return result
+	}
 	// Delegate the physical (Git/filesystem) review work to the owned environment
 	// service before any Git/filesystem business work. The control parent retains
 	// the server claim/result/PAT transport (localReviewLoop); the child runs the
@@ -60,9 +65,12 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	if command.ProjectResourceID != "" {
 		return d.runProjectDirectoryRead(ctx, command)
 	}
-	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Action: "read"}
+	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Scope: command.Scope, Action: "read"}
 	input.VersionID, input.FilePath, input.RelativePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.RelativePath, command.Offset, command.Limit
 	input.Recursive = command.Recursive
+	input.FileOperation = command.FileOperation
+	input.FileOperationID = command.FileOperationID
+	input.FileID = command.FileID
 	input.Side = command.Side
 	input.IndexID, input.Branch, input.Head, input.Message, input.Paths = command.IndexID, command.Branch, command.Head, command.Message, command.Paths
 	input.CommandID = command.ID
@@ -100,9 +108,15 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		w := &localReviewCapture{header: http.Header{}, status: http.StatusOK}
 		d.reviewOperationHandler(true)(w, req)
 		if w.status != http.StatusOK {
+			if w.header.Get(workspaceFileEffectsUnknownHeader) == "true" {
+				return worktreeReviewResponse{}, errors.Join(errWorkspaceFileEffectsUnknown, fmt.Errorf("%s", w.body.String()))
+			}
+			if w.header.Get(workspaceFileRejectedHeader) == "true" {
+				return worktreeReviewResponse{}, errors.Join(errWorkspaceFileRejected, fmt.Errorf("%s", w.body.String()))
+			}
 			return worktreeReviewResponse{}, fmt.Errorf("%s", w.body.String())
 		}
-		if isPagedReviewRead(action) || protocol.IsLocalIndexMutation(action) || input.VersionID != "" {
+		if isPagedReviewRead(action) || protocol.IsLocalIndexMutation(action) || action == "file_operation" || input.VersionID != "" {
 			page = append(json.RawMessage{}, w.body.Bytes()...)
 			return worktreeReviewResponse{}, nil
 		}
@@ -113,7 +127,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	var response worktreeReviewResponse
 	err = nil
 	switch command.Action {
-	case "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes":
+	case "workspace_trash", "file_operation", "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes":
 		response, err = call(command.Action)
 	case "merge":
 		if command.SnapshotID == "" {
@@ -139,6 +153,8 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		d.reviewOperationHandler(true)(editW, editReq)
 		if editW.status != http.StatusOK {
 			result.Error = editW.body.String()
+			result.EffectsUnknown = editW.header.Get(workspaceFileEffectsUnknownHeader) == "true"
+			result.FileOperationRejected = editW.header.Get(workspaceFileRejectedHeader) == "true"
 			return result
 		}
 		result.Edit = editW.body.Bytes()
@@ -149,13 +165,15 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	}
 	if err != nil {
 		result.Error = err.Error()
+		result.EffectsUnknown = errors.Is(err, errWorkspaceFileEffectsUnknown)
+		result.FileOperationRejected = errors.Is(err, errWorkspaceFileRejected)
 		return result
 	}
 	if command.Action == "branches" {
 		result.Branches = response.Branches
 		return result
 	}
-	if isPagedReviewRead(command.Action) || protocol.IsLocalIndexMutation(command.Action) || input.VersionID != "" {
+	if isPagedReviewRead(command.Action) || protocol.IsLocalIndexMutation(command.Action) || command.Action == "file_operation" || input.VersionID != "" {
 		result.Page = page
 		var view pagedReviewManifest
 		if json.Unmarshal(page, &view) == nil {

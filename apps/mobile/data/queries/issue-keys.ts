@@ -19,6 +19,7 @@ export type MyIssuesFilter = Pick<
 export const issueKeys = {
   all: (wsId: string | null) => ["issues", wsId] as const,
   list: (wsId: string | null) => [...issueKeys.all(wsId), "list"] as const,
+  pages: (wsId: string | null) => [...issueKeys.list(wsId), "pages"] as const,
   myAll: (wsId: string | null) => [...issueKeys.all(wsId), "my"] as const,
   myList: (
     wsId: string | null,

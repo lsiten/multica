@@ -13,12 +13,14 @@ import type {
   NotificationPreferences,
 } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { notificationPreferenceOptions } from "@/data/queries/notification-preferences";
 import { useUpdateNotificationPreferences } from "@/data/mutations/notification-preferences";
 import { useT } from "@/lib/i18n";
+import { PushRegistration } from "@/components/settings/push-registration";
 
 const INBOX_GROUPS: {
   key: Exclude<NotificationGroupKey, "system_notifications" | "chat_replies">;
@@ -64,7 +66,7 @@ const INBOX_GROUPS: {
 export default function NotificationsSettingsScreen() {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const { t } = useT("settings");
-  const { data, isLoading, error } = useQuery(
+  const { data, isLoading, error, refetch, isFetching } = useQuery(
     notificationPreferenceOptions(wsId),
   );
   const mutation = useUpdateNotificationPreferences();
@@ -98,6 +100,7 @@ export default function NotificationsSettingsScreen() {
         <Text className="text-sm text-destructive text-center">
           {t("errors.load_failed")}
         </Text>
+        <Button variant="outline" onPress={() => { void refetch(); }} disabled={isFetching}><Text>{t("common:actions.retry")}</Text></Button>
       </View>
     );
   }
@@ -107,6 +110,7 @@ export default function NotificationsSettingsScreen() {
       className="flex-1 bg-background"
       contentContainerClassName="px-4 py-4 gap-6"
     >
+      <PushRegistration />
       <Section
         title={t("groups.inbox_notifications")}
       >
@@ -127,6 +131,7 @@ export default function NotificationsSettingsScreen() {
                   ) : null}
                 </View>
                 <Switch
+                  accessibilityLabel={t(group.labelKey)}
                   checked={enabled}
                   onCheckedChange={(checked) => onToggle(group.key, checked)}
                 />
@@ -145,6 +150,7 @@ export default function NotificationsSettingsScreen() {
             </Text>
           </View>
           <Switch
+            accessibilityLabel={t("groups.system_notifications")}
             checked={systemEnabled}
             onCheckedChange={(checked) => onToggle("system_notifications", checked)}
           />
@@ -159,6 +165,7 @@ export default function NotificationsSettingsScreen() {
                 </Text>
               </View>
               <Switch
+                accessibilityLabel={t("groups.chat_replies")}
                 checked={preferences.chat_replies !== "muted"}
                 onCheckedChange={(checked) => onToggle("chat_replies", checked)}
               />
@@ -166,6 +173,11 @@ export default function NotificationsSettingsScreen() {
           </>
         )}
       </Section>
+      {mutation.isPending && <ActivityIndicator accessibilityLabel={t("common:states.saving")} />}
+      {mutation.isError && <View className="gap-3">
+        <Text accessibilityRole="alert" className="text-sm text-destructive">{t("common:states.save_failed")}</Text>
+        <Button variant="outline" onPress={mutation.retry}><Text>{t("common:actions.retry")}</Text></Button>
+      </View>}
     </ScrollView>
   );
 }

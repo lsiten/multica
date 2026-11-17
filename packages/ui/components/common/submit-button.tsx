@@ -31,6 +31,7 @@ interface SubmitButtonProps {
   disabledReason?: ReactNode;
   running?: boolean;
   onStop?: () => void;
+  stopping?: boolean;
   /**
    * Tooltip shown over the send button when idle. Pass a string or a node
    * (e.g. `Send · ⌘↵`). Omit to render no tooltip.
@@ -58,6 +59,7 @@ function SubmitButton({
   busy,
   running,
   onStop,
+  stopping,
   disabledReason,
   tooltip,
   ariaLabel,
@@ -73,9 +75,11 @@ function SubmitButton({
         onPointerDown={keepFocusInComposer}
         onMouseDown={keepFocusInComposer}
         onClick={onStop}
+        disabled={stopping}
+        aria-busy={stopping || undefined}
         aria-label={stopAriaLabel}
       >
-        <Square className="fill-current" aria-hidden="true" />
+        {stopping ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Square className="fill-current" aria-hidden="true" />}
       </Button>
     );
     return stopTooltip ? (

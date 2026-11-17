@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 const maxVersionBytes = 32 << 20
@@ -52,6 +53,40 @@ type ReviewVersion struct {
 	Format int           `json:"format"`
 	Header VersionHeader `json:"header"`
 	Files  []VersionFile `json:"files"`
+}
+
+// VersionSummary is the safe, metadata-only projection used by review history
+// pickers. It never exposes patch blobs; callers must still request a concrete
+// version before reading files.
+type VersionSummary struct {
+	ID        string        `json:"version_id"`
+	Header    VersionHeader `json:"header"`
+	UpdatedAt time.Time     `json:"updated_at"`
+}
+
+func (s *BlobStore) ListVersionSummaries(ctx context.Context) ([]VersionSummary, error) {
+	entries, err := cacheEntries(ctx, s.catalog)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]VersionSummary, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.regular || !validBlobID(entry.name) {
+			continue
+		}
+		version, err := s.LoadVersion(ctx, entry.name)
+		if err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, VersionSummary{ID: entry.name, Header: version.Header, UpdatedAt: entry.modified.UTC()})
+	}
+	slices.SortFunc(summaries, func(a, b VersionSummary) int {
+		if cmp := b.UpdatedAt.Compare(a.UpdatedAt); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return summaries, nil
 }
 
 // SaveVersion canonicalizes metadata so listing order cannot invalidate approval.

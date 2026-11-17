@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   DndContext,
@@ -35,6 +35,8 @@ import { toast } from "sonner";
 import { ApiError, clientErrorMessage } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useCurrentWorkspace } from "@multica/core/paths";
+import { useNavigationGuard } from "../navigation";
+import { runGuardedNavigation } from "@multica/core/platform";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { statusColumnKeys } from "@multica/core/issues";
 import {
@@ -44,7 +46,6 @@ import {
   useDeleteIssueWorkflow,
   useIssueWorkflows,
   useUpdateIssueWorkflow,
-  workflowMiddleKeys,
   workflowNextStatus,
 } from "@multica/core/issue-workflows";
 import { useActorName } from "@multica/core/workspace/hooks";
@@ -77,6 +78,9 @@ import { BriefPreviewDialog, HandoffFields, savedHandoff } from "./handoff-form"
 import { stepHandlerActor, useStepHandlerLabel } from "./step-handler";
 import { WORKFLOW_TEMPLATES, type WorkflowTemplateId } from "./templates";
 import { WorkflowMappingDialog } from "./workflow-mapping-dialog";
+import { NEW_WORKFLOW_MIDDLE, NO_HANDOFF, columnKey, hasHandoff, draftFrom, draftColumns, type Draft, type DraftColumn, type Handoff } from "./workflow-draft";
+import { useWorkflowDraft } from "./use-workflow-draft";
+import { confirmNavigation } from "../platform/navigation-confirmation";
 
 /**
  * The name and description edit in place. A hover or focus background tells
@@ -85,71 +89,6 @@ import { WorkflowMappingDialog } from "./workflow-mapping-dialog";
 const INLINE_FIELD =
   "-mx-1.5 block w-[calc(100%+0.75rem)] rounded-md bg-transparent px-1.5 outline-none transition-colors placeholder:text-muted-foreground read-only:cursor-default hover:[&:not(:read-only)]:bg-accent/60 focus-visible:[&:not(:read-only)]:bg-accent/60 focus-visible:[&:not(:read-only)]:ring-1 focus-visible:[&:not(:read-only)]:ring-ring/40";
 
-/** A new workflow starts from the common delivery loop instead of nothing. */
-const NEW_WORKFLOW_MIDDLE = ["in_progress", "in_review"];
-
-/** A middle column of the draft: a library status, or one to create on save. */
-type DraftColumn = { id: string; status_key: string } | { id: string; new_name: string; category?: "unstarted" | "started" };
-
-/** What entering a column does, keyed in the draft by column id. */
-type Handoff = Pick<IssueWorkflowStep, "handler" | "instructions" | "next_status_key" | "back_status_key">;
-
-const NO_HANDOFF: Handoff = { handler: { type: "none" }, instructions: "" };
-
-interface Draft {
-  name: string;
-  description: string;
-  backlog: boolean;
-  blocked: boolean;
-  middle: DraftColumn[];
-  handoffs: Record<string, Handoff>;
-}
-
-/**
- * The key a column goes by in the editor: its status, or — for a status the
- * save creates — its draft id, so its handoff can be edited before the save.
- */
-function columnKey(column: DraftColumn): string {
-  return "status_key" in column ? column.status_key : column.id;
-}
-
-function hasHandoff(h: Handoff | undefined): h is Handoff {
-  return !!h && (h.handler.type !== "none" || !!h.next_status_key || !!h.back_status_key);
-}
-
-function draftFrom(workflow: Pick<IssueWorkflow, "name" | "description" | "steps">): Draft {
-  const keys = workflow.steps.map((s) => s.status_key);
-  const handoffs: Record<string, Handoff> = {};
-  for (const s of workflow.steps) {
-    const h = { handler: s.handler, instructions: s.instructions, next_status_key: s.next_status_key, back_status_key: s.back_status_key };
-    if (hasHandoff(h)) handoffs[s.status_key] = h;
-  }
-  return {
-    name: workflow.name,
-    description: workflow.description,
-    backlog: keys.includes("backlog"),
-    blocked: keys.includes("blocked"),
-    middle: workflowMiddleKeys(workflow).map((key) => ({ id: key, status_key: key })),
-    handoffs,
-  };
-}
-
-/** Every column of the draft in board order. */
-function draftColumns(draft: Draft): DraftColumn[] {
-  const fixed = (key: string): DraftColumn => ({ id: key, status_key: key });
-  return [
-    ...(draft.backlog ? [fixed("backlog")] : []),
-    fixed("todo"),
-    ...draft.middle,
-    ...(draft.blocked ? [fixed("blocked")] : []),
-    fixed("done"),
-    fixed("cancelled"),
-  ];
-}
-
-function sameDraft(a: Draft, b: Draft): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
 
 function mappingPlanFrom(err: unknown): IssueWorkflowMappingPlan | null {
   if (!(err instanceof ApiError) || err.status !== 409 || !err.body || typeof err.body !== "object") return null;
@@ -239,20 +178,21 @@ export function WorkflowEditorPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved?.updated_at, workflowId, seed?.id, template, catalog.activeStatuses.length]);
 
-  const [draft, setDraft] = useState<Draft>(baseline);
+  const draftState = useWorkflowDraft(baseline, workflowId ?? `${seed?.id ?? "new"}:${template ?? ""}`, saved?.updated_at ?? "");
+  const { draft, setDraft, dirty } = draftState;
   const [mappingPlan, setMappingPlan] = useState<IssueWorkflowMappingPlan | null>(null);
   const [newName, setNewName] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  useEffect(() => setDraft(baseline), [baseline]);
-
-  const dirty = !workflowId || !sameDraft(draft, baseline);
   const pending = createWorkflow.isPending || updateWorkflow.isPending;
+  const mayLeave = () => !pending && (!dirty || confirmNavigation({ message: t(($) => $.workflows.editor.discard_prompt), cancelLabel: t(($) => $.workflows.editor.discard_keep), confirmLabel: t(($) => $.workflows.editor.discard_confirm) }));
+  useNavigationGuard(mayLeave, dirty || pending);
+  const back = () => runGuardedNavigation(onBack);
   // Statuses this save would create; a member must drop them or ask an admin.
   const missingStatuses = canCreateStatus
     ? []
     : draft.middle.flatMap((c) => ("new_name" in c ? [c.new_name] : []));
-  const canSave = canEdit && dirty && draft.name.trim().length > 0 && !pending && missingStatuses.length === 0;
+  const canSave = canEdit && (dirty || !workflowId) && !draftState.remoteChanged && draft.name.trim().length > 0 && !pending && missingStatuses.length === 0;
   const usedBy = saved
     ? projects.filter((p) => (saved.is_default ? !p.workflow_id : saved.project_ids.includes(p.id)))
     : [];
@@ -322,15 +262,21 @@ export function WorkflowEditorPage({
     };
     try {
       if (workflowId) {
-        await updateWorkflow.mutateAsync({ id: workflowId, ...body });
+        const updated = await updateWorkflow.mutateAsync({ id: workflowId, ...body, expected_updated_at: draftState.version });
+        if (updated.id !== workflowId) { toast.error(t(($) => $.workflows.editor.error)); return; }
+        draftState.commit(draftFrom(updated), updated.updated_at);
         toast.success(t(($) => $.workflows.editor.saved));
       } else {
         const created = await createWorkflow.mutateAsync({ ...body, name: draft.name.trim() });
+        if (!created.id) { toast.error(t(($) => $.workflows.editor.error)); return; }
         toast.success(t(($) => $.workflows.editor.created));
-        onOpen({ id: created.id });
+        runGuardedNavigation(() => onOpen({ id: created.id }), true);
       }
       setMappingPlan(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && err.body && typeof err.body === "object" && "code" in err.body && err.body.code === "workflow_conflict") {
+        draftState.conflict();
+      }
       const plan = mappingPlanFrom(err);
       if (plan) {
         setMappingPlan(plan);
@@ -354,7 +300,7 @@ export function WorkflowEditorPage({
   if (workflowId && isLoaded && !saved) {
     return (
       <div className="space-y-4">
-        <Breadcrumb onBack={onBack} current="" />
+        <Breadcrumb onBack={back} current="" />
         <p className="text-body text-muted-foreground">{t(($) => $.workflows.editor.not_found)}</p>
       </div>
     );
@@ -417,9 +363,13 @@ export function WorkflowEditorPage({
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <Breadcrumb onBack={onBack} current={title} />
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
+        <Breadcrumb onBack={back} current={title} />
+        {draftState.remoteChanged && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 p-3">
+          <p className="text-body">{t(($) => $.workflows.editor.remote_changed)}</p>
+          <Button variant="outline" size="sm" onClick={() => { if (!dirty || window.confirm(t(($) => $.workflows.editor.discard_prompt))) draftState.reload(); }}>{t(($) => $.workflows.editor.reload)}</Button>
+        </div>}
+        <div className="flex flex-col items-start gap-3 sm:flex-row">
+          <div className="w-full min-w-0 flex-1">
             <input
               aria-label={t(($) => $.workflows.editor.name)}
               value={draft.name}
@@ -453,12 +403,12 @@ export function WorkflowEditorPage({
             </p>
           </div>
           {(canEdit || canDuplicate) && (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               {canEdit && dirty && workflowId && (
                 <span className="text-caption text-muted-foreground">{t(($) => $.workflows.editor.unsaved)}</span>
               )}
               {canDuplicate && workflowId && (
-                <Button variant="outline" className="gap-1.5" onClick={() => onOpen({ duplicateOf: workflowId })}>
+                <Button variant="outline" className="gap-1.5" onClick={() => runGuardedNavigation(() => onOpen({ duplicateOf: workflowId }))}>
                   <Copy className="size-3.5" />
                   {t(($) => $.workflows.editor.duplicate)}
                 </Button>

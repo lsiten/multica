@@ -14,12 +14,15 @@ type workspaceDirectoryEntry struct {
 }
 
 type workspaceDirectoryPage struct {
-	Path       string                    `json:"path"`
-	Entries    []workspaceDirectoryEntry `json:"entries"`
-	Recursive  bool                      `json:"recursive"`
-	NextOffset int                       `json:"next_offset"`
-	HasMore    bool                      `json:"has_more"`
-	Truncated  bool                      `json:"truncated"`
+	FileOperationsSupported        bool                      `json:"file_operations_supported"`
+	FileOperationIdentitySupported bool                      `json:"file_operation_identity_supported"`
+	FileEditIdentitySupported      bool                      `json:"file_edit_identity_supported"`
+	Path                           string                    `json:"path"`
+	Entries                        []workspaceDirectoryEntry `json:"entries"`
+	Recursive                      bool                      `json:"recursive"`
+	NextOffset                     int                       `json:"next_offset"`
+	HasMore                        bool                      `json:"has_more"`
+	Truncated                      bool                      `json:"truncated"`
 }
 
 // Only immediate children spend a page's budget. Descendants are fetched when

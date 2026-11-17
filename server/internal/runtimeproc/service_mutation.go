@@ -137,6 +137,11 @@ func (s *Service) mutateHTTP(ctx context.Context, w http.ResponseWriter, req Req
 	default:
 		result, problem = s.config.Handler(ctx, req)
 	}
+	// Keep the admitted receipt pending when the domain cannot confirm its effects.
+	if problem != nil && problem.Code == CodeEffectsUnknown {
+		s.respond(w, 200, &receipt, nil)
+		return
+	}
 	// Canceled effects stay uncertain unless the domain proves a terminal outcome.
 	if ctx.Err() != nil {
 		outcome, confirmed := s.reconcileCanceledMutation(rootContext, req, Outcome{Result: result, Error: problem})

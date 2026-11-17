@@ -72,6 +72,8 @@ export type IssueWorkflowStepInput = ({ status_key: string } | { new_status: New
   Partial<SetWorkflowHandoffRequest>;
 
 export interface IssueWorkflowWriteRequest {
+  /** Reject an edit when the saved workflow no longer matches this baseline. */
+  expected_updated_at?: string;
   name?: string;
   description?: string;
   /**

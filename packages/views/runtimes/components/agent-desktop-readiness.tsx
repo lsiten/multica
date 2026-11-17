@@ -73,13 +73,24 @@ export function AgentDesktopReadinessSection({
     },
   });
 
-  if (runtime.runtime_mode !== "local" || !readiness) return null;
+  if (runtime.runtime_mode !== "local") return null;
+  const recheck = <div className="px-3 pb-2"><Button type="button" size="xs" variant="outline" disabled={runtime.status !== "online" || query.isFetching} aria-busy={query.isFetching} onClick={() => { void query.refetch(); }}>
+    <RefreshCw aria-hidden="true" className={query.isFetching ? "animate-spin" : undefined} />{t(($) => $.detail.desktop.recheck)}
+  </Button></div>;
+  if (!readiness) return <ObjectPanelSection title={t(($) => $.detail.desktop.title)}>
+    <p className="px-3 pb-2 text-caption text-muted-foreground" role={query.isError ? "alert" : "status"}>
+      {runtime.status !== "online" ? t(($) => $.detail.desktop.offline) : query.isFetching ? t(($) => $.detail.desktop.checking) : query.isError ? t(($) => $.detail.desktop.reason.status_failed) : t(($) => $.detail.desktop.unchecked)}
+    </p>
+    {recheck}
+  </ObjectPanelSection>;
   const reason = readiness.reason
     ? desktopReason(t, readiness.reason)
     : t(($) => $.detail.desktop.ready);
 
   return (
     <ObjectPanelSection title={t(($) => $.detail.desktop.title)}>
+      {runtime.status !== "online" && <p role="status" className="px-3 pb-2 text-caption text-muted-foreground">{t(($) => $.detail.desktop.offline)}</p>}
+      {query.isError && <p role="alert" className="px-3 pb-2 text-caption text-destructive">{t(($) => $.detail.desktop.reason.status_failed)}</p>}
       <ObjectProperty label={t(($) => $.detail.desktop.version)}>
         <ShieldCheck aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="truncate font-mono">
@@ -126,6 +137,7 @@ export function AgentDesktopReadinessSection({
           </Button>
         </div>
       )}
+      {recheck}
     </ObjectPanelSection>
   );
 }

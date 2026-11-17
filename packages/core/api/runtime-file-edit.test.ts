@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiClient } from "./client";
 import {
@@ -127,6 +128,19 @@ describe("parseRuntimeFileEditResult", () => {
 });
 
 describe("ApiClient.applyRuntimeFileEdit", () => {
+  it("preserves the canonical file identity and admission receipt through the edit HTTP contract", async () => {
+    const fileId = "66f46490-15d2-43ca-bdbb-89a18617dd9e";
+    vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+      if (typeof init?.body !== "string") throw new Error("Missing edit request");
+      const input = ApplyRuntimeFileEditRequestSchema.parse(JSON.parse(init.body));
+      if (input.file_id !== fileId) return okResponse({ error: "Identity required" }, 409);
+      return okResponse({ edit: { file_path: "moved.txt", file_id: fileId, command_id: input.command_id, operation_id: "f89b7499-3ad7-4dcc-8d70-9630b5313bc7", merged: true, conflict: false, bytes: 6 } });
+    }));
+
+    const result = await new ApiClient("https://api.example.test").applyRuntimeFileEdit({ ...base, file_id: fileId, action: "merge_edit", edit_base: "original", edit_new: "edited" });
+
+    expect(result).toMatchObject({ file_id: fileId, file_path: "moved.txt", operation_id: "f89b7499-3ad7-4dcc-8d70-9630b5313bc7", merged: true });
+  });
   it("POSTs the edit command and returns the parsed result", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       okResponse({ edit: { file_path: "file.txt", new_sha256: "b".repeat(64), bytes: 12 } }),

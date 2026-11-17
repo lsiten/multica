@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, ApiError } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useCancelChatTask } from "@multica/core/chat";
 import { chatKeys } from "@multica/core/chat/queries";
 import {
   prioritizePendingChatTask,
@@ -41,6 +42,7 @@ export function useChatTaskActions(
   const { t } = useT("chat");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
+  const { mutateAsync: requestCancellation } = useCancelChatTask(wsId, activeSessionId);
 
   const cancelChatTask = useCallback(
     async (
@@ -63,18 +65,10 @@ export function useChatTaskActions(
             pendingSnapshot.supports_queue === true);
       let queuedAction = options.queuedAction ??
         (derivedQueuedAction ? "edit" : undefined);
-      qc.setQueryData<ChatPendingTask>(
-        pendingKey,
-        (old) => removePendingChatTask(old, taskId),
-      );
-
       try {
         let result: CancelTaskResponse;
         try {
-          result = await api.cancelTaskById(
-            taskId,
-            queuedAction ? { queuedAction, sessionId } : undefined,
-          );
+          result = await requestCancellation({ taskId, options: queuedAction ? { queuedAction, sessionId } : undefined });
         } catch (err) {
           if (!(derivedQueuedAction && err instanceof ApiError && err.status === 409)) {
             throw err;
@@ -82,8 +76,9 @@ export function useChatTaskActions(
           // The daemon claimed the task after our cached queued snapshot.
           // Preserve Stop semantics by cancelling its new active state.
           queuedAction = undefined;
-          result = await api.cancelTaskById(taskId);
+          result = await requestCancellation({ taskId });
         }
+        qc.setQueryData<ChatPendingTask>(pendingKey, (old) => removePendingChatTask(old, taskId));
         const restored = result.cancelled_chat_message;
         if (restored) {
           removeChatMessageFromCaches(qc, restored.chat_session_id, restored.message_id);
@@ -110,7 +105,6 @@ export function useChatTaskActions(
         });
         return result;
       } catch (err) {
-        qc.setQueryData(pendingKey, pendingSnapshot);
         apiLogger.warn("cancelTask.error (task may have already finished)", {
           taskId,
           sessionId,
@@ -127,7 +121,7 @@ export function useChatTaskActions(
         if (wsId) qc.invalidateQueries({ queryKey: chatKeys.pendingTasks(wsId) });
       }
     },
-    [qc, enqueueLocalRestore, wsId],
+    [qc, enqueueLocalRestore, wsId, requestCancellation],
   );
 
   const handleEditQueuedTask = useCallback(
@@ -193,16 +187,10 @@ export function useChatTaskActions(
       if (!activeSessionId) return;
       const pendingKey = chatKeys.pendingTask(activeSessionId);
       await qc.cancelQueries({ queryKey: pendingKey });
-      const pendingSnapshot = qc.getQueryData<ChatPendingTask>(pendingKey);
-      qc.setQueryData<ChatPendingTask>(
-        pendingKey,
-        (old) => prioritizePendingChatTask(old, taskId),
-      );
-      let prioritizeSucceeded = false;
       try {
         const result = await api.prioritizeQueuedChatTask(activeSessionId, taskId);
         if (result.task_id !== taskId) throw new Error("invalid prioritize response");
-        prioritizeSucceeded = true;
+        qc.setQueryData<ChatPendingTask>(pendingKey, (old) => prioritizePendingChatTask(old, taskId));
         if (result.active_task_id) {
           const cancelled = await cancelChatTask(result.active_task_id, activeSessionId, {
             restoreDraftToInput: true,
@@ -211,7 +199,6 @@ export function useChatTaskActions(
           if (!cancelled) throw new Error("current task could not be stopped");
         }
       } catch (err) {
-        if (!prioritizeSucceeded) qc.setQueryData(pendingKey, pendingSnapshot);
         apiLogger.warn("sendQueuedTaskNow.error", {
           taskId,
           sessionId: activeSessionId,

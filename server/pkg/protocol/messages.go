@@ -442,6 +442,9 @@ type ChatSessionUpdatedPayload struct {
 	// ProjectID is set only by the project-context update path. The double
 	// pointer distinguishes an omitted field from an explicit JSON null.
 	ProjectID **string `json:"project_id,omitempty"`
+	// SelectedProjectID is set when the file browser changes its current
+	// project without changing the execution context used for new turns.
+	SelectedProjectID **string `json:"selected_project_id,omitempty"`
 	// SquadID follows the same omitted-vs-null convention as ProjectID.
 	SquadID **string `json:"squad_id,omitempty"`
 	// Pinned is set only by the pin/unpin path; nil on a plain rename so a

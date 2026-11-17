@@ -19,6 +19,7 @@ import { LightboxProvider, prewarmHighlighter } from "@/lib/markdown";
 import { NAV_THEME } from "@/lib/theme";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { MobileI18nProvider } from "@/lib/i18n";
+import { MobilePushProvider } from "@/data/mobile-push-provider";
 
 // Kick off Shiki highlighter init at module load — fires once per process,
 // finishes before the user navigates to any screen with a code block. If
@@ -85,6 +86,7 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <ThemeProvider value={NAV_THEME[colorScheme]}>
                 <AuthInitializer>
+                  <MobilePushProvider>
                   <SessionActivityBoundary>
                     <LightboxProvider>
                       <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
@@ -96,6 +98,7 @@ export default function RootLayout() {
                       <PortalHost />
                     </LightboxProvider>
                   </SessionActivityBoundary>
+                  </MobilePushProvider>
                 </AuthInitializer>
               </ThemeProvider>
             </QueryClientProvider>

@@ -6,18 +6,18 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import type { Project, Agent, Squad, ProjectExecutionScopeBindings } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
 import { useNavigationGuard } from "../../navigation";
+import { confirmNavigation } from "../../platform/navigation-confirmation";
 import { useT } from "../../i18n";
 
 export function ProjectExecutionScope({project,agents,squads}:{project:Project;agents:Agent[];squads:Squad[]}){
- const {t}=useT("projects");const wsId=useWorkspaceId();const qc=useQueryClient();
+ const {t}=useT("projects");const {t:common}=useT("common");const wsId=useWorkspaceId();const qc=useQueryClient();
  const key=["project-execution-scope-bindings",wsId,project.id];
  const query=useQuery({queryKey:key,queryFn:()=>api.getProjectExecutionScopeBindings(project.id)});
  const [open,setOpen]=useState(false);const [search,setSearch]=useState("");
  const [draft,setDraft]=useState<Pick<ProjectExecutionScopeBindings,"agent_ids"|"squad_ids">|null>(null);
  const save=useMutation({mutationFn:(values:Pick<ProjectExecutionScopeBindings,"agent_ids"|"squad_ids">)=>api.updateProjectExecutionScopeBindings(project.id,values),onSuccess:result=>{qc.setQueryData(key,result);setDraft(null)}});
- const guard=useCallback(()=>!draft || window.confirm(t($=>$.detail.scope_unsaved)),[draft,t]);
- useNavigationGuard(guard);
- useEffect(()=>{if(!draft)return;const prevent=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue=""};window.addEventListener("beforeunload",prevent);return()=>window.removeEventListener("beforeunload",prevent)},[draft]);
+ const guard=useCallback(()=>!save.isPending && (!draft || confirmNavigation({message:t($=>$.detail.scope_unsaved),cancelLabel:common($=>$.cancel),confirmLabel:common($=>$.confirm)})),[common,draft,save.isPending,t]);
+ useNavigationGuard(guard, !!draft || save.isPending);
  useEffect(()=>{void qc.invalidateQueries({queryKey:["project-execution-scope-bindings",wsId,project.id]})},[project.id,project.lead_id,project.lead_type,qc,wsId]);
  const value=draft??query.data;
  const autoIds=project.lead_type==="agent"&&project.lead_id?[project.lead_id]:[];

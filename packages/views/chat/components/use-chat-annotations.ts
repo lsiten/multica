@@ -23,7 +23,7 @@ type RevealChatMessage = (messageId: string) => boolean;
 
 const REVEAL_RETRY_FRAMES = 30;
 
-type MessagesQuery = UseInfiniteQueryResult<InfiniteData<ChatMessagesPage>>;
+type MessagesQuery = Pick<UseInfiniteQueryResult<InfiniteData<ChatMessagesPage>>, "data" | "fetchNextPage">;
 
 function hasMessage(pages: readonly ChatMessagesPage[] | undefined, messageId: string): boolean {
   return !!pages?.some((page) => page.messages.some((message) => message.id === messageId));
@@ -31,13 +31,14 @@ function hasMessage(pages: readonly ChatMessagesPage[] | undefined, messageId: s
 
 /** Page older history in until the message is loaded or history runs out. */
 async function loadOlderUntil(query: MessagesQuery, messageId: string): Promise<boolean> {
-  let result = query;
-  while (!hasMessage(result.data?.pages, messageId) && result.hasNextPage) {
+  let pages = query.data?.pages;
+  while (!hasMessage(pages, messageId) && pages?.at(-1)?.has_more && pages.at(-1)?.next_cursor) {
     // Join a page load the list already started rather than cancelling it.
-    result = await result.fetchNextPage({ cancelRefetch: false });
+    const result = await query.fetchNextPage({ cancelRefetch: false });
     if (result.isFetchNextPageError) return false;
+    pages = result.data?.pages;
   }
-  return hasMessage(result.data?.pages, messageId);
+  return hasMessage(pages, messageId);
 }
 
 export type ChatAnnotations = ReturnType<typeof useChatAnnotations>;
@@ -117,5 +118,20 @@ export function useChatAnnotations({ sessionId, agentName, enabled }: {
     return true;
   }, [draftKey, t, cancelRetry, openWhenMounted]);
 
-  return { ...annotations, draftKey, editAnnotation, revealSourceRef };
+  const revealMessage = useCallback(async (messageId: string) => {
+    cancelRetry();
+    const attempt = attemptRef.current;
+    const query = queryRef.current.data ? queryRef.current : { ...queryRef.current, ...await queryRef.current.refetch({ cancelRefetch: false }) };
+    if (attempt !== attemptRef.current) return;
+    if (!hasMessage(query.data?.pages, messageId)) {
+      const found = await loadOlderUntil(query, messageId);
+      if (attempt !== attemptRef.current) return;
+      if (!found) {
+        toast.error(t(($) => $.reply.annotations.source_changed));
+        return;
+      }
+    }
+  }, [cancelRetry, t]);
+
+  return { ...annotations, draftKey, editAnnotation, revealSourceRef, revealMessage };
 }

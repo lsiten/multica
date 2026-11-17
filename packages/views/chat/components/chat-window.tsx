@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
-import { Minus, Maximize2, Minimize2, ChevronDown, Plus, Check, Archive, Pencil, Loader2, Square, X } from "@multica/ui/icons";
+import { Minus, Maximize2, Minimize2, ChevronDown, Plus, Check, Archive, Pencil, Loader2, Square, X, ArrowUpRight, GripVertical } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
 import { cn } from "@multica/ui/lib/utils";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
@@ -13,10 +13,9 @@ import {
   PopoverTrigger,
 } from "@multica/ui/components/ui/popover";
 import { useReducedMotion } from "@multica/core/appearance";
-import { api } from "@multica/core/api";
+import { toast } from "sonner";
 import { isAgentRuntimeBound } from "@multica/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { ChatWindowMessages } from "./chat-window-messages";
 import { useChatOpenReveal } from "./use-chat-open-reveal";
@@ -44,14 +43,19 @@ import {
   chatKeys,
 } from "@multica/core/chat/queries";
 import { useUpdateChatSession } from "@multica/core/chat/mutations";
-import { useChatStore } from "@multica/core/chat";
+import { CHAT_SESSION_TAB_MIME, CHAT_SESSION_TAB_PROMOTE_EVENT, chatSessionTabDragValue, useChatStore, useDocModeStore, useCancelChatTask } from "@multica/core/chat";
+import { paths, useWorkspaceSlug } from "@multica/core/paths";
+import { useOptionalNavigation } from "../../navigation";
 import { chatQuickActionsPendingOptions } from "@multica/core/chat/queries";
 import { useQuickActionsPendingTimeout } from "@multica/core/chat/use-quick-actions-pending-timeout";
 import { useQuickActionsFailureToast } from "./use-quick-actions-failure-toast";
 import { removeChatMessageFromCaches } from "@multica/core/realtime";
 import { useChatInputFocus } from "./use-chat-input-focus";
-import { findOriginalChatInputMessage } from "./chat-failure-action";
-import { ChatInput } from "./chat-input";
+import { useChatRunControls } from "./use-chat-run-controls";
+import { ChatComposer } from "./chat-composer";
+import { useChatReferences } from "./use-chat-references";
+import { useChatMessageActions } from "./use-chat-message-actions";
+import { useMessageSourceNavigation } from "./use-message-source-navigation";
 import { useChatAnnotations } from "./use-chat-annotations";
 import { ChatQueue } from "./chat-queue";
 import { ChatAppRequests } from "../../common/app-requests";
@@ -68,7 +72,7 @@ import { CHAT_WINDOW_INSET, useChatWindowAnchor } from "./use-chat-window-anchor
 import { useFormatTimeAgo } from "./use-format-time-ago";
 import { useChatController } from "./use-chat-controller";
 import { createLogger } from "@multica/core/logger";
-import type { Agent, ChatAutonomyPolicyOverride, ChatMessage, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
+import type { Agent, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
 import { useT } from "../../i18n";
 
 const uiLogger = createLogger("chat.ui");
@@ -86,6 +90,17 @@ export function ChatWindow() {
   // MOUNTED when closed (it is only hidden, see isVisible below).
   const c = useChatController({ isActive: isOpen });
   const { wsId, activeSessionId, currentSession, activeAgent, pendingTask, pendingTaskId } = c;
+  const navigation = useOptionalNavigation();
+  const workspaceSlug = useWorkspaceSlug();
+  const openFullChat = (sessionId = activeSessionId, messageId?: string) => {
+    if (!navigation || !workspaceSlug) return;
+    const destination = paths.workspace(workspaceSlug).chat();
+    const query = new URLSearchParams();
+    if (sessionId) query.set("session", sessionId);
+    if (messageId) query.set("message", messageId);
+    navigation.push(query.size ? `${destination}?${query}` : destination);
+    setOpen(false);
+  };
   const customizeConversationStartersHref = useCustomizeConversationStartersHref(activeAgent, wsId);
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(activeSessionId ?? ""),
@@ -103,15 +118,62 @@ export function ChatWindow() {
   const newChatRequest = useChatStore((s) => s.newChatRequest);
   const { focusRequest: openFocusRequest } = useChatInputFocus(isOpen, windowRef, newChatRequest);
   const focusRequest = c.focusInputRequest + openFocusRequest;
+  const chatPromotionPointer = useRef<{ pointerId: number; promoted: boolean } | null>(null);
+  const promoteChatTab = useCallback(() => {
+    if (!activeSessionId || !workspaceSlug) return;
+    window.dispatchEvent(new CustomEvent(CHAT_SESSION_TAB_PROMOTE_EVENT, {
+      detail: { sessionId: activeSessionId, title: currentSession?.title ?? t(($) => $.workspace.conversation) },
+    }));
+  }, [activeSessionId, currentSession?.title, t, workspaceSlug]);
+
+  // Keep pointer promotion independent from the native HTML5 drag gesture.
+  // Capturing the pointer on the draggable button can prevent Chromium from
+  // dispatching `dragstart`, so observe the window instead and let the browser
+  // own the DataTransfer lifecycle when it starts a real drag.
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const drag = chatPromotionPointer.current;
+      if (!drag || drag.promoted || event.pointerId !== drag.pointerId || event.clientY > 80) return;
+      drag.promoted = true;
+      promoteChatTab();
+      setOpen(false);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const drag = chatPromotionPointer.current;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      if (!drag.promoted && event.clientY <= 80) {
+        drag.promoted = true;
+        promoteChatTab();
+        setOpen(false);
+      }
+      chatPromotionPointer.current = null;
+    };
+    const onPointerCancel = () => {
+      chatPromotionPointer.current = null;
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+    };
+  }, [promoteChatTab, setOpen]);
 
   const annotations = useChatAnnotations({
     sessionId: activeSessionId,
     agentName: activeAgent?.name,
     enabled: !c.isSessionArchived && !c.isAgentArchived && !c.isAgentAccessRevoked && c.isAgentRuntimeBound && !c.noAgent,
   });
-  const qc = useQueryClient();
-  const [autonomyPolicy, setAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
-  useEffect(() => { setAutonomyPolicy(null); }, [activeSessionId, c.selectedAgentId]);
+  const controls = useChatRunControls(c);
+  const messageActions = useChatMessageActions(c);
+  const openMessageReference = useMessageSourceNavigation(wsId, (session, messageId) => {
+    c.handleSelectSession(session);
+    useDocModeStore.getState().selectChat(session.id);
+    openFullChat(session.id, messageId);
+  });
+  const references = useChatReferences(c.wsId, c.activeSessionId, c.requestInputFocus, openMessageReference);
 
   // Mount / unmount logging. ChatWindow lives in DashboardLayout, so this
   // fires on layout mount (login / workspace switch / fresh page load).
@@ -131,35 +193,6 @@ export function ChatWindow() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
   }, []);
-
-  const handleFailureAction = useCallback(
-    async (message: ChatMessage, action: "retry" | "continue") => {
-      if (action === "continue") {
-        if (!message.task_id) {
-          toast.error(t(($) => $.input.send_failed_toast));
-          return;
-        }
-        try {
-          await api.continueChatTask(message.chat_session_id, message.task_id);
-          await qc.invalidateQueries({ queryKey: chatKeys.pendingTask(message.chat_session_id) });
-        } catch (err) {
-          apiLogger.error("continueChatTask.error", { sessionId: message.chat_session_id, taskId: message.task_id, err });
-          toast.error(t(($) => $.input.send_failed_toast));
-        }
-        return;
-      }
-      const original = findOriginalChatInputMessage(c.messages, message);
-      if (!original) {
-        toast.error(t(($) => $.input.send_failed_toast));
-        return;
-      }
-      await c.handleSend(
-        original.content,
-        original.attachments?.map((attachment) => attachment.id),
-      );
-    },
-    [c.handleSend, c.messages, qc, t],
-  );
 
   const handleMinimize = useCallback(() => {
     uiLogger.info("minimize (close)", {
@@ -293,9 +326,32 @@ export function ChatWindow() {
       }}
     >
       {!isMobile && <ChatResizeHandles onDragStart={startDrag} />}
-      {/* Header — ⊕ new + session dropdown | window tools */}
+      {/* Header — ⊕ new + session dropdown | window tools. The title area is
+          also a drag source: dropping it on the desktop tab strip promotes
+          this floating chat into a first-class workspace tab. */}
       <div className="flex items-center justify-between border-b px-4 py-2.5 gap-2">
-        <div className="flex items-center gap-1 min-w-0">
+        <button
+          type="button"
+          draggable={!!activeSessionId && !!workspaceSlug}
+          aria-label={t(($) => $.workspace.move_chat)}
+          title={t(($) => $.workspace.move_chat)}
+          className="flex size-7 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-surface-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !activeSessionId || !workspaceSlug) return;
+            chatPromotionPointer.current = { pointerId: event.pointerId, promoted: false };
+          }}
+          onDragStart={(event) => {
+            if (!activeSessionId || !workspaceSlug) return;
+            event.dataTransfer.effectAllowed = "copyMove";
+            event.dataTransfer.setData(CHAT_SESSION_TAB_MIME, chatSessionTabDragValue(activeSessionId));
+            event.dataTransfer.setData("text/plain", currentSession?.title ?? t(($) => $.workspace.conversation));
+          }}
+        >
+          <GripVertical aria-hidden="true" />
+        </button>
+        <div
+          className="flex min-w-0 flex-1 items-center gap-1"
+        >
           <Tooltip>
             <TooltipTrigger
               render={
@@ -323,6 +379,9 @@ export function ChatWindow() {
           />
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
+          <Button variant="ghost" size="icon-sm" className="text-muted-foreground"
+            aria-label={t(($) => $.workspace.open_full_chat)} title={t(($) => $.workspace.open_full_chat)}
+            disabled={!navigation || !workspaceSlug} onClick={() => openFullChat()}><ArrowUpRight /></Button>
           {!isMobile && (
             <Tooltip>
               <TooltipTrigger
@@ -385,6 +444,15 @@ export function ChatWindow() {
       <AnimatePresence initial={false}>
         {isOpen && (
           <ChatWindowMessages
+            onQuoteMessage={messageActions.onQuoteMessage}
+            onStartDiscussion={messageActions.onStartDiscussion}
+            onOpenMessageReference={openMessageReference}
+            referenceWorkspaceId={wsId}
+            onOpenDocumentReference={(reference) => {
+              if (!activeSessionId) return;
+              useDocModeStore.getState().openDoc(activeSessionId, reference.resource);
+              openFullChat();
+            }}
             sessionId={activeSessionId}
             pendingTask={pendingTask}
             pendingTaskLoading={c.pendingTaskLoading}
@@ -401,7 +469,7 @@ export function ChatWindow() {
             quickActionsPendingMessageId={quickActionsPending?.message_id ?? null}
             onReady={markContentReady}
             annotations={annotations}
-            onFailureAction={handleFailureAction}
+            onFailureAction={controls.handleFailureAction}
           >
             <EmptyState
               agent={activeAgent}
@@ -451,57 +519,26 @@ export function ChatWindow() {
         onClear={c.handleClearQueuedTasks}
       />
 
-      {/* Input — disabled for legacy archived sessions and for sessions whose
-       *  agent has been archived (read-only); locked out entirely when there's
-       *  no agent (the EmptyState above carries the CTA). */}
-      <ChatInput
-        historyMessages={c.messages}
-        historyWorkspaceId={wsId}
-        onSend={async (...args) => { await c.handleSend(...args); setAutonomyPolicy(null); }}
-        restoreDraftRequest={c.restoreDraftRequest}
-        conversationStarterRequest={c.conversationStarterRequest}
-        onConversationStarterApplied={c.handleConversationStarterApplied}
-        onRestoreDraftApplied={c.handleRestoreDraftApplied}
-        uploadEnabled={c.uploadEnabled && !c.isAgentAccessRevoked}
-        onStop={c.handleStop}
-        isRunning={!!pendingTaskId}
-        allowSubmitWhileRunning={pendingTask?.supports_queue === true}
-        disabled={
-          c.isSessionArchived ||
-          c.isAgentArchived ||
-          c.isAgentAccessRevoked ||
-          !c.isAgentRuntimeBound
-        }
-        noAgent={c.noAgent}
-        agentArchived={c.isAgentArchived}
-        agentAccessRevoked={c.isAgentAccessRevoked}
-        agentRuntimeRequired={!c.isAgentRuntimeBound}
-        agentName={activeAgent?.name}
-        projects={c.projects}
-        projectId={c.activeProjectId}
-        onProjectChange={c.handleProjectChange}
-        projectContextUnsupported={c.projectContextUnsupported}
-        isProjectUpdating={c.isProjectUpdating}
-        agentId={activeAgent?.id}
-        squads={c.squads}
-        squadId={c.activeSquadId}
-        onSquadChange={c.handleSquadChange}
-        workspaceScopeAllowed={c.workspaceScopeAllowed}
-        autonomyPolicy={autonomyPolicy}
-        onAutonomyPolicyChange={setAutonomyPolicy}
-        leftAdornment={
+      <ChatComposer
+        controller={c}
+        controls={controls}
+        annotations={annotations}
+        inputProps={{
+          ...references.inputProps,
+          leftAdornment: (
           <AgentDropdown
             agents={c.availableAgents}
             activeAgent={activeAgent}
             userId={c.user?.id}
             onSelect={c.handleSelectAgent}
           />
-        }
-        contextItems={contextItems}
-        pageContext={pageContext}
-        focusRequest={focusRequest}
-        annotations={annotations}
+          ),
+          contextItems,
+          pageContext,
+          focusRequest,
+        }}
       />
+      {messageActions.dialog}
     </motion.div>
   );
 }
@@ -704,6 +741,7 @@ function SessionDropdown({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const updateSession = useUpdateChatSession();
   const queryClient = useQueryClient();
+  const cancelTask = useCancelChatTask(wsId, null);
   const formatTimeAgo = useFormatTimeAgo();
 
   // Aggregate "which sessions have an in-flight task right now". Reuses
@@ -796,43 +834,29 @@ function SessionDropdown({
 
   const handleConfirmStop = (session: ChatSession, task: PendingChatTasksResponse["tasks"][number]) => {
     setStoppingTaskId(task.task_id);
-    previousInFlightRef.current = new Set(
-      [...previousInFlightRef.current].filter((sessionId) => sessionId !== session.id),
-    );
-
-    // Same optimistic behavior as the active chat Stop button: remove the
-    // running affordance immediately, then let task:cancelled / refetches
-    // converge every open surface on the server truth.
-    queryClient.setQueryData<PendingChatTasksResponse>(chatKeys.pendingTasks(wsId), (current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        tasks: current.tasks.filter((item) => item.task_id !== task.task_id),
-      };
-    });
-    queryClient.setQueryData(chatKeys.pendingTask(session.id), {});
-    queryClient.invalidateQueries({ queryKey: chatKeys.messages(session.id) });
-    queryClient.invalidateQueries({ queryKey: chatKeys.messagesPage(session.id) });
-
-    api.cancelTaskById(task.task_id).then(
+    cancelTask.mutateAsync({ taskId: task.task_id }).then(
       (result) => {
         const restored = result.cancelled_chat_message;
         if (restored?.restore_to_input) {
           removeChatMessageFromCaches(queryClient, restored.chat_session_id, restored.message_id);
         }
+        setConfirmingStopId(null);
         apiLogger.info("cancelTask.success (history row)", { taskId: task.task_id, sessionId: session.id });
       },
-      (err) =>
+      (err) => {
+        toast.error(t(($) => $.workspace.stop_failed));
         apiLogger.warn("cancelTask.error (history row; task may have already finished)", {
           taskId: task.task_id,
           sessionId: session.id,
           err,
-        }),
+        });
+      },
     ).finally(() => {
       queryClient.invalidateQueries({ queryKey: chatKeys.pendingTasks(wsId) });
       queryClient.invalidateQueries({ queryKey: chatKeys.pendingTask(session.id) });
+      queryClient.invalidateQueries({ queryKey: chatKeys.messages(session.id) });
+      queryClient.invalidateQueries({ queryKey: chatKeys.messagesPage(session.id) });
       setStoppingTaskId(null);
-      setConfirmingStopId(null);
     });
   };
 

@@ -6,6 +6,7 @@
  * iOS cannot present the next ActionSheet while the first is dismissing.
  */
 import { useCallback, useState } from "react";
+import { paths } from "@multica/core/paths/paths";
 import { ActionSheetIOS, Alert } from "react-native";
 import { router } from "expo-router";
 import * as Clipboard from "expo-clipboard";
@@ -159,8 +160,8 @@ export function useCommentLongPress(
             useCommentSelectStore.getState().setSelecting(entry.id);
             return;
           case "copyLink": {
-            if (!canCopyLink) return;
-            const url = `${webUrl}/${wsSlug}/issue/${issueIdentifier}#comment-${entry.id}`;
+            if (!webUrl || !wsSlug || !issueIdentifier) return;
+            const url = `${webUrl.replace(/\/+$/, "")}${paths.workspace(wsSlug).issueDetail(issueIdentifier)}#comment-${entry.id}`;
             Clipboard.setStringAsync(url);
             Haptics.notificationAsync(
               Haptics.NotificationFeedbackType.Success,

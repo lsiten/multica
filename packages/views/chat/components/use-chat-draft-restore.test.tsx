@@ -64,6 +64,7 @@ vi.mock("@multica/core/chat", () => ({
 vi.mock("@multica/core/realtime", () => ({ removeChatMessageFromCaches: vi.fn() }));
 vi.mock("@multica/core/logger", () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  noopLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 import type { Attachment } from "@multica/core/types";

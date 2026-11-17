@@ -117,6 +117,7 @@ import {
   EMPTY_USER,
   EMPTY_WORKSPACE_LIST,
   InboxListSchema,
+  InboxItemSchema,
   InboxUnreadSummarySchema,
   NotificationPreferenceResponseSchema,
   ListLabelsResponseSchema,
@@ -143,6 +144,12 @@ import { currentSessionEpoch, sessionEpochChanged } from "./session-epoch";
 import { parseWithFallback } from "@/lib/parse-response";
 import { createRequestId } from "@/lib/request-id";
 import { buildCommentUpdateBody } from "./revision";
+import {
+  MobilePushConfigurationSchema,
+  MobilePushRegistrationSchema,
+  EMPTY_MOBILE_PUSH_CONFIGURATION,
+  type MobilePushDevice,
+} from "./mobile-push-schema";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -408,6 +415,28 @@ class ApiClient {
   }
 
   // --- Auth ---
+  getMobilePushConfiguration(opts?: { signal?: AbortSignal }) {
+    return this.fetchValidated(
+      "/api/mobile-push/config", MobilePushConfigurationSchema,
+      EMPTY_MOBILE_PUSH_CONFIGURATION, opts,
+    );
+  }
+
+  async registerMobilePushDevice(device: MobilePushDevice, signal?: AbortSignal) {
+    const result = await this.fetchValidatedWith(
+      "/api/mobile-push/devices", MobilePushRegistrationSchema,
+      { registered: false },
+      { method: "PUT", body: JSON.stringify(device), signal },
+    );
+    if (!result.registered) throw new ApiError("Push registration failed", 0);
+  }
+
+  async deleteMobilePushDevice(device: MobilePushDevice) {
+    await this.fetch<void>("/api/mobile-push/devices", {
+      method: "DELETE", body: JSON.stringify(device),
+    });
+  }
+
   async sendCode(email: string): Promise<void> {
     await this.fetch<void>("/auth/send-code", {
       method: "POST",
@@ -550,8 +579,13 @@ class ApiClient {
     );
   }
 
-  async markInboxRead(id: string): Promise<InboxItem> {
-    return this.fetch<InboxItem>(`/api/inbox/${id}/read`, { method: "POST" });
+  async markInboxRead(id: string, workspaceSlug?: string): Promise<InboxItem> {
+    const item = await this.fetchValidatedWith<InboxItem | null>(
+      `/api/inbox/${id}/read`, InboxItemSchema, null,
+      { method: "POST", ...(workspaceSlug ? { headers: { "X-Workspace-Slug": workspaceSlug } } : {}) },
+    );
+    if (!item) throw new ApiError("Inbox read response invalid", 0);
+    return item;
   }
 
   // Archive endpoints — write surface. Match web's surface in

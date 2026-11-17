@@ -119,8 +119,8 @@
     "step2_label": "启动守护进程"
   },
   "cloud_waitlist": {
-    "intro_main": "云运行时尚未上线。留下邮箱，上线时通过邮件通知你。",
-    "intro_warning": "提示：未配置运行时，智能体就无法工作——如果现在跳过，在你回来安装之前不会启动任何运行。",
+    "intro_main": "当前接入流程暂不提供独立云电脑。留下邮箱以接收开放通知。",
+    "intro_warning": "本地智能体需要已连接的运行时。托管云智能体是另一种能力：完成引导后，若部署已启用云服务商，可在团队中选择。",
     "email_label": "邮箱",
     "email_placeholder": "you@work.com",
     "reason_label": "为什么选择云？",
@@ -187,7 +187,7 @@
     "empty_skip_subtitle": "连接运行时前，智能体无法运行。",
     "empty_skip_action": "跳过",
     "empty_waitlist_title": "使用云电脑",
-    "empty_waitlist_subtitle": "我们会在云上为你运行一台电脑。尚未上线。",
+    "empty_waitlist_subtitle": "当前接入流程暂不提供独立云电脑。托管云智能体可在团队中单独配置。",
     "empty_waitlist_action": "即将推出",
     "skip": "暂时跳过",
     "refresh": "刷新",
@@ -210,7 +210,7 @@
     "cli_subtitle": "连接一台服务器、远程开发机或任意无头电脑。需要终端。",
     "cli_action": "查看步骤",
     "cloud_title": "使用云电脑",
-    "cloud_subtitle": "我们会在云上为你运行一台电脑。尚未上线。",
+    "cloud_subtitle": "当前接入流程暂不提供独立云电脑。托管云智能体可在团队中单独配置。",
     "cloud_action": "即将推出",
     "cli_dialog_title": "通过终端连接",
     "cli_dialog_pick_hint": "在上方选一台电脑。",

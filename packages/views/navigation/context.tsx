@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { NavigationAdapter } from "./types";
 import { registerNavigationGuard, runGuardedNavigation } from "@multica/core/platform";
+import { isDesktopShell } from "../platform/local-directory";
 
 const NavigationGuardContext = createContext<((guard: () => boolean) => () => void) | null>(null);
 
@@ -119,7 +120,18 @@ export function useReportNavigating(pending: boolean): void {
 }
 
 /** Register a synchronous leave guard at the shared navigation boundary. */
-export function useNavigationGuard(guard: () => boolean): void {
+export function useNavigationGuard(guard: () => boolean, preventUnload = false): void {
  const register = use(NavigationGuardContext);
  useEffect(() => register?.(guard), [register, guard]);
+ useEffect(() => {
+   if (!preventUnload) return;
+   const beforeUnload = (event: BeforeUnloadEvent) => {
+     // Native close checks are dispatched before unloading; real unloads must not wait on a dialog.
+     if (isDesktopShell() && !event.isTrusted && guard()) return;
+     event.preventDefault();
+     event.returnValue = "";
+   };
+   window.addEventListener("beforeunload", beforeUnload);
+   return () => window.removeEventListener("beforeunload", beforeUnload);
+ }, [guard, preventUnload]);
 }

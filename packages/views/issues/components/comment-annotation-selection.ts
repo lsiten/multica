@@ -56,12 +56,16 @@ export function captureCommentSelection(card: HTMLElement, selection: Selection 
 }
 
 export function annotationRange(root: HTMLElement, annotation: ReplyAnnotation, editable = false): Range | null {
-  const { text, nodes } = indexCommentText(root, editable);
-  const start = locateReplyAnnotation(text, annotation);
+  const index = indexCommentText(root, editable);
+  const start = locateReplyAnnotation(index.text, annotation);
   if (start === null) return null;
-  const end = start + annotation.quote.length;
-  const first = nodes.find((n) => n.start <= start && n.end > start);
-  const last = nodes.find((n) => n.start < end && n.end >= end);
+  return indexedTextRange(index, start, annotation.quote.length);
+}
+
+export function indexedTextRange(index: ReturnType<typeof indexCommentText>, start: number, length: number): Range | null {
+  const end = start + length;
+  const first = index.nodes.find((n) => n.start <= start && n.end > start);
+  const last = index.nodes.find((n) => n.start < end && n.end >= end);
   if (!first || !last) return null;
   const range = document.createRange();
   range.setStart(first.node, start - first.start);

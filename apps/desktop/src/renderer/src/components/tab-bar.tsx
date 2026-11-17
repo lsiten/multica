@@ -1,13 +1,16 @@
 import {
   Fragment,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  type DragEvent,
   type RefObject,
 } from "react";
 import { motion } from "motion/react";
 import { useReducedMotion } from "@multica/core/appearance";
+import { CHAT_SESSION_TAB_MIME, CHAT_SESSION_TAB_PROMOTE_EVENT, DOCUMENT_TAB_MIME, documentTabDragSessionId, useChatStore } from "@multica/core/chat";
 import { toast } from "sonner";
 import { X, Plus, Pin, PinOff, ListX, ListEnd, AppWindow, Link2 } from "@multica/ui/icons";
 import { copyText } from "@multica/ui/lib/clipboard";
@@ -544,9 +547,11 @@ function NewTabButton() {
 export function TabBar() {
   const group = useActiveGroup();
   const moveTab = useTabStore((s) => s.moveTab);
+  const openTab = useTabStore((s) => s.openTab);
   const activeWorkspaceSlug = useTabStore((s) => s.activeWorkspaceSlug);
   const shouldReduceMotion = useReducedMotion();
   const tabScrollRef = useRef<HTMLDivElement>(null);
+  const [chatDropActive, setChatDropActive] = useState(false);
   const previousTabsRef = useRef<TabSnapshot | null>(null);
   const tabFadeStyle = useScrollFade(
     tabScrollRef,
@@ -583,6 +588,23 @@ export function TabBar() {
     newestTabId && newestTabId !== activeTabId ? newestTabId : null;
   const pinnedCount = tabs.filter((t) => t.pinned).length;
   const unpinnedCount = tabs.length - pinnedCount;
+
+  const promoteChatTab = useCallback((sessionId: string, title: string) => {
+    if (!activeWorkspaceSlug) return;
+    const path = `${paths.workspace(activeWorkspaceSlug).chat()}?session=${encodeURIComponent(sessionId)}`;
+    openTab(path, title);
+    useChatStore.getState().setOpen(false);
+  }, [activeWorkspaceSlug, openTab]);
+
+  useEffect(() => {
+    const onPromote = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: unknown; title?: unknown }>).detail;
+      if (typeof detail?.sessionId !== "string" || !detail.sessionId.trim()) return;
+      promoteChatTab(detail.sessionId, typeof detail.title === "string" ? detail.title : "");
+    };
+    window.addEventListener(CHAT_SESSION_TAB_PROMOTE_EVENT, onPromote);
+    return () => window.removeEventListener(CHAT_SESSION_TAB_PROMOTE_EVENT, onPromote);
+  }, [promoteChatTab]);
 
   useLayoutEffect(() => {
     const currentTabIds = tabOrder ? tabOrder.split("\0") : [];
@@ -650,6 +672,21 @@ export function TabBar() {
     if (from !== -1 && to !== -1) moveTab(from, to);
   };
 
+  const handleChatDrop = (event: DragEvent<HTMLDivElement>) => {
+    const chatPayload = event.dataTransfer.types.includes(CHAT_SESSION_TAB_MIME)
+      ? event.dataTransfer.getData(CHAT_SESSION_TAB_MIME).trim()
+      : "";
+    const documentPayload = event.dataTransfer.types.includes(DOCUMENT_TAB_MIME)
+      ? event.dataTransfer.getData(DOCUMENT_TAB_MIME)
+      : "";
+    const sessionId = chatPayload || documentTabDragSessionId(documentPayload);
+    if (!sessionId || !activeWorkspaceSlug) return;
+    event.preventDefault();
+    setChatDropActive(false);
+    const title = event.dataTransfer.getData("text/plain").trim();
+    promoteChatTab(sessionId, title);
+  };
+
   return (
     <div className="flex h-full w-full min-w-0 max-w-full items-center justify-start gap-1.5 px-2">
       <div className="relative flex h-full min-w-0 flex-1 items-center">
@@ -663,8 +700,16 @@ export function TabBar() {
           <div
             ref={tabScrollRef}
             data-tab-scroll-container
-            className="no-scrollbar flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain px-px"
+            className={cn("no-scrollbar flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain px-px", chatDropActive && "bg-accent/60")}
             style={tabFadeStyle}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes(CHAT_SESSION_TAB_MIME) && !event.dataTransfer.types.includes(DOCUMENT_TAB_MIME)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setChatDropActive(true);
+            }}
+            onDragLeave={() => setChatDropActive(false)}
+            onDrop={handleChatDrop}
           >
             <SortableContext items={tabIds} strategy={horizontalListSortingStrategy}>
               {tabs.map((tab, index) => (

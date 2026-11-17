@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createChatStore, registerChatStore, useChatStore } from "@multica/core/chat";
-import { chatSessionsOptions } from "@multica/core/chat/queries";
+import { CHAT_SESSION_TAB_MIME, CHAT_SESSION_TAB_PROMOTE_EVENT } from "@multica/core/chat";
+import { chatKeys, chatSessionsOptions } from "@multica/core/chat/queries";
 import type { ChatSession } from "@multica/core/types";
 import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
@@ -25,9 +27,10 @@ registerChatStore(
 
 // The header is what's under test, so the conversation body, composer and
 // network layer are stubbed; requests stay pending forever.
+const cancelRequest = vi.hoisted(() => vi.fn());
 vi.mock("@multica/core/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/api")>()),
-  api: new Proxy({}, { get: () => () => new Promise(() => {}) }),
+  api: new Proxy({}, { get: (_target, key) => key === "cancelTaskById" ? cancelRequest : () => new Promise(() => {}) }),
 }));
 vi.mock("@multica/core/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
@@ -36,6 +39,10 @@ vi.mock("@multica/core/auth", () => ({
 vi.mock("@multica/core/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/hooks")>()),
   useWorkspaceId: () => "ws-1",
+}));
+vi.mock("@multica/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/paths")>()),
+  useWorkspaceSlug: () => "acme",
 }));
 vi.mock("@multica/core/agents", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/agents")>()),
@@ -64,7 +71,7 @@ vi.mock("../../common/app-requests", () => ({ ChatAppRequests: () => null }));
 vi.mock("./chat-input", () => ({ ChatInput: () => null }));
 vi.mock("./chat-queue", () => ({ ChatQueue: () => null }));
 vi.mock("./chat-empty-state", () => ({ EmptyState: () => null }));
-vi.mock("./session-history-list", () => ({ SessionHistoryList: () => null }));
+vi.mock("./session-history-list", () => ({ SessionHistoryList: ({ sessions, renderRow }: { sessions: ChatSession[]; renderRow: (session: ChatSession) => ReactNode }) => sessions.map(renderRow) }));
 vi.mock("./chat-resize-handles", () => ({ ChatResizeHandles: () => null }));
 vi.mock("./offline-banner", () => ({ OfflineBanner: () => null }));
 vi.mock("./no-agent-banner", () => ({ NoAgentBanner: () => null }));
@@ -88,8 +95,7 @@ const session: ChatSession = {
   updated_at: "2026-11-01T00:00:00Z",
 };
 
-function renderWindow() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderWindow(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   qc.setQueryData(chatSessionsOptions("ws-1").queryKey, [session]);
   return render(
     <QueryClientProvider client={qc}>
@@ -101,9 +107,34 @@ function renderWindow() {
 }
 
 beforeEach(() => {
+  cancelRequest.mockReset();
   resize.isAtMax = false;
   act(() => {
     useChatStore.setState({ isOpen: true, isExpanded: false, activeSessionId: session.id });
+  });
+});
+
+describe("stopping a run from chat history", () => {
+  it("keeps task feedback until server confirmation and preserves the confirmation after failure", async () => {
+    const pending = Promise.withResolvers<{ id: string; status: string }>();
+    cancelRequest.mockReturnValue(pending.promise);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const aggregate = { tasks: [{ task_id: "task-1", status: "running", chat_session_id: session.id }] };
+    const task = { task_id: "task-1", status: "running" };
+    qc.setQueryData(chatKeys.pendingTasks("ws-1"), aggregate);
+    qc.setQueryData(chatKeys.pendingTask(session.id), task);
+    renderWindow(qc);
+
+    fireEvent.click(screen.getByRole("button", { name: /Roadmap/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop current run" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop run" }));
+    await waitFor(() => expect(cancelRequest).toHaveBeenCalledExactlyOnceWith("task-1", undefined));
+    expect(qc.getQueryData(chatKeys.pendingTasks("ws-1"))).toEqual(aggregate);
+    expect(qc.getQueryData(chatKeys.pendingTask(session.id))).toEqual(task);
+
+    await act(async () => { pending.reject(new Error("Network unavailable")); await pending.promise.catch(() => {}); });
+    expect(await screen.findByRole("button", { name: "Stop run" })).toBeEnabled();
+    expect(qc.getQueryData(chatKeys.pendingTask(session.id))).toEqual(task);
   });
 });
 
@@ -137,6 +168,48 @@ describe("ChatWindow header buttons", () => {
     renderWindow();
 
     expect(screen.getByRole("button", { name: enChat.window.restore_tooltip })).toBeInTheDocument();
+  });
+
+  it("exposes the active chat as a desktop-tab drag payload", () => {
+    renderWindow();
+    const dragHandle = document.querySelector<HTMLElement>("[draggable=true]");
+    expect(dragHandle).not.toBeNull();
+    const data = new Map<string, string>();
+    fireEvent.dragStart(dragHandle!, {
+      dataTransfer: {
+        effectAllowed: "",
+        setData: (type: string, value: string) => data.set(type, value),
+      },
+    });
+    expect(data.get(CHAT_SESSION_TAB_MIME)).toBe(session.id);
+    expect(data.get("text/plain")).toBe(session.title);
+  });
+
+  it("promotes when the pointer drag is released in the top tab strip", () => {
+    const setPointerCapture = vi.fn();
+    const releasePointerCapture = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: setPointerCapture });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", { configurable: true, value: releasePointerCapture });
+    Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", { configurable: true, value: () => false });
+    const promote = vi.fn();
+    window.addEventListener(CHAT_SESSION_TAB_PROMOTE_EVENT, promote);
+    try {
+      renderWindow();
+      const dragHandle = document.querySelector<HTMLElement>("[draggable=true]");
+      expect(dragHandle).not.toBeNull();
+      fireEvent.pointerDown(dragHandle!, { button: 0, pointerId: 7, clientY: 360 });
+      fireEvent.pointerUp(dragHandle!, { pointerId: 7, clientY: 40 });
+      expect(promote).toHaveBeenCalledOnce();
+      expect(promote.mock.calls[0]?.[0]).toMatchObject({
+        type: CHAT_SESSION_TAB_PROMOTE_EVENT,
+        detail: { sessionId: session.id, title: session.title },
+      });
+    } finally {
+      window.removeEventListener(CHAT_SESSION_TAB_PROMOTE_EVENT, promote);
+      delete (HTMLElement.prototype as Partial<HTMLElement>).setPointerCapture;
+      delete (HTMLElement.prototype as Partial<HTMLElement>).releasePointerCapture;
+      delete (HTMLElement.prototype as Partial<HTMLElement>).hasPointerCapture;
+    }
   });
 });
 

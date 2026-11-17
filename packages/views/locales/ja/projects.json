@@ -1,5 +1,6 @@
 {
   "supervision": {
+    "unsaved": "未保存の監督設定を破棄して移動しますか？",
     "title": "プロジェクト監督",
     "loading": "監督状態を読み込み中…",
     "unavailable": "監督状態を取得できません。",

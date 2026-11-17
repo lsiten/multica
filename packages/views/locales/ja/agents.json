@@ -945,6 +945,7 @@
     "section_columns": "列"
   },
   "creation_studio": {
+    "cloud_run_limits": "モデルとツールは Qoder で設定してください。この接続では、対話型のツール承認と課題実行からのファイル返却には対応していません。",
     "title": "エージェントを作成",
     "squad_title": "このスクワッド用のエージェントを作成",
     "duplicate_title": "{{name}} を複製",

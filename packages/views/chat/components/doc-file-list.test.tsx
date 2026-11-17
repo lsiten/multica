@@ -34,6 +34,7 @@ const session = vi.hoisted(() => ({
     projectTitle: "",
     hasProject: false,
     entries: [] as Array<{ path: string; size: number; directory: boolean }>,
+    contents: {} as Record<string, string>,
     entriesByPath: {} as Record<string, Array<{ path: string; size: number; directory: boolean }>>,
     shallow: false,
     errorsByRelativePath: {} as Record<string, Error>,
@@ -76,7 +77,8 @@ vi.mock("../../platform/local-review-pages", async () => {
   const actual = await vi.importActual<typeof import("../../platform/local-review-pages")>("../../platform/local-review-pages");
   return {
     ...actual,
-    requestReviewPage: (request: { path?: string; relative_path?: string; offset?: number }) => {
+    requestReviewPage: (request: { action?: string; path?: string; relative_path?: string; offset?: number }) => {
+      if (request.action === "file_content") return Promise.resolve({ path: request.relative_path, content: { encoding: "utf8", text: session.current.contents[request.relative_path ?? ""] ?? "", has_more: false } });
       if (session.current.shallow) {
         const relative = request.relative_path ?? ".";
         session.current.directoryRequests.push(relative);
@@ -97,6 +99,18 @@ vi.mock("../../platform/local-review-pages", async () => {
 vi.mock("../../issues/components/local-review-index", () => ({
   LocalReviewIndex: ({onChanged}:{onChanged:()=>void}) => {indexEvents.onChanged=onChanged;return <div data-testid="local-review-index">Source control</div>;},
 }));
+
+it("opens a body match under its actual directory identity even when its filename does not match", async () => {
+  session.current.contents = { "src/app.ts": "intro\nUnique body phrase" };
+  renderList(newClient());
+  const user = userEvent.setup();
+  await user.selectOptions(await screen.findByRole("combobox", { name: "Search in" }), "content");
+  await user.type(screen.getByRole("textbox", { name: "Filter files" }), "unique body");
+  const result = await screen.findByRole("button", { name: /src\/app\.ts:2\s*Unique body phrase/ });
+  await user.click(result);
+  expect(useDocModeStore.getState().activeBySession["session-1"]).toMatchObject({ kind: "workspace_file", taskId: "task-1", runtimeId: "rt-1", workDir: "/work", relativePath: "src/app.ts" });
+  expect(useDocModeStore.getState().locationBySession["session-1"]).toMatchObject({ offset: 6, line: 2, text: "Unique body" });
+});
 
 function newClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -140,6 +154,7 @@ beforeEach(() => {
     projectTitle: "Acme",
     hasProject: true,
     entries: [{ path: "src/app.ts", size: 10, directory: false }],
+    contents: {},
     entriesByPath: {},
     pageEntries: {}, pageRequests: [], shallow: false, entriesByRelativePath: {}, directoryRequests: [], errorsByRelativePath: {},
     workspaceErrorByPath: {},
@@ -149,6 +164,24 @@ beforeEach(() => {
 });
 
 describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
+
+  it("does not fall back to the legacy project when selection is required", async () => {
+    session.current.files = {
+      ...session.current.files,
+      project_id: "proj-legacy",
+      selected_project_id: undefined,
+      selection_required: true,
+      projects: [
+        { id: "proj-legacy", workspace_id: "ws-1", title: "Legacy project", role: "associated", reason: "chat_context", selectable: true },
+        { id: "proj-other", workspace_id: "ws-1", title: "Other project", role: "available", reason: "agent_binding", selectable: true },
+      ] as never,
+    };
+
+    renderList(newClient());
+
+    expect(await screen.findByText(enChat.doc_file_list.select_project_hint)).toBeInTheDocument();
+    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
+  });
 
 
   it("loads one page at a time for both the root and expanded folders", async () => {
@@ -212,8 +245,11 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     renderList(newClient());
     await userEvent.click(await screen.findByRole("button",{name:"docs"}));
     await screen.findByRole("button",{name:"old.md"});
+    await userEvent.click(screen.getByRole("tab", {name: enChat.doc_file_list.git}));
+    await screen.findByTestId("local-review-index");
     session.current.entriesByRelativePath.docs=[{path:"docs/new.md",size:1,directory:false}];
     act(()=>indexEvents.onChanged());
+    await userEvent.click(screen.getByRole("tab", {name: enChat.doc_file_list.project_files}));
     expect(await screen.findByRole("button",{name:"new.md"})).toBeInTheDocument();
     expect(screen.queryByRole("button",{name:"old.md"})).not.toBeInTheDocument();
   });
@@ -365,6 +401,28 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     // The attachment is only in the "Attachments" tab, not the files tab.
     fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
+  });
+
+  it("separates chat outputs from project reference material", async () => {
+    session.current.files.project_attachments = [
+      { id: "ref-1", filename: "brief.pdf", url: "", content_type: "application/pdf" } as never,
+    ];
+    renderList(newClient());
+    await screen.findByText("Acme");
+    fireEvent.click(screen.getByText(enChat.doc_file_list.attachments));
+
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(screen.getByText("brief.pdf")).toBeInTheDocument();
+    expect(screen.getAllByText(enChat.doc_file_list.attachment_source_output).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(enChat.doc_file_list.attachment_source_reference).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("tab", { name: enChat.doc_file_list.attachment_references }));
+    expect(screen.getByText("brief.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: enChat.doc_file_list.attachment_outputs }));
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("brief.pdf")).not.toBeInTheDocument();
   });
 
   it("shows a retry state when the session file projection fails", async () => {
@@ -563,7 +621,7 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     });
   });
 
-  it("does not infer Git from a chat task before a directory is opened", async () => {
+  it("uses a single chat worktree as the initial Source Control scope", async () => {
     session.current.files = {
       ...session.current.files,
       tasks: [
@@ -572,6 +630,17 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
     };
     renderList(newClient());
     await screen.findByText("Acme");
+    await userEvent.click(screen.getByRole("tab", { name: enChat.doc_file_list.git }));
+    expect(await screen.findByTestId("local-review-index")).toBeInTheDocument();
+  });
+
+  it("keeps Source Control as a separate tab when no Git workspace is available", async () => {
+    session.current.files = { ...session.current.files, tasks: [] };
+    renderList(newClient());
+    await screen.findByText("Acme");
+    expect(screen.queryByText(enChat.doc_file_list.no_git_checkout)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: enChat.doc_file_list.git }));
+    expect(await screen.findByText(enChat.doc_file_list.no_git_checkout)).toBeInTheDocument();
     expect(screen.queryByTestId("local-review-index")).not.toBeInTheDocument();
   });
 
@@ -591,6 +660,8 @@ describe("DocModeFileList (session-driven, doc-mode entry B)", () => {
       },
     });
     renderList(newClient());
+    await screen.findByText("Acme");
+    await userEvent.click(screen.getByRole("tab", {name: enChat.doc_file_list.git}));
     expect(await screen.findByTestId("local-review-index")).toBeInTheDocument();
   });
 });

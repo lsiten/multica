@@ -148,6 +148,8 @@
     "in_progress": "Uploading…",
     "interrupted": "Upload interrupted — the file wasn’t saved. Attach it again.",
     "remove": "Remove",
+    "cancel": "Cancel upload",
+    "retry": "Retry upload",
     "uploading_label": "Uploading {{filename}}…",
     "failed_label": "Couldn’t upload {{filename}}"
   },

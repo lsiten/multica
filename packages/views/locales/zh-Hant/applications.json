@@ -1,4 +1,8 @@
 {
+  "discard_title": "放棄變更？",
+  "discard_help": "應用程式設定尚未儲存。",
+  "keep_editing": "繼續編輯",
+  "discard": "放棄變更",
   "title": "應用",
   "new": "新建應用",
   "edit": "編輯應用",

@@ -98,12 +98,15 @@ IN SHARE ROW EXCLUSIVE MODE;
 
 -- name: DeletePurgedUploadAttachment :exec
 -- Parent lifecycle and shared references were checked under the maintenance lock.
-WITH deleted AS (
-    DELETE FROM attachment WHERE attachment.id = $1 AND attachment.workspace_id = $2
+WITH deleted_discussions AS (
+    DELETE FROM document_comment
+    WHERE document_comment.workspace_id = sqlc.arg(workspace_id) AND document_comment.resource_key = 'attachment:' || sqlc.arg(id)::uuid::text
+), deleted AS (
+    DELETE FROM attachment WHERE attachment.id = sqlc.arg(id) AND attachment.workspace_id = sqlc.arg(workspace_id)
     RETURNING attachment.issue_id, attachment.comment_id
 ), bumped_issue AS (
     UPDATE issue SET revision = issue.revision + 1
-    WHERE issue.workspace_id = $2 AND issue.id IN (SELECT deleted.issue_id FROM deleted)
+    WHERE issue.workspace_id = sqlc.arg(workspace_id) AND issue.id IN (SELECT deleted.issue_id FROM deleted)
 )
 UPDATE comment SET revision = comment.revision + 1
-WHERE comment.workspace_id = $2 AND comment.id IN (SELECT deleted.comment_id FROM deleted);
+WHERE comment.workspace_id = sqlc.arg(workspace_id) AND comment.id IN (SELECT deleted.comment_id FROM deleted);

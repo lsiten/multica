@@ -1,4 +1,8 @@
 {
+  "discard_title": "¿Descartar los cambios?",
+  "discard_help": "La configuración de la aplicación no se ha guardado.",
+  "keep_editing": "Seguir editando",
+  "discard": "Descartar",
   "title": "Applications",
   "new": "New application",
   "edit": "Edit application",

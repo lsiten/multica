@@ -7,6 +7,7 @@ import type { DraftUpload } from "@multica/core/drafts";
 import type { ChatMessage } from "@multica/core/types";
 import { setCurrentWorkspace } from "@multica/core/platform";
 import type { DictationDraft } from "../../editor/dictation-draft";
+import type { ChatVoiceInputRef } from "./chat-voice-input";
 import enCommon from "../../locales/en/common.json";
 import enChat from "../../locales/en/chat.json";
 import enEditor from "../../locales/en/editor.json";
@@ -25,13 +26,19 @@ vi.mock("../../common/human-reply-binding", () => ({ useHumanReplyBinding: () =>
 const insertMarkdownSpy = vi.hoisted(() => vi.fn());
 const voiceFixture = vi.hoisted(() => ({ hold: false, draft: null as DictationDraft | null }));
 vi.mock("./chat-voice-input", () => ({
-  ChatVoiceInput: ({ onBegin, disabled }: { onBegin: () => DictationDraft | null; disabled: boolean }) =>
-    <button disabled={disabled} onClick={() => {
+  ChatVoiceInput: forwardRef<ChatVoiceInputRef, { onBegin: () => DictationDraft | null; disabled: boolean }>(function VoiceFixture({ onBegin, disabled }, ref) {
+    useImperativeHandle(ref, () => ({
+      isActive: () => voiceFixture.hold && voiceFixture.draft !== null,
+      cancel: () => voiceFixture.draft?.cancel(),
+      finish: async () => { voiceFixture.draft?.finish(); voiceFixture.hold = false; return true; },
+    }));
+    return <button disabled={disabled} onClick={() => {
       const draft = onBegin();
       voiceFixture.draft = draft;
       draft?.update("Voice <text>");
       if (!voiceFixture.hold) draft?.finish();
-    }}>Voice input fixture</button>,
+    }}>Voice input fixture</button>;
+  }),
 }));
 
 // The real handle mints an id when it inserts the placeholder and hands it to
@@ -249,7 +256,8 @@ vi.mock("../../projects/components/project-picker", () => ({
 // Mock chat store with an in-memory implementation that supports both
 // (selector) calls and getState(). Draft attachments hold coordinator-owned
 // DraftUpload entries (MUL-5181 L2).
-vi.mock("@multica/core/chat", () => {
+vi.mock("@multica/core/chat", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@multica/core/chat")>();
   const state = {
     activeSessionId: null as string | null,
     selectedAgentId: "agent-1",
@@ -266,6 +274,7 @@ vi.mock("@multica/core/chat", () => {
     clearInputDraft: vi.fn(),
   };
   return {
+    ...actual,
     DRAFT_NEW_SESSION: "__draft_new__",
     useChatStore: Object.assign(
       (selector?: (s: typeof state) => unknown) =>
@@ -482,6 +491,20 @@ it("appends voice text to the live draft without sending or interpreting markup"
   expect(useChatStore.getState().inputDrafts[DRAFT_NEW_SESSION]).toContain("Voice <text>");
   expect(insertMarkdownSpy).not.toHaveBeenCalled();
   expect(onSend).not.toHaveBeenCalled();
+});
+
+it("finishes active dictation on submit and requires another submit to send the editable draft", async () => {
+  voiceFixture.hold = true;
+  const { onSend } = renderInput({ agentId: "agent" });
+  fireEvent.change(screen.getByTestId("editor"), { target: { value: "Existing draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Voice input fixture" }));
+  const submit = editorProps.last?.onSubmit;
+  if (typeof submit !== "function") throw new Error("Editor submit handler is missing");
+  await act(async () => { await submit(); });
+  expect(onSend).not.toHaveBeenCalled();
+  expect(useChatStore.getState().inputDrafts[DRAFT_NEW_SESSION]).toContain("Voice <text>");
+  await act(async () => { await submit(); });
+  expect(onSend).toHaveBeenCalledOnce();
 });
 
 it("ignores stale dictation writes after the workspace namespace switches", async () => {
@@ -908,9 +931,9 @@ describe("ChatInput project context", () => {
     });
 
     expect(
-      screen.getByText(
-        "Project description won't apply — this agent's daemon needs an upgrade",
-      ),
+      screen.getByRole("img", {
+        name: "Project description won't apply — this agent's daemon needs an upgrade",
+      }),
     ).toBeInTheDocument();
     // Soft gate: the warning must not lock the control.
     expect(
@@ -926,9 +949,9 @@ describe("ChatInput project context", () => {
     });
 
     expect(
-      screen.queryByText(
-        "Project description won't apply — this agent's daemon needs an upgrade",
-      ),
+      screen.queryByRole("img", {
+        name: "Project description won't apply — this agent's daemon needs an upgrade",
+      }),
     ).not.toBeInTheDocument();
   });
 

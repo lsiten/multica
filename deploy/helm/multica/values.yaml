@@ -175,6 +175,10 @@ backend:
   # updating it.
   extraCACerts:
     configMap: ""
+  # Optional Secret containing production.p8 and/or sandbox.p8. Mounted read-only
+  # at /etc/multica/apns. Put the MULTICA_APNS_* env values in existingSecret;
+  # PRIVATE_KEY_FILE values must point at the corresponding mounted files.
+  apnsCredentialsSecret: ""
   # All non-secret backend env. Secret values come from `existingSecret`.
   config:
     # Optional container-loopback maintenance API; empty disables it. Never expose via Service/Ingress.

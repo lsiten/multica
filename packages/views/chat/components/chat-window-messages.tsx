@@ -22,6 +22,11 @@ export function ChatWindowMessages({
   quickActionsPendingMessageId,
   onReady,
   annotations,
+  referenceWorkspaceId,
+  onOpenDocumentReference,
+  onOpenMessageReference,
+  onQuoteMessage,
+  onStartDiscussion,
   onFailureAction,
   children,
 }: {
@@ -35,6 +40,11 @@ export function ChatWindowMessages({
   /** This area has something to show — the window can fade in around it. */
   onReady?: () => void;
   annotations?: ComponentProps<typeof ChatMessageList>["annotations"];
+  referenceWorkspaceId?: string;
+  onOpenDocumentReference?: ComponentProps<typeof ChatMessageList>["onOpenDocumentReference"];
+  onOpenMessageReference?: ComponentProps<typeof ChatMessageList>["onOpenMessageReference"];
+  onQuoteMessage?: ComponentProps<typeof ChatMessageList>["onQuoteMessage"];
+  onStartDiscussion?: ComponentProps<typeof ChatMessageList>["onStartDiscussion"];
   onFailureAction?: ComponentProps<typeof ChatMessageList>["onFailureAction"];
   children: ReactNode;
 }) {
@@ -78,6 +88,12 @@ export function ChatWindowMessages({
         <ChatMessageSkeleton />
       ) : showList ? (
         <ChatMessageList
+          readingContext={sessionId && referenceWorkspaceId ? { workspaceId: referenceWorkspaceId, sessionId } : undefined}
+          onQuoteMessage={onQuoteMessage}
+          onStartDiscussion={onStartDiscussion}
+          referenceWorkspaceId={referenceWorkspaceId}
+          onOpenMessageReference={onOpenMessageReference}
+          onOpenDocumentReference={onOpenDocumentReference}
           key={sessionId}
           active={isPresent}
           revealKey={sessionId}

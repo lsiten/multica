@@ -3,14 +3,22 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { defaultStorage } from "../platform/storage";
+import { registerDraftCleanup } from "../drafts/cleanup-registry";
+import { restoreDocModeState } from "./doc-mode-persistence";
+import { documentDraftKey } from "./document-identity";
 
-// Doc mode is the confirmed v12 interaction: opening a project document fills the
-// main area, the chat stays in its original conversation (D10), a floating
-// layer shows only a "working" status (D7), and an edit completes WITHOUT
-// auto-switching back to the chat (D9). Only an explicit close returns to the
-// chat. This store holds the client-only doc-mode state that gates that UI;
-// server data (the document content / versions) stays in TanStack Query.
+export { documentDraftKey } from "./document-identity";
+
+// Selected documents and drafts belong to their conversation. The workspace
+// layout decides whether the document is beside chat or focused; finishing an
+// edit never closes it. Server content and versions remain in TanStack Query.
 export type DocumentKind = "issue" | "attachment" | "workspace_file";
+
+export interface DocumentTextLocation {
+  readonly offset: number;
+  readonly text: string;
+  readonly line: number;
+}
 
 export interface DocumentRef {
   kind: DocumentKind;
@@ -26,6 +34,10 @@ export interface DocumentRef {
   runtimeId?: string;
   workDir?: string;
   relativePath?: string;
+  /** Server-owned file identity remains independent of its current location. */
+  readonly fileId?: string;
+  readonly directoryId?: string;
+  readonly directoryRevision?: number;
 }
 
 export type DocumentDraft =
@@ -49,6 +61,7 @@ interface DocModeState {
   // document: switching sessions shows that session's document, and switching
   // back restores it, instead of leaking one session's document across another.
   activeBySession: Record<string, DocumentRef | null>;
+  openBySession: Record<string, readonly DocumentRef[]>;
   // The floating "working" indicator (the agent is editing the document).
   workingBySession: Record<string, boolean>;
   // The diff view toggle (D6: not shown by default; the user switches to it).
@@ -56,10 +69,15 @@ interface DocModeState {
   // Unsaved edits survive closing, switching documents, reloads and session
   // changes. The key is derived from the document identity, not the session.
   draftsByDocument: Record<string, DocumentDraft>;
+  locationBySession: Record<string, (DocumentTextLocation & { readonly documentKey: string }) | undefined>;
   // Enter doc mode with a document (full-screen doc + floating working).
-  openDoc: (sessionId: string, doc: DocumentRef) => void;
+  openDoc: (sessionId: string, doc: DocumentRef, location?: DocumentTextLocation) => void;
+  clearLocation: (sessionId: string) => void;
   // Explicitly close the document (D9: only an explicit close returns to chat).
   closeDoc: (sessionId: string) => void;
+  selectChat: (sessionId: string) => void;
+  closeTab: (sessionId: string, key: string) => void;
+  moveTab: (sessionId: string, key: string, target: string) => void;
   // Set the floating "working" state; an edit completing must NOT clear doc mode.
   setWorking: (sessionId: string, working: boolean) => void;
   // Toggle the diff view (D6).
@@ -72,24 +90,52 @@ export const useDocModeStore = create<DocModeState>()(
   persist(
     (set) => ({
       activeBySession: {},
+      openBySession: {},
       workingBySession: {},
       diffViewBySession: {},
       draftsByDocument: {},
-      openDoc: (sessionId, doc) =>
-        set((state) => ({
-          activeBySession: { ...state.activeBySession, [sessionId]: doc },
+      locationBySession: {},
+      clearLocation: (sessionId) => set((state) => ({ locationBySession: { ...state.locationBySession, [sessionId]: undefined } })),
+      openDoc: (sessionId, doc, location) =>
+        set((state) => {
+          const opened = state.openBySession[sessionId] ?? [];
+          const key = documentDraftKey(doc);
+          const existing = opened.find((entry) => documentDraftKey(entry) === key);
+          const retainedLocation = existing && (existing.directoryRevision ?? -1) > (doc.directoryRevision ?? -1)
+            ? { relativePath: existing.relativePath, label: existing.label, directoryId: existing.directoryId, directoryRevision: existing.directoryRevision }
+            : {};
+          const selected = doc.kind === "workspace_file"
+            ? { ...doc, ...retainedLocation, id: existing?.id ?? doc.fileId ?? doc.id }
+            : doc;
+          return {
+          locationBySession: { ...state.locationBySession, [sessionId]: location ? { ...location, documentKey: key } : undefined },
+          activeBySession: { ...state.activeBySession, [sessionId]: selected },
+          openBySession: {
+            ...state.openBySession,
+            [sessionId]: opened.some((entry) => documentDraftKey(entry) === key)
+              ? opened.map((entry) => documentDraftKey(entry) === key ? selected : entry)
+              : [...opened, selected],
+          },
           // Opening a document is an explicit action; keep the working flag
           // independent so a prior edit's "working" state does not leak in.
           workingBySession: { ...state.workingBySession, [sessionId]: false },
-        })),
+          };
+        }),
       closeDoc: (sessionId) =>
         set((state) => {
+          const active = state.activeBySession[sessionId];
           if (
             !state.activeBySession[sessionId] &&
             state.workingBySession[sessionId] !== true
           )
             return state;
           return {
+            openBySession: {
+              ...state.openBySession,
+              [sessionId]: active
+                ? (state.openBySession[sessionId] ?? []).filter((opened) => documentDraftKey(opened) !== documentDraftKey(active))
+                : state.openBySession[sessionId] ?? [],
+            },
             activeBySession: {
               ...state.activeBySession,
               [sessionId]: null,
@@ -100,6 +146,24 @@ export const useDocModeStore = create<DocModeState>()(
             },
           };
         }),
+      selectChat: (sessionId) => set((state) => ({ activeBySession: { ...state.activeBySession, [sessionId]: null } })),
+      closeTab: (sessionId, key) => set((state) => {
+        const remaining = (state.openBySession[sessionId] ?? []).filter((doc) => documentDraftKey(doc) !== key);
+        const active = state.activeBySession[sessionId];
+        return {
+          openBySession: { ...state.openBySession, [sessionId]: remaining },
+          activeBySession: { ...state.activeBySession, [sessionId]: active && documentDraftKey(active) === key ? remaining.at(-1) ?? null : active ?? null },
+        };
+      }),
+      moveTab: (sessionId, key, target) => set((state) => {
+        const opened = state.openBySession[sessionId] ?? [];
+        const moving = opened.find((doc) => documentDraftKey(doc) === key);
+        if (!moving || key === target) return state;
+        const others = opened.filter((doc) => documentDraftKey(doc) !== key);
+        const index = others.findIndex((doc) => documentDraftKey(doc) === target);
+        if (index < 0) return state;
+        return { openBySession: { ...state.openBySession, [sessionId]: [...others.slice(0, index), moving, ...others.slice(index)] } };
+      }),
       setWorking: (sessionId, working) =>
         set((state) => ({
           workingBySession: {
@@ -134,35 +198,28 @@ export const useDocModeStore = create<DocModeState>()(
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({
         activeBySession: state.activeBySession,
+        openBySession: state.openBySession,
         draftsByDocument: state.draftsByDocument,
         // "working" and "diff view" are ephemeral UI state, not persisted.
       }),
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         // v1 persisted by workspace; drop it so no stale workspace-scoped
         // document leaks across sessions once the key becomes session-scoped.
-        if (version < 2) return { activeBySession: {}, draftsByDocument: {} };
-        const previous = persisted as { activeBySession?: Record<string, DocumentRef | null> } | undefined;
-        return {
-          activeBySession: previous?.activeBySession ?? {},
-          draftsByDocument: {},
-        };
+        if (version < 2) return restoreDocModeState({});
+        return restoreDocModeState(persisted);
       },
+      merge: (persisted, current) => ({ ...current, ...restoreDocModeState(persisted) }),
     },
   ),
 );
 
 const NO_DOC: DocumentRef | null = null;
 
-export function documentDraftKey(doc: DocumentRef): string {
-  return [
-    doc.kind,
-    doc.id,
-    doc.taskId ?? "",
-    doc.projectResourceId ?? "",
-    doc.relativePath ?? "",
-  ].join(":");
-}
+registerDraftCleanup({
+  storageKey: "multica_doc_mode", workspaceScoped: false,
+  resetInMemory: () => useDocModeStore.setState({ activeBySession: {}, openBySession: {}, draftsByDocument: {}, workingBySession: {}, diffViewBySession: {}, locationBySession: {} }),
+});
 
 export function selectActiveDocument(sessionId: string | null) {
   return (state: DocModeState) =>

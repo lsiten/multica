@@ -64,6 +64,7 @@ export interface IssueSurfaceRenderContext {
 
 interface IssueSurfaceComponentProps extends IssueSurfaceProps {
   renderHeader?: (context: IssueSurfaceRenderContext) => ReactNode;
+  renderBody?: (content: ReactNode) => ReactNode;
   renderEmpty?: (context: IssueSurfaceRenderContext) => ReactNode;
   renderLoading?: (context: IssueSurfaceRenderContext) => ReactNode;
   clientFilter?: (issue: Issue) => boolean;
@@ -92,6 +93,7 @@ export function IssueSurface({
   createDefaults,
   search,
   renderHeader,
+  renderBody,
   renderEmpty,
   renderLoading,
   clientFilter,
@@ -188,6 +190,7 @@ export function IssueSurface({
           createDefaults={createDefaults}
           search={search}
           renderHeader={renderHeader}
+          renderBody={renderBody}
           renderEmpty={renderEmpty}
           renderLoading={renderLoading}
           clientFilter={clientFilter}
@@ -210,6 +213,7 @@ function IssueSurfaceContent({
   createDefaults,
   search,
   renderHeader,
+  renderBody = (content) => content,
   renderEmpty,
   renderLoading,
   clientFilter,
@@ -283,6 +287,7 @@ function IssueSurfaceContent({
       <IssueSurfaceSelectionProvider selection={controller.selection}>
       <ColumnStatusesProvider statuses={controller.columnStatuses}>
         {renderHeader?.(renderContext)}
+        {renderBody(<>
         {/* Every view opens the side peek on Shift+Click. The host wraps the
             loading and empty states too, so a view switch that briefly shows
             a skeleton keeps the peek open. */}
@@ -407,6 +412,7 @@ function IssueSurfaceContent({
             }
           />
         )}
+        </>)}
       </ColumnStatusesProvider>
       </IssueSurfaceSelectionProvider>
       </IssueContextMenuProvider>

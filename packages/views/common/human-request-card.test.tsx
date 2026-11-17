@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HumanRequest } from "@multica/core/types";
@@ -7,6 +8,11 @@ import { renderWithI18n } from "../test/i18n";
 
 const respond = vi.hoisted(() => vi.fn());
 vi.mock("@multica/core/api", () => ({ api: { respondHumanRequest: respond } }));
+vi.mock("@multica/core/paths", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@multica/core/paths")>(),
+  useWorkspacePaths: () => ({ issueDetail: (id: string) => `/acme/issues/${id}`, chatSession: (id: string) => `/acme/chat?session=${encodeURIComponent(id)}` }),
+}));
+vi.mock("../navigation", () => ({ AppLink: ({ href, children, ...props }: { href: string; children: ReactNode }) => <a href={href} {...props}>{children}</a> }));
 
 const request: HumanRequest = { id: "request", workspace_id: "workspace", source_task_id: "source", agent_id: "agent", recipient_id: "member", issue_id: "issue", chat_session_id: null, project_id: null, revision: 3, status: "pending", can_respond: true, expires_at: "2030-01-01T00:00:00Z", response: null, response_task_id: null, payload: { key: "approach", kind: "choice", title: "选择测试方式", steps: [], action_label: "提交选择", next: "智能体将按你选择的方式继续。", choices: [{ id: "unit", label: "仅运行单元测试", recommended: true }, { id: "full", label: "运行完整测试" }], details: "Long technical evidence" } };
 
@@ -42,6 +48,12 @@ describe("human action controls", () => {
     view.unmount();
     renderRequest({ ...request, payload: { ...request.payload, kind: "unknown" } });
     expect(screen.queryByRole("button", { name: "提交选择" })).not.toBeInTheDocument();
+  });
+
+  it("exposes links back to the originating issue and chat", () => {
+    renderRequest({ ...request, chat_session_id: "chat-1" });
+    expect(screen.getByRole("link", { name: "打开关联工作项" })).toHaveAttribute("href", "/acme/issues/issue");
+    expect(screen.getByRole("link", { name: "打开关联聊天" })).toHaveAttribute("href", "/acme/chat?session=chat-1");
   });
 
   it("reports manual completion for verification, rather than approving an operation", async () => {

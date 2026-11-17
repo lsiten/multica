@@ -331,7 +331,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     if (projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId(null);
     setSelectedSquadId(null);
-  }, [wsId, projectsLoaded, projects, selectedProjectId, setSelectedProjectId]);
+  }, [wsId, projectsLoaded, projects, selectedProjectId, setSelectedProjectId, setSelectedSquadId]);
   useEffect(() => {
     if (!squadsLoaded || !selectedSquadId) return;
     if (squads.some((squad) => squad.id === selectedSquadId)) return;
@@ -387,9 +387,6 @@ export function useChatController(opts?: { isActive?: boolean }) {
     agent: activeAgent,
     selectedSquadId: candidateSquadId,
   });
-  const projectBindingsById = new Map(
-    projects.map((project, index) => [project.id, projectScopeQueries[index]?.data]),
-  );
   const executionScopeLoaded =
     projectsLoaded && squadsLoaded && projectScopeQueries.every((query) => query.isSuccess || query.isError);
   const availableProjects = executionScopeLoaded
@@ -763,8 +760,10 @@ export function useChatController(opts?: { isActive?: boolean }) {
     void cancelChatTask(pendingTaskId, activeSessionId, {
       restoreDraftToInput: true,
       source: "active-input",
+    }).then((result) => {
+      if (!result) toast.error(t(($) => $.workspace.stop_failed));
     });
-  }, [pendingTaskId, activeSessionId, cancelChatTask]);
+  }, [pendingTaskId, activeSessionId, cancelChatTask, t]);
 
   const handleNewChat = useCallback(() => {
     uiLogger.info("newChat", {
@@ -786,7 +785,6 @@ export function useChatController(opts?: { isActive?: boolean }) {
     activeSessionId,
     pendingTaskId,
     setSelectedProjectId,
-    setSelectedSquadId,
     setActiveSession,
     markRead,
     requestInputFocus,
@@ -897,7 +895,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       const targetScope = resolveChatExecutionScope({
         projects,
         squads,
-        bindingsByProject: projectBindingsById,
+        bindingsByProject: new Map(projects.map((project, index) => [project.id, projectScopeQueries[index]?.data])),
         agent,
         selectedSquadId: activeSquadId,
       });
@@ -930,10 +928,9 @@ export function useChatController(opts?: { isActive?: boolean }) {
       activeSessionId,
       activeProjectId,
       activeSquadId,
-      availableAgents,
       createGroupSession,
       markRead,
-      projectBindingsById,
+      projectScopeQueries,
       projects,
       requestInputFocus,
       squads,
@@ -978,7 +975,6 @@ export function useChatController(opts?: { isActive?: boolean }) {
       setSessionProject,
       setSelectedAgentId,
       setSelectedProjectId,
-      setSelectedSquadId,
       setActiveSession,
       requestInputFocus,
     ],
@@ -1071,6 +1067,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     handleRestoreDraftApplied,
     // compose-box focus nonce (bumped on new chat)
     focusInputRequest,
+    requestInputFocus,
     conversationStarterRequest,
     handleConversationStarterApplied,
     sendConversationStarter,

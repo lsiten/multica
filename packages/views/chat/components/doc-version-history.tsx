@@ -36,19 +36,21 @@ export function DocVersionHistory({
   readonly current: DocumentContentVersion | undefined;
   readonly actorLabels?: Readonly<Record<string, string>>;
   readonly loading: boolean;
-  readonly onRollback: (revision: number) => void;
+  readonly onRollback: (revision: number) => Promise<unknown>;
   readonly onDelete: (revision: number) => Promise<void>;
   readonly rollbackLabel: string;
   readonly diffLabel: string;
   readonly rollbackConfirmTitle: string;
   readonly rollbackConfirmDescription: string;
   readonly cancelLabel: string;
-  readonly onAddToChat?: (content: string) => void;
+  readonly onAddToChat?: (content: string, revision: number) => void;
 }) {
   const { t } = useT("chat");
   const locale = useLocale();
   const [selectedRevision, setSelectedRevision] = useState<number | null>(null);
   const [confirmRollback, setConfirmRollback] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState(false);
   const [deleteRevision, setDeleteRevision] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
@@ -83,11 +85,11 @@ export function DocVersionHistory({
     return <div className="flex h-full items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   }
   if (!selected || !current) {
-    return <div className="flex h-full items-center justify-center text-muted-foreground">—</div>;
+    return <div className="flex h-full items-center justify-center p-4 text-body text-muted-foreground">{t(($) => $.doc_mode.history_empty)}</div>;
   }
   const groups = groupVersions(versions, locale);
   const impact = selected.content !== null && current.content !== null
-    ? diffTraceLines(selected.content.split("\n"), current.content.split("\n"))
+    ? diffTraceLines(current.content.split("\n"), selected.content.split("\n"))
         .reduce(
           (counts, line) => ({
             additions: counts.additions + Number(line.kind === "add"),
@@ -235,7 +237,10 @@ export function DocVersionHistory({
             </Button>
           </div>
           {selected.revision !== current.revision && (
-            <Button size="xs" variant="ghost" onClick={() => setConfirmRollback(true)}>
+            <Button size="xs" variant="ghost" onClick={() => {
+              setRestoreError(false);
+              setConfirmRollback(true);
+            }}>
               {rollbackLabel}
             </Button>
           )}
@@ -280,27 +285,42 @@ export function DocVersionHistory({
             size="sm"
             variant="outline"
             className="mt-3"
-            onClick={() => onAddToChat(selected.content ?? "")}
+            onClick={() => onAddToChat(selected.content ?? "", selected.revision)}
           >
             {t(($) => $.doc_mode.use_version_in_chat)}
           </Button>
         )}
       </div>
-      <AlertDialog open={confirmRollback} onOpenChange={setConfirmRollback}>
+      <AlertDialog open={confirmRollback} onOpenChange={(open) => {
+        if (!restoring) setConfirmRollback(open);
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{rollbackConfirmTitle}</AlertDialogTitle>
             <AlertDialogDescription>{rollbackConfirmDescription}</AlertDialogDescription>
           </AlertDialogHeader>
+          {restoreError && (
+            <p role="alert" className="text-caption text-destructive">
+              {t(($) => $.doc_mode.rollback_failed)}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
+            <AlertDialogCancel disabled={restoring}>{cancelLabel}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={() => {
-                onRollback(selected.revision);
-                setConfirmRollback(false);
+              disabled={restoring}
+              aria-busy={restoring}
+              onClick={(event) => {
+                event.preventDefault();
+                setRestoring(true);
+                setRestoreError(false);
+                void onRollback(selected.revision)
+                  .then(() => setConfirmRollback(false))
+                  .catch(() => setRestoreError(true))
+                  .finally(() => setRestoring(false));
               }}
             >
+              {restoring && <Loader2 className="animate-spin" aria-hidden="true" />}
               {rollbackLabel}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -5,6 +5,8 @@ import {
   startUpload,
   abortAll,
   abortUpload,
+  canRetryUpload,
+  retryUpload,
   __trackedUploadCountForTest,
   type UploadOutcome,
 } from "./upload-coordinator";
@@ -121,6 +123,40 @@ describe("upload coordinator", () => {
     expect(settled[0]).toMatchObject({ clientUploadId: "c1", status: "failed" });
     expect((settled[0] as { error: Error }).error.message).toBe("boom");
     expect(__trackedUploadCountForTest()).toBe(0);
+    expect(canRetryUpload("c1")).toBe(true);
+    abortUpload("c1");
+    expect(canRetryUpload("c1")).toBe(false);
+  });
+
+  it("retries a failed upload with the same client id and file", async () => {
+    let rejectFirst!: (err: Error) => void;
+    let resolveSecond!: (att: Attachment) => void;
+    const api = {
+      uploadFile: vi
+        .fn()
+        .mockImplementationOnce(
+          () => new Promise<Attachment>((_resolve, reject) => { rejectFirst = reject; }),
+        )
+        .mockImplementationOnce(
+          () => new Promise<Attachment>((resolve) => { resolveSecond = resolve; }),
+        ),
+    } as unknown as Pick<ApiClient, "uploadFile">;
+    const settled: UploadOutcome[] = [];
+
+    startUpload({ clientUploadId: "retry", file: file(), api, onSettled: (o) => settled.push(o) });
+    rejectFirst(new Error("temporary"));
+    await tick();
+
+    expect(canRetryUpload("retry")).toBe(true);
+    expect(retryUpload("retry")).toBe(true);
+    expect(api.uploadFile).toHaveBeenCalledTimes(2);
+    const retriedFile = (api.uploadFile as ReturnType<typeof vi.fn>).mock.calls[1]?.[0];
+    expect(retriedFile).toBeInstanceOf(File);
+    resolveSecond(makeAttachment("att-retried"));
+    await tick();
+
+    expect(settled.map((outcome) => outcome.status)).toEqual(["failed", "uploaded"]);
+    expect(canRetryUpload("retry")).toBe(false);
   });
 
   it("does NOT call onSettled when aborted", async () => {

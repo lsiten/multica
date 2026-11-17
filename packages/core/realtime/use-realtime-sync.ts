@@ -369,6 +369,7 @@ type ChatSessionUpdatedPayload = {
   chat_session_id: string;
   title?: string;
   project_id?: string | null;
+  selected_project_id?: string | null;
   pinned?: boolean;
   status?: "active" | "archived";
   updated_at?: string;
@@ -404,6 +405,7 @@ export function applyChatSessionUpdatedToCache(
             ...s,
             title: payload.title ?? s.title,
             ...("project_id" in payload ? { project_id: payload.project_id } : {}),
+            ...("selected_project_id" in payload ? { selected_project_id: payload.selected_project_id } : {}),
             pinned: payload.pinned ?? s.pinned,
             status: payload.status ?? s.status,
             updated_at: payload.updated_at ?? s.updated_at,
@@ -1309,6 +1311,7 @@ export function useRealtimeSync(
         if (!parsed.success) return;
         const { workspace_id: wsId, owner_type: kind, owner_id: id } = parsed.data;
         qc.invalidateQueries({ queryKey: documentContentVersionKeys.document(wsId, { kind, id }) });
+        if (kind === "issue") qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, id) });
         if (kind === "attachment") qc.invalidateQueries({ queryKey: ["attachment-text-content", wsId, id] });
         return;
       }

@@ -38,6 +38,8 @@ const state = vi.hoisted(() => ({
   closeTabsToRight: vi.fn<(tabId: string) => void>(),
   setActiveTab: vi.fn<(tabId: string) => void>(),
   moveTab: vi.fn<(from: number, to: number) => void>(),
+  openTab: vi.fn<(path: string, title: string) => string>(),
+  setOpen: vi.fn<(open: boolean) => void>(),
   addTab: vi.fn<(path: string, title: string) => string>(),
   updateTab: vi.fn<(tabId: string, patch: { title?: string }) => void>(),
   rememberIssueIdentity: vi.fn<(tabId: string, uuid: string, identifier: string) => void>(),
@@ -62,6 +64,7 @@ vi.mock("@/stores/tab-store", () => {
     closeTabsToRight: state.closeTabsToRight,
     setActiveTab: state.setActiveTab,
     moveTab: state.moveTab,
+    openTab: state.openTab,
     addTab: state.addTab,
     updateTab: state.updateTab,
     rememberIssueIdentity: state.rememberIssueIdentity,
@@ -89,8 +92,17 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
   paths: {
     workspace: (slug: string) => ({
       issues: () => `/${slug}/issues`,
+      chat: () => `/${slug}/chat`,
     }),
   },
+}));
+
+vi.mock("@multica/core/chat", () => ({
+  CHAT_SESSION_TAB_MIME: "application/x-multica-chat-session-tab",
+  CHAT_SESSION_TAB_PROMOTE_EVENT: "multica:promote-chat-tab",
+  DOCUMENT_TAB_MIME: "application/x-multica-document-tab",
+  documentTabDragSessionId: (value: string) => value.split("\n", 1)[0]?.trim() ?? "",
+  useChatStore: { getState: () => ({ setOpen: state.setOpen }) },
 }));
 
 // The tab bar's presentation (URL/cache → visual + title) is covered by the
@@ -156,6 +168,8 @@ function reset() {
   state.closeTabsToRight.mockReset();
   state.setActiveTab.mockReset();
   state.moveTab.mockReset();
+  state.openTab.mockReset();
+  state.setOpen.mockReset();
   state.addTab.mockReset();
   state.updateTab.mockReset();
   state.rememberIssueIdentity.mockReset();
@@ -573,6 +587,44 @@ describe("TabBar overflow", () => {
       container.querySelector('[data-new-tab-edge-feedback="true"]'),
     ).toBeInTheDocument();
     rectSpy.mockRestore();
+  });
+});
+
+describe("TabBar chat promotion", () => {
+  it("promotes a floating chat dropped onto the strip into a workspace tab", () => {
+    const { container } = render(<TabBar />);
+    const strip = container.querySelector("[data-tab-scroll-container]");
+    expect(strip).not.toBeNull();
+    fireEvent.drop(strip!, {
+      dataTransfer: {
+        types: ["application/x-multica-chat-session-tab", "text/plain"],
+        getData: (type: string) => type === "application/x-multica-chat-session-tab" ? "session-42" : "Planning chat",
+      },
+    });
+    expect(state.openTab).toHaveBeenCalledWith("/acme/chat?session=session-42", "Planning chat");
+    expect(state.setOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("promotes a pointer-drag event from the floating chat", () => {
+    render(<TabBar />);
+    window.dispatchEvent(new CustomEvent("multica:promote-chat-tab", {
+      detail: { sessionId: "session-99", title: "Review chat" },
+    }));
+    expect(state.openTab).toHaveBeenCalledWith("/acme/chat?session=session-99", "Review chat");
+    expect(state.setOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("promotes a document drag into the owning chat workspace tab", () => {
+    const { container } = render(<TabBar />);
+    const strip = container.querySelector("[data-tab-scroll-container]");
+    fireEvent.drop(strip!, {
+      dataTransfer: {
+        types: ["application/x-multica-document-tab", "text/plain"],
+        getData: (type: string) => type === "application/x-multica-document-tab" ? "session-doc\nworkspace_file:file-1" : "notes.md",
+      },
+    });
+    expect(state.openTab).toHaveBeenCalledWith("/acme/chat?session=session-doc", "notes.md");
+    expect(state.setOpen).toHaveBeenCalledWith(false);
   });
 });
 

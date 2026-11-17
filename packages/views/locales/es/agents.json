@@ -291,6 +291,7 @@
     "page_navigation_aria": "Agent page"
   },
   "creation_studio": {
+    "cloud_run_limits": "Configura los modelos y herramientas en Qoder. Esta conexión no admite aprobaciones interactivas de herramientas ni la devolución de archivos generados al ejecutar tareas.",
     "title": "Crear un agente",
     "squad_title": "Crear un agente para este squad",
     "duplicate_title": "Duplicar {{name}}",

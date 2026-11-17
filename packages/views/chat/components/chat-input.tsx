@@ -1,8 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Scan, TriangleAlert, X } from "@multica/ui/icons";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Loader2, RotateCw, Scan, X } from "@multica/ui/icons";
 import { IconButton } from "@multica/ui/components/common/icon-button";
 import { cn } from "@multica/ui/lib/utils";
 import {
@@ -31,8 +31,7 @@ import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
 import { escapeMarkdownLabel } from "../../editor/utils/escape-markdown-label";
 import type { Attachment, ChatAutonomyPolicyOverride, ChatMessage, Project, Squad } from "@multica/core/types";
-import { ProjectPicker } from "../../projects/components/project-picker";
-import { ClearablePillButton } from "../../common/pill-button";
+import { ChatInputContext } from "./chat-input-context";
 import { useT } from "../../i18n";
 import { useCommentDraftStore } from "@multica/core/issues/stores";
 import { composeAnnotatedReply, EMPTY_REPLY_ANNOTATIONS, hasReplyIntent } from "@multica/core/drafts/reply-annotation";
@@ -40,17 +39,9 @@ import { ReplyAnnotations } from "../../issues/components/reply-annotations";
 import type { ChatAnnotations } from "./use-chat-annotations";
 import { useChatInputHistory } from "./use-chat-input-history";
 import { useHumanReplyBinding } from "../../common/human-reply-binding";
-export interface ChatReference {
-  id: string;
-  label: string;
-  content: string;
-}
-
-function composeChatReferences(content: string, references: ChatReference[]): string {
-  if (references.length === 0) return content;
-  const quoted = references.map((reference) => reference.content).join("\n\n---\n\n");
-  return [quoted, content.trim()].filter(Boolean).join("\n\n");
-}
+import { composeChatReferences, type ChatReference } from "@multica/core/chat";
+import { ChatReferenceChips } from "./chat-reference-chips";
+export type { ChatReference } from "@multica/core/chat";
 
 const logger = createLogger("chat.ui");
 const EMPTY_UPLOADS: DraftUpload[] = [];
@@ -122,6 +113,7 @@ interface ChatInputProps {
    *  paste/drag/button still type into the editor but no upload fires. */
   uploadEnabled?: boolean;
   onStop?: () => void;
+  stopping?: boolean;
   isRunning?: boolean;
   /** Enabled only after the server explicitly advertises follow-up queues. */
   allowSubmitWhileRunning?: boolean;
@@ -185,7 +177,8 @@ interface ChatInputProps {
   /** Codex-style document references shown as removable chips above the editor. */
   references?: ChatReference[];
   onRemoveReference?: (id: string) => void;
-  onReferencesConsumed?: () => void;
+  onOpenReference?: (reference: ChatReference) => void;
+  onReferencesConsumed?: (ids: readonly string[]) => void;
   /** Saved quotes from this session's replies, sent ahead of the typed text. */
   annotations?: Pick<ChatAnnotations, "draftKey" | "composer" | "editAnnotation">;
 }
@@ -205,6 +198,7 @@ export function ChatInput({
   onRestoreDraftApplied,
   uploadEnabled: uploadAllowed,
   onStop,
+  stopping,
   isRunning,
   allowSubmitWhileRunning,
   disabled,
@@ -234,6 +228,7 @@ export function ChatInput({
   embedded = false,
   references = [],
   onRemoveReference,
+  onOpenReference,
   onReferencesConsumed,
   annotations: annotationSlot,
 }: ChatInputProps) {
@@ -243,6 +238,7 @@ export function ChatInput({
   const editorRef = useRef<ContentEditorRef>(null);
   const voiceRef = useRef<ChatVoiceInputRef>(null);
   const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceFeedbackContainer, setVoiceFeedbackContainer] = useState<HTMLDivElement | null>(null);
   const [uncontrolledAutonomyPolicy, setUncontrolledAutonomyPolicy] = useState<ChatAutonomyPolicyOverride | null>(null);
   const effectiveAutonomyPolicy = onAutonomyPolicyChange ? autonomyPolicy : uncontrolledAutonomyPolicy;
   const changeAutonomyPolicy = onAutonomyPolicyChange ?? setUncontrolledAutonomyPolicy;
@@ -413,6 +409,9 @@ export function ChatInput({
     uploads: draftUploads,
     attachments: draftAttachments,
     handleUpload,
+    retryUpload,
+    canRetryUpload,
+    removeUpload,
     gate,
   } = useCoordinatedUploads(uploadBinding, storeUploads, {}, uploadGate, editorRef, {
     resolveUploadTarget: () => makeUploadBinding(editorDraftKeyRef.current),
@@ -420,9 +419,6 @@ export function ChatInput({
   });
 
   const voiceScope = JSON.stringify([historyWorkspaceId, draftKey, agentId, editorKey]);
-  const voiceSubmitPending = useRef(false);
-  const latestVoiceScope = useRef(voiceScope);
-  latestVoiceScope.current = voiceScope;
   useLayoutEffect(() => {
     const voice = voiceRef.current;
     return () => voice?.cancel();
@@ -605,6 +601,7 @@ export function ChatInput({
       editorScrubbedRef.current = false;
       // Same tick as `normalize`, so this is exactly what `content` quotes.
       const annotationKeyAtSend = annotationDraftKey;
+      const referenceIdsAtSend = references.map((reference) => reference.id);
       const sentAnnotationIds = annotationKeyAtSend
         ? useCommentDraftStore.getState().getAnnotations(annotationKeyAtSend).map((a) => a.id)
         : [];
@@ -715,7 +712,7 @@ export function ChatInput({
         if (formal === "blocked") return false;
         if (formal === "accepted") {
           commitInput();
-          onReferencesConsumed?.();
+          onReferencesConsumed?.(referenceIdsAtSend);
           return true;
         }
       }
@@ -739,24 +736,17 @@ export function ChatInput({
       // retry. Only a commit — here or by the owner — clears it.
       if (accepted === false) return false;
       if (!committed) commitInput();
-      onReferencesConsumed?.();
+      onReferencesConsumed?.(referenceIdsAtSend);
       return true;
     },
   });
 
   const submitInput = async () => {
-    if (voiceSubmitPending.current || disabled || noAgent || gate.isBlocked() ||
+    if (disabled || noAgent || gate.isBlocked() ||
       (isRunning && !allowSubmitWhileRunning && !humanReply.bound)) return;
     const voice = voiceRef.current;
     if (!voice?.isActive()) { void submit(); return; }
-    voiceSubmitPending.current = true;
-    const scope = voiceScope;
-    try {
-      const completed = await voice.finish();
-      if (completed && latestVoiceScope.current === scope && voiceRef.current === voice) await submit();
-    } finally {
-      voiceSubmitPending.current = false;
-    }
+    await voice.finish();
   };
 
   const placeholder = agentAccessRevoked
@@ -783,9 +773,6 @@ export function ChatInput({
     !noAgent &&
     !submitting &&
     !isProjectUpdating;
-  const selectedProject = projects.find((project) => project.id === projectId);
-  const selectedSquad = squads.find((squad) => squad.id === squadId);
-  const squadSelectId = useId();
   const canSubmitNow = !disabled && !noAgent && (!isRunning || !!allowSubmitWhileRunning);
 
   return (
@@ -796,6 +783,7 @@ export function ChatInput({
     } : undefined)}
     <div
       ref={composerRef}
+      data-chat-composer
       className={cn(
         // The composer grows with the draft up to half the surface it sits on
         // — a fixed 160px cap made long drafts unreadable in a five-line
@@ -833,7 +821,7 @@ export function ChatInput({
           // composer without a definite height (percentage max-height would
           // then resolve to none).
           CHAT_COLUMN,
-          "relative flex min-h-16 flex-col pb-9 transition-[border-color,box-shadow]",
+          "relative flex min-h-16 flex-col transition-[border-color,box-shadow]",
           embedded
             ? "rounded-none border-0 bg-transparent shadow-none focus-within:ring-0"
             : "rounded-lg border border-surface-border bg-surface focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
@@ -888,81 +876,51 @@ export function ChatInput({
             </span>
           </div>
         )}
-        {selectedProject && (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pt-2">
-            <div
-              className={cn(
-                "inline-flex max-w-full",
-                !projectSelectionEnabled && "pointer-events-none opacity-60",
-              )}
-            >
-              <ProjectPicker
-                projectId={selectedProject.id}
-                projects={projects}
-                onUpdate={(updates) => onProjectChange?.(updates.project_id ?? null)}
-                disabled={!projectSelectionEnabled}
-                triggerRender={
-                  <ClearablePillButton
-                    disabled={!projectSelectionEnabled}
-                    aria-label={t(($) => $.input.change_project_context)}
-                    title={t(($) => $.input.change_project_context)}
-                    onClear={() => onProjectChange?.(null)}
-                    clearLabel={t(($) => $.input.remove_project_context)}
-                    className="h-6 border-surface-border bg-surface-raised font-medium text-foreground"
-                  />
-                }
-              />
-            </div>
-            {projectContextUnsupported && (
-              <span className="inline-flex min-w-0 items-center gap-1 text-caption text-warning">
-                <TriangleAlert className="size-3 shrink-0" />
-                {t(($) => $.input.project_context_unsupported)}
-              </span>
-            )}
-          </div>
-        )}
-        {onSquadChange && (
-          <div className="flex items-center gap-2 px-3 pt-2">
-            <label className="text-caption text-muted-foreground" htmlFor={squadSelectId}>{t(($) => $.input.squad_context)}</label>
-            <select
-              id={squadSelectId}
-              value={selectedSquad?.id ?? ""}
-              onChange={(event) => onSquadChange(event.target.value || null)}
-              disabled={!projectSelectionEnabled}
-              className="h-6 min-w-24 rounded-md border border-surface-border bg-surface-raised px-1 text-caption"
-            >
-              {workspaceScopeAllowed && (
-                <option value="">{t(($) => $.input.workspace_context)}</option>
-              )}
-              {squads.map((squad) => <option key={squad.id} value={squad.id}>{squad.name}</option>)}
-            </select>
-          </div>
-        )}
-        {references.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2" aria-label="文档引用">
-            {references.map((reference, index) => (
+        <ChatInputContext projects={projects} projectId={projectId} squads={squads} squadId={squadId} workspaceScopeAllowed={workspaceScopeAllowed} enabled={projectSelectionEnabled} unsupported={projectContextUnsupported} onProjectChange={onProjectChange} onSquadChange={onSquadChange} />
+        <ChatReferenceChips references={references} onRemove={onRemoveReference} onOpen={onOpenReference} />
+        {draftUploads.some((upload) => upload.status === "failed" || upload.status === "uploading") && (
+          <div
+            data-slot="chat-upload-status"
+            className="mx-3 mt-2 space-y-1 rounded-md border border-surface-border bg-surface-raised/60 p-1.5"
+            role="status"
+          >
+            {draftUploads.filter((upload) => upload.status === "failed" || upload.status === "uploading").map((upload) => (
               <div
-                key={reference.id}
-                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-surface-border bg-surface-raised px-2 py-1 text-caption text-foreground hover:bg-accent"
-                title={reference.label}
+                key={upload.clientUploadId}
+                className="flex min-w-0 items-center gap-2 rounded px-1.5 py-1 text-caption"
               >
-                <span className="shrink-0 text-muted-foreground">{index + 1}</span>
-                <span className="truncate">{reference.label}</span>
-                <button
+                {upload.status === "uploading" && <Loader2 aria-hidden className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
+                <span className={cn("min-w-0 flex-1 truncate", upload.status === "failed" ? "text-destructive" : "text-muted-foreground")}>
+                  {upload.status === "failed"
+                    ? tEditor(($) => $.upload.failed_label, { filename: upload.filename })
+                    : tEditor(($) => $.upload.uploading_label, { filename: upload.filename })}
+                  {upload.status === "failed" && "error" in upload && upload.error ? ` · ${upload.error}` : ""}
+                </span>
+                {upload.status === "failed" && canRetryUpload(upload.clientUploadId) && (
+                  <IconButton
+                    type="button"
+                    size="icon-xs"
+                    label={tEditor(($) => $.upload.retry)}
+                    onClick={() => retryUpload(upload.clientUploadId)}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <RotateCw aria-hidden />
+                  </IconButton>
+                )}
+                <IconButton
                   type="button"
-                  tabIndex={0}
-                  aria-label={`移除引用 ${reference.label}`}
-                  className="ml-0.5 text-muted-foreground hover:text-foreground"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRemoveReference?.(reference.id);
-                  }}
-                >×</button>
+                  size="icon-xs"
+                  label={tEditor(($) => upload.status === "uploading" ? $.upload.cancel : $.upload.remove)}
+                  onClick={() => removeUpload(upload.clientUploadId)}
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                >
+                  <X aria-hidden />
+                </IconButton>
               </div>
             ))}
           </div>
         )}
-        <div ref={editorAreaRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+        <div ref={editorAreaRef} data-chat-composer-editor className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
           <ContentEditor
             // See the editorKey / draftKey split note above — editor identity
             // intentionally tracks neither the session nor the agent.
@@ -1015,15 +973,46 @@ export function ChatInput({
             showBubbleMenu
           />
         </div>
+        <div ref={setVoiceFeedbackContainer} data-chat-voice-feedback className="shrink-0" />
+        <div data-chat-composer-toolbar className="relative flex min-h-10 shrink-0 items-center justify-between gap-1 px-1.5 pb-1 pointer-coarse:min-h-14">
+        {!voiceActive && (
+          <div className="flex min-w-0 items-center gap-1">
+            {(
+              <ChatAddMenu
+                onSelectFile={uploadEnabled
+                  ? (file) => editorRef.current?.uploadFile(file)
+                  : undefined}
+                projects={projects}
+                projectId={projectId}
+                onSelectProject={projectSelectionEnabled ? onProjectChange : undefined}
+                projectContextUnsupported={projectContextUnsupported}
+        autonomyPolicy={effectiveAutonomyPolicy}
+        onAutonomyPolicyChange={changeAutonomyPolicy}
+              />
+            )}
+            {leftAdornment}
+          </div>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {!voiceActive && pageContext && (
+            <IconButton
+              type="button"
+              aria-pressed={!!attachedPage}
+              onClick={togglePageContext}
+              label={t(($) => $.input.page_context_add)}
+              shortcut={<ShortcutKeycaps shortcut={PAGE_CONTEXT_SHORTCUT} decorative />}
+              className="text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
+            >
+              <Scan />
+            </IconButton>
+          )}
         {agentId && <ChatVoiceInput
           key={voiceScope}
           ref={voiceRef}
           agentId={agentId}
           disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
           onActiveChange={setVoiceActive}
-          onSubmit={() => { void submitInput(); }}
-          canSubmit={!disabled && !noAgent && !submitting && !gate.uploading && (!isRunning || !!allowSubmitWhileRunning || humanReply.bound)}
-          hasContent={!hasNothingToSend}
+          feedbackContainer={voiceFeedbackContainer}
           onBegin={() => {
             if (editorDraftKeyRef.current !== draftKey) return null;
             const editor = editorRef.current;
@@ -1053,38 +1042,7 @@ export function ChatInput({
             };
           }}
         />}
-        {!voiceActive && (
-          <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
-            {(
-              <ChatAddMenu
-                onSelectFile={uploadEnabled
-                  ? (file) => editorRef.current?.uploadFile(file)
-                  : undefined}
-                projects={projects}
-                projectId={projectId}
-                onSelectProject={projectSelectionEnabled ? onProjectChange : undefined}
-                projectContextUnsupported={projectContextUnsupported}
-        autonomyPolicy={effectiveAutonomyPolicy}
-        onAutonomyPolicyChange={changeAutonomyPolicy}
-              />
-            )}
-            {leftAdornment}
-          </div>
-        )}
-        {!voiceActive && <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
-          {pageContext && (
-            <IconButton
-              type="button"
-              aria-pressed={!!attachedPage}
-              onClick={togglePageContext}
-              label={t(($) => $.input.page_context_add)}
-              shortcut={<ShortcutKeycaps shortcut={PAGE_CONTEXT_SHORTCUT} decorative />}
-              className="text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
-            >
-              <Scan />
-            </IconButton>
-          )}
-          <SubmitButton
+          {!voiceActive && <SubmitButton
             onClick={submitInput}
             disabled={hasNothingToSend || submitting || voiceActive || !!disabled || !!noAgent}
             loading={submitting}
@@ -1096,10 +1054,11 @@ export function ChatInput({
             // removing chat's only cancellation path; the attachment node
             // remains the visible upload-progress surface in the editor.
             running={
-              !!isRunning && !humanReply.bound &&
-              (!allowSubmitWhileRunning || hasNothingToSend || gate.uploading)
+              stopping || (!!isRunning && !humanReply.bound &&
+              (!allowSubmitWhileRunning || hasNothingToSend || gate.uploading))
             }
             onStop={onStop}
+            stopping={stopping}
             tooltip={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
               ? tEditor(($) => $.upload.in_progress)
               : isRunning
@@ -1112,10 +1071,11 @@ export function ChatInput({
               : isRunning
                 ? t(($) => $.input.queue_send_tooltip)
               : t(($) => $.input.send_tooltip)}
-            stopTooltip={t(($) => $.input.stop_tooltip)}
-            stopAriaLabel={t(($) => $.input.stop_tooltip)}
-          />
-        </div>}
+            stopTooltip={t(($) => stopping ? $.workspace.stopping : $.input.stop_tooltip)}
+            stopAriaLabel={t(($) => stopping ? $.workspace.stopping : $.input.stop_tooltip)}
+          />}
+        </div>
+        </div>
         {uploadEnabled && isDragOver && <FileDropOverlay />}
       </div>
     </div>

@@ -65,6 +65,20 @@
     "save_failed_default": "Could not save your profile."
   },
   "email_fixed": "Email is set at sign-up and can't be changed here.",
+  "push": {
+    "title": "Background notifications on this device",
+    "checking": "Checking notification delivery…",
+    "unsupported": "Native push is available on iOS.",
+    "build_required": "This build does not support APNs. Install a push-enabled build on a physical iPhone.",
+    "server_unavailable": "The server has not configured APNs for this app and signing environment. Ask your administrator to configure it.",
+    "permission_required": "Allow notifications to receive updates while Multica is in the background.",
+    "permission_denied": "Notifications are disabled in iOS Settings.",
+    "registered": "This device is registered. Workspace notification preferences below control which alerts are sent.",
+    "error": "Could not register this device. Check your connection and try again.",
+    "enable": "Enable notifications",
+    "open_settings": "Open iOS Settings",
+    "check_again": "Check again"
+  },
   "groups": {
     "assignments": "Assignments",
     "assignments_description": "Assigned or unassigned.",

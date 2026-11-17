@@ -156,6 +156,7 @@ vi.mock("../../common/use-app-foreground", () => ({
   useAppForeground: () => h.appForeground.value,
 }));
 vi.mock("@multica/core/chat", () => ({
+  useCancelChatTask: () => ({ mutateAsync: ({ taskId, options }: { taskId: string; options?: { queuedAction?: "edit" | "remove"; sessionId?: string } }) => api.cancelTaskById(taskId, options) }),
   useChatStore: Object.assign(
     (sel: (s: typeof h.store) => unknown) => sel(h.store),
     { getState: () => h.store },
@@ -166,6 +167,7 @@ vi.mock("@multica/core/realtime", () => ({
 }));
 vi.mock("@multica/core/logger", () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  noopLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock("../../i18n", () => ({ useT: () => ({ t: () => "x" }) }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -803,7 +805,7 @@ describe("useChatController queued task actions", () => {
         queuedAction: "edit",
         sessionId: "sA",
       });
-      expect(api.cancelTaskById).toHaveBeenNthCalledWith(2, taskId);
+      expect(api.cancelTaskById).toHaveBeenNthCalledWith(2, taskId, undefined);
       expect(h.store.enqueuePendingSendRestore).toHaveBeenCalledWith(
         expect.objectContaining({ content: "Stop and restore this" }),
       );
@@ -835,7 +837,7 @@ describe("useChatController queued task actions", () => {
     expect(h.store.enqueuePendingSendRestore).not.toHaveBeenCalled();
   });
 
-  it("restores the pending snapshot when queued-only cancellation loses a race", async () => {
+  it("keeps pending tasks unchanged when queued-only cancellation loses a race", async () => {
     const pending: ChatPendingTask = {
       task_id: "task-active",
       status: "running",
@@ -851,10 +853,7 @@ describe("useChatController queued task actions", () => {
       await result.current.handleRemoveQueuedTask("task-queued");
     });
 
-    expect(h.queryClient.setQueryData).toHaveBeenLastCalledWith(
-      expect.anything(),
-      pending,
-    );
+    expect(h.queryClient.setQueryData).not.toHaveBeenCalled();
   });
 
   it("refetches the durable restore when a queued edit response is lost", async () => {
@@ -956,7 +955,7 @@ describe("useChatController queued task actions", () => {
     ).toBeLessThan(vi.mocked(api.cancelTaskById).mock.invocationCallOrder[0]!);
   });
 
-  it("restores the pending snapshot when send-now loses a queued race", async () => {
+  it("keeps the queue unchanged when send-now loses a queued race", async () => {
     const pending: ChatPendingTask = {
       task_id: "task-active",
       status: "running",
@@ -975,10 +974,7 @@ describe("useChatController queued task actions", () => {
       await result.current.handleSendQueuedTaskNow("task-stale");
     });
 
-    expect(h.queryClient.setQueryData).toHaveBeenLastCalledWith(
-      expect.anything(),
-      pending,
-    );
+    expect(h.queryClient.setQueryData).not.toHaveBeenCalled();
   });
 });
 

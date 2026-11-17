@@ -3868,6 +3868,9 @@ func (h *Handler) deleteComment(ctx context.Context, commentID, workspaceID pgty
 	if err != nil {
 		return out, err
 	}
+	if err := qtx.DeleteDocumentCommentsForCommentAttachments(ctx, db.DeleteDocumentCommentsForCommentAttachmentsParams{WorkspaceID: target.WorkspaceID, CommentID: target.ID}); err != nil {
+		return out, err
+	}
 	out.AttachmentURLs, err = qtx.DeleteCommentAttachments(ctx, db.DeleteCommentAttachmentsParams{
 		CommentID:   target.ID,
 		WorkspaceID: target.WorkspaceID,

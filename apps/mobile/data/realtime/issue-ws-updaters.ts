@@ -5,12 +5,13 @@
  * My Issues stores one Issue array per scope/filter and patches all matching keys;
  * the workspace list stores a single client-filtered Issue array.
  */
-import type { QueryClient } from "@tanstack/react-query";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import type {
   Comment,
   Issue,
   IssueReaction,
   Label,
+  ListIssuesResponse,
   Reaction,
   TimelineEntry,
 } from "@multica/core/types";
@@ -150,6 +151,11 @@ function invalidateIssueOwnerProjectionsWhere(
     }
   }
   const listKey = issueKeys.list(wsId);
+  for (const [key, data] of qc.getQueriesData<InfiniteData<ListIssuesResponse>>({ queryKey: issueKeys.pages(wsId) })) {
+    if (data?.pages.some((page) => page.issues.some((issue) => issue.id === issueId && shouldInvalidate(issue)))) {
+      qc.invalidateQueries({ queryKey: key, exact: true });
+    }
+  }
   if (qc.getQueryData<Issue[]>(listKey)?.some(
     (issue) => issue.id === issueId && shouldInvalidate(issue),
   )) {
@@ -396,45 +402,6 @@ export function removeFromMyIssuesList(
 
 // Workspace Issues list (flat Issue[] under list(wsId))
 
-export function patchIssuesList(
-  qc: QueryClient,
-  wsId: string,
-  partial: Partial<Issue> & { id: string },
-) {
-  if (partial.revision === undefined) {
-    qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
-  }
-  qc.setQueryData<Issue[]>(issueKeys.list(wsId), (old) =>
-    old ? old.map((i) =>
-      i.id === partial.id && acceptsRevision(i.revision, partial.revision)
-        ? { ...i, ...partial }
-        : i,
-    ) : old,
-  );
-  reconcileIssueFullSnapshotRevision(qc, wsId, partial.id, partial.revision);
-}
-
-export function prependToIssuesList(
-  qc: QueryClient,
-  wsId: string,
-  issue: Issue,
-) {
-  qc.setQueryData<Issue[]>(issueKeys.list(wsId), (old) => {
-    if (!old) return old;
-    if (old.some((i) => i.id === issue.id)) return old;
-    return [issue, ...old];
-  });
-}
-
-export function removeFromIssuesList(
-  qc: QueryClient,
-  wsId: string,
-  issueId: string,
-) {
-  qc.setQueryData<Issue[]>(issueKeys.list(wsId), (old) =>
-    old ? old.filter((i) => i.id !== issueId) : old,
-  );
-}
 
 // Reactions
 

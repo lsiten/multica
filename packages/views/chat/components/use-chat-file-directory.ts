@@ -1,13 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
-import { chatFileDirectories, type ChatFileDirectory, type DocumentRef } from "@multica/core/chat";
+import { chatFileDirectories, rebindWorkspaceFileDocument, type ChatFileDirectory, type DocumentRef } from "@multica/core/chat";
 import { useLocalDirectoryStore, selectCurrentLocalDirectory } from "@multica/core/chat/local-directory-store";
 import type { ChatSessionFilesResponse } from "@multica/core/types";
 import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import { useWorkspaceFileSearch } from "./use-workspace-file-search";
 import { readWorkspaceDirectory, WORKSPACE_DIRECTORY_READ_TIMEOUT_MS } from "./workspace-directory-query";
 
-export function useChatFileDirectory(wsId: string, sessionId: string | null | undefined, projectId: string, files: ChatSessionFilesResponse | undefined, activeDoc: DocumentRef | null, enabled: boolean, expandedDirectories: ReadonlySet<string>, searchTerm: string) {
+export function useChatFileDirectory(wsId: string, sessionId: string | null | undefined, projectId: string, files: ChatSessionFilesResponse | undefined, activeDoc: DocumentRef | null, enabled: boolean, expandedDirectories: ReadonlySet<string>, searchInput: { readonly term: string; readonly mode: "name" | "content" }) {
+  const searchTerm = searchInput.term;
   const client = useQueryClient();
   const current = useLocalDirectoryStore(selectCurrentLocalDirectory(wsId));
   const setCurrentDirectory = useLocalDirectoryStore((state) => state.setCurrentDirectory);
@@ -45,7 +46,7 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
     retry: false,
   });
   const query = { ...browse, data: browse.data?.pages[0] };
-  const rootEntries = browse.data?.pages.flatMap((page) => page.entries) ?? [];
+  const rootEntries = useMemo(() => browse.data?.pages.flatMap((page) => page.entries) ?? [], [browse.data]);
   const [paging, setPaging] = useState<{ scope: string; offsets: Record<string, number[]> }>({ scope: "", offsets: {} });
   const pagingScope = JSON.stringify(directoryKey);
   const offsets = paging.scope === pagingScope ? paging.offsets : {};
@@ -83,8 +84,19 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
       },
     }] as const;
   }));
-  const search = useWorkspaceFileSearch(request, directoryKey, searchTerm, enabled && !!sessionId);
-  const entries = searchTerm ? search.entries : [...rootEntries, ...children.flatMap((child) => child.data?.entries ?? [])];
+  const search = useWorkspaceFileSearch(request, directoryKey, searchTerm, enabled && !!sessionId && searchInput.mode === "name");
+  const entries = useMemo(() => searchTerm ? search.entries : [...rootEntries, ...children.flatMap((child) => child.data?.entries ?? [])], [children, rootEntries, search.entries, searchTerm]);
+  useEffect(() => {
+    if (!activeDoc?.fileId || !selected?.runtimeId || activeDoc.runtimeId === selected.runtimeId) return;
+    const matching = entries.find((entry) => entry.path === activeDoc.relativePath);
+    if (!matching) return;
+    rebindWorkspaceFileDocument(activeDoc, {
+      runtimeId: selected.runtimeId,
+      taskId: selected.taskId,
+      workDir: selected.path,
+      relativePath: matching.path,
+    });
+  }, [activeDoc, selected, entries]);
   const select = (key: string | null) => {
     const directory = directories.find((candidate) => candidate.key === key);
     if (!directory) return;
@@ -94,15 +106,18 @@ export function useChatFileDirectory(wsId: string, sessionId: string | null | un
       runtimeId: directory.runtimeId, workspaceId: wsId, label: directory.label,
     });
   };
-  // Explicit directory selection and opened files define Git's scope. Keep the
-  // existing global directory usable when this chat has no directory of its own.
-  const gitRequest: PagedReviewInput | null = request && (selection[scope] || selected?.projectResourceId || (selected && (matchesDocument(selected) || matchesCurrent(selected))))
+  // The first directory is the chat's current scope when there is only one
+  // available root. A separate Source Control tab must be useful immediately;
+  // waiting for a file click would make a valid worktree look unavailable.
+  // Explicit selection still wins when multiple roots are available.
+  const gitRequest: PagedReviewInput | null = request && (selection[scope] || directories.length === 1 || selected?.projectResourceId || (selected && (matchesDocument(selected) || matchesCurrent(selected))))
     ? request
     : !selected && current && (current.taskId || current.projectResourceId)
     ? { task_id: current.taskId ?? "", project_resource_id: current.projectResourceId, workspace_id: wsId, runtime_id: current.runtimeId, path: current.path, target: "HEAD" }
     : null;
-  return { directories, selected, select, query, gitRequest, entries, nestedQueries, search, hasMore: browse.hasNextPage, loadMore: () => browse.fetchNextPage(), refresh: () => Promise.all([
+  return { directories, selected, select, query, request, directoryKey, gitRequest, entries, nestedQueries, search, hasMore: browse.hasNextPage, loadMore: () => browse.fetchNextPage(), refresh: () => Promise.all([
     client.resetQueries({ queryKey: [...directoryKey, "search"] }),
+    client.resetQueries({ queryKey: [...directoryKey, "content-search"] }),
     client.invalidateQueries({ queryKey: directoryKey, predicate: (query) => query.queryKey[directoryKey.length] !== "search" }),
   ]) };
 }

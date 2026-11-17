@@ -374,6 +374,11 @@ deleted_activity AS (
 deleted_workspace_jev_config AS (
     DELETE FROM workspace_jev_config WHERE workspace_id = $1
 ),
+deleted_mobile_push_deliveries AS (
+    DELETE FROM mobile_push_delivery
+    WHERE inbox_id IN (SELECT id FROM inbox_item WHERE workspace_id = $1)
+       OR chat_message_id IN (SELECT id FROM chat_message WHERE chat_session_id IN (SELECT id FROM ws_sessions))
+),
 deleted_inbox AS (
     DELETE FROM inbox_item WHERE workspace_id = $1
 ),

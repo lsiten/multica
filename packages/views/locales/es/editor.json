@@ -135,6 +135,8 @@
     "in_progress": "Subiendo…",
     "interrupted": "Subida interrumpida: el archivo no se guardó. Adjúntalo de nuevo.",
     "remove": "Quitar",
+    "cancel": "Cancelar carga",
+    "retry": "Reintentar carga",
     "uploading_label": "Subiendo {{filename}}…",
     "failed_label": "No se ha podido subir {{filename}}"
   },

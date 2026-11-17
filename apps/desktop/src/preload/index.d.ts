@@ -39,6 +39,7 @@ import type {
 } from "../shared/workspace-window";
 
 interface DesktopAPI {
+  confirmNavigation: (request: import("@multica/core/platform").NavigationConfirmation) => boolean;
   getSavedRuntimeConfig: () => RuntimeConfigResult;
   saveRuntimeConfig: (config: RuntimeConfig) => Promise<RuntimeConfig>;
   pickAppIcon: () => Promise<string | null>;

@@ -13,8 +13,53 @@ it("accepts one project directory scope and rejects ambiguous scopes or writes",
   expect(pagedReviewRequestSchema.safeParse({ ...request, project_resource_id: "resource", task_id: "", action: "stage" }).success).toBe(false);
 });
 
+it("validates explicit review scope against the resource identity", () => {
+  expect(pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "index", scope: "run" })).toMatchObject({ scope: "run" });
+  expect(pagedReviewRequestSchema.parse({ project_resource_id: "resource", workspace_id: "ws", path: "/repo", action: "index", scope: "directory" })).toMatchObject({ scope: "directory" });
+  expect(pagedReviewRequestSchema.parse({ ...request, scope: "version" })).toMatchObject({ scope: "version" });
+  expect(pagedReviewRequestSchema.safeParse({ project_resource_id: "resource", workspace_id: "ws", path: "/repo", action: "index", scope: "run" }).success).toBe(false);
+  expect(pagedReviewRequestSchema.safeParse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "index", scope: "directory" }).success).toBe(false);
+  expect(pagedReviewRequestSchema.safeParse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "manifest", target: "main", scope: "version" }).success).toBe(false);
+});
+
 it("parses bounded patch pages", () => {
   expect(parsePagedReviewResponse(pagedReviewRequestSchema.parse(request), response)).toMatchObject(response);
+});
+
+it("parses a version directory without requiring a target branch", () => {
+  const input = pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "versions" });
+  const page = { versions: [{ version_id: id, updated_at: "2026-11-16T10:00:00.000Z", header: { repository: "/repo", branch: "feature", target: "main", head: "b".repeat(40), target_head: "c".repeat(40), base: "d".repeat(40), dirty: true, committed: false } }] };
+  expect(parsePagedReviewResponse(input, page)).toEqual(page);
+});
+
+it("retains server file identities on directory and content pages and rejects malformed identities", () => {
+  const fileId = "26d9d04d-5c45-40b6-bb58-c60e7d59433c";
+  const directory = pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "workspace_files" });
+  const page = { path: "/repo", directory_id: id, entries: [{ path: "notes.md", file_id: fileId, size: 4, directory: false }] };
+  expect(parsePagedReviewResponse(directory, page)).toMatchObject(page);
+  expect(() => parsePagedReviewResponse(directory, { ...page, entries: [{ ...page.entries[0], file_id: "wrong" }] })).toThrow();
+  const file = pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "file_content", relative_path: "notes.md", limit: 20 });
+  const content = { path: "notes.md", file_id: fileId, directory_id: id, content: { text: "body", encoding: "utf8", offset: 0, next_offset: 4, size: 4, has_more: false } };
+  expect(parsePagedReviewResponse(file, content)).toEqual(content);
+  expect(() => parsePagedReviewResponse(file, { ...content, directory_id: "wrong" })).toThrow();
+});
+
+it("only accepts explicit runtime support for file operation admission identities", () => {
+  const directory = pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "workspace_files" });
+  const page = { path: "/repo", entries: [] };
+  expect(parsePagedReviewResponse(directory, { ...page, file_operation_identity_supported: true })).toMatchObject({ file_operation_identity_supported: true });
+  expect(parsePagedReviewResponse(directory, { ...page, file_operation_identity_supported: "yes" })).toMatchObject({ file_operation_identity_supported: false });
+  expect(parsePagedReviewResponse(directory, page)).not.toHaveProperty("file_operation_identity_supported", true);
+});
+
+it("follows a known file identity to its current path without accepting another generation", () => {
+  const fileId = "26d9d04d-5c45-40b6-bb58-c60e7d59433c";
+  const input = pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", path: "/repo", action: "file_content", file_id: fileId, relative_path: "old.md" });
+  const page = { path: "renamed.md", file_id: fileId, directory_id: id, directory_revision: 4, file_identity_ambiguous: false, content: { text: "body", encoding: "utf8", offset: 0, next_offset: 4, size: 4, has_more: false } };
+  expect(parsePagedReviewResponse(input, page)).toEqual(page);
+  expect(() => parsePagedReviewResponse(input, { ...page, file_id: "952ccf77-3227-4579-9404-cc8db100fbe1" })).toThrow(/identity/);
+  expect(() => parsePagedReviewResponse(input, { ...page, file_id: undefined })).toThrow(/identity/);
+  expect(parsePagedReviewResponse(input, { ...page, file_identity_ambiguous: "invalid" })).toMatchObject({ file_identity_ambiguous: true });
 });
 it("rejects a response for another version", () => {
   expect(() => parsePagedReviewResponse(pagedReviewRequestSchema.parse(request), { ...response, version_id: "b".repeat(64) })).toThrow();
