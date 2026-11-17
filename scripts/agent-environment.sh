@@ -82,7 +82,8 @@ acquire_lock() {
 }
 
 release_lock() {
-  rm "$LOCK_DIR/owner-$$" && rmdir "$LOCK_DIR"
+  rm -f "$LOCK_DIR/owner-$$"
+  rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
 claim_file() { printf '%s/%s.claim' "$STATE_DIR" "$1"; }
