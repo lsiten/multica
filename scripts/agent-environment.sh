@@ -37,6 +37,7 @@ DEV_ENV="$REPO_ROOT/scripts/dev-env.sh"
 STATE_DIR="$REPO_ROOT/.multica/agent-environments"
 LOCK_DIR="$STATE_DIR/lock.d"
 BORROWED="$STATE_DIR/borrowed"
+DESTROYING="$STATE_DIR/destroying"
 
 # One hour longer than the ttl in environments.toml: the daemon's stop runs
 # first, and dev-env's own expiry only collects what a dead daemon left behind.
@@ -113,8 +114,11 @@ release_component() {
     echo "$other is running outside 'multica env'; kept the API and database."
   elif [ -f "$BORROWED" ]; then
     echo "The environment existed before 'multica env start'; kept it."
+  elif ! mkdir "$DESTROYING" 2>/dev/null; then
+    echo "Another stop is destroying the environment; kept the cleanup single-owner."
   else
     bash "$DEV_ENV" destroy --yes
+    rmdir "$DESTROYING" 2>/dev/null || true
   fi
 }
 
@@ -155,6 +159,7 @@ cmd_start() {
   acquire_lock
   if [ -z "$(claim_holder web)$(claim_holder desktop)" ]; then
     rm -f "$BORROWED"
+    rmdir "$DESTROYING" 2>/dev/null || true
     ! bash "$DEV_ENV" status --json >/dev/null 2>&1 || touch "$BORROWED"
   fi
   printf '%s\n' "$$" > "$(claim_file "$component")"
