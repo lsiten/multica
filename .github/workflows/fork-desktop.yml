@@ -55,7 +55,6 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       release_acceptance: true
-      concurrency_key: fork-desktop
 
   build:
     needs: [verify, acceptance]

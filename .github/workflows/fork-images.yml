@@ -39,7 +39,6 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       release_acceptance: true
-      concurrency_key: fork-images
 
   build:
     needs: [verify, acceptance]
