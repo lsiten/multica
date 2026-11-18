@@ -52,7 +52,6 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
 import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
 import { Switch } from "@multica/ui/components/ui/switch";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useUploadGate, useComposerSubmit } from "../editor";
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
@@ -276,8 +275,6 @@ export function ManualCreatePanel({
 
   const sendShortcut = useShortcut("send");
   const [title, setTitle] = useState(draft.manual.title);
-  const [goalMode, setGoalMode] = useState(false);
-  const [goalObjective, setGoalObjective] = useState("");
   const [issueKind, setIssueKind] = useState<IssueKind>("task");
   const [formResetKey, setFormResetKey] = useState(0);
   const titleEditorRef = useRef<TitleEditorRef>(null);
@@ -465,8 +462,6 @@ export function ManualCreatePanel({
   const attachLabelMutation = useAttachLabelToIssue();
   const resetForNextIssue = () => {
     setTitle("");
-    setGoalMode(false);
-    setGoalObjective("");
     setIssueKind("task");
     setStatus("todo");
     setStatus(status);
@@ -574,7 +569,6 @@ export function ManualCreatePanel({
               ...(Object.keys(propertyValues).length > 0 ? { properties: propertyValues } : {}),
               stage: parentIssueId && stage != null ? stage : undefined,
               project_id: projectId,
-              goal_objective: goalMode ? goalObjective.trim() : undefined,
               kind: issueKind,
             },
           },
@@ -601,7 +595,6 @@ export function ManualCreatePanel({
           // Stage is only meaningful for a sub-issue (relative to its siblings).
           stage: parentIssueId && stage != null ? stage : undefined,
           project_id: projectId,
-          goal_objective: goalMode ? goalObjective.trim() : undefined,
           kind: issueKind,
         });
       }
@@ -858,10 +851,6 @@ export function ManualCreatePanel({
       titleEditorRef.current?.focus();
       return;
     }
-    if (goalMode && !goalObjective.trim()) {
-      toast.error(tIssues(($) => $.goal_mode.objective_required));
-      return;
-    }
     void composer.submit();
   };
   const submitting = composer.submitting;
@@ -1108,23 +1097,6 @@ export function ManualCreatePanel({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <label className="flex items-center gap-1.5 text-caption text-muted-foreground cursor-pointer select-none">
-                <Switch
-                  size="sm"
-                  checked={goalMode}
-                  onCheckedChange={setGoalMode}
-                />
-                {tIssues(($) => $.goal_mode.title)}
-              </label>
-              {goalMode && (
-                <Input
-                  value={goalObjective}
-                  onChange={(event) => setGoalObjective(event.target.value)}
-                  placeholder={tIssues(($) => $.goal_mode.placeholder)}
-                  aria-label={tIssues(($) => $.goal_mode.objective_aria)}
-                  className="min-w-56 flex-1"
-                />
-              )}
              </div>
 
              {/* Property toolbar — each field renders per the Settings → Issue

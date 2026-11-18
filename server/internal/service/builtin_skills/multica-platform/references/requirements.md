@@ -5,6 +5,10 @@ requirement. A requirement issue carries a 1:1 requirement row, created atomical
 with the issue, whose `description` **is** the requirement document, and whose
 lifecycle is `pending_confirm` → `confirmed` → (change).
 
+Requirements are always top-level issues. Delivery work is represented by
+`kind=task` sub-issues under the requirement; a requirement cannot be filed under
+another issue.
+
 ## Read it
 
 ```bash
@@ -56,12 +60,22 @@ for the full contract). The two keys a requirement uses:
      --next "I will apply the impact to the sub-tasks"
    ```
 
+   By default the decision applies to every direct sub-issue. When only some
+   direct sub-issues are affected, include their IDs in the request payload as
+   `affected_issue_ids` (a unique list of up to 100 IDs). An empty or omitted
+   list keeps the legacy all-sub-issues behavior, so older clients remain
+   compatible while newer cards can show and persist the exact impact set.
+   In a JSON `--body-file`, the field sits alongside `choices`, for example
+   `"affected_issue_ids":["<child-uuid-1>","<child-uuid-2>"]`.
+
 ## Sub-tasks
 
 After a requirement is confirmed, development and bug-fix work is created as
 **sub-issues under the requirement issue** (a task `--parent` pointing at the
 requirement). Create them once the confirmation lands; do not create them while
-the requirement is still `pending_confirm`.
+the requirement is still `pending_confirm`. The API enforces this rule: a
+pending or edited requirement returns a conflict until the latest revision is
+confirmed again.
 
 ## Consequences
 

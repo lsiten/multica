@@ -92,7 +92,7 @@
 ### 3.5 本地评审 / 本地 MR
 
 - 文档：`LOCAL_MR_ACCEPTANCE.md`（验收口径）、`LOCAL_MR_IMPLEMENTATION.md`（实现状态）。
-- 能力：runtime 持有的暂存区、暂存 diff 预览、选择性文件合并事务、待合并选择与批量文件控制、本地评审闭环与目标模式。
+- 能力：runtime 持有的暂存区、暂存 diff 预览、选择性文件合并事务、待合并选择与批量文件控制，以及本地评审闭环。
 - 安全要点：MR mutation 的 ID 生成走 core 的 `createSafeId`（`randomUUID` 不可用时回退 `getRandomValues`，无安全随机源则拒绝下发），而不是直接调用 `crypto.randomUUID`。
 
 ### 3.6 Jev 决策模型（`server/internal/jevmodels` + `internal/daemon/llm2jev*`）

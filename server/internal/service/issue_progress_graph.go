@@ -329,9 +329,6 @@ func (g *progressGraph) entry(id string, now time.Time, staleAfter time.Duration
 	}
 	for _, ancestor := range path {
 		ancestorRow := g.nodes[ancestor.ID]
-		if ancestorRow.InScope && progressOpen(ancestorRow) {
-			entry.AffectedGoalCount++
-		}
 		if priority := progressPriority(ancestorRow.Priority); priority < entry.sortPriority {
 			entry.sortPriority = priority
 		}

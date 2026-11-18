@@ -106,6 +106,14 @@ export function HumanRequestContent({ request, workspaceId }: {
             </ol>
           )}
           {payload.impact && <p className="whitespace-pre-wrap break-words">{payload.impact}</p>}
+          {payload.affected_issue_ids?.length ? (
+            <p className="whitespace-pre-wrap break-words text-caption text-muted-foreground">
+              {t($ => $.human_request.affected_subissues, {
+                count: payload.affected_issue_ids.length,
+                ids: payload.affected_issue_ids.join(", "),
+              })}
+            </p>
+          ) : null}
           <p className="break-words text-caption text-muted-foreground">{payload.next}</p>
         </>
       )}

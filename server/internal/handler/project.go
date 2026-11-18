@@ -37,12 +37,15 @@ type ProjectResponse struct {
 	CreatorID   *string `json:"creator_id"`
 	// StartDate / DueDate are calendar days ("YYYY-MM-DD"), no time-of-day or
 	// timezone — same contract as issue.start_date / issue.due_date.
-	StartDate  *string `json:"start_date"`
-	DueDate    *string `json:"due_date"`
-	CreatedAt  string  `json:"created_at"`
-	UpdatedAt  string  `json:"updated_at"`
-	IssueCount int64   `json:"issue_count"`
-	DoneCount  int64   `json:"done_count"`
+	StartDate       *string `json:"start_date"`
+	DueDate         *string `json:"due_date"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
+	IssueCount      int64   `json:"issue_count"`
+	DoneCount       int64   `json:"done_count"`
+	LeafIssueCount  int64   `json:"leaf_issue_count"`
+	DoneLeafCount   int64   `json:"done_leaf_count"`
+	OpenParentCount int64   `json:"open_parent_count"`
 	// ResourceCount is a breadcrumb pointing at the sub-collection at
 	// /api/projects/{id}/resources. Resources themselves stay out of this
 	// payload to keep parent metadata and child collections separate; clients
@@ -87,7 +90,7 @@ func projectVisibilityOrDefault(v string) string {
 	return v
 }
 
-func (h *Handler) loadProjectIssueStats(ctx context.Context, workspaceID, projectID pgtype.UUID) (int64, int64) {
+func (h *Handler) loadProjectIssueStats(ctx context.Context, workspaceID, projectID pgtype.UUID) (db.GetProjectIssueStatsRow, bool) {
 	terminalStatusKeys := h.projectTerminalIssueStatusKeys(ctx, workspaceID)
 	stats, err := h.Queries.GetProjectIssueStats(ctx, db.GetProjectIssueStatsParams{
 		WorkspaceID:        workspaceID,
@@ -95,9 +98,9 @@ func (h *Handler) loadProjectIssueStats(ctx context.Context, workspaceID, projec
 		TerminalStatusKeys: terminalStatusKeys,
 	})
 	if err != nil || len(stats) == 0 {
-		return 0, 0
+		return db.GetProjectIssueStatsRow{}, false
 	}
-	return stats[0].TotalCount, stats[0].DoneCount
+	return stats[0], true
 }
 
 // projectTerminalIssueStatusKeys keeps project responses useful if the custom
@@ -238,6 +241,9 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		if s, ok := statsMap[resp[i].ID]; ok {
 			resp[i].IssueCount = s.TotalCount
 			resp[i].DoneCount = s.DoneCount
+			resp[i].LeafIssueCount = s.LeafCount
+			resp[i].DoneLeafCount = s.DoneLeafCount
+			resp[i].OpenParentCount = s.OpenParentCount
 		}
 		resp[i].ResourceCount = resourceCountMap[resp[i].ID]
 	}
@@ -266,7 +272,13 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := projectToResponse(project)
-	resp.IssueCount, resp.DoneCount = h.loadProjectIssueStats(r.Context(), wsUUID, project.ID)
+	if stats, ok := h.loadProjectIssueStats(r.Context(), wsUUID, project.ID); ok {
+		resp.IssueCount = stats.TotalCount
+		resp.DoneCount = stats.DoneCount
+		resp.LeafIssueCount = stats.LeafCount
+		resp.DoneLeafCount = stats.DoneLeafCount
+		resp.OpenParentCount = stats.OpenParentCount
+	}
 	resp.ResourceCount = h.loadProjectResourceCount(r.Context(), project.ID)
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -740,7 +752,13 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	// fail the project update.
 	_, _ = h.ensureProjectGroupChat(r.Context(), project, parseUUID(userID))
 	resp := projectToResponse(project)
-	resp.IssueCount, resp.DoneCount = h.loadProjectIssueStats(r.Context(), wsUUID, project.ID)
+	if stats, ok := h.loadProjectIssueStats(r.Context(), wsUUID, project.ID); ok {
+		resp.IssueCount = stats.TotalCount
+		resp.DoneCount = stats.DoneCount
+		resp.LeafIssueCount = stats.LeafCount
+		resp.DoneLeafCount = stats.DoneLeafCount
+		resp.OpenParentCount = stats.OpenParentCount
+	}
 	resp.ResourceCount = h.loadProjectResourceCount(r.Context(), project.ID)
 	h.publish(protocol.EventProjectUpdated, workspaceID, "member", userID, map[string]any{"project": resp})
 	writeJSON(w, http.StatusOK, resp)

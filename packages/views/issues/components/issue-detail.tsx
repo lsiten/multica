@@ -125,7 +125,6 @@ import { ExecutionLogSection } from "./execution-log-section";
 import { WakeupsSection } from "./wakeups-section";
 import { CodeReviewContextSection } from "./code-review-context-section";
 import { QuickActionsSection } from "./quick-actions-section";
-import { GoalModeSection } from "./goal-mode-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestsSection } from "./pull-requests-section";
 import { IssueEnvironmentsSection } from "./issue-environments-section";
@@ -3168,9 +3167,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               issue={issue}
             />
           </PropRow>
-          <div className="col-span-2 pt-2">
-            <GoalModeSection issue={issue} wsId={wsId} />
-          </div>
           <IssueWorkflowPropRow projectId={issue.project_id} status={issue.status} label={t(($) => $.workflows.project.label)} />
 
           {/* Optional props — rendered only when set on the issue OR added

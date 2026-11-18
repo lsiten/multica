@@ -27,7 +27,6 @@ export interface ProgressEntry {
   direct_blockers: ProgressIssueRef[];
   root_blockers: ProgressIssueRef[];
   blocked_issue_count: number;
-  affected_goal_count: number;
   run: ProgressRun | null;
   requests: ProgressRequest[];
   stage: number | null;

@@ -695,17 +695,6 @@
     "empty": "暫無已排期的任務 — 給任意任務設定開始或截止日期，即可顯示在時間軸上。",
     "inverted_dates_warning": "開始日期晚於截止日期——已按區間最小/最大端繪製。"
   },
-  "goal_mode": {
-    "title": "目標模式",
-    "placeholder": "描述必須完成的目標結果",
-    "objective_aria": "任務目標",
-    "objective_required": "請先填寫目標，再建立目標模式任務。",
-    "enable": "啟用目標模式",
-    "disable": "關閉目標模式",
-    "complete": "確認已完成目標",
-    "completed": "負責人已完成目標",
-    "review_gate": "只有負責人確認完成目標後，才能進入稽核。"
-  },
   "hover_card": {
     "created_updated": "建立於 {{created}} · 更新於 {{updated}}"
   },

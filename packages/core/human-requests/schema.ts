@@ -29,6 +29,7 @@ export const HumanRequestSchema = z.object({
     input_label: z.string().optional(),
     verification: z.string().optional(),
     details: z.string().optional(),
+    affected_issue_ids: z.array(z.string()).optional().default([]),
     response_mode: z.enum(["card_only", "chat_or_card"]).catch("card_only").optional().default("card_only"),
     purpose: z.literal("desktop_approval").optional(),
   }),

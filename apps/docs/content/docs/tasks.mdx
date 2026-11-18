@@ -25,6 +25,8 @@ The same issue can be handed to different agents in turn, or run again after a f
 
 On the same runtime with the same project and repositories, an issue and all its descendants share a managed code directory owned by the top-level issue. A requirement can be that top-level issue. The first run creates the shared directory even if the parent has never run; later runs can use it across agent assignments. Each run still has its own configuration, credentials, and provider session. Local resources using `in_place` keep their configured directory; providers that require a private checkout retain that isolation.
 
+A top-level task is a parentless `task`. A `requirement` is a root-level document and cannot be nested under another issue; after confirmation, delivery work belongs in ordinary `task` sub-issues.
+
 Managed MCP configuration in a shared directory requires Cursor's `--plugin-dir` support or OMP 18.8.3 or later. Its configuration stays in the run's private directory.
 
 Older child directories are preserved when a run switches to the shared directory. The run's brief identifies a previous directory that may contain work to recover; its files are not automatically merged. A changed working directory starts a fresh provider session. Shared code is retained while any issue in the tree is unfinished, a run is active, or a member request is pending. Broken parent links, cycles, and parent/child project mismatches must be corrected before the runtime can prepare the shared directory.

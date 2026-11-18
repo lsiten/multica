@@ -88,7 +88,23 @@ WHERE project_id = $1;
 -- name: GetProjectIssueStats :many
 SELECT project_id,
        count(*)::bigint AS total_count,
-       count(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[]))::bigint AS done_count
+       count(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[]))::bigint AS done_count,
+       count(*) FILTER (WHERE NOT EXISTS (
+           SELECT 1 FROM issue child
+           WHERE child.workspace_id = issue.workspace_id
+             AND child.parent_issue_id = issue.id
+       ))::bigint AS leaf_count,
+       count(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[])
+           AND NOT EXISTS (
+               SELECT 1 FROM issue child
+               WHERE child.workspace_id = issue.workspace_id
+                 AND child.parent_issue_id = issue.id
+           ))::bigint AS done_leaf_count,
+       count(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM issue child
+           WHERE child.workspace_id = issue.workspace_id
+             AND child.parent_issue_id = issue.id
+       ) AND NOT (status = ANY(sqlc.arg('terminal_status_keys')::text[])))::bigint AS open_parent_count
 FROM issue
 WHERE workspace_id = sqlc.arg('workspace_id')::uuid
   AND project_id = ANY(sqlc.arg('project_ids')::uuid[])

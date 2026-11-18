@@ -789,6 +789,8 @@ func TestPlatformSkillCoversPlatformContracts(t *testing.T) {
 				"404 for a kind=task issue",
 				"pending_confirm",
 				"confirmed",
+				"affected_issue_ids",
+				"API enforces this rule",
 			},
 		},
 	}

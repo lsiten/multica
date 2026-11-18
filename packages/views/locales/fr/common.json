@@ -141,6 +141,7 @@
     "load_failed": "Impossible de charger la demande. Réessayez pour consulter son état.",
     "retry": "Réessayer",
     "details": "Voir les détails",
+    "affected_subissues": "Sous-tâches affectées ({{count}}) : {{ids}}",
     "recommended": "Recommandé",
     "received": "Réponse reçue. Une nouvelle exécution est en attente.",
     "declined": "Action refusée. L’agent a été informé.",

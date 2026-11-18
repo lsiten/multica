@@ -166,6 +166,7 @@ function SearchIssueRow({ item, query, slug }: SearchIssueRowProps) {
   const showSnippet =
     item.match_source === "comment" && !!item.matched_snippet;
   const { colorOf, labelOf, iconOf } = useIssueStatuses();
+  const { t } = useT("issues");
   const category = issueColumnCategory(item);
   const statusLabel = labelOf(item.status);
   return (
@@ -181,9 +182,26 @@ function SearchIssueRow({ item, query, slug }: SearchIssueRowProps) {
           size={14}
         />
         <PriorityIcon priority={item.priority} size={14} />
-        <Text className="text-xs text-muted-foreground shrink-0 w-16">
-          {item.identifier}
-        </Text>
+        <View className="flex-row items-center gap-1 shrink-0">
+          <Text className="text-xs text-muted-foreground w-16">
+            {item.identifier}
+          </Text>
+          {item.kind === "requirement" ? (
+            <Text
+              accessibilityLabel={t("requirement.marker")}
+              className="rounded-xs bg-accent px-1 text-[10px] font-semibold text-accent-foreground"
+            >
+              {t("requirement.marker_short")}
+            </Text>
+          ) : item.kind === "task" && item.parent_issue_id === null ? (
+            <Text
+              accessibilityLabel={t("task_hierarchy.top_level")}
+              className="rounded-xs bg-muted px-1 text-[10px] font-semibold text-muted-foreground"
+            >
+              {t("task_hierarchy.top_level_short")}
+            </Text>
+          ) : null}
+        </View>
         <View className="flex-1">
           <HighlightText
             text={item.title}

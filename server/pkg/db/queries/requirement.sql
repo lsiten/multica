@@ -3,6 +3,25 @@
 -- name: GetRequirementByIssue :one
 SELECT * FROM requirement WHERE issue_id = @issue_id AND workspace_id = @workspace_id;
 
+-- name: LockRequirementAncestor :one
+-- Child creation must observe a stable confirmed lifecycle. Walk the complete
+-- parent chain so a nested task cannot bypass a pending root requirement.
+WITH RECURSIVE ancestors AS (
+    SELECT issue.id, issue.parent_issue_id
+    FROM issue
+    WHERE issue.id = @issue_id AND issue.workspace_id = @workspace_id
+    UNION ALL
+    SELECT parent.id, parent.parent_issue_id
+    FROM issue parent
+    JOIN ancestors child ON child.parent_issue_id = parent.id
+    WHERE parent.workspace_id = @workspace_id
+)
+SELECT r.*
+FROM requirement r
+JOIN ancestors a ON a.id = r.issue_id
+WHERE r.workspace_id = @workspace_id
+FOR UPDATE;
+
 -- name: CreateRequirement :one
 INSERT INTO requirement (workspace_id, issue_id, lifecycle_status,
     confirmed_revision, confirmed_by, confirmed_at, unconfirmed_change)

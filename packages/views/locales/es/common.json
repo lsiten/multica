@@ -141,6 +141,7 @@
     "load_failed": "Could not load the request. Retry to read its current state.",
     "retry": "Retry",
     "details": "View details",
+    "affected_subissues": "Subtareas afectadas ({{count}}): {{ids}}",
     "recommended": "Recommended",
     "received": "Response received. A follow-up run has been queued.",
     "declined": "Action declined. The agent has been notified.",

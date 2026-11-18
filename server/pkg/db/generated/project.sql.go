@@ -245,7 +245,23 @@ func (q *Queries) GetProjectInWorkspace(ctx context.Context, arg GetProjectInWor
 const getProjectIssueStats = `-- name: GetProjectIssueStats :many
 SELECT project_id,
        count(*)::bigint AS total_count,
-       count(*) FILTER (WHERE status = ANY($1::text[]))::bigint AS done_count
+       count(*) FILTER (WHERE status = ANY($1::text[]))::bigint AS done_count,
+       count(*) FILTER (WHERE NOT EXISTS (
+           SELECT 1 FROM issue child
+           WHERE child.workspace_id = issue.workspace_id
+             AND child.parent_issue_id = issue.id
+       ))::bigint AS leaf_count,
+       count(*) FILTER (WHERE status = ANY($1::text[])
+           AND NOT EXISTS (
+               SELECT 1 FROM issue child
+               WHERE child.workspace_id = issue.workspace_id
+                 AND child.parent_issue_id = issue.id
+           ))::bigint AS done_leaf_count,
+       count(*) FILTER (WHERE EXISTS (
+           SELECT 1 FROM issue child
+           WHERE child.workspace_id = issue.workspace_id
+             AND child.parent_issue_id = issue.id
+       ) AND NOT (status = ANY($1::text[])))::bigint AS open_parent_count
 FROM issue
 WHERE workspace_id = $2::uuid
   AND project_id = ANY($3::uuid[])
@@ -259,9 +275,12 @@ type GetProjectIssueStatsParams struct {
 }
 
 type GetProjectIssueStatsRow struct {
-	ProjectID  pgtype.UUID `json:"project_id"`
-	TotalCount int64       `json:"total_count"`
-	DoneCount  int64       `json:"done_count"`
+	ProjectID       pgtype.UUID `json:"project_id"`
+	TotalCount      int64       `json:"total_count"`
+	DoneCount       int64       `json:"done_count"`
+	LeafCount       int64       `json:"leaf_count"`
+	DoneLeafCount   int64       `json:"done_leaf_count"`
+	OpenParentCount int64       `json:"open_parent_count"`
 }
 
 func (q *Queries) GetProjectIssueStats(ctx context.Context, arg GetProjectIssueStatsParams) ([]GetProjectIssueStatsRow, error) {
@@ -273,7 +292,14 @@ func (q *Queries) GetProjectIssueStats(ctx context.Context, arg GetProjectIssueS
 	items := []GetProjectIssueStatsRow{}
 	for rows.Next() {
 		var i GetProjectIssueStatsRow
-		if err := rows.Scan(&i.ProjectID, &i.TotalCount, &i.DoneCount); err != nil {
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.TotalCount,
+			&i.DoneCount,
+			&i.LeafCount,
+			&i.DoneLeafCount,
+			&i.OpenParentCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

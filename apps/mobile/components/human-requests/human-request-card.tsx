@@ -50,6 +50,12 @@ function HumanRequestContent({ request }: { request: HumanRequest }) {
     {pending && <>
       {payload.steps.map((step, index) => <Text key={index}>{index+1}. {step}</Text>)}
       {payload.impact && <Text>{payload.impact}</Text>}
+      {payload.affected_issue_ids?.length ? <Text className="text-sm text-muted-foreground">
+        {t("human_request.affected_subissues", {
+          count: payload.affected_issue_ids.length,
+          ids: payload.affected_issue_ids.join(", "),
+        })}
+      </Text> : null}
       <Text className="text-sm text-muted-foreground">{payload.next}</Text>
     </>}
     {payload.details && <>

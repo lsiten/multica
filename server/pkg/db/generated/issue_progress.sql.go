@@ -93,7 +93,7 @@ func (q *Queries) FindProgressActionTask(ctx context.Context, arg FindProgressAc
 }
 
 const getIssueNextStepScope = `-- name: GetIssueNextStepScope :one
-SELECT md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text || COALESCE((SELECT objective FROM issue_goal g WHERE g.issue_id = i.id),''))::text FROM issue i WHERE i.id = $1 AND i.workspace_id = $2
+SELECT md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text)::text FROM issue i WHERE i.id = $1 AND i.workspace_id = $2
 `
 
 type GetIssueNextStepScopeParams struct {
@@ -333,7 +333,7 @@ SELECT i.id, i.number, i.title, i.status, i.priority, i.revision,
     EXISTS(SELECT 1 FROM scope WHERE scope.id = i.id)::boolean AS in_scope,
     latest.id AS latest_run_id, COALESCE(latest.status, '')::text AS latest_run_status,
     latest.context AS latest_run_context, latest.result AS latest_run_result,
-    CASE WHEN latest.context ? 'next_step' THEN md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text || COALESCE((SELECT objective FROM issue_goal g WHERE g.issue_id = i.id),'')) ELSE '' END::text AS next_step_scope,
+    CASE WHEN latest.context ? 'next_step' THEN md5((to_jsonb(i) - ARRAY['revision','created_at','updated_at','last_activity_at','position'])::text) ELSE '' END::text AS next_step_scope,
     COALESCE(latest.handoff_note, '')::text AS latest_handoff,
     latest.agent_id AS latest_run_agent_id,
     COALESCE(latest.completed_at, latest.started_at, latest.created_at) AS latest_run_at,

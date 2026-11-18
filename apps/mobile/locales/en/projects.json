@@ -22,6 +22,8 @@
     "properties": "Properties",
     "related_issues": "Related issues",
     "resources": "Resources",
+    "leaf_progress": "Leaf delivery progress",
+    "open_parent_tasks": "Open parent tasks",
     "lead": "Lead",
     "no_resources": "No resources attached.",
     "add_resource": "Add resource"

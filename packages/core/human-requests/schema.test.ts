@@ -11,6 +11,13 @@ describe("human request API boundary", () => {
     expect(HumanRequestSchema.parse(request)).toMatchObject({ response: null, response_task_id: null, payload: { steps: [], choices: [] } });
   });
 
+  it("preserves the selected requirement sub-issue set", () => {
+    expect(HumanRequestSchema.parse({
+      ...request,
+      payload: { ...request.payload, affected_issue_ids: [id, `${id.slice(0, -1)}2`] },
+    }).payload.affected_issue_ids).toHaveLength(2);
+  });
+
   it("retains unknown enums without making them actionable", () => {
     expect(HumanRequestSchema.parse({ ...request, status: "new-state", payload: { ...request.payload, kind: "new-kind" } })).toMatchObject({ status: "unknown", payload: { kind: "unknown" } });
   });

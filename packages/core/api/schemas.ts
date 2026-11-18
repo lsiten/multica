@@ -1974,13 +1974,6 @@ export const RequirementSchema = z.object({
   unconfirmed_change: z.boolean().default(false),
 }).loose();
 
-export const IssueGoalSchema = z.object({
-  objective: z.string().min(1),
-  completed_at: z.string().nullable(),
-  completed_by_type: z.enum(["member", "agent"]).nullable(),
-  completed_by_id: z.string().nullable(),
-}).loose();
-
 export const ListIssuesResponseSchema = z.object({
   issues: z.array(IssueSchema).default([]),
   total: z.number().default(0),
@@ -2048,6 +2041,9 @@ export const ProjectSchema = z.object({
   updated_at: z.string(),
   issue_count: z.number().default(0),
   done_count: z.number().default(0),
+  leaf_issue_count: z.number().default(0),
+  done_leaf_count: z.number().default(0),
+  open_parent_count: z.number().default(0),
   resource_count: z.number().default(0),
   workflow_id: z.string().nullable().default(null),
 }).loose();
@@ -2056,7 +2052,7 @@ export const EMPTY_PROJECT: Project = {
   id: "", workspace_id: "", title: "", description: null, icon: null,
   status: "planned", priority: "none", lead_type: null, lead_id: null,
   creator_type: null, creator_id: null, start_date: null, due_date: null,
-  created_at: "", updated_at: "", issue_count: 0, done_count: 0, resource_count: 0,
+  created_at: "", updated_at: "", issue_count: 0, done_count: 0, leaf_issue_count: 0, done_leaf_count: 0, open_parent_count: 0, resource_count: 0,
 };
 
 export const ListProjectsResponseSchema = z.object({

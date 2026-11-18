@@ -61,6 +61,7 @@ describe("RequirementBadge", () => {
         <TopLevelTaskBadge issue={{ id: "root", kind: "task", parent_issue_id: null } as never} />
         <TopLevelTaskBadge issue={{ id: "child", kind: "task", parent_issue_id: "root" } as never} />
         <TopLevelTaskBadge issue={{ id: "requirement", kind: "requirement", parent_issue_id: null } as never} />
+        <TopLevelTaskBadge issue={{ id: "legacy", parent_issue_id: null } as never} />
       </>,
     );
     expect(screen.getByText("T")).toBeInTheDocument();

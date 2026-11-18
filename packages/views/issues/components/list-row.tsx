@@ -34,6 +34,7 @@ import {
   useIssuePeekLinkProps,
 } from "../surface/peek-context";
 import { useLocale } from "../../i18n";
+import { RequirementBadge, TopLevelTaskBadge } from "./requirement-badge";
 
 export interface ChildProgress {
   done: number;
@@ -146,6 +147,8 @@ function ListRowContent({
           <span className="min-w-16 shrink-0 text-caption text-issue-row-identifier">
             {issue.identifier}
           </span>
+          <RequirementBadge issue={issue} />
+          <TopLevelTaskBadge issue={issue} />
           <IssueAgentActivityIndicator issueId={issue.id} />
 
           <span className="flex min-w-0 flex-1 items-center gap-1.5">

@@ -39,6 +39,14 @@
     "high": "High",
     "urgent": "Urgent"
   },
+  "requirement": {
+    "marker": "Requirement",
+    "marker_short": "R"
+  },
+  "task_hierarchy": {
+    "top_level": "Top-level task",
+    "top_level_short": "T"
+  },
   "filters": {
     "title": "Filters",
     "status": "Status",

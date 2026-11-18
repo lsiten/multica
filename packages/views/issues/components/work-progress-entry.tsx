@@ -66,7 +66,6 @@ export function WorkProgressEntry({ entry, currentProjectId, requestLinksOnly = 
       {crossProject && <span>{t($ => $.work_progress.other_project, { project: entry.issue.project_title || t($ => $.work_progress.no_project) })}</span>}
       {entry.waiting_children > 0 && <span>{t($ => $.work_progress.waiting_children, { count: entry.waiting_children })}</span>}
       {entry.blocked_issue_count > 0 && <span>{t($ => $.work_progress.blocks, { count: entry.blocked_issue_count })}</span>}
-      {entry.affected_goal_count > 0 && <span>{t($ => $.work_progress.belongs_to, { count: entry.affected_goal_count })}</span>}
       {entry.wait_since && <span title={new Date(entry.wait_since).toLocaleString(locale)}>{t($ => $.work_progress.since, { time: timeAgo(entry.wait_since) })}</span>}
     </div>
     {entry.direct_blockers.length > 0 && <div className="space-y-1 break-words">

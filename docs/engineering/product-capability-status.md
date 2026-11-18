@@ -1,14 +1,23 @@
 # 项目能力与优化实施状态
 
-核验日期：2026-11-17。本文按当前源码、路由和已执行检查区分仓库实现、部署前提与验收证据。
+核验日期：2026-11-18。本文按当前源码、路由和已执行检查区分仓库实现、部署前提与验收证据。
 “仓库已实现”不代表生产已启用，也不代表已完成原生设备或外部服务验收。
 
 剩余工作的优先级、实施方式与验收标准见[优化收尾方案](optimization-follow-up.md)。
+
+## 范围调整
+
+目标模式已移除：不再提供目标模式创建、目标完成确认或目标审核门禁。需求和顶层任务
+继续使用统一层级模型：`requirement` 只能是根任务，顶层任务是无父级的普通 `task`，
+交付工作通过普通 `task` 子任务承载。旧数据库中的目标模式数据由后续迁移删除，历史
+迁移文件保留以维护迁移身份。
 
 ## 本轮优化
 
 | 功能 | 当前行为 | 实现与验证入口 | 仍需验证 |
 | --- | --- | --- | --- |
+| 需求与顶层任务模型 | `requirement` 只能根级存在；无父级的普通 `task` 才是顶级任务；父任务、叶子任务、阶段和依赖分别表达交付结构与调度约束；需求待确认或变更未复核时不能新增交付子任务；目标模式字段、接口和进度投影已移除 | `server/internal/service/issue.go`、`server/internal/handler/issue.go`、`server/internal/service/issue_progress_graph.go`、`packages/views/issues/components/requirement-badge.tsx`、移动端 `IssueRow`；根级约束、需求生命周期、12 层父链循环、旧 payload 降级、进度投影与多端类型/单测通过 | 原生设备上的层级徽标可用性与实时刷新仍需实机复核 |
+| 需求变更影响范围 | 变更卡可通过 `affected_issue_ids` 精确绑定直接子任务；空值保持旧卡片的全量兼容；Web/移动端展示 ID 集合 | `server/internal/service/human_request_types.go`、`server/internal/handler/requirement.go`、`packages/core/human-requests/schema.ts`、`packages/views/common/human-request-card.tsx`、`apps/mobile/components/human-requests/human-request-card.tsx`；12 项 schema、15 项卡片和 handler 回归通过 | 真实客户端提交跨端卡片后的最终确认体验 |
 | 移动端全部任务、我的任务 | 服务端筛选与分页；显示已加载数量和服务端总数；翻页失败可重试；实时事件及重连刷新分页投影 | `apps/mobile/data/queries/issue-pages.ts`、`components/issue/paginated-issue-list.tsx`；251 条数据、筛选、去重和首次请求竞态回归 | iPhone 上滚动、筛选、删除后返回，以及 Web 改动后的跨端同步 |
 | 工作流草稿 | 远端更新保留本地编辑；显式加载新版；保存携带版本，服务端锁内拒绝过期写入；新建成功允许跳转；窄屏操作区换行 | `packages/views/workflows/`、`server/internal/handler/issue_workflow_update.go`；组件、Hook 和真实数据库回归；网页冲突与桌面取消离开实测 | 原生退出、刷新及更多跨客户端场景 |
 | 移动端分享链接 | 任务、项目、评论复用纯路径构造器，使用部署配置的 Web origin | `apps/mobile/components/issue/comment-context-menu.tsx`、任务/项目详情 | 真机打开与复制、非默认域名部署 |

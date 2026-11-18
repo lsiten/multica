@@ -166,6 +166,7 @@ import type { ChildProgress } from "./list-row";
 import { ListLoadMoreFooter } from "./list-load-more-footer";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { IssueDuplicateOfMarker } from "./issue-duplicates";
+import { RequirementBadge, TopLevelTaskBadge } from "./requirement-badge";
 import { IssuePullRequestChips, useIssuePullRequestSummaries } from "./pull-request-chips";
 import { issuePullRequestSummariesOptions } from "@multica/core/github";
 
@@ -751,6 +752,8 @@ export function InlineTitle({
       <span className="min-w-16 shrink-0 text-caption text-muted-foreground">
         {row.issue.identifier}
       </span>
+      <RequirementBadge issue={row.issue} />
+      <TopLevelTaskBadge issue={row.issue} />
       <IssueAgentActivityIndicator issueId={row.issue.id} />
       {editing ? (
         <Input
@@ -1199,7 +1202,11 @@ function IssueTableBodyCell({
       );
     case "identifier":
       return (
-        <span className="text-caption text-muted-foreground">{issue.identifier}</span>
+        <span className="inline-flex items-center gap-1.5 text-caption text-muted-foreground">
+          {issue.identifier}
+          <RequirementBadge issue={issue} />
+          <TopLevelTaskBadge issue={issue} />
+        </span>
       );
     case "status":
       return (

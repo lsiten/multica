@@ -74,13 +74,6 @@ func (s *TaskService) AcceptProgressReview(ctx context.Context, issue db.Issue, 
 		if pending || evidence.ActiveRuns > 0 || !evidence.HasDelivery || progressDeliverySummary(latest.Result) == "" || evidence.DependencyBlocked {
 			return ErrProgressSnapshotChanged
 		}
-		goal, goalErr := q.GetIssueGoal(ctx, current.ID)
-		if goalErr != nil && !errors.Is(goalErr, pgx.ErrNoRows) {
-			return goalErr
-		}
-		if goalErr == nil && !goal.CompletedAt.Valid {
-			return fmt.Errorf("%w: complete the issue objective before acceptance", ErrProgressSnapshotChanged)
-		}
 		accepted, err = q.UpdateIssue(ctx, db.UpdateIssueParams{ID: current.ID, ExpectedRevision: pgtype.Int8{Int64: current.Revision, Valid: true}, Status: pgtype.Text{String: "done", Valid: true}, AssigneeType: current.AssigneeType, AssigneeID: current.AssigneeID, StartDate: current.StartDate, DueDate: current.DueDate, ParentIssueID: current.ParentIssueID, ProjectID: current.ProjectID, Stage: current.Stage})
 		return err
 	})

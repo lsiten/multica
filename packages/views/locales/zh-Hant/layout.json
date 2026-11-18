@@ -649,17 +649,6 @@
     "empty": "No scheduled issues yet — set a start or due date on any issue to see it on the timeline.",
     "inverted_dates_warning": "Start date is after due date — bar shown from min to max."
   },
-  "goal_mode": {
-    "title": "Goal mode",
-    "placeholder": "Describe the outcome that must be completed",
-    "objective_aria": "Goal objective",
-    "objective_required": "Enter an objective before creating a goal-mode issue.",
-    "enable": "Enable goal mode",
-    "disable": "Disable goal mode",
-    "complete": "Confirm goal complete",
-    "completed": "Goal completed by the assignee",
-    "review_gate": "Only the assignee can confirm this goal before review."
-  },
   "hover_card": {
     "created_updated": "created {{created}} · updated {{updated}}"
   },

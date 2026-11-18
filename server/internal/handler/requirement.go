@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -141,7 +142,7 @@ func (h *Handler) applyRequirementFromHumanResponse(ctx context.Context, req db.
 		if answer.Decision == "reject" {
 			return
 		}
-		h.applyChangeReviewFromAnswer(ctx, req, answer)
+		h.applyChangeReviewFromAnswer(ctx, req, input, answer)
 	}
 }
 
@@ -158,15 +159,19 @@ func (h *Handler) confirmRequirementFromAnswer(ctx context.Context, req db.Human
 }
 
 // applyChangeReviewFromAnswer applies the lead's change-impact decision to the
-// requirement's sub-issues and re-confirms the requirement at the (edited)
-// current revision, so the change becomes the new confirmed baseline.
-func (h *Handler) applyChangeReviewFromAnswer(ctx context.Context, req db.HumanRequest, answer service.HumanRequestAnswer) {
+// affected sub-issues named by the review card and re-confirms the requirement
+// at the edited current revision. Empty affected_issue_ids preserves the
+// legacy all-sub-issues behavior for older cards.
+func (h *Handler) applyChangeReviewFromAnswer(ctx context.Context, req db.HumanRequest, input service.HumanRequestInput, answer service.HumanRequestAnswer) {
 	action, ok := changeReviewActionForAnswer(answer)
 	if !ok {
 		return
 	}
 	reqIssue := db.Issue{ID: req.IssueID, WorkspaceID: req.WorkspaceID}
-	decisions := h.changeReviewDecisionsForSubIssues(ctx, req.WorkspaceID, req.IssueID, action)
+	decisions, ok := h.changeReviewDecisionsForSubIssues(ctx, req.WorkspaceID, req.IssueID, input.AffectedIssueIDs, action)
+	if !ok {
+		return
+	}
 	if err := h.applyRequirementChangeReview(ctx, reqIssue, decisions); err != nil {
 		return
 	}
@@ -179,15 +184,34 @@ func (h *Handler) applyChangeReviewFromAnswer(ctx context.Context, req db.HumanR
 	}
 }
 
-// changeReviewDecisionsForSubIssues maps a single global change-impact action
-// onto every sub-issue of the requirement, so one lead decision covers all
-// sub-task states and development situations.
-func (h *Handler) changeReviewDecisionsForSubIssues(ctx context.Context, workspaceID, requirementIssueID pgtype.UUID, action string) []changeReviewDecision {
+// changeReviewDecisionsForSubIssues scopes a single change-impact action to
+// the direct sub-issues named by the review card. An empty selection means all
+// direct sub-issues for backward compatibility.
+
+func (h *Handler) changeReviewDecisionsForSubIssues(ctx context.Context, workspaceID, requirementIssueID pgtype.UUID, affectedIDs []string, action string) ([]changeReviewDecision, bool) {
+	affected := map[pgtype.UUID]bool{}
+	for _, rawID := range affectedIDs {
+		id, err := util.ParseUUID(rawID)
+		if err != nil {
+			return nil, false
+		}
+		affected[id] = true
+	}
 	var decisions []changeReviewDecision
+	matched := map[pgtype.UUID]bool{}
 	for _, sub := range h.listRequirementSubIssuesForChange(ctx, workspaceID, requirementIssueID) {
+		if len(affected) > 0 && !affected[sub.ID] {
+			continue
+		}
+		if len(affected) > 0 {
+			matched[sub.ID] = true
+		}
 		decisions = append(decisions, changeReviewDecision{SubIssueID: sub.ID, Action: action})
 	}
-	return decisions
+	if len(affected) > 0 && len(matched) != len(affected) {
+		return nil, false
+	}
+	return decisions, true
 }
 
 // changeReviewActionForAnswer maps a card answer's chosen choice to a

@@ -189,26 +189,33 @@ function ProjectCard({
         </div>
 
         {project.issue_count > 0 ? (
-          <div className="flex items-center justify-end gap-1.5 pt-2">
-            <div className="relative h-4 w-4">
-              <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
-                <circle className="text-muted" strokeWidth="2" stroke="currentColor" fill="none" r="6" cx="8" cy="8" />
-                <circle
-                  className="text-success"
-                  strokeWidth="2"
-                  stroke="currentColor"
-                  fill="none"
-                  r="6"
-                  cx="8"
-                  cy="8"
-                  strokeDasharray={`${progressPercent * 0.377} 37.7`}
-                  strokeLinecap="round"
-                />
-              </svg>
+          <div className="flex flex-col items-end gap-1 pt-2">
+            <div className="flex items-center gap-1.5">
+              <div className="relative h-4 w-4">
+                <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
+                  <circle className="text-muted" strokeWidth="2" stroke="currentColor" fill="none" r="6" cx="8" cy="8" />
+                  <circle
+                    className="text-success"
+                    strokeWidth="2"
+                    stroke="currentColor"
+                    fill="none"
+                    r="6"
+                    cx="8"
+                    cy="8"
+                    strokeDasharray={`${progressPercent * 0.377} 37.7`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+              <span className="text-micro tabular-nums text-muted-foreground">
+                {project.done_count}/{project.issue_count}
+              </span>
             </div>
-            <span className="text-micro tabular-nums text-muted-foreground">
-              {project.done_count}/{project.issue_count}
-            </span>
+            {(project.leaf_issue_count ?? project.issue_count) > 0 && (
+              <span className="text-micro tabular-nums text-muted-foreground">
+                {t(($) => $.detail.leaf_progress)}: {project.done_leaf_count ?? project.done_count}/{project.leaf_issue_count ?? project.issue_count}
+              </span>
+            )}
           </div>
         ) : (
           <span className="flex justify-end pt-2 text-micro text-muted-foreground">

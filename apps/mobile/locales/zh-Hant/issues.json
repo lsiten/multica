@@ -39,6 +39,14 @@
     "high": "高",
     "urgent": "緊急"
   },
+  "requirement": {
+    "marker": "需求",
+    "marker_short": "需"
+  },
+  "task_hierarchy": {
+    "top_level": "頂級任務",
+    "top_level_short": "頂"
+  },
   "filters": {
     "title": "篩選",
     "status": "狀態",

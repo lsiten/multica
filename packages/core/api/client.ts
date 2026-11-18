@@ -40,12 +40,10 @@ import { parseWorktreeCleanupPreviews } from "../types/worktree-cleanup";
 import { NotificationBotListSchema, type NotificationBotList, type SaveNotificationBot } from "../notification-bots/schema";
 import type {
   Issue,
-  IssueGoal,
   IssuePriority,
   CreateIssueRequest,
   MoveIssueRequest,
   UpdateIssueRequest,
-  UpsertIssueGoalRequest,
   IssueDuplicates,
   GroupedIssuesResponse,
   ListIssuesResponse,
@@ -425,7 +423,6 @@ import {
   CreateIssueResponseSchema,
   IssueSchema,
   RequirementSchema,
-  IssueGoalSchema,
   AgentTaskSchema,
   SourceContextPreviewSchema,
   CommentSubIssueTaskResponseSchema,
@@ -2278,42 +2275,6 @@ export class ApiClient {
     });
     if (!version) throw new Error("Malformed document content version response");
     return version;
-  }
-
-  async getIssueGoal(id: string): Promise<IssueGoal> {
-    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(id)}/goal`);
-    const goal = parseWithFallback<IssueGoal | null>(raw, IssueGoalSchema, null, {
-      endpoint: "GET /api/issues/:id/goal",
-    });
-    if (!goal) throw new Error("GET /api/issues/:id/goal returned a malformed goal");
-    return goal;
-  }
-
-  async upsertIssueGoal(id: string, data: UpsertIssueGoalRequest): Promise<IssueGoal> {
-    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(id)}/goal`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    });
-    const goal = parseWithFallback<IssueGoal | null>(raw, IssueGoalSchema, null, {
-      endpoint: "PUT /api/issues/:id/goal",
-    });
-    if (!goal) throw new Error("PUT /api/issues/:id/goal returned a malformed goal");
-    return goal;
-  }
-
-  async completeIssueGoal(id: string): Promise<IssueGoal> {
-    const raw = await this.fetch<unknown>(`/api/issues/${encodeURIComponent(id)}/goal/complete`, {
-      method: "POST",
-    });
-    const goal = parseWithFallback<IssueGoal | null>(raw, IssueGoalSchema, null, {
-      endpoint: "POST /api/issues/:id/goal/complete",
-    });
-    if (!goal) throw new Error("POST /api/issues/:id/goal/complete returned a malformed goal");
-    return goal;
-  }
-
-  async deleteIssueGoal(id: string): Promise<void> {
-    await this.fetch(`/api/issues/${encodeURIComponent(id)}/goal`, { method: "DELETE" });
   }
 
   async moveIssue(id: string, data: MoveIssueRequest): Promise<Issue> {

@@ -22,6 +22,8 @@
     "properties": "属性",
     "related_issues": "相关任务",
     "resources": "资源",
+    "leaf_progress": "叶子任务进度",
+    "open_parent_tasks": "未完成的父任务",
     "lead": "负责人",
     "no_resources": "尚未添加资源。",
     "add_resource": "添加资源"

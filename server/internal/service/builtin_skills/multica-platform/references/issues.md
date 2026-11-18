@@ -11,12 +11,22 @@ Product contracts the runtime brief does not fully encode.
 - [Subscribers](#subscribers)
 - [Labels](#labels)
 - [Sub-issues and stages](#sub-issues-and-stages)
+- [Top-level tasks and requirements](#top-level-tasks-and-requirements)
 - [Charts and files in a comment](#charts-and-files-in-a-comment)
 - [Incorrect to correct](#incorrect-to-correct)
 - [Run handoffs and member replies](#run-handoffs-and-member-replies)
 - [Issue wakeups](issue-wakeups.md)
 
 To attach a local file to an existing issue description, use `multica issue update <id> --attachment <local-path>`. The CLI appends the file's Markdown reference to the end of the description; to replace an image, also use `--description-file` to remove the old reference. Do not put local filesystem paths in the description. `--description-file` and `--attachment` read a path **inside the current working directory** unless `--allow-external-file` is set (MUL-4252), which stops a stale file from another run or environment from being picked up. `--attachment` is repeatable (repeat the flag for multiple files); on `issue create` you can instead bind already-uploaded attachments with `--attachment-id <uuid>` — `issue update` has no such flag. To feed a description from a pipe use `--description-stdin` (a heredoc `--description` can swallow trailing flags, #4182).
+
+## Top-level tasks and requirements
+
+`kind=requirement` is reserved for a top-level requirement document. It cannot
+have a parent. Delivery work is always a `kind=task` sub-issue under that
+requirement. An ordinary task with `parent=null` is a workspace-level task; a
+task with a parent is a delivery sub-task. Use the explicit `kind` and
+`parent_issue_id` fields from issue JSON when deciding which case you have — a
+missing `kind` from an older server is not evidence that the task is top-level.
 
 ## PR linking
 

@@ -141,6 +141,7 @@
     "load_failed": "요청을 불러올 수 없습니다. 다시 시도하여 현재 상태를 확인하세요.",
     "retry": "다시 시도",
     "details": "상세 보기",
+    "affected_subissues": "영향받는 하위 작업 ({{count}}): {{ids}}",
     "recommended": "권장",
     "received": "응답을 받았습니다. 후속 실행이 대기열에 추가되었습니다.",
     "declined": "작업을 거절하고 에이전트에게 알렸습니다.",

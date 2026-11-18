@@ -2108,17 +2108,6 @@
     "title": "Couldn't load issues",
     "retry": "Try again"
   },
-  "goal_mode": {
-    "title": "Goal mode",
-    "placeholder": "Describe the outcome that must be completed",
-    "objective_aria": "Goal objective",
-    "objective_required": "Enter an objective before creating a goal-mode issue.",
-    "enable": "Enable goal mode",
-    "disable": "Disable goal mode",
-    "complete": "Confirm goal complete",
-    "completed": "Goal completed by the assignee",
-    "review_gate": "Only the assignee can confirm this goal before review."
-  },
   "local_review": {
     "entry_checking": "Checking repository…",
     "entry_empty": "No Git repository to review",

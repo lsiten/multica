@@ -1757,7 +1757,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		where = append(where, fmt.Sprintf("i.id = ANY(%s::uuid[])", addArg(idsFilter)))
 	}
 	if r.URL.Query().Get("top_level_only") == "true" {
-		where = append(where, "i.parent_issue_id IS NULL")
+		where = append(where, "i.parent_issue_id IS NULL AND i.kind = 'task'")
 	}
 	where = appendIssueTableSearchFilter(where, addArg, r.URL.Query().Get("q"))
 	if scheduledFilter.Valid {
@@ -3232,8 +3232,7 @@ type CreateIssueRequest struct {
 	OriginType *string `json:"origin_type,omitempty"`
 	OriginID   *string `json:"origin_id,omitempty"`
 
-	AllowDuplicate bool    `json:"allow_duplicate,omitempty"`
-	GoalObjective  *string `json:"goal_objective,omitempty"`
+	AllowDuplicate bool `json:"allow_duplicate,omitempty"`
 	// Kind is "task" (default) or "requirement". A requirement issue carries a
 	// requirement document (its description) plus a confirm/change lifecycle.
 	Kind                   *string `json:"kind,omitempty"`
@@ -3421,16 +3420,6 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "stage must be >= 1")
 		return
 	}
-	var goalObjective pgtype.Text
-	if req.GoalObjective != nil {
-		objective := strings.TrimSpace(*req.GoalObjective)
-		if objective == "" {
-			writeError(w, http.StatusBadRequest, "goal_objective must not be empty")
-			return
-		}
-		goalObjective = pgtype.Text{String: objective, Valid: true}
-	}
-
 	var assigneeType pgtype.Text
 	var assigneeID pgtype.UUID
 	if req.AssigneeType != nil {
@@ -3697,7 +3686,6 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		LabelIDs:       labelIDs,
 		Properties:     properties,
 		AllowDuplicate: req.AllowDuplicate,
-		GoalObjective:  goalObjective,
 		Kind: func() string {
 			if req.Kind != nil {
 				return *req.Kind
@@ -3741,6 +3729,14 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	if errors.Is(err, service.ErrParentIssueNotFound) {
 		writeError(w, http.StatusBadRequest, "parent issue not found in this workspace")
+		return
+	}
+	if errors.Is(err, service.ErrRequirementMustBeRoot) {
+		writeError(w, http.StatusBadRequest, "requirement issues must be top-level")
+		return
+	}
+	if errors.Is(err, service.ErrRequirementNotConfirmed) {
+		writeError(w, http.StatusConflict, "confirm the requirement before adding sub-issues")
 		return
 	}
 	if errors.Is(err, service.ErrProjectNotFound) {
@@ -3996,6 +3992,17 @@ func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.
 		}
 	}
 	refreshUntouchedNullableIssueParams(&params, current, rawFields, workflowAssignee)
+	if _, parentTouched := rawFields["parent_issue_id"]; parentTouched && params.ParentIssueID.Valid {
+		requirement, requirementErr := qtx.LockRequirementAncestor(ctx, db.LockRequirementAncestorParams{
+			IssueID: params.ParentIssueID, WorkspaceID: workspaceID,
+		})
+		if requirementErr == nil && (requirement.LifecycleStatus != "confirmed" || requirement.UnconfirmedChange) {
+			return db.Issue{}, current, false, service.ErrRequirementNotConfirmed
+		}
+		if requirementErr != nil && !errors.Is(requirementErr, pgx.ErrNoRows) {
+			return db.Issue{}, current, false, fmt.Errorf("lock requirement ancestor: %w", requirementErr)
+		}
+	}
 
 	issue, cancelledWakeups, err := updateIssueStoppingWakeups(ctx, qtx, params)
 	if err != nil {
@@ -4129,11 +4136,6 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		if issuestatus.Effective(r.Context(), h.Queries, prevIssue.WorkspaceID, statusKey) == "in_review" &&
-			!h.requireCompletedIssueGoalForReview(r, prevIssue.ID) {
-			writeError(w, http.StatusConflict, "the assignee must complete this goal before the issue can enter review")
-			return
-		}
 		statusKeyForGuard = statusKey
 		params.Status = pgtype.Text{String: statusKey, Valid: true}
 	}
@@ -4202,6 +4204,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "an issue cannot be its own parent")
 				return
 			}
+			if prevIssue.Kind == "requirement" {
+				writeError(w, http.StatusBadRequest, "requirement issues must be top-level")
+				return
+			}
 			// Validate parent exists in the same workspace.
 			newParent, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
 				ID:          newParentID,
@@ -4214,18 +4220,17 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			if !h.requireProjectVisible(w, r, uuidToString(prevIssue.WorkspaceID), newParent.ProjectID, http.StatusBadRequest, "parent issue not found in this workspace") {
 				return
 			}
-			// Cycle detection: walk up from the new parent to ensure we don't reach this issue.
-			cursor := newParentID
-			for depth := 0; depth < 10; depth++ {
-				ancestor, err := h.Queries.GetIssue(r.Context(), cursor)
-				if err != nil || !ancestor.ParentIssueID.Valid {
-					break
-				}
-				if ancestor.ParentIssueID == prevIssue.ID {
-					writeError(w, http.StatusBadRequest, "circular parent relationship detected")
-					return
-				}
-				cursor = ancestor.ParentIssueID
+			cycle, err := h.Queries.WouldCreateIssueParentCycle(r.Context(), db.WouldCreateIssueParentCycleParams{
+				IssueID: prevIssue.ID, ParentID: newParentID, WorkspaceID: prevIssue.WorkspaceID,
+			})
+			if err != nil {
+				slog.Error("update issue: validate parent cycle", append(logger.RequestAttrs(r), "error", err)...)
+				writeError(w, http.StatusInternalServerError, "failed to validate parent issue")
+				return
+			}
+			if cycle {
+				writeError(w, http.StatusBadRequest, "circular parent relationship detected")
+				return
 			}
 			params.ParentIssueID = newParentID
 		} else {
@@ -4328,7 +4333,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	writeCtx := withWakeupHandedTo(r.Context(), h.handedToAgent(r.Context(), prevIssue, params, handoff != nil))
 	var issue db.Issue
 	attachmentsChanged := false
-	if req.Description != nil || req.TitleBase != nil || req.DescriptionBase != nil || len(attachmentIDs) > 0 {
+	if req.Description != nil || req.TitleBase != nil || req.DescriptionBase != nil || len(attachmentIDs) > 0 || rawFields["parent_issue_id"] != nil {
 		var lockedPrev db.Issue
 		issue, lockedPrev, attachmentsChanged, err = h.updateIssueAtomically(
 			writeCtx, prevIssue.WorkspaceID, params, rawFields, req.TitleBase, req.DescriptionBase, attachmentIDs, statusKeyForGuard, handoff != nil, callerType, callerID,
@@ -4348,6 +4353,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, errIssueFieldConflict) {
 			writeEditConflict(w, "issue", prevIssue.ID)
+			return
+		}
+		if errors.Is(err, service.ErrRequirementNotConfirmed) {
+			writeError(w, http.StatusConflict, "confirm the requirement before moving work beneath it")
 			return
 		}
 		if errors.Is(err, pgx.ErrNoRows) && req.ExpectedRevision != nil {
@@ -4802,9 +4811,6 @@ func (h *Handler) deleteIssuesAndCollectAttachmentURLs(ctx context.Context, issu
 		if err := qtx.CancelHumanRequestsByIssue(ctx, db.CancelHumanRequestsByIssueParams{WorkspaceID: issue.WorkspaceID, IssueID: issue.ID}); err != nil {
 			return issueDeleteResult{}, err
 		}
-		if err := qtx.DeleteIssueGoal(ctx, issue.ID); err != nil {
-			return issueDeleteResult{}, fmt.Errorf("delete issue goal: %w", err)
-		}
 		if err := qtx.DeleteIssue(ctx, db.DeleteIssueParams{ID: issue.ID, WorkspaceID: issue.WorkspaceID}); err != nil {
 			return issueDeleteResult{}, fmt.Errorf("delete issue: %w", err)
 		}
@@ -5004,7 +5010,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		if req.Updates.Title != nil {
 			params.Title = pgtype.Text{String: *req.Updates.Title, Valid: true}
 		}
-		if req.Updates.Description != nil {
+		if req.Updates.Description != nil || rawUpdates["parent_issue_id"] != nil {
 			params.Description = pgtype.Text{String: *req.Updates.Description, Valid: true}
 		}
 		if req.Updates.Status != nil {
@@ -5075,21 +5081,10 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 				if err != nil || !hidden.CanSeeProject(newParent.ProjectID) {
 					continue
 				}
-				// Cycle detection: walk up from the new parent to ensure we don't reach this issue.
-				cycleDetected := false
-				cursor := newParentID
-				for depth := 0; depth < 10; depth++ {
-					ancestor, err := h.Queries.GetIssue(r.Context(), cursor)
-					if err != nil || !ancestor.ParentIssueID.Valid {
-						break
-					}
-					if ancestor.ParentIssueID == prevIssue.ID {
-						cycleDetected = true
-						break
-					}
-					cursor = ancestor.ParentIssueID
-				}
-				if cycleDetected {
+				cycleDetected, err := h.Queries.WouldCreateIssueParentCycle(r.Context(), db.WouldCreateIssueParentCycleParams{
+					IssueID: prevIssue.ID, ParentID: newParentID, WorkspaceID: prevIssue.WorkspaceID,
+				})
+				if err != nil || cycleDetected {
 					continue
 				}
 				params.ParentIssueID = newParentID

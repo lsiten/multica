@@ -89,10 +89,6 @@ type IssueCreateParams struct {
 	// used by the standalone PUT path, then inserts the complete bag atomically.
 	Properties     map[pgtype.UUID]json.RawMessage
 	AllowDuplicate bool
-	// GoalObjective enables goal mode for the new issue. It is written in the
-	// same transaction as the issue, so a review-gated task cannot be created
-	// without its objective.
-	GoalObjective pgtype.Text
 	// PRAutoCompleteDisabled is persisted before the issue becomes visible.
 	PRAutoCompleteDisabled bool
 	// Stage groups this issue into an ordered barrier group under its parent
@@ -161,6 +157,14 @@ var ErrActiveDuplicate = errors.New("active duplicate issue exists")
 // orphaned or cross-workspace child issues; callers translate this into
 // their transport's 400 / Lark card error.
 var ErrParentIssueNotFound = errors.New("parent issue not found in this workspace")
+
+// ErrRequirementMustBeRoot keeps requirement documents at the top of the
+// issue hierarchy. Delivery work belongs in task-kind sub-issues below them.
+var ErrRequirementMustBeRoot = errors.New("requirement issues must be top-level")
+
+// ErrRequirementNotConfirmed prevents delivery work from being added while a
+// requirement is waiting for confirmation or has an unconfirmed edit.
+var ErrRequirementNotConfirmed = errors.New("requirement must be confirmed before adding sub-issues")
 
 // ErrProjectNotFound signals that the supplied ProjectID does not exist
 // in the issue's workspace. Cross-workspace project IDs are rejected
@@ -364,12 +368,24 @@ func (s *IssueService) createOnce(ctx context.Context, p IssueCreateParams, opts
 	// foreign workspace.
 	projectID := p.ProjectID
 	if p.ParentIssueID.Valid {
+		if p.Kind == "requirement" {
+			return IssueCreateResult{}, ErrRequirementMustBeRoot
+		}
 		parent, err := qtx.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{
 			ID:          p.ParentIssueID,
 			WorkspaceID: p.WorkspaceID,
 		})
 		if err != nil || !parent.ID.Valid {
 			return IssueCreateResult{}, ErrParentIssueNotFound
+		}
+		requirement, requirementErr := qtx.LockRequirementAncestor(ctx, db.LockRequirementAncestorParams{
+			IssueID: parent.ID, WorkspaceID: p.WorkspaceID,
+		})
+		if requirementErr == nil && (requirement.LifecycleStatus != "confirmed" || requirement.UnconfirmedChange) {
+			return IssueCreateResult{}, ErrRequirementNotConfirmed
+		}
+		if requirementErr != nil && !errors.Is(requirementErr, pgx.ErrNoRows) {
+			return IssueCreateResult{}, fmt.Errorf("lock requirement ancestor: %w", requirementErr)
 		}
 		// Back-fill project from parent when the caller did not pin
 		// one explicitly. Matches the long-standing HTTP behavior: a
@@ -523,14 +539,6 @@ func (s *IssueService) createOnce(ctx context.Context, p IssueCreateParams, opts
 			return IssueCreateResult{}, fmt.Errorf("create requirement: %w", err)
 		}
 	}
-	if p.GoalObjective.Valid {
-		if _, err := qtx.UpsertIssueGoal(ctx, db.UpsertIssueGoalParams{
-			IssueID: issue.ID, Objective: p.GoalObjective.String,
-		}); err != nil {
-			return IssueCreateResult{}, fmt.Errorf("create issue goal: %w", err)
-		}
-	}
-
 	if p.SourceContext != nil {
 		if _, err := PersistSourceContext(ctx, qtx, *p.SourceContext, issue.ID, pgtype.UUID{}); err != nil {
 			return IssueCreateResult{}, fmt.Errorf("persist source context: %w", err)

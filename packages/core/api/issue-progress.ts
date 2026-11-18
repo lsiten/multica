@@ -16,7 +16,7 @@ const ProgressEntrySchema = z.object({
   path: z.array(ProgressIssueRefSchema).default([]), group: ProgressIssueRefSchema.nullable().default(null),
   reasons: z.array(z.string()).default([]), needs_me: z.boolean().default(false), attention: z.boolean().default(false),
   waiting_children: count.default(0), direct_blockers: z.array(ProgressIssueRefSchema).default([]), root_blockers: z.array(ProgressIssueRefSchema).default([]),
-  blocked_issue_count: count.default(0), affected_goal_count: count.default(0),
+  blocked_issue_count: count.default(0),
   run: z.object({ id: z.string().min(1), status: z.string(), since: z.string(), summary: z.string().optional().default("") }).nullable().default(null),
   requests: z.array(ProgressRequestSchema).default([]), stage: z.number().int().positive().nullable().default(null),
   due_date: z.string().nullable().default(null), wait_since: z.string().default(""), rank: count.default(6),

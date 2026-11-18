@@ -38,6 +38,7 @@ import { PriorityIcon } from "@/components/ui/priority-icon";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { CustomStatusChip } from "@/components/issue/custom-status-chip";
 import { issueColumnCategory } from "@/lib/issue-status";
+import { useT } from "@/lib/i18n";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 interface Props {
@@ -51,6 +52,7 @@ export function IssueRow({ issue, onPress, showStatus = false }: Props) {
   // One catalog read for both the icon's colour and the chip — see the
   // divergence note in `custom-status-chip.tsx`.
   const catalog = useIssueStatuses();
+  const { t } = useT("issues");
   return (
     <Pressable onPress={onPress} className="active:bg-secondary px-4 py-3">
       <View className="flex-row items-center gap-3">
@@ -66,9 +68,26 @@ export function IssueRow({ issue, onPress, showStatus = false }: Props) {
           />
         ) : null}
         <PriorityIcon priority={issue.priority} size={14} />
-        <Text className="text-xs text-muted-foreground shrink-0 w-16">
-          {issue.identifier}
-        </Text>
+        <View className="flex-row items-center gap-1 shrink-0">
+          <Text className="text-xs text-muted-foreground w-16">
+            {issue.identifier}
+          </Text>
+          {issue.kind === "requirement" ? (
+            <Text
+              accessibilityLabel={t("requirement.marker")}
+              className="rounded-xs bg-accent px-1 text-[10px] font-semibold text-accent-foreground"
+            >
+              {t("requirement.marker_short")}
+            </Text>
+          ) : issue.kind === "task" && issue.parent_issue_id === null ? (
+            <Text
+              accessibilityLabel={t("task_hierarchy.top_level")}
+              className="rounded-xs bg-muted px-1 text-[10px] font-semibold text-muted-foreground"
+            >
+              {t("task_hierarchy.top_level_short")}
+            </Text>
+          ) : null}
+        </View>
         <View className="flex-1 flex-row items-center gap-1.5 min-w-0">
           <Text className="text-sm text-foreground shrink" numberOfLines={1}>
             {issue.title}

@@ -90,6 +90,10 @@ func TestListIssues_TableFacetsAreServerSide(t *testing.T) {
 	issueA := insertIssue(token+" todo", "todo", "high", false, nil, nil)
 	issueB := insertIssue(token+" progress", "in_progress", "low", true, &projectA, nil)
 	issueC := insertIssue(token+" child", "done", "high", true, &projectB, &issueB)
+	issueRequirement := insertIssue(token+" requirement", "todo", "high", false, nil, nil)
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET kind = 'requirement' WHERE id = $1`, issueRequirement); err != nil {
+		t.Fatalf("mark root requirement: %v", err)
+	}
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO issue_to_label (issue_id, label_id) VALUES ($1, $2), ($3, $4), ($5, $2)
 	`, issueA, labelA, issueB, labelB, issueC); err != nil {

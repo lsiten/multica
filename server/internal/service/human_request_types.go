@@ -35,20 +35,23 @@ type HumanRequestChoice struct {
 
 // HumanRequestInput describes the member's action, not an executable command.
 type HumanRequestInput struct {
-	Key              string               `json:"key"`
-	Kind             string               `json:"kind"`
-	Title            string               `json:"title"`
-	Steps            []string             `json:"steps,omitempty"`
-	ActionLabel      string               `json:"action_label"`
-	Next             string               `json:"next"`
-	Impact           string               `json:"impact,omitempty"`
-	Choices          []HumanRequestChoice `json:"choices,omitempty"`
-	InputLabel       string               `json:"input_label,omitempty"`
-	Verification     string               `json:"verification,omitempty"`
-	Details          string               `json:"details,omitempty"`
-	ExpiresInSeconds int64                `json:"expires_in_seconds,omitempty"`
-	ResponseMode     string               `json:"response_mode,omitempty"`
-	Purpose          string               `json:"purpose,omitempty"`
+	Key          string               `json:"key"`
+	Kind         string               `json:"kind"`
+	Title        string               `json:"title"`
+	Steps        []string             `json:"steps,omitempty"`
+	ActionLabel  string               `json:"action_label"`
+	Next         string               `json:"next"`
+	Impact       string               `json:"impact,omitempty"`
+	Choices      []HumanRequestChoice `json:"choices,omitempty"`
+	InputLabel   string               `json:"input_label,omitempty"`
+	Verification string               `json:"verification,omitempty"`
+	Details      string               `json:"details,omitempty"`
+	// A requirement change-review card may scope its decision to these direct
+	// sub-issue IDs. Empty keeps the legacy all-sub-issues behavior.
+	AffectedIssueIDs []string `json:"affected_issue_ids,omitempty"`
+	ExpiresInSeconds int64    `json:"expires_in_seconds,omitempty"`
+	ResponseMode     string   `json:"response_mode,omitempty"`
+	Purpose          string   `json:"purpose,omitempty"`
 }
 
 // Validate rejects requests whose primary action would have to be inferred.
@@ -76,8 +79,15 @@ func (r HumanRequestInput) Validate() error {
 			return fail(field.name + " is required and must be concise")
 		}
 	}
-	if len(r.Steps) > 5 || utf8.RuneCountInString(r.Impact) > 400 || len(r.Details) > 8000 || utf8.RuneCountInString(r.Verification) > 500 {
+	if len(r.Steps) > 5 || len(r.AffectedIssueIDs) > 100 || utf8.RuneCountInString(r.Impact) > 400 || len(r.Details) > 8000 || utf8.RuneCountInString(r.Verification) > 500 {
 		return fail("request is too long; move background into details")
+	}
+	seenAffected := map[string]bool{}
+	for _, id := range r.AffectedIssueIDs {
+		if !shortText(id, 80) || seenAffected[id] {
+			return fail("affected issue IDs must be unique and concise")
+		}
+		seenAffected[id] = true
 	}
 	for _, step := range r.Steps {
 		if !shortText(step, 240) {

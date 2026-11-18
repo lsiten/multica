@@ -2483,3 +2483,36 @@ func (q *Queries) UpdateIssueStatus(ctx context.Context, arg UpdateIssueStatusPa
 	)
 	return i, err
 }
+
+const wouldCreateIssueParentCycle = `-- name: WouldCreateIssueParentCycle :one
+WITH RECURSIVE ancestors(id, parent_issue_id, visited) AS (
+    SELECT id, parent_issue_id, ARRAY[id]::uuid[]
+    FROM issue
+    WHERE id = $2::uuid
+      AND workspace_id = $3::uuid
+    UNION ALL
+    SELECT parent.id, parent.parent_issue_id, ancestors.visited || parent.id
+    FROM issue parent
+    JOIN ancestors ON parent.id = ancestors.parent_issue_id
+    WHERE parent.workspace_id = $3::uuid
+      AND NOT parent.id = ANY(ancestors.visited)
+)
+SELECT EXISTS (
+    SELECT 1 FROM ancestors WHERE id = $1::uuid
+)::bool
+`
+
+type WouldCreateIssueParentCycleParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	ParentID    pgtype.UUID `json:"parent_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Walk the proposed parent's ancestry without a fixed depth cap. The visited
+// array also makes this safe when repairing a pre-existing malformed cycle.
+func (q *Queries) WouldCreateIssueParentCycle(ctx context.Context, arg WouldCreateIssueParentCycleParams) (bool, error) {
+	row := q.db.QueryRow(ctx, wouldCreateIssueParentCycle, arg.IssueID, arg.ParentID, arg.WorkspaceID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}

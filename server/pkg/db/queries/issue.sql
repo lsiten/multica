@@ -98,6 +98,25 @@ WHERE workspace_id = sqlc.arg('workspace_id')
 SELECT * FROM issue
 WHERE id = $1 AND workspace_id = $2;
 
+-- name: WouldCreateIssueParentCycle :one
+-- Walk the proposed parent's ancestry without a fixed depth cap. The visited
+-- array also makes this safe when repairing a pre-existing malformed cycle.
+WITH RECURSIVE ancestors(id, parent_issue_id, visited) AS (
+    SELECT id, parent_issue_id, ARRAY[id]::uuid[]
+    FROM issue
+    WHERE id = sqlc.arg(parent_id)::uuid
+      AND workspace_id = sqlc.arg(workspace_id)::uuid
+    UNION ALL
+    SELECT parent.id, parent.parent_issue_id, ancestors.visited || parent.id
+    FROM issue parent
+    JOIN ancestors ON parent.id = ancestors.parent_issue_id
+    WHERE parent.workspace_id = sqlc.arg(workspace_id)::uuid
+      AND NOT parent.id = ANY(ancestors.visited)
+)
+SELECT EXISTS (
+    SELECT 1 FROM ancestors WHERE id = sqlc.arg(issue_id)::uuid
+)::bool;
+
 -- name: GetIssueMetadataInWorkspace :one
 -- Reloads the committed metadata snapshot after a conditional mutation
 -- returns no rows, without fetching the rest of the issue payload.

@@ -5,7 +5,6 @@ export type { Issue, IssueStatus, BuiltInIssueStatus, IssuePriority, IssueAssign
   RequirementLifecycleStatus,
   IssueUnread,
 } from "./issue";
-export type { IssueGoal, UpsertIssueGoalRequest } from "./issue-goal";
 export type { ProgressScope, ProgressIssueRef, ProgressRun, ProgressRequest, ProgressEntry, ProgressSummary, IssueProgressView, ProgressFilter, ProgressFilters, IssueNextStep, ProgressAction } from "./issue-progress";
 export type {
   IssueStatusCategory,

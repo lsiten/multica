@@ -41,7 +41,7 @@ const lockUploadCleanupReferences = `-- name: LockUploadCleanupReferences :exec
 LOCK TABLE agent, agent_builder_draft, agent_task_queue, application, application_revision,
     attachment, autopilot, autopilot_rule_version,
     channel_media_pending_object, chat_draft_restore, chat_message, chat_session,
-    comment, document_content_version, human_request, issue, issue_goal, issue_wakeup, issue_source_context,
+    comment, document_content_version, human_request, issue, issue_wakeup, issue_source_context,
     issue_source_context_object_intent, issue_status, plugin_storage, project,
     project_resource, quick_action, skill, skill_file, squad, task_message, "user", workspace
 IN SHARE ROW EXCLUSIVE MODE
@@ -125,7 +125,6 @@ WITH expired_issue AS MATERIALIZED (
     UNION ALL SELECT to_jsonb(a)::text FROM application_revision a
     UNION ALL SELECT to_jsonb(a)::text FROM autopilot a
     UNION ALL SELECT to_jsonb(a)::text FROM autopilot_rule_version a
-    UNION ALL SELECT to_jsonb(g)::text FROM issue_goal g WHERE g.issue_id NOT IN (SELECT id FROM expired_issue)
     UNION ALL SELECT to_jsonb(w)::text FROM issue_wakeup w WHERE w.enabled
     UNION ALL SELECT to_jsonb(q)::text FROM quick_action q
     UNION ALL SELECT to_jsonb(h)::text FROM human_request h

@@ -16,6 +16,8 @@ export interface HumanRequestPayload {
   input_label?: string;
   verification?: string;
   details?: string;
+  /** Direct sub-issues selected by a requirement change-review card. */
+  affected_issue_ids?: string[];
   response_mode?: "card_only" | "chat_or_card";
   purpose?: "desktop_approval";
 }

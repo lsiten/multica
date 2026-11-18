@@ -51,3 +51,22 @@ func TestHumanRequestResponseMatchesTheRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestHumanRequestAffectedIssueIDsAreBoundedAndUnique(t *testing.T) {
+	base := HumanRequestInput{
+		Key: "requirement-change-review", Kind: "choice", Title: "Requirement changed",
+		ActionLabel: "Decide", Next: "Apply the selected impact",
+		Choices: []HumanRequestChoice{{ID: "keep", Label: "Keep"}, {ID: "redo", Label: "Redo"}},
+	}
+	base.AffectedIssueIDs = []string{"child-a", "child-a"}
+	if base.Validate() == nil {
+		t.Fatal("accepted duplicate affected issue IDs")
+	}
+	base.AffectedIssueIDs = make([]string, 101)
+	for i := range base.AffectedIssueIDs {
+		base.AffectedIssueIDs[i] = string(rune('a'+i%26)) + string(rune('0'+i/26))
+	}
+	if base.Validate() == nil {
+		t.Fatal("accepted more than 100 affected issue IDs")
+	}
+}

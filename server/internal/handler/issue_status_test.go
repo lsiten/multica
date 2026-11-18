@@ -595,13 +595,16 @@ func TestCustomTerminalStatusCountsAsTerminalInSQL(t *testing.T) {
 		}
 		t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectID) })
 
-		for _, id := range []pgtype.UUID{
-			mkIssue("sql project custom done", "gate_approved_s"),
-			mkIssue("sql project open", "todo"),
-		} {
+		doneIssue := mkIssue("sql project custom done", "gate_approved_s")
+		openIssue := mkIssue("sql project open", "todo")
+		childIssue := mkIssue("sql project child", "todo")
+		for _, id := range []pgtype.UUID{doneIssue, openIssue, childIssue} {
 			if _, err := testPool.Exec(ctx, `UPDATE issue SET project_id = $1 WHERE id = $2`, projectID, id); err != nil {
 				t.Fatalf("attach to project: %v", err)
 			}
+		}
+		if _, err := testPool.Exec(ctx, `UPDATE issue SET parent_issue_id = $1 WHERE id = $2`, openIssue, childIssue); err != nil {
+			t.Fatalf("attach project child: %v", err)
 		}
 		foreignWorkspaceID := dbfx.Workspace(t, "Foreign project stats", fmt.Sprintf("foreign-project-stats-%d", time.Now().UnixNano()))
 		dbfx.Issue(t, "foreign workspace issue with mismatched project", testutil.Cols{
@@ -621,9 +624,9 @@ func TestCustomTerminalStatusCountsAsTerminalInSQL(t *testing.T) {
 		if len(stats) != 1 {
 			t.Fatalf("expected stats for one project, got %d", len(stats))
 		}
-		if stats[0].TotalCount != 2 || stats[0].DoneCount != 1 {
-			t.Errorf("project stats = %d done / %d total, want 1/2 (the custom done status must count)",
-				stats[0].DoneCount, stats[0].TotalCount)
+		if stats[0].TotalCount != 3 || stats[0].DoneCount != 1 || stats[0].LeafCount != 2 || stats[0].DoneLeafCount != 1 || stats[0].OpenParentCount != 1 {
+			t.Errorf("project stats = done %d/%d, leaf %d/%d, open parents %d; want done 1/3, leaf 1/2, open parents 1",
+				stats[0].DoneCount, stats[0].TotalCount, stats[0].DoneLeafCount, stats[0].LeafCount, stats[0].OpenParentCount)
 		}
 	})
 

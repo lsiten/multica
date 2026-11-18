@@ -58,6 +58,11 @@ export interface Project {
   updated_at: string;
   issue_count: number;
   done_count: number;
+  /** Counts only issues without children, so parent tasks do not inflate delivery progress. */
+  leaf_issue_count?: number;
+  done_leaf_count?: number;
+  /** Open parent tasks with at least one child still open. */
+  open_parent_count?: number;
   resource_count: number;
   /**
    * The workflow this project uses; null for the workspace Default workflow.

@@ -15,6 +15,7 @@ import { Pressable, View } from "react-native";
 import type { Project } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { ProjectIcon } from "@/components/ui/project-icon";
+import { useT } from "@/lib/i18n";
 
 interface Props {
   project: Project;
@@ -22,6 +23,9 @@ interface Props {
 }
 
 export function ProjectHeaderCard({ project, onEdit }: Props) {
+  const { t } = useT("projects");
+  const leafTotal = project.leaf_issue_count ?? project.issue_count;
+  const leafDone = project.done_leaf_count ?? project.done_count;
   return (
     <Pressable
       onPress={onEdit}
@@ -52,6 +56,11 @@ export function ProjectHeaderCard({ project, onEdit }: Props) {
           <ProgressSection
             done={project.done_count}
             total={project.issue_count}
+            leafDone={leafDone}
+            leafTotal={leafTotal}
+            openParentCount={project.open_parent_count ?? 0}
+            leafLabel={t("detail.leaf_progress")}
+            openParentLabel={t("detail.open_parent_tasks")}
           />
         ) : null}
       </View>
@@ -59,7 +68,7 @@ export function ProjectHeaderCard({ project, onEdit }: Props) {
   );
 }
 
-function ProgressSection({ done, total }: { done: number; total: number }) {
+function ProgressSection({ done, total, leafDone, leafTotal, openParentCount, leafLabel, openParentLabel }: { done: number; total: number; leafDone: number; leafTotal: number; openParentCount: number; leafLabel: string; openParentLabel: string }) {
   const pct = Math.round((done / total) * 100);
   return (
     <View className="w-full pt-2 gap-1.5">
@@ -71,6 +80,17 @@ function ProgressSection({ done, total }: { done: number; total: number }) {
           {done} / {total} · {pct}%
         </Text>
       </View>
+      {leafTotal > 0 && (
+        <View className="flex-row items-center justify-between">
+          <Text className="text-xs text-muted-foreground">{leafLabel}</Text>
+          <Text className="text-xs text-muted-foreground">{leafDone} / {leafTotal}</Text>
+        </View>
+      )}
+      {openParentCount > 0 && (
+        <Text className="text-xs text-muted-foreground">
+          {openParentLabel}: {openParentCount}
+        </Text>
+      )}
       <View className="h-1.5 bg-secondary rounded-full overflow-hidden">
         <View
           className="h-full bg-brand rounded-full"

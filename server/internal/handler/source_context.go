@@ -778,21 +778,12 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 		}
 		stage = pgtype.Int4{Int32: *input.Stage, Valid: true}
 	}
-	var goalObjective pgtype.Text
-	if input.GoalObjective != nil {
-		objective := strings.TrimSpace(*input.GoalObjective)
-		if objective == "" {
-			return sourceContextBadRequest("goal_objective must not be empty")
-		}
-		goalObjective = pgtype.Text{String: objective, Valid: true}
-	}
 	prefix := h.getIssuePrefix(r.Context(), workspaceID)
 	result, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
 		WorkspaceID: workspaceID, Title: title, Description: ptrToText(input.Description), Status: status, Priority: priority,
 		AssigneeType: assigneeType, AssigneeID: assigneeID, CreatorType: "member", CreatorID: userID,
 		ParentIssueID: capture.SourceIssueID, ProjectID: projectID, StartDate: startDate, DueDate: dueDate,
 		AttachmentIDs: attachmentIDs, LabelIDs: labelIDs, Properties: properties, Stage: stage,
-		GoalObjective:  goalObjective,
 		AllowDuplicate: input.AllowDuplicate, SourceContext: &capture,
 		PRAutoCompleteDisabled: input.PRAutoCompleteDisabled,
 	}, service.IssueCreateOpts{
@@ -976,6 +967,9 @@ func (h *Handler) writeSourceContextError(w http.ResponseWriter, err error, limi
 		message = err.Error()
 	case errors.Is(err, service.ErrParentIssueNotFound), errors.Is(err, service.ErrProjectNotFound):
 		status = http.StatusBadRequest
+		message = err.Error()
+	case errors.Is(err, service.ErrRequirementNotConfirmed):
+		status, code = http.StatusConflict, "requirement_not_confirmed"
 		message = err.Error()
 	case errors.As(err, &propertyErr):
 		status, code = http.StatusBadRequest, "invalid_issue_property"

@@ -189,6 +189,49 @@ func (q *Queries) ListRequirementSubIssues(ctx context.Context, arg ListRequirem
 	return items, nil
 }
 
+const lockRequirementAncestor = `-- name: LockRequirementAncestor :one
+WITH RECURSIVE ancestors AS (
+    SELECT issue.id, issue.parent_issue_id
+    FROM issue
+    WHERE issue.id = $2 AND issue.workspace_id = $1
+    UNION ALL
+    SELECT parent.id, parent.parent_issue_id
+    FROM issue parent
+    JOIN ancestors child ON child.parent_issue_id = parent.id
+    WHERE parent.workspace_id = $1
+)
+SELECT r.id, r.workspace_id, r.issue_id, r.lifecycle_status, r.confirmed_revision, r.confirmed_by, r.confirmed_at, r.unconfirmed_change, r.created_at, r.updated_at
+FROM requirement r
+JOIN ancestors a ON a.id = r.issue_id
+WHERE r.workspace_id = $1
+FOR UPDATE
+`
+
+type LockRequirementAncestorParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+}
+
+// Child creation must observe a stable confirmed lifecycle. Walk the complete
+// parent chain so a nested task cannot bypass a pending root requirement.
+func (q *Queries) LockRequirementAncestor(ctx context.Context, arg LockRequirementAncestorParams) (Requirement, error) {
+	row := q.db.QueryRow(ctx, lockRequirementAncestor, arg.WorkspaceID, arg.IssueID)
+	var i Requirement
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.IssueID,
+		&i.LifecycleStatus,
+		&i.ConfirmedRevision,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.UnconfirmedChange,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const reopenRequirementForChange = `-- name: ReopenRequirementForChange :one
 UPDATE requirement SET lifecycle_status = 'pending_confirm', unconfirmed_change = true, updated_at = now()
 WHERE issue_id = $1 AND workspace_id = $2

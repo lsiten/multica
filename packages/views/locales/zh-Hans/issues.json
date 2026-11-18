@@ -695,17 +695,6 @@
     "empty": "暂无已排期的任务 — 给任意任务设置开始或截止日期，即可显示在时间轴上。",
     "inverted_dates_warning": "开始日期晚于截止日期——已按区间最小/最大端绘制。"
   },
-  "goal_mode": {
-    "title": "目标模式",
-    "placeholder": "描述必须完成的目标结果",
-    "objective_aria": "任务目标",
-    "objective_required": "请先填写目标，再创建目标模式任务。",
-    "enable": "启用目标模式",
-    "disable": "关闭目标模式",
-    "complete": "确认已完成目标",
-    "completed": "负责人已完成目标",
-    "review_gate": "只有负责人确认完成目标后，才能进入审核。"
-  },
   "hover_card": {
     "created_updated": "创建于 {{created}} · 更新于 {{updated}}"
   },

@@ -178,6 +178,9 @@ export const ProjectSchema = z.object({
   updated_at: z.string(),
   issue_count: z.number().default(0),
   done_count: z.number().default(0),
+  leaf_issue_count: z.number().default(0),
+  done_leaf_count: z.number().default(0),
+  open_parent_count: z.number().default(0),
   resource_count: z.number().default(0),
 }).loose();
 
@@ -213,6 +216,9 @@ export const EMPTY_PROJECT: Project = {
   updated_at: "",
   issue_count: 0,
   done_count: 0,
+  leaf_issue_count: 0,
+  done_leaf_count: 0,
+  open_parent_count: 0,
   resource_count: 0,
 };
 

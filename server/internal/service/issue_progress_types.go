@@ -63,7 +63,6 @@ type ProgressEntry struct {
 	DirectBlockers    []ProgressIssueRef `json:"direct_blockers"`
 	RootBlockers      []ProgressIssueRef `json:"root_blockers"`
 	BlockedIssueCount int                `json:"blocked_issue_count"`
-	AffectedGoalCount int                `json:"affected_goal_count"`
 	Run               *ProgressRun       `json:"run"`
 	Requests          []ProgressRequest  `json:"requests"`
 	Stage             *int32             `json:"stage"`

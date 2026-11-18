@@ -504,16 +504,29 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               {t(($) => $.detail.section_progress)}
               <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${progressOpen ? "rotate-90" : ""}`} />
             </button>
-            {progressOpen && <div className="pl-2 flex items-center gap-3">
-              <div className="relative h-2 flex-1 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-success transition-all"
-                  style={{ width: `${pct}%` }}
-                />
+            {progressOpen && <div className="pl-2 space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="relative h-2 flex-1 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full bg-success transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="text-caption text-muted-foreground tabular-nums shrink-0">
+                  {issueMetrics.completedCount}/{issueMetrics.totalCount}
+                </span>
               </div>
-              <span className="text-caption text-muted-foreground tabular-nums shrink-0">
-                {issueMetrics.completedCount}/{issueMetrics.totalCount}
-              </span>
+              {issueMetrics.leafCount > 0 && (
+                <div className="flex items-center justify-between text-micro text-muted-foreground">
+                  <span>{t(($) => $.detail.leaf_progress)}</span>
+                  <span className="tabular-nums">{issueMetrics.completedLeafCount}/{issueMetrics.leafCount}</span>
+                </div>
+              )}
+              {issueMetrics.openParentCount > 0 && (
+                <div className="text-micro text-warning">
+                  {t(($) => $.detail.open_parent_tasks)}: {issueMetrics.openParentCount}
+                </div>
+              )}
             </div>}
           </div>
         );

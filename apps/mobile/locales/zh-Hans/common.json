@@ -60,6 +60,7 @@
     "load_failed": "无法读取请求。请重试，获取当前状态。",
     "retry": "重试",
     "details": "查看详情",
+    "affected_subissues": "受影响的子任务（{{count}}）：{{ids}}",
     "recommended": "建议",
     "received": "已收到回复，后续运行已排队。",
     "declined": "已拒绝操作，并通知智能体。",
