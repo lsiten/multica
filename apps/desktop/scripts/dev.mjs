@@ -12,6 +12,7 @@
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 
 import { envWithLocalBins } from "./package.mjs";
 import {
@@ -25,6 +26,17 @@ applyWorktreeDevEnv(process.env, {
   root: repoRootFromScriptDir(here),
   log: true,
 });
+
+// ChatGPT Desktop currently exposes two Codex entrypoints on macOS: a stable
+// shell wrapper under `codex-cli/bin/codex` and the nested Mach-O binary under
+// `CodexCLI.app`. The latter can start successfully but remain silent when it
+// is launched by Multica's worker process, which trips the three-minute startup
+// watchdog. Keep local Desktop runs on the wrapper; it resolves the same
+// binary while preserving the bundle's launch environment.
+if (process.platform === "darwin" && !process.env.MULTICA_CODEX_PATH) {
+  const stableCodex = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex";
+  if (existsSync(stableCodex)) process.env.MULTICA_CODEX_PATH = stableCodex;
+}
 
 function run(command, args, { shell = false, env = process.env } = {}) {
   const result = spawnSync(command, args, {

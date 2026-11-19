@@ -2152,6 +2152,7 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		DaemonID   string   `json:"daemon_id"`
 		RuntimeIDs []string `json:"runtime_ids"`
 		MaxTasks   int      `json:"max_tasks"`
+		ForceClaim bool     `json:"force_claim"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -2270,7 +2271,12 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claimed, err := h.TaskService.ClaimTasksForRuntimes(r.Context(), authorized, maxTasks)
+	var claimed []db.AgentTaskQueue
+	if req.ForceClaim {
+		claimed, err = h.TaskService.ClaimTasksForRuntimesFresh(r.Context(), authorized, maxTasks)
+	} else {
+		claimed, err = h.TaskService.ClaimTasksForRuntimes(r.Context(), authorized, maxTasks)
+	}
 	if err != nil {
 		slog.Warn("claim tasks failed", append(logger.RequestAttrs(r), "error", err)...)
 		writeError(w, http.StatusInternalServerError, "failed to claim tasks")

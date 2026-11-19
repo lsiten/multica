@@ -35,6 +35,18 @@ import (
 // already carrying its runtime_id so the daemon routes it to the matching
 // runtime locally.
 func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int) ([]db.AgentTaskQueue, error) {
+	return s.claimTasksForRuntimes(ctx, runtimeIDs, maxTasks, false)
+}
+
+// ClaimTasksForRuntimesFresh bypasses the Redis negative-result cache. Daemons
+// use this on every poll so a missed enqueue invalidation cannot strand work
+// behind the cache TTL. The cache remains available to the singular/legacy
+// path and for deployments that call ClaimTasksForRuntimes directly.
+func (s *TaskService) ClaimTasksForRuntimesFresh(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int) ([]db.AgentTaskQueue, error) {
+	return s.claimTasksForRuntimes(ctx, runtimeIDs, maxTasks, true)
+}
+
+func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int, bypassEmptyCache bool) ([]db.AgentTaskQueue, error) {
 	if len(runtimeIDs) == 0 || maxTasks <= 0 {
 		return nil, nil
 	}
@@ -145,7 +157,7 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 	versions := make(map[string]int64, len(uniqueIDs))
 	for _, rid := range uniqueIDs {
 		key := util.UUIDToString(rid)
-		if s.EmptyClaim.IsEmpty(ctx, key) {
+		if !bypassEmptyCache && s.EmptyClaim.IsEmpty(ctx, key) {
 			continue
 		}
 		versions[key] = s.EmptyClaim.CurrentVersion(ctx, key)

@@ -256,6 +256,24 @@ func (f taskRunnerFunc) run(ctx context.Context, task Task, provider string, slo
 	return f(ctx, task, provider, slot, log)
 }
 
+// runTaskSafely keeps a provider or child-process lifecycle panic inside the
+// task boundary. A panic here must become an ordinary task failure so the
+// daemon can report it and continue serving other claimed tasks; letting it
+// escape a handleTask goroutine terminates the whole daemon and strands the
+// server-side task in running/dispatched state.
+func (d *Daemon) runTaskSafely(ctx context.Context, task Task, provider string, slot int, log *slog.Logger) (result TaskResult, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if log != nil {
+				log.Error("task runner panicked", "panic", recovered)
+			}
+			result = TaskResult{}
+			err = fmt.Errorf("task runner panic: %v", recovered)
+		}
+	}()
+	return d.runner.run(ctx, task, provider, slot, log)
+}
+
 type terminalTaskReportKind uint8
 
 const (
@@ -6535,7 +6553,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		}
 	}()
 
-	result, err := d.runner.run(runCtx, task, provider, slot, taskLog)
+	result, err := d.runTaskSafely(runCtx, task, provider, slot, taskLog)
 	if errors.Is(err, errWorkerOutcomeUncertain) {
 		taskLog.Warn("worker outcome unconfirmed; preserving execution for reconciliation", "error", err)
 		return

@@ -67,6 +67,22 @@ func isTaskNotFoundError(err error) bool {
 	return strings.Contains(strings.ToLower(reqErr.Body), "task not found")
 }
 
+// isApplicationNotFoundError returns true if the server rejected an
+// application callback because the referenced application no longer exists.
+// Application observation and step reports cannot become valid again for the
+// same payload after the catalog row has been deleted.
+func isApplicationNotFoundError(err error) bool {
+	var reqErr *requestError
+	if !errors.As(err, &reqErr) {
+		return false
+	}
+	if reqErr.StatusCode != http.StatusNotFound {
+		return false
+	}
+	body := strings.ToLower(reqErr.Body)
+	return strings.Contains(body, "application_not_found") || strings.Contains(body, "application not found")
+}
+
 // isUnauthorizedError returns true if the error is a 401 from the server.
 // Used by the token-renewal loop to surface a clear "re-login required"
 // message instead of a generic transport-level retry.
@@ -334,6 +350,10 @@ func (c *Client) claimTasksWithHints(ctx context.Context, daemonID string, runti
 		"daemon_id":   daemonID,
 		"runtime_ids": runtimeIDs,
 		"max_tasks":   maxTasks,
+		// The daemon is the wakeup source and already owns the runtime set.
+		// Force the server to verify the queue instead of trusting a stale
+		// negative Redis verdict from an older enqueue path.
+		"force_claim": true,
 	}, &resp); err != nil {
 		return claimTasksResult{}, err
 	}

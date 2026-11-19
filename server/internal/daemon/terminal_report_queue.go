@@ -575,7 +575,10 @@ func (s *terminalReportStore) acknowledge(item pendingTerminalTaskReport) error 
 // terminalReportPermanentRejection classifies only response semantics that are
 // stable for an unchanged terminal request. Authentication expiry (401), rate
 // limiting (429), and timeout (408) stay pending because credentials or
-// deployment version can recover, as do generic and missing-route 404s.
+// deployment version can recover, as do generic and missing-route 404s. A
+// 404 application_not_found is permanent for application observation/step
+// reports because the catalog row is gone and the same callback can never be
+// accepted.
 //
 // A conflict (409) is permanent only for a terminal task result: /complete and
 // /fail return 409 solely for service.ErrExecutionStale (a revoked or mismatched
@@ -592,7 +595,13 @@ func terminalReportPermanentRejection(kind terminalTaskReportKind, err error) (i
 	case http.StatusBadRequest, http.StatusForbidden:
 		return reqErr.StatusCode, true
 	case http.StatusNotFound:
-		return reqErr.StatusCode, isTaskNotFoundError(err)
+		if isTaskNotFoundError(err) {
+			return reqErr.StatusCode, true
+		}
+		if kind == applicationObservationReport || kind == applicationStepReport {
+			return reqErr.StatusCode, isApplicationNotFoundError(err)
+		}
+		return reqErr.StatusCode, false
 	case http.StatusConflict:
 		// Only a terminal task result's 409 (an ErrExecutionStale fence) is
 		// permanent; a shared application instance can still be in use.

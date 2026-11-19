@@ -5823,6 +5823,36 @@ func TestHandleTask_BareErrorReportsFailureWithCancelledParent(t *testing.T) {
 	}
 }
 
+func TestHandleTask_RunnerPanicReportsFailureAndKeepsDaemonAlive(t *testing.T) {
+	t.Parallel()
+
+	var failCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if !strings.HasSuffix(req.URL.Path, "/fail") {
+			t.Errorf("unexpected daemon call: %s %s", req.Method, req.URL.Path)
+		}
+		failCalls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	d := &Daemon{
+		client:             NewClient(srv.URL),
+		logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
+		runtimeIndex:       map[string]Runtime{"rt-1": {ID: "rt-1", Provider: "codex"}},
+		cancelPollInterval: time.Hour,
+	}
+	d.runner = taskRunnerFunc(func(context.Context, Task, string, int, *slog.Logger) (TaskResult, error) {
+		panic("simulated child-process lifecycle panic")
+	})
+
+	d.handleTask(context.Background(), Task{ID: "task-runner-panic", RuntimeID: "rt-1"}, 0)
+
+	if got := failCalls.Load(); got != 1 {
+		t.Fatalf("fail callback calls = %d, want 1", got)
+	}
+}
+
 // TestHandleTask_UntrackedRuntimeFailsBackForRetry covers the window between a
 // batch claim leaving with a runtime ID and the claimed task arriving here.
 //
