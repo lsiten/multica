@@ -1626,7 +1626,10 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build dynamic SQL — same approach as ListGroupedIssues.
-	where := []string{"i.workspace_id = $1"}
+	// The general issue list powers task tables and searches. Requirement
+	// documents have their own lifecycle endpoints and must not leak into the
+	// ordinary task window or distort facet counts.
+	where := []string{"i.workspace_id = $1", "i.kind = 'task'"}
 	args := []any{wsUUID}
 	addArg := func(v any) string {
 		args = append(args, v)
