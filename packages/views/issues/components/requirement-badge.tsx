@@ -24,11 +24,6 @@ export function RequirementBadge({
   className?: string;
 }) {
   const { t } = useT("issues");
-  const wsId = useWorkspaceId();
-  const { data: requirement } = useQuery({
-    ...requirementOptions(wsId, issue.id),
-    enabled: showLifecycle && issue.kind === "requirement",
-  });
 
   if (issue.kind !== "requirement") return null;
 
@@ -41,9 +36,18 @@ export function RequirementBadge({
       >
         {t(($) => $.requirement.marker_short)}
       </span>
-      {showLifecycle && <RequirementLifecyclePill requirement={requirement} />}
+      {showLifecycle && <RequirementLifecycle issueId={issue.id} />}
     </span>
   );
+}
+
+function RequirementLifecycle({ issueId }: { issueId: string }) {
+  const wsId = useWorkspaceId();
+  const { data: requirement } = useQuery({
+    ...requirementOptions(wsId, issueId),
+    enabled: Boolean(wsId),
+  });
+  return <RequirementLifecyclePill requirement={requirement} />;
 }
 
 /** Marks an ordinary task with no parent issue as a workspace-level task. */

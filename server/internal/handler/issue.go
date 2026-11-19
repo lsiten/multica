@@ -5010,7 +5010,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		if req.Updates.Title != nil {
 			params.Title = pgtype.Text{String: *req.Updates.Title, Valid: true}
 		}
-		if req.Updates.Description != nil || rawUpdates["parent_issue_id"] != nil {
+		if req.Updates.Description != nil {
 			params.Description = pgtype.Text{String: *req.Updates.Description, Valid: true}
 		}
 		if req.Updates.Status != nil {
