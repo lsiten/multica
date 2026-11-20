@@ -248,7 +248,7 @@ func TestTaskClaimPollIntervalTracksWSRPCAvailability(t *testing.T) {
 // queued for the full default 30 seconds.
 func TestRunBatchPollerWakesAfterTaskExit(t *testing.T) {
 	t.Parallel()
-	testRunBatchPollerTaskExitWakeup(t, 2, 50*time.Millisecond)
+	testRunBatchPollerTaskExitWakeup(t, 2, 50*time.Millisecond, 0)
 }
 
 // The max-concurrency=1 shape takes a different sleep branch: after the
@@ -257,14 +257,26 @@ func TestRunBatchPollerWakesAfterTaskExit(t *testing.T) {
 // explicit completion signal is required there too.
 func TestRunBatchPollerWakesFromCapacityBackoffAfterTaskExit(t *testing.T) {
 	t.Parallel()
-	testRunBatchPollerTaskExitWakeup(t, 1, 200*time.Millisecond)
+	testRunBatchPollerTaskExitWakeup(t, 1, 200*time.Millisecond, 0)
 }
 
-func testRunBatchPollerTaskExitWakeup(t *testing.T, maxConcurrent int, releaseDelay time.Duration) {
+// TestRunBatchPollerRetriesAfterTaskExitClaimRace covers the narrower race
+// where the first claim after a local task exit still sees the predecessor as
+// active on the server. The successor must not wait for the normal idle poll.
+func TestRunBatchPollerRetriesAfterTaskExitClaimRace(t *testing.T) {
+	oldRetryDelay := taskExitClaimRetryDelay
+	taskExitClaimRetryDelay = 20 * time.Millisecond
+	t.Cleanup(func() { taskExitClaimRetryDelay = oldRetryDelay })
+	testRunBatchPollerTaskExitWakeup(t, 2, 50*time.Millisecond, 1)
+}
+
+func testRunBatchPollerTaskExitWakeup(t *testing.T, maxConcurrent int, releaseDelay time.Duration, postCompletionEmptyClaims int) {
 	t.Helper()
 
 	var firstCompleted atomic.Bool
 	var secondServed atomic.Bool
+	var emptyAfterCompletion atomic.Int64
+	emptyAfterCompletion.Store(int64(postCompletionEmptyClaims))
 	var claimCalls atomic.Int64
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
@@ -278,6 +290,9 @@ func testRunBatchPollerTaskExitWakeup(t *testing.T, maxConcurrent int, releaseDe
 			switch {
 			case !firstCompleted.Load():
 				w.Write([]byte(`{"tasks":[{"id":"t1","runtime_id":"rt-1","issue_id":"i1","agent":{"name":"a"}}]}`))
+			case emptyAfterCompletion.Load() > 0:
+				emptyAfterCompletion.Add(-1)
+				w.Write([]byte(`{"tasks":[]}`))
 			case secondServed.CompareAndSwap(false, true):
 				w.Write([]byte(`{"tasks":[{"id":"t2","runtime_id":"rt-1","issue_id":"i1","agent":{"name":"a"}}]}`))
 			default:

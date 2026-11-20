@@ -129,6 +129,11 @@ const (
 // shrink it, same as the other timing knobs in this package.
 var pendingWorkHintMinInterval = time.Second
 
+// taskExitClaimRetryDelay bounds the follow-up claim after a task exits. The
+// first claim can race the server's final terminal-state commit; a short retry
+// closes that window without turning the healthy idle poll into a tight loop.
+var taskExitClaimRetryDelay = time.Second
+
 // repoCheckoutModeFor picks the Git metadata layout for a task's
 // `multica repo checkout`. Under Codex's workspace-write sandbox a linked
 // worktree's gitdir resolves into the shared cache and stays read-only even
@@ -821,6 +826,10 @@ type Daemon struct {
 	// It deliberately includes preparation and local-directory waiters because
 	// restart/update barriers must not kill any claimed task.
 	activeTasks atomic.Int64
+	// taskExitSeq increments after a task's local terminal/report path and
+	// before its execution slot is released. The claim poller uses it to
+	// distinguish a normal idle poll from an empty claim racing task cleanup.
+	taskExitSeq atomic.Uint64
 	// Sticky for this process: a finished task can leave independent processes
 	// behind even after activeTasks reaches zero.
 	cleanupUnconfirmed atomic.Bool
@@ -6105,6 +6114,7 @@ func (d *Daemon) pollLoop(ctx context.Context, taskWakeups <-chan taskWakeup) er
 // handleTask so an in-flight task is not killed just because the poll loop is
 // stopping mid-flight.
 func (d *Daemon) runBatchPoller(pollerCtx, parentCtx context.Context, sem chan int, wakeup chan struct{}, taskWG *sync.WaitGroup) {
+	lastTaskExitSeq := d.taskExitSeq.Load()
 	releaseSlots := func(slots []int) {
 		for _, sl := range slots {
 			sem <- sl
@@ -6197,6 +6207,7 @@ func (d *Daemon) runBatchPoller(pollerCtx, parentCtx context.Context, sem chan i
 				defer taskWG.Done()
 				defer d.activeTasks.Add(-1)
 				defer func() {
+					d.taskExitSeq.Add(1)
 					// Release local capacity before waking the poller. The task's
 					// terminal callback and local cleanup have both finished at this
 					// point, so a successor that was previously blocked by agent
@@ -6222,7 +6233,12 @@ func (d *Daemon) runBatchPoller(pollerCtx, parentCtx context.Context, sem chan i
 		if dispatched > 0 && dispatched == len(slots) {
 			continue
 		}
-		if err := sleepWithContextOrWakeup(pollerCtx, d.taskClaimPollInterval(claimResult), wakeup); err != nil {
+		interval := d.taskClaimPollInterval(claimResult)
+		if taskExitSeq := d.taskExitSeq.Load(); taskExitSeq != lastTaskExitSeq {
+			lastTaskExitSeq = taskExitSeq
+			interval = taskExitClaimRetryDelay
+		}
+		if err := sleepWithContextOrWakeup(pollerCtx, interval, wakeup); err != nil {
 			return
 		}
 	}
