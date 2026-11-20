@@ -44,6 +44,47 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("chat dictation lifecycle", () => {
+  it("transcribes the complete recording when MediaRecorder flushes after stop", async () => {
+    let trackStopped = false;
+    const recordingTrack = {
+      enabled: true,
+      stop: vi.fn(() => { trackStopped = true; }),
+    };
+    const recordingStream = { getTracks: () => [recordingTrack] };
+    getUserMedia.mockResolvedValueOnce(recordingStream);
+    class AsyncRecorder {
+      static isTypeSupported() { return true; }
+      state = "inactive";
+      mimeType = "audio/webm";
+      ondataavailable?: (event: { data: Blob }) => void;
+      onstop?: () => void;
+      start() { this.state = "recording"; }
+      stop() {
+        this.state = "inactive";
+        queueMicrotask(() => {
+          this.ondataavailable?.({ data: new Blob([trackStopped ? "truncated" : "complete"]) });
+          this.onstop?.();
+        });
+      }
+    }
+    vi.stubGlobal("MediaRecorder", AsyncRecorder);
+    const draft = { update: vi.fn(), finish: vi.fn(), cancel: vi.fn() };
+    const view = renderHook(() => useChatDictation({
+      enabled: true,
+      onBegin: () => draft,
+      onActiveChange: vi.fn(),
+      onVoice: async (audio: Blob) => audio.text(),
+    }));
+
+    await act(() => view.result.current.start());
+    act(() => view.result.current.stop());
+    await act(async () => {});
+
+    expect(draft.update).toHaveBeenLastCalledWith("complete");
+    expect(draft.finish).toHaveBeenCalledOnce();
+    expect(trackStopped).toBe(true);
+  });
+
   it("starts on activation, updates snapshots and finishes only after final correction", async () => {
     const view = setup();
     await act(() => view.result.current.start());
@@ -53,9 +94,9 @@ describe("chat dictation lifecycle", () => {
     act(() => view.result.current.stop());
     expect(view.result.current.phase).toBe("transcribing");
     expect(view.result.current.isActive()).toBe(true);
-    expect(stopTrack).toHaveBeenCalled();
     expect(view.draft.finish).not.toHaveBeenCalled();
     await act(async () => view.pending.resolve("Hello!"));
+    expect(stopTrack).toHaveBeenCalled();
     expect(view.draft.update).toHaveBeenLastCalledWith("Hello!");
     expect(view.draft.finish).toHaveBeenCalledOnce();
     expect(view.draft.cancel).not.toHaveBeenCalled();

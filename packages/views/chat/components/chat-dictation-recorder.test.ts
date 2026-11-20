@@ -22,7 +22,9 @@ class Recorder {
 beforeEach(() => {
   state.data = new Blob(["synthetic audio"]);
   vi.stubGlobal("MediaRecorder", Recorder);
-  vi.stubGlobal("MediaStream", class {});
+  vi.stubGlobal("MediaStream", class {
+    getTracks() { return [{ stop: vi.fn() }]; }
+  });
 });
 afterEach(() => vi.unstubAllGlobals());
 

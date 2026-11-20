@@ -35,8 +35,10 @@ export function recordDictation(
     };
     recorder.onstop = () => {
       cleanup();
-      if (signal.aborted) return;
       const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      // `stop()` flushes the final data asynchronously; release the source after that flush.
+      stream.getTracks().forEach((track) => track.stop());
+      if (signal.aborted) return;
       if (!blob.size || blob.size > 512 * 1024) {
         reject(new DictationAudioError("empty"));
         return;

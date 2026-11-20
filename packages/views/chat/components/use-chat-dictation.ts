@@ -96,7 +96,6 @@ export function useChatDictation(options: ChatDictationOptions) {
     current.timer = setTimeout(() => fail(current), 120_000);
     try {
       current.recording.stop();
-      current.stream?.getTracks().forEach((track) => track.stop());
     } catch {
       fail(current);
     }
