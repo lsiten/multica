@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -49,6 +50,48 @@ func TestWSRPCClient_CallRoundTrip(t *testing.T) {
 	}
 	if len(resp.Tasks) != 1 || resp.Tasks[0].ID != "t1" {
 		t.Fatalf("resp = %+v, want one task t1", resp)
+	}
+}
+
+func TestClaimTasksWSFirst_ForcesFreshQueueCheck(t *testing.T) {
+	t.Parallel()
+
+	d := New(Config{ServerBaseURL: "http://127.0.0.1:1"}, slog.Default())
+	var got struct {
+		DaemonID   string   `json:"daemon_id"`
+		RuntimeIDs []string `json:"runtime_ids"`
+		MaxTasks   int      `json:"max_tasks"`
+		ForceClaim bool     `json:"force_claim"`
+	}
+	generation := d.wsRPC.attach(func(frame []byte) (*wsOutbound, error) {
+		var message protocol.Message
+		if err := json.Unmarshal(frame, &message); err != nil {
+			return nil, err
+		}
+		var request protocol.RPCRequestPayload
+		if err := json.Unmarshal(message.Payload, &request); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(request.Body, &got); err != nil {
+			return nil, err
+		}
+		go d.wsRPC.deliver(protocol.RPCResponsePayload{
+			RequestID: request.RequestID,
+			Status:    200,
+			Body:      json.RawMessage(`{"tasks":[]}`),
+		})
+		return &wsOutbound{data: frame}, nil
+	})
+	d.wsRPC.markRPCV1Supported(generation)
+
+	if _, err := d.claimTasksWSFirst(context.Background(), "daemon-x", []string{"runtime-1"}, 3); err != nil {
+		t.Fatalf("claimTasksWSFirst: %v", err)
+	}
+	if got.DaemonID != "daemon-x" || len(got.RuntimeIDs) != 1 || got.RuntimeIDs[0] != "runtime-1" || got.MaxTasks != 3 {
+		t.Fatalf("claim body = %+v, want daemon/runtime/max_tasks preserved", got)
+	}
+	if !got.ForceClaim {
+		t.Fatal("WS claim did not request a fresh queue check")
 	}
 }
 

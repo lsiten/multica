@@ -351,6 +351,10 @@ func (d *Daemon) claimTasksWSFirst(ctx context.Context, daemonID string, runtime
 			"daemon_id":   daemonID,
 			"runtime_ids": runtimeIDs,
 			"max_tasks":   maxTasks,
+			// Keep the WS claim semantics identical to the HTTP fallback. The
+			// daemon is already the authoritative owner of this runtime set, so
+			// every claim must bypass a stale negative empty-claim cache.
+			"force_claim": true,
 		}, &resp)
 		if err == nil {
 			resp.ClaimedOverWS = true
