@@ -1,6 +1,6 @@
 ---
 name: multica-platform
-description: "Manage Multica via CLI for issues, requirements, sub-issues, issue wakeups and handoffs, local environments, coordination, mentions, chats, agents, squads, autopilots, projects, runtimes, skill import and notifications."
+description: "Manage Multica via CLI for issues, requirements, sub-issues, issue wakeups and handoffs, Agent-to-Agent collaboration across Runtimes, local environments, coordination, mentions, chats, agents, squads, autopilots, projects, runtimes, skill import and notifications."
 user-invocable: false
 allowed-tools: Bash(multica *), Bash(git *), Bash(gh *)
 ---
@@ -23,6 +23,7 @@ Read the invariants below, then open the reference(s) your task actually needs
 | `references/issue-run-handoffs.md` | Issue run handoffs and human-request cards |
 | `references/issue-wakeups.md` | Issue wakeups: events, conditions, timers, recurring checks and check-ins |
 | `references/coordination.md` | The coordination graph: how a task's project, sub-issues/stages, runs, and squad (leader / members / routing) connect — read it before acting on one node in isolation |
+| `references/agent-collaboration.md` | Agent-to-Agent collaboration across Runtimes: delegate, append, next turn, watch, stop, receipts and operation status |
 | `references/mentions.md` | Writing a `mention://` link: which types enqueue a run, which are inert, why one silently did nothing; steering another agent's running turn (`comment add --steer`) |
 | `references/notifications.md` | Personal inbox notification bots: platform credentials, workspace scope, delivery and test-send boundaries |
 | `references/agents.md` | Creating, copying or debugging an agent definition: fields, secrets, MCP config, skill binding |
