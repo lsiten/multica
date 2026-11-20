@@ -1969,6 +1969,12 @@
       "quick": "Création avec un agent",
       "manual": "Création manuelle",
       "unsupported": "Indisponible lors de la création avec un agent"
+    },
+    "meeting_title": "Réunions",
+    "meeting_runtime": {
+      "title": "Runtime par défaut des réunions",
+      "hint": "Utilisé au démarrage d’une réunion depuis cet appareil.",
+      "unselected": "Choisir un runtime"
     }
   },
   "shortcuts": {

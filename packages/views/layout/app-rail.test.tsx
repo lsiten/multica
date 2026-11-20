@@ -150,11 +150,11 @@ describe("AppRail global actions", () => {
 describe("AppRail order", () => {
   it("lists the spaces in the default order", () => {
     renderRail();
-    expect(railOrder()).toEqual(["inbox", "applications", "work", "team", "chat", "autopilots"]);
+    expect(railOrder()).toEqual(["inbox", "applications", "work", "team", "chat", "meetings", "autopilots"]);
   });
 
   it("follows the saved order", () => {
-    const order = ["chat", "inbox", "applications", "work", "team", "autopilots"] as const;
+    const order = ["chat", "meetings", "inbox", "applications", "work", "team", "autopilots"] as const;
     useRailOrderStore.getState().setOrder(order);
     renderRail();
     expect(railOrder()).toEqual(order);
@@ -192,7 +192,7 @@ describe("AppRail spaces", () => {
     state.pathname = "/acme/projects/p-1";
     renderRail();
 
-    for (const href of ["/acme/inbox", "/acme/applications", "/acme/issues", "/acme/agents", "/acme/chat", "/acme/autopilots"]) {
+    for (const href of ["/acme/inbox", "/acme/applications", "/acme/issues", "/acme/agents", "/acme/chat", "/acme/meetings", "/acme/autopilots"]) {
       expect(link(href)).not.toBeNull();
     }
     // Projects belong to the work space, which links to Issues.

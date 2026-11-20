@@ -169,7 +169,8 @@
     "unsubscribe_action": "Unsubscribe from project",
     "toast_subscribed": "Subscribed. You'll be notified about every issue in this project.",
     "toast_subscription_failed": "Failed to update subscription",
-    "rename_action": "Rename project"
+    "rename_action": "Rename project",
+    "meetings": "Meetings"
   },
   "resources": {
     "section_header": "Resources",

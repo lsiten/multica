@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect } from "react";
-import { createMemoryRouter, Outlet, useLocation, useMatches } from "react-router-dom";
+import { createMemoryRouter, Outlet, useLocation, useMatches, useParams } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
@@ -31,6 +31,7 @@ import { SquadsPage, SquadDetailPage as SquadDetailPageView } from "@multica/vie
 import { AllViewsPage } from "@multica/views/issue-views";
 import { InboxPage } from "@multica/views/inbox";
 import { ChatPage } from "@multica/views/chat";
+import { MeetingDetailPage as MeetingDetailView, MeetingsPage } from "@multica/views/meetings";
 import { SettingsPage } from "@multica/views/settings";
 import { useT } from "@multica/views/i18n";
 import { Download, Server } from "@multica/ui/icons";
@@ -43,6 +44,11 @@ import { useRenderedRouteStore } from "./stores/rendered-route-store";
 
 const WORKSPACE_VIEW_SCOPE = { scope_type: "workspace" } as const;
 const MY_VIEW_SCOPE = { scope_type: "my" } as const;
+
+function DesktopMeetingDetailPage() {
+  const { meetingId } = useParams<{ meetingId: string }>();
+  return meetingId ? <MeetingDetailView meetingId={meetingId} /> : null;
+}
 
 /**
  * Wraps `SettingsPage` so the desktop-only extra tabs can pull their labels
@@ -273,6 +279,8 @@ export const appRoutes: RouteObject[] = [
           },
           { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
           { path: "chat", element: <ChatPage />, handle: { title: "Chat" } },
+          { path: "meetings", element: <MeetingsPage />, handle: { title: "Meetings" } },
+          { path: "meetings/:meetingId", element: <DesktopMeetingDetailPage />, handle: { title: "Meeting" } },
           {
             path: "attachments/:id/preview",
             element: <AttachmentPreviewRoute />,

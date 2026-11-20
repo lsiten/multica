@@ -1947,7 +1947,8 @@
     "skills": "스킬",
     "settings": "설정",
     "views": "뷰",
-    "applications": "애플리케이션"
+    "applications": "애플리케이션",
+    "meetings": "회의"
   },
   "tab": {
     "issue": "태스크",

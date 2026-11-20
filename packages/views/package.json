@@ -62,6 +62,7 @@
     "./auth": "./auth/index.ts",
     "./search": "./search/index.ts",
     "./chat": "./chat/index.ts",
+    "./meetings": "./meetings/index.ts",
     "./chat/floating-chat": "./chat/floating-chat.tsx",
     "./settings": "./settings/index.ts",
     "./settings/worktree-inventory-filters": "./settings/components/worktree-inventory-filters.tsx",

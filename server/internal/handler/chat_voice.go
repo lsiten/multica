@@ -83,3 +83,58 @@ func (h *Handler) TranscribeChatVoice(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}{Text: result.Text})
 }
+
+// TranscribeRuntimeVoice forwards bounded audio directly to a selected runtime
+// for workspace meetings that are not started from an agent conversation.
+func (h *Handler) TranscribeRuntimeVoice(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if isMachineCredentialActor(r) {
+		writeError(w, http.StatusForbidden, "human actor required")
+		return
+	}
+	runtimeID := chi.URLParam(r, "runtimeId")
+	rt, _, ok := h.requireRuntimeReadAccess(w, r, "meeting_voice", runtimeID)
+	if !ok {
+		return
+	}
+	if !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityVoiceTranscriptionV1) {
+		writeError(w, http.StatusNotImplemented, "voice_upgrade_required")
+		return
+	}
+	if rt.Status != "online" || !rt.DaemonID.Valid || h.DaemonHub == nil {
+		writeError(w, http.StatusServiceUnavailable, "daemon_unavailable")
+		return
+	}
+	var audio protocol.VoiceAudio
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, protocol.MaxVoiceRequestBytes))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&audio) != nil || decoder.Decode(new(json.RawMessage)) != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid_audio")
+		return
+	}
+	if _, err := audio.Decode(); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_audio")
+		return
+	}
+	result, err := h.DaemonHub.TranscribeVoice(r.Context(), uuidToString(rt.WorkspaceID), uuidToString(rt.ID), rt.DaemonID.String, audio)
+	if err != nil {
+		switch {
+		case errors.Is(err, daemonws.ErrMirrorCapacity):
+			writeError(w, http.StatusTooManyRequests, "voice_busy")
+		case errors.Is(err, context.DeadlineExceeded):
+			writeError(w, http.StatusGatewayTimeout, "voice_timeout")
+		case errors.Is(err, context.Canceled):
+			return
+		default:
+			writeError(w, http.StatusServiceUnavailable, "daemon_unavailable")
+		}
+		return
+	}
+	if result.Reason != "" {
+		writeError(w, http.StatusServiceUnavailable, result.Reason)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Text string `json:"text"`
+	}{Text: result.Text})
+}

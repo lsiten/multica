@@ -2706,6 +2706,23 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// "agents working" chip and its assignee-id Table filter.
 			r.Get("/api/working-agents", h.ListWorkspaceWorkingAgents)
 
+			// Workspace meetings. Recording mutations are human-only; reads follow
+			// the workspace membership boundary.
+			r.Route("/api/meetings", func(r chi.Router) {
+				r.Get("/", h.ListMeetings)
+				r.With(handler.RequireHumanActor).Post("/", h.CreateMeeting)
+				r.Route("/{meetingId}", func(r chi.Router) {
+					r.Get("/", h.GetMeeting)
+					r.Get("/file", h.GetMeetingFile)
+					r.With(handler.RequireHumanActor).Patch("/", h.UpdateMeeting)
+					r.With(handler.RequireHumanActor).Post("/archive", h.ArchiveMeeting)
+					r.With(handler.RequireHumanActor).Post("/segments", h.AppendMeetingSegment)
+					r.With(handler.RequireHumanActor).Post("/finish", h.FinishMeeting)
+					r.With(handler.RequireHumanActor).Post("/cancel", h.CancelMeeting)
+					r.With(handler.RequireHumanActor).Delete("/", h.DeleteMeeting)
+				})
+			})
+
 			// Workspace-wide daily agent activity (last 30d, anchored on
 			// completed_at). Backs the Agents-list sparkline (trailing 7d
 			// slice) AND the agent detail "Last 30 days" panel.
@@ -2747,6 +2764,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/draft-restores/{restoreId}", h.ConsumeChatDraftRestore)
 				})
 			})
+			r.With(handler.RequireHumanActor).Post("/api/runtimes/{runtimeId}/voice/transcribe", h.TranscribeRuntimeVoice)
 			r.Get("/api/chat/pending-tasks", h.ListPendingChatTasks)
 			r.Get("/api/chat/pending-tasks/has-any", h.HasPendingChatTasks)
 

@@ -1902,6 +1902,12 @@
       "quick": "AI 代理建立",
       "manual": "手動建立",
       "unsupported": "AI 代理建立時不支援此欄位"
+    },
+    "meeting_title": "會議",
+    "meeting_runtime": {
+      "title": "會議預設執行時",
+      "hint": "在此裝置開始會議時使用。",
+      "unselected": "選擇執行時"
     }
   },
   "shortcuts": {

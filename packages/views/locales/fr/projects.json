@@ -169,7 +169,8 @@
     "unsubscribe_action": "Se désabonner du projet",
     "toast_subscribed": "Abonné. Vous serez notifié de chaque tâche de ce projet.",
     "toast_subscription_failed": "Échec de la mise à jour de l'abonnement",
-    "rename_action": "Renommer le projet"
+    "rename_action": "Renommer le projet",
+    "meetings": "Réunions"
   },
   "resources": {
     "section_header": "Ressources",

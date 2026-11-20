@@ -1698,6 +1698,61 @@ type MaintenanceJob struct {
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 }
 
+type MeetingDistribution struct {
+	ID            pgtype.UUID        `json:"id"`
+	MeetingID     pgtype.UUID        `json:"meeting_id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	SenderID      pgtype.UUID        `json:"sender_id"`
+	Instruction   string             `json:"instruction"`
+	Status        string             `json:"status"`
+	ChatSessionID pgtype.UUID        `json:"chat_session_id"`
+	TaskID        pgtype.UUID        `json:"task_id"`
+	ErrorMessage  string             `json:"error_message"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type MeetingSegment struct {
+	ID           pgtype.UUID        `json:"id"`
+	MeetingID    pgtype.UUID        `json:"meeting_id"`
+	Sequence     int64              `json:"sequence"`
+	StartMs      int64              `json:"start_ms"`
+	EndMs        int64              `json:"end_ms"`
+	SpeakerLabel string             `json:"speaker_label"`
+	Text         string             `json:"text"`
+	IsFinal      bool               `json:"is_final"`
+	Confidence   pgtype.Float4      `json:"confidence"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type MeetingSession struct {
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	CreatorID           pgtype.UUID        `json:"creator_id"`
+	SourceType          string             `json:"source_type"`
+	SourceChatSessionID pgtype.UUID        `json:"source_chat_session_id"`
+	SourceAgentID       pgtype.UUID        `json:"source_agent_id"`
+	RuntimeID           pgtype.UUID        `json:"runtime_id"`
+	Status              string             `json:"status"`
+	Language            string             `json:"language"`
+	Title               string             `json:"title"`
+	Timezone            string             `json:"timezone"`
+	StartedAt           pgtype.Timestamptz `json:"started_at"`
+	EndedAt             pgtype.Timestamptz `json:"ended_at"`
+	AudioRetention      string             `json:"audio_retention"`
+	ProjectID           pgtype.UUID        `json:"project_id"`
+	Topic               string             `json:"topic"`
+	Transcript          string             `json:"transcript"`
+	Summary             string             `json:"summary"`
+	Decisions           []byte             `json:"decisions"`
+	ActionItems         []byte             `json:"action_items"`
+	Classification      []byte             `json:"classification"`
+	FailureReason       string             `json:"failure_reason"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt          pgtype.Timestamptz `json:"archived_at"`
+}
+
 type Member struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`

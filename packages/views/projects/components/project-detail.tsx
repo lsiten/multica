@@ -199,8 +199,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [progressOpen, setProgressOpen] = useState(true);
   const [descriptionOpen, setDescriptionOpen] = useState(true);
   const requestedTab = router.searchParams.get("project_tab");
-  const [activeTab, setActiveTabValue] = useState<ProjectDetailTab>(requestedTab === "attention" || requestedTab === "graph" || requestedTab === "applications" ? requestedTab : "issues");
-  useEffect(() => { setActiveTabValue(requestedTab === "attention" || requestedTab === "graph" || requestedTab === "applications" ? requestedTab : "issues"); }, [requestedTab]);
+  const [activeTab, setActiveTabValue] = useState<ProjectDetailTab>(requestedTab === "attention" || requestedTab === "graph" || requestedTab === "applications" || requestedTab === "meetings" ? requestedTab : "issues");
+  useEffect(() => { setActiveTabValue(requestedTab === "attention" || requestedTab === "graph" || requestedTab === "applications" || requestedTab === "meetings" ? requestedTab : "issues"); }, [requestedTab]);
   const setActiveTab = (tab: ProjectDetailTab) => {
     setActiveTabValue(tab);
     const search = new URLSearchParams(router.searchParams);

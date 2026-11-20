@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY meeting_segment_meeting_sequence;

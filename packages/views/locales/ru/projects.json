@@ -121,7 +121,8 @@
     "scope_effective": "Effective scope: {{count}} agents",
     "scope_effective_saved": "Shows the last saved effective scope.",
     "scope_save_preserved": "Save failed. Your draft is preserved.",
-    "scope_retry": "Retry"
+    "scope_retry": "Retry",
+    "meetings": "Встречи"
   },
   "resources": {
     "section_header": "Ресурсы",

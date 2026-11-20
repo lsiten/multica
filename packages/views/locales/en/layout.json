@@ -2004,6 +2004,7 @@
   "nav": {
     "inbox": "Inbox",
     "chat": "Chat",
+    "meetings": "Meetings",
     "my_issues": "My Issues",
     "issues": "Issues",
     "projects": "Projects",

@@ -168,7 +168,8 @@
     "unsubscribe_action": "取消订阅项目",
     "toast_subscribed": "已订阅。此项目中任务的变更都会通知你。",
     "toast_subscription_failed": "更新订阅失败",
-    "rename_action": "重命名项目"
+    "rename_action": "重命名项目",
+    "meetings": "会议"
   },
   "resources": {
     "section_header": "资源",

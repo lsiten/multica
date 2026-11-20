@@ -1962,6 +1962,12 @@
       "hint": "Thumbnails keep long threads short; click an image to see it full size."
     },
     "comments_title": "Comments & chat",
+    "meeting_title": "Meetings",
+    "meeting_runtime": {
+      "title": "Default meeting runtime",
+      "hint": "Used when a meeting is started outside a conversation.",
+      "unselected": "Choose a runtime"
+    },
     "region_title": "Language & region",
     "issue_fields_title": "Fields shown when creating issues",
     "issue_fields": {

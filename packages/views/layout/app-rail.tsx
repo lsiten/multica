@@ -386,6 +386,12 @@ export function AppRail({
       label: t(($) => $.rail.chat),
       fullLabel: t(($) => $.nav.chat),
     },
+    meetings: {
+      href: p.meetings(),
+      icon: routeIconForPath(p.meetings()),
+      label: t(($) => $.nav.meetings),
+      fullLabel: t(($) => $.nav.meetings),
+    },
     autopilots: {
       href: p.autopilots(),
       icon: routeIconForPath(p.autopilots()),

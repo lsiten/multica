@@ -10,6 +10,7 @@ describe("resolveRailOrder", () => {
   it("adds Applications to navigation saved before its entry existed", () => {
     expect(resolveRailOrder(["chat", "inbox", "work", "team", "autopilots"])).toEqual([
       "chat",
+      "meetings",
       "inbox",
       "applications",
       "work",
@@ -20,12 +21,13 @@ describe("resolveRailOrder", () => {
 
   it("keeps a saved order", () => {
     const saved = ["chat", "inbox", "applications", "work", "team", "autopilots"];
-    expect(resolveRailOrder(saved)).toEqual(saved);
+    expect(resolveRailOrder(saved)).toEqual(["chat", "meetings", "inbox", "applications", "work", "team", "autopilots"]);
   });
 
   it("drops unknown and repeated ids", () => {
     expect(resolveRailOrder(["chat", "settings", 3, "chat", "inbox", "applications", "work", "team", "autopilots"])).toEqual([
       "chat",
+      "meetings",
       "inbox",
       "applications",
       "work",
@@ -37,6 +39,7 @@ describe("resolveRailOrder", () => {
   it("puts a space missing from the saved order after its default neighbour", () => {
     expect(resolveRailOrder(["chat", "inbox", "applications", "autopilots", "work"])).toEqual([
       "chat",
+      "meetings",
       "inbox",
       "applications",
       "autopilots",
@@ -47,6 +50,7 @@ describe("resolveRailOrder", () => {
       "inbox",
       "applications",
       "chat",
+      "meetings",
       "work",
       "team",
       "autopilots",
@@ -60,13 +64,13 @@ describe("useRailOrderStore", () => {
   });
 
   it("saves a custom order", () => {
-    const order = ["chat", "inbox", "applications", "work", "team", "autopilots"] as const;
+    const order = ["chat", "inbox", "applications", "work", "team", "meetings", "autopilots"] as const;
     useRailOrderStore.getState().setOrder(order);
     expect(useRailOrderStore.getState().order).toEqual(order);
   });
 
   it("forgets the order once it is back to the default", () => {
-    useRailOrderStore.getState().setOrder(["work", "inbox", "applications", "team", "chat", "autopilots"]);
+    useRailOrderStore.getState().setOrder(["work", "inbox", "applications", "team", "chat", "meetings", "autopilots"]);
     useRailOrderStore.getState().setOrder(RAIL_SPACES);
     expect(useRailOrderStore.getState().order).toBeNull();
   });

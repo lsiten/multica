@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronsUpDown } from "@multica/ui/icons";
 import { toast } from "sonner";
 import {
@@ -26,6 +26,11 @@ import {
 } from "@multica/ui/components/ui/command";
 import type { SupportedLocale } from "@multica/core/i18n";
 import { useAuthStore } from "@multica/core/auth";
+import { useQuery } from "@tanstack/react-query";
+import { useWorkspaceId } from "@multica/core";
+import { defaultStorage } from "@multica/core/platform";
+import { runtimeListOptions } from "@multica/core/runtimes/queries";
+import { runtimeDisplayLabel } from "@multica/core/runtimes";
 import { useChatStore } from "@multica/core/chat";
 import {
   useCommentComposerStore,
@@ -80,6 +85,16 @@ export function PreferencesTab() {
       </SettingsSection>
 
       <SettingsSection
+        title={t(($) => $.preferences.meeting_title)}
+        scope="device-workspace"
+        anchor="meeting"
+      >
+        <SettingsCard>
+          <MeetingDefaultRuntimeRow />
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
         title={t(($) => $.preferences.comments_title)}
         scope="device"
         anchor="comments"
@@ -112,6 +127,45 @@ export function PreferencesTab() {
         <IssueFieldsMatrix />
       </SettingsSection>
     </SettingsTab>
+  );
+}
+
+function MeetingDefaultRuntimeRow() {
+  const { t } = useT("settings");
+  const workspaceId = useWorkspaceId();
+  const runtimes = useQuery({ ...runtimeListOptions(workspaceId), enabled: workspaceId.length > 0 });
+  const key = `meeting-default-runtime:${workspaceId}`;
+  const [value, setValue] = useState(() => defaultStorage.getItem(key) ?? "");
+  useEffect(() => {
+    if (value && runtimes.data?.some((runtime) => runtime.id === value)) return;
+    setValue(defaultStorage.getItem(key) ?? "");
+  }, [key, runtimes.data, value]);
+
+  const options = (runtimes.data ?? []).map((runtime) => ({ value: runtime.id, label: runtimeDisplayLabel(runtime) }));
+  return (
+    <SettingsRow
+      anchor="meeting-runtime"
+      label={t(($) => $.preferences.meeting_runtime.title)}
+      description={t(($) => $.preferences.meeting_runtime.hint)}
+      size="select"
+    >
+      <Select
+        items={options}
+        value={value}
+        onValueChange={(next) => {
+          if (!next) return;
+          setValue(next);
+          defaultStorage.setItem(key, next);
+        }}
+      >
+        <SelectTrigger size="sm" className="w-full" aria-label={t(($) => $.preferences.meeting_runtime.title)}>
+          <SelectValue>{options.find((option) => option.value === value)?.label ?? t(($) => $.preferences.meeting_runtime.unselected)}</SelectValue>
+        </SelectTrigger>
+        <SelectContent align="end">
+          {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </SettingsRow>
   );
 }
 

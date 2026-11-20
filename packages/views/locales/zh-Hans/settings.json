@@ -1895,6 +1895,12 @@
       "hint": "缩略图让长讨论更紧凑，点击图片可查看原图。"
     },
     "comments_title": "评论与聊天",
+    "meeting_title": "会议",
+    "meeting_runtime": {
+      "title": "会议默认运行时",
+      "hint": "从工作区入口开始会议时使用。",
+      "unselected": "选择运行时"
+    },
     "region_title": "语言与地区",
     "issue_fields_title": "创建任务时显示的字段",
     "issue_fields": {

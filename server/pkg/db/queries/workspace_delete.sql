@@ -332,6 +332,16 @@ deleted_orphan_task_context_receipts AS (
 deleted_agent_collaboration_operations AS (
     DELETE FROM agent_collaboration_operation WHERE workspace_id = $1
 ),
+deleted_meeting_distributions AS (
+    DELETE FROM meeting_distribution WHERE workspace_id = $1
+),
+deleted_meeting_segments AS (
+    DELETE FROM meeting_segment
+    WHERE meeting_id IN (SELECT id FROM meeting_session WHERE workspace_id = $1)
+),
+deleted_meeting_sessions AS (
+    DELETE FROM meeting_session WHERE workspace_id = $1
+),
 deleted_hourly_dirty AS (
     DELETE FROM task_usage_hourly_dirty WHERE workspace_id = $1
 ),

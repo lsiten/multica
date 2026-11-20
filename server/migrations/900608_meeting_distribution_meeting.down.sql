@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY meeting_distribution_meeting_created;

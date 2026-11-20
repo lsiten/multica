@@ -214,6 +214,15 @@ export type { IssueSubscriber } from "./subscriber";
 export type * from "./events";
 export type * from "./api";
 export type { Attachment } from "./attachment";
+export type {
+  Meeting,
+  MeetingSegment,
+  MeetingStatus,
+  MeetingSourceType,
+  CreateMeetingRequest,
+  AppendMeetingSegmentRequest,
+  UpdateMeetingRequest,
+} from "./meeting";
 export {
   attachmentDownloadPath,
   attachmentIdFromDownloadURL,

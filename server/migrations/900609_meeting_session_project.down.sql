@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY meeting_session_project;

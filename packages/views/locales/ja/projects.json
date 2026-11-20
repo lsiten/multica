@@ -168,7 +168,8 @@
     "unsubscribe_action": "プロジェクトの購読を解除",
     "toast_subscribed": "購読しました。このプロジェクトのタスクの変更をすべて通知します。",
     "toast_subscription_failed": "購読を更新できませんでした",
-    "rename_action": "プロジェクト名を変更"
+    "rename_action": "プロジェクト名を変更",
+    "meetings": "会議"
   },
   "resources": {
     "section_header": "リソース",

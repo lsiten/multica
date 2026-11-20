@@ -1902,6 +1902,12 @@
       "quick": "에이전트로 생성",
       "manual": "수동 생성",
       "unsupported": "에이전트로 생성할 때는 사용할 수 없습니다"
+    },
+    "meeting_title": "회의",
+    "meeting_runtime": {
+      "title": "회의 기본 런타임",
+      "hint": "이 기기에서 회의를 시작할 때 사용합니다.",
+      "unselected": "런타임 선택"
     }
   },
   "shortcuts": {

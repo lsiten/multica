@@ -33,6 +33,7 @@ import { useServerSearch } from "./use-server-search";
 const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   inbox: ["inbox", "notifications", "收件箱", "通知"],
   chat: ["chat", "messages", "conversation", "聊天", "消息", "对话"],
+  meetings: ["meetings", "meeting", "会议", "转写"],
   myIssues: ["my", "issues", "assigned", "mine", "我的", "任务"],
   issues: ["issues", "tasks", "bugs", "任务"],
   applications: ["applications", "apps", "services", "应用", "服务"],

@@ -21,6 +21,7 @@ import {
 import { SubmitButton } from "@multica/ui/components/common/submit-button";
 import { ChatAddMenu } from "./chat-add-menu";
 import { ChatVoiceInput, type ChatVoiceInputRef } from "./chat-voice-input";
+import { MeetingRecorder } from "./meeting-recorder";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { useChatStore, DRAFT_NEW_SESSION } from "@multica/core/chat";
 import { getCurrentSlug } from "@multica/core/platform";
@@ -1042,6 +1043,12 @@ export function ChatInput({
             };
           }}
         />}
+          {agentId && !voiceActive && <MeetingRecorder
+            workspaceId={historyWorkspaceId ?? ""}
+            agentId={agentId}
+            chatSessionId={activeSessionId}
+            disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
+          />}
           {!voiceActive && <SubmitButton
             onClick={submitInput}
             disabled={hasNothingToSend || submitting || voiceActive || !!disabled || !!noAgent}

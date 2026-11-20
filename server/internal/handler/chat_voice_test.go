@@ -38,3 +38,14 @@ func TestVoiceHandlerAuthorizationAndValidation(t *testing.T) {
 	req := withURLParam(newRequestAsUser(other, http.MethodPost, "/voice/transcribe", nil), "id", agentID)
 	testutil.Call(t, h.TranscribeChatVoice, req).Want(http.StatusForbidden)
 }
+
+func TestRuntimeVoiceHandlerRequiresCapability(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	h := *testHandler
+	h.DaemonHub = daemonws.NewHub()
+	runtimeID := dbfx.Runtime(t, "meeting voice runtime", testutil.Cols{"daemon_id": "meeting-daemon", "visibility": "public", "metadata": testutil.Raw(`'{}'::jsonb`)})
+	req := withURLParam(newRequest(http.MethodPost, "/voice/transcribe", map[string]string{"mime_type": "audio/webm", "audio_base64": "YQ=="}), "runtimeId", runtimeID)
+	testutil.Call(t, h.TranscribeRuntimeVoice, req).Want(http.StatusNotImplemented)
+}

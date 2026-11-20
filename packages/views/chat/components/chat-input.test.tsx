@@ -40,6 +40,7 @@ vi.mock("./chat-voice-input", () => ({
     }}>Voice input fixture</button>;
   }),
 }));
+vi.mock("./meeting-recorder", () => ({ MeetingRecorder: () => null }));
 
 // The real handle mints an id when it inserts the placeholder and hands it to
 // the uploader, which adopts it as the draft `clientUploadId`. Mocks must do

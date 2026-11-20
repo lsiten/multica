@@ -184,7 +184,13 @@
       "unsupported": "No disponible al crear con un agente"
     },
     "issue_fields_title": "Campos al crear tareas",
-    "region_title": "Idioma y región"
+    "region_title": "Idioma y región",
+    "meeting_title": "Reuniones",
+    "meeting_runtime": {
+      "title": "Runtime predeterminado para reuniones",
+      "hint": "Se usará al iniciar reuniones desde este dispositivo.",
+      "unselected": "Seleccionar runtime"
+    }
   },
   "appearance": {
     "reset": "Restablecer valores predeterminados",

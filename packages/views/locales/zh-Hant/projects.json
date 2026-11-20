@@ -168,7 +168,8 @@
     "unsubscribe_action": "取消訂閱專案",
     "toast_subscribed": "已訂閱。此專案中任務的變更都會通知你。",
     "toast_subscription_failed": "更新訂閱失敗",
-    "rename_action": "重新命名專案"
+    "rename_action": "重新命名專案",
+    "meetings": "會議"
   },
   "resources": {
     "section_header": "資源",

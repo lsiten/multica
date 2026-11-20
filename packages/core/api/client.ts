@@ -27,6 +27,7 @@ import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { createVscreenApi, VscreenScopeError } from "./vscreen";
 import { createDocumentCommentsApi } from "./document-comments";
 import { VoiceTranscriptSchema, voiceAudioPayload } from "./voice";
+import { MeetingListSchema, MeetingSchema, MeetingSegmentSchema } from "./meetings";
 import type { MirrorSourceBinding, VscreenScope } from "../types/vscreen";
 import { parseQoderConnection, parseQoderCatalog, type QoderInput } from "../runtimes/qoder-schema";
 import { configStore } from "../config";
@@ -146,6 +147,11 @@ import type {
   HasPendingChatTasksResponse,
   SendChatMessageResponse,
   ContinueChatTaskResponse,
+  Meeting,
+  MeetingSegment,
+  CreateMeetingRequest,
+  AppendMeetingSegmentRequest,
+  UpdateMeetingRequest,
   StartMikaOnboardingResponse,
   CancelTaskResponse,
   Project,
@@ -4999,6 +5005,131 @@ export class ApiClient {
     const result = parseWithFallback<{ text: string } | null>(raw, VoiceTranscriptSchema, null, { endpoint });
     if (!result) throw new Error("invalid_voice_transcript");
     return result.text;
+  }
+
+  async transcribeRuntimeVoice(runtimeId: string, recording: Blob, signal: AbortSignal): Promise<string> {
+    const body = await voiceAudioPayload(recording, signal);
+    const endpoint = `/api/runtimes/${encodeURIComponent(runtimeId)}/voice/transcribe`;
+    const raw: unknown = await this.fetch(endpoint, {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(28_000)]),
+    });
+    const result = parseWithFallback<{ text: string } | null>(raw, VoiceTranscriptSchema, null, { endpoint });
+    if (!result) throw new Error("invalid_voice_transcript");
+    return result.text;
+  }
+
+  async createMeeting(data: CreateMeetingRequest = {}, workspace?: WorkspaceScope): Promise<Meeting> {
+    const raw: unknown = await this.fetch("/api/meetings", {
+      method: "POST",
+      headers: workspaceHeader(workspace),
+      body: JSON.stringify(data),
+    });
+    const result = parseWithFallback<Meeting | null>(raw, MeetingSchema, null, {
+      endpoint: "POST /api/meetings",
+    });
+    if (!result) throw new Error("invalid meeting response");
+    return result;
+  }
+
+  async listMeetings(params: { search?: string; includeArchived?: boolean; projectId?: string; agentId?: string } = {}, workspace?: WorkspaceScope): Promise<readonly Meeting[]> {
+    const query = new URLSearchParams();
+    if (params.search?.trim()) query.set("q", params.search.trim());
+    if (params.includeArchived) query.set("include_archived", "true");
+    if (params.projectId) query.set("project_id", params.projectId);
+    if (params.agentId) query.set("agent_id", params.agentId);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const raw: unknown = await this.fetch(`/api/meetings${suffix}`, {
+      headers: workspaceHeader(workspace),
+    });
+    return parseWithFallback(raw, MeetingListSchema, [], {
+      endpoint: "GET /api/meetings",
+    });
+  }
+
+  async getMeeting(id: string, workspace?: WorkspaceScope): Promise<Meeting> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}`;
+    const raw: unknown = await this.fetch(endpoint, { headers: workspaceHeader(workspace) });
+    const result = parseWithFallback<Meeting | null>(raw, MeetingSchema, null, { endpoint: `GET ${endpoint}` });
+    if (!result) throw new Error("invalid meeting response");
+    return result;
+  }
+
+  async appendMeetingSegment(
+    id: string,
+    data: AppendMeetingSegmentRequest,
+    workspace?: WorkspaceScope,
+  ): Promise<MeetingSegment> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}/segments`;
+    const raw: unknown = await this.fetch(endpoint, {
+      method: "POST",
+      headers: workspaceHeader(workspace),
+      body: JSON.stringify(data),
+    });
+    const result = parseWithFallback<MeetingSegment | null>(raw, MeetingSegmentSchema, null, { endpoint: `POST ${endpoint}` });
+    if (!result) throw new Error("invalid meeting segment response");
+    return result;
+  }
+
+  async finishMeeting(id: string, workspace?: WorkspaceScope): Promise<Meeting> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}/finish`;
+    const raw: unknown = await this.fetch(endpoint, {
+      method: "POST",
+      headers: workspaceHeader(workspace),
+    });
+    const result = parseWithFallback<Meeting | null>(raw, MeetingSchema, null, { endpoint: `POST ${endpoint}` });
+    if (!result) throw new Error("invalid finalized meeting response");
+    return result;
+  }
+
+  async cancelMeeting(id: string, workspace?: WorkspaceScope): Promise<Meeting> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}/cancel`;
+    const raw: unknown = await this.fetch(endpoint, {
+      method: "POST",
+      headers: workspaceHeader(workspace),
+    });
+    const result = parseWithFallback<Meeting | null>(raw, MeetingSchema, null, { endpoint: `POST ${endpoint}` });
+    if (!result) throw new Error("invalid cancelled meeting response");
+    return result;
+  }
+
+  async updateMeeting(id: string, data: UpdateMeetingRequest, workspace?: WorkspaceScope): Promise<Meeting> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}`;
+    const raw: unknown = await this.fetch(endpoint, {
+      method: "PATCH",
+      headers: workspaceHeader(workspace),
+      body: JSON.stringify(data),
+    });
+    const result = parseWithFallback<Meeting | null>(raw, MeetingSchema, null, { endpoint: `PATCH ${endpoint}` });
+    if (!result) throw new Error("invalid updated meeting response");
+    return result;
+  }
+
+  async archiveMeeting(id: string, archived: boolean, workspace?: WorkspaceScope): Promise<Meeting> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}/archive`;
+    const raw: unknown = await this.fetch(endpoint, {
+      method: "POST",
+      headers: workspaceHeader(workspace),
+      body: JSON.stringify({ archived }),
+    });
+    const result = parseWithFallback<Meeting | null>(raw, MeetingSchema, null, { endpoint: `POST ${endpoint}` });
+    if (!result) throw new Error("invalid archived meeting response");
+    return result;
+  }
+
+  async deleteMeeting(id: string, workspace?: WorkspaceScope): Promise<void> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}`;
+    await this.fetch(endpoint, { method: "DELETE", headers: workspaceHeader(workspace) });
+  }
+
+  async getMeetingFile(id: string, workspace?: WorkspaceScope): Promise<string> {
+    const endpoint = `/api/meetings/${encodeURIComponent(id)}/file`;
+    const response = await this.fetchRaw(endpoint, { headers: workspaceHeader(workspace) });
+    if (!response.ok) {
+      throw new ApiError(`Failed to download meeting file: ${response.status}`, response.status, response.statusText);
+    }
+    return response.text();
   }
 
   async listChatMessagesPage(

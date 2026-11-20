@@ -1902,6 +1902,12 @@
       "quick": "エージェントで作成",
       "manual": "手動作成",
       "unsupported": "エージェントでの作成では使用できません"
+    },
+    "meeting_title": "会議",
+    "meeting_runtime": {
+      "title": "会議のデフォルトランタイム",
+      "hint": "このデバイスで会議を開始するときに使用します。",
+      "unselected": "ランタイムを選択"
     }
   },
   "shortcuts": {
