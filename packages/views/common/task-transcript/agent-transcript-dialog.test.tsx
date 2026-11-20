@@ -1091,7 +1091,7 @@ describe("readable issue references", () => {
     const issueId = "01a07eca-8e82-775e-be06-e4a97ccfa299";
     renderDialog([{ seq: 1, type: "tool_use", tool: "exec_command", input: { command: `multica issue get ${issueId} --output json` } }]);
     expect(screen.getByText("multica issue get DEV-17 --output json")).toBeInTheDocument();
-    const search = screen.getByRole("textbox");
+    const search = screen.getByRole("textbox", { name: "Search this run…" });
     fireEvent.change(search, { target: { value: "DEV-17" } });
     expect(screen.getByText("multica issue get DEV-17 --output json")).toBeInTheDocument();
     fireEvent.change(search, { target: { value: issueId } });
