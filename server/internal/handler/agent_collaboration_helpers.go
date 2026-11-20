@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -76,6 +77,11 @@ func decodeAgentCollaborationCommand(w http.ResponseWriter, r *http.Request, out
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, collaborationOperationMaxBody))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid collaboration request")
+		return false
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
 		writeError(w, http.StatusBadRequest, "invalid collaboration request")
 		return false
 	}
