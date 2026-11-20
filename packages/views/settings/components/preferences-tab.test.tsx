@@ -69,6 +69,16 @@ vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1", name: "Acme" }),
 }));
 
+vi.mock("@multica/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core")>()),
+  useWorkspaceId: () => "ws-1",
+}));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
+  useQuery: () => ({ data: [] }),
+}));
+
 vi.mock("@multica/core/api", () => ({
   api: { updateMe: mockUpdateMe },
 }));
