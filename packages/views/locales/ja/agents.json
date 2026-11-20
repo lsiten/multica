@@ -923,6 +923,18 @@
       "user_cancelled": "ユーザーがキャンセルしました"
     }
   },
+  "collaboration": {
+    "mode_label": "協働モード",
+    "append": "現在の実行に追加",
+    "next": "次のターンを開始",
+    "stop": "実行を停止",
+    "watch": "結果を監視",
+    "delegate": "別のエージェントに委任",
+    "target_agent": "対象エージェント",
+    "target_agent_placeholder": "エージェント UUID",
+    "run_prefix": "実行",
+    "sending": "送信中…"
+  },
   "last_active": {
     "today": "今日",
     "days_ago_other": "{{count}} 日前",
@@ -983,7 +995,7 @@
         "required": "メンバーを1人以上選択してください。"
       }
     },
-    "builder": {
+        "builder": {
       "draft_parse_failed": "この返信からフォームを入力できませんでした。エージェントに下書きの再生成を依頼するか、手動で入力してください。",
       "start_failed": "Agent Builder を開始できませんでした。",
       "send_failed": "メッセージを送信できませんでした。",

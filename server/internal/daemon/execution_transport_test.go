@@ -164,7 +164,7 @@ func TestExecutionClientBuildsDaemonFreeRunProviderSeams(t *testing.T) {
 		ackSupplement   func(context.Context, string, string, bool, string) error = func(ctx context.Context, taskID, commentID string, delivered bool, reason string) error {
 			return client.AckSupplement(ctx, commentID, delivered, reason)
 		}
-		subscribeSupplement func(string) (<-chan struct{}, func()) = workerSupplementSubscribe()
+		subscribeSupplement func(string) (<-chan struct{}, func()) = new(taskSupplementSignals).subscribe
 	)
 	if reportTaskMessages == nil || pinTaskSession == nil || claimSupplement == nil || ackSupplement == nil || subscribeSupplement == nil {
 		t.Fatal("a runProviderExecution seam did not resolve")

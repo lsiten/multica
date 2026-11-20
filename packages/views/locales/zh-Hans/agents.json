@@ -336,7 +336,7 @@
         "required": "请至少选择一位成员。"
       }
     },
-    "builder": {
+        "builder": {
       "draft_parse_failed": "本次回复未能填入表单。请让智能体重新生成草稿，或手动填写。",
       "start_failed": "无法启动智能体构建器。",
       "send_failed": "无法发送消息。",
@@ -1077,6 +1077,18 @@
       "manual": "用户取消",
       "user_cancelled": "用户取消"
     }
+  },
+  "collaboration": {
+    "mode_label": "协作方式",
+    "append": "追加到当前运行",
+    "next": "开始下一轮",
+    "stop": "停止运行",
+    "watch": "关注结果",
+    "delegate": "委派给其他智能体",
+    "target_agent": "目标智能体",
+    "target_agent_placeholder": "智能体 UUID",
+    "run_prefix": "运行",
+    "sending": "发送中…"
   },
   "last_active": {
     "today": "今天",

@@ -329,7 +329,7 @@
         "required": "Selecciona al menos un miembro."
       }
     },
-    "builder": {
+        "builder": {
       "start_failed": "No se ha podido iniciar Agent Builder.",
       "send_failed": "No se ha podido enviar tu mensaje.",
       "stop_failed": "No se ha podido detener la generación actual.",
@@ -1085,6 +1085,18 @@
       "user_cancelled": "Cancelada por el usuario",
       "startup_timeout": "Agent produced no output after starting; run stopped (possibly not signed in or unreachable)"
     }
+  },
+  "collaboration": {
+    "mode_label": "Modo de colaboración",
+    "append": "Añadir a la ejecución actual",
+    "next": "Iniciar el siguiente turno",
+    "stop": "Detener la ejecución",
+    "watch": "Ver resultado",
+    "delegate": "Delegar a otro agente",
+    "target_agent": "Agente de destino",
+    "target_agent_placeholder": "UUID del agente",
+    "run_prefix": "Ejecución",
+    "sending": "Enviando…"
   },
   "last_active": {
     "today": "Hoy",

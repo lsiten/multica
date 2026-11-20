@@ -7,6 +7,7 @@ import en from "../locales/en/applications.json";
 import { ApplicationEditor } from "./application-editor";
 import { NavigationProvider } from "../navigation";
 import { runGuardedNavigation } from "@multica/core/platform";
+import { WorkspaceSlugProvider } from "@multica/core/paths";
 
 const mocks = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock("@multica/core/api", () => ({ api: {
@@ -20,9 +21,9 @@ const clients: QueryClient[] = [];
 function openEditor(onSaved?: () => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   clients.push(client);
-  render(<NavigationProvider value={{ push: () => {}, replace: () => {}, back: () => {}, pathname: "/acme/applications", searchParams: new URLSearchParams(), hash: "", getShareableUrl: (path) => new URL(path, "https://app.example").toString() }}><QueryClientProvider client={client}><I18nProvider locale="en" resources={{ en: { applications: en } }}>
+  render(<WorkspaceSlugProvider slug="acme"><NavigationProvider value={{ push: () => {}, replace: () => {}, back: () => {}, pathname: "/acme/applications", searchParams: new URLSearchParams(), hash: "", getShareableUrl: (path) => new URL(path, "https://app.example").toString() }}><QueryClientProvider client={client}><I18nProvider locale="en" resources={{ en: { applications: en } }}>
     <ApplicationEditor workspaceId={id} application={application} trigger={<button>Open editor</button>} onSaved={onSaved} />
-  </I18nProvider></QueryClientProvider></NavigationProvider>);
+  </I18nProvider></QueryClientProvider></NavigationProvider></WorkspaceSlugProvider>);
   fireEvent.click(screen.getByText("Open editor"));
 }
 afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; vi.resetAllMocks(); vi.restoreAllMocks(); });

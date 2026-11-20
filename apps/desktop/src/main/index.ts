@@ -20,6 +20,7 @@ import {
   setupDaemonManager,
 } from "./daemon-manager";
 import { setupLocalDirectory } from "./local-directory";
+import { setupLocalVoice } from "./local-voice";
 import { setupThemeFolder } from "./theme-folder";
 import { configureLinuxFileDialogs } from "./linux-file-dialog";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
@@ -1116,6 +1117,7 @@ if (!gotTheLock) {
     });
 
     desktopInitialized = true;
+    setupLocalVoice();
     for (const saved of loadWindowSession(windowStateFile())) {
       createMainWindow(saved);
     }

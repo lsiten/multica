@@ -1,7 +1,9 @@
+import { createAgentCollaborationApi } from "./agent-answers";
+import { createApplicationRevisionApi } from "./application-revisions";
 import type { HumanRequest, HumanRequestAnswer, HumanTextReplyResult } from "../types/human-request";
 import type { Requirement } from "../types";
-import { applicationSchema, applicationListSchema, applicationPlanSchema, applicationBoardSchema, applicationOperationSchema, applicationLaunchSchema, applicationLogSchema } from "../applications/schema";
-import type { Application, ApplicationList, ApplicationPlan, ApplicationBoard, ApplicationOperation, ApplicationOperationRequest, ApplicationLog, CreateApplicationRequest, UpdateApplicationRequest } from "../applications/schema";
+import { applicationSchema, applicationListSchema, applicationPlanSchema, applicationBoardSchema, applicationOperationSchema, applicationLaunchSchema, applicationLogSchema, applicationServiceAccessSchema } from "../applications/schema";
+import type { Application, ApplicationList, ApplicationPlan, ApplicationBoard, ApplicationOperation, ApplicationOperationRequest, ApplicationLog, ApplicationServiceAccess, CreateApplicationRequest, UpdateApplicationRequest } from "../applications/schema";
 import type { IssueProgressView, ProgressFilters, ProgressScope } from "../types/issue-progress";
 import { IssueProgressViewSchema, ProgressActionResultSchema } from "./issue-progress";
 import {
@@ -965,6 +967,8 @@ function isLocalApplicationHost(hostname: string): boolean {
 }
 
 export class ApiClient {
+  readonly agentCollaboration = createAgentCollaborationApi((path, options) => this.fetch<unknown>(path, options));
+  readonly applicationRevisions = createApplicationRevisionApi((path, options) => this.fetch<unknown>(path, options));
   readonly documentComments = createDocumentCommentsApi((path, options) => this.fetch<unknown>(path, options));
   async cancelApplicationOperation(workspaceId: string, id: string, operationId: string): Promise<ApplicationOperation> {
     const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/operations/${encodeURIComponent(operationId)}/cancel`, { method: "POST", headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
@@ -982,6 +986,13 @@ export class ApiClient {
     const safeProtocol = address.protocol === "https:" || (address.protocol === "http:" && isLocalApplicationHost(address.hostname));
     if ((!dedicatedPath && !publicOriginPath) || address.username || address.password || address.hash || [...address.searchParams.keys()].length !== 1 || !/^[a-f0-9]{64}$/.test(address.searchParams.get("ticket") ?? "") || !safeProtocol) throw new Error("Invalid application launch URL");
     return receipt.url;
+  }
+
+  async createApplicationServiceAccess(workspaceId: string, id: string, endpointId: string): Promise<ApplicationServiceAccess> {
+    const raw = await this.fetch<unknown>(`/api/applications/${encodeURIComponent(id)}/endpoints/${encodeURIComponent(endpointId)}/service-access`, { method: "POST", headers: { "X-Workspace-ID": workspaceId, "X-Workspace-Slug": "" } });
+    const result = parseWithFallback<ApplicationServiceAccess | null>(raw, applicationServiceAccessSchema, null, { endpoint: "POST /api/applications/:id/endpoints/:endpointId/service-access", redactPayload: true });
+    if (!result) throw new Error("Invalid application service access response");
+    return result;
   }
 
   async getApplicationLogs(workspaceId: string, id: string, instanceId: string, cursor = "", signal?: AbortSignal): Promise<ApplicationLog> {

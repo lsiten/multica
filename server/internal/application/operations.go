@@ -628,5 +628,8 @@ func refreshOperationState(ctx context.Context, q *db.Queries, operation db.Appl
 			state = "failed"
 		}
 	}
-	return q.SetApplicationOperationState(ctx, db.SetApplicationOperationStateParams{ID: operation.ID, WorkspaceID: operation.WorkspaceID, State: state, Error: message})
+	if err := q.SetApplicationOperationState(ctx, db.SetApplicationOperationStateParams{ID: operation.ID, WorkspaceID: operation.WorkspaceID, State: state, Error: message}); err != nil {
+		return err
+	}
+	return q.CreateApplicationOperationNotification(ctx, db.CreateApplicationOperationNotificationParams{ID: operation.ID, WorkspaceID: operation.WorkspaceID})
 }

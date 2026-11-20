@@ -22,6 +22,7 @@ func applicationTestCreate(t *testing.T, projectID, name, kind string) applicati
 	var view application.View
 	testutil.Call(t, testHandler.CreateApplication, squadScopeReq("", http.MethodPost, "/api/applications", map[string]any{"project_id": projectID, "name": name, "kind": kind, "config": config}, nil)).Want(http.StatusCreated).JSON(&view)
 	dbfx.Cleanup(t, "DELETE FROM application WHERE id=$1", view.ID)
+	dbfx.Cleanup(t, "DELETE FROM inbox_item WHERE details->>'application_id'=$1", view.ID)
 	dbfx.Cleanup(t, "DELETE FROM application_revision WHERE application_id=$1", view.ID)
 	dbfx.Cleanup(t, "DELETE FROM application_relation WHERE source_id=$1 OR target_id=$1", view.ID)
 	dbfx.Cleanup(t, "DELETE FROM application_instance WHERE application_id=$1", view.ID)

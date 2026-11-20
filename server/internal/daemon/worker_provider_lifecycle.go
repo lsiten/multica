@@ -128,7 +128,7 @@ func runWorkerProvider(ctx context.Context, client *ExecutionClient, in *workerC
 				return client.ReportTaskMessages(c, messages)
 			},
 			func(c context.Context, _, session, dir string) error { return client.PinTaskSession(c, session, dir) },
-			workerSupplementSubscribe(), func(c context.Context, _ string) (*TaskSupplement, error) { return client.ClaimSupplement(c) },
+			in.supplements.subscribe, func(c context.Context, _ string) (*TaskSupplement, error) { return client.ClaimSupplement(c) },
 			func(c context.Context, _, id string, delivered bool, reason string) error {
 				return client.AckSupplement(c, id, delivered, reason)
 			},

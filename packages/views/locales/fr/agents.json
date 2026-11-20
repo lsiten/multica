@@ -347,7 +347,7 @@
         "required": "Sélectionnez au moins un membre."
       }
     },
-    "builder": {
+        "builder": {
       "draft_parse_failed": "Cette réponse n’a pas permis de remplir le formulaire. Demandez à l’agent de générer à nouveau le brouillon ou remplissez le formulaire manuellement.",
       "start_failed": "Impossible de démarrer l'Agent Builder.",
       "send_failed": "Impossible d'envoyer votre message.",
@@ -1103,6 +1103,18 @@
       "manual": "Annulée par l'utilisateur",
       "user_cancelled": "Annulée par l'utilisateur"
     }
+  },
+  "collaboration": {
+    "mode_label": "Mode de collaboration",
+    "append": "Ajouter à l’exécution actuelle",
+    "next": "Démarrer le prochain tour",
+    "stop": "Arrêter l’exécution",
+    "watch": "Suivre le résultat",
+    "delegate": "Déléguer à un autre agent",
+    "target_agent": "Agent cible",
+    "target_agent_placeholder": "UUID de l’agent",
+    "run_prefix": "Exécution",
+    "sending": "Envoi…"
   },
   "last_active": {
     "today": "Aujourd'hui",

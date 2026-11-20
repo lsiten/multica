@@ -3,10 +3,9 @@
 import { useRef, useState, type ReactElement } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "@multica/ui/icons";
-import { toast } from "sonner";
 import { applicationPlanOptions, useApplicationOperation, type Application, type ApplicationBoard, type ApplicationOperationRequest } from "@multica/core/applications";
 import { useAuthStore } from "@multica/core/auth";
-import { runtimeListOptions, isRuntimeUsableForUser } from "@multica/core/runtimes";
+import { runtimeDisplayLabel, runtimeListOptions, isRuntimeUsableForUser } from "@multica/core/runtimes";
 import { memberListOptions } from "@multica/core/workspace/queries";
 import { api } from "@multica/core/api";
 import { Button } from "@multica/ui/components/ui/button";
@@ -14,18 +13,18 @@ import { Switch } from "@multica/ui/components/ui/switch";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@multica/ui/components/ui/dialog";
 import { RuntimePicker } from "../agents/components/runtime-picker";
 import { useT } from "../i18n";
+import { useLocale } from "../i18n";
 import { applicationRequestKey, type ApplicationRequestKey } from "./application-request-key";
+import { useApplicationActionLabels } from "./application-action-labels";
+import { ApplicationStatusBadge } from "./controls";
 
 type Action = ApplicationOperationRequest["action"];
 
-export function useApplicationActionLabels() {
-  const { t } = useT("applications");
-  return { start: t(($) => $.start), stop: t(($) => $.stop), restart: t(($) => $.restart), publish: t(($) => $.publish), unpublish: t(($) => $.unpublish), delete: t(($) => $.delete_instance) };
-}
 
 function OperationForm({ workspaceId, application, board, action, initialRuntimeId, onAccepted }: { workspaceId: string; application: Application; board: ApplicationBoard; action: Action; initialRuntimeId?: string; onAccepted: () => void }) {
   const { t } = useT("applications");
   const labels = useApplicationActionLabels();
+  const locale = useLocale();
   const [runtimeId, setRuntimeId] = useState(initialRuntimeId ?? "");
   const [placements, setPlacements] = useState<Record<string, string>>({});
   const [force, setForce] = useState(false);
@@ -50,7 +49,6 @@ function OperationForm({ workspaceId, application, board, action, initialRuntime
       setError("");
       requestKey.current = applicationRequestKey(requestKey.current, { workspaceId, applicationId: application.id, request: input });
       await operation.mutateAsync({ ...input, idempotency_key: requestKey.current.key });
-      toast.success(t(($) => $.accepted));
       onAccepted();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t(($) => $.invalid_config)); }
   };
@@ -58,6 +56,7 @@ function OperationForm({ workspaceId, application, board, action, initialRuntime
   return <>
     <div className="min-h-0 space-y-4 overflow-y-auto py-1">
       <RuntimePicker runtimes={capable} runtimesLoading={runtimes.isPending} members={members.data ?? []} currentUserId={userId} selectedRuntimeId={runtimeId} onSelect={setRuntimeId} disabled={operation.isPending} />
+      {selected && <div className="flex flex-wrap items-center gap-3 rounded-lg bg-muted/40 p-3 text-caption"><span className="font-medium">{runtimeDisplayLabel(selected)}</span><ApplicationStatusBadge status={selected.status} />{selected.last_seen_at && <span className="text-muted-foreground">{t(($) => $.runtime_last_seen)} {new Date(selected.last_seen_at).toLocaleString(locale)}</span>}{Array.isArray(selected.metadata.capabilities) && <span className="text-muted-foreground">{t(($) => $.runtime_capabilities)} {selected.metadata.capabilities.filter((cap): cap is string => typeof cap === "string").join(", ")}</span>}</div>}
       {!runtimes.isPending && !capable.length && <p role="alert" className="text-caption text-warning">{t(($) => $.runtime_upgrade)}</p>}
       {application.kind === "composition" && placementIds.length > 0 && <details className="rounded-lg border p-3"><summary className="cursor-pointer text-body font-medium">{t(($) => $.placement)}</summary><div className="mt-4 space-y-4">{placementIds.map((id) => <div key={id} className="space-y-2"><p className="break-words text-caption font-medium">{byId.get(id)?.name ?? id}</p><RuntimePicker runtimes={capable} members={members.data ?? []} currentUserId={userId} selectedRuntimeId={placements[id] ?? runtimeId} onSelect={(value) => setPlacements((current) => ({ ...current, [id]: value }))} disabled={operation.isPending} /></div>)}</div></details>}
       {(action === "stop" || action === "restart") && <div className="space-y-3 rounded-lg border p-3"><p className="text-caption text-muted-foreground">{t(($) => $.force_help)}</p><label className="flex items-center justify-between gap-4 text-caption">{t(($) => $.force)}<Switch checked={force} onCheckedChange={setForce} disabled={operation.isPending} /></label></div>}

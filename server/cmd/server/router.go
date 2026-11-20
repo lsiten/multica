@@ -2181,6 +2181,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Patch("/{id}", h.UpdateApplication)
 				r.Delete("/{id}", h.DeleteApplication)
 				r.Get("/{id}/plan", h.PreviewApplicationPlan)
+				r.Get("/{id}/revisions", h.ListApplicationRevisions)
+				r.Get("/{id}/revisions/{revision}", h.GetApplicationRevision)
+				r.Post("/{id}/restore", h.RestoreApplicationRevision)
 				r.Post("/{id}/operations", h.EnqueueApplicationOperation)
 				r.Get("/{id}/operations", h.ListApplicationOperations)
 				r.Get("/{id}/operations/{operationId}", h.GetApplicationOperation)
@@ -2310,9 +2313,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 
 			// Task messages (user-facing, not daemon auth)
-			r.Get("/api/tasks/{taskId}/messages", h.ListTaskMessagesByUser)
-			r.Get("/api/tasks/{taskId}/context-receipt", h.GetTaskContextReceipt)
-			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/retry-source-context", h.RetrySourceContextQuickCreate)
+			registerTaskReadRoutes(r, h)
 
 			// Issue quick actions (definitions; running one lives under
 			// /api/issues/{id}/quick-actions/{quickActionId}/run)

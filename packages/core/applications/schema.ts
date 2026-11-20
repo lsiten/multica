@@ -92,8 +92,10 @@ export const applicationEndpointSchema = z.object({
 });
 
 export const applicationLaunchSchema = z.object({ url: z.string().url() });
+export const applicationServiceAccessSchema = z.object({ url: z.string().url(), token: z.string().min(1), expires_in_seconds: z.number().int().positive() });
 export const applicationLogSchema = z.object({ text: z.string(), cursor: z.string(), gap: z.boolean() });
 export type ApplicationLog = z.infer<typeof applicationLogSchema>;
+export type ApplicationServiceAccess = z.infer<typeof applicationServiceAccessSchema>;
 
 export const applicationOperationSchema = z.object({
   local:z.boolean().optional().default(false),sync_pending:z.boolean().optional().default(false),

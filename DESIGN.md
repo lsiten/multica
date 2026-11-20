@@ -47,6 +47,33 @@ preference scoped to the conversation. It never changes document ownership.
 
 ## 5. Components
 
+### Applications
+
+- **Primary action:** create an application on the overview; start or monitor it
+  on its detail page.
+- **Information priorities:** actionable health summary, scoped application results,
+  and the progress of an operation requested by the user.
+- **Required content:** service and composition totals, instance health and runtime
+  counts, project/runtime/board views, search, project and runtime selection,
+  application types and states, instances, configuration, orchestration, logs,
+  activity, publication and all existing lifecycle controls.
+- **Filtering:** URL-backed scope applies consistently to all views. Summary
+  counts describe the selected project/runtime and search; selecting a summary
+  applies its type or status filter. An empty result offers reset rather than
+  implying that the workspace has no applications.
+- **Recovery:** first use offers project creation or application creation. Errors
+  stay beside the failed data with retry. A submitted operation remains visible
+  through its queued, running and terminal states, including step errors and
+  cancellation.
+- **Primitives:** shared Button, Select, Sheet and collection states, semantic
+  tokens and role typography. The existing compact desktop density is retained.
+- **Left out on purpose:** zero-only summary tiles before first use, decorative
+  status charts, invented completion estimates and duplicate success toasts.
+
+Layout: Applications - keep scope and results inside the bounded workspace -> scroll-body-shell (https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/scroll-body-shell.md); scroll owner: [data-application-scroll]; anti-patterns: document scrolling, clipped filter controls, and two competing result scrollers.
+
+Layout: Application operations - inspect progress without losing the selected application -> scroll-body-shell (https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/scroll-body-shell.md); scroll owner: [data-application-operations-scroll]; anti-patterns: a scrolling close control, unlabelled steps, and a second confirmation dialog hiding progress.
+
 ### Project detail
 
 - **Purpose:** manage project tasks and resolve work that needs attention.

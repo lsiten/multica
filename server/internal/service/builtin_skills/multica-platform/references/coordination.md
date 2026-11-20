@@ -100,6 +100,7 @@ status". See `references/squads.md`, "Issue assignment behavior".
 | who a squad routes to, roster, activity | `references/squads.md` |
 | a `@squad` / `@agent` mention that enqueues | `references/mentions.md` |
 | a scheduled or triggered run | `references/autopilots.md` |
+| Agent-to-Agent handoff across Runtimes | `references/agent-collaboration.md` |
 
 ## Execution scope
 

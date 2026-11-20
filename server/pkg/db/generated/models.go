@@ -75,6 +75,26 @@ type AgentBuilderDraft struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AgentCollaborationOperation struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ActorType       string             `json:"actor_type"`
+	ActorID         pgtype.UUID        `json:"actor_id"`
+	ClientRequestID string             `json:"client_request_id"`
+	Operation       string             `json:"operation"`
+	Fingerprint     string             `json:"fingerprint"`
+	Status          string             `json:"status"`
+	SourceTaskID    pgtype.UUID        `json:"source_task_id"`
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	TargetAgentID   pgtype.UUID        `json:"target_agent_id"`
+	TargetTaskID    pgtype.UUID        `json:"target_task_id"`
+	CommentID       pgtype.UUID        `json:"comment_id"`
+	Result          []byte             `json:"result"`
+	Error           pgtype.Text        `json:"error"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AgentIdentity struct {
 	AgentID        pgtype.UUID        `json:"agent_id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`

@@ -1,5 +1,6 @@
 import { screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NavigationProvider, type NavigationAdapter } from "../navigation";
 import { renderWithI18n } from "../test/i18n";
 import { AppBottomBar } from "./bottom-bar";
@@ -32,7 +33,12 @@ vi.mock("./panels/team-status", () => ({ useTeamAgentStatus: () => h.team }));
 vi.mock("./app-shell-context", () => ({ useAppShell: () => null }));
 vi.mock("../chat/components/chat-bar", () => ({ ChatBar: () => <div data-testid="chat-bar" /> }));
 
+const clients: QueryClient[] = [];
+afterEach(() => { clients.forEach((client) => client.clear()); clients.length = 0; });
+
 function renderBar(pathname = "/acme/issues") {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  clients.push(client);
   const adapter: NavigationAdapter = {
     push: vi.fn(),
     replace: vi.fn(),
@@ -43,9 +49,9 @@ function renderBar(pathname = "/acme/issues") {
     getShareableUrl: (path) => path,
   };
   return renderWithI18n(
-    <NavigationProvider value={adapter}>
+    <QueryClientProvider client={client}><NavigationProvider value={adapter}>
       <AppBottomBar />
-    </NavigationProvider>,
+    </NavigationProvider></QueryClientProvider>,
   );
 }
 

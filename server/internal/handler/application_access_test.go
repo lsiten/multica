@@ -36,6 +36,7 @@ func applicationAccessFixture(t *testing.T) (db.ApplicationEndpoint, string) {
 		t.Fatal(err)
 	}
 	dbfx.Cleanup(t, "DELETE FROM application_access_ticket WHERE endpoint_id=$1", uuidToString(endpoint.ID))
+	dbfx.Cleanup(t, "DELETE FROM inbox_item WHERE details->>'endpoint_id'=$1", uuidToString(endpoint.ID))
 	return endpoint, runtimeID
 }
 
@@ -135,6 +136,9 @@ func TestApplicationServiceAccessEnforcesAgentProjectScope(t *testing.T) {
 		URL   string `json:"url"`
 	}
 	testutil.Call(t, h.CreateApplicationServiceAccess, request()).Want(http.StatusOK).JSON(&receipt)
+	if got := dbfx.Count(t, "SELECT count(*) FROM inbox_item WHERE type='application_access' AND details->>'endpoint_id'=$1", uuidToString(endpoint.ID)); got != 1 {
+		t.Fatalf("service access audit count = %d, want 1", got)
+	}
 	claims, err := applicationgateway.ParseAccess(auth.JWTSecret(), strings.TrimPrefix(receipt.Token, "mas_"))
 	if err != nil || claims.EndpointID != uuidToString(endpoint.ID) || claims.Subject != testUserID {
 		t.Fatalf("service access scope=%+v err=%v", claims, err)

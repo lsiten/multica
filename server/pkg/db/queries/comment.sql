@@ -433,6 +433,12 @@ WHERE c.issue_id = @issue_id
   -- replayed like any other mention. The same comment still reconciles
   -- normally for any other agent it addressed without steering.
   AND NOT EXISTS (
+      SELECT 1 FROM agent_collaboration_operation collaboration
+      WHERE collaboration.comment_id = c.id
+        AND collaboration.operation = 'append'
+        AND collaboration.target_agent_id = @agent_id
+  )
+  AND NOT EXISTS (
       SELECT 1 FROM task_supplement s
       JOIN agent_task_queue bound ON bound.id = s.task_id
       WHERE s.comment_id = c.id AND s.workspace_id = c.workspace_id

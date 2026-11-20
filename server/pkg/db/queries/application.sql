@@ -12,6 +12,13 @@ WHERE a.id=$1 AND a.workspace_id=$2;
 -- name: GetApplicationRevision :one
 SELECT * FROM application_revision WHERE application_id=$1 AND workspace_id=$2 AND revision=$3;
 
+-- name: ListApplicationRevisions :many
+SELECT * FROM application_revision
+WHERE application_id=$1 AND workspace_id=$2
+  AND (sqlc.arg(before_revision)::bigint=0 OR revision<sqlc.arg(before_revision)::bigint)
+ORDER BY revision DESC
+LIMIT 26;
+
 -- name: LockApplicationProject :one
 SELECT id FROM project WHERE id=$1 AND workspace_id=$2 FOR UPDATE;
 
@@ -139,6 +146,41 @@ ORDER BY created_at DESC,id DESC LIMIT 100;
 -- name: SetApplicationOperationState :exec
 UPDATE application_operation SET state=$3,error=$4,updated_at=now(),completed_at=CASE WHEN $3::text IN ('completed','partial','failed','cancelled') THEN now() ELSE NULL END
 WHERE id=$1 AND workspace_id=$2;
+
+-- name: CreateApplicationOperationNotification :exec
+-- Terminal outcomes are surfaced in the member inbox exactly once. The
+-- operation id in details is the idempotency key because refreshOperationState
+-- runs after every daemon result, timeout, and cancellation transition.
+INSERT INTO inbox_item (
+    workspace_id, recipient_type, recipient_id, type, severity, title, body,
+    actor_type, actor_id, details, section
+)
+SELECT o.workspace_id,
+       'member',
+       o.user_id,
+       'application_operation',
+       CASE WHEN o.state IN ('failed', 'partial') THEN 'attention' ELSE 'info' END,
+       CASE WHEN o.state = 'completed' THEN 'Application operation completed'
+            WHEN o.state = 'partial' THEN 'Application operation partially completed'
+            WHEN o.state = 'cancelled' THEN 'Application operation cancelled'
+            ELSE 'Application operation failed' END,
+       NULLIF(o.error, ''),
+       o.actor_type,
+       o.actor_id,
+       jsonb_build_object('operation_id', o.id, 'application_id', o.application_id, 'state', o.state),
+       CASE WHEN o.state IN ('failed', 'partial') THEN 'action' ELSE 'activity' END
+FROM application_operation o
+WHERE o.id = $1
+  AND o.workspace_id = $2
+  AND o.state IN ('completed', 'partial', 'failed', 'cancelled')
+  AND NOT EXISTS (
+      SELECT 1 FROM inbox_item i
+      WHERE i.workspace_id = o.workspace_id
+        AND i.recipient_type = 'member'
+        AND i.recipient_id = o.user_id
+        AND i.type = 'application_operation'
+        AND i.details->>'operation_id' = o.id::text
+  );
 
 -- name: SetApplicationOperationDeadline :exec
 UPDATE application_operation SET deadline_at=$3 WHERE id=$1 AND workspace_id=$2;

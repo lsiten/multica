@@ -346,7 +346,7 @@
         "required": "Select at least one member."
       }
     },
-    "builder": {
+        "builder": {
       "draft_parse_failed": "This reply could not fill the form. Ask the assistant to generate the draft again, or fill it in manually.",
       "start_failed": "Could not start Agent Builder.",
       "send_failed": "Could not send your message.",
@@ -1103,6 +1103,18 @@
       "manual": "Cancelled by user",
       "user_cancelled": "Cancelled by user"
     }
+  },
+  "collaboration": {
+    "mode_label": "Collaboration mode",
+    "append": "Append to current Run",
+    "next": "Start next turn",
+    "stop": "Stop Run",
+    "watch": "Watch result",
+    "delegate": "Delegate to another Agent",
+    "target_agent": "Target Agent",
+    "target_agent_placeholder": "Agent UUID",
+    "run_prefix": "Run",
+    "sending": "Sending…"
   },
   "last_active": {
     "today": "Today",

@@ -110,6 +110,7 @@ import { formatBytes } from "../format-bytes";
 import "../../editor/styles/code.css";
 import "./task-transcript.css";
 import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
+import { AgentCollaborationControls } from "./agent-collaboration-controls";
 
 // The run surface, read in four layers: what happened (header), what it
 // produced (outcome), where the time went (timeline), and the evidence (steps).
@@ -1127,6 +1128,8 @@ export function AgentTranscriptDialog({
             {headerSlot}
           </div>
         )}
+
+        <AgentCollaborationControls task={task} agentName={agentName} runtimeName={runtimeInfo ? runtimeDisplayName(runtimeInfo) : undefined} />
 
         {/* ── List toolbar: search left, the two menus right ── */}
         <div className="flex items-center gap-2 border-b px-4 py-1.5 shrink-0">

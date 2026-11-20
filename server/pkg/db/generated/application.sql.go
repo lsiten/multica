@@ -522,6 +522,52 @@ func (q *Queries) CreateApplicationOperation(ctx context.Context, arg CreateAppl
 	return i, err
 }
 
+const createApplicationOperationNotification = `-- name: CreateApplicationOperationNotification :exec
+INSERT INTO inbox_item (
+    workspace_id, recipient_type, recipient_id, type, severity, title, body,
+    actor_type, actor_id, details, section
+)
+SELECT o.workspace_id,
+       'member',
+       o.user_id,
+       'application_operation',
+       CASE WHEN o.state IN ('failed', 'partial') THEN 'attention' ELSE 'info' END,
+       CASE WHEN o.state = 'completed' THEN 'Application operation completed'
+            WHEN o.state = 'partial' THEN 'Application operation partially completed'
+            WHEN o.state = 'cancelled' THEN 'Application operation cancelled'
+            ELSE 'Application operation failed' END,
+       NULLIF(o.error, ''),
+       o.actor_type,
+       o.actor_id,
+       jsonb_build_object('operation_id', o.id, 'application_id', o.application_id, 'state', o.state),
+       CASE WHEN o.state IN ('failed', 'partial') THEN 'action' ELSE 'activity' END
+FROM application_operation o
+WHERE o.id = $1
+  AND o.workspace_id = $2
+  AND o.state IN ('completed', 'partial', 'failed', 'cancelled')
+  AND NOT EXISTS (
+      SELECT 1 FROM inbox_item i
+      WHERE i.workspace_id = o.workspace_id
+        AND i.recipient_type = 'member'
+        AND i.recipient_id = o.user_id
+        AND i.type = 'application_operation'
+        AND i.details->>'operation_id' = o.id::text
+  )
+`
+
+type CreateApplicationOperationNotificationParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Terminal outcomes are surfaced in the member inbox exactly once. The
+// operation id in details is the idempotency key because refreshOperationState
+// runs after every daemon result, timeout, and cancellation transition.
+func (q *Queries) CreateApplicationOperationNotification(ctx context.Context, arg CreateApplicationOperationNotificationParams) error {
+	_, err := q.db.Exec(ctx, createApplicationOperationNotification, arg.ID, arg.WorkspaceID)
+	return err
+}
+
 const deferApplicationOperationStep = `-- name: DeferApplicationOperationStep :exec
 UPDATE application_operation_step SET state='queued',claim_token=NULL,lease_until=now()+interval '3 seconds'
 WHERE id=$1 AND workspace_id=$2 AND claim_token=$3 AND state='running'
@@ -1865,6 +1911,50 @@ func (q *Queries) ListApplicationRelations(ctx context.Context, arg ListApplicat
 			&i.Required,
 			&i.Condition,
 			&i.StartExternal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listApplicationRevisions = `-- name: ListApplicationRevisions :many
+SELECT id, application_id, workspace_id, revision, config, relations, actor_type, actor_id, created_at FROM application_revision
+WHERE application_id=$1 AND workspace_id=$2
+  AND ($3::bigint=0 OR revision<$3::bigint)
+ORDER BY revision DESC
+LIMIT 26
+`
+
+type ListApplicationRevisionsParams struct {
+	ApplicationID  pgtype.UUID `json:"application_id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	BeforeRevision int64       `json:"before_revision"`
+}
+
+func (q *Queries) ListApplicationRevisions(ctx context.Context, arg ListApplicationRevisionsParams) ([]ApplicationRevision, error) {
+	rows, err := q.db.Query(ctx, listApplicationRevisions, arg.ApplicationID, arg.WorkspaceID, arg.BeforeRevision)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApplicationRevision{}
+	for rows.Next() {
+		var i ApplicationRevision
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.WorkspaceID,
+			&i.Revision,
+			&i.Config,
+			&i.Relations,
+			&i.ActorType,
+			&i.ActorID,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

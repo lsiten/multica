@@ -369,7 +369,7 @@
         "required": "Выберите хотя бы одного участника."
       }
     },
-    "builder": {
+        "builder": {
       "draft_parse_failed": "Не удалось заполнить форму из этого ответа. Попросите помощника создать черновик заново или заполните форму вручную.",
       "start_failed": "Не удалось запустить Agent Builder.",
       "send_failed": "Не удалось отправить сообщение.",
@@ -1155,6 +1155,18 @@
       "user_cancelled": "Отменено пользователем",
       "startup_timeout": "Agent produced no output after starting; run stopped (possibly not signed in or unreachable)"
     }
+  },
+  "collaboration": {
+    "mode_label": "Режим совместной работы",
+    "append": "Добавить в текущий запуск",
+    "next": "Начать следующий ход",
+    "stop": "Остановить запуск",
+    "watch": "Следить за результатом",
+    "delegate": "Поручить другому агенту",
+    "target_agent": "Целевой агент",
+    "target_agent_placeholder": "UUID агента",
+    "run_prefix": "Запуск",
+    "sending": "Отправка…"
   },
   "last_active": {
     "today": "Сегодня",

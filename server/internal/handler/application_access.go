@@ -3,7 +3,9 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/applicationgateway"
 	"github.com/multica-ai/multica/server/internal/auth"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // applicationOrigin resolves the browser origin for published applications.
@@ -155,6 +158,17 @@ func (h *Handler) CreateApplicationServiceAccess(w http.ResponseWriter, r *http.
 	address := applicationEndpointURL(origin, dedicated, uuidToString(endpoint.ID))
 	address.Path = strings.TrimRight(address.Path, "/") + endpoint.EntryPath
 	address.RawPath = ""
+	details, err := json.Marshal(map[string]string{"application_id": uuidToString(endpoint.ApplicationID), "endpoint_id": uuidToString(endpoint.ID), "endpoint_revision": fmt.Sprint(endpoint.Revision), "expires_in_seconds": "28800"})
+	if err != nil {
+		h.applicationError(w, err)
+		return
+	}
+	item, err := h.Queries.CreateInboxItem(r.Context(), db.CreateInboxItemParams{WorkspaceID: endpoint.WorkspaceID, RecipientType: "member", RecipientID: member.UserID, Type: "application_access", Severity: "info", Title: "Application service access issued", Body: pgtype.Text{String: "A temporary credential was issued for a published endpoint.", Valid: true}, ActorType: pgtype.Text{String: "member", Valid: true}, ActorID: member.UserID, Details: details})
+	if err != nil {
+		h.applicationError(w, err)
+		return
+	}
+	h.publish(protocol.EventInboxNew, uuidToString(endpoint.WorkspaceID), "member", uuidToString(member.UserID), map[string]any{"item": inboxToResponse(item)})
 	writeJSON(w, http.StatusOK, map[string]any{"url": address.String(), "token": "mas_" + token, "expires_in_seconds": 28800})
 }
 

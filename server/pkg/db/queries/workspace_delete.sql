@@ -329,6 +329,9 @@ deleted_orphan_task_supplement_capabilities AS (
 deleted_orphan_task_context_receipts AS (
     DELETE FROM task_context_receipt WHERE workspace_id = $1
 ),
+deleted_agent_collaboration_operations AS (
+    DELETE FROM agent_collaboration_operation WHERE workspace_id = $1
+),
 deleted_hourly_dirty AS (
     DELETE FROM task_usage_hourly_dirty WHERE workspace_id = $1
 ),

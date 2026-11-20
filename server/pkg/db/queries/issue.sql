@@ -540,6 +540,9 @@ cleared_environment_configs AS (
 -- so their receipts are swept here by the issue_id copied onto each row.
 cleared_task_context_receipts AS (
     DELETE FROM task_context_receipt WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_agent_collaboration_operations AS (
+    DELETE FROM agent_collaboration_operation WHERE issue_id IN (SELECT target.id FROM target)
 )
 DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target);
 

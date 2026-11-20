@@ -60,18 +60,6 @@ func (s *taskSupplementSignals) notify(taskID string) {
 	}
 }
 
-// workerSupplementSubscribe is the *Daemon-free supplement subscription the
-// per-execution task worker uses in place of the in-process taskSupplementSignals
-// WebSocket hint. It returns an unsignalled wakeup channel and a no-op unsubscribe:
-// runTaskSupplementLoop re-checks the poll cadence on every pass, so a worker with
-// no in-process hint still claims and acknowledges durable additions on schedule.
-// The returned subscription matches the runProviderExecution subscribeSupplement seam.
-func workerSupplementSubscribe() func(string) (<-chan struct{}, func()) {
-	return func(taskID string) (<-chan struct{}, func()) {
-		return make(chan struct{}), func() {}
-	}
-}
-
 func (d *Daemon) effectiveTaskSupplementPollInterval() time.Duration {
 	if d.taskSupplementPollInterval > 0 {
 		return d.taskSupplementPollInterval
@@ -177,9 +165,11 @@ func runTaskSupplementLoop(ctx context.Context, session *agent.Session, taskID s
 			continue
 		}
 
+		claimStarted := time.Now()
 		claimCtx, cancelClaim := context.WithTimeout(ctx, 3*time.Second)
 		supplement, claimErr := claimSupplement(claimCtx, taskID)
 		cancelClaim()
+		claimElapsed := time.Since(claimStarted)
 		if claimErr != nil || supplement == nil {
 			if taskSupplementEndpointUnsupported(claimErr) {
 				return
@@ -196,7 +186,9 @@ func runTaskSupplementLoop(ctx context.Context, session *agent.Session, taskID s
 		// The adapter owns transport deadlines. Hook-based providers wait for a
 		// safe boundary, which can follow a long-running tool; run cancellation
 		// still aborts that wait and prevents late delivery.
+		injectStarted := time.Now()
 		injectErr := session.Supplement(ctx, formatTaskSupplementInstruction(supplement.AuthorType, supplement.AuthorName, supplement.Content))
+		injectElapsed := time.Since(injectStarted)
 		reason := taskSupplementFailureReason(ctx, injectErr)
 		if injectErr != nil {
 			// Raw provider/Go diagnostics remain local. Workspace-visible state is
@@ -209,6 +201,9 @@ func runTaskSupplementLoop(ctx context.Context, session *agent.Session, taskID s
 		cancelAck()
 		if ackErr != nil {
 			taskLog.Warn("additional message acknowledgement failed", "comment_id", supplement.CommentID, "error", ackErr)
+		} else {
+			taskLog.Debug("additional message delivery settled", "task_id", taskID, "comment_id", supplement.CommentID,
+				"provider_accepted", injectErr == nil, "claim_ms", claimElapsed.Milliseconds(), "provider_ms", injectElapsed.Milliseconds())
 		}
 		// Do not sleep after a claim: drain already-ordered pending rows one at a
 		// time. When empty, the branch above returns to the bounded wait.

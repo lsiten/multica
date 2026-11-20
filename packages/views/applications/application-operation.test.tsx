@@ -2,17 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@multica/core/i18n/react";
-import { applicationSchema, applicationBoardSchema, applicationInstanceSchema, applicationOperationSchema, defaultApplicationConfig, type ApplicationOperation, type ApplicationOperationRequest } from "@multica/core/applications";
+import { applicationSchema, applicationBoardSchema, applicationInstanceSchema, applicationOperationSchema, defaultApplicationConfig, useApplicationOperationPanel, type ApplicationOperation, type ApplicationOperationRequest } from "@multica/core/applications";
 import en from "../locales/en/applications.json";
 import agents from "../locales/en/agents.json";
 import common from "../locales/en/common.json";
 import { ApplicationOperationDialog } from "./application-operation-dialog";
 import { ApplicationDetail } from "./application-detail";
+import { ApplicationOperationMonitor } from "./application-operations";
 
 const fixture = vi.hoisted(() => ({
   enqueue: vi.fn<(ws: string, id: string, input: ApplicationOperationRequest) => Promise<ApplicationOperation>>(),
   safeId: vi.fn(),
-  getApplication: vi.fn(), getBoard: vi.fn(), getPlan: vi.fn(),
+  getApplication: vi.fn(), getBoard: vi.fn(), getPlan: vi.fn(), getOperation: vi.fn(),
   listRuntimes: vi.fn(async () => []), listMembers: vi.fn(async () => []),
   supportsLocal: vi.fn(async () => true),
 }));
@@ -21,6 +22,7 @@ vi.mock("@multica/core/api", () => ({ api: {
   getApplicationBoard: fixture.getBoard, previewApplicationPlan: fixture.getPlan,
   listRuntimes: fixture.listRuntimes, listMembers: fixture.listMembers,
   supportsLocalApplication: fixture.supportsLocal,
+  getApplicationOperation: fixture.getOperation,
 } }));
 vi.mock("@multica/core/utils", async (original) => ({ ...await original<typeof import("@multica/core/utils")>(), createSafeId: fixture.safeId }));
 vi.mock("@multica/core/auth", () => ({
@@ -72,7 +74,21 @@ beforeEach(() => {
   fixture.getBoard.mockResolvedValue(board);
   fixture.getPlan.mockResolvedValue(plan);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); useApplicationOperationPanel.getState().close(); vi.restoreAllMocks(); });
+
+it("automatically shows accepted operation progress and its observed completion", async () => {
+  const completed = { ...operation, state: "completed" as const, steps: [{ id: operationId, application_id: id, instance_id: instanceId, runtime_id: runtimeId, generation: 1, wave: 0, required: true, action: "start", state: "completed" as const, error: "" }] };
+  fixture.enqueue.mockResolvedValue(operation);
+  fixture.getOperation.mockResolvedValue(completed);
+  renderView(<><ApplicationOperationMonitor workspaceId={id} /><ApplicationOperationDialog workspaceId={id} application={application} board={board} action="start" initialRuntimeId={runtimeId} trigger={<button>Open start</button>} /></>);
+  fireEvent.click(screen.getByText("Open start"));
+  await submitDialog("Start");
+
+  const progress = await screen.findByRole("dialog", { name: "Operations" });
+  expect(await within(progress).findByText("1 of 1 steps completed")).toBeInTheDocument();
+  expect(within(progress).getAllByText("Completed", { selector: "span" })).toHaveLength(2);
+  expect(within(progress).getByRole("progressbar", { name: "Operation steps" })).toHaveAttribute("value", "1");
+});
 
 describe("application operation confirmation", () => {
   it("uses the secure ID helper and keeps the same request key after a failed submission", async () => {

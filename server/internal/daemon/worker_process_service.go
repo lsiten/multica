@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/runtimeproc"
 	"github.com/multica-ai/multica/server/pkg/agent"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -34,6 +33,7 @@ type workerProcessService struct {
 	bootstrap runtimeproc.Bootstrap
 
 	mu            sync.Mutex
+	supplements   taskSupplementSignals
 	client        *ExecutionClient // nil until a valid callback url is bound
 	identity      protocol.ExecutionIdentity
 	authorization WorkerLaunchAuthorization
@@ -76,7 +76,7 @@ func RunWorkerService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	s := &workerProcessService{bootstrap: b, state: "starting", lifetime: ctx}
 	service, err := runtimeproc.NewService(runtimeproc.Config{
 		Bootstrap:        b,
-		Capabilities:     []string{"worker.bind", "worker.acquire", "worker.run", "worker.report", "worker.gate-record", "worker.honor-cancel", "worker.cancel"},
+		Capabilities:     []string{"worker.bind", "worker.acquire", "worker.run", "worker.report", "worker.gate-record", "worker.honor-cancel", "worker.cancel", "worker.supplement-wakeup"},
 		ReadCapabilities: []string{"worker.status", "worker.gate-status", "worker.result"},
 		Handler:          s.mutate,
 		ReadHandler:      s.read,
@@ -99,91 +99,6 @@ func (s *workerProcessService) ready(ctx context.Context) error {
 	s.mu.Unlock()
 	slog.Default().Info("worker ready", "worker", s.bootstrap.Identity.InstanceID)
 	return nil
-}
-
-// workerBindRequest is the exact facts control delivers before a provider launch.
-// The grant is the scoped mwt_ credential; the remaining flags are control's
-// observation of the bind/Start/launch acknowledgement. The worker applies the
-// closed launch-authorization contract to them and never launches on its own.
-type workerBindRequest struct {
-	Grant               protocol.ExecutionGrantResponse `json:"grant"`
-	CallbackURL         string                          `json:"callback_url"`
-	WorkerIDMatchesBind bool                            `json:"worker_id_matches_bind"`
-	LaunchAuthorized    bool                            `json:"launch_authorized"`
-	Uncertain           bool                            `json:"uncertain"`
-	// Context is the execution context the control parent delivers so the worker
-	// can build and launch the provider run without a *Daemon. Absent until the
-	// control parent supports context delivery; the worker stays launchable for
-	// the authorization gate but cannot run a provider without it (fail-closed).
-	Context *workerContext `json:"context,omitempty"`
-}
-
-// workerContext is the exact facts the control parent delivers so a worker can
-// build the provider run (ExecOptions, backend, prompt) and drive
-// runProviderExecution. It carries no *Daemon reference and no secret: the
-// scoped mwt_ grant is delivered separately as the worker's own credential.
-type workerContext struct {
-	// Provider is the runtime identity (e.g. "codex", "opencode", "kimi") the
-	// control parent delivers so the worker resolves the exact provider it is
-	// authorized to run.
-	Provider string
-	// Config is the daemon-wide configuration the worker reuses (timeouts,
-	// budgets, and agent entries).
-	Config Config
-	// Task is the server-claimed task; it supplies the resume session, thread
-	// name, resume continuity, and the prompt brief.
-	Task Task
-	// Env is the prepared execution environment (workdir, codex home, mcp, and
-	// the resolved agent environment) so the backend resolves identically.
-	Env PreparedEnv
-	// Launch carries the resolved provider launch facts assembled by control.
-	// Keeping these facts in the bind payload prevents the worker from silently
-	// dropping runtime profiles, MCP overlays, model selection, or task briefs.
-	Launch workerLaunchFacts
-}
-
-type workerLaunchFacts struct {
-	SharedLocalDirectory     bool                      `json:"shared_local_directory"`
-	Prompt                   string                    `json:"prompt"`
-	TaskContext              execenv.TaskContextForEnv `json:"task_context"`
-	Receipt                  contextReceiptInput       `json:"receipt"`
-	CursorHookCommand        []string                  `json:"cursor_hook_command"`
-	ThinkingLevelWarning     string                    `json:"thinking_level_warning"`
-	OpenclawModelOverride    string                    `json:"openclaw_model_override"`
-	ExecutablePath           string                    `json:"executable_path,omitempty"`
-	LaunchPrefix             []string                  `json:"launch_prefix,omitempty"`
-	CLIVersion               string                    `json:"cli_version,omitempty"`
-	CodexVersion             string                    `json:"codex_version,omitempty"`
-	BuiltinRuntime           bool                      `json:"builtin_runtime"`
-	Model                    string                    `json:"model,omitempty"`
-	IdleWatchdogTimeout      time.Duration             `json:"idle_watchdog_timeout,omitempty"`
-	ExtraArgs                []string                  `json:"extra_args,omitempty"`
-	CustomArgs               []string                  `json:"custom_args,omitempty"`
-	McpConfig                json.RawMessage           `json:"mcp_config,omitempty"`
-	ThinkingLevel            string                    `json:"thinking_level,omitempty"`
-	ServiceTier              string                    `json:"service_tier,omitempty"`
-	OpenclawMode             string                    `json:"openclaw_mode,omitempty"`
-	RuntimeBrief             string                    `json:"runtime_brief,omitempty"`
-	TaskSupplementNegotiated bool                      `json:"task_supplement_negotiated"`
-}
-
-// PreparedEnv is the prepared execution environment delivered to a worker. It is
-// the JSON-safe projection of the environment control prepares in runTask: the
-// workdir, codex home, and resolved agent environment map.
-type PreparedEnv struct {
-	PiSkillPaths       []string                    `json:"pi_skill_paths"`
-	HermesHome         string                      `json:"hermes_home"`
-	Delivery           *execenv.WorktreeInspection `json:"delivery,omitempty"`
-	WorkDir            string                      `json:"work_dir"`
-	RootDir            string                      `json:"root_dir,omitempty"`
-	LocalWorktree      bool                        `json:"local_worktree,omitempty"`
-	CodexHome          string                      `json:"codex_home"`
-	ClaudeSettingsPath string                      `json:"claude_settings_path,omitempty"`
-	QwenpawWorkspace   string                      `json:"qwenpaw_workspace,omitempty"`
-	ContextDir         string                      `json:"context_dir,omitempty"`
-	CursorMcpPluginDir string                      `json:"cursor_mcp_plugin_dir,omitempty"`
-	OmpMcpExtensionDir string                      `json:"omp_mcp_extension_dir,omitempty"`
-	Env                map[string]string           `json:"env,omitempty"`
 }
 
 // workerGateRecord is one verification result the worker records into its gate.
@@ -225,212 +140,6 @@ type workerStatus struct {
 	ReasonCode  string `json:"reason_code"`
 	ExecutionID string `json:"execution_id"`
 	HasClient   bool   `json:"has_client"`
-}
-
-// mutate binds a single execution and cancels it. bind constructs the scoped
-// execution client (only from a valid grant) and applies DecideWorkerLaunch so
-// the launch decision is made exactly once, fail-closed, in the worker process.
-func (s *workerProcessService) mutate(ctx context.Context, r runtimeproc.Request) (json.RawMessage, *runtimeproc.Error) {
-	switch r.Operation {
-	case "worker.bind":
-		var in workerBindRequest
-		if json.Unmarshal(r.Payload, &in) != nil {
-			return nil, &runtimeproc.Error{Code: "malformed", Message: "invalid worker bind"}
-		}
-		// The grant is evidence, not authorization: a missing/invalid grant is
-		// never a remaining-budget or completion promise.
-		granted := validExecutionGrant(in.Grant)
-		// A callback url must be a plain loopback http origin; a worker that
-		// would call a non-loopback host is not bound and cannot launch.
-		client := s.executionClient(in.Grant, in.CallbackURL, granted)
-		if client != nil && in.Context != nil && in.Context.Config.WorkspacesRoot != "" {
-			store := newTerminalReportStore(in.Context.Config)
-			store.bindAccount(s.bootstrap.Identity.Scope.Account)
-			identity := in.Grant.Identity
-			client.client.taskReportQueue = func(report terminalTaskReport) error {
-				report.execution = &identity
-				report.accountID = s.bootstrap.Identity.Scope.Account
-				return store.enqueue(report)
-			}
-		}
-		decision := DecideWorkerLaunch(
-			in.Grant.Identity.TaskID,
-			in.Grant.Identity.RuntimeID,
-			in.Grant.Identity.WorkerID,
-			in.Grant.Identity.ExecutionID,
-			in.Grant.Identity.DispatchedAt,
-			in.WorkerIDMatchesBind,
-			granted,
-			in.LaunchAuthorized,
-			in.Uncertain,
-		)
-		if err := decision.Validate(); err != nil {
-			return nil, &runtimeproc.Error{Code: "invalid_authorization", Message: err.Error()}
-		}
-		s.mu.Lock()
-		if (s.bound || s.workDone != nil) && s.identity != in.Grant.Identity {
-			s.mu.Unlock()
-			return nil, &runtimeproc.Error{Code: "execution_changed", Message: "worker cannot bind a different execution"}
-		}
-		s.client = client
-		s.identity = in.Grant.Identity
-		s.authorization = decision
-		s.gate = newCompletionGate(in.Grant.Identity.TaskID)
-		s.runContext = in.Context
-		s.bound = true
-		if s.state == "starting" {
-			s.state = "ready"
-		}
-		s.mu.Unlock()
-		return marshalRaw(workerStatus{
-			InstanceID:  s.bootstrap.Identity.InstanceID,
-			PID:         os.Getpid(),
-			State:       s.state,
-			Launchable:  decision.Launchable,
-			ReasonCode:  decision.ReasonCode,
-			ExecutionID: in.Grant.Identity.ExecutionID,
-			HasClient:   client != nil,
-		}), nil
-	case "worker.acquire":
-		s.mu.Lock()
-		client := s.client
-		s.mu.Unlock()
-		if client == nil {
-			return nil, &runtimeproc.Error{Code: "no_client", Message: "worker has no bound execution client; bind first"}
-		}
-		// A live callback to control is real work: the worker confirms the
-		// execution is still current before it would launch a provider. An
-		// uncertain/failed query is never an acquisition.
-		var live struct {
-			State string `json:"state"`
-		}
-		if err := client.Status(ctx, &live); err != nil {
-			return nil, &runtimeproc.Error{Code: "acquire_failed", Message: "execution status query failed: " + err.Error()}
-		}
-		return marshalRaw(map[string]any{
-			"acquired":     true,
-			"execution_id": s.identity.ExecutionID,
-			"state":        live.State,
-		}), nil
-	case "worker.report":
-		s.mu.Lock()
-		client := s.client
-		launchable := s.authorization.Launchable
-		s.mu.Unlock()
-		if client == nil {
-			return nil, &runtimeproc.Error{Code: "no_client", Message: "worker has no bound execution client; bind first"}
-		}
-		// A worker that is not launchable never ran a provider, so it must not
-		// produce a result the server would record as real work.
-		if !launchable {
-			return nil, &runtimeproc.Error{Code: "not_launchable", Message: "worker is not launchable; it produced no result"}
-		}
-		var in workerReportRequest
-		if json.Unmarshal(r.Payload, &in) != nil || in.Operation == "" {
-			return nil, &runtimeproc.Error{Code: "malformed", Message: "invalid worker report"}
-		}
-		if err := client.Callback(ctx, in.Operation, in.Payload, nil); err != nil {
-			return nil, &runtimeproc.Error{Code: "report_failed", Message: "result report failed: " + err.Error()}
-		}
-		return json.RawMessage(`{"reported":true}`), nil
-	case "worker.gate-record":
-		var in workerGateRecord
-		if json.Unmarshal(r.Payload, &in) != nil {
-			return nil, &runtimeproc.Error{Code: "malformed", Message: "invalid worker gate record"}
-		}
-		s.mu.Lock()
-		gate := s.gate
-		s.mu.Unlock()
-		if gate == nil {
-			return nil, &runtimeproc.Error{Code: "no_gate", Message: "worker has no bound completion gate; bind first"}
-		}
-		// The worker owns the completion gate: a verification result is recorded
-		// only for the bound task and only advances the current attempt, so a
-		// stale provider response cannot restore a successful gate (F3 保留).
-		gate.recordForAttemptWithDetails(0, s.identity.TaskID, in.Goal, in.Criteria, in.Evidence, in.Verdict, in.Mode, in.Calibrated, in.Confidence, in.Probabilities)
-		return marshalRaw(gate.status()), nil
-	case "worker.honor-cancel":
-		// A provider that is not launchable never started, so there is nothing
-		// to cancel; honor-cancel must not fabricate a cancellation.
-		s.mu.Lock()
-		client := s.client
-		launchable := s.authorization.Launchable
-		s.mu.Unlock()
-		if client == nil {
-			return nil, &runtimeproc.Error{Code: "no_client", Message: "worker has no bound execution client; bind first"}
-		}
-		if !launchable {
-			return marshalRaw(workerCancelState{
-				InstanceID: s.bootstrap.Identity.InstanceID,
-				PID:        os.Getpid(),
-				Cancelled:  false,
-				ReasonCode: "not_launchable",
-			}), nil
-		}
-		// Query the execution's authoritative state from control. A terminal state
-		// means the execution is cancelled/failed/completed server-side; the
-		// worker must stop and may not relaunch or report a result it did not run.
-		var live struct {
-			State string `json:"state"`
-		}
-		if err := client.Status(ctx, &live); err != nil {
-			// An uncertain query is never a cancellation: the worker keeps the
-			// execution and must not treat a failed query as a stop signal.
-			return nil, &runtimeproc.Error{Code: "cancel_query_failed", Message: "cancellation query uncertain: " + err.Error()}
-		}
-		cancelled := isAgentTaskTerminal(live.State)
-		if cancelled {
-			s.mu.Lock()
-			s.client = nil
-			s.authorization = WorkerLaunchAuthorization{}
-			s.gate = nil
-			s.bound = false
-			s.state = "cancelled"
-			s.mu.Unlock()
-		}
-		return marshalRaw(workerCancelState{
-			InstanceID: s.bootstrap.Identity.InstanceID,
-			PID:        os.Getpid(),
-			Cancelled:  cancelled,
-			TaskState:  live.State,
-			ReasonCode: live.State,
-		}), nil
-	case "worker.cancel":
-		if err := s.stopProviderRun(ctx); err != nil {
-			return nil, &runtimeproc.Error{Code: "stop_unconfirmed", Message: err.Error()}
-		}
-		s.mu.Lock()
-		s.client = nil
-		s.identity = protocol.ExecutionIdentity{}
-		s.authorization = WorkerLaunchAuthorization{}
-		s.gate = nil
-		s.bound = false
-		s.mu.Unlock()
-		return json.RawMessage(`{}`), nil
-	case "worker.run":
-		// A worker runs the provider only when control admitted the launch,
-		// delivered the execution context, and bound a scoped client. A missing
-		// context or client fails closed: the worker must never fabricate a run.
-		s.mu.Lock()
-		client := s.client
-		launchable := s.authorization.Launchable
-		runCtx := s.runContext
-		s.mu.Unlock()
-		if !launchable {
-			return nil, &runtimeproc.Error{Code: "not_launchable", Message: "worker is not launchable; run refused"}
-		}
-		if client == nil {
-			return nil, &runtimeproc.Error{Code: "no_client", Message: "worker has no bound execution client; bind first"}
-		}
-		if runCtx == nil {
-			return nil, &runtimeproc.Error{Code: "no_context", Message: "worker has no execution context; run refused"}
-		}
-		s.startProviderRun(client, runCtx)
-		return json.RawMessage(`{"accepted":true}`), nil
-
-	default:
-		return nil, &runtimeproc.Error{Code: "unknown_operation", Message: "unknown worker operation"}
-	}
 }
 
 // read reports the current decision without changing it. It is a read because a
@@ -562,7 +271,9 @@ func (s *workerProcessService) reportWorkerRun(ctx context.Context, client *Exec
 }
 
 func (s *workerProcessService) executeProviderRun(ctx context.Context, client *ExecutionClient, runCtx *workerContext) workerRunResult {
-	result, tools, retired, runErr := runWorkerProvider(ctx, client, runCtx)
+	run := *runCtx
+	run.supplements = &s.supplements
+	result, tools, retired, runErr := runWorkerProvider(ctx, client, &run)
 	status := result.Status
 	if runErr != nil {
 		status = "failed"

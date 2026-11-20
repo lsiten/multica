@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/application"
 	"github.com/multica-ai/multica/server/internal/testutil"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 func TestApplicationOptionalMemberFailureReturnsPartialAndKeepsRequiredService(t *testing.T) {
@@ -37,6 +39,15 @@ func TestApplicationOptionalMemberFailureReturnsPartialAndKeepsRequiredService(t
 	final := applicationTestGetOperation(t, root.ID, operation.ID)
 	if final.State != "partial" {
 		t.Fatalf("optional failure lost partial outcome: %s", final.State)
+	}
+	if got := dbfx.Count(t, "SELECT count(*) FROM inbox_item WHERE details->>'operation_id'=$1", operation.ID); got != 1 {
+		t.Fatalf("partial operation notification count = %d, want 1", got)
+	}
+	if err := testHandler.Queries.CreateApplicationOperationNotification(context.Background(), db.CreateApplicationOperationNotificationParams{ID: parseUUID(operation.ID), WorkspaceID: parseUUID(testWorkspaceID)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := dbfx.Count(t, "SELECT count(*) FROM inbox_item WHERE details->>'operation_id'=$1", operation.ID); got != 1 {
+		t.Fatalf("duplicate operation notification count = %d, want 1", got)
 	}
 	for _, step := range final.Steps {
 		if step.ApplicationID == required.ID && step.State != "completed" {

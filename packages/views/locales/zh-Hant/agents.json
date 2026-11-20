@@ -336,7 +336,7 @@
         "required": "請至少選擇一位成員。"
       }
     },
-    "builder": {
+        "builder": {
       "draft_parse_failed": "本次回覆未能填入表單。請讓 AI 代理重新生成草稿，或手動填寫。",
       "start_failed": "無法啟動 AI 代理構建器。",
       "send_failed": "無法傳送訊息。",
@@ -1077,6 +1077,18 @@
       "manual": "使用者取消",
       "user_cancelled": "使用者取消"
     }
+  },
+  "collaboration": {
+    "mode_label": "協作方式",
+    "append": "追加到目前執行",
+    "next": "開始下一輪",
+    "stop": "停止執行",
+    "watch": "關注結果",
+    "delegate": "委派給其他 AI 代理",
+    "target_agent": "目標 AI 代理",
+    "target_agent_placeholder": "AI 代理 UUID",
+    "run_prefix": "執行",
+    "sending": "傳送中…"
   },
   "last_active": {
     "today": "今天",

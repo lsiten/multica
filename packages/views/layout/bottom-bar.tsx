@@ -10,6 +10,7 @@ import { useT } from "../i18n";
 import { AppLink, useNavigation } from "../navigation";
 import { useAppShell } from "./app-shell-context";
 import { useTeamAgentStatus } from "./panels/team-status";
+import { ApplicationOperations, ApplicationOperationMonitor } from "../applications/application-operations";
 
 /**
  * Work that cannot start because its runtime is offline. Links to Team,
@@ -56,12 +57,14 @@ export function AppBottomBar() {
   const { pathname } = useNavigation();
   const chatPath = useWorkspacePaths().chat();
 
-  if (!wsId || isMobile) return null;
+  if (!wsId) return null;
+  if (isMobile) return <ApplicationOperationMonitor workspaceId={wsId} />;
   // Same gates as the floating window: the Settings preference, and the Chat
   // tab, which already shows the conversation full-page.
   const showChat = floatingChatEnabled && !isFloatingChatRouteSuppressed(pathname, chatPath);
 
-  return (
+  return (<>
+    <ApplicationOperationMonitor workspaceId={wsId} />
     <footer
       aria-label={t(($) => $.bottom_bar.label)}
       data-slot="app-bottom-bar"
@@ -70,8 +73,8 @@ export function AppBottomBar() {
       // column as the page header's trailing action.
       className="hidden h-8 shrink-0 items-center justify-between gap-4 pr-[18px] pl-3 md:flex"
     >
-      <TeamStatus wsId={wsId} />
+      <div className="flex min-w-0 items-center gap-2"><TeamStatus wsId={wsId} /><ApplicationOperations workspaceId={wsId} /></div>
       {showChat && <ChatBar />}
     </footer>
-  );
+  </>);
 }
