@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -57,6 +58,30 @@ func TestMigrationFilesHaveMatchingDirections(t *testing.T) {
 		if !directions["up"] || !directions["down"] {
 			t.Errorf("migration %s must have both .up.sql and .down.sql files", stem)
 		}
+	}
+}
+
+func TestAgentCollaborationRecoveryMigrationsAreIdempotent(t *testing.T) {
+	dir := realMigrationsDir(t)
+	tests := []struct {
+		file string
+		want string
+	}{
+		{file: "900599_agent_collaboration_operation.up.sql", want: "CREATE TABLE IF NOT EXISTS"},
+		{file: "900600_agent_collaboration_operation_key.up.sql", want: "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS"},
+		{file: "900601_agent_collaboration_operation_id.up.sql", want: "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS"},
+		{file: "900602_agent_collaboration_operation_target.up.sql", want: "CREATE INDEX CONCURRENTLY IF NOT EXISTS"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(dir, tt.file))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), tt.want) {
+				t.Fatalf("migration %s must contain %q so a partially-applied DDL can be recovered", tt.file, tt.want)
+			}
+		})
 	}
 }
 

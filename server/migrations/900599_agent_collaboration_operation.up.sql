@@ -1,7 +1,7 @@
 -- Durable command receipts for Agent-to-Agent collaboration. The row is only
 -- metadata and references existing comments/Runs; it is not a second queue or
 -- transcript. Effects are inserted in the same transaction as this row.
-CREATE TABLE agent_collaboration_operation (
+CREATE TABLE IF NOT EXISTS agent_collaboration_operation (
     id UUID NOT NULL,
     workspace_id UUID NOT NULL,
     actor_type TEXT NOT NULL CHECK (actor_type IN ('member', 'agent', 'system')),
