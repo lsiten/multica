@@ -62,7 +62,13 @@ func (h *Handler) rpcClaimTasks(ctx context.Context, identity daemonws.ClientIde
 	// via membership from X-User-ID instead, so we must NOT set a single-
 	// workspace daemon context there (it would reject the daemon's other
 	// workspaces).
-	if identity.DaemonID != "" {
+	// DaemonID is also populated for user-credential WebSocket connections so
+	// the server can route the connection's runtime set. It is therefore not a
+	// credential discriminator: only DaemonTokenHash proves that DaemonAuth
+	// authenticated an mdt_ token. Treating a PAT connection as a daemon token
+	// installs an empty token-owner context and silently filters every runtime
+	// out of the reused HTTP claim handler.
+	if identity.DaemonTokenHash != "" {
 		reqCtx = middleware.WithDaemonContext(reqCtx, identity.PrimaryWorkspaceID(), identity.DaemonID)
 		// Carry the connection's credential so per-call revocation checks
 		// (Qoder) validate the real token instead of an empty header.

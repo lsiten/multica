@@ -4,60 +4,96 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/multica-ai/multica/server/internal/daemonws"
+	"github.com/multica-ai/multica/server/internal/testutil"
 )
 
-// TestDaemonRPCHandler_TasksClaim pins the WS-first claim binding (MUL-4257):
-// a tasks.claim RPC, driven with the WS connection's identity, reuses the HTTP
-// claim handler and claims a queued task for the daemon's runtime.
-func TestDaemonRPCHandler_TasksClaim(t *testing.T) {
+// TestDaemonRPCHandler_UserCredentialClaimsAcrossWorkspaces pins the WS-first
+// claim binding (MUL-4257): a PAT-authenticated tasks.claim RPC, driven with
+// the real WebSocket identity builder, reuses the HTTP claim handler and
+// claims queued tasks across the owner's workspaces.
+func TestDaemonRPCHandler_UserCredentialClaimsAcrossWorkspaces(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
-	rt := createClaimReclaimRuntime(t, ctx, "WS claim rt")
-	a, i := createClaimReclaimAgentAndIssue(t, ctx, rt, "WS claim agent")
-	taskID := seedQueuedIssueTask(t, ctx, a, rt, i)
+	daemonID := "ws-user-" + uuid.NewString()
+	otherWorkspace := dbfx.Workspace(t, "WS user's second workspace", "ws-user-"+uuid.NewString())
+	dbfx.Member(t, otherWorkspace, testUserID, "member")
+	fixtures := []*testutil.Fixture{dbfx, testutil.New(testPool, otherWorkspace, testUserID)}
+	runtimeIDs := make([]string, len(fixtures))
+	for index, fixture := range fixtures {
+		runtimeIDs[index] = fixture.Runtime(t, "WS user runtime", testutil.Cols{"daemon_id": daemonID})
+	}
+	w := httptest.NewRecorder()
+	identity, ok := testHandler.buildDaemonWebSocketIdentity(w,
+		newOwnerDaemonRequest(http.MethodGet, "/api/daemon/ws", nil), runtimeIDs, testUserID)
+	if !ok {
+		t.Fatalf("user websocket handshake failed: %d %s", w.Code, w.Body.String())
+	}
+	for index, fixture := range fixtures {
+		for _, transport := range []string{"http", "websocket"} {
+			t.Run(fixture.WorkspaceID+"/"+transport, func(t *testing.T) {
+				runtimeID := runtimeIDs[index]
+				agentID := fixture.Agent(t, "WS claim agent", runtimeID)
+				issueID := fixture.Issue(t, "WS claim issue")
+				taskID := fixture.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID})
+				body := map[string]any{"daemon_id": daemonID, "runtime_ids": runtimeIDs, "max_tasks": 5, "force_claim": true}
+				var response batchClaimReceiptResponse
+				if transport == "http" {
+					testutil.Call(t, testHandler.ClaimTasksByRuntime,
+						newOwnerDaemonRequest(http.MethodPost, "/api/daemon/tasks/claim", body)).Want(http.StatusOK).JSON(&response)
+				} else {
+					requestBody, err := json.Marshal(body)
+					if err != nil {
+						t.Fatal(err)
+					}
+					status, responseBody, err := testHandler.DaemonRPCHandler(ctx, identity, "tasks.claim", requestBody)
+					if err != nil || status != http.StatusOK {
+						t.Fatalf("RPC claim: status=%d err=%v body=%s", status, err, responseBody)
+					}
+					if err := json.Unmarshal(responseBody, &response); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if len(response.Tasks) != 1 || response.Tasks[0].ID != taskID || response.Tasks[0].RuntimeID != runtimeID {
+					t.Fatalf("claimed %+v, want queued task %s on runtime %s", response.Tasks, taskID, runtimeID)
+				}
+				if got := taskStatusOf(t, taskID); got != "dispatched" {
+					t.Fatalf("task status = %q, want dispatched", got)
+				}
+			})
+		}
+	}
+}
 
+func TestDaemonRPCHandler_UnboundDaemonTokenCannotUseUserIdentity(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	daemonID := "ws-unbound-" + uuid.NewString()
+	runtimeID := dbfx.Runtime(t, "WS unbound token runtime", testutil.Cols{"daemon_id": daemonID})
+	agentID := dbfx.Agent(t, "WS unbound token agent", runtimeID)
+	issueID := dbfx.Issue(t, "WS unbound token issue")
+	taskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "issue_id": issueID})
 	identity := daemonws.ClientIdentity{
-		// User-credential connection (the runtime owner): no daemon id.
-		UserID:       testUserID,
-		WorkspaceID:  testWorkspaceID,
-		WorkspaceIDs: []string{testWorkspaceID},
-		RuntimeIDs:   []string{rt},
+		DaemonID: daemonID, DaemonTokenHash: "unbound-token-hash", UserID: testUserID,
+		WorkspaceID: testWorkspaceID, RuntimeIDs: []string{runtimeID},
 	}
-	body, _ := json.Marshal(map[string]any{
-		"daemon_id":   "ws-daemon",
-		"runtime_ids": []string{rt},
-		"max_tasks":   5,
-	})
-
-	status, respBody, err := testHandler.DaemonRPCHandler(ctx, identity, "tasks.claim", body)
+	body, err := json.Marshal(map[string]any{"daemon_id": daemonID, "runtime_ids": []string{runtimeID}, "max_tasks": 1, "force_claim": true})
 	if err != nil {
-		t.Fatalf("DaemonRPCHandler: %v", err)
+		t.Fatal(err)
 	}
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", status, string(respBody))
+	status, response, err := testHandler.DaemonRPCHandler(context.Background(), identity, "tasks.claim", body)
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("RPC claim: status=%d err=%v body=%s", status, err, response)
 	}
-	var resp batchClaimReceiptResponse
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(resp.Tasks) != 1 || resp.Tasks[0].ID != taskID {
-		t.Fatalf("claimed %+v, want the queued task %s", resp.Tasks, taskID)
-	}
-	if resp.Tasks[0].RuntimeID != rt {
-		t.Fatalf("claimed runtime = %s, want %s", resp.Tasks[0].RuntimeID, rt)
-	}
-
-	var dbStatus string
-	if err := testPool.QueryRow(ctx, `SELECT status FROM agent_task_queue WHERE id = $1`, taskID).Scan(&dbStatus); err != nil {
-		t.Fatalf("read status: %v", err)
-	}
-	if dbStatus != "dispatched" {
-		t.Fatalf("task status = %s, want dispatched", dbStatus)
+	if got := taskStatusOf(t, taskID); got != "queued" {
+		t.Fatalf("unbound daemon credential claimed owner's task: status=%q", got)
 	}
 }
 
