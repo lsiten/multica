@@ -535,6 +535,28 @@ describe("Attachment — image dispatch", () => {
     expect(getAttachmentMock).toHaveBeenCalledWith(id);
   });
 
+  it("does not render an auth-gated URL while inline media is being re-signed", () => {
+    getBaseUrlMock.mockReturnValue("https://multica-api.copilothub.ai");
+    const id = "11111111-2222-3333-4444-555555555555";
+    const markdownUrl = `https://multica-api.copilothub.ai/api/attachments/${id}/download`;
+    getAttachmentMock.mockImplementation(() => new Promise(() => {}));
+
+    renderWithQuery(
+      <Attachment
+        attachment={{
+          kind: "url",
+          url: markdownUrl,
+          filename: "shot.png",
+          forceKind: "image",
+        }}
+      />,
+    );
+
+    const image = document.querySelector("img");
+    expect(image?.getAttribute("src")).toBeNull();
+    expect(image?.closest(".image-figure")?.hasAttribute("data-pending")).toBe(true);
+  });
+
   it("falls back to an authenticated byte fetch when the deployment has no signed URL (MUL-5445)", async () => {
     // Proxy download mode — the default `auto` classification for a storage
     // endpoint on an internal host (docker-compose MinIO). GET
@@ -1250,19 +1272,23 @@ describe("Attachment — blob URL GC (MUL-7741)", () => {
         <Attachment attachment={{ kind: "url", url: markdownUrl, filename: "d.png", forceKind: "image" }} />
       </QueryClientProvider>,
     );
-    await new Promise((r) => setTimeout(r, 20));
-    expect(document.querySelector("img")?.getAttribute("src")).toBe(markdownUrl);
-    expect(document.querySelector("img")?.getAttribute("src")).not.toBe(OBJECT_URL);
+    await waitFor(() => expect(getAttachmentMock).toHaveBeenCalledTimes(2));
+    // Keep the previous account's private blob out of the DOM while the new
+    // account's authenticated metadata request is still pending.
+    expect(document.querySelector("img")?.getAttribute("src")).toBeNull();
     expect(getAttachmentBlobMock).not.toHaveBeenCalled();
     unmountB();
     getAttachmentMock.mockRejectedValue(new Error("forbidden"));
     const qcB2 = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const callsBeforeSecondAccount = getAttachmentMock.mock.calls.length;
     const { unmount: unmountB2 } = render(
       <QueryClientProvider client={qcB2}>
         <Attachment attachment={{ kind: "url", url: markdownUrl, filename: "d.png", forceKind: "image" }} />
       </QueryClientProvider>,
     );
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() =>
+      expect(getAttachmentMock).toHaveBeenCalledTimes(callsBeforeSecondAccount + 1),
+    );
     expect(document.querySelector("img")?.getAttribute("src")).not.toBe(OBJECT_URL);
     expect(getAttachmentBlobMock).not.toHaveBeenCalled();
     unmountB2();

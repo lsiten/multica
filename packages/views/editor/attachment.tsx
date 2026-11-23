@@ -322,11 +322,17 @@ export function Attachment({
   // on deployments that have no signed URL to give — to an object URL built
   // from the authenticated byte fetch. Only the image branch renders a native
   // resource load, so only it opts into that byte fetch.
-  const { url: mediaUrl } = useResignedInlineMedia(
+  const { url: mediaUrl, pending: mediaPending } = useResignedInlineMedia(
     state.attachmentId,
     state.url,
     kind === "image",
   );
+  // Stable attachment paths need an authenticated metadata exchange on
+  // split-origin web, desktop, and mobile clients. Do not hand that path to a
+  // native <img> while the exchange is pending: it cannot attach the API
+  // credentials and briefly paints a broken image before the signed URL or
+  // authenticated blob is ready.
+  const renderMediaUrl = mediaPending ? "" : mediaUrl;
   // Object URLs are session-local, so anything that hands a URL to the user or
   // to another surface keeps the durable pick instead.
   const shareUrl = isObjectURL(mediaUrl) ? state.url : mediaUrl;
@@ -421,7 +427,7 @@ export function Attachment({
     return (
       <>
         <ImageAttachmentView
-          src={mediaUrl}
+          src={renderMediaUrl}
           linkUrl={shareUrl}
           alt={state.filename}
           uploading={state.uploading}
