@@ -102,6 +102,7 @@ export function createVscreenApi(
         ? {
             iceServers: result.ice_servers,
             turnConfigured: result.turn_configured,
+          iceTransportPolicy: result.ice_transport_policy,
           }
         : null;
     },

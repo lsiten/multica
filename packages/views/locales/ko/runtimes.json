@@ -2848,6 +2848,7 @@
     "network_poor": "연결 나쁨",
     "measuring": "측정 중…",
     "packet_loss": "손실",
+    "candidate_type": "경로",
     "negotiated_quality": "협상된 화질",
     "rotate_hint": "기기를 가로로 돌리면 화면을 더 넓게 볼 수 있습니다",
     "gesture_hint": "탭하여 클릭하고, 드래그하여 이동하며, 스크롤하여 휠을 사용하고, 두 손가락으로 이동하거나 확대할 수 있습니다.",

@@ -35,6 +35,7 @@ export function useVideoSession(
   const [autoRetry, setAutoRetry] = useState(0);
   const autoRetryAttempt = useRef(0);
   const autoRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const stableConnectionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sessionRef = useRef<MirrorVideoSession | null>(null);
   const closing = useRef(Promise.resolve());
   const identity = JSON.stringify([
@@ -74,10 +75,17 @@ export function useVideoSession(
               if (active) {
                 setStatus({ state, reason });
                 if (state === "decoding" || state === "streaming") {
-                  autoRetryAttempt.current = 0;
-                  setRetryAttempt(0);
-                  setRetryAt(null);
-                  setReconnecting(false);
+                  clearTimeout(stableConnectionTimer.current);
+                  stableConnectionTimer.current = setTimeout(() => {
+                    stableConnectionTimer.current = undefined;
+                    autoRetryAttempt.current = 0;
+                    setRetryAttempt(0);
+                    setRetryAt(null);
+                    setReconnecting(false);
+                  }, 10_000);
+                } else if (state === "failed") {
+                  clearTimeout(stableConnectionTimer.current);
+                  stableConnectionTimer.current = undefined;
                 }
               }
             },
@@ -108,6 +116,8 @@ export function useVideoSession(
       active = false;
       clearTimeout(autoRetryTimer.current);
       autoRetryTimer.current = undefined;
+      clearTimeout(stableConnectionTimer.current);
+      stableConnectionTimer.current = undefined;
       sessionRef.current = null;
       closing.current = session?.close() ?? Promise.resolve();
     };
@@ -135,7 +145,8 @@ export function useVideoSession(
     }
     const attempt = autoRetryAttempt.current;
     autoRetryAttempt.current += 1;
-    const delay = Math.min(1_000 * 2 ** Math.min(attempt, 4), 16_000);
+    const backoff = Math.min(1_000 * 2 ** Math.min(attempt, 4), 16_000);
+    const delay = Math.max(1_000, Math.round(backoff * (0.75 + Math.random() * 0.5)));
     setRetryAttempt(attempt + 1);
     setRetryAt(Date.now() + delay);
     setReconnecting(true);

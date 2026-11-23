@@ -143,9 +143,14 @@ const MIRROR_ICE_SERVER_LIST_SCHEMA = z.array(z.unknown()).transform((servers) =
 export const MirrorICEConfigSchema = z.object({
   ice_servers: MIRROR_ICE_SERVER_LIST_SCHEMA.default([]),
   turn_configured: z.boolean().default(false),
+  ice_transport_policy: z.enum(["all", "relay"]).default("all"),
 }).loose();
 
-export const EMPTY_MIRROR_ICE_CONFIG = { ice_servers: [], turn_configured: false };
+export const EMPTY_MIRROR_ICE_CONFIG = {
+  ice_servers: [],
+  turn_configured: false,
+  ice_transport_policy: "all" as const,
+};
 
 const MIRROR_NETWORK_URL_LIST_SCHEMA = z.array(z.unknown()).transform((urls) =>
   urls.filter((value): value is string => typeof value === "string" && value.trim() !== ""),
@@ -165,6 +170,7 @@ export const BuiltinMirrorNetworkSchema = z.object({
   available: z.boolean().default(false),
   host: z.string().optional(),
   port: z.number().int().positive().optional(),
+  tls_port: z.number().int().positive().optional(),
   transports: z.array(z.string()).optional(),
   credential_ttl_seconds: z.number().int().positive().optional(),
 }).loose();
@@ -184,6 +190,7 @@ export const MirrorNetworkSettingsSchema = z.object({
   can_manage: z.boolean().default(false),
   turn_configured: z.boolean().default(false),
   mode: z.enum(["builtin", "custom", "disabled"]).default("builtin"),
+  transport_policy: z.enum(["all", "relay"]).default("all"),
   viewer_notifications_enabled: z.boolean().default(true),
   cloudflare: CloudflareMirrorNetworkSchema.default({
     enabled: false,
@@ -210,6 +217,7 @@ export const EMPTY_MIRROR_NETWORK_SETTINGS: MirrorNetworkSettings = {
   can_manage: false,
   turn_configured: false,
   mode: "builtin",
+  transport_policy: "all",
   viewer_notifications_enabled: true,
   cloudflare: {
     enabled: false,

@@ -10,7 +10,10 @@ import (
 	"github.com/multica-ai/multica/server/internal/mirror"
 )
 
-const mirrorICEEnvVar = "MULTICA_MIRROR_ICE_SERVERS"
+const (
+	mirrorICEEnvVar       = "MULTICA_MIRROR_ICE_SERVERS"
+	mirrorICEPolicyEnvVar = "MULTICA_MIRROR_ICE_TRANSPORT_POLICY"
+)
 
 type mirrorICEServerWire struct {
 	URLs       json.RawMessage `json:"urls"`
@@ -24,14 +27,27 @@ type mirrorICEServerWire struct {
 func LoadMirrorICEPlanFromEnv() mirror.ICEPlan {
 	raw := strings.TrimSpace(os.Getenv(mirrorICEEnvVar))
 	if raw == "" {
-		return mirror.ICEPlan{}
+		return mirror.ICEPlan{TransportPolicy: configuredMirrorICEPolicy()}
 	}
 	plan, err := ParseMirrorICEPlan(raw)
 	if err != nil {
 		slog.Warn("mirror ICE configuration disabled", "env", mirrorICEEnvVar, "error", err)
 		return mirror.ICEPlan{}
 	}
+	plan.TransportPolicy = configuredMirrorICEPolicy()
 	return plan
+}
+
+func configuredMirrorICEPolicy() string {
+	policy := strings.TrimSpace(os.Getenv(mirrorICEPolicyEnvVar))
+	if policy == "" {
+		return ""
+	}
+	if !mirror.KnownTransportPolicy(policy) {
+		slog.Warn("mirror ICE transport policy is invalid; using all", "env", mirrorICEPolicyEnvVar, "value", policy)
+		return mirror.NetworkTransportPolicyAll
+	}
+	return policy
 }
 
 func ParseMirrorICEPlan(raw string) (mirror.ICEPlan, error) {

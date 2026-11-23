@@ -10,7 +10,13 @@ data:
     listening-port=3478
     fingerprint
     no-cli
+    {{- if not .Values.turn.tls.enabled }}
     no-tls
+    {{- else }}
+    tls-listening-port={{ .Values.turn.tlsPort }}
+    cert=/etc/coturn/tls/{{ .Values.turn.tls.certKey }}
+    pkey=/etc/coturn/tls/{{ .Values.turn.tls.keyKey }}
+    {{- end }}
     no-dtls
     no-multicast-peers
     no-tlsv1

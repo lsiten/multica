@@ -74,5 +74,8 @@ export function waitForUsableIceCandidates(
 }
 
 export function peerConfiguration(config: MirrorICEConfig): RTCConfiguration {
-  return { iceServers: peerIceServers(config.ice_servers) };
+	return {
+		iceServers: peerIceServers(config.ice_servers),
+		iceTransportPolicy: config.ice_transport_policy === "relay" ? "relay" : "all",
+	};
 }

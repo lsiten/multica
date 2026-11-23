@@ -12,8 +12,9 @@ type ICEServer struct {
 }
 
 type ICEPlan struct {
-	ICEServers     []ICEServer `json:"ice_servers"`
-	TURNConfigured bool        `json:"turn_configured"`
+	ICEServers      []ICEServer `json:"ice_servers"`
+	TURNConfigured  bool        `json:"turn_configured"`
+	TransportPolicy string      `json:"transport_policy"`
 }
 
 func (plan ICEPlan) Protocol() protocol.MirrorICEConfig {
@@ -25,7 +26,15 @@ func (plan ICEPlan) Protocol() protocol.MirrorICEConfig {
 			Credential: server.Credential,
 		})
 	}
-	return protocol.MirrorICEConfig{ICEServers: servers, TURNConfigured: plan.TURNConfigured}
+	policy := plan.TransportPolicy
+	if !KnownTransportPolicy(policy) {
+		policy = NetworkTransportPolicyAll
+	}
+	return protocol.MirrorICEConfig{
+		ICEServers:         servers,
+		TURNConfigured:     plan.TURNConfigured,
+		ICETransportPolicy: policy,
+	}
 }
 
 // ICEConfigFromProtocol converts the control-plane ICE configuration into the
@@ -43,5 +52,9 @@ func ICEConfigFromProtocol(config protocol.MirrorICEConfig) ICEConfig {
 			Credential: server.Credential,
 		})
 	}
-	return ICEConfig{ICEServers: servers}
+	policy := config.ICETransportPolicy
+	if !KnownTransportPolicy(policy) {
+		policy = NetworkTransportPolicyAll
+	}
+	return ICEConfig{ICEServers: servers, TransportPolicy: policy}
 }

@@ -26,12 +26,13 @@ var (
 // Servers and ICEServers are accepted as equivalent spellings so callers can
 // use either the concise configuration form or the Pion-shaped form.
 type ICEConfig struct {
-	Servers        []string           `json:"servers,omitempty"`
-	ICEServers     []webrtc.ICEServer `json:"iceServers,omitempty"`
-	STUNServers    []string           `json:"stunServers,omitempty"`
-	TURNServers    []string           `json:"turnServers,omitempty"`
-	TURNUsername   string             `json:"turnUsername,omitempty"`
-	TURNCredential string             `json:"turnCredential,omitempty"`
+	Servers         []string           `json:"servers,omitempty"`
+	ICEServers      []webrtc.ICEServer `json:"iceServers,omitempty"`
+	STUNServers     []string           `json:"stunServers,omitempty"`
+	TURNServers     []string           `json:"turnServers,omitempty"`
+	TURNUsername    string             `json:"turnUsername,omitempty"`
+	TURNCredential  string             `json:"turnCredential,omitempty"`
+	TransportPolicy string             `json:"transportPolicy,omitempty"`
 }
 
 func (c ICEConfig) Pion() webrtc.Configuration {
@@ -49,7 +50,11 @@ func (c ICEConfig) Pion() webrtc.Configuration {
 			Credential: c.TURNCredential,
 		})
 	}
-	return webrtc.Configuration{ICEServers: iceServers}
+	policy := webrtc.ICETransportPolicyAll
+	if c.TransportPolicy == "relay" {
+		policy = webrtc.ICETransportPolicyRelay
+	}
+	return webrtc.Configuration{ICEServers: iceServers, ICETransportPolicy: policy}
 }
 
 // SessionDescription is the JSON-safe SDP representation used by the daemon

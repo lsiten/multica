@@ -253,6 +253,7 @@ describe("ApiClient runtime mirror ICE compatibility", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(endpoint);
     expect(config).toEqual({
       turn_configured: true,
+      ice_transport_policy: "all",
       ice_servers: [{ urls: ["turn:turn.example.com:3478"], username: "viewer", credential: "secret" }],
     });
   });

@@ -2848,6 +2848,7 @@
     "network_poor": "接続不良",
     "measuring": "計測中…",
     "packet_loss": "損失",
+    "candidate_type": "経路",
     "negotiated_quality": "確定した画質",
     "rotate_hint": "端末を横向きにすると画面を広く表示できます",
     "gesture_hint": "タップでクリック、ドラッグで移動、スクロールでホイール操作、2本指でパンまたはピンチできます。",

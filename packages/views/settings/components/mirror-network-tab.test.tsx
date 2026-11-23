@@ -22,6 +22,7 @@ function settings(over: Partial<MirrorNetworkSettings> = {}): MirrorNetworkSetti
     can_manage: true,
     turn_configured: true,
     mode: "builtin",
+    transport_policy: "all",
     viewer_notifications_enabled: true,
     cloudflare: {
       enabled: false,
@@ -112,6 +113,7 @@ describe("MirrorNetworkTab", () => {
     await waitFor(() =>
       expect(mockMutate).toHaveBeenCalledWith({
         mode: "builtin",
+        transport_policy: "all",
         viewer_notifications_enabled: true,
       }),
     );
@@ -138,6 +140,7 @@ describe("MirrorNetworkTab", () => {
     await waitFor(() =>
       expect(mockMutate).toHaveBeenCalledWith({
         mode: "custom",
+        transport_policy: "all",
         servers: [
           {
             urls: [
@@ -189,6 +192,7 @@ describe("MirrorNetworkTab", () => {
     // The credential field is omitted so the server preserves the secret.
     expect(mockMutate).toHaveBeenCalledWith({
       mode: "custom",
+      transport_policy: "all",
       servers: [
         {
           urls: ["turn:turn.example.com:3478?transport=udp"],
@@ -206,7 +210,23 @@ describe("MirrorNetworkTab", () => {
     await waitFor(() =>
       expect(mockMutate).toHaveBeenCalledWith({
         mode: "builtin",
+        transport_policy: "all",
         viewer_notifications_enabled: false,
+      }),
+    );
+  });
+
+  it("saves the relay-only transport policy", async () => {
+    render(<MirrorNetworkTab />, { wrapper: Wrapper });
+    fireEvent.change(screen.getByLabelText("Transport policy"), {
+      target: { value: "relay" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockMutate).toHaveBeenCalledWith({
+        mode: "builtin",
+        transport_policy: "relay",
+        viewer_notifications_enabled: true,
       }),
     );
   });

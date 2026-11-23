@@ -1125,6 +1125,7 @@ export function MirrorSurface({
               <div className="rounded-md border p-2"><dt className="text-muted-foreground">{t(($) => $.vscreen.mbps)}</dt><dd className="text-body font-medium tabular-nums">{((statistics?.bitsPerSecond ?? quality?.bitrate ?? 0) / 1_000_000).toFixed(1)}</dd></div>
               <div className="rounded-md border p-2"><dt className="text-muted-foreground">{t(($) => $.vscreen.rtt)}</dt><dd className="text-body font-medium tabular-nums">{t(($) => $.vscreen.milliseconds, { value: Math.round(statistics?.roundTripTimeMs ?? 0) })}</dd></div>
               <div className="rounded-md border p-2"><dt className="text-muted-foreground">{t(($) => $.vscreen.packet_loss)}</dt><dd className="text-body font-medium tabular-nums">{(statistics?.packetLossPercent ?? 0).toFixed(1)}%</dd></div>
+              <div className="rounded-md border p-2"><dt className="text-muted-foreground">{t(($) => $.vscreen.candidate_type)}</dt><dd className="text-body font-medium">{statistics?.candidateType ?? "—"}</dd></div>
             </dl>
             <section>
               <h3 className="font-semibold">{t(($) => $.vscreen.negotiated_quality)}</h3>

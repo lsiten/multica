@@ -51,6 +51,50 @@ func TestBuiltinTURNPlanMintsShortLivedCredentials(t *testing.T) {
 	}
 }
 
+func TestBuiltinTURNPlanIncludesConfiguredTLSAndSkipsUnknownTransports(t *testing.T) {
+	plan := (BuiltinTURNConfig{
+		Enabled:    true,
+		Host:       "turn.example.com",
+		Port:       3478,
+		TLSPort:    443,
+		Secret:     "secret",
+		TTL:        time.Hour,
+		Transports: []string{"udp", "tls", "bogus"},
+	}).Plan(time.Unix(1_800_000_000, 0), "viewer")
+
+	want := []string{
+		"stun:turn.example.com:3478",
+		"turn:turn.example.com:3478?transport=udp",
+		"turns:turn.example.com:443?transport=tcp",
+	}
+	if got := plan.ICEServers[0].URLs; len(got) != len(want) {
+		t.Fatalf("urls = %v, want %v", got, want)
+	} else {
+		for index := range want {
+			if got[index] != want[index] {
+				t.Fatalf("urls[%d] = %q, want %q", index, got[index], want[index])
+			}
+		}
+	}
+}
+
+func TestResolveNetworkPlanUsesWorkspaceRelayPolicy(t *testing.T) {
+	plan, source := ResolveNetworkPlan(
+		NetworkSettings{Mode: NetworkModeCustom, TransportPolicy: NetworkTransportPolicyRelay},
+		ICEPlan{},
+		BuiltinTURNConfig{},
+		[]ICEServer{{URLs: []string{"turn:turn.example.com:3478"}}},
+		time.Unix(1_800_000_000, 0),
+		"viewer",
+	)
+	if source != NetworkSourceCustom {
+		t.Fatalf("source = %q, want %q", source, NetworkSourceCustom)
+	}
+	if plan.TransportPolicy != NetworkTransportPolicyRelay {
+		t.Fatalf("transport policy = %q, want %q", plan.TransportPolicy, NetworkTransportPolicyRelay)
+	}
+}
+
 func TestResolveNetworkPlanPrecedence(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	builtin := BuiltinTURNConfig{Enabled: true, Host: "turn.example.com", Port: 3478, Secret: "secret", TTL: time.Hour}

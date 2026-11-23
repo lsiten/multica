@@ -26,6 +26,10 @@ data:
   MULTICA_VCS_INTEGRATION_ENABLED: {{ .Values.backend.config.vcsIntegrationEnabled | quote }}
   MULTICA_TURN_ENABLED: {{ .Values.turn.enabled | quote }}
   MULTICA_TURN_PUBLIC_HOST: {{ .Values.turn.publicHost | quote }}
+  MULTICA_TURN_TRANSPORTS: {{ .Values.turn.transports | quote }}
+  MULTICA_TURN_TLS_PORT: {{ .Values.turn.tlsPort | quote }}
+  MULTICA_TURN_TLS_ENABLED: {{ .Values.turn.tls.enabled | quote }}
+  MULTICA_MIRROR_ICE_TRANSPORT_POLICY: {{ .Values.turn.transportPolicy | quote }}
   MULTICA_TURN_PORT: {{ .Values.turn.service.port | quote }}
   MULTICA_TURN_CREDENTIAL_TTL: {{ .Values.turn.credentialTTL | quote }}
   MULTICA_CLOUDFLARE_TURN_KEY_ID: {{ .Values.turn.cloudflare.keyId | quote }}

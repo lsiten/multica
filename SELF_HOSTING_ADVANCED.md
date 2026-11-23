@@ -520,6 +520,38 @@ cd apps/web
 REMOTE_API_URL=http://localhost:8080 pnpm start
 ```
 
+## Screen mirror network
+
+Screen mirroring sends pixels directly between the browser and the runtime with
+WebRTC. The HTTP reverse proxy only carries signaling, so proxying `/ws` cannot
+replace a TURN relay. For clients behind a corporate proxy or VPN, use a TURN
+server that exposes TCP/TLS on port 443 and set the workspace transport policy
+to **Force TURN relay** in Settings → Screen mirroring.
+
+The built-in coturn relay is configured with:
+
+```bash
+MULTICA_TURN_ENABLED=true
+MULTICA_TURN_PUBLIC_HOST=turn.example.com
+MULTICA_TURN_TRANSPORTS=udp,tcp,tls
+MULTICA_TURN_TLS_PORT=443
+MULTICA_TURN_TLS_ENABLED=true
+MULTICA_MIRROR_ICE_TRANSPORT_POLICY=relay   # force TURN globally; omit for workspace control
+```
+
+When `tls` is enabled, mount a certificate and private key at
+`/etc/coturn/tls/tls.crt` and `/etc/coturn/tls/tls.key` for Compose, or set
+`turn.tls.enabled=true` and provide `turn.tls.secretName` in Helm. Open 3478
+UDP/TCP, the configured TLS port, and the full relay UDP range in the firewall.
+Cloudflare Realtime TURN is an alternative that supplies TLS-capable relay
+URLs without running coturn.
+
+For multiple deployment-managed relays, set `MULTICA_MIRROR_ICE_SERVERS` to a
+JSON array of ICE server objects. The backend combines configured Cloudflare,
+coturn, and deployment relays and removes duplicates. Workspace owners can
+choose between direct-first and relay-only policies unless deployment ICE is
+locked with that environment variable.
+
 ## Reverse Proxy
 
 In production, put a reverse proxy in front of both the backend and frontend to handle TLS and routing.

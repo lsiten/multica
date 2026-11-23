@@ -6,7 +6,8 @@ function report(input: { timestamp: number; bytesReceived?: number; framesDecode
   return new Map<string, unknown>([
     ["video", { type: "inbound-rtp", kind: "video", id: "video", transportId: "transport", ...input }],
     ["transport", { type: "transport", selectedCandidatePairId: "selected" }],
-    ["selected", { type: "candidate-pair", state: "succeeded", currentRoundTripTime: 0.025 }],
+    ["selected", { type: "candidate-pair", state: "succeeded", localCandidateId: "local", currentRoundTripTime: 0.025 }],
+    ["local", { type: "local-candidate", candidateType: "relay" }],
     ["unselected", { type: "candidate-pair", state: "succeeded", currentRoundTripTime: 9 }],
   ]);
 }
@@ -22,7 +23,7 @@ it("reports received bitrate, decoded frames, interval loss and the selected tra
     .mockResolvedValue(report({ timestamp: 3000, bytesReceived: 501000, framesDecoded: 50, packetsReceived: 198, packetsLost: 4 })) };
   observeMirrorVideoStats(peer, controller.signal, publish);
   await vi.advanceTimersByTimeAsync(1000);
-  expect(publish).toHaveBeenLastCalledWith({ framesPerSecond: 20, bitsPerSecond: 2_000_000, packetLossPercent: 2, roundTripTimeMs: 25 });
+  expect(publish).toHaveBeenLastCalledWith({ framesPerSecond: 20, bitsPerSecond: 2_000_000, packetLossPercent: 2, roundTripTimeMs: 25, candidateType: "relay" });
   controller.abort();
 });
 
@@ -38,7 +39,7 @@ it("resets rates across stream identity or counter resets and keeps missing metr
   observeMirrorVideoStats(peer, controller.signal, publish);
   for (let sample = 0; sample < 3; sample++) {
     await vi.advanceTimersByTimeAsync(1000);
-    expect(publish).toHaveBeenLastCalledWith({ framesPerSecond: null, bitsPerSecond: null, packetLossPercent: null, roundTripTimeMs: 25 });
+    expect(publish).toHaveBeenLastCalledWith({ framesPerSecond: null, bitsPerSecond: null, packetLossPercent: null, roundTripTimeMs: 25, candidateType: "relay" });
   }
   controller.abort();
 });
@@ -72,7 +73,7 @@ it("clears unavailable statistics and resumes with a fresh counter baseline", as
   await vi.advanceTimersByTimeAsync(1000);
   expect(publish).toHaveBeenLastCalledWith(null);
   await vi.advanceTimersByTimeAsync(1000);
-  expect(publish).toHaveBeenLastCalledWith({ framesPerSecond: null, bitsPerSecond: null, packetLossPercent: null, roundTripTimeMs: 25 });
+  expect(publish).toHaveBeenLastCalledWith({ framesPerSecond: null, bitsPerSecond: null, packetLossPercent: null, roundTripTimeMs: 25, candidateType: "relay" });
   expect(warning).toHaveBeenCalledWith("Mirror video statistics unavailable", { name: "InvalidStateError" });
   controller.abort();
   warning.mockRestore();

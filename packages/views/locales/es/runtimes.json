@@ -2962,6 +2962,7 @@
     "network_poor": "Conexión deficiente",
     "measuring": "Midiendo…",
     "packet_loss": "Pérdida",
+    "candidate_type": "Ruta",
     "negotiated_quality": "Calidad negociada",
     "rotate_hint": "Gira el dispositivo para ampliar el lienzo",
     "gesture_hint": "Toca para hacer clic, arrastra para mover, desplázate para usar la rueda y usa dos dedos para desplazar o ampliar.",

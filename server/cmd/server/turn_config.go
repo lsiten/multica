@@ -14,6 +14,7 @@ import (
 
 func loadBuiltinTURNConfig() mirror.BuiltinTURNConfig {
 	port := envPositiveInt("MULTICA_TURN_PORT", 3478)
+	tlsPort := envPositiveInt("MULTICA_TURN_TLS_PORT", 443)
 	ttl := envDuration("MULTICA_TURN_CREDENTIAL_TTL", time.Hour)
 	secret := strings.TrimSpace(os.Getenv("MULTICA_TURN_SECRET"))
 	if secret == "" {
@@ -27,14 +28,40 @@ func loadBuiltinTURNConfig() mirror.BuiltinTURNConfig {
 		Enabled:    strings.EqualFold(strings.TrimSpace(os.Getenv("MULTICA_TURN_ENABLED")), "true"),
 		Host:       turnPublicHost(),
 		Port:       port,
+		TLSPort:    tlsPort,
 		Secret:     secret,
 		TTL:        ttl,
-		Transports: []string{"udp", "tcp"},
+		Transports: configuredTURNTransports(),
 	}
 	if config.Enabled && !config.Configured() {
 		slog.Warn("screen mirror built-in TURN is enabled but unusable: set MULTICA_TURN_PUBLIC_HOST to the server's public hostname or IP (localhost is ignored) so peers across restrictive networks can relay")
 	}
 	return config
+}
+
+func configuredTURNTransports() []string {
+	transports := splitAndTrim(os.Getenv("MULTICA_TURN_TRANSPORTS"))
+	if len(transports) == 0 {
+		return []string{"udp", "tcp"}
+	}
+	tlsEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("MULTICA_TURN_TLS_ENABLED")), "true")
+	configured := make([]string, 0, len(transports))
+	for _, raw := range transports {
+		transport := strings.ToLower(strings.TrimSpace(raw))
+		if transport == "tls" || transport == "turns" {
+			if tlsEnabled {
+				configured = append(configured, "tls")
+			}
+			continue
+		}
+		if transport == "udp" || transport == "tcp" {
+			configured = append(configured, transport)
+		}
+	}
+	if len(configured) == 0 {
+		return []string{"udp", "tcp"}
+	}
+	return configured
 }
 
 func loadCloudflareTURNConfig() mirror.CloudflareTURNConfig {

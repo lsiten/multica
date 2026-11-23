@@ -32,6 +32,15 @@ describe("mirror peer ICE helpers", () => {
     expect(config.iceServers).toEqual([
       { urls: ["turn:turn.example"], username: undefined, credential: undefined },
     ]);
+    expect(config.iceTransportPolicy).toBe("all");
+  });
+
+  it("forces relay candidates when the deployment policy requires it", () => {
+    expect(peerConfiguration({
+      ice_servers: [],
+      turn_configured: true,
+      ice_transport_policy: "relay",
+    }).iceTransportPolicy).toBe("relay");
   });
 
   it("resolves when candidate gathering completes", async () => {

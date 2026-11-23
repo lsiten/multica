@@ -31,6 +31,7 @@ type mirrorBuiltinNetworkResponse struct {
 	Available            bool     `json:"available"`
 	Host                 string   `json:"host,omitempty"`
 	Port                 int      `json:"port,omitempty"`
+	TLSPort              int      `json:"tls_port,omitempty"`
 	Transports           []string `json:"transports,omitempty"`
 	CredentialTTLSeconds int64    `json:"credential_ttl_seconds,omitempty"`
 }
@@ -41,6 +42,7 @@ type mirrorNetworkResponse struct {
 	CanManage                  bool                            `json:"can_manage"`
 	TURNConfigured             bool                            `json:"turn_configured"`
 	Mode                       string                          `json:"mode"`
+	TransportPolicy            string                          `json:"transport_policy"`
 	ViewerNotificationsEnabled bool                            `json:"viewer_notifications_enabled"`
 	Cloudflare                 mirrorCloudflareNetworkResponse `json:"cloudflare"`
 	Builtin                    mirrorBuiltinNetworkResponse    `json:"builtin"`
@@ -65,7 +67,7 @@ func (h *Handler) UpdateWorkspaceMirrorNetwork(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if len(h.cfg.MirrorICE.ICEServers) > 0 {
+	if len(h.cfg.MirrorICE.ICEServers) > 0 || mirror.KnownTransportPolicy(h.cfg.MirrorICE.TransportPolicy) {
 		writeError(w, http.StatusConflict, "mirror network is locked by deployment configuration")
 		return
 	}
@@ -135,12 +137,14 @@ func (h *Handler) mirrorNetworkResponse(settings mirror.NetworkSettings, canMana
 	custom := h.decryptMirrorNetworkServers(settings.Servers)
 	source := h.mirrorNetworkSource(settings, custom)
 	cloudflare := h.cloudflareStatus(settings)
+	deploymentLocked := len(h.cfg.MirrorICE.ICEServers) > 0 || mirror.KnownTransportPolicy(h.cfg.MirrorICE.TransportPolicy)
 	return mirrorNetworkResponse{
 		Source:                     source,
-		Locked:                     len(h.cfg.MirrorICE.ICEServers) > 0,
-		CanManage:                  canManage && len(h.cfg.MirrorICE.ICEServers) == 0,
+		Locked:                     deploymentLocked,
+		CanManage:                  canManage && !deploymentLocked,
 		TURNConfigured:             h.mirrorNetworkConfigured(source, custom),
 		Mode:                       settings.Mode,
+		TransportPolicy:            h.mirrorNetworkTransportPolicy(settings),
 		ViewerNotificationsEnabled: settings.ViewerNotifications(),
 		Cloudflare:                 cloudflare,
 		Builtin: mirrorBuiltinNetworkResponse{
@@ -148,11 +152,22 @@ func (h *Handler) mirrorNetworkResponse(settings mirror.NetworkSettings, canMana
 			Available:            h.cfg.MirrorBuiltinTURN.Configured(),
 			Host:                 strings.TrimSpace(h.cfg.MirrorBuiltinTURN.Host),
 			Port:                 h.cfg.MirrorBuiltinTURN.Port,
+			TLSPort:              h.cfg.MirrorBuiltinTURN.TLSPort,
 			Transports:           mirrorNetworkTransports(h.cfg.MirrorBuiltinTURN.Transports),
 			CredentialTTLSeconds: int64(h.cfg.MirrorBuiltinTURN.TTL / time.Second),
 		},
 		Custom: mirrorNetworkCustomResponse(custom),
 	}
+}
+
+func (h *Handler) mirrorNetworkTransportPolicy(settings mirror.NetworkSettings) string {
+	if mirror.KnownTransportPolicy(h.cfg.MirrorICE.TransportPolicy) {
+		return h.cfg.MirrorICE.TransportPolicy
+	}
+	if mirror.KnownTransportPolicy(settings.TransportPolicy) {
+		return settings.TransportPolicy
+	}
+	return mirror.NetworkTransportPolicyAll
 }
 
 func mirrorNetworkCustomResponse(servers []mirror.ICEServer) []mirrorNetworkServerResponse {
@@ -168,7 +183,7 @@ func mirrorNetworkCustomResponse(servers []mirror.ICEServer) []mirrorNetworkServ
 }
 
 func (h *Handler) mirrorNetworkSource(settings mirror.NetworkSettings, custom []mirror.ICEServer) string {
-	if len(h.cfg.MirrorICE.ICEServers) > 0 {
+	if len(h.cfg.MirrorICE.ICEServers) > 0 || mirror.KnownTransportPolicy(h.cfg.MirrorICE.TransportPolicy) {
 		return mirror.NetworkSourceEnv
 	}
 	if settings.Mode == mirror.NetworkModeCustom && len(custom) > 0 {

@@ -139,6 +139,7 @@ export class MirrorVideoSession {
         throw new MirrorVideoError("webrtc_unavailable");
       const peer = new RTCPeerConnection({
         iceServers: peerIceServers(ice.iceServers),
+        iceTransportPolicy: ice.iceTransportPolicy === "relay" ? "relay" : "all",
       });
       this.peer = peer;
       if (this.options.callbacks.statistics) {
@@ -175,7 +176,7 @@ export class MirrorVideoSession {
             this.connectionGrace = undefined;
             if (peer.connectionState === "disconnected")
               this.fail(new MirrorVideoError("transport"));
-          }, 5_000);
+          }, 10_000);
           return;
         }
         if (
@@ -189,8 +190,13 @@ export class MirrorVideoSession {
       });
       dataChannel.onmessage = (event: MessageEvent<unknown>) =>
         this.videoMetadataMessage(event.data);
-      dataChannel.onclose = () =>
-        this.fail(new MirrorVideoError("viewer_revoked"));
+      dataChannel.onclose = () => {
+        if (this.disposed) return;
+        const reason = peer.connectionState === "failed" || peer.connectionState === "disconnected"
+          ? "transport"
+          : "viewer_revoked";
+        this.fail(new MirrorVideoError(reason));
+      };
       dataChannel.onerror = () => this.fail(new MirrorVideoError("transport"));
       this.options.callbacks.state("negotiating");
       const createdOffer = await peer.createOffer();

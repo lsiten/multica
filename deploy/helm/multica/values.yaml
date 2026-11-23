@@ -87,11 +87,23 @@ turn:
   # deploy the bundled coturn relay; otherwise mirroring relies on direct
   # connections or per-workspace custom ICE servers.
   enabled: false
+  # Comma-separated transports advertised by the backend. Add tls only after
+  # provisioning a certificate and TLS listener for the coturn service.
+  transports: "udp,tcp"
+  tlsPort: 443
+  # Leave empty for workspace control; set relay to force TURN cluster-wide.
+  transportPolicy: ""
+  tls:
+    enabled: false
+    secretName: ""
+    certKey: tls.crt
+    keyKey: tls.key
   # Public DNS name or IP advertised to browser and daemon WebRTC peers.
   # Leave empty to derive the host from backend.config.appUrl; localhost is
   # never usable across networks. Cloud firewalls and security groups must
   # allow ingress to 3478/tcp and 3478/udp. TURN cannot be proxied by the HTTP
-  # Ingress because WebRTC requires UDP/TCP at this Service.
+  # Ingress because WebRTC requires UDP/TCP at this Service. TLS TURN can expose
+  # tlsPort through the same LoadBalancer when turn.tls.enabled is true.
   publicHost: ""
   # Public/Elastic IP coturn should advertise when the pod sees only the
   # node's private address (typical EC2 + EIP). Leave empty when the public

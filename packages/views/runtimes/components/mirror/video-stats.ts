@@ -19,7 +19,12 @@ const transport = z.object({
 const candidatePair = z.object({
   type: z.literal("candidate-pair"),
   state: z.literal("succeeded"),
+  localCandidateId: z.string().optional(),
   currentRoundTripTime: counter,
+});
+const localCandidate = z.object({
+  type: z.literal("local-candidate"),
+  candidateType: z.enum(["host", "srflx", "prflx", "relay"]),
 });
 type VideoSample = z.infer<typeof inboundVideo>;
 
@@ -28,6 +33,7 @@ export interface MirrorVideoStats {
   readonly bitsPerSecond: number | null;
   readonly packetLossPercent: number | null;
   readonly roundTripTimeMs: number | null;
+  readonly candidateType: "host" | "srflx" | "prflx" | "relay" | null;
 }
 
 function difference(current: number | undefined, previous: number | undefined): number | null {
@@ -49,12 +55,16 @@ function measure(report: RTCStatsReport, previous: VideoSample | null) {
   const selectedPair = selectedTransport.success
     ? candidatePair.safeParse(report.get(selectedTransport.data.selectedCandidatePairId))
     : null;
+  const selectedCandidate = selectedPair?.success && selectedPair.data.localCandidateId
+    ? localCandidate.safeParse(report.get(selectedPair.data.localCandidateId))
+    : null;
   const roundTripTime = selectedPair?.success ? selectedPair.data.currentRoundTripTime : undefined;
   const stats: MirrorVideoStats = {
     framesPerSecond: null,
     bitsPerSecond: null,
     packetLossPercent: null,
     roundTripTimeMs: roundTripTime === undefined ? null : roundTripTime * 1000,
+    candidateType: selectedCandidate?.success ? selectedCandidate.data.candidateType : null,
   };
   if (!previous || previous.id !== sample.id || sample.timestamp <= previous.timestamp) {
     return { sample, stats };
@@ -72,6 +82,7 @@ function measure(report: RTCStatsReport, previous: VideoSample | null) {
       framesPerSecond: frames === null ? null : frames / seconds,
       packetLossPercent: received === null || lost === null || received + lost === 0
         ? null : (lost * 100) / (received + lost),
+      candidateType: selectedCandidate?.success ? selectedCandidate.data.candidateType : null,
     },
   };
 }

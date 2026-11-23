@@ -2938,6 +2938,7 @@
     "network_poor": "Connection poor",
     "measuring": "Measuring…",
     "packet_loss": "Loss",
+    "candidate_type": "Route",
     "negotiated_quality": "Negotiated quality",
     "rotate_hint": "Rotate your device for a larger canvas",
     "gesture_hint": "Tap to click, drag to move, scroll to wheel, and use two fingers to pan or pinch.",

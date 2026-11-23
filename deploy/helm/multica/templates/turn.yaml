@@ -71,12 +71,22 @@ spec:
               mountPath: /etc/coturn/turnserver.conf
               subPath: turnserver.conf
               readOnly: true
+            {{- if .Values.turn.tls.enabled }}
+            - name: turn-tls
+              mountPath: /etc/coturn/tls
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.turn.resources | nindent 12 }}
       volumes:
         - name: turn-config
           configMap:
             name: {{ .Release.Name }}-turn-config
+        {{- if .Values.turn.tls.enabled }}
+        - name: turn-tls
+          secret:
+            secretName: {{ required "turn.tls.secretName is required when turn.tls.enabled" .Values.turn.tls.secretName }}
+        {{- end }}
       {{- with .Values.turn.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
@@ -112,6 +122,12 @@ spec:
       port: {{ .Values.turn.service.port }}
       targetPort: 3478
       protocol: TCP
+    {{- if .Values.turn.tls.enabled }}
+    - name: turn-tls
+      port: {{ .Values.turn.tlsPort }}
+      targetPort: {{ .Values.turn.tlsPort }}
+      protocol: TCP
+    {{- end }}
     {{- if .Values.turn.service.relay.enabled }}
     # coturn relays media for symmetric-NAT peers from this UDP range. A
     # cloud LoadBalancer forwards the whole range; restrict it via

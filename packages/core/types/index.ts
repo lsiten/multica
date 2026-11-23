@@ -152,6 +152,7 @@ export type {
   MirrorSessionResponse,
   CreateMirrorSessionRequest,
   MirrorNetworkMode,
+  MirrorTransportPolicy,
   MirrorNetworkSource,
   MirrorNetworkServerInput,
   MirrorNetworkServer,

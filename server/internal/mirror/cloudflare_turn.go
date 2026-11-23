@@ -66,15 +66,29 @@ func (chain builtinChain) Configured() bool {
 }
 
 func (chain builtinChain) Plan(now time.Time, identity string) ICEPlan {
+	combined := ICEPlan{ICEServers: make([]ICEServer, 0)}
+	seen := make(map[string]struct{})
 	for _, provider := range chain.providers {
 		if !provider.Configured() {
 			continue
 		}
-		if plan := provider.Plan(now, identity); len(plan.ICEServers) > 0 {
-			return plan
+		plan := provider.Plan(now, identity)
+		if plan.TransportPolicy != "" {
+			combined.TransportPolicy = plan.TransportPolicy
+		}
+		if plan.TURNConfigured {
+			combined.TURNConfigured = true
+		}
+		for _, server := range plan.ICEServers {
+			key := strings.Join(server.URLs, "\x00") + "\x00" + server.Username + "\x00" + server.Credential
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			combined.ICEServers = append(combined.ICEServers, server)
 		}
 	}
-	return ICEPlan{}
+	return combined
 }
 
 const (

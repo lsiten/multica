@@ -20,6 +20,7 @@ import type {
   MirrorNetworkMode,
   MirrorNetworkServerInput,
   MirrorNetworkSettings,
+	MirrorTransportPolicy,
 } from "@multica/core/types";
 import { workspaceMirrorNetworkOptions } from "@multica/core/workspace/queries";
 import { useUpdateWorkspaceMirrorNetwork } from "@multica/core/workspace/mutations";
@@ -84,6 +85,7 @@ function MirrorNetworkPanel() {
   const update = useUpdateWorkspaceMirrorNetwork(wsId);
 
   const [mode, setMode] = useState<MirrorNetworkMode>("builtin");
+  const [transportPolicy, setTransportPolicy] = useState<MirrorTransportPolicy>("all");
   const [drafts, setDrafts] = useState<CustomServerDraft[]>([emptyCustomDraft()]);
   const [cloudflareKeyID, setCloudflareKeyID] = useState("");
   const [cloudflareAPIToken, setCloudflareAPIToken] = useState("");
@@ -96,6 +98,7 @@ function MirrorNetworkPanel() {
   useEffect(() => {
     if (!settings) return;
     setMode(settings.mode);
+    setTransportPolicy(settings.transport_policy);
     setDrafts(settingsToDraft(settings));
     // Never prefill the stored key ID into the editable field: the saved
     // key is already shown as a badge above. Prefilling made every unrelated
@@ -109,6 +112,7 @@ function MirrorNetworkPanel() {
   const readOnly = !settings || settings.locked || !settings.can_manage;
   const hasTurn = settings?.turn_configured ?? false;
   const builtinAvailable = settings?.builtin.available ?? false;
+  const builtinTransports = settings?.builtin.transports ?? [];
 
   const previewServers = useMemo(
     () => collectServers(drafts),
@@ -134,12 +138,14 @@ function MirrorNetworkPanel() {
         }
         await update.mutateAsync({
           mode,
+          transport_policy: transportPolicy,
           servers,
           viewer_notifications_enabled: viewerNotifications,
         });
       } else {
         await update.mutateAsync({
           mode,
+          transport_policy: transportPolicy,
           viewer_notifications_enabled: viewerNotifications,
           cloudflare:
             cloudflareKeyID.trim() || cloudflareAPIToken
@@ -224,7 +230,7 @@ function MirrorNetworkPanel() {
                 settings.builtin.host
                   ? `${settings.builtin.host}${
                       settings.builtin.port ? `:${settings.builtin.port}` : ""
-                    } · ${(settings.builtin.transports ?? []).join(" / ").toUpperCase()}`
+                    }${settings.builtin.tls_port && builtinTransports.some((transport) => transport === "tls" || transport === "turns") ? ` · TLS ${settings.builtin.tls_port}` : ""} · ${builtinTransports.join(" / ").toUpperCase()}`
                   : t(($) => $.mirror_network.builtin_host_unset)
               }
             >
@@ -281,6 +287,21 @@ function MirrorNetworkPanel() {
         description={t(($) => $.mirror_network.mode_description)}
       >
         <SettingsCard>
+          <SettingsRow
+            label={t(($) => $.mirror_network.transport_policy_label)}
+            description={t(($) => $.mirror_network.transport_policy_description)}
+          >
+            <select
+              value={transportPolicy}
+              disabled={readOnly}
+              aria-label={t(($) => $.mirror_network.transport_policy_label)}
+              onChange={(event) => setTransportPolicy(event.target.value as MirrorTransportPolicy)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-caption text-foreground"
+            >
+              <option value="all">{t(($) => $.mirror_network.transport_policy_all)}</option>
+              <option value="relay">{t(($) => $.mirror_network.transport_policy_relay)}</option>
+            </select>
+          </SettingsRow>
           <SettingsRow
             label={t(($) => $.mirror_network.modes.builtin_label)}
             description={
@@ -350,6 +371,7 @@ function MirrorNetworkPanel() {
                     try {
                       await update.mutateAsync({
                         mode,
+                        transport_policy: transportPolicy,
                         viewer_notifications_enabled: viewerNotifications,
                         cloudflare: { remove: true },
                       });

@@ -20,6 +20,11 @@ const (
 )
 
 const (
+	NetworkTransportPolicyAll   = "all"
+	NetworkTransportPolicyRelay = "relay"
+)
+
+const (
 	NetworkSourceEnv                = "env"
 	NetworkSourceBuiltin            = "builtin"
 	NetworkSourceCustom             = "custom"
@@ -28,9 +33,10 @@ const (
 )
 
 type NetworkSettings struct {
-	Mode       string                `json:"mode"`
-	Servers    []StoredICEServer     `json:"servers"`
-	Cloudflare *StoredCloudflareTURN `json:"cloudflare,omitempty"`
+	Mode            string                `json:"mode"`
+	TransportPolicy string                `json:"transport_policy"`
+	Servers         []StoredICEServer     `json:"servers"`
+	Cloudflare      *StoredCloudflareTURN `json:"cloudflare,omitempty"`
 	// ViewerNotificationsEnabled controls inbox items for read-only mirror
 	// viewing start/stop. A pointer lets absent/legacy settings default to
 	// enabled while an explicit false stays distinguishable.
@@ -61,6 +67,7 @@ type BuiltinTURNConfig struct {
 	Enabled    bool
 	Host       string
 	Port       int
+	TLSPort    int
 	Secret     string
 	TTL        time.Duration
 	Transports []string
@@ -71,7 +78,11 @@ type networkSettingsEnvelope struct {
 }
 
 func DefaultNetworkSettings() NetworkSettings {
-	return NetworkSettings{Mode: NetworkModeBuiltin, Servers: []StoredICEServer{}}
+	return NetworkSettings{
+		Mode:            NetworkModeBuiltin,
+		TransportPolicy: NetworkTransportPolicyAll,
+		Servers:         []StoredICEServer{},
+	}
 }
 
 func ParseNetworkSettings(raw []byte) (NetworkSettings, error) {
@@ -87,6 +98,10 @@ func ParseNetworkSettings(raw []byte) (NetworkSettings, error) {
 		return settings, nil
 	}
 	settings.Mode = envelope.MirrorNetwork.Mode
+	settings.TransportPolicy = envelope.MirrorNetwork.TransportPolicy
+	if settings.TransportPolicy == "" {
+		settings.TransportPolicy = NetworkTransportPolicyAll
+	}
 	settings.Servers = envelope.MirrorNetwork.Servers
 	settings.Cloudflare = envelope.MirrorNetwork.Cloudflare
 	settings.ViewerNotificationsEnabled = envelope.MirrorNetwork.ViewerNotificationsEnabled
@@ -117,6 +132,15 @@ func MarshalNetworkSettings(existing []byte, next NetworkSettings) ([]byte, erro
 func KnownNetworkMode(mode string) bool {
 	switch mode {
 	case NetworkModeBuiltin, NetworkModeCustom, NetworkModeDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+func KnownTransportPolicy(policy string) bool {
+	switch policy {
+	case NetworkTransportPolicyAll, NetworkTransportPolicyRelay:
 		return true
 	default:
 		return false
@@ -174,6 +198,9 @@ func (config BuiltinTURNConfig) Configured() bool {
 	if !config.Enabled || host == "" || config.Secret == "" || config.Port <= 0 || config.TTL <= 0 {
 		return false
 	}
+	if !config.hasUsableTransport() {
+		return false
+	}
 	if strings.EqualFold(host, "localhost") {
 		return false
 	}
@@ -181,6 +208,24 @@ func (config BuiltinTURNConfig) Configured() bool {
 		return false
 	}
 	return true
+}
+
+func (config BuiltinTURNConfig) hasUsableTransport() bool {
+	transports := config.Transports
+	if len(transports) == 0 {
+		return true
+	}
+	for _, rawTransport := range transports {
+		switch strings.ToLower(strings.TrimSpace(rawTransport)) {
+		case "udp", "tcp":
+			return true
+		case "tls", "turns":
+			if config.TLSPort > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (config BuiltinTURNConfig) Plan(now time.Time, identity string) ICEPlan {
@@ -193,20 +238,38 @@ func (config BuiltinTURNConfig) Plan(now time.Time, identity string) ICEPlan {
 	_, _ = mac.Write([]byte(username))
 	credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	host := strings.TrimSpace(config.Host)
-	urls := []string{
-		fmt.Sprintf("stun:%s:%d", host, config.Port),
-		fmt.Sprintf("turn:%s:%d?transport=udp", host, config.Port),
-		fmt.Sprintf("turn:%s:%d?transport=tcp", host, config.Port),
+	urls := []string{fmt.Sprintf("stun:%s:%d", host, config.Port)}
+	transports := config.Transports
+	if len(transports) == 0 {
+		transports = []string{"udp", "tcp"}
+	}
+	for _, rawTransport := range transports {
+		transport := strings.ToLower(strings.TrimSpace(rawTransport))
+		switch transport {
+		case "udp", "tcp":
+			urls = append(urls, fmt.Sprintf("turn:%s:%d?transport=%s", host, config.Port, transport))
+		case "tls", "turns":
+			if config.TLSPort > 0 {
+				urls = append(urls, fmt.Sprintf("turns:%s:%d?transport=tcp", host, config.TLSPort))
+			}
+		}
 	}
 	return ICEPlan{
 		ICEServers:     []ICEServer{{URLs: urls, Username: username, Credential: credential}},
-		TURNConfigured: true,
+		TURNConfigured: HasTURNURL(urls),
 	}
 }
 
 func ResolveNetworkPlan(settings NetworkSettings, deployment ICEPlan, builtin BuiltinNetwork, custom []ICEServer, now time.Time, identity string) (ICEPlan, string) {
 	if len(deployment.ICEServers) > 0 {
+		if !KnownTransportPolicy(deployment.TransportPolicy) {
+			deployment.TransportPolicy = NetworkTransportPolicyAll
+		}
 		return deployment, NetworkSourceEnv
+	}
+	transportPolicy := normalizeTransportPolicy(settings.TransportPolicy)
+	if KnownTransportPolicy(deployment.TransportPolicy) {
+		transportPolicy = deployment.TransportPolicy
 	}
 	if settings.Mode == NetworkModeCustom && len(custom) > 0 {
 		plan := ICEPlan{ICEServers: custom}
@@ -215,15 +278,31 @@ func ResolveNetworkPlan(settings NetworkSettings, deployment ICEPlan, builtin Bu
 				plan.TURNConfigured = true
 			}
 		}
+		plan.TransportPolicy = transportPolicy
 		return plan, NetworkSourceCustom
 	}
 	if settings.Mode == NetworkModeDisabled {
-		return ICEPlan{ICEServers: []ICEServer{}}, NetworkSourceDisabled
+		return ICEPlan{
+			ICEServers:      []ICEServer{},
+			TransportPolicy: transportPolicy,
+		}, NetworkSourceDisabled
 	}
 	if builtin.Configured() {
-		return builtin.Plan(now, identity), NetworkSourceBuiltin
+		plan := builtin.Plan(now, identity)
+		plan.TransportPolicy = transportPolicy
+		return plan, NetworkSourceBuiltin
 	}
-	return ICEPlan{ICEServers: []ICEServer{}}, NetworkSourceBuiltinUnavailable
+	return ICEPlan{
+		ICEServers:      []ICEServer{},
+		TransportPolicy: transportPolicy,
+	}, NetworkSourceBuiltinUnavailable
+}
+
+func normalizeTransportPolicy(policy string) string {
+	if KnownTransportPolicy(policy) {
+		return policy
+	}
+	return NetworkTransportPolicyAll
 }
 
 func sanitizeTURNIdentity(value string) string {

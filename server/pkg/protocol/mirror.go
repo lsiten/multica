@@ -76,8 +76,9 @@ type MirrorICEServer struct {
 // TURNConfigured lets the UI warn that restrictive NATs may block the direct
 // peer connection when no relay is configured.
 type MirrorICEConfig struct {
-	ICEServers     []MirrorICEServer `json:"ice_servers"`
-	TURNConfigured bool              `json:"turn_configured"`
+	ICEServers         []MirrorICEServer `json:"ice_servers"`
+	TURNConfigured     bool              `json:"turn_configured"`
+	ICETransportPolicy string            `json:"ice_transport_policy,omitempty"`
 }
 
 // Validate checks the wire-level invariants required by the mirror handshake.

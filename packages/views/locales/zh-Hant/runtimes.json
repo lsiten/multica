@@ -2848,6 +2848,7 @@
     "network_poor": "連線較差",
     "measuring": "測量中…",
     "packet_loss": "封包遺失",
+    "candidate_type": "鏈路",
     "negotiated_quality": "協商畫質",
     "rotate_hint": "旋轉裝置以擴大畫面區域",
     "gesture_hint": "輕點點擊，拖曳移動，捲動滾輪，雙指平移或捏合縮放。",

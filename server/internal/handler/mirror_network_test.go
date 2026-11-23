@@ -11,12 +11,13 @@ import (
 )
 
 type mirrorNetworkWire struct {
-	Source         string `json:"source"`
-	Locked         bool   `json:"locked"`
-	CanManage      bool   `json:"can_manage"`
-	TURNConfigured bool   `json:"turn_configured"`
-	Mode           string `json:"mode"`
-	Builtin        struct {
+	Source          string `json:"source"`
+	Locked          bool   `json:"locked"`
+	CanManage       bool   `json:"can_manage"`
+	TURNConfigured  bool   `json:"turn_configured"`
+	Mode            string `json:"mode"`
+	TransportPolicy string `json:"transport_policy"`
+	Builtin         struct {
 		Enabled    bool     `json:"enabled"`
 		Available  bool     `json:"available"`
 		Host       string   `json:"host"`
@@ -99,7 +100,8 @@ func TestUpdateWorkspaceMirrorNetworkLifecycle(t *testing.T) {
 	var custom mirrorNetworkWire
 	testutil.Call(t, h.UpdateWorkspaceMirrorNetwork,
 		mirrorNetworkRequest(t, http.MethodPatch, map[string]any{
-			"mode": "custom",
+			"mode":             "custom",
+			"transport_policy": "relay",
 			"servers": []map[string]any{
 				{"urls": "stun:stun.example.com:3478"},
 				{
@@ -110,7 +112,7 @@ func TestUpdateWorkspaceMirrorNetworkLifecycle(t *testing.T) {
 			},
 		}),
 	).Want(http.StatusOK).JSON(&custom)
-	if custom.Mode != "custom" || custom.Source != "custom" || !custom.TURNConfigured {
+	if custom.Mode != "custom" || custom.Source != "custom" || !custom.TURNConfigured || custom.TransportPolicy != "relay" {
 		t.Fatalf("custom response = %+v", custom)
 	}
 	if len(custom.Custom) != 2 || !custom.Custom[1].HasCredential {

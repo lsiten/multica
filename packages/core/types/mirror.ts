@@ -14,6 +14,7 @@ export interface MirrorICEServer {
 export interface MirrorICEConfig {
   readonly ice_servers: readonly MirrorICEServer[];
   readonly turn_configured: boolean;
+  readonly ice_transport_policy?: MirrorTransportPolicy;
 }
 
 export type MirrorSessionState =
@@ -50,6 +51,8 @@ export interface CreateMirrorSessionRequest {
 
 export type MirrorNetworkMode = "builtin" | "custom" | "disabled";
 
+export type MirrorTransportPolicy = "all" | "relay";
+
 export type MirrorNetworkSource =
   | "env"
   | "builtin"
@@ -76,6 +79,7 @@ export interface BuiltinMirrorNetwork {
   readonly available: boolean;
   readonly host?: string;
   readonly port?: number;
+  readonly tls_port?: number;
   readonly transports?: readonly string[];
   readonly credential_ttl_seconds?: number;
 }
@@ -95,6 +99,7 @@ export interface MirrorNetworkSettings {
   readonly can_manage: boolean;
   readonly turn_configured: boolean;
   readonly mode: MirrorNetworkMode;
+  readonly transport_policy: MirrorTransportPolicy;
   readonly viewer_notifications_enabled: boolean;
   readonly cloudflare: CloudflareMirrorNetwork;
   readonly builtin: BuiltinMirrorNetwork;
@@ -109,6 +114,7 @@ export interface CloudflareMirrorNetworkInput {
 
 export interface UpdateMirrorNetworkRequest {
   readonly mode: MirrorNetworkMode;
+  readonly transport_policy?: MirrorTransportPolicy;
   readonly servers?: readonly MirrorNetworkServerInput[];
   readonly cloudflare?: CloudflareMirrorNetworkInput;
   readonly viewer_notifications_enabled?: boolean;

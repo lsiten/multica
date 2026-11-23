@@ -130,16 +130,20 @@ func TestCloudflareTURNProviderServesUnexpiredOnRefreshFailure(t *testing.T) {
 	}
 }
 
-func TestBuiltinChainPrecedence(t *testing.T) {
+func TestBuiltinChainCombinesConfiguredProviders(t *testing.T) {
 	empty := stubBuiltin{configured: true}
-	full := stubBuiltin{configured: true, plan: ICEPlan{ICEServers: []ICEServer{{URLs: []string{"turn:chain.example.com"}}}, TURNConfigured: true}}
-	chain := NewBuiltinChain(empty, full)
+	first := stubBuiltin{configured: true, plan: ICEPlan{ICEServers: []ICEServer{{URLs: []string{"turn:first.example.com"}}}, TURNConfigured: true}}
+	second := stubBuiltin{configured: true, plan: ICEPlan{ICEServers: []ICEServer{{URLs: []string{"turn:second.example.com"}}}, TURNConfigured: true}}
+	chain := NewBuiltinChain(empty, first, second)
 	if !chain.Configured() {
 		t.Fatal("chain should be configured")
 	}
 	plan := chain.Plan(time.Now(), "id")
 	if !plan.TURNConfigured {
-		t.Fatalf("chain did not fall through to the working provider: %+v", plan)
+		t.Fatalf("chain did not include configured providers: %+v", plan)
+	}
+	if len(plan.ICEServers) != 2 {
+		t.Fatalf("chain servers = %d, want 2", len(plan.ICEServers))
 	}
 }
 

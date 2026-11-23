@@ -2936,6 +2936,7 @@
     "network_poor": "Connexion faible",
     "measuring": "Mesure…",
     "packet_loss": "Perte",
+    "candidate_type": "Route",
     "negotiated_quality": "Qualité négociée",
     "rotate_hint": "Tournez l’appareil pour agrandir le canevas",
     "gesture_hint": "Touchez pour cliquer, faites glisser pour déplacer, faites défiler pour la molette et utilisez deux doigts pour déplacer ou zoomer.",
