@@ -8,6 +8,7 @@ import { useTranscribeChatVoice } from "@multica/core/chat/mutations";
 import { useT } from "../../i18n";
 import { useLocalVoice } from "../../platform";
 import type { Meeting } from "@multica/core/types";
+import { createMeetingAudioCapture, type MeetingAudioCapture } from "./meeting-audio-capture";
 
 type RecorderState = "idle" | "recording" | "paused" | "finishing" | "complete" | "error";
 type LiveSegment = { readonly sequence: number; readonly text: string; readonly startMs: number; readonly speaker: string };
@@ -38,8 +39,7 @@ export function MeetingRecorder({
   const meetingId = useRef<string | undefined>(undefined);
   const sequence = useRef(0);
   const startedAt = useRef(0);
-  const recorder = useRef<MediaRecorder | undefined>(undefined);
-  const sliceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const capture = useRef<MeetingAudioCapture | undefined>(undefined);
   const stopping = useRef(false);
   const paused = useRef(false);
   const finalizeCapture = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -94,63 +94,22 @@ export function MeetingRecorder({
     });
   };
 
-  const clearSliceTimer = () => {
-    if (sliceTimer.current) clearTimeout(sliceTimer.current);
-    sliceTimer.current = undefined;
-  };
-
-  const startSlice = (media: MediaStream, mimeType?: string) => {
-    if (stopping.current || paused.current) return;
-    const next = new MediaRecorder(media, mimeType ? { mimeType } : undefined);
-    next.onerror = () => {
-      if (stopping.current) return;
-      setError(t(($) => $.input.meeting_failed));
-      setState("error");
-    };
-    next.ondataavailable = (event) => {
-      if (event.data.size > 0) transcribeChunk(event.data);
-    };
-    next.onstop = () => {
-      if (stopping.current) {
-        void finalizeCapture.current?.();
-        return;
-      }
-      if (paused.current) return;
-      startSlice(media, mimeType);
-    };
-    recorder.current = next;
-    next.start();
-    sliceTimer.current = setTimeout(() => {
-      sliceTimer.current = undefined;
-      if (next.state === "recording") next.stop();
-    }, 2_000);
-  };
-
   const stop = () => {
     if (state !== "recording" && state !== "paused") return;
     setState("finishing");
     stopping.current = true;
-    clearSliceTimer();
-    const current = recorder.current;
-    if (current?.state === "paused" || current?.state === "recording") current.stop();
-    else if (!meetingId.current) setState("idle");
+    void capture.current?.stop().then(() => finalizeCapture.current?.());
   };
 
   const togglePause = () => {
     if (state === "recording") {
       paused.current = true;
-      clearSliceTimer();
-      recorder.current?.pause();
+      capture.current?.pause();
       stream.current?.getTracks().forEach((track) => { track.enabled = false; });
       setState("paused");
     } else if (state === "paused") {
       paused.current = false;
-      recorder.current?.resume();
-      sliceTimer.current = setTimeout(() => {
-        const current = recorder.current;
-        sliceTimer.current = undefined;
-        if (current?.state === "recording") current.stop();
-      }, 2_000);
+      capture.current?.resume();
       stream.current?.getTracks().forEach((track) => { track.enabled = true; });
       setState("recording");
     }
@@ -162,14 +121,36 @@ export function MeetingRecorder({
     setLiveText("");
     setSegments([]);
     setCompletedMeeting(undefined);
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") {
       setError(t(($) => $.input.voice_unsupported));
       setState("error");
       return;
     }
+    let audioCapture: MeetingAudioCapture | undefined;
     try {
       const media = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.current = media;
+      try {
+        audioCapture = createMeetingAudioCapture({
+          stream: media,
+          onChunk: transcribeChunk,
+          onError: () => {
+            if (stopping.current) return;
+            stopping.current = true;
+            capture.current?.cancel();
+            abort.current?.abort();
+            const failedMeetingId = meetingId.current;
+            meetingId.current = undefined;
+            media.getTracks().forEach((track) => track.stop());
+            if (failedMeetingId) void cancelMeeting.mutateAsync({ meetingId: failedMeetingId, workspace: workspaceId });
+            setError(t(($) => $.input.meeting_failed));
+            setState("error");
+          },
+        });
+      } catch {
+        media.getTracks().forEach((track) => track.stop());
+        throw new Error("meeting audio capture unavailable");
+      }
       const meeting = await createMeeting.mutateAsync({
         workspace: workspaceId,
         data: {
@@ -189,12 +170,10 @@ export function MeetingRecorder({
       paused.current = false;
       startedAt.current = Date.now();
       abort.current = new AbortController();
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"]
-        .find((type) => MediaRecorder.isTypeSupported(type));
       const finalize = async () => {
         finalizeCapture.current = undefined;
         media.getTracks().forEach((track) => track.stop());
-        recorder.current = undefined;
+        capture.current = undefined;
         await pending.current;
         if (meetingId.current && !abort.current?.signal.aborted) {
           if (transcriptionFailed.current) {
@@ -223,28 +202,11 @@ export function MeetingRecorder({
         }
       };
       finalizeCapture.current = finalize;
-      const firstRecorder = new MediaRecorder(media, mimeType ? { mimeType } : undefined);
-      firstRecorder.onstop = () => {
-        if (stopping.current) void finalizeCapture.current?.();
-        else startSlice(media, mimeType);
-      };
-      firstRecorder.onerror = () => {
-        if (!stopping.current) {
-          setError(t(($) => $.input.meeting_failed));
-          setState("error");
-        }
-      };
-      firstRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) transcribeChunk(event.data);
-      };
-      recorder.current = firstRecorder;
-      firstRecorder.start();
-      sliceTimer.current = setTimeout(() => {
-        sliceTimer.current = undefined;
-        if (firstRecorder.state === "recording") firstRecorder.stop();
-      }, 2_000);
+      capture.current = audioCapture;
+      audioCapture.start();
       setState("recording");
     } catch {
+      audioCapture?.cancel();
       if (meetingId.current) void cancelMeeting.mutateAsync({ meetingId: meetingId.current, workspace: workspaceId });
       stream.current?.getTracks().forEach((track) => track.stop());
       setError(t(($) => $.input.voice_failed));
@@ -255,10 +217,10 @@ export function MeetingRecorder({
   const cancel = () => {
     const currentMeetingId = meetingId.current;
     stopping.current = true;
-    clearSliceTimer();
     if (currentMeetingId) void cancelMeeting.mutateAsync({ meetingId: currentMeetingId, workspace: workspaceId });
     abort.current?.abort();
-    recorder.current?.stop();
+    capture.current?.cancel();
+    capture.current = undefined;
     stream.current?.getTracks().forEach((track) => track.stop());
     meetingId.current = undefined;
     setState("idle");
