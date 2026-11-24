@@ -62,7 +62,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          # Pin the same macOS image used by the release workflow. macos-latest
+          # is currently capacity-constrained for hosted arm64 runners.
+          - os: macos-14
             target: mac
           - os: windows-latest
             target: win
