@@ -62,9 +62,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Pin the same macOS image used by the release workflow. macos-latest
-          # is currently capacity-constrained for hosted arm64 runners.
-          - os: macos-14
+          # Pin the supported Intel macOS image. macos-latest is arm64 and
+          # macos-14 is unavailable in this repository's hosted runner pool.
+          - os: macos-15-intel
             target: mac
           - os: windows-latest
             target: win

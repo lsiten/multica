@@ -95,7 +95,7 @@ jobs:
     # GoReleaser matrix on a macOS runner so darwin artifacts can compile
     # natively while Linux/Windows targets remain CGO-free and portable.
     if: github.repository_owner == 'multica-ai'
-    runs-on: macos-14
+    runs-on: macos-15-intel
     steps:
       - name: Checkout
         uses: actions/checkout@v4
