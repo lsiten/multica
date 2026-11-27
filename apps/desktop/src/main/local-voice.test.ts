@@ -1,18 +1,23 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
 import { LOCAL_VOICE_CHANNEL } from "../shared/local-voice";
+import type { VoiceBridgeTranscribe } from "./voice-bridge";
 import { setupLocalVoice } from "./local-voice";
 
 const electron = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   workerListeners: new Map<string, (message: unknown) => void>(),
+  bridge: vi.fn<(path: string, transcribe: VoiceBridgeTranscribe) => Promise<() => void>>(),
   appListeners: new Map<string, () => void>(),
   mainFrame: {},
   postMessage: vi.fn<(message: unknown) => void>(),
   kill: vi.fn(),
+  preferredLanguages: vi.fn<() => string[]>().mockReturnValue(["zh-Hans-CN"]),
 }));
 vi.mock("electron", () => ({
   app: {
+    getLocale: () => "zh-CN",
+    getPreferredSystemLanguages: electron.preferredLanguages,
     getPath: () => "/unused-voice-test",
     on: vi.fn(),
     once: (event: string, listener: () => void) => electron.appListeners.set(event, listener),
@@ -34,6 +39,8 @@ vi.mock("electron", () => ({
     }),
   },
 }));
+vi.mock("./voice-bridge", () => ({ startVoiceBridge: electron.bridge.mockResolvedValue(() => {}) }));
+vi.mock("./voice-decoder", () => ({ decodeVoiceAudio: async () => new Float32Array([0.1]) }));
 vi.mock("./voice-download", () => ({ downloadVoiceAssets: async () => undefined }));
 
 afterEach(() => {
@@ -45,7 +52,7 @@ afterEach(() => {
 });
 
 async function fixture() {
-  setupLocalVoice();
+  await setupLocalVoice();
   await Promise.resolve();
   electron.workerListeners.get("message")?.({ type: "ready" });
   const request = electron.handlers.get(LOCAL_VOICE_CHANNEL.transcribe);
@@ -73,4 +80,35 @@ it("forwards the selected language to the worker and returns its transcript", as
 
   expect(electron.postMessage).toHaveBeenCalledWith({ id: "recording", samples: f.samples, language: "zh" });
   await expect(result).resolves.toBe("中文");
+});
+
+
+it.each([
+  { preferred: ["zh-Hans-CN"], language: "zh" },
+  { preferred: ["ja-JP"], language: "ja" },
+  { preferred: ["de-DE"], language: "en" },
+  { preferred: [], language: "zh" },
+])("routes Web audio with the supported system language $language for $preferred", async ({ preferred, language }) => {
+  electron.preferredLanguages.mockReturnValue(preferred);
+  await fixture();
+  const bridge = electron.bridge.mock.calls.at(-1)?.[1];
+  if (!bridge) throw new Error("Voice bridge missing");
+  const result = bridge({ bytes: Buffer.from("audio"), mimeType: "audio/mp4" }, new AbortController().signal);
+  await vi.waitFor(() => expect(electron.postMessage).toHaveBeenCalled());
+  const message = electron.postMessage.mock.calls[0]?.[0];
+  if (!message || typeof message !== "object" || !("id" in message)) throw new Error("Worker request missing");
+  electron.workerListeners.get("message")?.({ type: "result", id: message.id, text: "中文" });
+  await expect(result).resolves.toBe("中文");
+  expect(message).toMatchObject({ language });
+});
+
+it("keeps desktop voice working when the runtime bridge cannot start", async () => {
+  electron.bridge.mockRejectedValueOnce(new Error("bind failed"));
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const f = await fixture();
+    const result = f.request(f.event, "recording", f.samples, "zh");
+    electron.workerListeners.get("message")?.({ type: "result", id: "recording", text: "中文" });
+    await expect(result).resolves.toBe("中文");
+  } finally { warn.mockRestore(); }
 });

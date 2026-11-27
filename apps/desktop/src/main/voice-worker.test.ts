@@ -34,7 +34,7 @@ it.each([
     expect(postMessage).toHaveBeenCalledWith({ type: "result", id: "recording", text: "中文" });
   } else {
     expect(transcriber).not.toHaveBeenCalled();
-    expect(postMessage).toHaveBeenCalledWith({ type: "error", id: "recording" });
+    expect(postMessage).toHaveBeenCalledWith({ type: "error", id: "recording", reason: "no_signal" });
     expect(postMessage.mock.calls.some(([message]) => message.type === "result")).toBe(false);
   }
 });

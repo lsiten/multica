@@ -16,7 +16,7 @@ async function start() {
     if (!data || typeof data !== "object" || !("id" in data) || typeof data.id !== "string" || !("samples" in data) || !validVoiceSamples(data.samples) || !("language" in data) || !validVoiceLanguage(data.language)) return;
     const id = data.id;
     if (!hasVoiceSignal(data.samples)) {
-      parent?.postMessage({ type: "error", id });
+      parent?.postMessage({ type: "error", id, reason: "no_signal" });
       return;
     }
     try {
@@ -28,7 +28,9 @@ async function start() {
       const text = (Array.isArray(output) ? output[0]?.text : output.text)?.trim();
       if (!text || !confidence.accepts(text)) throw new Error("Unreliable voice transcript");
       parent?.postMessage({ type: "result", id, text });
-    } catch { parent?.postMessage({ type: "error", id }); }
+    } catch (error) {
+      parent?.postMessage({ type: "error", id, reason: error instanceof Error && error.message === "Unreliable voice transcript" ? "unreliable_transcript" : "inference_failed" });
+    }
   });
   parent?.postMessage({ type: "ready" });
 }

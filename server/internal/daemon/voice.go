@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"sync"
 	"time"
 
@@ -96,7 +95,7 @@ func (v *voiceRequests) handle(raw json.RawMessage) {
 		defer v.wg.Done()
 		defer cancel()
 		defer func() { v.mu.Lock(); delete(v.active, request.RequestID); v.mu.Unlock() }()
-		result := transcribeVoiceRequest(ctx, request, os.Getenv("MULTICA_VOICE_TRANSCRIBER"))
+		result := v.d.transcribeVoice(ctx, request)
 		if ctx.Err() == nil {
 			v.reply(result)
 		}

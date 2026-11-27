@@ -123,7 +123,7 @@ func (d *Daemon) ensureMirrorProcess(ctx context.Context) (*mirrorProcessClient,
 		return nil, err
 	}
 	environment := map[string]string{}
-	for _, key := range []string{"PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "MULTICA_VOICE_TRANSCRIBER", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"} {
+	for _, key := range []string{"PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "MULTICA_VOICE_TRANSCRIBER", "MULTICA_DESKTOP_VOICE_DESCRIPTOR", "MULTICA_LAUNCHED_BY", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"} {
 		if value, ok := os.LookupEnv(key); ok {
 			environment[key] = value
 		}

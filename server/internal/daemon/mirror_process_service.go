@@ -66,7 +66,7 @@ func RunMirrorService(ctx context.Context, b runtimeproc.Bootstrap) error {
 	if err != nil {
 		return err
 	}
-	d := &Daemon{cfg: Config{ServerBaseURL: b.Identity.Scope.Backend, DaemonID: b.Identity.Scope.DaemonID, Profile: b.Identity.Scope.Profile, NativeHostExecutable: executable, NativeHostBuild: b.Identity.Build, NativeVscreenPreferencesPath: filepath.Join(filepath.Dir(b.Root), "vscreen-enabled.json")}, logger: slog.New(slog.NewTextHandler(io.Discard, nil)), workspaces: map[string]*workspaceState{}, runtimeIndex: map[string]Runtime{}, runtimeMirrors: map[string]*mirror.RuntimeMirror{}}
+	d := &Daemon{cfg: Config{LaunchedBy: os.Getenv("MULTICA_LAUNCHED_BY"), ServerBaseURL: b.Identity.Scope.Backend, DaemonID: b.Identity.Scope.DaemonID, Profile: b.Identity.Scope.Profile, NativeHostExecutable: executable, NativeHostBuild: b.Identity.Build, NativeVscreenPreferencesPath: filepath.Join(filepath.Dir(b.Root), "vscreen-enabled.json")}, logger: slog.New(slog.NewTextHandler(io.Discard, nil)), workspaces: map[string]*workspaceState{}, runtimeIndex: map[string]Runtime{}, runtimeMirrors: map[string]*mirror.RuntimeMirror{}}
 	s := &mirrorProcessService{daemon: d, bootstrap: b, jobs: map[string]*mirrorProcessJob{}, stop: make(chan struct{}), stopped: make(chan struct{})}
 	d.mirrorChild = s
 	process, err := runtimeproc.NewService(runtimeproc.Config{Bootstrap: b, Capabilities: []string{"mirror.bind", "mirror.unbind", "mirror.submit", "mirror.cancel_job", "mirror.consume_job"}, ReadCapabilities: []string{"mirror.endpoint", "mirror.job", "mirror.inventory"}, Handler: s.mutate, ReadHandler: s.read, Ready: s.ready, Shutdown: s.shutdown})

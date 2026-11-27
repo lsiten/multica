@@ -1119,7 +1119,7 @@ if (!gotTheLock) {
 
     desktopInitialized = true;
     setupMicrophonePermission();
-    setupLocalVoice();
+    await setupLocalVoice();
     for (const saved of loadWindowSession(windowStateFile())) {
       createMainWindow(saved);
     }

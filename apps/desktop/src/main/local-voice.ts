@@ -1,19 +1,22 @@
 import { app, BrowserWindow, ipcMain, net, utilityProcess, type IpcMainInvokeEvent, type UtilityProcess } from "electron";
+import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { LocalVoiceStatus } from "@multica/core/platform";
-import { LOCAL_VOICE_CHANNEL, validVoiceLanguage, validVoiceSamples } from "../shared/local-voice";
+import { LOCAL_VOICE_CHANNEL, validVoiceLanguage, validVoiceSamples, type LocalVoiceLanguage } from "../shared/local-voice";
 import { VOICE_ASSETS, VOICE_BASE_URL, VOICE_REVISION } from "./voice-assets";
 import { downloadVoiceAssets } from "./voice-download";
+import { startVoiceBridge } from "./voice-bridge";
+import { decodeVoiceAudio } from "./voice-decoder";
 
-export function setupLocalVoice(): void {
+export async function setupLocalVoice(): Promise<void> {
   const root = join(app.getPath("userData"), "voice", VOICE_REVISION);
   const lifetime = new AbortController();
   let status: LocalVoiceStatus = { phase: "downloading", percent: 0 };
   let preparing = false;
   let worker: UtilityProcess | undefined;
   let loadingTimer: ReturnType<typeof setTimeout> | undefined;
-  let pending: { id: string; sender: number; resolve: (text: string) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
+  let pending: { id: string; sender: number | null; resolve: (text: string) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | undefined;
   function publish(next: LocalVoiceStatus) {
     if (JSON.stringify(next) === JSON.stringify(status)) return;
     status = next;
@@ -48,7 +51,10 @@ export function setupLocalVoice(): void {
             if (!pending || !("id" in message) || message.id !== pending.id) return;
             const request = pending; pending = undefined; clearTimeout(request.timer);
             if (message.type === "result" && "text" in message && typeof message.text === "string" && message.text.trim() && message.text.length <= 16 * 1024) request.resolve(message.text);
-            else request.reject(new Error("Voice transcription failed"));
+            else {
+              console.warn("[voice] inference rejected", { reason: "reason" in message && typeof message.reason === "string" ? message.reason : "worker_error" });
+              request.reject(new Error("Voice transcription failed"));
+            }
             break;
           }
           default: break;
@@ -75,15 +81,18 @@ export function setupLocalVoice(): void {
   }
   ipcMain.handle(LOCAL_VOICE_CHANNEL.status, (event) => { checkSender(event); return status; });
   ipcMain.handle(LOCAL_VOICE_CHANNEL.retry, (event) => { checkSender(event); void prepare({ forceRefresh: true }); });
-  ipcMain.handle(LOCAL_VOICE_CHANNEL.transcribe, (event, id: unknown, samples: unknown, language: unknown) => {
-    checkSender(event);
-    if (typeof id !== "string" || id.length > 100 || !validVoiceSamples(samples) || !validVoiceLanguage(language)) throw new Error("Invalid voice recording");
+  function transcribe(id: string, samples: Float32Array, language: LocalVoiceLanguage, sender: number | null) {
     if (status.phase !== "ready" || !worker || pending) throw new Error("Voice transcription unavailable or busy");
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => { stopWorker(); load(); }, 120_000);
-      pending = { id, sender: event.sender.id, resolve, reject, timer };
+      pending = { id, sender, resolve, reject, timer };
       worker?.postMessage({ id, samples, language });
     });
+  }
+  ipcMain.handle(LOCAL_VOICE_CHANNEL.transcribe, (event, id: unknown, samples: unknown, language: unknown) => {
+    checkSender(event);
+    if (typeof id !== "string" || id.length > 100 || !validVoiceSamples(samples) || !validVoiceLanguage(language)) throw new Error("Invalid voice recording");
+    return transcribe(id, samples, language, event.sender.id);
   });
   ipcMain.on(LOCAL_VOICE_CHANNEL.cancel, (event, id: unknown) => {
     if (pending?.id !== id || pending?.sender !== event.sender.id) return;
@@ -92,6 +101,25 @@ export function setupLocalVoice(): void {
   app.on("web-contents-created", (_event, contents) => {
     contents.once("destroyed", () => { if (pending?.sender === contents.id) { stopWorker(); load(); } });
   });
-  app.once("before-quit", () => { lifetime.abort(); stopWorker(); });
+  const descriptorPath = join(app.getPath("userData"), "voice-bridge.json");
+  let stopBridge = () => {};
+  try { stopBridge = await startVoiceBridge(descriptorPath, async (audio, signal) => {
+    if (status.phase !== "ready" || pending) throw new Error("Voice transcription unavailable or busy");
+    const samples = await decodeVoiceAudio(audio, signal);
+    signal.throwIfAborted();
+    const id = randomUUID();
+    const cancel = () => { if (pending?.id === id) { stopWorker(); load(); } };
+    signal.addEventListener("abort", cancel, { once: true });
+    const preferred = app.getPreferredSystemLanguages()[0] ?? app.getLocale();
+    const language = preferred.split(/[-_]/)[0];
+    try { return await transcribe(id, samples, validVoiceLanguage(language) ? language : "en", null); }
+    finally { signal.removeEventListener("abort", cancel); }
+  });
+    process.env.MULTICA_DESKTOP_VOICE_DESCRIPTOR = descriptorPath;
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    console.warn("Desktop voice bridge unavailable:", error.message);
+  }
+  app.once("before-quit", () => { lifetime.abort(); stopBridge(); stopWorker(); });
   void prepare();
 }
