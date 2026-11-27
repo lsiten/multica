@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, net, utilityProcess, type IpcMainInvokeEvent, type UtilityProcess } from "electron";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { LocalVoiceStatus } from "@multica/core/platform";
 import { LOCAL_VOICE_CHANNEL, validVoiceLanguage, validVoiceSamples } from "../shared/local-voice";
@@ -55,11 +56,12 @@ export function setupLocalVoice(): void {
       });
     } catch { fail(); }
   }
-  async function prepare() {
+  async function prepare(options: { readonly forceRefresh?: boolean } = {}) {
     if (preparing || worker || lifetime.signal.aborted) return;
     preparing = true;
     publish({ phase: "downloading", percent: 0 });
     try {
+      if (options.forceRefresh) await rm(root, { recursive: true, force: true });
       await downloadVoiceAssets({ root, assets: VOICE_ASSETS, baseURL: VOICE_BASE_URL,
         fetchAsset: (url, options) => net.fetch(url, options), signal: lifetime.signal,
         onProgress: (percent) => publish({ phase: "downloading", percent }) });
@@ -72,7 +74,7 @@ export function setupLocalVoice(): void {
     if (!window || event.senderFrame !== window.webContents.mainFrame) throw new Error("Voice request requires an application window");
   }
   ipcMain.handle(LOCAL_VOICE_CHANNEL.status, (event) => { checkSender(event); return status; });
-  ipcMain.handle(LOCAL_VOICE_CHANNEL.retry, (event) => { checkSender(event); void prepare(); });
+  ipcMain.handle(LOCAL_VOICE_CHANNEL.retry, (event) => { checkSender(event); void prepare({ forceRefresh: true }); });
   ipcMain.handle(LOCAL_VOICE_CHANNEL.transcribe, (event, id: unknown, samples: unknown, language: unknown) => {
     checkSender(event);
     if (typeof id !== "string" || id.length > 100 || !validVoiceSamples(samples) || !validVoiceLanguage(language)) throw new Error("Invalid voice recording");

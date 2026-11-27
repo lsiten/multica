@@ -1,5 +1,7 @@
-import { env, pipeline } from "@huggingface/transformers";
+import { env, pipeline, LogitsProcessorList } from "@huggingface/transformers";
 import { validVoiceLanguage, validVoiceSamples } from "../shared/local-voice";
+import { hasVoiceSignal } from "./voice-signal";
+import { VoiceConfidence } from "./voice-confidence";
 
 env.allowRemoteModels = false;
 env.useBrowserCache = false;
@@ -13,10 +15,18 @@ async function start() {
   parent?.on("message", async ({ data }: { data: unknown }) => {
     if (!data || typeof data !== "object" || !("id" in data) || typeof data.id !== "string" || !("samples" in data) || !validVoiceSamples(data.samples) || !("language" in data) || !validVoiceLanguage(data.language)) return;
     const id = data.id;
+    if (!hasVoiceSignal(data.samples)) {
+      parent?.postMessage({ type: "error", id });
+      return;
+    }
     try {
-      const output = await transcriber(data.samples, { language: data.language, task: "transcribe", chunk_length_s: 30, stride_length_s: 5, return_timestamps: false });
+      const confidence = new VoiceConfidence();
+      const processors = new LogitsProcessorList();
+      processors.push(confidence);
+      const options = { language: data.language, task: "transcribe", chunk_length_s: 30, stride_length_s: 5, return_timestamps: false, logits_processor: processors, do_sample: false };
+      const output = await transcriber(data.samples, options);
       const text = (Array.isArray(output) ? output[0]?.text : output.text)?.trim();
-      if (!text || text.length > 16 * 1024) throw new Error("Empty or oversized voice transcript");
+      if (!text || !confidence.accepts(text)) throw new Error("Unreliable voice transcript");
       parent?.postMessage({ type: "result", id, text });
     } catch { parent?.postMessage({ type: "error", id }); }
   });

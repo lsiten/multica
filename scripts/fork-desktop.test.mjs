@@ -31,6 +31,25 @@ function fixtureDirectory(t) {
   return directory;
 }
 
+test("release installs optional native dependencies for every packaged CPU", () => {
+  const result = spawnSync("pnpm", ["config", "get", "supportedArchitectures", "--json"], {
+    cwd: root,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const configured = result.stdout.trim();
+  const architectures = configured && configured !== "undefined"
+    ? JSON.parse(configured)?.cpu ?? ["current"]
+    : ["current"];
+  const installed = new Set(architectures.map((arch) => arch === "current" ? process.arch : arch));
+  const packaged = [...stepScript("Package desktop installers").matchAll(/--(x64|arm64)\b/g)];
+  assert.ok(packaged.length, "Release must declare its CPU targets");
+  for (const [, arch] of packaged) {
+    assert.ok(installed.has(arch), `Release packages ${arch} without installing its optional native dependencies`);
+  }
+});
+
 test("packaging omits an absent signing certificate and runs through pnpm", (t) => {
   const directory = fixtureDirectory(t);
   const probe = join(directory, "probe.cjs");

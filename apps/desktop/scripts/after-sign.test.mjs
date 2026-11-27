@@ -195,6 +195,7 @@ describe("afterSign screen recording identity", () => {
       execFileSync("/usr/bin/codesign", ["--verify", "--strict", daemonApp], { stdio: "pipe" });
       const entitlements = spawnSync("/usr/bin/codesign", ["-d", "--entitlements", ":-", app], { encoding: "utf8" });
       expect(entitlements.status).toBe(0);
+      expect(entitlements.stdout + entitlements.stderr).toMatch(/<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\s*\/>/);
       for (const capability of ["allow-jit", "allow-unsigned-executable-memory", "disable-library-validation"]) {
         expect(entitlements.stdout + entitlements.stderr).toContain(`com.apple.security.cs.${capability}`);
       }

@@ -42,6 +42,7 @@ afterSign: build/after-sign.cjs
 # launch. See scripts/mac-update-floor.cjs for why this can't be plain config.
 beforePack: ./scripts/mac-update-floor.cjs
 mac:
+  entitlements: build/entitlements.mac.plist
   # Electron 44 requires macOS 13 Ventura; declare it on every mac bundle.
   minimumSystemVersion: "13.0.0"
   entitlementsInherit: build/entitlements.mac.plist
