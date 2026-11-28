@@ -2354,5 +2354,22 @@
     "marker_notify": "阻塞结束后通知 {{name}}。",
     "marker_unavailable": "{{name}} 当前无法运行，阻塞结束后不会自动开始。",
     "marker_unassigned": "未指派负责人，阻塞结束后不会自动开始。"
+  },
+  "git_changes": {
+    "title": "Git 变更",
+    "open": "查看 Git 变更",
+    "uncommitted": "未提交",
+    "branch": "分支差异",
+    "commits": "提交",
+    "scope": "变更范围",
+    "runtime": "运行时",
+    "directory": "目录",
+    "directory_unavailable": "未记录工作目录。",
+    "no_git": "没有可用的 Git 仓库或比较引用。",
+    "diff_unavailable": "此快照的文件差异不可用。",
+    "offline": "运行时已离线，请重新连接后刷新。",
+    "access_unavailable": "目录不可用，或你已无权访问。",
+    "directory_missing": "工作目录已不可用。",
+    "current_branch": "分支"
   }
 }

@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { LocalReviewRequest } from "@multica/core/types/local-review";
+import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import type { ReviewManifest } from "@multica/core/types/local-review-pages";
 import { Button } from "@multica/ui/components/ui/button";
 import { readReviewContent } from "../../platform/local-review-pages";
@@ -8,7 +8,7 @@ import { useT } from "../../i18n";
 import { LocalReviewError } from "./local-review-error";
 import type { LocalReviewFileNavigation } from "./local-review-file-browser";
 
-export function LocalReviewContent({ request, manifest, filePath, onBack, navigation }: { request: LocalReviewRequest; manifest: ReviewManifest; filePath: string; onBack: () => void; navigation: LocalReviewFileNavigation }) {
+export function LocalReviewContent({ request, manifest, filePath, onBack, navigation }: { request: Omit<PagedReviewInput, "action">; manifest: ReviewManifest; filePath: string; onBack: () => void; navigation: LocalReviewFileNavigation }) {
   const { t } = useT("issues");
   const errorId = useId();
   const [side, setSide] = useState<"old" | "new">("new");
@@ -16,7 +16,7 @@ export function LocalReviewContent({ request, manifest, filePath, onBack, naviga
   const [index, setIndex] = useState(0);
   const offset = offsets[index] ?? 0;
   const query = useQuery({
-    queryKey: ["review-version-content", request.workspace_id, request.task_id, manifest.version_id, filePath, side, offset],
+    queryKey: ["review-version-content", request.workspace_id, request.runtime_id, request.task_id, request.project_resource_id, request.path, request.scope, request.target, manifest.version_id, filePath, side, offset],
     queryFn: ({ signal }) => readReviewContent({ ...request, action: "content", target: manifest.header.target, version_id: manifest.version_id, file_path: filePath, side, offset, limit: 16384 }, signal),
     retry: false, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false, networkMode: "always",
   });

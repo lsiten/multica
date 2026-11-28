@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { LocalReviewRequest } from "@multica/core/types/local-review";
+import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import type { ReviewManifest } from "@multica/core/types/local-review-pages";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
@@ -55,7 +55,7 @@ export type LocalReviewRowStaging = {
 export type LocalReviewFileSelection = { readonly files: readonly { readonly path: string }[]; readonly busy: boolean; readonly add: (file: ReviewManifest["page"]["files"][number]) => void; readonly remove: (path: string) => void; readonly addAll?: () => void; readonly removeAll?: () => void };
 
 export function LocalReviewFileBrowser({ request, manifest, staging, selection, selectedPath, onSelectPath, diffLayout = "inherit", fileFilter = "all", fileView = "list", onFileFilterChange, onFileViewChange, comments = [], focusComment, commentSide = "new", onCommentSideChange, onAddComment, onFindings }: {
-  request: LocalReviewRequest;
+  request: Omit<PagedReviewInput, "action">;
   manifest: ReviewManifest;
   staging?: LocalReviewRowStaging;
   selection?: LocalReviewFileSelection;
@@ -89,7 +89,7 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
   const changedListRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const files = useInfiniteQuery({
-    queryKey: ["review-version-files", request.workspace_id, request.task_id, manifest.version_id],
+    queryKey: ["review-version-files", request.workspace_id, request.runtime_id, request.task_id, request.project_resource_id, request.path, request.scope, request.target, manifest.version_id],
     queryFn: ({ pageParam, signal }) => readReviewManifest({ ...request, target: manifest.header.target, action: "files", version_id: manifest.version_id, offset: pageParam, limit: 100 }, signal),
     initialPageParam: 0,
     initialData: { pages: [manifest], pageParams: [0] },
@@ -438,7 +438,7 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
 export type LocalReviewFileNavigation = { readonly previous?: () => void; readonly next?: () => void; readonly loading: boolean };
 
 function LocalReviewPatch({ request, manifest, filePath, navigation, layout, comments, focusComment, commentSide, onCommentSideChange, onAddComment, onFindings }: {
-  request: LocalReviewRequest;
+  request: Omit<PagedReviewInput, "action">;
   manifest: ReviewManifest;
   filePath: string;
   navigation: LocalReviewFileNavigation;
@@ -465,7 +465,7 @@ function LocalReviewPatch({ request, manifest, filePath, navigation, layout, com
   const diffRef = useRef<CodeMirrorDiffHandle>(null);
   const offset = offsets[index] ?? 0;
   const query = useQuery({
-    queryKey: ["review-version-patch", request.workspace_id, request.task_id, manifest.version_id, filePath, offset],
+    queryKey: ["review-version-patch", request.workspace_id, request.runtime_id, request.task_id, request.project_resource_id, request.path, request.scope, request.target, manifest.version_id, filePath, offset],
     queryFn: ({ signal }) => readReviewFile({ ...request, target: manifest.header.target, action: "file", version_id: manifest.version_id, file_path: filePath, offset, limit: 200 }, signal),
     enabled: !showContent,
     retry: false, staleTime: Infinity, gcTime: 0, refetchOnWindowFocus: false, networkMode: "always",
@@ -575,7 +575,7 @@ function LocalReviewPatch({ request, manifest, filePath, navigation, layout, com
   ]);
   if (showContent) return <LocalReviewContent request={request} manifest={manifest} filePath={filePath} onBack={() => setShowContent(false)} navigation={navigation} />;
   return <section className="flex min-h-0 flex-col overflow-hidden rounded-sm border">
-    <header className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-card p-2"><p className="min-w-0 flex-1 break-all font-mono text-caption font-semibold">{filePath}</p>{response?.page && <Button variant={showDiff ? "secondary" : "ghost"} aria-pressed={showDiff} onClick={() => setShowDiff((visible) => !visible)}>{t(($) => showDiff ? $.local_review.patch_view : $.local_review.diff_view)}</Button>}{showDiff && response?.page && <><Button size="icon-xs" variant={wrap ? "secondary" : "ghost"} aria-label={t(($) => $.local_review.wrap_lines)} aria-pressed={wrap} onClick={() => setWrap((value) => !value)}><WrapText aria-hidden="true" /></Button><Button size="icon-xs" variant={showWhitespace ? "secondary" : "ghost"} aria-label={t(($) => $.local_review.show_whitespace)} aria-pressed={showWhitespace} onClick={() => setShowWhitespace((value) => !value)}><Type aria-hidden="true" /></Button><form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); const line = Number(lineTarget); if (line > 0) diffRef.current?.goToLine(line); }}><Input type="number" min={1} value={lineTarget} onChange={(event) => setLineTarget(event.target.value)} aria-label={t(($) => $.local_review.jump_to_line)} placeholder={t(($) => $.local_review.line_number)} className="h-7 w-20" /><Button type="submit" size="xs" variant="ghost" disabled={!lineTarget}>{t(($) => $.local_review.go)}</Button></form></>}{response?.page && <Button variant="ghost" disabled={!onFindings} onClick={() => { const page = response?.page; if (page) onFindings?.(reviewFindingsForPatch({ file: filePath, revision: manifest.version_id, page })); }}><Sparkles aria-hidden="true" />{t(($) => $.local_review.find_issues)}</Button>}{response?.page && <Button variant="ghost" onClick={() => { setCommentLine(commentSide === "old" ? diffRef.current?.selectedOldLine() ?? 1 : diffRef.current?.selectedNewLine() ?? 1); setCommentOpen(true); }}>{t(($) => $.local_review.add_line_comment)}</Button>}<Button variant="ghost" disabled={query.isPending || response?.preview === "unsupported"} onClick={() => setShowContent(true)}>{t(($) => $.local_review.view_content)}</Button></header>
+    <header className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-card p-2"><p className="min-w-0 flex-1 break-all font-mono text-caption font-semibold">{filePath}</p>{response?.page && <Button variant={showDiff ? "secondary" : "ghost"} aria-pressed={showDiff} onClick={() => setShowDiff((visible) => !visible)}>{t(($) => showDiff ? $.local_review.patch_view : $.local_review.diff_view)}</Button>}{showDiff && response?.page && <><Button size="icon-xs" variant={wrap ? "secondary" : "ghost"} aria-label={t(($) => $.local_review.wrap_lines)} aria-pressed={wrap} onClick={() => setWrap((value) => !value)}><WrapText aria-hidden="true" /></Button><Button size="icon-xs" variant={showWhitespace ? "secondary" : "ghost"} aria-label={t(($) => $.local_review.show_whitespace)} aria-pressed={showWhitespace} onClick={() => setShowWhitespace((value) => !value)}><Type aria-hidden="true" /></Button><form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); const line = Number(lineTarget); if (line > 0) diffRef.current?.goToLine(line); }}><Input type="number" min={1} value={lineTarget} onChange={(event) => setLineTarget(event.target.value)} aria-label={t(($) => $.local_review.jump_to_line)} placeholder={t(($) => $.local_review.line_number)} className="h-7 w-20" /><Button type="submit" size="xs" variant="ghost" disabled={!lineTarget}>{t(($) => $.local_review.go)}</Button></form></>}{response?.page && onFindings && <Button variant="ghost" onClick={() => { const page = response?.page; if (page) onFindings?.(reviewFindingsForPatch({ file: filePath, revision: manifest.version_id, page })); }}><Sparkles aria-hidden="true" />{t(($) => $.local_review.find_issues)}</Button>}{response?.page && onAddComment && <Button variant="ghost" onClick={() => { setCommentLine(commentSide === "old" ? diffRef.current?.selectedOldLine() ?? 1 : diffRef.current?.selectedNewLine() ?? 1); setCommentOpen(true); }}>{t(($) => $.local_review.add_line_comment)}</Button>}<Button variant="ghost" disabled={query.isPending || response?.preview === "unsupported"} onClick={() => setShowContent(true)}>{t(($) => $.local_review.view_content)}</Button></header>
     <div key={offset} data-review-diff-scroll="" className="min-h-0 flex-1 overflow-auto">
       {query.isPending && <p role="status" className="p-3 text-caption">{t(($) => $.local_review.loading)}</p>}
       {query.error && <div className="p-3"><LocalReviewError error={query.error} id={errorId} /><Button className="mt-2" variant="outline" onClick={() => void query.refetch()}>{t(($) => $.local_review.refresh)}</Button></div>}

@@ -92,3 +92,25 @@ it("validates shallow directory pagination and preserves older response compatib
  expect(()=>parsePagedReviewResponse(input,{...page,entries:[],has_more:true})).toThrow(/pagination/);
  expect(parsePagedReviewResponse(input,{path:"/repo",entries:[]})).toMatchObject({truncated:false});
 });
+
+it("allows only read-only checkout operations with either authorized locator", () => {
+  const checkout = { workspace_id: "ws", project_resource_id: "resource", path: "/repo", scope: "checkout" } as const;
+  expect(pagedReviewRequestSchema.parse({ ...checkout, action: "git_history" }).scope).toBe("checkout");
+  expect(pagedReviewRequestSchema.parse({ ...checkout, action: "git_manifest", git_scope: "commit", commit_sha: "1".repeat(40) }).target).toBe("");
+  expect(pagedReviewRequestSchema.safeParse({ ...checkout, action: "git_manifest", git_scope: "branch" }).success).toBe(false);
+  for (const action of ["stage", "commit", "submit", "merge", "versions", "manifest"]) expect(pagedReviewRequestSchema.safeParse({ ...checkout, action }).success).toBe(false);
+  expect(pagedReviewRequestSchema.safeParse({ ...checkout, action: "git_manifest", git_scope: "commit", commit_sha: "main" }).success).toBe(false);
+});
+
+it("rejects a dirty or mismatched committed Git manifest", () => {
+  const input = pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", runtime_id: "runtime", path: "/repo", scope: "checkout", action: "git_manifest", git_scope: "commit", commit_sha: "1".repeat(40) });
+  const manifest = { version_id: id, runtime_id: "runtime", header: { repository: "/repo", branch: "feature", target: "", head: "1".repeat(40), target_head: "", base: "", dirty: false, committed: true, commit_only: true }, page: { files: [], total_files: 0, next_offset: 0, has_more: false, additions: 0, deletions: 0 }, review: { snapshot_id: id, state: "draft", comment: "", merged_commit: "" } };
+  expect(parsePagedReviewResponse(input, manifest)).toMatchObject({ header: { commit_only: true } });
+  for (const header of [{ dirty: true }, { committed: false }, { commit_only: false }, { head: "2".repeat(40) }, { repository: "/other" }]) expect(() => parsePagedReviewResponse(input, { ...manifest, header: { ...manifest.header, ...header } })).toThrow(/identity/);
+  expect(() => parsePagedReviewResponse(input, { ...manifest, runtime_id: "other" })).toThrow(/runtime/);
+});
+
+it("rejects nonprogressing workspace commit history", () => {
+  const input = pagedReviewRequestSchema.parse({ task_id: "task", workspace_id: "ws", path: "/repo", scope: "checkout", action: "git_history" });
+  expect(() => parsePagedReviewResponse(input, { commits: [], next_offset: 0, has_more: true })).toThrow(/pagination/);
+});

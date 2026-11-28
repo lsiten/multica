@@ -116,3 +116,19 @@ export async function renewReviewLease(input: PagedReviewInput, signal?: AbortSi
   if (!("expires_at" in response)) throw new Error("Review lease expected");
   return response;
 }
+
+export async function readGitBranches(input: PagedReviewInput, signal?: AbortSignal) {
+  const response = await requestReviewPage({ ...input, scope: "checkout", action: "branches" }, signal);
+  if (!("branches" in response)) throw new Error("Git branches response expected");
+  return response;
+}
+
+export async function readGitManifest(input: PagedReviewInput, signal?: AbortSignal) {
+  return readReviewManifest({ ...input, scope: "checkout", action: "git_manifest" }, signal);
+}
+
+export async function readGitHistory(input: PagedReviewInput, signal?: AbortSignal) {
+  const response = await requestReviewPage({ ...input, scope: "checkout", action: "git_history" }, signal);
+  if (!("commits" in response)) throw new Error("Git history response expected");
+  return response;
+}

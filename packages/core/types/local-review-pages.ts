@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { localReviewEventSchema } from "./local-review";
+import { localReviewEventSchema, localReviewBranchesSchema } from "./local-review";
 import { selectedMergeResultSchema, type SelectedMergeResult } from "./local-review-selection";
 import { isLocalIndexAction, isLocalIndexMutation, parseLocalIndexResponse, type LocalIndexView, type LocalIndexResult } from "./local-review-index";
 import { workspaceFileOperationSchema, parseWorkspaceFileOperationResult, parseWorkspaceTrashPage, type WorkspaceTrashPage, type WorkspaceFileOperationResult } from "./workspace-file-operation";
@@ -9,7 +9,7 @@ const count = z.number().int().nonnegative().safe();
 const blob = z.object({ id: digest, size: count });
 const preview = z.enum(["text", "binary", "too_large", "uncached", "unsupported"]).catch("unsupported");
 export const pagedReviewCapabilitySchema = z.object({ local_review_paging_supported: z.boolean().optional().catch(false) });
-export const reviewScopeSchema = z.enum(["run", "directory", "version"]);
+export const reviewScopeSchema = z.enum(["run", "directory", "version", "checkout"]);
 
 export function isPagedReviewDecision(action: string): boolean {
   return ["file_operation", "submit", "approve", "request_changes", "merge", "merge_selected"].includes(action) || isLocalIndexMutation(action);
@@ -20,7 +20,9 @@ export const pagedReviewRequestSchema = z.object({
   scope: reviewScopeSchema.optional(),
   workspace_id: z.string().min(1), runtime_id: z.string().optional(),
   path: z.string().min(1).max(4096), target: z.string().max(250).default(""),
-  action: z.enum(["workspace_trash", "file_operation", "merge_selected", "index", "stage", "unstage", "commit", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
+  action: z.enum(["git_history", "git_manifest", "branches", "workspace_trash", "file_operation", "merge_selected", "index", "stage", "unstage", "commit", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes", "merge"]).default("manifest"),
+  git_scope: z.enum(["branch", "commit"]).optional(),
+  commit_sha: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(),
   file_operation: workspaceFileOperationSchema.optional(),
   index_id: digest.optional(), head: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/).optional(), branch: z.string().max(250).optional(),
   paths: z.array(z.string().min(1).max(4096)).max(10000).optional(), message: z.string().max(8000).optional(),
@@ -36,9 +38,14 @@ export const pagedReviewRequestSchema = z.object({
   if (request.scope === "run" && !request.task_id) context.addIssue({ code: "custom", message: "Run scope requires a task" });
   if (request.scope === "directory" && !request.project_resource_id) context.addIssue({ code: "custom", message: "Directory scope requires a project resource" });
   if (request.scope === "version" && !request.version_id) context.addIssue({ code: "custom", message: "Version scope requires a review version" });
-  if (request.project_resource_id && !["workspace_files", "file_content", "index", "lease"].includes(request.action)) context.addIssue({ code: "custom", message: "Project directory browsing is read-only" });
-  if (!["workspace_trash", "file_operation", "index", "repositories", "versions", "workspace_files", "file_content"].includes(request.action) && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
-  if (!["workspace_trash", "file_operation", "index", "manifest", "repositories", "versions", "workspace_files", "file_content"].includes(request.action) && !request.version_id) context.addIssue({ code: "custom", message: "Review version required" });
+  const checkoutReads = ["git_history", "branches", "repositories", "git_manifest", "index", "files", "file", "context", "content", "commits", "lease"];
+  if (request.scope === "checkout" && !checkoutReads.includes(request.action)) context.addIssue({ code: "custom", message: "Checkout scope is read-only" });
+  if (request.scope === "checkout" && request.action === "git_manifest" && request.git_scope === "branch" && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
+  if (request.action === "git_history" && (request.scope !== "checkout" || request.limit > 100)) context.addIssue({ code: "custom", message: "Checkout history page required" });
+  if (request.action === "git_manifest" && (request.scope !== "checkout" || !request.git_scope || (request.git_scope === "commit" && !request.commit_sha) || request.version_id)) context.addIssue({ code: "custom", message: "Git comparison identity required" });
+  if (request.project_resource_id && !(request.scope === "checkout" && checkoutReads.includes(request.action)) && !["workspace_files", "file_content", "index", "lease"].includes(request.action)) context.addIssue({ code: "custom", message: "Project directory browsing is read-only" });
+  if (request.scope !== "checkout" && !(request.action === "git_manifest" && request.git_scope === "commit") && !["branches", "workspace_trash", "file_operation", "index", "repositories", "versions", "workspace_files", "file_content"].includes(request.action) && !request.target.trim()) context.addIssue({ code: "custom", message: "Target branch required" });
+  if (!["git_history", "branches", "git_manifest", "workspace_trash", "file_operation", "index", "manifest", "repositories", "versions", "workspace_files", "file_content"].includes(request.action) && !request.version_id) context.addIssue({ code: "custom", message: "Review version required" });
   if (request.action === "file_operation" && (!request.file_operation || !request.command_id)) context.addIssue({ code: "custom", message: "File operation and operation identity required" });
   if (request.action === "workspace_trash" && request.limit > 100) context.addIssue({ code: "custom", message: "Trash page limit exceeded" });
   if ((request.action === "file" || request.action === "context" || request.action === "content") && !request.file_path) context.addIssue({ code: "custom", message: "Review file required" });
@@ -62,7 +69,7 @@ export const reviewVersionFileSchema = z.object({
 });
 export const reviewVersionHeaderSchema = z.object({
   repository: z.string(), branch: z.string(), target: z.string(),
-  head: z.string(), target_head: z.string(), base: z.string(), dirty: z.boolean(), committed: z.boolean(),
+  head: z.string(), target_head: z.string(), base: z.string(), dirty: z.boolean(), committed: z.boolean(), commit_only: z.boolean().optional(),
 });
 export const reviewManifestSchema = z.object({
   version_id: digest, runtime_id: z.string().optional(), header: reviewVersionHeaderSchema,
@@ -89,6 +96,7 @@ export const reviewFilePageSchema = z.object({
 
 export type PagedReviewInput = z.input<typeof pagedReviewRequestSchema>;
 export const reviewRepositoriesSchema = z.object({ repositories: z.array(z.string()).max(1000), runtime_id: z.string().optional() });
+export const gitHistorySchema = z.object({ commits: z.array(z.object({ sha: z.string(), subject: z.string() })).max(100), next_offset: count, has_more: z.boolean() });
 export const reviewCommitsSchema = z.object({ version_id: digest, runtime_id: z.string().optional(), commits: z.array(z.object({ sha: z.string(), subject: z.string() })).max(100), next_offset: count, has_more: z.boolean() });
 export const reviewVersionsSchema = z.object({ versions: z.array(z.object({ version_id: digest, header: reviewVersionHeaderSchema, updated_at: z.string().datetime() })).max(500) });
 export const reviewContentSchema = z.object({
@@ -116,9 +124,15 @@ export const reviewLeaseSchema = z.object({ version_id: digest, runtime_id: z.st
 export type PagedReviewRequest = z.infer<typeof pagedReviewRequestSchema>;
 export type ReviewManifest = z.infer<typeof reviewManifestSchema>;
 export type ReviewFilePage = z.infer<typeof reviewFilePageSchema>;
-export type PagedReviewResponse = WorkspaceTrashPage | WorkspaceFileOperationResult | SelectedMergeResult | LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewVersionsSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof workspaceFileListSchema> | z.infer<typeof workspaceFileContentSchema> | z.infer<typeof reviewLeaseSchema>;
+export type PagedReviewResponse = z.infer<typeof gitHistorySchema> | z.infer<typeof localReviewBranchesSchema> | WorkspaceTrashPage | WorkspaceFileOperationResult | SelectedMergeResult | LocalIndexView | LocalIndexResult | ReviewManifest | ReviewFilePage | z.infer<typeof reviewRepositoriesSchema> | z.infer<typeof reviewVersionsSchema> | z.infer<typeof reviewCommitsSchema> | z.infer<typeof reviewContentSchema> | z.infer<typeof workspaceFileListSchema> | z.infer<typeof workspaceFileContentSchema> | z.infer<typeof reviewLeaseSchema>;
 
 export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unknown): PagedReviewResponse {
+  if (request.action === "git_history") {
+    const page = gitHistorySchema.parse(raw);
+    if (page.next_offset !== request.offset + page.commits.length || (page.has_more && !page.commits.length)) throw new Error("Invalid Git history pagination");
+    return page;
+  }
+  if (request.action === "branches") return localReviewBranchesSchema.parse(raw);
   if (request.action === "workspace_trash") return parseWorkspaceTrashPage(request, raw);
   if (request.action === "file_operation") return parseWorkspaceFileOperationResult(request, raw);
   if (request.action === "merge_selected") {
@@ -168,9 +182,10 @@ export function parsePagedReviewResponse(request: PagedReviewRequest, raw: unkno
   if (request.version_id && response.version_id !== request.version_id) throw new Error("Review version mismatch");
   if (request.runtime_id && response.runtime_id && request.runtime_id !== response.runtime_id) throw new Error("Review runtime mismatch");
   if ("header" in response) {
+    if (request.action === "git_manifest" && (!response.header.committed || response.header.dirty || response.header.repository !== request.path || (request.git_scope === "commit" && (!response.header.commit_only || response.header.head !== request.commit_sha)))) throw new Error("Git comparison identity mismatch");
     const page = response.page;
     const offset = isPagedReviewDecision(request.action) ? 0 : request.offset;
-    if (response.header.target !== request.target || response.review.snapshot_id !== response.version_id) throw new Error("Review identity mismatch");
+    if ((!(request.action === "git_manifest" && request.git_scope === "commit") && response.header.target !== request.target) || response.review.snapshot_id !== response.version_id) throw new Error("Review identity mismatch");
     if (page.next_offset !== offset + page.files.length || page.next_offset > page.total_files || page.has_more !== (page.next_offset < page.total_files)) throw new Error("Invalid review file pagination");
   } else {
     if (response.path !== request.file_path) throw new Error("Review file mismatch");

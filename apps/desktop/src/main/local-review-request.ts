@@ -31,6 +31,7 @@ export async function requestLocalReviewBranches(input: unknown, transport: Loca
 
 export async function requestLocalReviewPage(input: unknown, transport: LocalReviewTransport, signal?: AbortSignal) {
   const request = pagedReviewRequestSchema.parse(input);
+  if (request.scope === "checkout" && (request.project_resource_id || !request.runtime_id)) return null;
   if (request.action === "file_operation" || request.action === "workspace_trash") throw new Error("workspace_file_operations_require_server_authorization");
   const result = await requestReviewOperation(request, transport, { paged: true, signal });
   return result === null ? null : { ...parsePagedReviewResponse(request, result.response), runtime_id: result.runtimeId };

@@ -1741,8 +1741,10 @@ export class ApiClient {
         snapshot_id: request.snapshot_id, command_id: request.command_id, comment: request.comment,
         index_id: request.index_id, branch: request.branch, head: request.head, paths: request.paths, message: request.message,
         file_operation: request.file_operation, file_id: request.file_id,
+        git_scope: request.git_scope, commit_sha: request.commit_sha,
       }),
     });
+    if (request.action === "branches" && raw && typeof raw === "object" && "branches" in raw) return parsePagedReviewResponse(request, raw);
     if (!raw || typeof raw !== "object" || !("page" in raw)) throw new Error("Review page response missing");
     return parsePagedReviewResponse(request, raw.page);
   }

@@ -2354,5 +2354,22 @@
     "marker_notify": "すべて終了すると {{name}} に通知されます。",
     "marker_unavailable": "{{name}} は現在実行できないため、すべて終了しても自動では開始しません。",
     "marker_unassigned": "担当者がいないため、すべて終了しても自動では開始しません。"
+  },
+  "git_changes": {
+    "title": "Git の変更",
+    "open": "Git の変更を表示",
+    "uncommitted": "未コミット",
+    "branch": "ブランチ差分",
+    "commits": "コミット",
+    "scope": "変更の範囲",
+    "runtime": "ランタイム",
+    "directory": "ディレクトリ",
+    "directory_unavailable": "作業ディレクトリが記録されていません。",
+    "no_git": "Git リポジトリまたは比較参照がありません。",
+    "diff_unavailable": "このスナップショットのファイル差分は利用できません。",
+    "offline": "ランタイムがオフラインです。再接続して更新してください。",
+    "access_unavailable": "ディレクトリが利用できないか、アクセス権がありません。",
+    "directory_missing": "作業ディレクトリは利用できなくなりました。",
+    "current_branch": "ブランチ"
   }
 }

@@ -2448,5 +2448,22 @@
     "marker_notify": "{{name}} recibirá una notificación cuando terminen.",
     "marker_unavailable": "{{name}} no puede ejecutarse ahora, así que nada comenzará cuando terminen.",
     "marker_unassigned": "Sin responsable: nada comenzará cuando terminen."
+  },
+  "git_changes": {
+    "title": "Cambios de Git",
+    "open": "Ver cambios de Git",
+    "uncommitted": "Sin confirmar",
+    "branch": "Diferencias de rama",
+    "commits": "Commits",
+    "scope": "Ámbito de cambios",
+    "runtime": "Entorno",
+    "directory": "Directorio",
+    "directory_unavailable": "No se registró un directorio de trabajo.",
+    "no_git": "No hay un repositorio Git ni una referencia de comparación disponible.",
+    "diff_unavailable": "El diff de archivos no está disponible para esta instantánea.",
+    "offline": "El entorno está desconectado. Vuelve a conectarlo y actualiza.",
+    "access_unavailable": "El directorio no está disponible o ya no tienes acceso.",
+    "directory_missing": "El directorio de trabajo ya no está disponible.",
+    "current_branch": "Rama"
   }
 }

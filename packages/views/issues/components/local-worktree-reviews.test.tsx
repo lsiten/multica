@@ -13,6 +13,8 @@ vi.mock("../../platform/local-review", () => ({ readLocalReviewBranches: async (
   { taskId: "task-b", workspaceId: "ws", runtimeId: "runtime-b", agentId: "agent-b", taskName: "feature-b", repositories: ["/remote/worktree-b"], repositoryDetails: [{ path: "/remote/worktree-b", target: "main", nextAction: "review" }] },
 ] }));
 vi.mock("../../platform/local-review-pages", () => ({
+  readGitBranches: async () => ({ branches: ["main"] }),
+  readLocalIndex: async () => ({ version_id: "a".repeat(64), unstaged_version_id: "b".repeat(64), status: { branch: "feature", head: "1".repeat(40), files: [{ path: "entry.ts", unstaged: true }] } }),
   readReviewRepositories: async (input: PagedReviewInput) => ({ repositories: [input.path] }),
   readReviewManifest: async (input: PagedReviewInput) => reviewManifestFixture(input),
   readReviewFile: async (input: PagedReviewInput) => reviewFileFixture(input, "+" + input.task_id + "-change"),
@@ -26,8 +28,8 @@ describe("remote worktree entry points", () => {
     renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalWorktreeReviews workspaceId="ws" agentId="agent-b" /></QueryClientProvider>, { locale: "zh-Hans" });
     expect(await screen.findByText(/\/remote\/worktree-b/)).toBeInTheDocument();
     expect(screen.queryByText(/\/remote\/worktree-a/)).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "查看 / 提交 MR" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "查看 / 提交 MR" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "查看 Git 变更" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "查看 Git 变更" }));
     expect(await screen.findByText("+task-b-change")).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toHaveTextContent("/remote/worktree-b");
   });
@@ -35,8 +37,8 @@ describe("remote worktree entry points", () => {
     renderWithI18n(<QueryClientProvider client={new QueryClient()}><LocalWorktreeReviews workspaceId="ws" /></QueryClientProvider>, { locale: "zh-Hans" });
     expect(await screen.findByText(/\/remote\/worktree-a/)).toBeInTheDocument();
     expect(screen.getByText(/\/remote\/worktree-b/)).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "查看 / 提交 MR" })).toHaveLength(2);
-    const [first] = screen.getAllByRole("button", { name: "查看 / 提交 MR" });
+    expect(screen.getAllByRole("button", { name: "查看 Git 变更" })).toHaveLength(2);
+    const [first] = screen.getAllByRole("button", { name: "查看 Git 变更" });
     if (!first) throw new Error("MR entry missing");
     await waitFor(() => expect(first).toBeEnabled());
     fireEvent.click(first);

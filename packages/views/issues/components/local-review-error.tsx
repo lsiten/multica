@@ -7,6 +7,10 @@ function reviewErrorDetail(error: Error): string {
 
 export function reviewErrorKind(error: Error) {
   const detail = reviewErrorDetail(error);
+  if (detail === "directory runtime is offline" || detail === "runtime offline") return "offline";
+  if (detail === "directory runtime unavailable" || detail === "API error: 403" || detail === "API error: 404") return "access";
+  if (detail === "project directory unavailable" || detail === "checkout directory is unavailable") return "directory";
+  if (detail === "select the repository root") return "repository";
   if (detail === "target must be an existing local branch") return "target";
   if (detail.startsWith("review output exceeds 8 MiB")) return "size";
   if (detail.startsWith("directory has no matching runtime task binding")) return "binding";
@@ -21,6 +25,10 @@ export function reviewErrorKind(error: Error) {
 export function LocalReviewError({ error, id }: { error: Error; id: string }) {
   const { t } = useT("issues");
   const messages = {
+    offline: t(($) => $.git_changes.offline),
+    access: t(($) => $.git_changes.access_unavailable),
+    directory: t(($) => $.git_changes.directory_missing),
+    repository: t(($) => $.git_changes.no_git),
     target: t(($) => $.local_review.error_target),
     size: t(($) => $.local_review.error_size),
     binding: t(($) => $.local_review.error_binding),

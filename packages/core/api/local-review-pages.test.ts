@@ -133,3 +133,18 @@ it("preserves shallow directory mode and its cursor through the relay",async()=>
  await new ApiClient("https://api.example.test").executePagedLocalReview({workspace_id:"ws",project_resource_id:"resource",path:"/project",action:"workspace_files",recursive:false,relative_path:".",offset:500,limit:500});
  expect(body).toMatchObject({recursive:false,relative_path:".",offset:500,limit:500});
 });
+
+it("sends the selected checkout commit through the HTTP relay", async () => {
+  const sha = "1".repeat(40);
+  const manifest = { version_id: id, header: { repository: "/repo", branch: "feature", target: "", head: sha, target_head: "", base: "", dirty: false, committed: true, commit_only: true }, page: { files: [], total_files: 0, next_offset: 0, has_more: false, additions: 0, deletions: 0 }, review: { snapshot_id: id, state: "draft", comment: "", merged_commit: "" } };
+  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
+    const input = z.object({ scope: z.literal("checkout"), git_scope: z.literal("commit"), commit_sha: z.literal(sha), project_resource_id: z.literal("resource") }).parse(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ page: { ...manifest, header: { ...manifest.header, head: input.commit_sha } } }), { status: 200 });
+  }));
+  expect(await new ApiClient("https://api.example.test").executePagedLocalReview({ workspace_id: "ws", project_resource_id: "resource", path: "/repo", scope: "checkout", action: "git_manifest", git_scope: "commit", commit_sha: sha })).toMatchObject({ header: { head: sha } });
+});
+
+it("parses checkout refs from the branch relay envelope", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ branches: ["refs/heads/main", "refs/remotes/origin/main"] }), { status: 200 })));
+  expect(await new ApiClient("https://api.example.test").executePagedLocalReview({ task_id: "task", workspace_id: "ws", path: "/repo", scope: "checkout", action: "branches" })).toEqual({ branches: ["refs/heads/main", "refs/remotes/origin/main"] });
+});

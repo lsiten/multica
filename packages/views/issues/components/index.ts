@@ -13,3 +13,7 @@ export { IssueChip } from "./issue-chip";
 export { LocalReviewDialog } from "./local-review-dialog";
 export { LocalReviewEntry } from "./local-review-entry";
 export { WorktreeActionLabel, WorktreeLifecycle, WorktreeReason, WorktreeRepositoryStatus } from "./worktree-lifecycle";
+
+export { GitChangesPanel } from "./git-changes-panel";
+export { GitChangesDialog } from "./git-changes-dialog";
+export { GitChangesEntry } from "./git-changes-entry";

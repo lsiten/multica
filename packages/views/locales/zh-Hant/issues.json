@@ -2354,5 +2354,22 @@
     "marker_notify": "阻塞結束後通知 {{name}}。",
     "marker_unavailable": "{{name}} 目前無法執行，阻塞結束後不會自動開始。",
     "marker_unassigned": "未指派負責人，阻塞結束後不會自動開始。"
+  },
+  "git_changes": {
+    "title": "Git 變更",
+    "open": "查看 Git 變更",
+    "uncommitted": "未提交",
+    "branch": "分支差異",
+    "commits": "提交",
+    "scope": "變更範圍",
+    "runtime": "執行環境",
+    "directory": "目錄",
+    "directory_unavailable": "未記錄工作目錄。",
+    "no_git": "沒有可用的 Git 儲存庫或比較參照。",
+    "diff_unavailable": "此快照的檔案差異無法使用。",
+    "offline": "執行環境已離線，請重新連線後重新整理。",
+    "access_unavailable": "目錄無法使用，或你已無權存取。",
+    "directory_missing": "工作目錄已無法使用。",
+    "current_branch": "分支"
   }
 }

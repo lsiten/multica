@@ -1,13 +1,13 @@
 import { useId, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import type { LocalReviewRequest } from "@multica/core/types/local-review";
+import type { PagedReviewInput } from "@multica/core/types/local-review-pages";
 import { Button } from "@multica/ui/components/ui/button";
 import { readReviewContext } from "../../platform/local-review-pages";
 import { useT } from "../../i18n";
 import { LocalReviewError } from "./local-review-error";
 
 type ContextProps = {
-  readonly request: LocalReviewRequest;
+  readonly request: Omit<PagedReviewInput, "action">;
   readonly versionId: string;
   readonly filePath: string;
   readonly oldStart: number;
@@ -27,7 +27,7 @@ function ContextLines({ request, versionId, filePath, oldStart, newStart, count 
   const errorId = useId();
   const end = newStart - 1 + count;
   const query = useInfiniteQuery({
-    queryKey: ["review-hunk-context", request.workspace_id, request.task_id, versionId, filePath, newStart, count],
+    queryKey: ["review-hunk-context", request.workspace_id, request.runtime_id, request.task_id, request.project_resource_id, request.path, request.scope, request.target, versionId, filePath, newStart, count],
     queryFn: ({ pageParam, signal }) => readReviewContext({ ...request, action: "context", version_id: versionId, file_path: filePath, offset: pageParam, limit: Math.min(50, end - pageParam) }, signal),
     initialPageParam: newStart - 1,
     getNextPageParam: (last) => last.page && last.page.has_more && last.page.next_line < end ? last.page.next_line : undefined,

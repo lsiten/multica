@@ -2448,5 +2448,22 @@
     "marker_notify": "{{name}} is notified once these end.",
     "marker_unavailable": "{{name}} can't run right now, so nothing starts when these end.",
     "marker_unassigned": "No assignee, so nothing starts when these end."
+  },
+  "git_changes": {
+    "title": "Git changes",
+    "open": "View Git changes",
+    "uncommitted": "Uncommitted",
+    "branch": "Branch diff",
+    "commits": "Commits",
+    "scope": "Change scope",
+    "runtime": "Runtime",
+    "directory": "Directory",
+    "directory_unavailable": "No work directory was recorded.",
+    "no_git": "No Git repository or comparison ref is available.",
+    "diff_unavailable": "File diff is unavailable for this snapshot.",
+    "offline": "The runtime is offline. Reconnect it and refresh.",
+    "access_unavailable": "This directory is unavailable or you no longer have access.",
+    "directory_missing": "The work directory is no longer available.",
+    "current_branch": "Branch"
   }
 }

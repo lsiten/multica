@@ -2354,5 +2354,22 @@
     "marker_notify": "모두 종료되면 {{name}}에게 알림이 갑니다.",
     "marker_unavailable": "{{name}}이(가) 지금 실행할 수 없어 모두 종료되어도 자동으로 시작되지 않습니다.",
     "marker_unassigned": "담당자가 없어 모두 종료되어도 자동으로 시작되지 않습니다."
+  },
+  "git_changes": {
+    "title": "Git 변경 사항",
+    "open": "Git 변경 사항 보기",
+    "uncommitted": "커밋되지 않음",
+    "branch": "브랜치 차이",
+    "commits": "커밋",
+    "scope": "변경 범위",
+    "runtime": "런타임",
+    "directory": "디렉터리",
+    "directory_unavailable": "작업 디렉터리가 기록되지 않았습니다.",
+    "no_git": "Git 저장소 또는 비교 참조가 없습니다.",
+    "diff_unavailable": "이 스냅샷의 파일 차이를 사용할 수 없습니다.",
+    "offline": "런타임이 오프라인입니다. 다시 연결하고 새로 고치세요.",
+    "access_unavailable": "디렉터리를 사용할 수 없거나 접근 권한이 없습니다.",
+    "directory_missing": "작업 디렉터리를 더 이상 사용할 수 없습니다.",
+    "current_branch": "브랜치"
   }
 }

@@ -2448,5 +2448,22 @@
     "marker_notify": "{{name}} sera notifié une fois celles-ci terminées.",
     "marker_unavailable": "{{name}} ne peut pas s'exécuter pour l'instant : rien ne démarrera une fois celles-ci terminées.",
     "marker_unassigned": "Aucun responsable : rien ne démarrera une fois celles-ci terminées."
+  },
+  "git_changes": {
+    "title": "Modifications Git",
+    "open": "Voir les modifications Git",
+    "uncommitted": "Non commitées",
+    "branch": "Différence de branche",
+    "commits": "Commits",
+    "scope": "Portée des modifications",
+    "runtime": "Environnement",
+    "directory": "Répertoire",
+    "directory_unavailable": "Aucun répertoire de travail enregistré.",
+    "no_git": "Aucun dépôt Git ou référence de comparaison disponible.",
+    "diff_unavailable": "Le diff des fichiers est indisponible pour cet instantané.",
+    "offline": "L’environnement est hors ligne. Reconnectez-le puis actualisez.",
+    "access_unavailable": "Ce répertoire est indisponible ou vous n’y avez plus accès.",
+    "directory_missing": "Le répertoire de travail n’est plus disponible.",
+    "current_branch": "Branche"
   }
 }

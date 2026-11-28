@@ -6,8 +6,8 @@ import { useAuthStore } from "@multica/core/auth";
 import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { Button } from "@multica/ui/components/ui/button";
 import { localReviewInventoryPage } from "../../platform/local-review";
-import { LocalReviewDialog } from "./local-review-dialog";
-import { LocalReviewEntry } from "./local-review-entry";
+import { GitChangesDialog } from "./git-changes-dialog";
+import { GitChangesEntry } from "./git-changes-entry";
 import { useT } from "../../i18n";
 import { compareWorktreeLifecycle, worktreeActions } from "@multica/core/types/worktree-lifecycle";
 import { WorktreeActionLabel, WorktreeLifecycle, WorktreeRepositoryStatus } from "./worktree-lifecycle";
@@ -40,11 +40,11 @@ function LocalWorktreeReviewList({ workspaceId, agentId }: { workspaceId: string
         <WorktreeLifecycle row={row} />
         {row.repositories.map((path) => {
           const repository = row.repositoryDetails?.find((entry) => entry.path === path);
-          return <div key={path} className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><p className="break-all text-caption">{path}</p><WorktreeRepositoryStatus repository={repository} /></div><LocalReviewEntry className="max-w-64" request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: repository?.target ?? "" }} onOpen={setRequest} /></div>;
+          return <div key={path} className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><p className="break-all text-caption">{path}</p><WorktreeRepositoryStatus repository={repository} /></div><GitChangesEntry className="max-w-64" request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: repository?.target ?? "" }} onOpen={setRequest} /></div>;
         })}
       </div>)}</div>;
     })}
     {inventory.hasNextPage && <Button variant="outline" disabled={inventory.isFetchingNextPage} onClick={() => void inventory.fetchNextPage()}>{t(($) => $.local_review.load_more)}</Button>}
-    {request && rows.some((row) => row.taskId === request.task_id && row.repositories.includes(request.path)) && <LocalReviewDialog key={request.path} request={request} onClose={() => setRequest(null)} />}
+    {request && rows.some((row) => row.taskId === request.task_id && row.repositories.includes(request.path)) && <GitChangesDialog key={request.path} request={request} initialScope="uncommitted" onClose={() => setRequest(null)} />}
   </section>;
 }

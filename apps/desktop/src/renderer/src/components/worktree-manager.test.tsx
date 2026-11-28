@@ -47,17 +47,19 @@ beforeEach(() => {
 });
 
 describe("worktree management", () => {
-  it("opens the real MR dialog for the selected repository without cleaning it", async () => {
+  it("opens the read-only Git dialog for the selected repository without cleaning it", async () => {
     listWorktrees.mockResolvedValue([{ ...row("agent-id", "/task-root"), runtimeId: "runtime", repositories: ["/repo/worktree"], repositoryDetails: [{ path: "/repo/worktree", target: "main", reviewState: "open", nextAction: "review", reason: "review" }] }]);
     readLocalReviewPage.mockImplementation(async (raw: unknown) => {
       const input = pagedReviewRequestSchema.parse(raw);
+      if (input.action === "branches") return { branches: ["main"] };
+      if (input.action === "index") return { kind: "index", version_id: "a".repeat(64), unstaged_version_id: "b".repeat(64), status: { index_id: "c".repeat(64), branch: "feature", head: "1".repeat(40), files: [{ path: "entry.ts", index_code: " ", working_code: "M", staged: false, unstaged: true, untracked: false, conflicted: false, unsupported: false }] } };
       if (input.action === "repositories") return { repositories: [input.path] };
       if (input.action === "lease") return { version_id: input.version_id, expires_at: "2100-01-01T00:00:00Z" };
       if (input.action === "file") return reviewFileFixture(input, "+manager-change");
       return reviewManifestFixture(input);
     });
     mount();
-    fireEvent.click(await screen.findByRole("button", { name: /查看 \/ 提交 MR/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /查看 Git 变更/ }));
     expect(await screen.findByText("+manager-change")).toBeInTheDocument();
     expect(readLocalReviewPage).toHaveBeenCalledWith(expect.objectContaining({ task_id: "task-id", workspace_id: "ws", runtime_id: "runtime", path: "/repo/worktree" }), expect.any(String));
     expect(cleanupWorktrees).not.toHaveBeenCalled();

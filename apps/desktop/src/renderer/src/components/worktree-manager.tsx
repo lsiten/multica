@@ -10,7 +10,7 @@ import { SettingsCard, SettingsRow, SettingsSection } from "@multica/views/setti
 import { useT } from "@multica/views/i18n";
 import { toast } from "sonner";
 import type { DaemonStatus, ManagedWorktree } from "../../../shared/daemon-types";
-import { LocalReviewDialog, LocalReviewEntry, WorktreeActionLabel, WorktreeLifecycle, WorktreeReason, WorktreeRepositoryStatus } from "@multica/views/issues/components";
+import { GitChangesDialog, GitChangesEntry, WorktreeActionLabel, WorktreeLifecycle, WorktreeReason, WorktreeRepositoryStatus } from "@multica/views/issues/components";
 import type { LocalReviewRequest } from "@multica/core/types/local-review";
 import { canCleanWorktree, canDiscardWorktree } from "@multica/core/types/managed-worktree";
 import { compareWorktreeLifecycle, type WorktreeAction } from "@multica/core/types/worktree-lifecycle";
@@ -155,7 +155,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
                     <WorktreeLifecycle row={row} />
                     {row.repositories?.map((path) => {
                       const repository = row.repositoryDetails?.find((entry) => entry.path === path);
-                      return <div key={path} className="mt-2 space-y-1"><WorktreeRepositoryStatus repository={repository} /><LocalReviewEntry labelSuffix={path.split(/[\\/]/).pop()} request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: repository?.target ?? "" }} onOpen={setReview} /></div>;
+                      return <div key={path} className="mt-2 space-y-1"><WorktreeRepositoryStatus repository={repository} /><GitChangesEntry labelSuffix={path.split(/[\\/]/).pop()} request={{ task_id: row.taskId, workspace_id: row.workspaceId, runtime_id: row.runtimeId, path, target: repository?.target ?? "" }} onOpen={setReview} /></div>;
                     })}
                   </div>
                   <Button variant="ghost" size="sm" disabled={blocked || (!canCleanWorktree(row) && !canDiscardWorktree(row))} onClick={() => selectCleanup([row])}>{canDiscardWorktree(row) ? t(($) => $.desktop.worktrees.discard_worktree) : t(($) => $.desktop.worktrees.clean)}</Button>
@@ -165,7 +165,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
           </div>
         ))}
       </SettingsCard>
-      {review && <LocalReviewDialog key={review.path} request={review} onClose={() => setReview(null)} />}
+      {review && <GitChangesDialog key={review.path} request={review} initialScope="uncommitted" onClose={() => setReview(null)} />}
       <Dialog open={pending !== null} onOpenChange={(open) => { if (!open && !cleanup.isPending) setPending(null); }}>
         <DialogContent>
           <DialogHeader>

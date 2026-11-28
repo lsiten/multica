@@ -48,3 +48,17 @@ it("requires separate index support even when paging is available", async () => 
   await expect(requestLocalReviewPage({ ...request, action: "index" }, { resolveProfile: async () => profile, health: async () => health, review })).rejects.toThrow("local_review_index_upgrade_required");
   expect(review).not.toHaveBeenCalled();
 });
+
+it("keeps checkout project and unresolved runtime authorization on the server", async () => {
+  const review = vi.fn();
+  const transport = { resolveProfile: async () => profile, health: async () => health, review };
+  expect(await requestLocalReviewPage({ task_id: "task", workspace_id: "ws", path: "/repo", scope: "checkout", action: "branches" }, transport)).toBeNull();
+  expect(await requestLocalReviewPage({ project_resource_id: "resource", workspace_id: "ws", runtime_id: "runtime", path: "/repo", scope: "checkout", action: "branches" }, transport)).toBeNull();
+  expect(review).not.toHaveBeenCalled();
+});
+
+it("preserves checkout scope and known owning runtime for branch reads", async () => {
+  const review = vi.fn().mockResolvedValue({ branches: ["refs/heads/main"] });
+  expect(await requestLocalReviewPage({ ...request, action: "branches", scope: "checkout", version_id: undefined }, { resolveProfile: async () => profile, health: async () => health, review })).toMatchObject({ branches: ["refs/heads/main"] });
+  expect(review).toHaveBeenCalledWith(profile, expect.objectContaining({ scope: "checkout", task_id: "task", runtime_id: "runtime" }), undefined);
+});
