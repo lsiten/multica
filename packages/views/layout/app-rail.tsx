@@ -432,7 +432,7 @@ export function AppRail({
     applications: {
       href: p.applications(),
       icon: routeIconForPath(p.applications()),
-      label: t(($) => $.nav.applications),
+      label: t(($) => $.rail.applications),
       fullLabel: t(($) => $.nav.applications),
     },
     work: {
@@ -462,7 +462,7 @@ export function AppRail({
     meetings: {
       href: p.meetings(),
       icon: routeIconForPath(p.meetings()),
-      label: t(($) => $.nav.meetings),
+      label: t(($) => $.rail.meetings),
       fullLabel: t(($) => $.nav.meetings),
     },
     autopilots: {

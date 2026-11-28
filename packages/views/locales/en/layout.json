@@ -2117,6 +2117,8 @@
     "team": "Team"
   },
   "rail": {
+    "applications": "Apps",
+    "meetings": "Meets",
     "label": "App navigation",
     "sheet_description": "Switch views and workspaces.",
     "work": "Work",

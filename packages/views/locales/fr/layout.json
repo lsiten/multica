@@ -2087,6 +2087,8 @@
     "team": "Équipe"
   },
   "rail": {
+    "applications": "Apps",
+    "meetings": "Réun.",
     "label": "Navigation de l'application",
     "sheet_description": "Changer de vue et d'espace de travail.",
     "work": "Travail",

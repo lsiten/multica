@@ -2048,6 +2048,8 @@
     "team": "团队"
   },
   "rail": {
+    "applications": "应用",
+    "meetings": "会议",
     "label": "应用导航",
     "sheet_description": "切换视图和工作区。",
     "work": "工作",

@@ -2019,6 +2019,8 @@
     "team": "チーム"
   },
   "rail": {
+    "applications": "アプリ",
+    "meetings": "会議",
     "label": "アプリナビゲーション",
     "sheet_description": "ビューとワークスペースを切り替えます。",
     "work": "作業",

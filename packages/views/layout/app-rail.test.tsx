@@ -213,7 +213,7 @@ describe("AppRail order", () => {
 describe("AppRail spaces", () => {
   it("opens Applications and keeps its space selected on application details", () => {
     const { visit } = renderRail();
-    const applications = screen.getByRole("link", { name: "Applications" });
+    const applications = screen.getByRole("link", { name: "Apps" });
     expect(applications).toHaveAttribute("href", "/acme/applications");
 
     visit("/acme/applications/app-1");

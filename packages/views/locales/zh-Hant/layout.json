@@ -2048,6 +2048,8 @@
     "team": "團隊"
   },
   "rail": {
+    "applications": "應用",
+    "meetings": "會議",
     "label": "應用導覽",
     "sheet_description": "切換檢視與工作區。",
     "work": "工作",
