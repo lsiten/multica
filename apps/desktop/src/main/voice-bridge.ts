@@ -2,13 +2,15 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { writeFile, rename, rm } from "node:fs/promises";
 import { z } from "zod";
+import { VoiceTranscriptionError } from "./voice-error";
 
 const MAX_AUDIO_BYTES = 512 * 1024;
 const AudioRequest = z.object({
+  language: z.enum(["en", "zh", "zh-Hans", "zh-Hant", "es", "fr", "ja", "ko", "ru"]).optional(),
   mime_type: z.string().max(128).regex(/^audio\/(webm|ogg|mp4|wav|x-wav)(;.*)?$/),
   audio_base64: z.string().min(1).max(Math.ceil(MAX_AUDIO_BYTES / 3) * 4),
 }).strict();
-export type VoiceBridgeAudio = { readonly mimeType: string; readonly bytes: Buffer };
+export type VoiceBridgeAudio = { readonly mimeType: string; readonly bytes: Buffer; readonly language?: string };
 export type VoiceBridgeTranscribe = (audio: VoiceBridgeAudio, signal: AbortSignal) => Promise<string>;
 
 export async function startVoiceBridge(descriptorPath: string, transcribe: VoiceBridgeTranscribe) {
@@ -41,13 +43,14 @@ export async function startVoiceBridge(descriptorPath: string, transcribe: Voice
         response.writeHead(400).end(); return;
       }
       signal.throwIfAborted();
-      const text = (await transcribe({ mimeType: parsed.data.mime_type, bytes }, signal)).trim();
+      const text = (await transcribe({ mimeType: parsed.data.mime_type, bytes, language: parsed.data.language }, signal)).trim();
       if (!text || Buffer.byteLength(text) > 16 * 1024) { response.writeHead(422).end(); return; }
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify({ text }));
     } catch (error) { // Request boundary: malformed audio and inference failures never return text.
       console.warn("[voice-bridge] request failed", { kind: error instanceof Error ? error.name : "unknown", message: error instanceof Error && !(error instanceof SyntaxError) ? error.message.slice(0, 200) : "invalid request", aborted: signal.aborted });
-      response.writeHead(error instanceof SyntaxError ? 400 : 503).end();
+      response.writeHead(error instanceof SyntaxError ? 400 : 503, { "Content-Type": "application/json" })
+        .end(JSON.stringify({ error: error instanceof VoiceTranscriptionError ? error.code : "transcription_failed" }));
     } finally { active = false; }
   });
   server.requestTimeout = 25_000;

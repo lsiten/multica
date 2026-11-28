@@ -84,16 +84,24 @@ it("forwards the selected language to the worker and returns its transcript", as
 
 
 it.each([
-  { preferred: ["zh-Hans-CN"], language: "zh" },
-  { preferred: ["ja-JP"], language: "ja" },
-  { preferred: ["de-DE"], language: "en" },
-  { preferred: [], language: "zh" },
-])("routes Web audio with the supported system language $language for $preferred", async ({ preferred, language }) => {
+  { preferred: ["zh-Hans-CN"], requested: undefined, language: "zh" },
+  { preferred: ["ja-JP"], requested: undefined, language: "ja" },
+  { preferred: ["de-DE"], requested: undefined, language: "en" },
+  { preferred: [], requested: undefined, language: "zh" },
+  { preferred: ["zh-Hans-CN"], requested: "en", language: "en" },
+  { preferred: ["en-US"], requested: "zh-Hans", language: "zh" },
+  { preferred: ["en-US"], requested: "zh-Hant", language: "zh" },
+  { preferred: ["en-US"], requested: "es", language: "es" },
+  { preferred: ["en-US"], requested: "fr", language: "fr" },
+  { preferred: ["en-US"], requested: "ja", language: "ja" },
+  { preferred: ["en-US"], requested: "ko", language: "ko" },
+  { preferred: ["en-US"], requested: "ru", language: "ru" },
+])("uses requested UI locale $requested with legacy host fallback", async ({ preferred, requested, language }) => {
   electron.preferredLanguages.mockReturnValue(preferred);
   await fixture();
   const bridge = electron.bridge.mock.calls.at(-1)?.[1];
   if (!bridge) throw new Error("Voice bridge missing");
-  const result = bridge({ bytes: Buffer.from("audio"), mimeType: "audio/mp4" }, new AbortController().signal);
+  const result = bridge({ bytes: Buffer.from("audio"), mimeType: "audio/mp4", language: requested }, new AbortController().signal);
   await vi.waitFor(() => expect(electron.postMessage).toHaveBeenCalled());
   const message = electron.postMessage.mock.calls[0]?.[0];
   if (!message || typeof message !== "object" || !("id" in message)) throw new Error("Worker request missing");
@@ -111,4 +119,20 @@ it("keeps desktop voice working when the runtime bridge cannot start", async () 
     electron.workerListeners.get("message")?.({ type: "result", id: "recording", text: "中文" });
     await expect(result).resolves.toBe("中文");
   } finally { warn.mockRestore(); }
+});
+
+it.each([
+  { reason: "no_signal", code: "no_speech" },
+  { reason: "unreliable_transcript", code: "unreliable_transcript" },
+])("retains worker rejection $reason for Web callers without transcript text", async ({ reason, code }) => {
+  await fixture();
+  const bridge = electron.bridge.mock.calls.at(-1)?.[1];
+  if (!bridge) throw new Error("Voice bridge missing");
+  const result = bridge({ bytes: Buffer.from("audio"), mimeType: "audio/mp4", language: "en" }, new AbortController().signal);
+  const rejected = expect(result).rejects.toMatchObject({ code });
+  await vi.waitFor(() => expect(electron.postMessage).toHaveBeenCalled());
+  const message = electron.postMessage.mock.calls[0]?.[0];
+  if (!message || typeof message !== "object" || !("id" in message)) throw new Error("Worker request missing");
+  electron.workerListeners.get("message")?.({ type: "error", id: message.id, reason });
+  await rejected;
 });

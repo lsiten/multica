@@ -5,24 +5,8 @@ import { LocalVoiceContext } from "@multica/views/platform";
 import type { LocalVoiceAdapter, LocalVoiceStatus } from "@multica/core/platform";
 import type { LocalVoiceAPI, LocalVoiceLanguage } from "../../../shared/local-voice";
 
-// mapVoiceLanguage resolves the UI locale to one of the languages the offline
-// whisper worker can transcribe. Unsupported locales fall back to English so a
-// recording is never handed to the worker with an invalid language.
-export function mapVoiceLanguage(locale: string): LocalVoiceLanguage {
-  switch (locale) {
-    case "ja":
-      return "ja";
-    case "ko":
-      return "ko";
-    case "fr":
-      return "fr";
-    case "zh-Hans":
-    case "zh-Hant":
-      return "zh";
-    default:
-      return "en";
-  }
-}
+import { mapVoiceLanguage } from "../../../shared/local-voice";
+export { mapVoiceLanguage } from "../../../shared/local-voice";
 
 // decodeRecordingToPcm16 turns a recorded media Blob into mono 16 kHz PCM samples
 // matching the offline whisper contract. Resampling through an OfflineAudioContext

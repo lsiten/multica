@@ -61,6 +61,10 @@ func (h *Handler) TranscribeChatVoice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_audio")
 		return
 	}
+	if audio.Language != "" && !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityVoiceLocaleV1) {
+		writeError(w, http.StatusNotImplemented, "voice_upgrade_required")
+		return
+	}
 	result, err := h.DaemonHub.TranscribeVoice(r.Context(), uuidToString(rt.WorkspaceID), uuidToString(rt.ID), rt.DaemonID.String, audio)
 	if err != nil {
 		switch {
@@ -114,6 +118,10 @@ func (h *Handler) TranscribeRuntimeVoice(w http.ResponseWriter, r *http.Request)
 	}
 	if _, err := audio.Decode(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_audio")
+		return
+	}
+	if audio.Language != "" && !runtimeHasCapability(rt.Metadata, protocol.DaemonCapabilityVoiceLocaleV1) {
+		writeError(w, http.StatusNotImplemented, "voice_upgrade_required")
 		return
 	}
 	result, err := h.DaemonHub.TranscribeVoice(r.Context(), uuidToString(rt.WorkspaceID), uuidToString(rt.ID), rt.DaemonID.String, audio)

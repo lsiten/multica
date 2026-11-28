@@ -22,7 +22,7 @@ func desktopVoiceFixture(t *testing.T, text string) (string, func()) {
 			return
 		}
 		var audio protocol.VoiceAudio
-		if json.NewDecoder(r.Body).Decode(&audio) != nil || audio.MimeType != "audio/mp4" || audio.AudioBase64 != "YQ==" {
+		if json.NewDecoder(r.Body).Decode(&audio) != nil || audio.MimeType != "audio/mp4" || audio.AudioBase64 != "YQ==" || audio.Language != "zh-Hans" {
 			w.WriteHeader(400)
 			return
 		}
@@ -43,7 +43,7 @@ func desktopVoiceFixture(t *testing.T, text string) (string, func()) {
 }
 
 func voiceDesktopRequest() protocol.VoiceRequest {
-	return protocol.VoiceRequest{RuntimeEnvelope: protocol.RuntimeEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "gen", RequestID: "req"}, VoiceAudio: protocol.VoiceAudio{MimeType: "audio/mp4", AudioBase64: "YQ=="}}
+	return protocol.VoiceRequest{RuntimeEnvelope: protocol.RuntimeEnvelope{WorkspaceID: "ws", RuntimeID: "rt", DaemonGeneration: "gen", RequestID: "req"}, VoiceAudio: protocol.VoiceAudio{MimeType: "audio/mp4", AudioBase64: "YQ==", Language: "zh-Hans"}}
 }
 
 func TestDesktopVoiceUsesCurrentDescriptorAfterDesktopRestart(t *testing.T) {
@@ -104,5 +104,31 @@ func TestDesktopVoiceRejectsNonLoopbackDescriptor(t *testing.T) {
 		if _, err := readDesktopVoiceDescriptor(path); err == nil {
 			t.Fatalf("accepted %s", endpoint)
 		}
+	}
+}
+
+func TestDesktopVoiceForwardsOnlyKnownRejectionCodes(t *testing.T) {
+	for _, tc := range []struct{ code, expected string }{{"no_speech", "no_speech"}, {"unreliable_transcript", "unreliable_transcript"}, {"private error detail", "transcription_failed"}} {
+		t.Run(tc.expected+tc.code, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				if err := json.NewEncoder(w).Encode(map[string]string{"error": tc.code, "text": "must not return"}); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			descriptor, err := json.Marshal(desktopVoiceDescriptor{URL: server.URL + "/transcribe", Token: strings.Repeat("a", 64)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "voice-bridge.json")
+			if err := os.WriteFile(path, descriptor, 0600); err != nil {
+				t.Fatal(err)
+			}
+			result := transcribeDesktopVoice(context.Background(), voiceDesktopRequest(), path)
+			if result.Text != "" || result.Reason != tc.expected || !result.Valid() {
+				t.Fatalf("result=%+v", result)
+			}
+		})
 	}
 }

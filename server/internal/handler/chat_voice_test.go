@@ -49,3 +49,43 @@ func TestRuntimeVoiceHandlerRequiresCapability(t *testing.T) {
 	req := withURLParam(newRequest(http.MethodPost, "/voice/transcribe", map[string]string{"mime_type": "audio/webm", "audio_base64": "YQ=="}), "runtimeId", runtimeID)
 	testutil.Call(t, h.TranscribeRuntimeVoice, req).Want(http.StatusNotImplemented)
 }
+
+func TestVoiceLocaleRequiresRuntimeSupportWithoutBreakingLegacyAudio(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	h := *testHandler
+	h.DaemonHub = daemonws.NewHub()
+	for _, tc := range []struct {
+		name, metadata, language, reason string
+		status                           int
+	}{
+		{"legacy audio", `'{"capabilities":["voice-transcription-v1"]}'::jsonb`, "", "daemon_unavailable", http.StatusServiceUnavailable},
+		{"locale on old runtime", `'{"capabilities":["voice-transcription-v1"]}'::jsonb`, "en", "voice_upgrade_required", http.StatusNotImplemented},
+		{"locale on updated runtime", `'{"capabilities":["voice-transcription-v1","voice-locale-v1"]}'::jsonb`, "en", "daemon_unavailable", http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtimeID := dbfx.Runtime(t, "locale voice runtime", testutil.Cols{"daemon_id": "locale-daemon", "visibility": "public", "metadata": testutil.Raw(tc.metadata)})
+			agentID := dbfx.Agent(t, "locale voice agent", runtimeID)
+			body := map[string]string{"mime_type": "audio/webm", "audio_base64": "YQ=="}
+			if tc.language != "" {
+				body["language"] = tc.language
+			}
+			for _, target := range []struct {
+				name, param, id string
+				handle          http.HandlerFunc
+			}{{"chat", "id", agentID, h.TranscribeChatVoice}, {"meeting", "runtimeId", runtimeID, h.TranscribeRuntimeVoice}} {
+				t.Run(target.name, func(t *testing.T) {
+					req := withURLParam(newRequest(http.MethodPost, "/voice/transcribe", body), target.param, target.id)
+					var result struct {
+						Error string `json:"error"`
+					}
+					testutil.Call(t, target.handle, req).Want(tc.status).JSON(&result)
+					if result.Error != tc.reason {
+						t.Fatalf("reason=%q want=%q", result.Error, tc.reason)
+					}
+				})
+			}
+		})
+	}
+}

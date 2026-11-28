@@ -121,6 +121,7 @@
     "remove_project_context": "Удалить контекст проекта",
     "no_projects": "Пока нет проектов",
     "project_context_unsupported": "Описание проекта не применится — демону этого агента нужно обновление",
+    "voice_uncertain": "Не удалось надёжно распознать запись. Запишите ещё раз.",
     "voice_failed": "Не удалось расшифровать запись. Повторите попытку или запишите заново.",
     "voice_upgrade_required": "Update the server and selected runtime to use voice input.",
     "voice_unconfigured": "Configure MULTICA_VOICE_TRANSCRIBER on the selected runtime, then restart it.",

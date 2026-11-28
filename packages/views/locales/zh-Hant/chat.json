@@ -302,6 +302,7 @@
     "default": "問 Multica"
   },
   "input": {
+    "voice_uncertain": "未能可靠辨識這段錄音，請重新錄音。",
     "voice_failed": "轉寫失敗，請重試轉寫或重新錄音。",
     "voice_upgrade_required": "請更新服務端和所選執行時後使用語音輸入。",
     "voice_unconfigured": "請在所選執行時配置 MULTICA_VOICE_TRANSCRIBER 並重啟。",

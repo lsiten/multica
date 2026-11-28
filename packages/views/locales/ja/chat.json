@@ -302,6 +302,7 @@
     "default": "Multica に質問"
   },
   "input": {
+    "voice_uncertain": "この録音を正確に認識できませんでした。もう一度録音してください。",
     "voice_failed": "文字起こしに失敗しました。再試行するか、もう一度録音してください。",
     "voice_upgrade_required": "音声入力にはサーバーと選択したランタイムの更新が必要です。",
     "voice_unconfigured": "選択したランタイムで MULTICA_VOICE_TRANSCRIBER を設定して再起動してください。",

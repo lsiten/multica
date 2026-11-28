@@ -8,12 +8,13 @@ import { ApiError } from "@multica/core/api";
 import { createShortcutChord, formatShortcut, shortcutMatchesEvent } from "@multica/core/shortcuts";
 import { useTranscribeChatVoice } from "@multica/core/chat/mutations";
 import type { DictationDraft } from "../../editor/dictation-draft";
-import { useT } from "../../i18n";
+import { useT, useLocale } from "../../i18n";
+import { normalizeVoiceTranscript } from "@multica/core/chat/transcript-locale";
 import { useLocalVoice } from "../../platform";
 import { DICTATION_LIMIT_SECONDS, useChatDictation } from "./use-chat-dictation";
 
 const DICTATION_SHORTCUT = createShortcutChord("M", { primary: true, shift: true });
-const METER_BARS = [0.38, 0.62, 0.86, 0.56, 0.32, 0.7, 0.94, 0.5] as const;
+const METER_BARS = 24;
 
 export interface ChatVoiceInputRef {
   cancel: () => void;
@@ -30,6 +31,7 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, fee
   readonly ref?: Ref<ChatVoiceInputRef>;
 }) {
   const { t } = useT("chat");
+  const locale = useLocale();
   const root = useRef<HTMLDivElement>(null);
   const microphone = useRef<HTMLButtonElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
@@ -46,7 +48,7 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, fee
       accepted.current = false;
       const draft = onBegin();
       return draft && {
-        update: draft.update,
+        update: (text) => draft.update(normalizeVoiceTranscript(text, locale)),
         cancel: draft.cancel,
         finish: () => { accepted.current = true; draft.finish(); },
       };
@@ -55,7 +57,7 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, fee
     onRealtimeVoice: localVoice?.transcribeStream,
     onVoice: (recording, signal) => localVoice
       ? localVoice.transcribe(recording, signal)
-      : transcription.mutateAsync({ agentId, recording, signal }),
+      : transcription.mutateAsync({ agentId, recording, signal, locale }),
   });
   const active = dictation.phase !== "idle";
   const capturing = dictation.phase === "recording" || dictation.phase === "paused";
@@ -96,6 +98,8 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, fee
       case "transcription":
         if (error instanceof ApiError) {
           if (error.status === 501 || (error.status === 404 && !["agent not found", "runtime not found"].includes(error.message))) return t(($) => $.input.voice_upgrade_required);
+          if (error.message === "no_speech") return t(($) => $.input.voice_no_speech);
+          if (error.message === "unreliable_transcript") return t(($) => $.input.voice_uncertain);
           if (error.message === "transcriber_unavailable") return t(($) => $.input.voice_unconfigured);
           if (error.message === "daemon_unavailable") return t(($) => $.input.voice_offline);
         }
@@ -103,6 +107,7 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, fee
     }
   })();
   const remaining = DICTATION_LIMIT_SECONDS - dictation.seconds;
+  const volume = dictation.phase === "paused" ? 0 : dictation.level;
   const status = dictation.phase === "requesting" ? t(($) => $.input.voice_requesting)
     : dictation.phase === "transcribing" ? t(($) => $.input.voice_transcribing)
       : dictation.phase === "paused" ? t(($) => $.input.voice_paused)
@@ -125,12 +130,20 @@ export function ChatVoiceInput({ agentId, disabled, onBegin, onActiveChange, fee
       <Button ref={cancelButton} size="icon-sm" variant="ghost" className="shrink-0 pointer-coarse:size-11" aria-label={t(($) => $.input.voice_cancel)} title={t(($) => $.input.voice_cancel)} onClick={dictation.cancel}>
         <X aria-hidden="true" />
       </Button>
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="min-w-0 truncate text-caption text-muted-foreground" role="status" title={status}>{status}</span>
-        {dictation.phase === "recording" && <span className="flex h-6 min-w-0 flex-1 items-center justify-center gap-0.5 overflow-hidden" role="img" aria-label={t(($) => $.input.voice_volume)}>
-          {METER_BARS.map((base, index) => <span key={index} aria-hidden="true" className="h-4 w-0.5 shrink-0 rounded-full bg-current motion-safe:transition-transform motion-safe:duration-100" style={{ transform: `scaleY(${0.15 + base * dictation.level})` }} />)}
-        </span>}
-        {capturing && <span className="shrink-0 text-caption tabular-nums text-muted-foreground" aria-label={t(($) => $.input.voice_duration, { count: dictation.seconds })}>{String(Math.floor(dictation.seconds / 60)).padStart(2, "0")}:{String(dictation.seconds % 60).padStart(2, "0")}</span>}
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-caption text-muted-foreground" role="status" title={status}>{status}</span>
+          {capturing && <span className="shrink-0 text-caption tabular-nums text-muted-foreground" aria-label={t(($) => $.input.voice_duration, { count: dictation.seconds })}>{String(Math.floor(dictation.seconds / 60)).padStart(2, "0")}:{String(dictation.seconds % 60).padStart(2, "0")}</span>}
+        </div>
+        {capturing && <div className="flex h-6 min-w-0 items-center gap-2" role={volume === null ? "img" : "meter"} aria-label={t(($) => $.input.voice_volume)} aria-valuemin={volume === null ? undefined : 0} aria-valuemax={volume === null ? undefined : 100} aria-valuenow={volume === null ? undefined : Math.round(volume * 100)}>
+          <span className="flex h-full min-w-0 flex-1 items-center gap-0.5 overflow-hidden" aria-hidden="true">
+            {Array.from({ length: METER_BARS }, (_, index) => {
+              const value = dictation.phase === "paused" ? 0 : dictation.levels[index - (METER_BARS - dictation.levels.length)] ?? 0;
+              return <span key={index} className="min-w-0 flex-1 rounded-full bg-current motion-safe:transition-[height] motion-safe:duration-100" style={{ height: `${Math.max(8, value * 100)}%`, opacity: value > 0 ? 1 : 0.25 }} />;
+            })}
+          </span>
+          <span className="w-8 shrink-0 text-right text-caption tabular-nums text-muted-foreground" aria-hidden="true">{volume === null ? "—" : `${Math.round(volume * 100)}%`}</span>
+        </div>}
       </div>
       {capturing && <Button size="icon-sm" variant="ghost" className="shrink-0 pointer-coarse:size-11" aria-label={pauseLabel} title={pauseLabel} onClick={dictation.togglePause}>
         {dictation.phase === "paused" ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}

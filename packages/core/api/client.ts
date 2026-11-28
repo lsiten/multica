@@ -4996,8 +4996,8 @@ export class ApiClient {
     });
   }
 
-  async transcribeChatVoice(agentId: string, recording: Blob, signal: AbortSignal): Promise<string> {
-    const body = await voiceAudioPayload(recording, signal);
+  async transcribeChatVoice(agentId: string, recording: Blob, signal: AbortSignal, locale?: string): Promise<string> {
+    const body = await voiceAudioPayload(recording, signal, locale);
     const endpoint = `/api/agents/${encodeURIComponent(agentId)}/voice/transcribe`;
     const raw: unknown = await this.fetch(endpoint, {
       method: "POST", body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(28_000)]),
@@ -5007,8 +5007,8 @@ export class ApiClient {
     return result.text;
   }
 
-  async transcribeRuntimeVoice(runtimeId: string, recording: Blob, signal: AbortSignal): Promise<string> {
-    const body = await voiceAudioPayload(recording, signal);
+  async transcribeRuntimeVoice(runtimeId: string, recording: Blob, signal: AbortSignal, locale?: string): Promise<string> {
+    const body = await voiceAudioPayload(recording, signal, locale);
     const endpoint = `/api/runtimes/${encodeURIComponent(runtimeId)}/voice/transcribe`;
     const raw: unknown = await this.fetch(endpoint, {
       method: "POST",

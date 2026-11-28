@@ -35,6 +35,8 @@ describe("mapVoiceLanguage", () => {
     expect(mapVoiceLanguage("ja")).toBe("ja");
     expect(mapVoiceLanguage("ko")).toBe("ko");
     expect(mapVoiceLanguage("fr")).toBe("fr");
+    expect(mapVoiceLanguage("es")).toBe("es");
+    expect(mapVoiceLanguage("ru")).toBe("ru");
   });
   it("falls back to English for unsupported locales", () => {
     expect(mapVoiceLanguage("de")).toBe("en");

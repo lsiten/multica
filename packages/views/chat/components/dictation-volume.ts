@@ -1,8 +1,14 @@
-/** Observes the existing microphone stream without opening another capture. */
-export function observeDictationVolume(stream: MediaStream, onLevel: (level: number) => void): () => void {
+export interface DictationVolumeMeter {
+  connect: (stream: MediaStream) => void;
+  close: () => void;
+}
+
+/** Prepare during the activation gesture; microphone permission may settle later. */
+export function prepareDictationVolume(onLevel: (level: number | null) => void): DictationVolumeMeter {
   let context: AudioContext | undefined;
   let source: MediaStreamAudioSourceNode | undefined;
   let analyser: AnalyserNode | undefined;
+  let output: GainNode | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let closed = false;
   const close = () => {
@@ -11,28 +17,41 @@ export function observeDictationVolume(stream: MediaStream, onLevel: (level: num
     clearInterval(timer);
     source?.disconnect();
     analyser?.disconnect();
+    output?.disconnect();
     if (context && context.state !== "closed") void context.close().catch(() => undefined);
-    onLevel(0);
+    onLevel(null);
   };
-  if (typeof AudioContext === "undefined") return close;
-  try {
-    context = new AudioContext();
-    source = context.createMediaStreamSource(stream);
-    analyser = context.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    const meter = analyser;
-    const samples = new Uint8Array(meter.fftSize);
-    timer = setInterval(() => {
-      meter.getByteTimeDomainData(samples);
-      let energy = 0;
-      for (const sample of samples) energy += ((sample - 128) / 128) ** 2;
-      onLevel(Math.min(1, Math.sqrt(energy / samples.length) * 3.5));
-    }, 80);
-    void context.resume().catch(close);
-  } catch {
-    // Meter availability must not prevent transcription; release partial setup.
-    close();
+  const connect = (stream: MediaStream) => {
+    if (closed || !context) return;
+    try {
+      source = context.createMediaStreamSource(stream);
+      analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
+      source.connect(analyser);
+      output = context.createGain();
+      output.gain.value = 0;
+      analyser.connect(output);
+      output.connect(context.destination);
+      const meter = analyser;
+      const samples = new Float32Array(meter.fftSize);
+      timer = setInterval(() => {
+        if (context?.state !== "running") { onLevel(null); return; }
+        meter.getFloatTimeDomainData(samples);
+        let energy = 0;
+        let sum = 0;
+        for (const sample of samples) { energy += sample * sample; sum += sample; }
+        const mean = sum / samples.length;
+        const rms = Math.sqrt(Math.max(0, energy / samples.length - mean * mean));
+        // Map -60..-12 dBFS to the display range; this is input level, not speech confidence.
+        onLevel(rms > 0 ? Math.max(0, Math.min(1, (20 * Math.log10(rms) + 60) / 48)) : 0);
+      }, 80);
+    } catch { close(); }
+  };
+  if (typeof AudioContext !== "undefined") {
+    try {
+      context = new AudioContext();
+      void context.resume().catch(close);
+    } catch { close(); }
   }
-  return close;
+  return { connect, close };
 }

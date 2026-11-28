@@ -302,6 +302,7 @@
     "default": "Multica에 묻기"
   },
   "input": {
+    "voice_uncertain": "이 녹음을 정확하게 인식하지 못했습니다. 다시 녹음해 주세요.",
     "voice_failed": "텍스트 변환에 실패했습니다. 다시 시도하거나 새로 녹음하세요.",
     "voice_upgrade_required": "음성 입력을 사용하려면 서버와 선택한 런타임을 업데이트하세요.",
     "voice_unconfigured": "선택한 런타임에 MULTICA_VOICE_TRANSCRIBER를 설정하고 다시 시작하세요.",

@@ -117,6 +117,7 @@
     "remove_project_context": "Quitar contexto del proyecto",
     "no_projects": "Aún no hay proyectos",
     "project_context_unsupported": "La descripción del proyecto no se aplicará: el daemon de este agente necesita una actualización",
+    "voice_uncertain": "No se pudo reconocer esta grabación con fiabilidad. Vuelve a grabar.",
     "voice_failed": "La transcripción falló. Reinténtala o vuelve a grabar.",
     "voice_upgrade_required": "Update the server and selected runtime to use voice input.",
     "voice_unconfigured": "Configure MULTICA_VOICE_TRANSCRIBER on the selected runtime, then restart it.",

@@ -60,8 +60,8 @@ export function useDeleteMeeting() {
 
 export function useTranscribeRuntimeVoice() {
   return useMutation({
-    mutationFn: ({ runtimeId, recording, signal }: { runtimeId: string; recording: Blob; signal: AbortSignal }) =>
-      api.transcribeRuntimeVoice(runtimeId, recording, signal),
+    mutationFn: ({ runtimeId, recording, signal, locale }: { runtimeId: string; recording: Blob; signal: AbortSignal; locale?: string }) =>
+      api.transcribeRuntimeVoice(runtimeId, recording, signal, locale),
   });
 }
 

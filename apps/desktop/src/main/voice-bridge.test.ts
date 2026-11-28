@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
+import { VoiceTranscriptionError } from "./voice-error";
 import { startVoiceBridge, type VoiceBridgeTranscribe } from "./voice-bridge";
 
 const cleanup: (() => Promise<void> | void)[] = [];
@@ -42,11 +43,11 @@ it.each([
   expect((await f.post({}, body)).status).toBe(400);
 });
 
-it("does not turn failed recognition into transcript text", async () => {
-  const f = await fixture(async () => { throw new Error("Unreliable voice transcript"); });
+it.each(["no_speech", "unreliable_transcript", "transcription_failed"] as const)("returns only the known error code %s for rejected recognition", async (code) => {
+  const f = await fixture(async () => { throw code === "transcription_failed" ? new Error("private detail") : new VoiceTranscriptionError(code); });
   const response = await f.post();
   expect(response.status).toBe(503);
-  expect(await response.text()).toBe("");
+  expect(await response.json()).toEqual({ error: code });
 });
 
 it("cancels inference when caller disconnects and rejects concurrent requests", async () => {
@@ -64,4 +65,11 @@ it("cancels inference when caller disconnects and rejects concurrent requests", 
   controller.abort();
   await cancelled.promise;
   await request;
+});
+
+it.each(["en", "zh-Hans", "zh-Hant", "es", "fr", "ja", "ko", "ru"])("retains UI locale %s at the loopback boundary", async (language) => {
+  const f = await fixture(async (audio) => audio.language ?? "missing");
+  const response = await f.post({}, { mime_type: "audio/mp4", audio_base64: "YQ==", language });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ text: language });
 });

@@ -44,6 +44,42 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("chat dictation lifecycle", () => {
+  it("unlocks the meter during activation and retains only real recent levels", async () => {
+    vi.useFakeTimers();
+    let inGesture = true;
+    let running = false;
+    let amplitude = 0;
+    let meterClosed = false;
+    class GestureAudio {
+      get state() { return running ? "running" : "suspended"; }
+      destination = {};
+      resume() { running = inGesture; return Promise.resolve(); }
+      close() { meterClosed = true; return Promise.resolve(); }
+      createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+      createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; }
+      createAnalyser() {
+        return { fftSize: 1024, connect() {}, disconnect() {}, getFloatTimeDomainData(samples: Float32Array) { samples.forEach((_sample, index) => { samples[index] = index % 2 ? amplitude : -amplitude; }); } };
+      }
+    }
+    vi.stubGlobal("AudioContext", GestureAudio);
+    getUserMedia.mockImplementationOnce(async () => { inGesture = false; return stream; });
+    const view = setup();
+    await act(() => view.result.current.start());
+    act(() => vi.advanceTimersByTime(80));
+    expect(view.result.current.level).toBe(0);
+    amplitude = 0.1;
+    act(() => vi.advanceTimersByTime(80));
+    expect(view.result.current.levels).toHaveLength(2);
+    expect(view.result.current.levels[0]).toBe(0);
+    expect(view.result.current.levels[1]).toBeGreaterThan(0.8);
+    act(() => view.result.current.togglePause());
+    act(() => vi.advanceTimersByTime(160));
+    expect(view.result.current.levels).toEqual([]);
+    act(() => view.result.current.cancel());
+    expect(meterClosed).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("transcribes the complete recording when MediaRecorder flushes after stop", async () => {
     let trackStopped = false;
     const recordingTrack = {

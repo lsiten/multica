@@ -70,6 +70,15 @@ func transcribeDesktopVoice(ctx context.Context, request protocol.VoiceRequest, 
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		result.Reason = "transcription_failed"
+		var failure struct {
+			Error string `json:"error"`
+		}
+		if response.StatusCode == http.StatusServiceUnavailable && json.NewDecoder(io.LimitReader(response.Body, 1024)).Decode(&failure) == nil {
+			switch failure.Error {
+			case "no_speech", "unreliable_transcript":
+				result.Reason = failure.Error
+			}
+		}
 		return result
 	}
 	var transcript struct {

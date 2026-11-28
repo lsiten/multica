@@ -304,6 +304,7 @@
     "unread_one": "{{count}} unread chat"
   },
   "input": {
+    "voice_uncertain": "Cet enregistrement n’a pas pu être reconnu de façon fiable. Veuillez enregistrer à nouveau.",
     "voice_failed": "La transcription a échoué. Réessayez ou enregistrez à nouveau.",
     "voice_upgrade_required": "Mettez à jour le serveur et le runtime sélectionné pour utiliser la saisie vocale.",
     "voice_unconfigured": "Configurez MULTICA_VOICE_TRANSCRIBER sur le runtime sélectionné, puis redémarrez-le.",

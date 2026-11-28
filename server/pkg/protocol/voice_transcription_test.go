@@ -37,3 +37,16 @@ func TestVoiceResultValidation(t *testing.T) {
 		t.Fatal("rejected valid transcript")
 	}
 }
+
+func TestVoiceAudioLanguageAllowsUILocalesAndLegacyRequests(t *testing.T) {
+	for _, language := range []string{"", "en", "zh", "zh-Hans", "zh-Hant", "es", "fr", "ja", "ko", "ru"} {
+		if _, err := (VoiceAudio{MimeType: "audio/mp4", AudioBase64: "YQ==", Language: language}).Decode(); err != nil {
+			t.Fatalf("language %q: %v", language, err)
+		}
+	}
+	for _, language := range []string{"auto", "de", "zh-CN", "en\nMULTICA_TOKEN=x"} {
+		if _, err := (VoiceAudio{MimeType: "audio/mp4", AudioBase64: "YQ==", Language: language}).Decode(); err == nil {
+			t.Fatalf("accepted invalid language %q", language)
+		}
+	}
+}

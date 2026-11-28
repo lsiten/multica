@@ -121,7 +121,7 @@ func transcribeVoiceRequest(ctx context.Context, request protocol.VoiceRequest, 
 		result.Reason = "transcriber_unavailable"
 		return result
 	}
-	text, err := transcriber.Transcribe(ctx, request.MimeType, audio)
+	text, err := transcriber.Transcribe(ctx, request.VoiceAudio, audio)
 	if err != nil {
 		result.Reason = "transcription_failed"
 		return result

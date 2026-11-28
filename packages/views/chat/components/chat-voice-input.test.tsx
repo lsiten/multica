@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupportedLocale } from "@multica/core/i18n";
+import { ApiError } from "@multica/core/api";
 import { I18nProvider } from "@multica/core/i18n/react";
 import type { LocalVoiceAdapter, LocalVoiceStatus } from "@multica/core/platform";
 import { getTestResources } from "../../test/i18n";
@@ -8,12 +10,20 @@ import { ChatVoiceInput } from "./chat-voice-input";
 
 const mocks = vi.hoisted(() => ({
   mutateAsync: vi.fn(), reset: vi.fn(), retry: vi.fn(),
+  meter: { notify: (_level: number | null) => {} },
   local: { adapter: null as LocalVoiceAdapter | null, status: null as LocalVoiceStatus | null },
 }));
 vi.mock("@multica/core/chat/mutations", () => ({
   useTranscribeChatVoice: () => ({ mutateAsync: mocks.mutateAsync, reset: mocks.reset, error: null }),
 }));
 vi.mock("../../platform", () => ({ useLocalVoice: () => mocks.local }));
+
+vi.mock("./dictation-volume", () => ({
+  prepareDictationVolume: (notify: (level: number | null) => void) => {
+    mocks.meter.notify = notify;
+    return { connect() {}, close() {} };
+  },
+}));
 
 const stopTrack = vi.fn();
 const getUserMedia = vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] }));
@@ -32,8 +42,8 @@ function adapter(): LocalVoiceAdapter {
     },
   };
 }
-function view() {
-  return <I18nProvider locale="en" resources={getTestResources()}>
+function view(locale: SupportedLocale = "en") {
+  return <I18nProvider locale={locale} resources={getTestResources(locale)}>
     <ChatVoiceInput agentId="agent" disabled={false} onBegin={() => draft} onActiveChange={activeChange} />
   </I18nProvider>;
 }
@@ -61,6 +71,40 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ChatVoiceInput", () => {
+  it("uses the chosen Simplified Chinese script for partial and final dictation", async () => {
+    render(view("zh-Hans"));
+    fireEvent.click(screen.getByRole("button", { name: "开始语音输入" }));
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    act(() => partial("我們測試語音"));
+    expect(draft.update).toHaveBeenLastCalledWith("我们测试语音");
+    await act(async () => resolve("我們測試語音輸入。"));
+    expect(draft.update).toHaveBeenLastCalledWith("我们测试语音输入。");
+  });
+
+  it("reports unreliable recognition without inserting a transcript", async () => {
+    mocks.local = { adapter: null, status: null };
+    mocks.mutateAsync.mockRejectedValueOnce(new ApiError("unreliable_transcript", 503, "Service Unavailable"));
+    render(view());
+    fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Done" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("could not be recognized reliably");
+    expect(draft.update).not.toHaveBeenCalled();
+  });
+  it("shows measured input level and clears it while paused", async () => {
+    render(view());
+    fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));
+    await screen.findByRole("button", { name: "Done" });
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument();
+    act(() => mocks.meter.notify(0.65));
+    const meter = screen.getByRole("meter");
+    expect(meter).toHaveAttribute("aria-valuenow", "65");
+    expect(screen.getByText("65%")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Pause dictation" }));
+    expect(meter).toHaveAttribute("aria-valuenow", "0");
+    expect(screen.getByText("0%")).toBeInTheDocument();
+  });
+
   it("one click starts live dictation, Done keeps final text in the draft", async () => {
     render(view());
     fireEvent.click(screen.getByRole("button", { name: "Start dictation" }));

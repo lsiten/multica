@@ -1,5 +1,5 @@
 import type { LocalVoiceStatus } from "@multica/core/platform";
-const LOCAL_VOICE_LANGUAGES = ["en", "zh", "ja", "ko", "fr"] as const;
+const LOCAL_VOICE_LANGUAGES = ["en", "zh", "ja", "ko", "fr", "es", "ru"] as const;
 export type LocalVoiceLanguage = typeof LOCAL_VOICE_LANGUAGES[number];
 export const LOCAL_VOICE_CHANNEL = {
   status: "local-voice:status", changed: "local-voice:changed", retry: "local-voice:retry",
@@ -18,4 +18,9 @@ export function validVoiceLanguage(value: unknown): value is LocalVoiceLanguage 
 export function validVoiceSamples(value: unknown): value is Float32Array {
   return value instanceof Float32Array && value.length > 0 && value.length <= 16_000 * 61
     && value.every((sample) => Number.isFinite(sample) && Math.abs(sample) <= 1);
+}
+
+export function mapVoiceLanguage(locale: string): LocalVoiceLanguage {
+  const language = locale.split(/[-_]/)[0];
+  return validVoiceLanguage(language) ? language : "en";
 }

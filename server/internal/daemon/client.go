@@ -233,6 +233,7 @@ func daemonHTTPClientCapabilities() string {
 func daemonCommonCapabilities() []string {
 	capabilities := []string{
 		protocol.DaemonCapabilityVoiceTranscriptionV1,
+		protocol.DaemonCapabilityVoiceLocaleV1,
 		protocol.DaemonCapabilitySkillBundlesV1,
 		protocol.DaemonCapabilityCoalescedCommentsV1,
 		protocol.DaemonCapabilityLocalWorktreeV1,

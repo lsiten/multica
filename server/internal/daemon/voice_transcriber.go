@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 const maxVoiceTranscriptBytes = 16 * 1024
@@ -33,7 +35,7 @@ func newCommandVoiceTranscriber(executable string) (*commandVoiceTranscriber, er
 	return &commandVoiceTranscriber{executable: executable}, nil
 }
 
-func (t *commandVoiceTranscriber) Transcribe(ctx context.Context, mimeType string, audio []byte) (string, error) {
+func (t *commandVoiceTranscriber) Transcribe(ctx context.Context, request protocol.VoiceAudio, audio []byte) (string, error) {
 	if t == nil || len(audio) == 0 {
 		return "", errors.New("voice transcriber unavailable")
 	}
@@ -41,7 +43,7 @@ func (t *commandVoiceTranscriber) Transcribe(ctx context.Context, mimeType strin
 	defer cancel()
 	command := exec.CommandContext(ctx, t.executable)
 	command.WaitDelay = time.Second
-	command.Env = append(os.Environ(), "MULTICA_VOICE_MIME="+mimeType)
+	command.Env = append(os.Environ(), "MULTICA_VOICE_MIME="+request.MimeType, "MULTICA_VOICE_LANGUAGE="+request.Language)
 	command.Stdin = bytes.NewReader(audio)
 	var output transcriptBuffer
 	command.Stdout = &output

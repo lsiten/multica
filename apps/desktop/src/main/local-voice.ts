@@ -3,11 +3,12 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { LocalVoiceStatus } from "@multica/core/platform";
-import { LOCAL_VOICE_CHANNEL, validVoiceLanguage, validVoiceSamples, type LocalVoiceLanguage } from "../shared/local-voice";
+import { LOCAL_VOICE_CHANNEL, mapVoiceLanguage, validVoiceLanguage, validVoiceSamples, type LocalVoiceLanguage } from "../shared/local-voice";
 import { VOICE_ASSETS, VOICE_BASE_URL, VOICE_REVISION } from "./voice-assets";
 import { downloadVoiceAssets } from "./voice-download";
 import { startVoiceBridge } from "./voice-bridge";
 import { decodeVoiceAudio } from "./voice-decoder";
+import { VoiceTranscriptionError } from "./voice-error";
 
 export async function setupLocalVoice(): Promise<void> {
   const root = join(app.getPath("userData"), "voice", VOICE_REVISION);
@@ -53,7 +54,10 @@ export async function setupLocalVoice(): Promise<void> {
             if (message.type === "result" && "text" in message && typeof message.text === "string" && message.text.trim() && message.text.length <= 16 * 1024) request.resolve(message.text);
             else {
               console.warn("[voice] inference rejected", { reason: "reason" in message && typeof message.reason === "string" ? message.reason : "worker_error" });
-              request.reject(new Error("Voice transcription failed"));
+              const reason = "reason" in message ? message.reason : undefined;
+              request.reject(reason === "no_signal" ? new VoiceTranscriptionError("no_speech")
+                : reason === "unreliable_transcript" ? new VoiceTranscriptionError("unreliable_transcript")
+                  : new Error("Voice transcription failed"));
             }
             break;
           }
@@ -110,9 +114,8 @@ export async function setupLocalVoice(): Promise<void> {
     const id = randomUUID();
     const cancel = () => { if (pending?.id === id) { stopWorker(); load(); } };
     signal.addEventListener("abort", cancel, { once: true });
-    const preferred = app.getPreferredSystemLanguages()[0] ?? app.getLocale();
-    const language = preferred.split(/[-_]/)[0];
-    try { return await transcribe(id, samples, validVoiceLanguage(language) ? language : "en", null); }
+    const locale = audio.language ?? app.getPreferredSystemLanguages()[0] ?? app.getLocale();
+    try { return await transcribe(id, samples, mapVoiceLanguage(locale), null); }
     finally { signal.removeEventListener("abort", cancel); }
   });
     process.env.MULTICA_DESKTOP_VOICE_DESCRIPTOR = descriptorPath;

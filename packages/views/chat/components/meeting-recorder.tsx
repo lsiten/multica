@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@multica/ui/components/ui/button";
 import { useAppendMeetingSegment, useCancelMeeting, useCreateMeeting, useFinishMeeting, useTranscribeRuntimeVoice } from "@multica/core/meetings/mutations";
 import { useTranscribeChatVoice } from "@multica/core/chat/mutations";
-import { useT } from "../../i18n";
+import { useT, useLocale } from "../../i18n";
+import { normalizeVoiceTranscript } from "@multica/core/chat/transcript-locale";
 import { useLocalVoice } from "../../platform";
 import type { Meeting } from "@multica/core/types";
 import { createMeetingAudioCapture, type MeetingAudioCapture } from "./meeting-audio-capture";
@@ -31,6 +32,7 @@ export function MeetingRecorder({
   readonly disabled: boolean;
 }) {
   const { t } = useT("chat");
+  const locale = useLocale();
   const [state, setState] = useState<RecorderState>("idle");
   const [error, setError] = useState<string>();
   const [liveText, setLiveText] = useState("");
@@ -66,12 +68,12 @@ export function MeetingRecorder({
       const text = localVoice
         ? await localVoice.transcribe(blob, signal)
         : agentId
-          ? await transcription.mutateAsync({ agentId, recording: blob, signal })
+          ? await transcription.mutateAsync({ agentId, recording: blob, signal, locale })
           : runtimeId
-            ? await runtimeTranscription.mutateAsync({ runtimeId, recording: blob, signal })
+            ? await runtimeTranscription.mutateAsync({ runtimeId, recording: blob, signal, locale })
             : "";
       if (!text.trim() || signal.aborted) return;
-      const normalizedText = text.trim();
+      const normalizedText = normalizeVoiceTranscript(text.trim(), locale);
       setLiveText((current) => current ? `${current} ${normalizedText}` : normalizedText);
       setSegments((current) => [...current, { sequence: index, text: normalizedText, startMs, speaker: "发言人" }]);
       await appendSegment.mutateAsync({
@@ -82,7 +84,7 @@ export function MeetingRecorder({
           start_ms: startMs,
           end_ms: endMs,
           speaker_label: "",
-          text: text.trim(),
+          text: normalizedText,
           is_final: true,
         },
       });

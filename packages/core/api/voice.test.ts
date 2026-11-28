@@ -13,6 +13,16 @@ describe("chat voice transcription", () => {
     expect(fetch.mock.calls[0]?.[0]).toBe("https://example.test/api/agents/agent/voice/transcribe");
     expect(JSON.parse(fetch.mock.calls[0]?.[1].body)).toEqual({ mime_type: "audio/webm", audio_base64: "YQ==" });
   });
+  it.each(["en", "zh-Hans", "zh-Hant", "es", "fr", "ja", "ko", "ru"])("forwards the UI locale %s on agent and runtime voice requests", async (locale) => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: "recognized" })));
+    vi.stubGlobal("fetch", fetch);
+    const api = new ApiClient("https://example.test");
+    await api.transcribeChatVoice("agent", new Blob(["a"], { type: "audio/mp4" }), new AbortController().signal, locale);
+    expect(JSON.parse(fetch.mock.calls[0]?.[1].body).language).toBe(locale);
+    fetch.mockResolvedValue(new Response(JSON.stringify({ text: "recognized" })));
+    await api.transcribeRuntimeVoice("runtime", new Blob(["a"], { type: "audio/mp4" }), new AbortController().signal, locale);
+    expect(JSON.parse(fetch.mock.calls[1]?.[1].body).language).toBe(locale);
+  });
   it.each([{}, { text: "" }, { text: 42 }, { text: "a".repeat(16385) }])("rejects malformed transcripts %j", async (response) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(response))));
     await expect(new ApiClient("https://example.test").transcribeChatVoice("agent", new Blob(["a"]), new AbortController().signal)).rejects.toThrow("invalid_voice_transcript");

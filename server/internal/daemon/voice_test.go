@@ -15,10 +15,10 @@ func TestVoiceTranscriptionWithoutMirror(t *testing.T) {
 		t.Skip("POSIX fixture")
 	}
 	helper := filepath.Join(t.TempDir(), "transcriber")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\n[ \"$MULTICA_VOICE_MIME\" = \"audio/webm\" ] || exit 1\n[ \"$(cat)\" = \"a\" ] || exit 1\nprintf 'recognized text'\n"), 0700); err != nil {
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\n[ \"$MULTICA_VOICE_MIME\" = \"audio/webm\" ] || exit 1\n[ \"$MULTICA_VOICE_LANGUAGE\" = \"es\" ] || exit 1\n[ \"$(cat)\" = \"a\" ] || exit 1\nprintf 'recognized text'\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	request := protocol.VoiceRequest{VoiceAudio: protocol.VoiceAudio{MimeType: "audio/webm", AudioBase64: "YQ=="}}
+	request := protocol.VoiceRequest{VoiceAudio: protocol.VoiceAudio{MimeType: "audio/webm", AudioBase64: "YQ==", Language: "es"}}
 	result := transcribeVoiceRequest(context.Background(), request, helper)
 	if result.Text != "recognized text" || result.Reason != "" {
 		t.Fatalf("result=%+v", result)

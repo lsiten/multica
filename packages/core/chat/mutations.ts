@@ -14,8 +14,8 @@ const logger = createLogger("chat.mut");
 
 export function useTranscribeChatVoice() {
   return useMutation({
-    mutationFn: ({ agentId, recording, signal }: { agentId: string; recording: Blob; signal: AbortSignal }) =>
-      api.transcribeChatVoice(agentId, recording, signal),
+    mutationFn: ({ agentId, recording, signal, locale }: { agentId: string; recording: Blob; signal: AbortSignal; locale?: string }) =>
+      api.transcribeChatVoice(agentId, recording, signal, locale),
     retry: false,
     gcTime: 0,
   });

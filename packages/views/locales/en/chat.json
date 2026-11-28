@@ -304,6 +304,7 @@
     "default": "Ask Multica"
   },
   "input": {
+    "voice_uncertain": "This recording could not be recognized reliably. Please record again.",
     "voice_failed": "Transcription failed. Retry or record again.",
     "voice_upgrade_required": "Update the server and selected runtime to use voice input.",
     "voice_unconfigured": "Configure MULTICA_VOICE_TRANSCRIBER on the selected runtime, then restart it.",

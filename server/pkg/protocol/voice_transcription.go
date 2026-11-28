@@ -11,6 +11,7 @@ import (
 
 const (
 	DaemonCapabilityVoiceTranscriptionV1 = "voice-transcription-v1"
+	DaemonCapabilityVoiceLocaleV1        = "voice-locale-v1"
 	EventVoiceTranscribe                 = "voice:transcribe"
 	EventVoiceTranscript                 = "voice:transcript"
 	EventVoiceCancel                     = "voice:cancel"
@@ -21,11 +22,17 @@ const (
 var ErrInvalidVoice = errors.New("invalid voice payload")
 
 type VoiceAudio struct {
+	Language    string `json:"language,omitempty"`
 	MimeType    string `json:"mime_type"`
 	AudioBase64 string `json:"audio_base64"`
 }
 
 func (v VoiceAudio) Decode() ([]byte, error) {
+	switch v.Language {
+	case "", "en", "zh", "zh-Hans", "zh-Hant", "es", "fr", "ja", "ko", "ru":
+	default:
+		return nil, ErrInvalidVoice
+	}
 	mediaType, _, err := mime.ParseMediaType(v.MimeType)
 	if err != nil || len(v.MimeType) > 128 {
 		return nil, ErrInvalidVoice
@@ -69,7 +76,7 @@ func (v VoiceResult) Valid() bool {
 		return false
 	}
 	switch v.Reason {
-	case "transcriber_unavailable", "transcription_failed", "invalid_audio", "busy", "timeout":
+	case "transcriber_unavailable", "transcription_failed", "invalid_audio", "busy", "timeout", "no_speech", "unreliable_transcript":
 		return true
 	default:
 		return false
