@@ -21,7 +21,15 @@ func (v ReviewVersion) CommitPage(ctx context.Context, request FilePageRequest) 
 	if request.Offset < 0 || request.Limit < 1 || request.Limit > 100 {
 		return page, ErrInvalidReviewVersion
 	}
-	raw, err := git(ctx, v.Header.Repository, "log", "--format=%H%x09%s", "--max-count="+strconv.Itoa(request.Limit+1), "--skip="+strconv.Itoa(request.Offset), v.Header.TargetHead+".."+v.Header.Head)
+	args := []string{"log", "--format=%H%x09%s", "--max-count=" + strconv.Itoa(request.Limit+1), "--skip=" + strconv.Itoa(request.Offset)}
+	if v.Header.CommitOnly {
+		args = append(args, "--no-walk", v.Header.Head)
+	} else if v.Header.TargetHead == "" {
+		args = append(args, v.Header.Head)
+	} else {
+		args = append(args, v.Header.TargetHead+".."+v.Header.Head)
+	}
+	raw, err := git(ctx, v.Header.Repository, args...)
 	if err != nil {
 		return page, err
 	}
@@ -40,4 +48,13 @@ func (v ReviewVersion) CommitPage(ctx context.Context, request FilePageRequest) 
 	}
 	page.NextOffset += len(page.Commits)
 	return page, nil
+}
+
+func CheckoutHistory(ctx context.Context, path string, request FilePageRequest) (VersionCommitPage, error) {
+	head, err := trimmed(ctx, path, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return VersionCommitPage{}, err
+	}
+	version := ReviewVersion{Header: VersionHeader{Repository: path, Head: head}}
+	return version.CommitPage(ctx, request)
 }

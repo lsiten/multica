@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -75,7 +76,7 @@ func (h *Handler) authorizeProjectDirectoryRead(w http.ResponseWriter, r *http.R
 		return "", "", false
 	}
 	var ref localDirectoryRef
-	if json.Unmarshal(resource.ResourceRef, &ref) != nil || ref.LocalPath == "" || ref.DaemonID == "" || path != ref.LocalPath {
+	if json.Unmarshal(resource.ResourceRef, &ref) != nil || ref.LocalPath == "" || ref.DaemonID == "" || !projectDirectoryContains(ref.LocalPath, path) {
 		writeError(w, http.StatusBadRequest, "path must match the project directory")
 		return "", "", false
 	}
@@ -93,5 +94,19 @@ func (h *Handler) authorizeProjectDirectoryRead(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusConflict, "directory runtime is offline")
 		return "", "", false
 	}
-	return ref.LocalPath, uuidToString(runtime.ID), true
+	return path, uuidToString(runtime.ID), true
+}
+
+func projectDirectoryContains(root, selected string) bool {
+	root = strings.TrimRight(strings.ReplaceAll(root, "\\", "/"), "/")
+	selected = strings.ReplaceAll(selected, "\\", "/")
+	if selected != root && !strings.HasPrefix(selected, root+"/") {
+		return false
+	}
+	for _, part := range strings.Split(selected, "/") {
+		if part == ".." || part == "." {
+			return false
+		}
+	}
+	return true
 }

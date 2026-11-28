@@ -32,7 +32,7 @@ type pagedReviewFile struct {
 
 func isPagedReviewRead(action string) bool {
 	switch action {
-	case "workspace_trash", "index", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease":
+	case "git_history", "git_manifest", "workspace_trash", "index", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease":
 		return true
 	default:
 		return false
@@ -44,6 +44,10 @@ func isReadReviewAction(action string) bool {
 
 // pagedReviewRead is called only after the existing task/directory ownership gate.
 func (d *Daemon) pagedReviewRead(w http.ResponseWriter, r *http.Request, scope pagedReviewContext) {
+	if scope.request.Action == "git_history" {
+		d.checkoutHistoryRead(w, r, scope)
+		return
+	}
 	if scope.request.Action == "workspace_trash" {
 		d.workspaceTrashRead(w, r, scope)
 		return
@@ -127,9 +131,11 @@ func (d *Daemon) pagedReviewRead(w http.ResponseWriter, r *http.Request, scope p
 	}
 	var version localreview.ReviewVersion
 	id := request.VersionID
-	if request.Action == "manifest" && id == "" {
+	if (request.Action == "manifest" || request.Action == "git_manifest") && id == "" {
 		d.maintainReviewCache(r.Context(), store, scope.root, true)
-		if binding, bindingErr := execenv.ReadReviewDirectory(scope.root); bindingErr == nil && binding.SourcePath == request.Path && binding.Commit != "" {
+		if request.Action == "git_manifest" {
+			version, err = store.CaptureCheckout(r.Context(), localreview.CheckoutRequest{Path: scope.path, Scope: request.GitScope, Target: request.Target, Commit: request.CommitSHA})
+		} else if binding, bindingErr := execenv.ReadReviewDirectory(scope.root); bindingErr == nil && binding.SourcePath == request.Path && binding.Commit != "" {
 			version, err = store.CaptureCommitted(r.Context(), localreview.CommittedRequest{Path: scope.path, Branch: binding.Branch, Head: binding.Commit, Target: request.Target})
 		} else {
 			version, err = store.CaptureWorking(r.Context(), localreview.WorkingVersionRequest{Path: scope.path, Target: request.Target})

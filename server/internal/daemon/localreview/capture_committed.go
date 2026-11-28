@@ -10,12 +10,15 @@ import (
 // CaptureCommitted freezes a pinned Git comparison without producing patch bodies.
 // The caller must authorize the repository and the task-owned cache first.
 func (s *BlobStore) CaptureCommitted(ctx context.Context, request CommittedRequest) (ReviewVersion, error) {
-	version := ReviewVersion{Format: 2, Files: []VersionFile{}}
 	header, err := captureVersionHeader(ctx, request)
 	if err != nil {
-		return version, err
+		return ReviewVersion{}, err
 	}
-	version.Header = header
+	return s.captureCommittedHeader(ctx, header)
+}
+
+func (s *BlobStore) captureCommittedHeader(ctx context.Context, header VersionHeader) (ReviewVersion, error) {
+	version := ReviewVersion{Format: 2, Files: []VersionFile{}, Header: header}
 	repository, base, head := header.Repository, header.Base, header.Head
 	raw, err := git(ctx, repository, "diff", "--raw", "-z", "--no-renames", "--no-abbrev", "--no-ext-diff", "--no-textconv", base, head, "--")
 	if err != nil {

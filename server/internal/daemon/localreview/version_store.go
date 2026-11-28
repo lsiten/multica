@@ -20,6 +20,7 @@ const maxVersionFiles = 10000
 var ErrInvalidReviewVersion = errors.New("invalid local review version")
 
 type VersionHeader struct {
+	CommitOnly bool   `json:"commit_only,omitempty"`
 	IndexTree  string `json:"index_tree,omitempty"`
 	Repository string `json:"repository"`
 	Branch     string `json:"branch"`
@@ -150,7 +151,7 @@ func validateReviewVersion(version ReviewVersion) error {
 	if h.IndexTree != "" && !validGitObjectID(h.IndexTree) {
 		return ErrInvalidReviewVersion
 	}
-	if version.Format != 2 || !filepath.IsAbs(h.Repository) || h.Branch == "" || h.Target == "" || !validGitObjectID(h.Head) || !validGitObjectID(h.TargetHead) || !validGitObjectID(h.Base) || len(version.Files) > maxVersionFiles {
+	if version.Format != 2 || !filepath.IsAbs(h.Repository) || h.Branch == "" || (h.Target == "" && !h.CommitOnly) || !validGitObjectID(h.Head) || !validGitObjectID(h.TargetHead) || !validGitObjectID(h.Base) || len(version.Files) > maxVersionFiles {
 		return ErrInvalidReviewVersion
 	}
 	previous := ""

@@ -13,7 +13,10 @@ type LocalReviewCommand struct {
 	FileOperation         *WorkspaceFileOperation `json:"file_operation,omitempty"`
 	FileOperationID       string                  `json:"file_operation_id,omitempty"`
 	FileID                string                  `json:"file_id,omitempty"`
+	DirectoryRoot         string                  `json:"directory_root,omitempty"`
 	ProjectResourceID     string                  `json:"project_resource_id,omitempty"`
+	GitScope              string                  `json:"git_scope,omitempty"`
+	CommitSHA             string                  `json:"commit_sha,omitempty"`
 	Scope                 string                  `json:"scope,omitempty"`
 	Environment           *EnvironmentCommand     `json:"environment,omitempty"`
 	IndexID               string                  `json:"index_id,omitempty"`
@@ -83,7 +86,16 @@ type LocalReviewResult struct {
 
 func IsProjectDirectoryRead(action string) bool {
 	switch action {
-	case "workspace_files", "file_content", "index", "lease", "versions", "manifest", "files", "file", "context", "content", "commits":
+	case "git_history", "git_manifest", "branches", "repositories", "workspace_files", "file_content", "index", "lease", "versions", "manifest", "files", "file", "context", "content", "commits":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsCheckoutRead(action string) bool {
+	switch action {
+	case "git_history", "git_manifest", "branches", "repositories", "index", "files", "file", "context", "content", "commits", "lease":
 		return true
 	default:
 		return false

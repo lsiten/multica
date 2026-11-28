@@ -68,6 +68,10 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	input := worktreeReviewRequest{TaskID: command.TaskID, WorkspaceID: command.WorkspaceID, Path: command.Path, Target: command.Target, SnapshotID: command.SnapshotID, Scope: command.Scope, Action: "read"}
 	input.VersionID, input.FilePath, input.RelativePath, input.Offset, input.Limit = command.VersionID, command.FilePath, command.RelativePath, command.Offset, command.Limit
 	input.Recursive = command.Recursive
+	input.GitScope, input.CommitSHA = command.GitScope, command.CommitSHA
+	if command.Scope == "checkout" {
+		input.RuntimeID = command.RuntimeID
+	}
 	input.FileOperation = command.FileOperation
 	input.FileOperationID = command.FileOperationID
 	input.FileID = command.FileID
@@ -127,7 +131,7 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	var response worktreeReviewResponse
 	err = nil
 	switch command.Action {
-	case "workspace_trash", "file_operation", "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes":
+	case "git_history", "git_manifest", "workspace_trash", "file_operation", "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes":
 		response, err = call(command.Action)
 	case "merge":
 		if command.SnapshotID == "" {

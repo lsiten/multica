@@ -92,6 +92,9 @@ func (d *Daemon) bindVerifiedExternalReviewDirectory(ctx context.Context, reques
 		return "", "", errors.New("external review directory identity mismatch")
 	}
 	archive := execenv.ReviewArchivePath(d.cfg.WorkspacesRoot, request.WorkspaceID, request.TaskID)
+	if request.Scope == "checkout" {
+		return reviewPath, archive, nil
+	}
 	if err := os.MkdirAll(archive, 0o700); err != nil {
 		return "", "", err
 	}

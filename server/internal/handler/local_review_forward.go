@@ -34,6 +34,8 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		Paths             []string                         `json:"paths,omitempty"`
 		TaskID            string                           `json:"task_id"`
 		ProjectResourceID string                           `json:"project_resource_id,omitempty"`
+		GitScope          string                           `json:"git_scope,omitempty"`
+		CommitSHA         string                           `json:"commit_sha,omitempty"`
 		Scope             string                           `json:"scope,omitempty"`
 		RuntimeID         string                           `json:"runtime_id,omitempty"`
 		Path              string                           `json:"path"`
@@ -53,7 +55,7 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		EditNew           string                           `json:"edit_new,omitempty"`
 		EditBaseSHA       string                           `json:"edit_base_sha,omitempty"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "workspace_trash" && input.Action != "file_operation" && input.Action != "lease" && input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && input.Action != "versions" && input.Action != "workspace_files" && input.Action != "file_content" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&input) != nil || (input.Action != "workspace_trash" && input.Action != "file_operation" && input.Action != "lease" && input.Action != "index" && input.Action != "branches" && input.Action != "repositories" && input.Action != "versions" && input.Action != "workspace_files" && input.Action != "file_content" && input.Scope != "checkout" && strings.TrimSpace(input.Target) == "") || len(input.Target) > 250 {
 		writeError(w, http.StatusBadRequest, "task and target branch required")
 		return
 	}
@@ -61,8 +63,12 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "exactly one task or project resource is required")
 		return
 	}
-	if input.Scope != "" && input.Scope != "run" && input.Scope != "directory" && input.Scope != "version" {
+	if input.Scope != "" && input.Scope != "run" && input.Scope != "directory" && input.Scope != "version" && input.Scope != "checkout" {
 		writeError(w, http.StatusBadRequest, "invalid review scope")
+		return
+	}
+	if input.Scope == "checkout" && !protocol.IsCheckoutRead(input.Action) {
+		writeError(w, http.StatusBadRequest, "checkout scope is read only")
 		return
 	}
 	if input.Scope == "run" && input.TaskID == "" {
@@ -136,6 +142,16 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	case "git_history":
+		if input.Scope != "checkout" || input.VersionID != "" || input.Offset < 0 || input.Limit < 0 || input.Limit > 100 {
+			writeError(w, http.StatusBadRequest, "invalid Git history request")
+			return
+		}
+	case "git_manifest":
+		if input.Scope != "checkout" || input.VersionID != "" || input.Offset < 0 || input.Limit < 0 || input.Limit > 500 || (input.GitScope != "branch" && input.GitScope != "commit") || (input.GitScope == "branch" && strings.TrimSpace(input.Target) == "") || (input.GitScope == "commit" && len(input.CommitSHA) != 40 && len(input.CommitSHA) != 64) {
+			writeError(w, http.StatusBadRequest, "invalid Git comparison request")
+			return
+		}
 	case "workspace_trash", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease":
 		maxLimit := 500
 		if input.Action == "workspace_trash" {
@@ -181,7 +197,7 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var path, runtimeID string
+	var path, runtimeID, directoryRoot string
 	var fileProjectID string
 	var fileOwnerKind, fileOwnerID string
 	fileOperationsAllowed := false
@@ -194,6 +210,16 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 		resource, err := h.Queries.GetProjectResourceInWorkspace(r.Context(), db.GetProjectResourceInWorkspaceParams{ID: parseUUID(input.ProjectResourceID), WorkspaceID: parseUUID(ctxWorkspaceID(r.Context()))})
 		if err != nil {
 			writeError(w, http.StatusNotFound, "project directory not found")
+			return
+		}
+		var ref localDirectoryRef
+		if json.Unmarshal(resource.ResourceRef, &ref) != nil {
+			writeError(w, http.StatusBadRequest, "invalid project directory")
+			return
+		}
+		directoryRoot = ref.LocalPath
+		if input.Scope != "checkout" && path != directoryRoot {
+			writeError(w, http.StatusBadRequest, "path must match the project directory")
 			return
 		}
 		fileProjectID = uuidToString(resource.ProjectID)
@@ -258,6 +284,7 @@ func (h *Handler) ForwardLocalReview(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	command := protocol.LocalReviewCommand{
+		DirectoryRoot: directoryRoot, GitScope: input.GitScope, CommitSHA: input.CommitSHA,
 		FileOperation: input.FileOperation,
 		FileID:        input.FileID,
 		WorkspaceID:   ctxWorkspaceID(r.Context()), RuntimeID: runtimeID,

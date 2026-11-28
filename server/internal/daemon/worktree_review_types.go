@@ -11,6 +11,8 @@ type worktreeReviewRequest struct {
 	FileOperationID   string                           `json:"file_operation_id,omitempty"`
 	FileID            string                           `json:"file_id,omitempty"`
 	ProjectResourceID string                           `json:"project_resource_id,omitempty"`
+	GitScope          string                           `json:"git_scope,omitempty"`
+	CommitSHA         string                           `json:"commit_sha,omitempty"`
 	Scope             string                           `json:"scope,omitempty"`
 	IndexID           string                           `json:"index_id,omitempty"`
 	Branch            string                           `json:"branch,omitempty"`

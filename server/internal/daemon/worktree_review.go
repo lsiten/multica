@@ -123,6 +123,10 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 			http.Error(w, "task, workspace and absolute repository path are required", http.StatusBadRequest)
 			return
 		}
+		if (request.Scope == "checkout" && !protocol.IsCheckoutRead(request.Action)) || ((request.Action == "git_manifest" || request.Action == "git_history") && request.Scope != "checkout") {
+			http.Error(w, "invalid checkout read request", http.StatusBadRequest)
+			return
+		}
 		if !forwarded && !isReadReviewAction(request.Action) && request.RuntimeID == "" {
 			http.Error(w, "runtime identity required for local decisions", http.StatusForbidden)
 			return
@@ -214,6 +218,14 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
+		if request.Scope == "checkout" {
+			checkout, err := d.checkoutReviewScope(r.Context(), pagedReviewContext{request: request, path: path, root: root})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+			path, root = checkout.path, checkout.root
+		}
 		actorName := ""
 		if isPagedReviewRead(request.Action) {
 			d.pagedReviewRead(w, r, pagedReviewContext{request: request, path: path, root: root})
@@ -221,6 +233,9 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 		}
 		if request.Action == "branches" {
 			branches, branchErr := localreview.Branches(r.Context(), path)
+			if request.Scope == "checkout" {
+				branches, branchErr = localreview.CheckoutReferences(r.Context(), path)
+			}
 			if branchErr != nil {
 				http.Error(w, branchErr.Error(), http.StatusConflict)
 				return
