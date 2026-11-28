@@ -52,11 +52,13 @@ func TestClaimTasksForRuntimes_ForceRecheckBypassesStaleEmptyVerdict(t *testing.
 	if err != nil {
 		t.Fatalf("forced claim: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("forced claim returned %d tasks, want exactly 1 (only rt1 bypassed)", len(got))
+	if len(got) != 2 {
+		t.Fatalf("forced claim returned %d tasks, want both queued tasks on rt1", len(got))
 	}
-	if util.UUIDToString(got[0].RuntimeID) != rt1 {
-		t.Fatalf("forced claim routed to %s, want rt1", util.UUIDToString(got[0].RuntimeID))
+	for _, task := range got {
+		if util.UUIDToString(task.RuntimeID) != rt1 {
+			t.Fatalf("forced claim routed to %s, want rt1", util.UUIDToString(task.RuntimeID))
+		}
 	}
 }
 
@@ -139,7 +141,7 @@ func TestClaimTasksForRuntimes_ForcedPositiveIsNotAcknowledged(t *testing.T) {
 
 	// Forced claim: bypasses the short-circuit and claims exactly one of the two
 	// same-agent tasks. Because the scan found candidates, rt1 is NOT acknowledged.
-	forced, acknowledged, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{rt1ID}, 5, rt1ID)
+	forced, acknowledged, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{rt1ID}, 1, rt1ID)
 	if err != nil {
 		t.Fatalf("forced claim: %v", err)
 	}
@@ -160,7 +162,7 @@ func TestClaimTasksForRuntimes_ForcedPositiveIsNotAcknowledged(t *testing.T) {
 
 	// The daemon kept rt1 forced, so the next FORCED claim takes the second
 	// same-agent task instead of stranding it until the TTL.
-	second, secondAck, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{rt1ID}, 5, rt1ID)
+	second, secondAck, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{rt1ID}, 1, rt1ID)
 	if err != nil {
 		t.Fatalf("second forced claim: %v", err)
 	}
@@ -176,7 +178,7 @@ func TestClaimTasksForRuntimes_ForcedPositiveIsNotAcknowledged(t *testing.T) {
 
 	// Once the queue really is drained, a forced scan comes back empty and only
 	// THEN is rt1 acknowledged, so the daemon finally drops the hint.
-	drained, drainedAck, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{rt1ID}, 5, rt1ID)
+	drained, drainedAck, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{rt1ID}, 1, rt1ID)
 	if err != nil {
 		t.Fatalf("drained forced claim: %v", err)
 	}

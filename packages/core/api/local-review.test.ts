@@ -16,20 +16,20 @@ it("rejects malformed branch-list responses", async () => {
   await expect(new ApiClient("https://api.example.test").listLocalReviewBranches(request)).rejects.toThrow();
 });
 
-const request = { task_id: "task", workspace_id: "workspace", path: "/runtime/repo", target: "main", action: "approve", snapshot_id: "snapshot", comment: "reviewed" } as const;
+const request = { task_id: "task", workspace_id: "workspace", path: "/runtime/repo", target: "main", action: "read" } as const;
 const response = {
   snapshot: { id: "snapshot", path: "/runtime/repo", branch: "feature", target: "main", head: "head", target_head: "target", base: "base", dirty: false, branches: ["main", "feature"], commits: "", files: [] },
   review: { snapshot_id: "snapshot", state: "approved", comment: "reviewed", merged_commit: "", events: [{ kind: "approve", snapshot_id: "snapshot", comment: "reviewed", actor_id: "user", created_at: "2026-09-08T00:00:00Z" }] },
 };
 
-it("forwards one action and reads its runtime-owned approval history", async () => {
+it("reads existing runtime-owned approval history without changing it", async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
   const client = new ApiClient("https://api.example.test");
   const result = await client.executeLocalReview(request);
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/local-reviews/execute", expect.objectContaining({
-    method: "POST", body: JSON.stringify({ task_id: "task", path: "/runtime/repo", target: "main", action: "approve", snapshot_id: "snapshot", comment: "reviewed" }),
+    method: "POST", body: JSON.stringify({ task_id: "task", path: "/runtime/repo", target: "main", action: "read" }),
   }));
   expect(result.review.state).toBe("approved");
   expect(result.history[0]?.actor_id).toBe("user");
