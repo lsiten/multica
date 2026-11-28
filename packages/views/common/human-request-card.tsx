@@ -48,7 +48,10 @@ export function HumanRequestCard({ requestId, fallbackContent }: {
 
   return (
     <HumanRequestContent
-      key={`${query.data.id}:${query.data.revision}`}
+      key={JSON.stringify([
+        workspaceId, query.data.id, query.data.recipient_id, query.data.payload.key,
+        query.data.payload.kind, query.data.payload.kind === "input" ? null : query.data.revision,
+      ])}
       request={query.data}
       workspaceId={workspaceId}
     />

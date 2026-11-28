@@ -125,7 +125,7 @@ export function AgentDesktopReadinessSection({
             type="button"
             size="xs"
             variant="outline"
-            disabled={repair.isPending || !scope}
+            disabled={runtime.status !== "online" || repair.isPending || !scope}
             aria-busy={repair.isPending}
             onClick={() => repair.mutate()}
           >
