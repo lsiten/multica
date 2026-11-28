@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,16 +49,6 @@ func TestLocalReviewResolvesReusedTaskBinding(t *testing.T) {
 	var snapshot worktreeReviewResponse
 	if err := json.Unmarshal(callReview(t, d, request, "test-token").Body.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
-	}
-	request.Action, request.SnapshotID = "approve", snapshot.ID
-	releaseRoot := d.markActiveEnvRoot(priorRoot)
-	w := callReview(t, d, request, "test-token")
-	releaseRoot()
-	if w.Code != http.StatusConflict {
-		t.Fatal("review ignored an active reused source", w.Code)
-	}
-	if w := callReview(t, d, request, "test-token"); w.Code != http.StatusOK {
-		t.Fatal("idle reused source rejected", w.Code, w.Body.String())
 	}
 	releaseSource, err := d.claimReviewSource(context.Background(), canonical, currentRoot)
 	if err != nil {

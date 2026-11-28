@@ -54,8 +54,11 @@ func TestCheckoutReviewRejectsEscapesAndMutations(t *testing.T) {
 	project := dbfx.Project(t, "bounded checkout")
 	runtime := dbfx.Runtime(t, "bounded runtime", testutil.Cols{"daemon_id": "bounded-daemon", "runtime_mode": "local", "status": "online"})
 	resource := dbfx.Insert(t, "project_resource", testutil.Cols{"workspace_id": testWorkspaceID, "project_id": project, "resource_type": "local_directory", "resource_ref": `{"local_path":"/bound","daemon_id":"bounded-daemon"}`, "created_by": testUserID})
-	for _, tc := range []struct{ path, action string }{{"/bound/../outside", "index"}, {"/boundary/repo", "index"}, {"/bound/repo", "stage"}, {"/bound/repo", "merge"}} {
+	for _, tc := range []struct {
+		path, action string
+		status       int
+	}{{"/bound/../outside", "index", http.StatusBadRequest}, {"/boundary/repo", "index", http.StatusBadRequest}, {"/bound/repo", "stage", http.StatusGone}, {"/bound/repo", "merge", http.StatusGone}} {
 		req := withChatTestWorkspaceCtx(t, newRequest(http.MethodPost, "/execute", map[string]string{"project_resource_id": resource, "runtime_id": runtime, "scope": "checkout", "action": tc.action, "path": tc.path}))
-		testutil.Call(t, testHandler.ForwardLocalReview, req).Want(http.StatusBadRequest)
+		testutil.Call(t, testHandler.ForwardLocalReview, req).Want(tc.status)
 	}
 }

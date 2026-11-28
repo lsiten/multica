@@ -9,7 +9,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func TestRemoteIndexReadStageAndCommit(t *testing.T) {
+func TestRemoteIndexReadsExistingStagedContent(t *testing.T) {
 	d := worktreeTestDaemon(t)
 	d.runtimeIndex = map[string]Runtime{"runtime": {ID: "runtime"}}
 	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task1", nil)
@@ -31,15 +31,7 @@ func TestRemoteIndexReadStageAndCommit(t *testing.T) {
 	if len(state.Status.Files) != 1 || !state.Status.Files[0].Untracked {
 		t.Fatal("working file missing")
 	}
-	command.Action, command.CommandID, command.VersionID, command.IndexID = "stage", "stage-once", state.VersionID, state.Status.IndexID
-	command.Branch, command.Head, command.Paths = state.Status.Branch, state.Status.Head, []string{"selected.txt"}
-	result = d.runRemoteReview(t.Context(), command)
-	if result.Error != "" {
-		t.Fatal(result.Error)
-	}
-	if got := worktreeTestGit(t, path, "diff", "--cached", "--name-only"); got != "selected.txt" {
-		t.Fatal("wrong staging", got)
-	}
+	worktreeTestGit(t, path, "add", "selected.txt")
 	command.Action = "index"
 	result = d.runRemoteReview(t.Context(), command)
 	if result.Error != "" {
@@ -48,7 +40,6 @@ func TestRemoteIndexReadStageAndCommit(t *testing.T) {
 	if err := json.Unmarshal(result.Page, &state); err != nil {
 		t.Fatal(err)
 	}
-	command.Action, command.CommandID, command.VersionID, command.IndexID = "commit", "commit-once", state.VersionID, state.Status.IndexID
 	if state.StagedVersionID == "" {
 		t.Fatal("staged preview identity missing")
 	}
@@ -79,13 +70,5 @@ func TestRemoteIndexReadStageAndCommit(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("staged endpoint omitted indexed content")
-	}
-	command.Branch, command.Head, command.Paths, command.Message = state.Status.Branch, state.Status.Head, nil, "commit through runtime"
-	result = d.runRemoteReview(t.Context(), command)
-	if result.Error != "" {
-		t.Fatal(result.Error)
-	}
-	if got := worktreeTestGit(t, path, "show", "HEAD:selected.txt"); got != "staged from runtime" {
-		t.Fatal("commit missing", got)
 	}
 }

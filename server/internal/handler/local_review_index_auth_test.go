@@ -10,7 +10,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func TestIndexAndFileWritesRequireRuntimeOwner(t *testing.T) {
+func TestLocalReviewRetiredGitAndUnauthorizedFileWritesNeverReachRuntime(t *testing.T) {
 	member := dbfx.User(t, "Index Reader", "index-reader@example.test")
 	dbfx.Member(t, testWorkspaceID, member, "member")
 	runtime := dbfx.Runtime(t, "index-public", testutil.Cols{"runtime_mode": "local", "visibility": "public"})
@@ -25,7 +25,11 @@ func TestIndexAndFileWritesRequireRuntimeOwner(t *testing.T) {
 			}
 			r := newRequestAsUser(member, http.MethodPost, "/api/local-reviews/execute", input)
 			handler := middleware.RequireWorkspaceMember(testHandler.Queries)(http.HandlerFunc(testHandler.ForwardLocalReview))
-			testutil.Call(t, handler.ServeHTTP, r).Want(http.StatusForbidden)
+			status := http.StatusGone
+			if action == "file_operation" || action == "workspace_trash" {
+				status = http.StatusForbidden
+			}
+			testutil.Call(t, handler.ServeHTTP, r).Want(status)
 			if len(testHandler.localReviewRelay.pending) != 0 {
 				t.Fatal("unauthorized Git write reached the runtime")
 			}

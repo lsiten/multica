@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func TestLocalReviewForwardRequiresOperationID(t *testing.T) {
-	for _, action := range []string{"submit", "approve", "request_changes", "merge"} {
+func TestLocalReviewForwardRetiresWritesBeforeDispatch(t *testing.T) {
+	for _, action := range []string{"submit", "approve", "request_changes", "merge", "merge_selected", "stage", "unstage", "commit"} {
 		t.Run(action, func(t *testing.T) {
 			request := newRequestAsUser("11111111-1111-4111-8111-111111111111", http.MethodPost, "/api/local-reviews/execute", map[string]string{
 				"task_id": "22222222-2222-4222-8222-222222222222", "target": "main", "action": action, "snapshot_id": "snapshot",
@@ -16,8 +17,8 @@ func TestLocalReviewForwardRequiresOperationID(t *testing.T) {
 			var response struct {
 				Error string `json:"error"`
 			}
-			testutil.Call(t, (&Handler{}).ForwardLocalReview, request).Want(http.StatusBadRequest).JSON(&response)
-			if response.Error != "valid operation ID required" {
+			testutil.Call(t, (&Handler{}).ForwardLocalReview, request).Want(http.StatusGone).JSON(&response)
+			if response.Error != protocol.LocalReviewWritesRetired {
 				t.Fatalf("rejected for unrelated reason: %+v", response)
 			}
 		})

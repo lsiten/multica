@@ -14,7 +14,7 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
-func TestLocalReviewLegacyBindingRequiresVerifiedRuntime(t *testing.T) {
+func TestLocalReviewRetiredDecisionDoesNotRepairLegacyBinding(t *testing.T) {
 	for _, matched := range []bool{true, false} {
 		t.Run(map[bool]string{true: "verified", false: "wrong runtime"}[matched], func(t *testing.T) {
 			var calls atomic.Int32
@@ -56,21 +56,9 @@ func TestLocalReviewLegacyBindingRequiresVerifiedRuntime(t *testing.T) {
 				return w
 			}
 			response := invoke()
-			binding, err := execenv.ReadReviewRuntime(root)
-			if !matched {
-				if response.Code != http.StatusForbidden || !os.IsNotExist(err) {
-					t.Fatal("unverified binding accepted", response.Code, err)
-				}
-				return
-			}
-			if response.Code != http.StatusOK || err != nil || binding.RuntimeID != "runtime1" || binding.AgentID != "agent1" {
-				t.Fatal("verified binding not persisted", response.Code, binding, err)
-			}
-			if response := invoke(); response.Code != http.StatusOK {
-				t.Fatal(response.Code, response.Body.String())
-			}
-			if calls.Load() != 1 {
-				t.Fatal("local retry repeated cloud verification", calls.Load())
+			_, err = execenv.ReadReviewRuntime(root)
+			if response.Code != http.StatusGone || !os.IsNotExist(err) || calls.Load() != 0 {
+				t.Fatal("retired decision consulted or persisted legacy binding", response.Code, err, calls.Load())
 			}
 		})
 	}

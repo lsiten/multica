@@ -208,7 +208,11 @@ func runLocalReviewProcessScenario(t *testing.T, mode string) {
 			t.Fatal(err)
 		}
 		defer response.Body.Close()
-		if response.StatusCode >= 300 {
+		expectedStatus := http.StatusOK
+		if review, ok := input.(protocol.LocalReviewCommand); ok && protocol.IsRetiredLocalReviewAction(review.Action) {
+			expectedStatus = http.StatusGone
+		}
+		if response.StatusCode != expectedStatus {
 			body, _ := io.ReadAll(response.Body)
 			t.Fatalf("%s %s: %d %s", method, path, response.StatusCode, body)
 		}
@@ -220,6 +224,9 @@ func runLocalReviewProcessScenario(t *testing.T, mode string) {
 	}
 	runWorker := func(input protocol.LocalReviewCommand) map[string]json.RawMessage {
 		t.Helper()
+		if protocol.IsRetiredLocalReviewAction(input.Action) {
+			return call("POST", "/reviews", input)
+		}
 		workerCtx, cancel := context.WithTimeout(ctx, time.Minute)
 		defer cancel()
 		command := exec.CommandContext(workerCtx, os.Args[0], "-test.run=^TestLocalReviewRuntimeProcessHelper$", "-test.count=1")

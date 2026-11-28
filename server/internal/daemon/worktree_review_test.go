@@ -143,7 +143,7 @@ func callReview(t *testing.T, d *Daemon, request worktreeReviewRequest, token st
 	return w
 }
 
-func TestLocalReviewLoopbackRequiresRuntimeIdentityForDecisions(t *testing.T) {
+func TestLocalReviewLoopbackRetiresDecisionsWithoutRuntimeLookup(t *testing.T) {
 	d := worktreeTestDaemon(t)
 	for _, action := range []string{"submit", "approve", "request_changes", "merge"} {
 		body, err := json.Marshal(worktreeReviewRequest{TaskID: "task1", WorkspaceID: "ws1", Path: t.TempDir(), Target: "main", Action: action})
@@ -155,13 +155,13 @@ func TestLocalReviewLoopbackRequiresRuntimeIdentityForDecisions(t *testing.T) {
 		r.Header.Set("X-Multica-Profile", d.cfg.Profile)
 		w := httptest.NewRecorder()
 		d.worktreeReviewHandler()(w, r)
-		if w.Code != http.StatusForbidden {
+		if w.Code != http.StatusGone {
 			t.Fatalf("loopback accepted %s: %d", action, w.Code)
 		}
 	}
 }
 
-func TestLocalReviewRequiresOwnershipAndCurrentApproval(t *testing.T) {
+func TestLocalReviewReadsRequireOwnership(t *testing.T) {
 	d := worktreeTestDaemon(t)
 	root := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "task1", nil)
 	repo := createWorktreeTestRepo(t)
@@ -182,47 +182,5 @@ func TestLocalReviewRequiresOwnershipAndCurrentApproval(t *testing.T) {
 	w := callReview(t, d, request, "test-token")
 	if w.Code != http.StatusOK {
 		t.Fatal(w.Code, w.Body.String())
-	}
-	var snapshot worktreeReviewResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	request.SnapshotID, request.Action = snapshot.ID, "merge"
-	if w := callReview(t, d, request, "test-token"); w.Code != http.StatusConflict {
-		t.Fatal("unapproved merge", w.Code)
-	}
-	request.Action = "approve"
-	if w := callReview(t, d, request, "test-token"); w.Code != http.StatusOK {
-		t.Fatal(w.Code, w.Body.String())
-	}
-	worktreeTestGit(t, path, "commit", "--allow-empty", "-m", "changed after approval")
-	request.Action = "merge"
-	if w := callReview(t, d, request, "test-token"); w.Code != http.StatusConflict {
-		t.Fatal("stale merge", w.Code)
-	}
-	request.Action = "read"
-	w = callReview(t, d, request, "test-token")
-	if err := json.Unmarshal(w.Body.Bytes(), &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	if snapshot.Review.State != "draft" {
-		t.Fatal("approval survived source update")
-	}
-	request.SnapshotID, request.Action = snapshot.ID, "approve"
-	if w := callReview(t, d, request, "test-token"); w.Code != http.StatusOK {
-		t.Fatal(w.Body.String())
-	}
-	request.Action = "merge"
-	w = callReview(t, d, request, "test-token")
-	if w.Code != http.StatusOK {
-		t.Fatal(w.Code, w.Body.String())
-	}
-	request.Action = "read"
-	w = callReview(t, d, request, "test-token")
-	if err := json.Unmarshal(w.Body.Bytes(), &snapshot); err != nil {
-		t.Fatal(err)
-	}
-	if snapshot.Review.State != "merged" {
-		t.Fatal("merged state lost on reload", w.Body.String())
 	}
 }

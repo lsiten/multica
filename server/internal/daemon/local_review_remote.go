@@ -36,6 +36,10 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		result.Error = "runtime is no longer registered here"
 		return result
 	}
+	if protocol.IsRetiredLocalReviewAction(command.Action) {
+		result.Error = protocol.LocalReviewWritesRetired
+		return result
+	}
 	if command.Action == "environment" || command.Environment != nil {
 		return d.runRemoteEnvironment(ctx, command)
 	}
@@ -91,11 +95,6 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 		return result
 	}
 	input.TaskID = directoryTask
-	if command.Action == "merge" {
-		if recovered, ok := d.recoverRemoteMerge(ctx, input, command.ClaimToken); ok {
-			return recovered
-		}
-	}
 	var page json.RawMessage
 	call := func(action string) (worktreeReviewResponse, error) {
 		input.Action = action
@@ -131,14 +130,8 @@ func (d *Daemon) runRemoteReview(ctx context.Context, command protocol.LocalRevi
 	var response worktreeReviewResponse
 	err = nil
 	switch command.Action {
-	case "git_history", "git_manifest", "workspace_trash", "file_operation", "merge_selected", "index", "stage", "unstage", "commit", "read", "branches", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease", "submit", "approve", "request_changes":
+	case "git_history", "git_manifest", "workspace_trash", "file_operation", "index", "read", "branches", "repositories", "versions", "manifest", "files", "file", "context", "content", "workspace_files", "file_content", "commits", "lease":
 		response, err = call(command.Action)
-	case "merge":
-		if command.SnapshotID == "" {
-			result.Error = "approved snapshot required"
-			return result
-		}
-		response, err = call("merge")
 	case "edit", "merge_edit":
 		input.Action = command.Action
 		data, mErr := json.Marshal(input)

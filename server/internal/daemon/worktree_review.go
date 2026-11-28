@@ -123,6 +123,10 @@ func (d *Daemon) reviewOperationHandler(forwarded bool) http.HandlerFunc {
 			http.Error(w, "task, workspace and absolute repository path are required", http.StatusBadRequest)
 			return
 		}
+		if protocol.IsRetiredLocalReviewAction(request.Action) {
+			http.Error(w, protocol.LocalReviewWritesRetired, http.StatusGone)
+			return
+		}
 		if (request.Scope == "checkout" && !protocol.IsCheckoutRead(request.Action)) || ((request.Action == "git_manifest" || request.Action == "git_history") && request.Scope != "checkout") {
 			http.Error(w, "invalid checkout read request", http.StatusBadRequest)
 			return

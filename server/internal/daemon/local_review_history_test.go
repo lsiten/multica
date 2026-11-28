@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"testing"
+
+	"github.com/multica-ai/multica/server/internal/daemon/localreview"
 )
 
 func TestLocalReviewHistorySurvivesChangedSnapshot(t *testing.T) {
@@ -25,9 +27,8 @@ func TestLocalReviewHistorySurvivesChangedSnapshot(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &initial); err != nil {
 		t.Fatal(err)
 	}
-	request.Action, request.SnapshotID, request.Comment = "approve", initial.ID, "checked locally"
-	if w := callReview(t, d, request, "test-token"); w.Code != http.StatusOK {
-		t.Fatal(w.Code, w.Body.String())
+	if err := localreview.SaveRecord(root, localreview.RecordKey(initial.Snapshot), localreview.Record{SnapshotID: initial.ID, SourceHead: initial.Head, State: "approved", PreparedCommit: initial.Head, Snapshot: &initial.Snapshot, Events: []localreview.Event{{Kind: "approve", SnapshotID: initial.ID, Comment: "checked locally"}}}); err != nil {
+		t.Fatal(err)
 	}
 	worktreeTestGit(t, path, "-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--allow-empty", "-m", "later change")
 
@@ -46,6 +47,17 @@ func TestLocalReviewHistorySurvivesChangedSnapshot(t *testing.T) {
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
+	}
+	var wire struct {
+		Review map[string]json.RawMessage `json:"review"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &wire); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"snapshot", "prepared_request", "prepared_commit"} {
+		if _, present := wire.Review[field]; present {
+			t.Fatal("private recovery data leaked", field)
+		}
 	}
 	// Then approval is invalidated, but its history remains available locally.
 	if response.Review.State != "draft" || len(response.Review.Events) != 1 {

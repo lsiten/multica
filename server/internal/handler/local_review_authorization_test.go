@@ -27,7 +27,7 @@ func TestLocalReviewForwardRejectsUnauthorizedActions(t *testing.T) {
 		{"anonymous", "", "", publicTask, "merge", "/runtime/repo", http.StatusUnauthorized},
 		{"task token", testUserID, "task_token", publicTask, "merge", "/runtime/repo", http.StatusForbidden},
 		{"cloud PAT", testUserID, "cloud_pat", publicTask, "approve", "/runtime/repo", http.StatusForbidden},
-		{"nonowner merge", member, "", publicTask, "merge", "/runtime/repo", http.StatusForbidden},
+		{"retired nonowner merge", member, "", publicTask, "merge", "/runtime/repo", http.StatusGone},
 		{"private runtime", member, "", privateTask, "read", "/runtime/repo", http.StatusNotFound},
 		{"personal run", member, "", personalTask, "read", "/runtime/repo", http.StatusForbidden},
 		{"foreign directory", testUserID, "", publicTask, "read", "/other/repo", http.StatusBadRequest},

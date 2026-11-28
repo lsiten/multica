@@ -25,26 +25,8 @@ func verifyLegacyReviewProcess(t *testing.T, fixture processReviewFixture) {
 	if !strings.Contains(string(view["snapshot"]), "delivered from runtime") {
 		t.Fatal("runtime diff missing")
 	}
-	input.SnapshotID, input.Action, input.CommandID = snapshot.ID, "approve", "process-approve"
-	fixture.run(input)
-	input.Action, input.CommandID = "merge", "process-merge"
-	view = fixture.run(input)
-	var merged string
-	if err := json.Unmarshal(view["merged_commit"], &merged); err != nil {
-		t.Fatal(err)
-	}
-	var record struct {
-		State string `json:"state"`
-	}
-	if err := json.Unmarshal(view["review"], &record); err != nil {
-		t.Fatal(err)
-	}
-	if record.State != "merged" || merged == "" || worktreeTestGit(t, fixture.repo, "rev-parse", "HEAD") != merged {
-		t.Fatal("platform and Git target disagree")
-	}
-	if worktreeTestGit(t, fixture.checkout, "rev-parse", "HEAD") != fixture.sourceHead {
-		t.Fatal("source checkout moved")
-	}
+	input.SnapshotID = snapshot.ID
+	verifyRetiredReviewProcess(t, fixture, input)
 }
 
 func verifyPagedReviewProcess(t *testing.T, fixture processReviewFixture) {
@@ -96,31 +78,22 @@ func verifyPagedReviewProcess(t *testing.T, fixture processReviewFixture) {
 	if !strings.Contains(string(view["page"]), fixture.sourceHead) {
 		t.Fatal("pinned commits missing")
 	}
-	input.Action, input.CommandID = "approve", "paged-process-approve"
-	view = fixture.run(input)
-	if err := json.Unmarshal(view["page"], &manifest); err != nil {
-		t.Fatal(err)
+	verifyRetiredReviewProcess(t, fixture, input)
+}
+
+func verifyRetiredReviewProcess(t *testing.T, fixture processReviewFixture, input protocol.LocalReviewCommand) {
+	t.Helper()
+	source, target := worktreeTestGit(t, fixture.checkout, "rev-parse", "HEAD"), worktreeTestGit(t, fixture.repo, "rev-parse", "HEAD")
+	index := worktreeTestGit(t, fixture.checkout, "diff", "--cached", "--binary")
+	for _, action := range []string{"submit", "approve", "request_changes", "merge", "merge_selected", "stage", "unstage", "commit"} {
+		input.Action, input.CommandID = action, "retired-"+action
+		response := fixture.run(input)
+		var message string
+		if err := json.Unmarshal(response["error"], &message); err != nil || message != protocol.LocalReviewWritesRetired {
+			t.Fatal("retired action did not return gone", action, message, err)
+		}
 	}
-	if manifest.Review.State != "approved" {
-		t.Fatal("approval was not persisted by runtime")
-	}
-	input.Action, input.CommandID = "merge", "paged-process-merge"
-	view = fixture.run(input)
-	if err := json.Unmarshal(view["page"], &manifest); err != nil {
-		t.Fatal(err)
-	}
-	merged := manifest.Review.MergedCommit
-	if manifest.Review.State != "merged" || merged == "" || worktreeTestGit(t, fixture.repo, "rev-parse", "HEAD") != merged {
-		t.Fatal("paged platform and target Git disagree")
-	}
-	view = fixture.run(input)
-	if err := json.Unmarshal(view["page"], &manifest); err != nil {
-		t.Fatal(err)
-	}
-	if manifest.Review.MergedCommit != merged || worktreeTestGit(t, fixture.repo, "rev-parse", "HEAD") != merged {
-		t.Fatal("merge redelivery changed the result")
-	}
-	if worktreeTestGit(t, fixture.checkout, "rev-parse", "HEAD") != fixture.sourceHead {
-		t.Fatal("source checkout moved")
+	if worktreeTestGit(t, fixture.checkout, "rev-parse", "HEAD") != source || worktreeTestGit(t, fixture.repo, "rev-parse", "HEAD") != target || worktreeTestGit(t, fixture.checkout, "diff", "--cached", "--binary") != index {
+		t.Fatal("retired HTTP writes changed checkout")
 	}
 }
