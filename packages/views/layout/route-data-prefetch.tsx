@@ -12,8 +12,7 @@ import { chatSessionsOptions } from "@multica/core/chat/queries";
 import { appCatalogOptions, appsOverviewOptions } from "@multica/core/connected-apps";
 import { inboxListOptions } from "@multica/core/inbox/queries";
 import { fetchIssueByRef, prefetchIssuePage } from "@multica/core/issues/queries";
-import { useAuthStore } from "@multica/core/auth";
-import { useIsGuest } from "@multica/core/permissions";
+import { useCurrentMember } from "@multica/core/permissions";
 import { paths, useCurrentWorkspace, useWorkspaceSlug } from "@multica/core/paths";
 import { pinListOptions } from "@multica/core/pins/queries";
 import { projectListOptions } from "@multica/core/projects/queries";
@@ -198,10 +197,9 @@ export function RouteDataPrefetch({
 /** `RouteDataPrefetch` for the app shell, scoped to the open workspace and user. */
 export function ShellRouteDataPrefetch({ children }: { children: ReactNode }) {
   const wsId = useCurrentWorkspace()?.id;
-  const userId = useAuthStore((s) => s.user?.id ?? null);
-  const guest = useIsGuest(wsId);
+  const { userId, role } = useCurrentMember(wsId ?? "");
   return (
-    <RouteDataPrefetch wsId={wsId} userId={userId} guest={guest}>
+    <RouteDataPrefetch wsId={role ? wsId : undefined} userId={userId} guest={role === "guest"}>
       {children}
     </RouteDataPrefetch>
   );
