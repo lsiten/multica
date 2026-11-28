@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { expect, it, vi } from "vitest";
 import { requestLocalReview, requestLocalReviewPage } from "./local-review-request";
 
-const input = { task_id: "task", workspace_id: "ws", runtime_id: "runtime", path: "/repo", target: "main", action: "approve", snapshot_id: "snapshot", command_id: "operation" };
+const input = { task_id: "task", workspace_id: "ws", runtime_id: "runtime", path: "/repo", target: "main", action: "read", snapshot_id: "snapshot", command_id: "operation" };
 const snapshot = { id: "snapshot", path: "/repo", branch: "feature", target: "main", head: "head", target_head: "base", base: "base", dirty: false, branches: [], commits: "", files: [], review: { snapshot_id: "snapshot", state: "approved", comment: "", merged_commit: "" } };
 
 it.each(["file_operation", "workspace_trash"] as const)("requires server member authority for %s before local dispatch", async (action) => {
@@ -88,5 +88,13 @@ it("rejects discovery that returns another workspace before local access", async
     health: async () => ({}), review,
     discoverRuntime: async () => ({ task_id: "task", workspace_id: "other", runtime_id: "runtime" }),
   })).rejects.toThrow("another task");
+  expect(review).not.toHaveBeenCalled();
+});
+
+it.each(["submit", "approve", "request_changes", "merge"])("rejects legacy IPC %s before profile or network access", async (action) => {
+  const resolveProfile = vi.fn();
+  const review = vi.fn();
+  await expect(requestLocalReview({ ...input, action }, { resolveProfile, health: async () => ({}), review })).rejects.toThrow("local_review_workflow_retired");
+  expect(resolveProfile).not.toHaveBeenCalled();
   expect(review).not.toHaveBeenCalled();
 });

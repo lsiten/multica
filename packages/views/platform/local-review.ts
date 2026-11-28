@@ -1,23 +1,21 @@
+import { assertLocalReviewActionSupported } from "@multica/core/types/local-review-retirement";
 import { api } from "@multica/core/api";
-import { createSafeId } from "@multica/core/utils";
 import type { LocalMR, LocalReviewRequest, LocalReviewSnapshot } from "@multica/core/types/local-review";
 import { localReviewBranchesSchema, localReviewDirectResponseSchema } from "@multica/core/types/local-review";
 import { reconcileLocalReviewInventory } from "./local-review-inventory";
 import { readWithCancellation } from "./local-review-cancellation";
 
 export async function readLocalReview(request: LocalReviewRequest): Promise<LocalReviewSnapshot & { command_status?: string; command_error?: string; review_id?: string; history?: LocalMR["events"] }> {
-  const operation = request.action && request.action !== "read"
-    ? { ...request, command_id: request.command_id ?? createSafeId() }
-    : request;
+  assertLocalReviewActionSupported(request.action);
   if (typeof window !== "undefined") {
     const daemon: unknown = Reflect.get(window, "daemonAPI");
     if (daemon && typeof daemon === "object" && "readLocalReview" in daemon && typeof daemon.readLocalReview === "function") {
-      const local: unknown = await daemon.readLocalReview(operation);
+      const local: unknown = await daemon.readLocalReview(request);
       if (local !== null) return localReviewDirectResponseSchema.parse(local);
     }
   }
   if (!await api.supportsLocalMR()) throw new Error("local_review_upgrade_required");
-  return api.executeLocalReview(operation);
+  return api.executeLocalReview(request);
 }
 
 export async function localReviewInventory(issueId?: string) {

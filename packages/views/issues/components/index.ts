@@ -10,8 +10,6 @@ export { CommentInput } from "./comment-input";
 export { ReplyInput } from "./reply-input";
 export { IssueMentionCard } from "./issue-mention-card";
 export { IssueChip } from "./issue-chip";
-export { LocalReviewDialog } from "./local-review-dialog";
-export { LocalReviewEntry } from "./local-review-entry";
 export { WorktreeActionLabel, WorktreeLifecycle, WorktreeReason, WorktreeRepositoryStatus } from "./worktree-lifecycle";
 
 export { GitChangesPanel } from "./git-changes-panel";

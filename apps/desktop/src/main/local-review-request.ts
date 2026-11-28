@@ -1,3 +1,4 @@
+import { assertLocalReviewActionSupported } from "@multica/core/types/local-review-retirement";
 import { localReviewBranchesRequestSchema, localReviewBranchesSchema, localReviewRequestSchema, localReviewDirectResponseSchema, localReviewRuntimeBindingSchema, type LocalReviewRequest } from "@multica/core/types/local-review";
 import { ownsReviewRuntime } from "../shared/local-review-routing";
 import { selectedMergeCapabilitySchema } from "@multica/core/types/local-review-selection";
@@ -18,7 +19,9 @@ export interface LocalReviewTransport {
 // Keep one selected profile throughout the health check and the authenticated
 // request. Re-resolving it between awaits could send a checked request elsewhere.
 export async function requestLocalReview(input: unknown, transport: LocalReviewTransport) {
-  const result = await requestReviewOperation(localReviewRequestSchema.parse(input), transport);
+  const request = localReviewRequestSchema.parse(input);
+  assertLocalReviewActionSupported(request.action);
+  const result = await requestReviewOperation(request, transport);
   if (result === null) return null;
   return { ...localReviewDirectResponseSchema.parse(result.response), runtime_id: result.runtimeId };
 }
@@ -30,6 +33,7 @@ export async function requestLocalReviewBranches(input: unknown, transport: Loca
 }
 
 export async function requestLocalReviewPage(input: unknown, transport: LocalReviewTransport, signal?: AbortSignal) {
+  if (input && typeof input === "object" && "action" in input && typeof input.action === "string") assertLocalReviewActionSupported(input.action);
   const request = pagedReviewRequestSchema.parse(input);
   if (request.scope === "checkout" && (request.project_resource_id || !request.runtime_id)) return null;
   if (request.action === "file_operation" || request.action === "workspace_trash") throw new Error("workspace_file_operations_require_server_authorization");

@@ -169,3 +169,12 @@ it("sends the same IPC read identifier on cancellation and removes the listener"
   expect(cancelRead).toHaveBeenCalledExactlyOnceWith(invokedID);
   expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
 });
+
+it.each(["submit", "approve", "request_changes", "merge", "merge_selected", "stage", "unstage", "commit"] as const)("rejects retired %s before IPC, capability checks or relay", async (action) => {
+  const local = vi.fn();
+  vi.stubGlobal("daemonAPI", { readLocalReviewPage: local });
+  await expect(requestReviewPage({ ...request, action })).rejects.toThrow("local_review_workflow_retired");
+  expect(local).not.toHaveBeenCalled();
+  expect(api.supportsPagedLocalMR).not.toHaveBeenCalled();
+  expect(api.executePagedLocalReview).not.toHaveBeenCalled();
+});

@@ -1,3 +1,4 @@
+import { assertLocalReviewActionSupported } from "@multica/core/types/local-review-retirement";
 import { api } from "@multica/core/api";
 import { createSafeId } from "@multica/core/utils";
 import { isLocalIndexAction } from "@multica/core/types/local-review-index";
@@ -11,6 +12,7 @@ export class RuntimeFileEditUnconfirmedError extends Error {
 }
 
 export async function requestReviewPage(input: PagedReviewInput, signal?: AbortSignal) {
+  assertLocalReviewActionSupported(input.action);
   signal?.throwIfAborted();
   const request = pagedReviewRequestSchema.parse(input.action !== "file_operation" && isPagedReviewDecision(input.action ?? "manifest")
     ? { ...input, command_id: input.command_id ?? createSafeId() } : input);
@@ -67,12 +69,6 @@ export async function applyReviewFileEdit(input: ApplyRuntimeFileEditRequest, si
   const result = await api.applyRuntimeFileEdit(request, signal);
   if (!result || (request.file_id && (result.file_id !== request.file_id || result.command_id !== request.command_id || !result.operation_id))) throw new RuntimeFileEditUnconfirmedError();
   return result;
-}
-
-export async function changeLocalIndex(input: PagedReviewInput & { action: "stage" | "unstage" | "commit" }) {
-  const response = await requestReviewPage(input);
-  if (!("kind" in response) || response.kind !== "index_result") throw new Error("Index operation response expected");
-  return response;
 }
 
 export async function readReviewFile(input: PagedReviewInput, signal?: AbortSignal) {

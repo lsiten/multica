@@ -1,3 +1,4 @@
+import { assertLocalReviewActionSupported } from "../types/local-review-retirement";
 import { createAgentCollaborationApi } from "./agent-answers";
 import { createApplicationRevisionApi } from "./application-revisions";
 import type { HumanRequest, HumanRequestAnswer, HumanTextReplyResult } from "../types/human-request";
@@ -1729,6 +1730,7 @@ export class ApiClient {
   }
 
   async executePagedLocalReview(input: PagedReviewInput, signal?: AbortSignal) {
+    assertLocalReviewActionSupported(input.action);
     const request = pagedReviewRequestSchema.parse(input);
     const timeout = AbortSignal.timeout(55000);
     const raw = await this.fetch<unknown>("/api/local-reviews/execute", {
@@ -1750,6 +1752,7 @@ export class ApiClient {
   }
 
   async executeLocalReview(request: import("../types/local-review").LocalReviewRequest) {
+    assertLocalReviewActionSupported(request.action);
     return localReviewRelayResponseSchema.parse(await this.fetch<unknown>("/api/local-reviews/execute", {
       method: "POST", signal: AbortSignal.timeout(55000),
       body: JSON.stringify({ task_id: request.task_id, path: request.path, target: request.target,

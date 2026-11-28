@@ -113,17 +113,6 @@ it("propagates cancellation to branch discovery without changing its payload", a
   expect(fetchMock).toHaveBeenCalledWith("https://api.example.test/api/local-reviews/execute", expect.objectContaining({ body: JSON.stringify({ task_id: "task", path: "/repo", action: "branches" }) }));
 });
 
-it("sends the selected index identity and file set through the relay", async () => {
-  let body: unknown;
-  vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => {
-    if (typeof init?.body !== "string") throw new Error("Missing JSON request");
-    body = JSON.parse(init.body);
-    return new Response(JSON.stringify({ page: { kind: "index_result", result: { index_id: "e".repeat(64) } } }), { status: 200 });
-  }));
-  await new ApiClient("https://api.example.test").executePagedLocalReview({ ...request, action: "stage", version_id: id, snapshot_id: id, index_id: "b".repeat(64), head: "c".repeat(40), branch: "feature", paths: ["selected.ts"], command_id: "stage-once" });
-  expect(body).toMatchObject({ action: "stage", command_id: "stage-once", index_id: "b".repeat(64), head: "c".repeat(40), branch: "feature", paths: ["selected.ts"] });
-});
-
 it("preserves shallow directory mode and its cursor through the relay",async()=>{
  let body:unknown;
  vi.stubGlobal("fetch",vi.fn(async(_url:unknown,init?:RequestInit)=>{
@@ -147,4 +136,18 @@ it("sends the selected checkout commit through the HTTP relay", async () => {
 it("parses checkout refs from the branch relay envelope", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ branches: ["refs/heads/main", "refs/remotes/origin/main"] }), { status: 200 })));
   expect(await new ApiClient("https://api.example.test").executePagedLocalReview({ task_id: "task", workspace_id: "ws", path: "/repo", scope: "checkout", action: "branches" })).toEqual({ branches: ["refs/heads/main", "refs/remotes/origin/main"] });
+});
+
+it.each(["submit", "approve", "request_changes", "merge", "merge_selected", "stage", "unstage", "commit"] as const)("rejects retired %s without sending HTTP", async (action) => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(new ApiClient("https://api.example.test").executePagedLocalReview({ ...request, action })).rejects.toThrow("local_review_workflow_retired");
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it.each(["submit", "approve", "request_changes", "merge"] as const)("rejects legacy %s without sending HTTP", async (action) => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(new ApiClient("https://api.example.test").executeLocalReview({ task_id: "task", workspace_id: "ws", path: "/repo", target: "main", action })).rejects.toThrow("local_review_workflow_retired");
+  expect(fetchMock).not.toHaveBeenCalled();
 });

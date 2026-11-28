@@ -62,3 +62,11 @@ it("preserves checkout scope and known owning runtime for branch reads", async (
   expect(await requestLocalReviewPage({ ...request, action: "branches", scope: "checkout", version_id: undefined }, { resolveProfile: async () => profile, health: async () => health, review })).toMatchObject({ branches: ["refs/heads/main"] });
   expect(review).toHaveBeenCalledWith(profile, expect.objectContaining({ scope: "checkout", task_id: "task", runtime_id: "runtime" }), undefined);
 });
+
+it.each(["submit", "approve", "request_changes", "merge", "merge_selected", "stage", "unstage", "commit"])("rejects retired %s before resolving a profile", async (action) => {
+  const resolveProfile = vi.fn();
+  const review = vi.fn();
+  await expect(requestLocalReviewPage({ ...request, action }, { resolveProfile, health: async () => health, review })).rejects.toThrow("local_review_workflow_retired");
+  expect(resolveProfile).not.toHaveBeenCalled();
+  expect(review).not.toHaveBeenCalled();
+});

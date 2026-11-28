@@ -18,12 +18,11 @@ it("does not contact the backend when desktop resolves the owning runtime locall
   expect(api.executeLocalReview).not.toHaveBeenCalled();
 });
 
-it("keeps local approvals on the local daemon without backend capability checks", async () => {
-  const local = vi.fn().mockResolvedValue({ ...snapshot, review: { ...snapshot.review, state: "approved" } });
+it.each(["submit", "approve", "request_changes", "merge"] as const)("rejects retired %s before local or relay dispatch", async (action) => {
+  const local = vi.fn();
   vi.stubGlobal("window", { daemonAPI: { readLocalReview: local } });
-  const approval = { ...request, action: "approve", snapshot_id: "id", command_id: "approval-1" } as const;
-  await expect(readLocalReview(approval)).resolves.toMatchObject({ review: { state: "approved" } });
-  expect(local).toHaveBeenCalledWith(approval);
+  await expect(readLocalReview({ ...request, action })).rejects.toThrow("local_review_workflow_retired");
+  expect(local).not.toHaveBeenCalled();
   expect(api.supportsLocalMR).not.toHaveBeenCalled();
   expect(api.executeLocalReview).not.toHaveBeenCalled();
 });
@@ -39,23 +38,5 @@ it("uses the relay when desktop confirms the runtime is not local", async () => 
 it("surfaces local errors without silently rerouting the request", async () => {
   vi.stubGlobal("window", { daemonAPI: { readLocalReview: vi.fn().mockRejectedValue(new Error("local repository unavailable")) } });
   await expect(readLocalReview(request)).rejects.toThrow("local repository unavailable");
-  expect(api.executeLocalReview).not.toHaveBeenCalled();
-});
-
-it("generates secure operation IDs when randomUUID is unavailable on HTTP", async () => {
-  vi.stubGlobal("window", {});
-  vi.stubGlobal("crypto", { getRandomValues: (bytes: Uint8Array) => {
-    for (let index = 0; index < bytes.length; index++) bytes[index] = index;
-    return bytes;
-  } });
-  api.supportsLocalMR.mockResolvedValue(true);
-  api.executeLocalReview.mockResolvedValue(snapshot);
-  await readLocalReview({ ...request, action: "approve", snapshot_id: "id" });
-  expect(api.executeLocalReview).toHaveBeenCalledWith(expect.objectContaining({ command_id: "00010203-0405-4607-8809-0a0b0c0d0e0f" }));
-});
-
-it("does not dispatch a mutation when secure randomness is unavailable", async () => {
-  vi.stubGlobal("crypto", {});
-  await expect(readLocalReview({ ...request, action: "approve", snapshot_id: "id" })).rejects.toThrow("Secure UUID generation requires crypto.getRandomValues");
   expect(api.executeLocalReview).not.toHaveBeenCalled();
 });
