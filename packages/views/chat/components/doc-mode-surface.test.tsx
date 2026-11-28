@@ -255,6 +255,36 @@ beforeEach(() => {
 });
 
 describe("DocModeSurface (workspace_file body + truncation notice)", () => {
+  it.each(["saved", "conflict", "failed"] as const)("keeps the newly selected document draft when an earlier workspace save returns %s", async (outcome) => {
+    session.current.content = { ...session.current.content, has_more: false };
+    let finish: () => void = () => { throw new Error("Save not started"); };
+    vi.mocked(applyReviewFileEdit).mockImplementationOnce(() => new Promise((resolve, reject) => {
+      finish = () => outcome === "failed"
+        ? reject(new Error("Save unavailable"))
+        : resolve({ file_path: "src/app.ts", merged: true, conflict: outcome === "conflict", bytes: 10, new_content: "submitted draft" });
+    }));
+    openWorkspaceDoc();
+    renderSurface();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    editDocument("submitted draft");
+    fireEvent.click(screen.getByRole("button", { name: "Apply to workspace file" }));
+    const nextDocument = {
+      kind: "workspace_file", id: "task-1:src/next.ts", label: "src/next.ts",
+      sessionId: "session-1", taskId: "task-1", runtimeId: "rt-1", relativePath: "src/next.ts",
+    } as const;
+    act(() => {
+      useDocModeStore.getState().setDocumentDraft(nextDocument, {
+        kind: "workspace_file", content: "next document draft", baseContent: "hello",
+      });
+      useDocModeStore.getState().openDoc("session-1", nextDocument);
+    });
+    expect(screen.getByRole("textbox", { name: "src/next.ts" })).toHaveTextContent("next document draft");
+
+    await act(async () => finish());
+
+    expect(screen.getByRole("textbox", { name: "src/next.ts" })).toHaveTextContent("next document draft");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("retains text entered while a workspace save is pending and rebases its next save on the submitted draft", async () => {
     session.current.content = { ...session.current.content, has_more: false };
     let finish: () => void = () => { throw new Error("Save not started"); };

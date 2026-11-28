@@ -149,6 +149,8 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
 
   const documentDraftId = doc ? documentDraftKey(doc) : null;
   const documentIdentity = `${doc?.sessionId ?? sessionId}:${documentDraftId ?? "none"}`;
+  const activeDocumentIdentity = useRef(documentIdentity);
+  activeDocumentIdentity.current = documentIdentity;
   const restoredDocument = useRef<{ readonly document: DocumentRef | null; readonly sessionId: string } | null>(null);
   useEffect(() => {
     const previous = restoredDocument.current;
@@ -381,6 +383,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
         edit_base: workspaceEditBase,
         edit_new: workspaceEdited,
       } });
+      if (activeDocumentIdentity.current !== documentIdentity) return;
       if (result.kind === "conflict") {
         setWorkspaceSaveError("changed_reload");
         await workspaceContent.refetch();
@@ -396,11 +399,11 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
       }
       await workspaceContent.refetch();
     } catch {
-      setWorkspaceSaveError("save_failed");
+      if (activeDocumentIdentity.current === documentIdentity) setWorkspaceSaveError("save_failed");
     } finally {
       setWorkspaceSaving(false);
     }
-  }, [doc, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEditBase, workspaceEdited, workspaceIdentityAmbiguous, workspaceSaving]);
+  }, [doc, documentIdentity, workspacePath, workspaceRequest, workspaceRuntimeId, workspaceContent, workspaceEditBase, workspaceEdited, workspaceIdentityAmbiguous, workspaceSaving]);
 
   const openEdit = useCallback(() => {
     const revision = current.data?.owner_revision;
