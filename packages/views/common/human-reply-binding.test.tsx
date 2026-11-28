@@ -11,6 +11,7 @@ import { useHumanReplyBinding } from "./human-reply-binding";
 
 vi.mock("@multica/core/api",async()=>({...await vi.importActual<typeof import("@multica/core/api")>("@multica/core/api"),api:{listHumanRequests:vi.fn(),replyHumanRequest:vi.fn()}}));
 vi.mock("@multica/core/hooks",()=>({useWorkspaceId:()=>"workspace"}));
+vi.mock("@multica/core/permissions", () => ({ useIsGuest: () => false }));
 vi.mock("@multica/core/realtime",()=>({useWSEvent:()=>undefined,useWSReconnect:()=>undefined}));
 
 const request:HumanRequest={id:"request",workspace_id:"workspace",source_task_id:"source",agent_id:"agent",recipient_id:"me",issue_id:"issue",chat_session_id:null,project_id:null,revision:3,status:"pending",can_respond:true,expires_at:"2030-01-01T00:00:00Z",response:null,response_task_id:null,payload:{key:"size",kind:"choice",title:"Image dimensions",steps:[],action_label:"Submit",next:"Continue",response_mode:"chat_or_card",choices:[{id:"native",label:"Accept native size"},{id:"resize",label:"Resize"}]}};

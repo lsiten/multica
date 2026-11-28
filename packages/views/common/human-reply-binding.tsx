@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useIsGuest } from "@multica/core/permissions";
 import { humanRequestsOptions, humanRequestKeys, matchHumanTextAnswer, humanTextAnswerLabel, useHumanRequestRealtime } from "@multica/core/human-requests";
 import { issueProgressKeys } from "@multica/core/issue-progress";
 import { issueKeys } from "@multica/core/issues/queries";
@@ -14,19 +15,20 @@ import { useT } from "../i18n";
 
 export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: string | null, text: string, eligible: boolean, initialRequestId = "", onAnswered?: () => void) {
   const workspaceId = useWorkspaceId();
+  const guest = useIsGuest(workspaceId);
   const { t } = useT("common");
   const client = useQueryClient();
   const acceptedReplyId = useRef<string | null>(null);
   const [picking, setPicking] = useState(false);
   const filter = channel === "chat" ? { chat_session_id: scopeId ?? "" } : { issue_id: scopeId ?? "" };
-  const query = useQuery({ ...humanRequestsOptions(workspaceId, filter), enabled: !!workspaceId && !!scopeId });
+  const query = useQuery({ ...humanRequestsOptions(workspaceId, filter), enabled: !guest && !!workspaceId && !!scopeId });
   useHumanRequestRealtime(workspaceId);
   const [selectedId, setSelectedId] = useState(initialRequestId);
   const [plain, setPlain] = useState(false);
   const [snapshot, setSnapshot] = useState<{ scopeId: string; text: string; request: HumanRequest } | null>(null);
   const [error, setError] = useState("");
   const knownRequests = client.getQueriesData<HumanRequest>({ queryKey: humanRequestKeys.all(workspaceId) }).flatMap(([, cached]) => cached && !Array.isArray(cached) && cached.payload && (channel === "chat" ? cached.chat_session_id : cached.issue_id) === scopeId ? [cached] : []);
-  const scopedRequests = query.data ?? knownRequests;
+  const scopedRequests = guest ? [] : query.data ?? knownRequests;
   const available = scopedRequests.filter(request => request.status === "pending" && request.can_respond && request.payload.response_mode === "chat_or_card" && Date.parse(request.expires_at) > Date.now());
   const candidates = eligible && !plain ? available.filter(request => (!selectedId || selectedId === request.id) && !!matchHumanTextAnswer(request, text, selectedId === request.id)) : [];
   const candidate = candidates.length === 1 ? candidates[0] : undefined;
@@ -56,7 +58,7 @@ export function useHumanReplyBinding(channel: "chat" | "comment", scopeId: strin
     ]);
   };
   const submit = async (raw: string): Promise<"ordinary" | "accepted" | "blocked"> => {
-    if (!eligible || plain) return "ordinary";
+    if (guest || !eligible || plain) return "ordinary";
     if (!selectedId && candidates.length > 1) { setError(t($ => $.human_request.reply_choose_target)); return "blocked"; }
     if (snapshot && raw === snapshot.text && snapshot.scopeId === scopeId && (stale || Date.parse(snapshot.request.expires_at) <= Date.now())) { setError(t($ => $.human_request.reply_stale)); return "blocked"; }
     const exact = snapshot && raw === snapshot.text && snapshot.scopeId === scopeId ? matchHumanTextAnswer(snapshot.request, raw, selectedId === snapshot.request.id) : null;

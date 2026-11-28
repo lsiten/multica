@@ -3630,7 +3630,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
       addRow={<IssueSidebarAddRow items={sidebarAddables.filter((item) => item !== sidebarReveal)} onPick={setSidebarReveal} issue={issue} />}
       footer={guest ? undefined : <IssueSidebarFooter issue={issue} />}
     />
-    <CodeReviewContextSection issueId={id} />
+    {!guest && <CodeReviewContextSection issueId={id} />}
     </>
   );
 
@@ -4260,7 +4260,7 @@ export function IssueDetail({ issueId, onDelete, inbox, defaultSidebarOpen = tru
               </button>
             </div>
           )}
-          <IssueWorkProgress key={issue.id} issueId={issue.id} projectId={issue.project_id} hasChildren={childIssues.length > 0}>
+          <IssueWorkProgress key={issue.id} guest={guest} issueId={issue.id} projectId={issue.project_id} hasChildren={childIssues.length > 0}>
           {childIssues.length > 0 && (() => {
             return (
               // Provider hosts the shared right-click actions menu the rows

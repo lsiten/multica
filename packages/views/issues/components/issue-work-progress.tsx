@@ -11,11 +11,12 @@ import { WorkProgressPanel } from "./work-progress-panel";
 import { WorkProgressEntry, WorkProgressSummary } from "./work-progress-entry";
 import { useWorkProgressLabels } from "./work-progress-labels";
 
-export function IssueWorkProgress({ issueId, projectId, hasChildren, children }: { issueId: string; projectId: string | null; hasChildren: boolean; children: ReactNode }) {
+export function IssueWorkProgress({ issueId, projectId, hasChildren, children, guest = false }: { readonly guest?: boolean; issueId: string; projectId: string | null; hasChildren: boolean; children: ReactNode }) {
   const { t } = useWorkProgressLabels();
   const workspaceId = useWorkspaceId();
   const memberId = useAuthStore(state => state.user?.id) ?? "";
-  const query = useQuery(issueProgressOptions(workspaceId, memberId, issueId));
+  const options = issueProgressOptions(workspaceId, memberId, issueId);
+  const query = useQuery({ ...options, enabled: !guest && options.enabled });
   const navigation = useNavigation();
   const routeRemaining = navigation.searchParams.get("work_view") === "remaining";
   const [remaining, setRemainingValue] = useState(routeRemaining);
@@ -26,6 +27,7 @@ export function IssueWorkProgress({ issueId, projectId, hasChildren, children }:
     if (value) search.set("work_view", "remaining"); else search.delete("work_view");
     const encoded = search.toString(); navigation.replace(`${navigation.pathname}${encoded ? `?${encoded}` : ""}${navigation.hash}`);
   };
+  if (guest) return children;
   const view = query.data;
   const parent = hasChildren || !!view && view.summary.total > 0;
   const rootContext = view?.root && view.root.reasons.some(reason => !["unassigned", "ready", "waiting_children"].includes(reason));
