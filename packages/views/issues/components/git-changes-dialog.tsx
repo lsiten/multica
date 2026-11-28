@@ -13,7 +13,7 @@ export function GitChangesDialog({ request, initialScope, onClose }: {
   const { t } = useT("issues");
   const [open, setOpen] = useState(true);
   return <Dialog open={open} onOpenChange={setOpen} onOpenChangeComplete={(value) => { if (!value) onClose(); }}>
-    <DialogContent className="flex max-h-[90vh] w-[calc(100%-2rem)] flex-col sm:max-w-6xl" aria-describedby={undefined}>
+    <DialogContent className="flex max-h-[90%] w-[calc(100%-2rem)] flex-col sm:max-w-6xl" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{t(($) => $.git_changes.title)}</DialogTitle></DialogHeader>
       <div className="min-h-0 overflow-y-auto"><GitChangesPanel request={request} initialScope={initialScope} /></div>
     </DialogContent>
