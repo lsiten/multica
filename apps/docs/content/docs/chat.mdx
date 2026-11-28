@@ -139,3 +139,17 @@ Deleting a conversation cannot be undone and stops any runs in it that haven't f
 - [Inbox and subscriptions](/inbox) — follow team activity that needs you.
 - [Search, shortcuts, and preferences](/shortcuts) — open chat, search, and move between pages from the keyboard.
 - [Providers matrix](/providers) — session and model capabilities per AI coding tool.
+
+## Workspace Git
+
+The file panel's Git changes view reads the selected directory on its runtime. It has three scopes:
+
+| Scope | Contents |
+| --- | --- |
+| Uncommitted | Current staged and unstaged changes, including untracked files |
+| Branch diff | The current branch compared with the selected target branch |
+| Commits | Commit history and the changes in a selected commit |
+
+Runs that use the same directory show the same current Git state. Choosing an older run does not restore a past checkout or filter changes to that run. The runtime must be online, and the source directory and repository must still be accessible. Reconnect or restore access before refreshing; an unavailable source is not an empty diff.
+
+This view is read-only. The former local MR workflow and its submit, approve, request-changes, merge, stage, unstage, and commit actions are retired. Use your Git tools for writes. Ordinary file operations and issue acceptance remain separate and are unaffected.

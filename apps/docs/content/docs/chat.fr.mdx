@@ -139,3 +139,17 @@ La suppression d'une conversation est irréversible et arrête toutes les exécu
 - [Boîte de réception et abonnements](/inbox) — suivre l'activité de l'équipe qui vous concerne.
 - [Recherche, raccourcis et préférences](/shortcuts) — ouvrir la discussion, rechercher et changer de page au clavier.
 - [Matrice des fournisseurs](/providers) — capacités de session et de modèle de chaque outil de codage IA.
+
+## Git du répertoire de travail
+
+La vue des modifications Git du panneau de fichiers lit l’état actuel du répertoire sélectionné sur son environnement. Elle propose trois portées :
+
+| Portée | Contenu |
+| --- | --- |
+| Non commitées | Modifications actuelles indexées, non indexées et fichiers non suivis |
+| Différence de branche | Comparaison de la branche actuelle avec la branche cible sélectionnée |
+| Commits | Historique et modifications d’un commit sélectionné |
+
+Les exécutions qui utilisent le même répertoire affichent le même état Git actuel. Choisir une ancienne exécution ne restaure pas un ancien répertoire et ne filtre pas les modifications par exécution. L’environnement doit être en ligne et le répertoire source ainsi que le dépôt doivent rester accessibles. Rétablissez la connexion ou l’accès avant d’actualiser ; une source indisponible ne signifie pas une différence vide.
+
+Cette vue est en lecture seule. L’ancien processus de MR locale et ses actions de soumission, d’approbation, de demande de modifications, de fusion, d’indexation, de désindexation et de commit Git sont retirés. Utilisez vos outils Git pour les écritures. Les opérations ordinaires sur les fichiers et l’acceptation des tâches restent distinctes et ne sont pas affectées.

@@ -13,6 +13,15 @@
 
 ## 1. 概览
 
+### 当前边界：工作区 Git 与历史功能
+
+当前 Git 面板读取所选运行时目录，提供 **未提交、分支差异、提交历史** 三个范围。同一目录跨多次运行显示同一份当前状态，不追踪单次运行贡献，也不把较早运行当作历史工作目录。运行时需在线，源目录和仓库需可访问；不可用时显示原因，不当作空差异。
+
+Git 面板只读。本地 MR 入口以及提交评审、批准、要求修改、合并、选择性合并、暂存、取消暂存、Git 提交写入已退役；普通文件操作和任务验收不受影响。当前说明见[会话文档](../apps/docs/content/docs/chat.zh.mdx)。
+
+下文远程输入控制、托管虚拟屏和一次运行一个 worker 的内容保留为历史设计，不表示当前提供这些入口。当前镜像与运行时能力以[运行时文档](../apps/docs/content/docs/daemon-runtimes.zh.mdx)为准。Provider 运行由 daemon 管理，遵循 provider 后端生命周期并支持其可用的暖会话复用；环境、应用、镜像、网关和模型服务有独立生命周期。
+
+
 以下规模统计沿用 2026-11-07 快照。本轮优先处理 macOS，Windows 控制能力保留为独立需求。功能状态与剩余环境条件见 [需求文档 §19](fork-requirements.md#19-已知缺口与待办gap)，验证结论限定到实际执行的场景。
 
 
@@ -26,7 +35,7 @@
 | 历史发布快照（2026-11-07） | `v1.0.118`，24 个资产，Latest |
 
 **一句话定位**：上游 Multica 是「人与智能体协作的命令面板」，本 fork 在其之上把
-「本地智能体运行时」扩展成**可视（屏幕镜像）、可控（远程/代操作）、可评审（本地 MR）、
+「本地智能体运行时」扩展成**可视（屏幕镜像）、可检查（工作区 Git）、
 可自托管、可独立分发**的一体化工作台。
 
 ---
@@ -36,11 +45,11 @@
 | 能力域 | 上游行为 | fork 行为 | 主要落点 |
 | --- | --- | --- | --- |
 | 运行时可见性 | 仅健康状态、配置、关联智能体 | 每个 runtime 唯一屏幕镜像，WebRTC 点对点，服务端不经手像素 | `server/internal/mirror`、`packages/views/runtimes/components/mirror` |
-| 远程交互 | 无 | 人工鼠标/键盘/文本注入 + 指挥智能体代操作，FCFS 仲裁显示资源 | `mirror/input_arbiter.go`、`vscreen` |
-| 虚拟屏 | 无 | 原生显示宿主、有界媒体 IPC、lease、窗口复用、本地选窗 | `server/internal/vscreen` |
+| 远程交互（历史设计） | 无 | 历史人工输入与代操作方案，不作为当前入口 | `mirror/input_arbiter.go`、`vscreen` |
+| 虚拟屏（历史设计） | 无 | 历史托管显示与窗口方案，不作为当前入口 | `server/internal/vscreen` |
 | 会话形态 | 对话流 | 文档化对话、内容版本化、选区工具栏与同一会话输入区 | `packages/views/chat` |
 | 语音输入 | 无 | runtime 承载的按住说话 + 流式听写；桌面端离线 whisper | `apps/desktop`、`views/chat` |
-| 代码评审 | 走上游评审流程 | 本地 MR：runtime 持有的暂存区、选择性文件合并事务 | `LOCAL_MR_*.md`、`views` 评审组件 |
+| Git 查看 | 走上游评审流程 | 当前目录的未提交变更、分支差异、提交历史；旧本地 MR 已退役 | `views` Git 组件；`LOCAL_MR_*.md` 仅供历史参考 |
 | 决策模型 | 单一执行路径 | Jev 三来源（local / agent_context / remote），按 daemon 安装 | `server/internal/jevmodels`、`llm2jev` |
 | 桌面分发 | 上游 Release 产物 | fork 自有版本线（1.0.x）+ 自有更新源 | `fork-desktop.yml` |
 | 部署镜像 | 官方镜像 | 自建 GHCR 镜像 + Helm | `fork-images.yml`、`deploy/helm` |
@@ -52,7 +61,7 @@
 
 ### 3.1 运行时镜像（`server/internal/mirror`，76 个 Go 文件 / 31 个测试文件）
 
-设计文档：`docs/prd/runtime-mirroring.md`、`docs/prd/runtime-mirror-control.md`。
+设计文档：`docs/prd/runtime-mirroring.md`；`docs/prd/runtime-mirror-control.md` 为历史控制设计。下列涉及输入控制与控制授予的描述仅供历史参考，镜像观看不因此退役。
 
 - **采集**：daemon 所在主机原生捕屏，支持 macOS 与 Windows；Linux 首版不支持，入口显式说明。
 - **传输**：WebRTC 直连观看端，服务端不转发、不存储任何像素、截图或录像。
@@ -66,6 +75,8 @@
 隐私边界是硬约束：**服务端不经手像素，也不经手输入 payload**。
 
 ### 3.2 虚拟屏与应用窗口控制（`server/internal/vscreen`）
+
+> 历史设计。本节的托管虚拟屏、租约和窗口控制不是当前产品入口；当前显示源与桌面工具见运行时文档。
 
 - 子包：`native/`（原生显示宿主）、`hostclient/`（宿主客户端）、`appclaim/`（应用窗口认领）、`smokefixture/`（冒烟夹具）。
 - 能力：原生显示宿主与有界媒体 IPC；runtime lease 与原生所有权；受租约约束的应用控制与有界快照；跨任务复用托管窗口；本地用户选择既有应用窗口并由运行时认领；PID 输入策略绑定到已校验的原生身份。
@@ -81,7 +92,7 @@
 
 ### 3.4 Daemon 与运行时隔离（`server/internal/daemon`，585 个 Go 文件 / 320 个测试文件）
 
-- **多进程**：生产 profile 强制五个子进程 owner；能力缺失、启动失败或 worker 授权不确定时 fail-closed，不回落到进程内 provider。
+- **运行生命周期**：provider 运行归 daemon 和 provider 后端管理，不再为每次运行启动独立 Multica worker。旧五角色强制 owner 与一次性 worker 方案仅供历史参考；环境等服务仍有独立生命周期。
 - **隔离**：并发工作区隔离与共享投递结算；agent 准入隔离并按配置容量填充调度。
 - **可靠性**：内置 MCP broker 保活；MCP 诊断与探测归属绑定到单次 run；报告重试相互隔离，失败任务不会拖住 agent；任务结果在 409 冲突围栏处被隔离；重建清理后恢复工作目录同步。
 - **工作树**：安全的自动/手动 worktree 清理，剔除已完全合并的本地目录分支，隐藏已移除的本地清单项。总览集中在桌面端管理器，议题详情保留关联上下文，Settings > Code 移除重复总览。
@@ -90,6 +101,8 @@
 配套：`runtimeproc`（33 文件，进程提交与准入错误分类）、`daemonws`（22 文件，daemon WebSocket hub 与断连观测）。
 
 ### 3.5 本地评审 / 本地 MR
+
+> 已退役的历史方案。以下能力和验收说明不再是可用入口；当前只读工作区 Git 见 §1。
 
 - 文档：`LOCAL_MR_ACCEPTANCE.md`（验收口径）、`LOCAL_MR_IMPLEMENTATION.md`（实现状态）。
 - 能力：runtime 持有的暂存区、暂存 diff 预览、选择性文件合并事务、待合并选择与批量文件控制，以及本地评审闭环。
@@ -223,6 +236,8 @@
 
 ## 8. 已知边界与技术债
 
+> 以下为原统计快照的边界记录；镜像源选择、控制和显示平台支持以当前运行时文档为准。
+
 1. **Linux 不支持镜像交互**，首版也不支持镜像采集；入口需明确说明，不做静默降级。
 2. **镜像仅支持主显示器**，不支持多源选择、窗口选择、录制回放、音频采集。
 3. **服务端永不落像素与输入**：任何「服务端转存/回放」需求都与当前架构冲突。
@@ -270,7 +285,7 @@
 | `docs/prd/runtime-mirroring.md` | 运行时镜像 PRD（目标、非目标、场景） |
 | `docs/prd/runtime-mirror-control.md` | 镜像交互 PRD（人工操作、智能体代操作、FCFS 仲裁） |
 | `docs/jev-model-sources.md` | Jev 三来源配置方案 |
-| `LOCAL_MR_ACCEPTANCE.md` / `LOCAL_MR_IMPLEMENTATION.md` | 本地 MR 验收口径与实现状态 |
+| `LOCAL_MR_ACCEPTANCE.md` / `LOCAL_MR_IMPLEMENTATION.md` | 已退役本地 MR 的历史验收与实现记录 |
 | `SELF_HOSTING_FORK.md` | fork 自托管部署 |
 | `.github/RELEASING.md` | 发布 runbook（含 fork 与上游两套） |
 | `docs/merges/*.md` | 上游同步内容审计记录 |
