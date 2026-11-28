@@ -702,7 +702,7 @@ export function MirrorSurface({
         agent_id: selectedAgent,
         title: `${sourceLabel} · ${label}`,
       });
-      await getApi().sendChatMessage(session.id, instruction.trim(), undefined, binding);
+      await getApi().sendChatMessage(session.id, instruction.trim(), undefined, undefined, undefined, binding);
       setInstructionStatus("sent");
       setInstruction("");
     } catch (reason) {

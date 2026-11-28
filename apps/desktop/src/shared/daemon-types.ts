@@ -42,24 +42,6 @@ export interface DaemonMcpReadiness {
   checked_at?: string;
 }
 
-// DaemonWorkerProcess is the local per-execution task worker a desktop panel reads
-// from the daemon's /runtimes/processes endpoint. It is a read-side view and
-// carries no credential.
-export interface DaemonWorkerProcess {
-  exec_id: string;
-  instance_id: string;
-  task_id: string;
-  provider: string;
-  state: string;
-  ready: boolean;
-  capabilities?: string[];
-  started_at: string;
-  /** Local-only process resource reading; absent when the sampler is unavailable. */
-  pid?: number;
-  memory_bytes?: number;
-  cpu_time_ms?: number;
-}
-
 // DaemonProcessOverviewEntry is one row of the daemon's unified local process
 // overview (GET /runtimes/processes/overview). It is a read-side view carrying no
 // credential; resource readings are optional and absent when the sampler is

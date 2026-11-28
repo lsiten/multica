@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -23,7 +24,7 @@ func (h *Handler) hydrateTaskSupplementMetadata(ctx context.Context, r *http.Req
 	}
 	taskIDs := make([]pgtype.UUID, 0, len(tasks))
 	for i := range tasks {
-		if tasks[i].IssueID.Valid {
+		if tasks[i].IssueID.Valid || tasks[i].ChatSessionID.Valid {
 			taskIDs = append(taskIDs, tasks[i].ID)
 		}
 	}
@@ -221,8 +222,13 @@ func (h *Handler) steerCommentAgentTriggers(ctx context.Context, issue db.Issue,
 			continue
 		}
 		// The comment is its own request id: it binds to a turn at most once.
+		var leaderSquadID pgtype.UUID
+		if trigger.Squad != nil {
+			leaderSquadID = trigger.Squad.ID
+		}
 		bound, err := h.bindCommentSteer(ctx, db.BindCommentTaskSupplementParams{
-			TaskID: taskID, IssueID: issue.ID, AgentID: trigger.Agent.ID, WorkspaceID: issue.WorkspaceID,
+			RequiredLeaderSquadID: leaderSquadID,
+			TaskID:                taskID, IssueID: issue.ID, AgentID: trigger.Agent.ID, WorkspaceID: issue.WorkspaceID,
 			AuthorType: comment.AuthorType, MaxAgentBindings: maxAgentSteersPerTurn, MaxBindingsPerAgent: maxAgentSteersPerAgentPerTurn,
 			CommentID: comment.ID, AuthorID: comment.AuthorID, ClientRequestID: comment.ID,
 		})
@@ -404,6 +410,7 @@ func (h *Handler) CreateTaskSupplement(w http.ResponseWriter, r *http.Request) {
 		"comment": resp, "issue_title": issue.Title, "issue_revision": created.IssueRevision,
 	})
 	h.notifyTaskSupplementAvailable(task)
+	h.archiveActorInboxOnAgentTrigger(r.Context(), uuidToString(issue.WorkspaceID), uuidToString(issue.ID), "member", uuidToString(authorID))
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -467,7 +474,8 @@ type ackTaskSupplementRequest struct {
 }
 
 func (h *Handler) ClaimTaskSupplement(w http.ResponseWriter, r *http.Request) {
-	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, chi.URLParam(r, "taskId"))
+	taskID := chi.URLParam(r, "taskId")
+	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
 	if !ok {
 		return
 	}
@@ -490,6 +498,23 @@ func (h *Handler) ClaimTaskSupplement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
+	if task.ChatSessionID.Valid && !task.IssueID.Valid {
+		row, err := q.ClaimNextChatTaskSupplement(r.Context(), task.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			if commitScopedExecutionWrite(w, r, tx, q, task.ID) {
+				writeJSON(w, http.StatusOK, map[string]any{})
+			}
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to claim chat guidance")
+		} else {
+			if !commitScopedExecutionWrite(w, r, tx, q, task.ID) {
+				return
+			}
+			// Keep the daemon wire contract: this opaque id names a chat message.
+			writeJSON(w, http.StatusOK, map[string]any{"comment_id": uuidToString(row.MessageID), "author_type": "member", "author_name": row.AuthorName, "content": row.Content})
+		}
+		return
+	}
 	row, err := q.ClaimNextTaskSupplement(r.Context(), db.ClaimNextTaskSupplementParams{
 		TaskID: task.ID, IncludeAgentAuthored: rendersAuthorType,
 	})
@@ -520,7 +545,8 @@ func (h *Handler) ClaimTaskSupplement(w http.ResponseWriter, r *http.Request) {
 	})
 }
 func (h *Handler) AckTaskSupplement(w http.ResponseWriter, r *http.Request) {
-	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, chi.URLParam(r, "taskId"))
+	taskID := chi.URLParam(r, "taskId")
+	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
 	if !ok {
 		return
 	}
@@ -530,6 +556,10 @@ func (h *Handler) AckTaskSupplement(w http.ResponseWriter, r *http.Request) {
 	}
 	var req ackTaskSupplementRequest
 	if !decodeScopedExecutionBody(w, r, &req, 16<<10) {
+		return
+	}
+	if task.ChatSessionID.Valid && !task.IssueID.Valid {
+		h.ackChatTaskSupplement(w, r, task, commentID, req.Delivered)
 		return
 	}
 	tx, q, ok := h.beginExecutionCallback(w, r, task.ID)
@@ -565,6 +595,45 @@ func (h *Handler) AckTaskSupplement(w http.ResponseWriter, r *http.Request) {
 	}
 	h.publishTaskSupplementUpdate(r, row)
 	writeJSON(w, 200, supplementReceipt(row))
+}
+
+func (h *Handler) ackChatTaskSupplement(w http.ResponseWriter, r *http.Request, task db.AgentTaskQueue, messageID pgtype.UUID, delivered bool) {
+	tx, q, ok := h.beginExecutionCallback(w, r, task.ID)
+	if !ok {
+		return
+	}
+	defer tx.Rollback(r.Context())
+	var err error
+	if _, err = q.LockChatSessionForTask(r.Context(), task.ID); err != nil {
+		writeError(w, http.StatusConflict, "chat session has ended")
+		return
+	}
+	if _, err = q.LockTaskForSupplementBind(r.Context(), task.ID); err != nil {
+		writeError(w, http.StatusConflict, "chat turn has ended")
+		return
+	}
+	var queued []db.AgentTaskQueue
+	if delivered {
+		_, err = q.AckChatTaskSupplement(r.Context(), db.AckChatTaskSupplementParams{TaskID: task.ID, MessageID: messageID})
+	} else {
+		queued, err = service.RequeueChatTaskSupplements(r.Context(), q, task, messageID)
+	}
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusConflict, "chat guidance is no longer deliverable")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to acknowledge chat guidance")
+		}
+		return
+	}
+	if !commitScopedExecutionWrite(w, r, tx, q, task.ID) {
+		return
+	}
+	for _, next := range queued {
+		h.TaskService.BroadcastTaskQueued(r.Context(), next)
+		h.TaskService.NotifyTaskEnqueued(r.Context(), next)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 func stableTaskSupplementFailureReason(reason string) string {

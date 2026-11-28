@@ -6,6 +6,7 @@
   "breadcrumb_aria": "Текущее меню",
   "groups": {
     "pages": "Страницы",
+    "views": "Представления",
     "commands": "Команды",
     "members": "Участники",
     "agents": "Агенты",
@@ -15,6 +16,7 @@
     "autopilots": "Автопилоты",
     "chats": "Чаты",
     "skills": "Навыки",
+    "docs": "Документы",
     "cancelled": "Отменено",
     "recent": "Недавние",
     "workspaces": "Рабочие пространства",
@@ -134,7 +136,6 @@
     "unsubscribed": "Подписка отменена",
     "label_added": "Добавлена метка «{{name}}»",
     "label_removed": "Удалена метка «{{name}}»",
-    "label_failed": "Не удалось добавить метку «{{name}}» ко всем задачам",
     "update_failed": "Не удалось обновить",
     "assigned": "Задача {{identifier}} назначена: {{name}}"
   },
@@ -149,7 +150,7 @@
   },
   "delegate": {
     "row": "Передать агенту: «{{prompt}}»",
-    "hint": "Быстрое создание"
+    "hint": "Создать с агентом"
   },
   "best": {
     "assign": "Назначить «{{subject}}»: {{name}}",
@@ -175,5 +176,6 @@
   },
   "trigger": {
     "label": "Поиск..."
-  }
+  },
+  "untitled_doc": "Без названия"
 }

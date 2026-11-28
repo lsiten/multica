@@ -31,7 +31,7 @@ func TestBatchClaimFillsEachAgentsOwnCapacity(t *testing.T) {
 		fx.Task(t, agent, testutil.Cols{"runtime_id": runtime, "issue_id": fx.Issue(t, "Queued issue")})
 	}
 	svc := NewTaskService(db.New(pool), pool, nil, events.New())
-	claimed, err := svc.ClaimTasksForRuntimes(t.Context(), []pgtype.UUID{util.MustParseUUID(runtime)}, 20)
+	claimed, _, err := svc.ClaimTasksForRuntimes(t.Context(), []pgtype.UUID{util.MustParseUUID(runtime)}, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestBatchClaimSkipsLockedAgentWithoutBlockingPeers(t *testing.T) {
 	svc := NewTaskService(db.New(pool), pool, nil, events.New())
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	claimed, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{util.MustParseUUID(runtime)}, 5)
+	claimed, _, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{util.MustParseUUID(runtime)}, 5)
 	if err != nil || len(claimed) != 1 || util.UUIDToString(claimed[0].ID) != peerTask {
 		t.Fatalf("one locked agent blocked its peer: claimed=%v, err=%v", claimed, err)
 	}
@@ -82,7 +82,7 @@ func TestBatchClaimFailedAgentDoesNotBlockPeers(t *testing.T) {
 	pool := sharedTestPool(t)
 	rt1, rt2 := batchClaimFixture(t, t.Context(), pool)
 	svc := NewTaskService(db.New(pool), &failNthBeginTxStarter{inner: pool, failOn: 1}, nil, events.New())
-	claimed, err := svc.ClaimTasksForRuntimes(t.Context(), []pgtype.UUID{util.MustParseUUID(rt1), util.MustParseUUID(rt2)}, 5)
+	claimed, _, err := svc.ClaimTasksForRuntimes(t.Context(), []pgtype.UUID{util.MustParseUUID(rt1), util.MustParseUUID(rt2)}, 5)
 	if err != nil || len(claimed) != 1 || util.UUIDToString(claimed[0].RuntimeID) != rt2 {
 		t.Fatalf("one failed agent blocked its peer: claimed=%v, err=%v", claimed, err)
 	}

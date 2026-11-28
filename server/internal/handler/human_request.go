@@ -97,6 +97,9 @@ func (h *Handler) loadHumanRequest(w http.ResponseWriter, r *http.Request) (db.H
 		humanRequestError(w, err)
 		return row, "", false
 	}
+	if (row.ProjectID.Valid && !h.requireProjectVisible(w, r, workspaceID, row.ProjectID, http.StatusNotFound, "request or its source is no longer available")) || !h.requireIssueIDVisible(w, r, workspaceID, row.IssueID, http.StatusNotFound, "request or its source is no longer available") {
+		return row, "", false
+	}
 	row, err = h.TaskService.RefreshHumanRequestScope(r.Context(), row)
 	if err != nil {
 		humanRequestError(w, err)
@@ -148,8 +151,35 @@ func (h *Handler) ListHumanRequests(w http.ResponseWriter, r *http.Request) {
 		humanRequestError(w, err)
 		return
 	}
+	hidden, ok := h.requestHiddenProjects(w, r, workspaceID)
+	if !ok {
+		return
+	}
+	issueProjects := make(map[pgtype.UUID]pgtype.UUID)
+	if !hidden.Empty() {
+		issueIDs := make([]pgtype.UUID, 0, len(rows))
+		for _, row := range rows {
+			if row.IssueID.Valid {
+				issueIDs = append(issueIDs, row.IssueID)
+			}
+		}
+		projects, err := h.Queries.ListIssueProjectIDs(r.Context(), issueIDs)
+		if err != nil {
+			writeProjectAccessError(w, r, workspaceID, err)
+			return
+		}
+		for _, project := range projects {
+			issueProjects[project.ID] = project.ProjectID
+		}
+	}
 	result := make([]humanRequestResponse, 0, len(rows))
 	for _, row := range rows {
+		if row.ProjectID.Valid && !hidden.CanSeeProject(row.ProjectID) {
+			continue
+		}
+		if project, known := issueProjects[row.IssueID]; known && !hidden.CanSeeProject(project) {
+			continue
+		}
 		result = append(result, humanRequestToResponse(row, uuidToString(params.MemberID)))
 	}
 	writeJSON(w, http.StatusOK, result)

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"slices"
-	"sync"
 	"syscall"
 	"time"
 
@@ -82,7 +81,7 @@ func fillTreeMetrics(entry *processOverviewEntry, pid int, cache *processMetrics
 // describeRuntimeProcess fills a best-effort resource reading and an authenticated
 // state probe for one child runtimeproc.Process. It never gates the listing: a
 // probe failure or a vanished child leaves the row reported as "unavailable"
-// with resource fields unset, exactly like the task-worker handler.
+// with resource fields unset.
 func describeRuntimeProcess(ctx context.Context, p *runtimeproc.Process, entry processOverviewEntry, cache *processMetricsCache) processOverviewEntry {
 	pid := safeProcessPID(p)
 	if pid > 0 {
@@ -116,13 +115,12 @@ func describeRuntimeProcess(ctx context.Context, p *runtimeproc.Process, entry p
 // unified, category-tagged list with best-effort resource usage. It is a local
 // read: it serves the local process-status panel and never touches the server.
 // Required capability services (including MCP and JEV) are child processes and
-// are included in this list alongside the daemon and per-task workers.
+// are included in this list alongside the daemon.
 //
 // Every managed category is always present, so the panel never hides a
 // supervised category behind a nil child. The daemon's own process is first; the
 // long-lived service children (application, gateway, environment, mirror) are
-// always reported, as "stopped" when they are not started on this daemon; task
-// workers are the only stoppable rows and appear as they run.
+// always reported, as "stopped" when they are not started on this daemon.
 //
 // The response also carries a deduped "total" (processOverviewTotal): the whole
 // Multica footprint, so the panel shows a number that matches an activity
@@ -140,7 +138,6 @@ func (d *Daemon) processesOverviewHandler() http.HandlerFunc {
 		cache := newProcessMetricsCache()
 		var out []processOverviewEntry
 		out = append(out, d.daemonProcessEntry(r, cache))
-		out = append(out, d.taskWorkerOverviewEntries(r, cache)...)
 		out = append(out, d.singletonProcessEntry(r, "application", "application service", d.snapshotApplicationProcess, d.applicationProcessMode, cache))
 		out = append(out, d.singletonProcessEntry(r, "gateway", "gateway", d.snapshotGatewayProcess, d.gatewayProcessMode, cache))
 		out = append(out, d.singletonProcessEntry(r, "environment", "environment service", d.snapshotEnvironmentProcess, d.environmentProcessMode, cache))
@@ -178,55 +175,6 @@ func (d *Daemon) daemonProcessEntry(r *http.Request, cache *processMetricsCache)
 		entry.Ready = true
 	}
 	return entry
-}
-
-// taskWorkerOverviewEntries maps the live task workers into overview rows. They
-// are the only stoppable category; the id is the exec id the stop endpoint takes.
-//
-// The per-worker health probes run concurrently: each keeps its own timeout and
-// is bounded by the request context, so a slow or hung worker can no longer
-// stretch the whole overview past the panel's refetch interval (the sequential
-// form was O(N x 2s)). Each goroutine writes only its own result slot, so the
-// shared slice has no locking.
-func (d *Daemon) taskWorkerOverviewEntries(r *http.Request, cache *processMetricsCache) []processOverviewEntry {
-	if d.workerProcessRegistry == nil {
-		return nil
-	}
-	entries := d.workerProcessRegistry.snapshot()
-	out := make([]processOverviewEntry, 0, len(entries))
-	if len(entries) == 0 {
-		return out
-	}
-	results := make([]processOverviewEntry, len(entries))
-	var wg sync.WaitGroup
-	for i, entry := range entries {
-		wg.Add(1)
-		go func(i int, entry *activeWorker) {
-			defer wg.Done()
-			state := d.workerProcessStateResponse(r, entry, cache)
-			outEntry := processOverviewEntry{
-				Category:     "task_worker",
-				ID:           state.ExecID,
-				Name:         state.Provider,
-				State:        state.State,
-				Ready:        state.Ready,
-				Capabilities: state.Capabilities,
-				Detail:       state.TaskID,
-				StartedAt:    state.StartedAt,
-				Pid:          state.Pid,
-				MemoryBytes:  state.MemoryBytes,
-				CpuTimeMS:    state.CpuTimeMS,
-				Stoppable:    true,
-			}
-			fillTreeMetrics(&outEntry, state.Pid, cache)
-			results[i] = outEntry
-		}(i, entry)
-	}
-	wg.Wait()
-	for _, e := range results {
-		out = append(out, e)
-	}
-	return out
 }
 
 // processOverviewTotal is the deduped aggregate across the whole Multica

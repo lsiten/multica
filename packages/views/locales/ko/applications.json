@@ -252,5 +252,11 @@
   "log_info": "정보",
   "log_debug": "디버그",
   "log_since": "시작일",
-  "created_by": "생성자"
+  "created_by": "생성자",
+  "local_offline": {
+    "title": "로컬 앱",
+    "description": "서버에 연결할 수 없습니다. 로컬 제어는 사용할 수 있으며 연결이 복구되면 변경 사항이 동기화됩니다.",
+    "empty": "검증된 로컬 앱 구성이 없습니다.",
+    "working": "처리 중..."
+  }
 }

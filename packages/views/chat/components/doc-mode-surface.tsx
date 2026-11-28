@@ -209,7 +209,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   const versions = useDocumentContentVersions(wsId, activeRef, { loadAttachments: diffView, enabled: diffView });
   const attachmentTextContent = useQuery({
     queryKey: ["attachment-text-content", wsId, doc?.id],
-    queryFn: ({ signal }) => api.getAttachmentTextContent(doc!.id, signal),
+    queryFn: ({ signal }) => api.getAttachmentTextContent(doc!.id, undefined, signal),
     enabled: isTextAttachment && !diffView,
     staleTime: 60_000,
     retry: false,
@@ -614,7 +614,7 @@ export function DocModeSurface({ wsId, sessionId, onAddToChat }: { wsId: string;
   };
   const conflictDialog = (
     <AlertDialog open={conflictOpen} onOpenChange={setConflictOpen}>
-      <AlertDialogContent className="w-[calc(100vw-2rem)] !max-w-6xl">
+      <AlertDialogContent className="w-[calc(100%-2rem)] !max-w-6xl">
         <AlertDialogHeader>
           <AlertDialogTitle>{t(($) => $.doc_mode.conflict_title)}</AlertDialogTitle>
           <AlertDialogDescription>

@@ -23,6 +23,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/dbstartup"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
+	"github.com/multica-ai/multica/server/internal/inbox"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
 	"github.com/multica-ai/multica/server/internal/logger"
 	"github.com/multica-ai/multica/server/internal/maintenance"
@@ -620,9 +621,12 @@ func main() {
 	registerEnvironmentListeners(bus, queries, daemonWakeup)
 	registerChatReplyNotifications(bus, broadcaster, &membershipChecker{queries: queries})
 	registerIssueUnreadListeners(bus, queries)
+	inboxTrimmer := inbox.NewTrimmer(queries, bus)
+	inboxTrimmer.Subscribe(bus)
 
 	metricsConfig := obsmetrics.ConfigFromEnv()
 	var metricsServer *http.Server
+	var inboxReadMetrics *obsmetrics.InboxReadMetrics
 	var httpMetrics *obsmetrics.HTTPMetrics
 	var businessMetrics *obsmetrics.BusinessMetrics
 	var channelMediaMetrics *obsmetrics.ChannelMediaReconcilerMetrics
@@ -638,6 +642,7 @@ func main() {
 			Version:     version,
 			Commit:      commit,
 		})
+		inboxReadMetrics = metricsRegistry.InboxRead
 		httpMetrics = metricsRegistry.HTTP
 		businessMetrics = metricsRegistry.Business
 		channelMediaMetrics = metricsRegistry.ChannelMedia
@@ -685,6 +690,7 @@ func main() {
 	}
 
 	r, h := NewRouterWithOptions(pool, hub, bus, analyticsClient, storeRedis, RouterOptions{
+		InboxReadMetrics:    inboxReadMetrics,
 		HTTPMetrics:         httpMetrics,
 		BusinessMetrics:     businessMetrics,
 		ChannelLeaseMetrics: channelLeaseMetrics,
@@ -702,6 +708,7 @@ func main() {
 	// member_delegation_day exists only for self-host telemetry; DO_NOT_TRACK
 	// stops writing it as well as sending the snapshot.
 	h.TaskService.RecordMemberActivity = telemetryConfig.Enabled
+	h.InboxTrimmer = inboxTrimmer
 	var replicaQueries *db.Queries
 	if replicaPool != nil {
 		replicaQueries = db.New(replicaPool)
@@ -773,7 +780,9 @@ func main() {
 	// instead of a slot in the runtime sweep tick.
 	go runSourceContextSweeper(sweepCtx, taskSvc)
 	go runUploadCleanupSweeper(sweepCtx, pool, h.Storage)
+	go inboxTrimmer.Run(sweepCtx)
 	go runEnvironmentLogSweeper(sweepCtx, queries)
+	go runCommentIdempotencySweeper(sweepCtx, queries)
 	if h.ConnectedApps != nil {
 		go h.ConnectedApps.RunSweeper(sweepCtx)
 	}
@@ -800,6 +809,12 @@ func main() {
 	}
 	if h.TelegramOutbound != nil {
 		h.TelegramOutbound.Start(sweepCtx)
+	}
+	if h.WeixinOutbound != nil {
+		h.WeixinOutbound.Start(sweepCtx)
+	}
+	if h.WeixinInstall != nil {
+		go h.WeixinInstall.RunCleanup(sweepCtx)
 	}
 	// GitHub PR-card API snapshot pipeline (MUL-5265): worker pool + TTL sweeper.
 	// No-op when unconfigured (no App private key).
@@ -876,6 +891,9 @@ func main() {
 	h.ProjectSupervisionService.Listen()
 	if err := schedulerMgr.Register(scheduler.ProjectSupervisionJob(h.ProjectSupervisionService)); err != nil {
 		slog.Error("scheduler: register project supervision", "error", err)
+	}
+	if err := schedulerMgr.Register(scheduler.ChatWakeupJob(&service.ChatWakeupService{Tasks: taskSvc})); err != nil {
+		slog.Error("scheduler: register chat wakeups", "error", err)
 	}
 	if err := schedulerMgr.Register(scheduler.AutopilotScheduleDispatchJob(pool, queries, autopilotSvc)); err != nil {
 		slog.Warn("scheduler: failed to register autopilot_schedule_dispatch job", "error", err)
@@ -985,6 +1003,9 @@ func main() {
 			}
 		},
 		JoinTelegram: func() {
+			if h.WeixinOutbound != nil && !h.WeixinOutbound.WaitWithTimeout(5*time.Second) {
+				slog.Warn("weixin outbound workers did not exit within shutdown timeout")
+			}
 			if h.TelegramOutbound != nil && !h.TelegramOutbound.WaitWithTimeout(5*time.Second) {
 				slog.Warn("telegram outbound workers did not exit within shutdown timeout")
 			}

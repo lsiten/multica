@@ -14,10 +14,10 @@ Product contracts the runtime brief does not fully encode.
 - [Top-level tasks and requirements](#top-level-tasks-and-requirements)
 - [Charts and files in a comment](#charts-and-files-in-a-comment)
 - [Incorrect to correct](#incorrect-to-correct)
-- [Run handoffs and member replies](#run-handoffs-and-member-replies)
+- [Wakeups and run handoffs](issue-run-handoffs.md)
 - [Issue wakeups](issue-wakeups.md)
 
-To attach a local file to an existing issue description, use `multica issue update <id> --attachment <local-path>`. The CLI appends the file's Markdown reference to the end of the description; to replace an image, also use `--description-file` to remove the old reference. Do not put local filesystem paths in the description. `--description-file` and `--attachment` read a path **inside the current working directory** unless `--allow-external-file` is set (MUL-4252), which stops a stale file from another run or environment from being picked up. `--attachment` is repeatable (repeat the flag for multiple files); on `issue create` you can instead bind already-uploaded attachments with `--attachment-id <uuid>` — `issue update` has no such flag. To feed a description from a pipe use `--description-stdin` (a heredoc `--description` can swallow trailing flags, #4182).
+To attach a local file to an existing issue description, use `multica issue update <id> --attachment <local-path>`. The CLI appends the file's Markdown reference to the end of the description; to replace an image, also remove the old reference with `multica issue edit-description <id> --old <old reference> --new ""`. Do not put local filesystem paths in the description.
 
 ## Top-level tasks and requirements
 
@@ -120,8 +120,10 @@ a draft?" is `state == "draft"`; coarse CI status is `checks_conclusion`.
 If the command returns no linked PRs after a PR was opened, check the syntax
 first: the key must be in the PR title or branch, or right after a closing
 keyword in the body — a bare body mention does not count. When the syntax is the
-problem, editing the title re-runs the scan. If a person removed
-the PR from the issue, it stays removed until someone links it again.
+problem, editing the title re-runs the scan. Otherwise link the synced PR with
+`multica issue pull-requests link <issue-id> <pr-url>`; that also restores a PR
+someone removed (removed PRs stay off until relinked). `unlink <issue-id> <pr>`
+(URL, number, or id) removes one and keeps it removed.
 
 If the key is already written correctly and the list is still empty, stop editing
 the PR blind: another no-op edit cannot fix an integration that never received the
@@ -441,9 +443,10 @@ Labels tag issues and filter them; they are distinct from properties and status.
 
 ## Sub-issues and stages
 
-Whether to split an issue at all, `todo` vs `backlog` children, serial chains,
-stages and their parent wakeups live in `references/sub-issues.md`. Read it
-before creating a sub-issue.
+Whether to split an issue at all, `todo` vs `backlog` children, ordering them
+with stages, and the parent wakeups stages drive live in
+`references/sub-issues.md`. Read it before creating a sub-issue. Making one
+issue wait for another (`--blocked-by`) lives in `references/dependencies.md`.
 
 ## Charts and files in a comment
 
@@ -492,7 +495,3 @@ Fix login redirect                  # incorrect — no issue key, won't link
 Body-only "Part of MUL-123"         # incorrect — passing mention, won't link
 MUL-123: fix login redirect        # correct — links the PR
 ```
-
-## Wakeups and run handoffs
-
-Read [Wakeups and run handoffs](issue-run-handoffs.md) for recurring checks, unfinished issue handoffs and member decision requests.

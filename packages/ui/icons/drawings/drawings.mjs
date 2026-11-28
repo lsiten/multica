@@ -27,6 +27,10 @@ const wifi = (arcs) => [
 ].slice(0, arcs + 1).join("");
 
 export const DRAWINGS = {
+  WeChat: `<path d="M9 16.5l-4.75 2 1-3.25C3.7 14.05 2.75 12.35 2.75 10.5c0-3.6 3.65-6.5 8.15-6.5 3.85 0 7.1 2.1 7.95 5"/>
+    <path class="b" d="M21.25 14.75c0-3.2-3-5.75-6.75-5.75s-6.75 2.55-6.75 5.75 3 5.75 6.75 5.75c1.15 0 2.25-.25 3.2-.7l3.2 1.45-.75-2.85c.7-1.05 1.1-2.3 1.1-3.65Z"/>
+    ${dot(12, 14.25, 1.1)}${dot(17, 14.25, 1.1)}`,
+
   Inbox: `<path class="b" d="${rect(2.75, 3, 18.5, 18, 8)}"/>
     <path class="k" d="M2.75 14h4.4c.75 0 1.35.55 1.75 1.2.55.95 1.6 1.8 3.1 1.8s2.55-.85 3.1-1.8c.4-.65 1-1.2 1.75-1.2h4.4"/>`,
   CircleUser: `<circle class="b" cx="12" cy="12" r="9.25"/><circle class="k" cx="12" cy="10" r="3"/>
@@ -78,6 +82,8 @@ export const DRAWINGS = {
     <path d="M14.5 3.25h6.25V9.5M20.75 3.25 12.5 11.5"/>`,
   Bell: `<path class="b" d="M5 17.25h14l-1.35-1.95a3 3 0 0 1-.55-1.73V10a5.1 5.1 0 0 0-10.2 0v3.57c0 .62-.19 1.22-.55 1.73Z"/>
     <path d="M9.5 20.25c.55.95 1.5 1.5 2.5 1.5s1.95-.55 2.5-1.5"/>`,
+  Mic: `<path class="b" d="M8.25 6.5a3.75 3.75 0 0 1 7.5 0v4.25a3.75 3.75 0 0 1-7.5 0Z"/>
+    <path d="M5 11a7 7 0 0 0 14 0M12 18v3.25"/>`,
   Filter: `<path d="M3.75 6.5h16.5M7 12h10M10.25 17.5h3.5"/>`,
   Pin: `<path class="b" d="${shape([[9.25, 3, 1], [14.75, 3, 1], [14.75, 8.25, 1], [18, 12.75, 1.5], [6, 12.75, 1.5], [9.25, 8.25, 1]])}"/>
     <path d="M12 12.75v8.5M8 3h8"/>`,
@@ -430,6 +436,7 @@ Object.assign(DRAWINGS, {
   GitPullRequestClosed: `<circle cx="6.25" cy="6" r="2.75"/><circle cx="17.75" cy="18" r="2.75"/><path d="M6.25 8.75v12.5M17.75 15.25V11M15.5 3.5 20 8M20 3.5 15.5 8"/>`,
   GitPullRequestDraft: `<circle cx="6.25" cy="6" r="2.75"/><circle cx="17.75" cy="18" r="2.75"/><path d="M6.25 8.75v12.5"/>${dot(17.75, 6, 1.3)}${dot(17.75, 11, 1.3)}`,
   BotOff: `${DRAWINGS.Bot}<path d="m2.5 2.5 19 19"/>`,
+  MicOff: `${DRAWINGS.Mic}<path d="m3 3 18 18"/>`,
   PencilLine: `${DRAWINGS.Pencil}<path d="M13 20.25h7.5"/>`,
 
   // Command palette
@@ -455,7 +462,6 @@ Object.assign(DRAWINGS, {
   Expand: `<path d="m15 15 6 6"/><path d="m15 9 6-6"/><path d="M21 16v5h-5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="m3 21 6-6"/><path d="M3 8V3h5"/><path d="M9 9 3 3"/>`,
   GitCompare: `<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/>`,
   MessageSquareQuote: `<path d="M14 14a2 2 0 0 0 2-2V8h-2"/><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/><path d="M8 14a2 2 0 0 0 2-2V8H8"/>`,
-  Mic: `<path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/>`,
   MousePointer2: `<path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>`,
   OctagonX: `<path d="m15 9-6 6"/><path d="M2.586 16.726A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2h6.624a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586z"/><path d="m9 9 6 6"/>`,
   PictureInPicture2: `<path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4"/><rect width="10" height="7" x="12" y="13" rx="2"/>`,

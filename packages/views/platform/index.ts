@@ -25,6 +25,10 @@ export {
   type ThemeFolderWriteResult,
 } from "./theme-folder";
 export {
+  localVoiceAPI,
+  type LocalVoiceAPI,
+} from "./local-voice";
+export {
   useLocalDaemonStatus,
   type LocalDaemonStatus,
 } from "./use-local-daemon-status";
@@ -45,5 +49,5 @@ export {
   type ScrollRestorationAdapter,
   type ScrollRestorationEntry,
 } from "./scroll-restoration";
-export { LocalVoiceContext, useLocalVoice } from "./local-voice";
+export { LocalVoiceContext, useLocalVoice } from "./local-voice-context";
 export { invalidateWorktreeInventory } from "./local-review-inventory";

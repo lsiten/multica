@@ -40,6 +40,9 @@ const (
 	// the extra deferred-task lookup for clients that opt in, and an older
 	// server's missing fields make a newer daemon retain its short fallback.
 	DaemonCapabilityClaimPollHintsV1 = "claim-poll-hints-v1"
+	// DaemonCapabilityForceRecheckV1 requests presence-aware batch claim
+	// acknowledgements on both HTTP and WebSocket.
+	DaemonCapabilityForceRecheckV1 = "force-recheck-v1"
 
 	// DaemonCapabilityPlatformSkillV1 advertises that the daemon's runtime
 	// brief names the merged `multica-platform` skill instead of the
@@ -89,6 +92,11 @@ const (
 	// the server leave out the workflow brief's lines that override those
 	// rules; an older daemon still states them, so it keeps getting them.
 	DaemonCapabilityWorkflowStatusRulesV1 = "workflow-status-rules-v1"
+	// DaemonCapabilityWorkflowStatusMapV1 advertises that the daemon's
+	// runtime brief states the status-map rules for an issue whose claim
+	// carries a status-map workflow brief (MUL-9913). Without it the server
+	// keeps sending the per-step command brief those daemons point at.
+	DaemonCapabilityWorkflowStatusMapV1 = "workflow-status-map-v1"
 	// DaemonCapabilityTaskSupplementAuthorV1 is sent when claiming a
 	// supplement: the daemon renders the claim's author_type, so an agent's
 	// message is presented as an agent's. Without it the server marks an
@@ -98,6 +106,11 @@ const (
 	// daemon puts on the agent's PATH has `issue comment add --steer`. The
 	// server tells a squad leader about steering only then.
 	DaemonCapabilityCLICommentSteerV1 = "cli-comment-steer-v1"
+	// DaemonCapabilityDocCommentV1 advertises that the daemon runs doc
+	// discussion tasks (MUL-9933): it renders their prompt and brief, and its
+	// CLI has `doc comment add`. An older daemon would treat such a task as an
+	// issue run with no issue, so the claim fails it before launch instead.
+	DaemonCapabilityDocCommentV1 = "doc-comment-v1"
 
 	TaskSupplementFailureTurnNotStarted   = "turn_not_started"
 	TaskSupplementFailureProviderRejected = "provider_rejected"
@@ -112,6 +125,13 @@ const (
 	// synchronous restore — a client without this capability would silently
 	// drop the user's prompt, and keeps the legacy synchronous restore instead.
 	AppCapabilityChatDraftRestoreV1 = "chat-draft-restore-v1"
+
+	// AppCapabilityWorkspaceGuestsV1 is advertised (X-Client-Capabilities) by
+	// clients that can render the guest member role. Workspace member and
+	// invitation lists leave guest rows out for any other caller: clients
+	// released before guests index their role tables by role and crash on an
+	// unknown one. Authorization never depends on it.
+	AppCapabilityWorkspaceGuestsV1 = "workspace-guests-v1"
 )
 
 // ChatQuickAction is a server-validated follow-up attached to one assistant
@@ -227,6 +247,23 @@ type TaskUsageUpdatedPayload struct {
 	TaskID string `json:"task_id"`
 }
 
+// TaskFailRequest reports the terminal failure of a daemon task.
+type TaskFailRequest struct {
+	Error          string `json:"error"`
+	SessionID      string `json:"session_id,omitempty"`
+	WorkDir        string `json:"work_dir,omitempty"`
+	DurableWorkDir string `json:"durable_work_dir,omitempty"`
+	FailureReason  string `json:"failure_reason,omitempty"`
+	// A worktree can produce a branch even when its task fails.
+	BranchName string `json:"branch_name,omitempty"`
+	// A missing rollout invalidates the withheld session's resume pointer.
+	SessionRolloutMissing bool `json:"session_rollout_missing,omitempty"`
+	// A known unresumable session must also be retired for subsequent tasks.
+	RetiredSessionID string `json:"retired_session_id,omitempty"`
+	// Older daemons and incomplete transcripts leave this proof unset.
+	NoToolCallsStarted bool `json:"no_tool_calls_started,omitempty"`
+}
+
 // TaskCompletedPayload is sent from daemon to server when a task finishes.
 type TaskCompletedPayload struct {
 	TaskID string `json:"task_id"`
@@ -271,6 +308,26 @@ type TaskMessagePayload struct {
 	// present as unknown rather than as complete.
 	OutputTruncated *bool  `json:"output_truncated,omitempty"`
 	CreatedAt       string `json:"created_at,omitempty"`
+	// DetailsHidden reports that the agent restricts its tool inputs and
+	// outputs and this reader is not allowed them: Input, Output and Content
+	// were removed from this tool_use/tool_result, not empty to begin with.
+	DetailsHidden bool `json:"details_hidden,omitempty"`
+}
+
+// WithoutToolDetails returns the message as a reader outside an agent's tool
+// details audience gets it. A tool call keeps its name, identity and timing;
+// its input, output and any text it carried are dropped. Prose, reasoning and
+// errors are not tool details and pass through unchanged.
+func (p TaskMessagePayload) WithoutToolDetails() TaskMessagePayload {
+	if p.Type != "tool_use" && p.Type != "tool_result" {
+		return p
+	}
+	p.Input = nil
+	p.Output = ""
+	p.Content = ""
+	p.OutputTruncated = nil
+	p.DetailsHidden = true
+	return p
 }
 
 // DaemonRegisterPayload is sent from daemon to server on connection.
@@ -316,6 +373,10 @@ const (
 	// the opening self-describes: chat renders the starter cards under this
 	// kind instead of quick-action chips (MUL-5765).
 	ChatMessageKindOnboardingOpening = "onboarding_opening"
+	// ChatMessageKindWakeup is the server-authored input of a turn a chat
+	// wakeup started. Its content is for the runtime; clients render a
+	// divider naming the wakeup (wakeup_id) instead of the text.
+	ChatMessageKindWakeup = "wakeup"
 )
 
 // ChatDonePayload is broadcast when an agent finishes responding to a chat
@@ -436,6 +497,16 @@ type ChatSessionDeletedPayload struct {
 // chat session changes (today: title via inline rename). Other tabs/devices
 // patch the session row in their cached list so the dropdown stays in sync
 // without a full refetch.
+// ChatWakeupChangedPayload says one chat wakeup was created, changed, fired or
+// ended. Receivers refetch the session's wakeups; TaskID is set when the
+// change started a turn, so they can also pick up its hidden input row.
+type ChatWakeupChangedPayload struct {
+	ChatSessionID string `json:"chat_session_id"`
+	WakeupID      string `json:"wakeup_id"`
+	Status        string `json:"status"`
+	TaskID        string `json:"task_id,omitempty"`
+}
+
 type ChatSessionUpdatedPayload struct {
 	ChatSessionID string `json:"chat_session_id"`
 	Title         string `json:"title"`
@@ -463,6 +534,9 @@ type ChatSessionUpdatedPayload struct {
 type DaemonHeartbeatRequestPayload struct {
 	RuntimeID           string `json:"runtime_id"`
 	SupportsBatchImport bool   `json:"supports_batch_import,omitempty"`
+	// SupportsQueuedUpdate: the daemon can hold a deferrable update while
+	// busy and install it once idle (see DaemonHeartbeatPendingUpdate).
+	SupportsQueuedUpdate bool `json:"supports_queued_update,omitempty"`
 }
 
 // DaemonHeartbeatAckPayload is the server's reply to DaemonHeartbeatRequestPayload.
@@ -502,6 +576,12 @@ const HeartbeatStatusRuntimeGone = "runtime_gone"
 type DaemonHeartbeatPendingUpdate struct {
 	ID            string `json:"id"`
 	TargetVersion string `json:"target_version"`
+	// Deferrable: a busy daemon should hold this update, report "scheduled",
+	// and install it once idle — only after the server accepts its "running"
+	// report, which it refuses once the update was cancelled or expired. The
+	// offer repeats on every heartbeat until then. Without it, the update
+	// is running from delivery and a busy daemon fails it.
+	Deferrable bool `json:"deferrable,omitempty"`
 }
 
 // DaemonHeartbeatPendingModelList describes a request for the daemon to

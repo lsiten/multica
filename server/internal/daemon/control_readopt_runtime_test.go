@@ -148,7 +148,7 @@ func TestGatewayProcessClientReAdoptsSurvivingChild(t *testing.T) {
 	}
 
 	// The parent has exited. The child must still be alive (orphaned to init).
-	if !survivalProcessLive(childPID, 10*time.Second) {
+	if !gatewayProcessLive(childPID, 10*time.Second) {
 		t.Fatalf("child (pid %d) did not survive the control parent's exit", childPID)
 	}
 
@@ -190,11 +190,39 @@ func TestGatewayProcessClientReAdoptsSurvivingChild(t *testing.T) {
 	if _, err := reAdopted.Call(ctx, stopReq); err != nil {
 		t.Fatalf("stop call failed: %v", err)
 	}
-	if !survivalProcessGone(childPID, 15*time.Second) {
+	if !gatewayProcessGone(childPID, 15*time.Second) {
 		_ = syscall.Kill(childPID, syscall.SIGTERM) // fallback cleanup so the orphan never leaks
-		if !survivalProcessGone(childPID, 5*time.Second) {
+		if !gatewayProcessGone(childPID, 5*time.Second) {
 			t.Fatalf("re-adopted child (pid %d) did not end on an explicit control stop", childPID)
 		}
 	}
 	t.Logf("readopt: gateway child pid=%d outlived its control parent, was re-adopted via Open, served ready, and ended only on control stop", childPID)
+}
+
+func gatewayProcessLive(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if err := syscall.Kill(pid, 0); err == nil {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// processExited polls the OS until the pid disappears (reaped by init) or the
+// timeout elapses.
+func gatewayProcessGone(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if err := syscall.Kill(pid, 0); err != nil {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

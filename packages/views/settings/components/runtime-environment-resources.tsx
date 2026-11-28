@@ -1,3 +1,4 @@
+import { issueRouteRef } from "@multica/core/paths/paths";
 import { useState } from "react";
 import type { ManagedWorktree } from "@multica/core/types/managed-worktree";
 import { paths } from "@multica/core/paths";
@@ -40,7 +41,7 @@ function EnvironmentResourceRow({ row, workspaceSlug }: { row: ManagedWorktree; 
     <p className="break-words font-medium">{row.taskName} · {row.agentName || row.agentId}</p>
     <p className="break-all font-mono text-muted-foreground">{row.path}</p>
     <p>{reason}</p>
-    {row.issueId && <AppLink href={paths.workspace(workspaceSlug).issueDetail(row.issueId)} className="inline-block break-all text-primary underline">
+    {row.issueId && <AppLink href={paths.workspace(workspaceSlug).issueDetail(issueRouteRef({ id: row.issueId, identifier: undefined }))} className="inline-block break-all text-primary underline">
       {t(($) => $.desktop.worktrees.retained_issue, { id: row.issueId })}
     </AppLink>}
     {Array.from(new Set([...row.consumerTaskIds, ...(row.retainedTaskId ? [row.retainedTaskId] : [])])).map((id) => <p key={id} className="break-all text-muted-foreground">{t(($) => $.desktop.worktrees.retained_run, { id })}</p>)}

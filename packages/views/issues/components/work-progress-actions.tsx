@@ -1,4 +1,5 @@
 "use client";
+import { issueRouteRef } from "@multica/core/paths/paths";
 
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -62,7 +63,7 @@ export function WorkProgressActions({ entry }: { entry: ProgressEntry }) {
     {entry.next_step?.evidence?.length ? <details><summary className="cursor-pointer text-caption">{t($ => $.work_progress.action_evidence)}</summary><ul className="mt-2 space-y-1 text-caption">{entry.next_step.evidence.map(reference => <li key={reference} className="break-words">{reference}</li>)}</ul></details> : null}
     <div className="flex flex-wrap gap-2">{actions.map((action, index) => {
       const label = actionLabels[action.kind] ?? t($ => $.work_progress.action_scope_hint);
-      if (action.kind === "open_blocker" && action.target_issue_id) return <AppLink key={`${action.kind}:${index}`} href={paths.issueDetail(action.target_issue_id)} className="rounded-md border px-3 py-1.5 text-caption hover:bg-accent">{label}</AppLink>;
+      if (action.kind === "open_blocker" && action.target_issue_id) return <AppLink key={`${action.kind}:${index}`} href={paths.issueDetail(issueRouteRef({ id: action.target_issue_id, identifier: undefined }))} className="rounded-md border px-3 py-1.5 text-caption hover:bg-accent">{label}</AppLink>;
       if (action.kind === "resolve_runtime") return <AppLink key={action.kind} href={action.actor_type === "agent" && action.actor_id ? paths.agentDetail(action.actor_id) : entry.assignee_type === "agent" && entry.assignee_id ? paths.agentDetail(entry.assignee_id) : paths.runtimes()} className="rounded-md border px-3 py-1.5 text-caption hover:bg-accent">{label}</AppLink>;
       if (action.kind === "assign") return <AssigneePicker key={action.kind} assigneeType={assigneeType} assigneeId={entry.assignee_id} onUpdate={updates => assign.mutate({ id: entry.issue.id, expected_revision: entry.revision, ...updates })} trigger={<Button size="sm" variant="outline">{label}</Button>} />;
       return <div key={action.kind} className="space-y-1"><Button size="sm" variant={index === 0 ? "default" : "outline"} disabled={!action.enabled || mutation.isPending} onClick={() => { observed.current = {revision: entry.revision, runId: entry.run?.id ?? "", missing: entry.next_step?.missing ?? []}; setOpened(action); setReceipt(""); mutation.reset(); setText(""); setFields({}); key.current = ""; }}>{label}</Button>{!action.enabled && <p className="text-micro text-muted-foreground">{action.disabled_reason === "other_member" ? t($ => $.work_progress.action_other_member) : action.disabled_reason === "invocation_not_allowed" ? t($ => $.work_progress.action_permission) : t($ => $.work_progress.action_unavailable)}</p>}</div>;

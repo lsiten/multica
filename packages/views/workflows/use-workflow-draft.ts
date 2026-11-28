@@ -16,7 +16,10 @@ export function useWorkflowDraft(source: Draft, target: string, version: string)
     }
   }
   const setDraft = useCallback((next: SetStateAction<Draft>) => {
-    setState((old) => ({ ...old, draft: typeof next === "function" ? next(old.draft) : next }));
+    setState((old) => {
+      const draft = typeof next === "function" ? next(old.draft) : next;
+      return draft === old.draft ? old : { ...old, draft };
+    });
   }, []);
   const commit = useCallback((next: Draft, nextVersion: string) => {
     setState((old) => ({ ...old, draft: next, baseline: next, version: nextVersion, remoteChanged: false }));

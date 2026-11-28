@@ -106,7 +106,7 @@ func TestClaimTasksForRuntimes_MultiRuntimeDrain(t *testing.T) {
 	ids := []pgtype.UUID{util.MustParseUUID(rt1), util.MustParseUUID(rt2)}
 
 	// Call 1: both agents have capacity, so drain all three tasks fairly.
-	got1, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
+	got1, _, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
 	if err != nil {
 		t.Fatalf("call1: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestClaimTasksForRuntimes_MultiRuntimeDrain(t *testing.T) {
 	}
 
 	// Call 2: the first call already filled every available task.
-	got2, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
+	got2, _, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
 	if err != nil {
 		t.Fatalf("call2: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestClaimTasksForRuntimes_MultiRuntimeDrain(t *testing.T) {
 	}
 
 	// Call 3: everything dispatched => empty.
-	got3, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
+	got3, _, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
 	if err != nil {
 		t.Fatalf("call3: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestClaimTasksForRuntimes_MaxTasksCap(t *testing.T) {
 	rt1, rt2 := batchClaimFixture(t, ctx, pool)
 	ids := []pgtype.UUID{util.MustParseUUID(rt1), util.MustParseUUID(rt2)}
 
-	got, err := svc.ClaimTasksForRuntimes(ctx, ids, 1)
+	got, _, err := svc.ClaimTasksForRuntimes(ctx, ids, 1)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestClaimTasksForRuntimes_AnyDueRuntimeChecksTheCompleteSet(t *testing.T) {
 		t.Fatalf("precondition due runtimes = %v, want [%s]", due, rt1)
 	}
 
-	claimed, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
+	claimed, _, err := svc.ClaimTasksForRuntimes(ctx, ids, 5)
 	if err != nil {
 		t.Fatalf("batch claim: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestClaimTasksForRuntimes_EmptyReclaimDefersHintForRetry(t *testing.T) {
 		t.Fatalf("precondition due runtimes = %v, want [%s]", due, rt1)
 	}
 
-	if claimed, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{runtimeID}, 5); err != nil {
+	if claimed, _, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{runtimeID}, 5); err != nil {
 		t.Fatalf("batch claim: %v", err)
 	} else if len(claimed) != 0 {
 		t.Fatalf("claimed tasks with stale runtime heartbeat: %v", claimed)
@@ -302,11 +302,11 @@ func TestClaimTasksForRuntimes_EmptyInputs(t *testing.T) {
 	pool := newTaskClaimRacePool(t)
 	svc := NewTaskService(db.New(pool), pool, nil, events.New())
 
-	if got, err := svc.ClaimTasksForRuntimes(ctx, nil, 5); err != nil || got != nil {
+	if got, _, err := svc.ClaimTasksForRuntimes(ctx, nil, 5); err != nil || got != nil {
 		t.Fatalf("nil runtimes: got=%v err=%v, want nil,nil", got, err)
 	}
 	rt1, _ := batchClaimFixture(t, ctx, pool)
-	if got, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{util.MustParseUUID(rt1)}, 0); err != nil || got != nil {
+	if got, _, err := svc.ClaimTasksForRuntimes(ctx, []pgtype.UUID{util.MustParseUUID(rt1)}, 0); err != nil || got != nil {
 		t.Fatalf("maxTasks=0: got=%v err=%v, want nil,nil", got, err)
 	}
 }

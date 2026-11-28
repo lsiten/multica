@@ -36,7 +36,7 @@ func TestHandleTaskFailureRecordsBothRunAndSharedCodeCompletion(t *testing.T) {
 		run = claim.RootDir()
 		return TaskResult{EnvRoot: run, CodeRoot: code, WorkDir: filepath.Join(code, "workdir")}, errors.New("fixture execution failed")
 	})
-	d.handleTask(t.Context(), task, 0)
+	d.handleTask(t.Context(), task, newTestTaskSlot(0))
 	for _, path := range []string{run, code} {
 		meta, err := execenv.ReadGCMeta(path)
 		if err != nil || meta.AgentID != task.AgentID || meta.RuntimeID != task.RuntimeID || meta.CompletedAt.IsZero() || meta.AutoCleanup {

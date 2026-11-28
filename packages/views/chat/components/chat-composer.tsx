@@ -10,7 +10,7 @@ import type { useChatController } from "./use-chat-controller";
 import type { useChatRunControls } from "./use-chat-run-controls";
 
 type InputOverrides = Pick<ComponentProps<typeof ChatInput>,
-  "references" | "onRemoveReference" | "onOpenReference" | "onReferencesConsumed" |
+  "hidden" | "references" | "onRemoveReference" | "onOpenReference" | "onReferencesConsumed" |
   "leftAdornment" | "contextItems" | "pageContext" | "focusRequest" | "onProjectChange"
 >;
 
@@ -76,6 +76,7 @@ export function ChatComposer({ controller: c, controls, annotations, inputProps 
       stopping={stopping}
       isRunning={!!c.pendingTaskId}
       allowSubmitWhileRunning={c.pendingTask?.supports_queue === true}
+      canSteerWhileRunning={c.pendingTask?.can_supplement}
       disabled={c.isSessionArchived || c.isAgentArchived || c.isAgentAccessRevoked || !c.isAgentRuntimeBound}
       noAgent={c.noAgent}
       agentArchived={c.isAgentArchived}

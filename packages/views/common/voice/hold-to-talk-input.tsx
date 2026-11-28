@@ -368,7 +368,7 @@ export function HoldToTalkInput({ enabled, onVoice, onTranscript, onPartial, onE
         {phase === "transcribing" ? t(($) => $.vscreen.voice_transcribing) : t(($) => $.vscreen.voice_hold)}
       </Button>
       {holding && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex flex-col items-center justify-end gap-6 bg-background/70 px-6 pb-[20vh] backdrop-blur-sm">
+        <div className="pointer-events-none fixed inset-0 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] z-50 flex flex-col items-center justify-end gap-6 bg-background/70 px-6 pb-[20vh] backdrop-blur-sm">
           <div
             ref={overlayRef}
             data-voice-overlay

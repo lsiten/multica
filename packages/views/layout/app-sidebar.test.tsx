@@ -414,7 +414,7 @@ describe("PinRow", () => {
       expect(lastPin()).not.toBeInTheDocument();
       expect(parent()).toHaveAttribute("data-active", "true");
 
-      fireEvent.click(screen.getByRole("button", { name: "Show 1 more…" }));
+      fireEvent.click(screen.getByRole("button", { name: "Show 1 more..." }));
       expect(lastPin()).toHaveAttribute("data-active", "true");
       expect(parent()).not.toHaveAttribute("data-active");
 

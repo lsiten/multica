@@ -35,6 +35,9 @@ func managedReuseScopeMatches(task Task, scope *execenv.ManagedEnvProvenance) bo
 	if task.IssueID != "" {
 		return scope.IssueID == task.IssueID && scope.ChatSessionID == ""
 	}
+	if task.DocID != "" {
+		return scope.DocID == task.DocID && scope.IssueID == "" && scope.ChatSessionID == "" && scope.AutopilotID == ""
+	}
 	return task.AutopilotID != "" && scope.AutopilotID == task.AutopilotID && scope.IssueID == "" && scope.ChatSessionID == ""
 }
 

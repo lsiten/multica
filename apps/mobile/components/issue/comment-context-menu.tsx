@@ -1,3 +1,4 @@
+import { issueRouteRef } from "@multica/core/paths/paths";
 /**
  * Native long-press actions for a comment bubble, with a pressed highlight
  * while the sheet is visible. Reply targets the inline composer.
@@ -161,7 +162,7 @@ export function useCommentLongPress(
             return;
           case "copyLink": {
             if (!webUrl || !wsSlug || !issueIdentifier) return;
-            const url = `${webUrl.replace(/\/+$/, "")}${paths.workspace(wsSlug).issueDetail(issueIdentifier)}#comment-${entry.id}`;
+            const url = `${webUrl.replace(/\/+$/, "")}${paths.workspace(wsSlug).issueDetail(issueRouteRef({ id: issueId, identifier: issueIdentifier }))}#comment-${entry.id}`;
             Clipboard.setStringAsync(url);
             Haptics.notificationAsync(
               Haptics.NotificationFeedbackType.Success,

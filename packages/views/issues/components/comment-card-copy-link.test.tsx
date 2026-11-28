@@ -14,6 +14,10 @@ vi.mock("../../common/human-reply-binding", () => ({
 // `useIssueActions.copyCommentLink`; this suite pins that the card routes each
 // row's own id to the handler and hides the item when no handler is wired.
 
+vi.mock("@multica/core/permissions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/permissions")>()),
+  useIsGuest: () => false,
+}));
 vi.mock("@multica/core/api", () => ({
   api: { uploadFile: vi.fn() },
   dispatchReasonCode: () => undefined,

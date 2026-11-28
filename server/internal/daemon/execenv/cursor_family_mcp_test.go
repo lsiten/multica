@@ -69,7 +69,7 @@ func TestFamilyManagedCursorKeepsMcpCredentialsInPrivatePlugins(t *testing.T) {
 
 func TestFamilyCursorPrivateMcpKeepsRelativeProcessPaths(t *testing.T) {
 	code := t.TempDir()
-	_, plugin, err := prepareCursorPrivateMcpPlugin(t.TempDir(), code, json.RawMessage(`{"mcpServers":{"relative":{"command":"./server","cwd":"tools"},"path":{"command":"node","args":["tool.js"]}}}`), "", &sidecarManifest{})
+	_, plugin, _, err := prepareCursorPrivateMcpPlugin(t.TempDir(), code, json.RawMessage(`{"mcpServers":{"relative":{"command":"./server","cwd":"tools"},"path":{"command":"node","args":["tool.js"]}}}`), "", "", &sidecarManifest{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

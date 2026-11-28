@@ -245,7 +245,17 @@ func writeSidecarManifest(envRoot string, m *sidecarManifest) error {
 
 func sidecarsWithinWorkdir(m *sidecarManifest, workdir string) *sidecarManifest {
 	filtered := &sidecarManifest{}
+	originalWorkdir := workdir
+	if resolved, err := filepath.EvalSymlinks(workdir); err == nil {
+		workdir = resolved
+	}
 	within := func(path string) bool {
+		if rel, err := filepath.Rel(originalWorkdir, path); err == nil && rel != "." && filepath.IsLocal(rel) {
+			return true
+		}
+		if parent, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
+			path = filepath.Join(parent, filepath.Base(path))
+		}
 		rel, err := filepath.Rel(workdir, path)
 		return err == nil && rel != "." && filepath.IsLocal(rel)
 	}
@@ -448,9 +458,16 @@ func removeReusedManagedSkillDirs(envRoot, skillsParent string) error {
 	}
 
 	cleanParent := filepath.Clean(skillsParent)
+	if resolved, err := filepath.EvalSymlinks(cleanParent); err == nil {
+		cleanParent = resolved
+	}
 	var firstErr error
 	for _, d := range m.Dirs {
-		if filepath.Dir(filepath.Clean(d)) != cleanParent {
+		parent := filepath.Dir(filepath.Clean(d))
+		if resolved, err := filepath.EvalSymlinks(parent); err == nil {
+			parent = resolved
+		}
+		if parent != cleanParent {
 			continue
 		}
 		if err := os.RemoveAll(d); err != nil && firstErr == nil {

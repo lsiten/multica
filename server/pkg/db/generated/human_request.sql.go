@@ -587,7 +587,7 @@ const setHumanResponseTaskContext = `-- name: SetHumanResponseTaskContext :one
 UPDATE agent_task_queue SET context = COALESCE(context, '{}'::jsonb) || jsonb_build_object(
     'human_response', jsonb_build_object('request_id', $1::text, 'revision', $2::bigint,
     'source_task_id', $3::text, 'prompt', $4::text))
-WHERE id = $5 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot, workflow_step, work_dir_missing
+WHERE id = $5 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, comment_thread_id, cancelled_by_type, cancelled_by_id, cancelled_by_name, issue_snapshot, workflow_step, usage_squad_id, doc_id, doc_thread_id, doc_comment_id, transcript_purged_at, transcript_purged_by, work_dir_missing
 `
 
 type SetHumanResponseTaskContextParams struct {
@@ -668,6 +668,12 @@ func (q *Queries) SetHumanResponseTaskContext(ctx context.Context, arg SetHumanR
 		&i.CancelledByName,
 		&i.IssueSnapshot,
 		&i.WorkflowStep,
+		&i.UsageSquadID,
+		&i.DocID,
+		&i.DocThreadID,
+		&i.DocCommentID,
+		&i.TranscriptPurgedAt,
+		&i.TranscriptPurgedBy,
 		&i.WorkDirMissing,
 	)
 	return i, err
@@ -749,7 +755,7 @@ func (q *Queries) UpdateHumanRequestComment(ctx context.Context, arg UpdateHuman
 const updateHumanRequestInbox = `-- name: UpdateHumanRequestInbox :one
 UPDATE inbox_item SET title = $1, body = $2, read = false, archived = false, created_at = now()
 WHERE id = $3 AND workspace_id = $4 AND type = 'human_action_requested'
-RETURNING id, workspace_id, recipient_type, recipient_id, type, severity, issue_id, title, body, read, archived, created_at, actor_type, actor_id, details, section
+RETURNING id, workspace_id, recipient_type, recipient_id, type, severity, issue_id, title, body, read, archived, created_at, actor_type, actor_id, details, section, snoozed_until, snoozed_at, returned_at
 `
 
 type UpdateHumanRequestInboxParams struct {
@@ -784,6 +790,9 @@ func (q *Queries) UpdateHumanRequestInbox(ctx context.Context, arg UpdateHumanRe
 		&i.ActorID,
 		&i.Details,
 		&i.Section,
+		&i.SnoozedUntil,
+		&i.SnoozedAt,
+		&i.ReturnedAt,
 	)
 	return i, err
 }

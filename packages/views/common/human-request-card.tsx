@@ -1,4 +1,5 @@
 "use client";
+import { issueRouteRef } from "@multica/core/paths/paths";
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -92,7 +93,7 @@ export function HumanRequestContent({ request, workspaceId }: {
       <h3 className="break-words font-medium">{payload.title}</h3>
       {(request.issue_id || request.chat_session_id) && (
         <div className="flex flex-wrap gap-2 text-caption">
-          {request.issue_id && <AppLink className="rounded-md border px-2 py-1 text-muted-foreground hover:bg-muted" href={paths.issueDetail(request.issue_id)}>{t($ => $.human_request.open_issue)}</AppLink>}
+          {request.issue_id && <AppLink className="rounded-md border px-2 py-1 text-muted-foreground hover:bg-muted" href={paths.issueDetail(issueRouteRef({ id: request.issue_id, identifier: undefined }))}>{t($ => $.human_request.open_issue)}</AppLink>}
           {request.chat_session_id && <AppLink className="rounded-md border px-2 py-1 text-muted-foreground hover:bg-muted" href={paths.chatSession(request.chat_session_id)}>{t($ => $.human_request.open_chat)}</AppLink>}
         </div>
       )}

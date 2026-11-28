@@ -252,5 +252,11 @@
   "log_info": "Info",
   "log_debug": "Depuración",
   "log_since": "Desde",
-  "created_by": "Creado por"
+  "created_by": "Creado por",
+  "local_offline": {
+    "title": "Aplicaciones locales",
+    "description": "El servidor no está disponible. Los controles locales siguen disponibles; los cambios se sincronizarán cuando vuelva la conexión.",
+    "empty": "No hay configuraciones locales verificadas disponibles.",
+    "working": "Procesando..."
+  }
 }

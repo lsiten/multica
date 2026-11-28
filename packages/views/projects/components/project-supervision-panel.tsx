@@ -1,4 +1,5 @@
 "use client";
+import { issueRouteRef } from "@multica/core/paths/paths";
 
 import { humanRequestsOptions, useHumanRequestRealtime } from "@multica/core/human-requests";
 
@@ -47,7 +48,7 @@ export function ProjectSupervisionPanel({project,canManage}:{project:Project;can
   {reason==="needs_human"&&hasPendingRequests ? <details><summary className="cursor-pointer">{t($=>$.supervision.request_details)}</summary><p className="mt-2 whitespace-pre-wrap break-words">{view.last_result.summary}</p>{view.last_result.wait_reason&&<p className="mt-1 break-words text-muted-foreground">{view.last_result.wait_reason}</p>}</details> : <>{view.last_result.summary&&<p className="break-words">{view.last_result.summary}</p>}{view.last_result.wait_reason&&<p className="break-words text-muted-foreground">{view.last_result.wait_reason}</p>}</>}
   <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">{view.last_checked_at&&<span>{t($=>$.supervision.last_check)} {new Date(view.last_checked_at).toLocaleString(locale)}</span>}{view.enabled&&view.next_check_at&&<span>{t($=>$.supervision.next_check)} {new Date(view.next_check_at).toLocaleString(locale)}</span>}{view.dirty_version>view.handled_version&&<span>{t($=>$.supervision.pending)}</span>}</div>
   {check.isError&&<p role="alert">{t($=>$.supervision.check_failed)}</p>}
-  {filter&&view.snapshot.counts[filter]>0&&<div className="space-y-1">{view.snapshot.issues.filter(issue=>issue.category===filter).map(issue=><AppLink key={issue.id} href={paths.issueDetail(issue.identifier||issue.id)} className="block truncate rounded-sm px-2 py-1 hover:bg-accent">{issue.identifier} · {issue.title}</AppLink>)}</div>}
+  {filter&&view.snapshot.counts[filter]>0&&<div className="space-y-1">{view.snapshot.issues.filter(issue=>issue.category===filter).map(issue=><AppLink key={issue.id} href={paths.issueDetail(issueRouteRef(issue))} className="block truncate rounded-sm px-2 py-1 hover:bg-accent">{issue.identifier} · {issue.title}</AppLink>)}</div>}
   </>}
  </section>;
 }

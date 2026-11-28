@@ -156,7 +156,7 @@ func (w *Worker) deliver(ctx context.Context, delivery db.MobilePushDelivery) er
 			finished = finished || origin.ChannelIngested || preferences["chat_replies"] == "muted"
 		}
 		if !finished && target.IssueProjectID.Valid {
-			hidden, err := projectaccess.ForMember(ctx, w.queries, target.WorkspaceID, target.UserID, target.Role)
+			hidden, err := projectaccess.ForMember(ctx, w.queries, db.Member{WorkspaceID: target.WorkspaceID, UserID: target.UserID, Role: target.Role})
 			if err != nil {
 				return err
 			}

@@ -72,7 +72,7 @@ func TestHandleTaskReportsWindowsCodexProcessStartFailure(t *testing.T) {
 			ID:   "agent-windows-launch-failure",
 			Name: "Windows launch failure agent",
 		},
-	}, 0)
+	}, newTestTaskSlot(0))
 
 	// New constructs the durable outbox, but this focused unit test does not
 	// start the daemon lifecycle replay loop. Drain one replay pass explicitly

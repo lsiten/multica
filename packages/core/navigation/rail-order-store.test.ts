@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it } from "vitest";
 import { RAIL_SPACES } from "../paths/spaces";
 import { resolveRailOrder, useRailOrderStore } from "./rail-order-store";
@@ -7,51 +8,54 @@ describe("resolveRailOrder", () => {
     expect(resolveRailOrder(null)).toEqual(RAIL_SPACES);
   });
 
-  it("adds Applications to navigation saved before its entry existed", () => {
-    expect(resolveRailOrder(["chat", "inbox", "work", "team", "autopilots"])).toEqual([
-      "chat",
-      "meetings",
-      "inbox",
-      "applications",
-      "work",
-      "team",
-      "autopilots",
-    ]);
+  it("inserts Applications, Docs and Meetings into a layout saved before they existed", () => {
+    expect(
+      resolveRailOrder(["chat", "inbox", "work", "team", "autopilots"]),
+    ).toEqual(["applications", "chat", "meetings", "work", "docs", "team", "autopilots"]);
   });
 
   it("keeps a saved order", () => {
-    const saved = ["chat", "inbox", "applications", "work", "team", "autopilots"];
-    expect(resolveRailOrder(saved)).toEqual(["chat", "meetings", "inbox", "applications", "work", "team", "autopilots"]);
+    const saved = ["chat", "meetings", "applications", "work", "docs", "team", "autopilots"];
+    expect(resolveRailOrder(saved)).toEqual(saved);
   });
 
   it("drops unknown and repeated ids", () => {
-    expect(resolveRailOrder(["chat", "settings", 3, "chat", "inbox", "applications", "work", "team", "autopilots"])).toEqual([
-      "chat",
-      "meetings",
-      "inbox",
-      "applications",
-      "work",
-      "team",
-      "autopilots",
-    ]);
+    expect(
+      resolveRailOrder([
+        "chat",
+        "settings",
+        3,
+        "chat",
+        "work",
+        "docs",
+        "team",
+        "autopilots",
+      ]),
+    ).toEqual(["applications", "chat", "meetings", "work", "docs", "team", "autopilots"]);
+  });
+
+  it("drops the retired Inbox space from an order saved before it moved into Work", () => {
+    expect(
+      resolveRailOrder(["chat", "inbox", "work", "docs", "team", "autopilots"]),
+    ).toEqual(["applications", "chat", "meetings", "work", "docs", "team", "autopilots"]);
   });
 
   it("puts a space missing from the saved order after its default neighbour", () => {
-    expect(resolveRailOrder(["chat", "inbox", "applications", "autopilots", "work"])).toEqual([
+    expect(resolveRailOrder(["chat", "autopilots", "work"])).toEqual([
+      "applications",
       "chat",
       "meetings",
-      "inbox",
-      "applications",
       "autopilots",
       "work",
+      "docs",
       "team",
     ]);
-    expect(resolveRailOrder(["chat", "work", "team", "autopilots"])).toEqual([
-      "inbox",
+    expect(resolveRailOrder(["chat", "team", "autopilots"])).toEqual([
       "applications",
+      "work",
+      "docs",
       "chat",
       "meetings",
-      "work",
       "team",
       "autopilots",
     ]);
@@ -64,13 +68,15 @@ describe("useRailOrderStore", () => {
   });
 
   it("saves a custom order", () => {
-    const order = ["chat", "inbox", "applications", "work", "team", "meetings", "autopilots"] as const;
+    const order = ["chat", "meetings", "applications", "work", "docs", "team", "autopilots"] as const;
     useRailOrderStore.getState().setOrder(order);
     expect(useRailOrderStore.getState().order).toEqual(order);
   });
 
   it("forgets the order once it is back to the default", () => {
-    useRailOrderStore.getState().setOrder(["work", "inbox", "applications", "team", "chat", "meetings", "autopilots"]);
+    useRailOrderStore
+      .getState()
+      .setOrder(["team", "work", "docs", "chat", "autopilots"]);
     useRailOrderStore.getState().setOrder(RAIL_SPACES);
     expect(useRailOrderStore.getState().order).toBeNull();
   });

@@ -60,7 +60,7 @@ export function NotificationBotEditor({
         if (!open && !pending) onClose();
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto">
+      <DialogContent className="max-h-[90%] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {t(($) =>

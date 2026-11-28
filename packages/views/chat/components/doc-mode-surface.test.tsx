@@ -467,7 +467,7 @@ describe("DocModeSurface (fast text attachment preview)", () => {
     });
     renderSurface();
     await screen.findByText("Fast attachment");
-    expect(read).toHaveBeenCalledWith("att-text", expect.any(AbortSignal));
+    expect(read).toHaveBeenCalledWith("att-text", undefined, expect.any(AbortSignal));
   });
 });
 

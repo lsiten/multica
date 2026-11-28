@@ -22,6 +22,10 @@ const editorDefaultValues = vi.hoisted(() => ({
 // the same or the two records drift apart only in tests.
 let mockUploadIdSeq = 0;
 
+vi.mock("@multica/core/permissions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/permissions")>()),
+  useIsGuest: () => false,
+}));
 vi.mock("@multica/core/api", () => ({
   // Uploads flow through the coordinator, which calls api.uploadFile (MUL-5181).
   api: { uploadFile: apiUploadFile },
@@ -205,7 +209,7 @@ async function startEditing() {
 }
 
 function getSaveButton() {
-  return screen.getByRole("button", { name: /Save|Uploading…/ });
+  return screen.getByRole("button", { name: /Save|Uploading.../ });
 }
 
 beforeEach(() => {

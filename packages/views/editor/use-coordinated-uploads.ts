@@ -59,6 +59,7 @@ import {
 } from "@multica/core/hooks/use-file-upload";
 import { MAX_FILE_SIZE } from "@multica/core/constants/upload";
 import { useT } from "../i18n";
+import { storageLimitRefusal, type StorageLimitRefusal } from "../billing/storage-limit-notice";
 import type { UploadGate } from "./use-upload-gate";
 import type { ContentEditorRef } from "./content-editor";
 import { pastedTextSource } from "./extensions/file-upload";
@@ -226,6 +227,13 @@ export interface CoordinatedUploads {
   /** Whether the failed upload still has an in-memory File to retry. */
   canRetryUpload: (clientUploadId: string) => boolean;
   /**
+   * The last file the attachment storage limit refused (MUL-9489), shown by
+   * the composer as a StorageLimitNotice under its editor. Cleared by the
+   * next upload that succeeds, or by dismissStorageRefusal.
+   */
+  storageRefusal: StorageLimitRefusal | null;
+  dismissStorageRefusal: () => void;
+  /**
    * The submit gate for this composer. Combines the editor gate (this mount's
    * in-document uploads) with the coordinator-owned placeholders in the draft:
    * a composer reopened while a previous mount's upload is still in flight has
@@ -279,6 +287,7 @@ export function useCoordinatedUploads(
   const { t } = useT("editor");
   const discardFailedUploads = opts?.discardFailedUploads ?? false;
   const [localUploads, setLocalUploads] = useState<DraftUpload[]>([]);
+  const [storageRefusal, setStorageRefusal] = useState<StorageLimitRefusal | null>(null);
   // Latest-value ref: handleUpload snapshots the target at invocation time.
   const resolveUploadTargetRef = useRef(opts?.resolveUploadTarget);
   resolveUploadTargetRef.current = opts?.resolveUploadTarget;
@@ -462,14 +471,17 @@ export function useCoordinatedUploads(
                   editorRef.current?.insertMarkdownAtEnd(attachmentMarkdown(outcome.attachment));
                 }
               }
+              if (mountedRef.current) setStorageRefusal(null);
               resolve(toUploadResult(outcome.attachment));
             } else {
               retryingUploadIdsRef.current.delete(clientUploadId);
               const reason = outcome.error.message;
+              const refusal = storageLimitRefusal(outcome.error, file.name);
+              const discardFailure = discardFailedUploads || refusal !== null;
               if (target) {
                 if (target.getUploads().some((u) => u.clientUploadId === clientUploadId)) {
-                  if (pastedText !== undefined || discardFailedUploads) {
-                    if (discardFailedUploads) abortUpload(clientUploadId);
+                  if (pastedText !== undefined || discardFailure) {
+                    if (discardFailure) abortUpload(clientUploadId);
                     target.removeUpload(clientUploadId);
                   } else {
                     target.failUpload(clientUploadId, reason);
@@ -481,8 +493,8 @@ export function useCoordinatedUploads(
                   }
                 }
               } else {
-                if (discardFailedUploads) abortUpload(clientUploadId);
-                setLocalUploads((prev) => pastedText !== undefined || discardFailedUploads
+                if (discardFailure) abortUpload(clientUploadId);
+                setLocalUploads((prev) => pastedText !== undefined || discardFailure
                   ? prev.filter((u) => u.clientUploadId !== clientUploadId)
                   : prev.map((u) =>
                     u.clientUploadId === clientUploadId
@@ -493,7 +505,14 @@ export function useCoordinatedUploads(
                   deliverPastedTextBack(undefined, editorRef, pastedText);
                 }
               }
-              toast.error(t(($) => $.upload.failed, { filename: file.name, reason }));
+              // A storage-limit refusal gets the notice under the editor
+              // (MUL-9489), which says what to do about it; a composer that
+              // has gone away still gets the plain toast.
+              if (refusal && mountedRef.current) {
+                setStorageRefusal(refusal);
+              } else {
+                toast.error(t(($) => $.upload.failed, { filename: file.name, reason }));
+              }
               resolve(null);
             }
           },
@@ -591,6 +610,8 @@ export function useCoordinatedUploads(
     [binding],
   );
 
+  const dismissStorageRefusal = useCallback(() => setStorageRefusal(null), []);
+
   return {
     uploads,
     attachments,
@@ -599,5 +620,7 @@ export function useCoordinatedUploads(
     retryUpload,
     canRetryUpload: canRetry,
     gate,
+    storageRefusal,
+    dismissStorageRefusal,
   };
 }

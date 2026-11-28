@@ -1,15 +1,6 @@
-import { useState } from "react";
-import { Loader2, RefreshCw, Square } from "@multica/ui/icons";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "@multica/ui/icons";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@multica/ui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@multica/ui/components/ui/dialog";
 import {
   Tabs,
   TabsContent,
@@ -20,7 +11,6 @@ import { Switch } from "@multica/ui/components/ui/switch";
 import { SettingsCard, SettingsSection } from "@multica/views/settings";
 import { useT } from "@multica/views/i18n";
 import { useSearchState } from "@multica/views/navigation";
-import { toast } from "sonner";
 import {
   daemonStatusAlive,
   type DaemonProcessOverviewTotal,
@@ -33,10 +23,10 @@ import {
 } from "./processes-overview-state";
 
 // Unified process overview: the daemon supervises several long-lived child
-// processes (AI, application, gateway, environment, mirror) plus per-execution
-// task workers, and brokered services (MCP / JEV). This panel aggregates every
+// processes (AI, application, gateway, environment, mirror) and brokered
+// services (MCP / JEV). This panel aggregates every
 // category the daemon exposes locally into one manageable list, with a per-row
-// state dot and a stop action for the categories that support it. Child
+// state dot. Child
 // processes carry best-effort CPU/memory usage; brokered services (MCP / JEV)
 // are status-only and their resource usage is not metered.
 
@@ -49,7 +39,6 @@ type UnifiedProcess = {
   detail?: string;
   sub?: string;
   capabilities?: string[];
-  stoppable: boolean;
   pid?: number;
   memoryBytes?: number;
   cpuTimeMS?: number;
@@ -114,7 +103,6 @@ function normalizeOverview(raw: unknown): UnifiedProcess[] {
         item.capabilities.every((c) => typeof c === "string")
           ? (item.capabilities as string[])
           : undefined,
-      stoppable: item.stoppable === true,
       pid: typeof item.pid === "number" ? item.pid : undefined,
       memoryBytes: typeof item.memory_bytes === "number" ? item.memory_bytes : undefined,
       cpuTimeMS: typeof item.cpu_time_ms === "number" ? item.cpu_time_ms : undefined,
@@ -151,7 +139,6 @@ function normalizeMcp(raw: unknown): UnifiedProcess[] {
       ready: item.ready === true,
       detail: item.enabled === false ? "disabled" : undefined,
       sub: item.reason,
-      stoppable: false,
     });
   }
   for (const svc of data?.services ?? []) {
@@ -164,7 +151,6 @@ function normalizeMcp(raw: unknown): UnifiedProcess[] {
       name: item.name,
       state: "ready",
       ready: true,
-      stoppable: false,
     });
   }
   return out;
@@ -200,7 +186,6 @@ function normalizeJev(raw: unknown): UnifiedProcess[] {
       state: item.state ?? (installed ? "installed" : "not_installed"),
       ready: running,
       detail,
-      stoppable: false,
     });
   }
   return out;
@@ -238,20 +223,6 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
     refetchInterval: enabled ? 10_000 : false,
   });
 
-  const [stopTarget, setStopTarget] = useState<UnifiedProcess | null>(null);
-  const stop = useMutation({
-    mutationFn: (execId: string) => window.daemonAPI.stopWorkerProcess(execId),
-    onSuccess: () => {
-      toast.success(t(($) => $.desktop.worker_processes.stopped));
-      setStopTarget(null);
-    },
-    onError: (error) => {
-      toast.error(t(($) => $.desktop.worker_processes.stop_failed), {
-        description: error instanceof Error ? error.message : undefined,
-      });
-    },
-  });
-
   // overview.data is the daemon's { processes, total } wrapper: processes are the
   // per-category rows and total is the deduped whole-footprint aggregate.
   const total = overview.data?.total;
@@ -271,7 +242,7 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
     else grouped.set(row.category, [row]);
   }
   const busy =
-    overview.isPending || mcp.isPending || jev.isPending || stop.isPending;
+    overview.isPending || mcp.isPending || jev.isPending;
   const failed =
     (overview.isError && !mcp.data && !jev.data) ||
     (mcp.isError && !overview.data && !jev.data);
@@ -332,17 +303,6 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
           {t(($) => $.desktop.processes.cpu)} {formatCpu(row.treeCpuTimeMS ?? row.cpuTimeMS)}
         </p>
       </div>
-      {row.stoppable && (
-        <Button
-          variant="destructive"
-          size="sm"
-          disabled={busy}
-          onClick={() => setStopTarget(row)}
-        >
-          <Square className="size-3.5" />
-          {t(($) => $.desktop.processes.stop)}
-        </Button>
-      )}
     </div>
   );
 
@@ -416,34 +376,6 @@ export function ProcessesOverview({ status }: { status: DaemonStatus }) {
           </div>
         )}
       </SettingsCard>
-      <Dialog
-        open={stopTarget !== null}
-        onOpenChange={(open) => {
-          if (!open && !stop.isPending) setStopTarget(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t(($) => $.desktop.processes.stop_confirm_title)}</DialogTitle>
-            <DialogDescription>{t(($) => $.desktop.processes.stop_confirm_description)}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" disabled={stop.isPending} onClick={() => setStopTarget(null)}>
-              {t(($) => $.desktop.daemon.cancel)}
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={stop.isPending}
-              onClick={() => {
-                if (stopTarget) stop.mutate(stopTarget.id);
-              }}
-            >
-              {stop.isPending && <Loader2 className="size-3.5 animate-spin" />}
-              {t(($) => $.desktop.processes.stop)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </SettingsSection>
       <ProcessServicesConfig status={status} />
     </>

@@ -190,7 +190,7 @@ function JevDecisionLogs({ workspaceID }: { workspaceID: string }) {
         </div>
       </>}
     </div>
-    <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-4xl" aria-describedby={undefined}>
+    <DialogContent className="max-h-[85%] overflow-y-auto sm:max-w-4xl" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{t(($) => $.jev_logs.detail_title)}</DialogTitle></DialogHeader>
       {selectedID && <JevDecisionDetail workspaceID={workspaceID} decisionID={selectedID} sourceLabels={sourceLabels} resultLabels={resultLabels} />}
     </DialogContent>

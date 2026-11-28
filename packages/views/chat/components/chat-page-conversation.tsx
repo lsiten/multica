@@ -9,7 +9,8 @@ import { useQuickActionsPendingTimeout } from "@multica/core/chat/use-quick-acti
 import type { Agent, ChatSession } from "@multica/core/types";
 import { ChatAppRequests } from "../../common/app-requests";
 import { ChatComposer } from "./chat-composer";
-import { ChatMessageList, ChatMessageSkeleton } from "./chat-message-list";
+import { ChatMessageList, ChatMessageSkeleton, type ChatMessageEnterTransition } from "./chat-message-list";
+import { ChatWakeupStrip, useChatWakeups } from "./chat-wakeups";
 import { ChatQueue } from "./chat-queue";
 import { ChatSessionHeader } from "./chat-session-header";
 import { ChatWorkbench } from "./chat-workbench";
@@ -32,14 +33,16 @@ import { useDocWorkingIndicator } from "./use-doc-working-indicator";
 import { useQuickActionsFailureToast } from "./use-quick-actions-failure-toast";
 import type { useChatController } from "./use-chat-controller";
 
-export function ChatPageConversation({ controller: c, leading, onArchive, onProjectChange, onStartNewChat, sourceMessageId }: {
+export function ChatPageConversation({ controller: c, leading, onArchive, onProjectChange, onStartNewChat, sourceMessageId, enterTransition }: {
   readonly controller: ReturnType<typeof useChatController>;
   readonly leading?: ReactNode;
   readonly onArchive: (session: ChatSession) => void;
   readonly onProjectChange: (projectId: string | null) => void;
   readonly sourceMessageId?: string;
+  readonly enterTransition?: ChatMessageEnterTransition | null;
   readonly onStartNewChat?: (agent: Agent) => void;
 }) {
+  const wakeups = useChatWakeups(c.activeSessionId);
   const controls = useChatRunControls(c);
   const messageActions = useChatMessageActions(c, onStartNewChat);
   const { data: quickActionsPending = null } = useQuery(chatQuickActionsPendingOptions(c.activeSessionId ?? ""));
@@ -78,6 +81,9 @@ export function ChatPageConversation({ controller: c, leading, onArchive, onProj
       <div data-chat-transcript className="flex min-h-0 flex-1 flex-col">
       {c.showSkeleton ? <ChatMessageSkeleton /> : c.hasMessages ? (
         <ChatMessageList
+          enterTransition={enterTransition}
+          revealKey={c.activeSessionId}
+          wakeups={wakeups}
           readingContext={c.activeSessionId ? { workspaceId: c.wsId, sessionId: c.activeSessionId } : undefined}
           onQuoteMessage={messageActions.onQuoteMessage}
           onStartDiscussion={messageActions.onStartDiscussion}
@@ -114,7 +120,9 @@ export function ChatPageConversation({ controller: c, leading, onArchive, onProj
           ? <RuntimeRequiredBanner agentId={c.activeAgent.id} agentName={c.activeAgent.name} />
           : <OfflineBanner agentName={c.activeAgent?.name} availability={c.availability} />}
       <div className="px-4"><ChatAppRequests sessionId={c.activeSessionId} /></div>
+      <ChatWakeupStrip sessionId={c.activeSessionId} wakeups={wakeups} />
       <ChatQueue
+        wakeups={wakeups}
         tasks={c.pendingTask?.queued_tasks ?? []}
         headStatus={c.pendingTask?.status}
         onSendNow={c.handleSendQueuedTaskNow}

@@ -33,13 +33,6 @@ func daemonFixtureEntry(_ *testing.M) {
 		}
 		os.Exit(0)
 	}
-	if len(os.Args) == 4 && os.Args[1] == "survival-parent" {
-		if err := runSurvivalParent(os.Args[2], os.Args[3]); err != nil {
-			_, _ = os.Stderr.WriteString(err.Error())
-			os.Exit(97)
-		}
-		os.Exit(0)
-	}
 
 	if len(os.Args) != 2 || os.Args[1] != runtimeproc.Entrypoint {
 		return
@@ -58,10 +51,6 @@ func daemonFixtureEntry(_ *testing.M) {
 		err = RunApplicationService(context.Background(), bootstrap)
 	case "gateway":
 		err = RunGatewayService(context.Background(), bootstrap)
-	case "worker":
-		err = RunWorkerService(context.Background(), bootstrap)
-	case "control":
-		err = RunControlService(context.Background(), bootstrap)
 	default:
 		err = RunMirrorService(context.Background(), bootstrap)
 	}

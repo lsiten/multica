@@ -58,6 +58,9 @@ func (h *Handler) GetAgentCollaborationOperation(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusNotFound, "collaboration operation not found")
 		return
 	}
+	if !h.requireIssueIDVisible(w, r, uuidToString(workspace), op.IssueID, http.StatusNotFound, "collaboration operation not found") {
+		return
+	}
 	writeJSON(w, http.StatusOK, collaborationOperationResponse(op, generated.AgentTaskQueue{}, generated.CreateCommentRow{}))
 }
 

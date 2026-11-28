@@ -62,3 +62,9 @@ func (s *claudeStreamUsage) observe(msg claudeSDKMessage, usage map[string]Token
 		delete(s.active, msg.ParentToolUseID)
 	}
 }
+
+func (t *claudeTurn) publishLiveUsage() {
+	if t.publishUsage != nil {
+		t.publishUsage(t.usage)
+	}
+}

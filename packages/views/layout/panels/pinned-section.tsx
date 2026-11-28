@@ -12,7 +12,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Folder, Monitor, X } from "@multica/ui/icons";
+import { Archive, Folder, Monitor, X } from "@multica/ui/icons";
 import { cn } from "@multica/ui/lib/utils";
 import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 import { ShimmerText } from "@multica/ui/components/common/shimmer-text";
@@ -26,7 +26,7 @@ import { pinListOptions } from "@multica/core/pins/queries";
 import { useSidebarTreeStore } from "@multica/core/issues/stores/sidebar-tree-store";
 import { useDeletePin, useReorderPins } from "@multica/core/pins/mutations";
 import { useIssueUnread } from "@multica/core/issues/unread";
-import { useWorkspacePaths, type WorkspacePaths } from "@multica/core/paths";
+import { useWorkspacePaths, issueRouteRef } from "@multica/core/paths";
 import type { Issue, PinnedItem } from "@multica/core/types";
 import { AppLink } from "../../navigation";
 import { IssueActionsContextMenu } from "../../issues/actions";
@@ -35,10 +35,12 @@ import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
 import { PANEL_ROW_CLASS, PanelList, PanelSection, isPathWithin, panelRowAnchor, panelRowStateClass } from "../panel-nav";
 import { useDragClickGuard } from "../use-drag-click-guard";
+import { PinnedSectionSettings, SECTION_SETTINGS_REVEAL_CLASS } from "./sidebar-settings";
 import {
   ISSUE_ROW_LINK_CLASS,
   IssueAgentBadge,
   IssueUnreadDot,
+  PrivateProjectLock,
   SIDEBAR_SHIMMER_CLASS,
   SidebarIssueStatus,
   issueRowMenuOpenClass,
@@ -49,27 +51,15 @@ import {
 // Stable empty default: an inline `= []` on useQuery is a new reference every
 // render while the query is disabled, which re-fires the sync effect below.
 const EMPTY_PINS: PinnedItem[] = [];
-const PINNED_PREVIEW_LIMIT = 5;
 
-function pinHref(p: WorkspacePaths, pin: PinnedItem): string {
-  switch (pin.item_type) {
-    case "issue":
-      return p.issueDetail(pin.item_id);
-    case "runtime_mirror":
-      return p.runtimeMirror(pin.item_id);
-    case "project":
-    case "view":
-      return p.projectDetail(pin.item_id);
-  }
-}
 
 /**
  * Pin list state for the Issues panel. Lifted out of the section so the
  * panel can keep its plain rows unlit while a pinned item is the page on
  * screen.
  *
- * An issue pin matches by id, not by path: the issue route rewrites its UUID
- * URL to the `MUL-123` form, which a pin's href never equals.
+ * An issue pin matches by id, not by path: the address names the issue by
+ * UUID or by its `MUL-123` identifier.
  */
 export function usePanelPins(
   wsId: string | undefined,
@@ -104,11 +94,12 @@ export function usePanelPins(
 
   const visible = localPinnedWsId === (wsId ?? null) ? localPinned : EMPTY_PINS;
   const expanded = expandedWsId === (wsId ?? null);
-  const displayed = expanded ? visible : visible.slice(0, PINNED_PREVIEW_LIMIT);
+  const limit = useSidebarTreeStore((s) => s.pinnedLimit);
+  const displayed = expanded ? visible : visible.slice(0, limit);
   const isPinActive = (pin: PinnedItem) =>
     pin.item_type === "issue"
       ? pin.item_id === currentIssueId
-      : isPathWithin(pathname, pinHref(p, pin));
+      : isPathWithin(pathname, pin.item_type === "runtime_mirror" ? p.runtimeMirror(pin.item_id) : p.projectDetail(pin.item_id));
   // A collapsed section shows no rows, so it must not keep the tree unlit.
   const pinnedCollapsed = useSidebarTreeStore((s) => s.pinnedCollapsed);
   const isActivePinnedRoute = !pinnedCollapsed && displayed.some(isPinActive);
@@ -117,6 +108,7 @@ export function usePanelPins(
     visible,
     displayed,
     expanded,
+    limit,
     isActivePinnedRoute,
     isPinActive,
     setExpanded: (next: boolean) => setExpandedWsId(next ? wsId ?? null : null),
@@ -130,11 +122,10 @@ type PanelPins = ReturnType<typeof usePanelPins>;
 
 export function PinnedSection({ pins, wsId }: { pins: PanelPins; wsId: string }) {
   const { t } = useT("layout");
-  const p = useWorkspacePaths();
   const deletePin = useDeletePin();
   const reorderPins = useReorderPins();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const { visible, displayed, expanded, setExpanded, setLocalPinned, isDraggingRef, viewPins, isPinActive } = pins;
+  const { visible, displayed, expanded, limit, setExpanded, setLocalPinned, isDraggingRef, viewPins, isPinActive } = pins;
   const collapsed = useSidebarTreeStore((s) => s.pinnedCollapsed);
   const setCollapsed = useSidebarTreeStore((s) => s.setPinnedCollapsed);
   const { arm: armClickGuard, release: releaseClickGuard } = useDragClickGuard();
@@ -167,9 +158,11 @@ export function PinnedSection({ pins, wsId }: { pins: PanelPins; wsId: string })
 
   return (
     <PanelSection
+      data-pinned-section
       label={t(($) => $.sidebar.pinned_label)}
       collapsed={collapsed}
       onCollapsedChange={setCollapsed}
+      action={<PinnedSectionSettings className={SECTION_SETTINGS_REVEAL_CLASS} />}
     >
       <DndContext
         sensors={sensors}
@@ -184,7 +177,6 @@ export function PinnedSection({ pins, wsId }: { pins: PanelPins; wsId: string })
               <PinRow
                 key={pin.id}
                 pin={pin}
-                href={pinHref(p, pin)}
                 active={isPinActive(pin)}
                 onUnpin={() => deletePin.mutate({ itemType: pin.item_type, itemId: pin.item_id })}
                 wsId={wsId}
@@ -193,7 +185,7 @@ export function PinnedSection({ pins, wsId }: { pins: PanelPins; wsId: string })
           </PanelList>
         </SortableContext>
       </DndContext>
-      {visible.length > PINNED_PREVIEW_LIMIT && (
+      {visible.length > limit && (
         <button
           type="button"
           aria-expanded={expanded}
@@ -202,7 +194,7 @@ export function PinnedSection({ pins, wsId }: { pins: PanelPins; wsId: string })
         >
           {expanded
             ? t(($) => $.sidebar.show_fewer_pins)
-            : t(($) => $.sidebar.show_more_pins, { count: visible.length - PINNED_PREVIEW_LIMIT })}
+            : t(($) => $.sidebar.show_more_pins, { count: visible.length - limit })}
         </button>
       )}
     </PanelSection>
@@ -218,6 +210,7 @@ function SortablePinItem({
   active,
   running = false,
   unread = false,
+  labelSuffix,
   trailing,
   issue,
 }: {
@@ -231,6 +224,8 @@ function SortablePinItem({
   running?: boolean;
   /** Brightens the label while the issue has an unread agent result. */
   unread?: boolean;
+  /** Right after the label, which truncates before it. */
+  labelSuffix?: React.ReactNode;
   trailing?: React.ReactNode;
   /** A pinned issue's row opens the issue context menu on right-click. */
   issue?: Issue;
@@ -254,20 +249,24 @@ function SortablePinItem({
       <AppLink
         href={href}
         newTabTitle={label}
+        data-issue-id={issue?.id}
         draggable={false}
         aria-current={active ? "page" : undefined}
         className={cn(ISSUE_ROW_LINK_CLASS, "gap-2.5")}
       >
-        <ShimmerText
-          active={running}
-          className={cn("min-w-0 flex-1 truncate", SIDEBAR_SHIMMER_CLASS, unread && "text-foreground")}
-        >
-          {label}
-        </ShimmerText>
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <ShimmerText
+            active={running}
+            className={cn("min-w-0 truncate", SIDEBAR_SHIMMER_CLASS, unread && "text-foreground")}
+          >
+            {label}
+          </ShimmerText>
+          {labelSuffix}
+        </span>
         {/* Holds the same right-edge slot as a tree row's avatars, and yields
             it to the unpin button on hover. */}
         {trailing && (
-          <span className="flex shrink-0 items-center group-hover/pin:invisible group-focus-within/pin:invisible">
+          <span className="flex shrink-0 items-center transition-opacity duration-150 motion-reduce:transition-none group-hover/pin:opacity-0 group-focus-within/pin:opacity-0">
             {trailing}
           </span>
         )}
@@ -279,7 +278,7 @@ function SortablePinItem({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn("group/pin relative", isDragging && "opacity-30")}
+      className={cn("group/pin relative transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none", isDragging && "opacity-30")}
       {...attributes}
       {...listeners}
     >
@@ -288,7 +287,7 @@ function SortablePinItem({
         <button
           type="button"
           aria-label={t(($) => $.sidebar.unpin_tooltip)}
-          className="absolute top-1/2 right-1.5 hidden size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground group-hover/pin:flex group-focus-within/pin:flex hover:bg-surface-selected hover:text-foreground"
+          className="pointer-events-none absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-150 motion-reduce:transition-none group-hover/pin:pointer-events-auto group-hover/pin:opacity-100 group-focus-within/pin:pointer-events-auto group-focus-within/pin:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 hover:bg-surface-selected hover:text-foreground"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.preventDefault();
@@ -315,17 +314,17 @@ function SortablePinItem({
  */
 function PinRow({
   pin,
-  href,
   active,
   onUnpin,
   wsId,
 }: {
   pin: PinnedItem;
-  href: string;
   active: boolean;
   onUnpin: () => void;
   wsId: string;
 }) {
+  const { t: tProjects } = useT("projects");
+  const p = useWorkspacePaths();
   const isIssue = pin.item_type === "issue";
   const isRuntimeMirror = pin.item_type === "runtime_mirror";
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
@@ -357,7 +356,7 @@ function PinRow({
     return (
       <SortablePinItem
         pin={pin}
-        href={href}
+        href={p.runtimeMirror(pin.item_id)}
         onUnpin={onUnpin}
         label={runtimeDisplayLabel(runtime)}
         active={active}
@@ -373,7 +372,7 @@ function PinRow({
     return (
       <SortablePinItem
         pin={pin}
-        href={unreadIssueHref(href, unread)}
+        href={unreadIssueHref(p.issueDetail(issueRouteRef(issue)), unread)}
         onUnpin={onUnpin}
         label={issue.title}
         active={active}
@@ -400,10 +399,20 @@ function PinRow({
   return (
     <SortablePinItem
       pin={pin}
-      href={href}
+      href={p.projectDetail(pin.item_id)}
       onUnpin={onUnpin}
       label={project.title}
       active={active}
+      labelSuffix={project.visibility === "private" && <PrivateProjectLock />}
+      trailing={
+        project.archived_at ? (
+          <Archive
+            role="img"
+            aria-label={tProjects(($) => $.archive.badge)}
+            className="size-3 shrink-0 text-muted-foreground"
+          />
+        ) : undefined
+      }
       iconNode={
         project.icon ? <ProjectIcon project={project} size="md" /> : <Folder className="size-4 shrink-0" />
       }

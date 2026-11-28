@@ -185,6 +185,14 @@ func (h *Handler) loadApplication(w http.ResponseWriter, r *http.Request) (appli
 		h.applicationError(w, err)
 		return application.View{}, workspaceID, id, member, false
 	}
+	hidden, ok := h.requestHiddenProjects(w, r, uuidToString(workspaceID))
+	if !ok {
+		return application.View{}, workspaceID, id, member, false
+	}
+	if !hidden.CanSeeProject(parseUUID(view.ProjectID)) {
+		h.applicationError(w, application.ErrNotFound)
+		return application.View{}, workspaceID, id, member, false
+	}
 	readable, ok := h.filterReadableApplications(w, r, workspaceID, member, []application.View{view})
 	if !ok {
 		return application.View{}, workspaceID, id, member, false

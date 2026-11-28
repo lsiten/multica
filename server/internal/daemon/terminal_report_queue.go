@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -63,15 +64,14 @@ type persistedTerminalTaskReport struct {
 	WorktreeDeliveryPending bool                             `json:"worktree_delivery_pending,omitempty"`
 	WorktreeCommit          string                           `json:"worktree_commit,omitempty"`
 	AccountID               string                           `json:"account_id,omitempty"`
-	ExecutionID             string                           `json:"execution_id,omitempty"`
 	Messages                []TaskMessageData                `json:"messages,omitempty"`
 	Usage                   []TaskUsageEntry                 `json:"usage,omitempty"`
-	Execution               *protocol.ExecutionIdentity      `json:"execution,omitempty"`
 	ApplicationObservation  *protocol.ApplicationObservation `json:"application_observation,omitempty"`
 	RuntimeID               string                           `json:"runtime_id,omitempty"`
 	ApplicationDesiredState string                           `json:"application_desired_state,omitempty"`
 	ApplicationIntentID     string                           `json:"application_intent_id,omitempty"`
 	ApplicationStep         *applicationStepReceipt          `json:"application_step,omitempty"`
+	NoToolCallsStarted      bool                             `json:"no_tool_calls_started,omitempty"`
 
 	PermanentRejectionCount   int        `json:"permanent_rejection_count,omitempty"`
 	FirstPermanentRejectionAt *time.Time `json:"first_permanent_rejection_at,omitempty"`
@@ -114,6 +114,7 @@ type terminalReportStore struct {
 	// account's pending terminal report.
 	accountAware bool
 	account      string
+	lastStats    atomic.Pointer[terminalReportStoreStats]
 }
 
 func newTerminalReportStore(cfg Config) *terminalReportStore {
@@ -223,15 +224,14 @@ func persistedTerminalReport(report terminalTaskReport, createdAt time.Time) (pe
 		WorktreeDeliveryPending: report.worktreeDeliveryPending,
 		WorktreeCommit:          report.worktreeCommit,
 		AccountID:               report.accountID,
-		ExecutionID:             report.executionID,
 		Messages:                report.messages,
 		Usage:                   report.usage,
-		Execution:               report.execution,
 		ApplicationObservation:  report.applicationObservation,
 		RuntimeID:               report.runtimeID,
 		ApplicationDesiredState: report.applicationDesiredState,
 		ApplicationIntentID:     report.applicationIntentID,
 		ApplicationStep:         report.applicationStep,
+		NoToolCallsStarted:      report.noToolCallsStarted,
 	}, nil
 }
 
@@ -281,15 +281,14 @@ func (record persistedTerminalTaskReport) terminalReport() (terminalTaskReport, 
 		worktreeDeliveryPending: record.WorktreeDeliveryPending,
 		worktreeCommit:          record.WorktreeCommit,
 		accountID:               record.AccountID,
-		executionID:             record.ExecutionID,
 		messages:                record.Messages,
 		usage:                   record.Usage,
-		execution:               record.Execution,
 		applicationObservation:  record.ApplicationObservation,
 		runtimeID:               record.RuntimeID,
 		applicationDesiredState: record.ApplicationDesiredState,
 		applicationIntentID:     record.ApplicationIntentID,
 		applicationStep:         record.ApplicationStep,
+		noToolCallsStarted:      record.NoToolCallsStarted,
 	}, nil
 }
 
@@ -745,7 +744,14 @@ func (s *terminalReportStore) stats() (terminalReportStoreStats, error) {
 	if s == nil {
 		return terminalReportStoreStats{}, nil
 	}
-	s.mu.Lock()
+	// A queue write can hold the lock while it flushes to disk. Health probes
+	// can use the last successful sample while that work is in progress.
+	if !s.mu.TryLock() {
+		if previous := s.lastStats.Load(); previous != nil {
+			return *previous, nil
+		}
+		return terminalReportStoreStats{}, nil
+	}
 	defer s.mu.Unlock()
 	var stats terminalReportStoreStats
 	var errs []error
@@ -759,7 +765,11 @@ func (s *terminalReportStore) stats() (terminalReportStoreStats, error) {
 	} else {
 		stats.FailedCount, stats.FailedBytes = count, bytes
 	}
-	return stats, errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		return stats, err
+	}
+	s.lastStats.Store(&stats)
+	return stats, nil
 }
 
 // otherNamespaceStats surfaces records owned by a different server/profile/
@@ -857,9 +867,7 @@ func (d *Daemon) handleTerminalReportDeliveryError(ctx context.Context, item pen
 			failureReason:         "agent_error.unknown",
 			sessionRolloutMissing: item.report.sessionRolloutMissing,
 			retiredSessionID:      item.report.retiredSessionID,
-			execution:             item.report.execution,
 			accountID:             item.report.accountID,
-			executionID:           item.report.executionID,
 		}
 		if err := d.sendTerminalTaskReport(ctx, fallback, nil); err != nil {
 			if queueErr := d.queueTaskReport(fallback); queueErr != nil {

@@ -436,7 +436,7 @@ export function LocalReviewDialog({ request, onClose }: { request: LocalReviewRe
       aria-labelledby="local-review-title"
       tabIndex={-1}
       onKeyDown={handleDialogKeyDown}
-      className="fixed inset-0 z-50 flex h-dvh w-dvw flex-col overflow-hidden bg-background text-foreground"
+      className="fixed inset-0 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] z-50 flex h-dvh w-dvw flex-col overflow-hidden bg-background text-foreground"
     >
       <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
         <Button

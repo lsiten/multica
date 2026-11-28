@@ -12,7 +12,7 @@ import (
 )
 
 const getAgentForTaskClaim = `-- name: GetAgentForTaskClaim :one
-SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters FROM agent WHERE id = $1 FOR UPDATE SKIP LOCKED
+SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, tool_details_visibility FROM agent WHERE id = $1 FOR UPDATE SKIP LOCKED
 `
 
 // Reserve this agent's capacity without blocking admission for other agents.
@@ -49,6 +49,7 @@ func (q *Queries) GetAgentForTaskClaim(ctx context.Context, id pgtype.UUID) (Age
 		&i.DisabledRuntimeSkills,
 		&i.ServiceTier,
 		&i.ConversationStarters,
+		&i.ToolDetailsVisibility,
 	)
 	return i, err
 }

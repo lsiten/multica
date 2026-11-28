@@ -14,6 +14,7 @@ RETURNING id;
 SELECT id, task_id, agent_id, agent_name, issue_identifier, tool, source, model, result_class, error_code, started_at, duration_ms
 FROM jev_decision_log
 WHERE workspace_id = sqlc.arg(workspace_id) AND created_at <= sqlc.arg(as_of)::timestamptz
+  AND (sqlc.narg('hidden_task_ids')::uuid[] IS NULL OR NOT (task_id = ANY(sqlc.narg('hidden_task_ids')::uuid[])))
   AND (sqlc.arg(query)::text = '' OR concat_ws(' ', id::text, task_id::text, agent_id::text, agent_name, issue_identifier, model, tool, error_code, payload::text) ILIKE '%' || sqlc.arg(query)::text || '%')
   AND (sqlc.arg(result_class)::text = '' OR result_class = sqlc.arg(result_class))
   AND (sqlc.arg(source)::text = '' OR source = sqlc.arg(source))
@@ -26,6 +27,7 @@ LIMIT sqlc.arg(page_limit)::integer OFFSET sqlc.arg(page_offset)::integer;
 -- name: CountJevDecisionLogs :one
 SELECT count(*) FROM jev_decision_log
 WHERE workspace_id = sqlc.arg(workspace_id) AND created_at <= sqlc.arg(as_of)::timestamptz
+  AND (sqlc.narg('hidden_task_ids')::uuid[] IS NULL OR NOT (task_id = ANY(sqlc.narg('hidden_task_ids')::uuid[])))
   AND (sqlc.arg(query)::text = '' OR concat_ws(' ', id::text, task_id::text, agent_id::text, agent_name, issue_identifier, model, tool, error_code, payload::text) ILIKE '%' || sqlc.arg(query)::text || '%')
   AND (sqlc.arg(result_class)::text = '' OR result_class = sqlc.arg(result_class))
   AND (sqlc.arg(source)::text = '' OR source = sqlc.arg(source))
@@ -41,3 +43,12 @@ DELETE FROM jev_decision_log WHERE workspace_id = $1;
 
 -- name: JevDecisionLogSnapshotTime :one
 SELECT clock_timestamp()::timestamptz AS as_of;
+
+-- name: ListJevDecisionTaskScopes :many
+-- Resolve ownership through projectaccess.TasksProjects before paging audit rows.
+SELECT task.id, task.issue_id, task.chat_session_id, task.autopilot_run_id, task.context
+FROM agent_task_queue task
+WHERE EXISTS (
+    SELECT 1 FROM jev_decision_log audit
+    WHERE audit.task_id = task.id AND audit.workspace_id = sqlc.arg('workspace_id')::uuid
+);

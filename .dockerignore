@@ -35,10 +35,12 @@ coverage
 /docs/
 *.md
 
-# Dockerfile.web needs the web workspace and root dependency patch inputs.
-# Default-exclude other app files so they do not enter the build context.
+# Dockerfile.web and Dockerfile.collab need their workspaces and root
+# dependency patch inputs. Default-exclude other app files so they do not
+# enter the build context.
 /apps/*
 !/apps/web/
+!/apps/collab/
 # Dockerfile.web runs a frozen pnpm install that reads the workspace-wide
 # lock, which records a patchedDependencies entry for the mobile patch. The
 # build context must include it (but not the whole mobile workspace) so the

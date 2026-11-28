@@ -57,9 +57,9 @@
     "save_failed": "變更未儲存，請重試。",
     "load_failed": "載入失敗，請重試。",
     "record_unavailable": "記錄已刪除，或你已沒有存取權限。",
-    "loading": "載入中...",
-    "saving": "儲存中...",
-    "sending": "傳送中...",
+    "loading": "載入中…",
+    "saving": "儲存中…",
+    "sending": "傳送中…",
     "offline": "離線",
     "empty": "暫無內容",
     "error": "出現錯誤"
@@ -70,7 +70,5 @@
     "hours_ago_other": "{{count}} 小時前",
     "days_ago_other": "{{count}} 天前",
     "weeks_ago_other": "{{count}} 周前"
-  },
-  "states.empty": "暫無內容",
-  "states.error": "出現錯誤"
+  }
 }

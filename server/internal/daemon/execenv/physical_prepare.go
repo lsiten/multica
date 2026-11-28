@@ -26,6 +26,7 @@ type PhysicalPrepareParams struct {
 	SquadID                      string               `json:"squad_id"`
 	IssueID                      string               `json:"issue_id"`
 	ChatSessionID                string               `json:"chat_session_id"`
+	DocID                        string               `json:"doc_id"`
 	AutopilotID                  string               `json:"autopilot_id"`
 	RepositoryScope              string               `json:"repository_scope"`
 	ConversationKey              string               `json:"conversation_key"`
@@ -42,7 +43,7 @@ func PhysicalPreparationInput(params PrepareParams) (PhysicalPrepareParams, erro
 		return PhysicalPrepareParams{}, err
 	}
 	key, id := localWorktreeConversation(params)
-	return PhysicalPrepareParams{CodeWorkspaceIssueID: params.Task.CodeWorkspaceIssueID, CodeWorkspaceIssueIdentifier: params.Task.CodeWorkspaceIssueIdentifier, CodeWorkspaceWorkDir: params.Task.CodeWorkspaceWorkDir, WorkspacesRoot: params.WorkspacesRoot, WorkspaceID: params.WorkspaceID, WorkspaceSlug: params.WorkspaceSlug, TaskID: params.TaskID, RuntimeID: params.RuntimeID, IssueIdentifier: params.IssueIdentifier, AgentID: params.Task.AgentID, AgentName: params.AgentName, ProjectID: params.Task.ProjectID, SquadID: params.Task.SquadID, IssueID: params.Task.IssueID, ChatSessionID: params.Task.ChatSessionID, AutopilotID: params.Task.AutopilotID, RepositoryScope: fingerprint, ConversationKey: key, ConversationID: id, LocalWorkDir: params.LocalWorkDir, LocalWorktree: params.LocalWorktree, PrivateCheckoutRequired: params.IsolateLocalContext && NeedsPrivateProviderCheckout(params.Provider, params.McpConfig) && (params.LocalWorkDir != "" || params.LocalWorktree != nil)}, nil
+	return PhysicalPrepareParams{CodeWorkspaceIssueID: params.Task.CodeWorkspaceIssueID, CodeWorkspaceIssueIdentifier: params.Task.CodeWorkspaceIssueIdentifier, CodeWorkspaceWorkDir: params.Task.CodeWorkspaceWorkDir, WorkspacesRoot: params.WorkspacesRoot, WorkspaceID: params.WorkspaceID, WorkspaceSlug: params.WorkspaceSlug, TaskID: params.TaskID, RuntimeID: params.RuntimeID, IssueIdentifier: params.IssueIdentifier, AgentID: params.Task.AgentID, AgentName: params.AgentName, ProjectID: params.Task.ProjectID, SquadID: params.Task.SquadID, IssueID: params.Task.IssueID, ChatSessionID: params.Task.ChatSessionID, AutopilotID: params.Task.AutopilotID, DocID: params.Task.DocID, RepositoryScope: fingerprint, ConversationKey: key, ConversationID: id, LocalWorkDir: params.LocalWorkDir, LocalWorktree: params.LocalWorktree, PrivateCheckoutRequired: params.IsolateLocalContext && NeedsPrivateProviderCheckout(params.Provider, params.McpConfig) && (params.LocalWorkDir != "" || params.LocalWorktree != nil)}, nil
 }
 
 // PreparePhysical acquires the root and prepares only physical checkout state.
@@ -242,7 +243,7 @@ func preparePhysical(params PhysicalPrepareParams, preclaimed bool, logger *slog
 	// each has a durable workline identity. Non-fatal: a write failure
 	// only costs the next follow-up its session reuse (it falls back to a fresh
 	// session), which must never block dispatching this task.
-	if !params.ReserveOnly && params.LocalWorkDir == "" && (params.IssueID != "" || params.ChatSessionID != "" || params.AutopilotID != "") {
+	if !params.ReserveOnly && params.LocalWorkDir == "" && (params.IssueID != "" || params.ChatSessionID != "" || params.AutopilotID != "" || params.DocID != "") {
 		repositoryScope := params.RepositoryScope
 		if err := WriteManagedEnvProvenance(envRoot, ManagedEnvProvenance{
 			PrivateProviderCheckout: privateProvider,
@@ -255,6 +256,7 @@ func preparePhysical(params PhysicalPrepareParams, preclaimed bool, logger *slog
 			IssueID:                 params.IssueID,
 			ChatSessionID:           params.ChatSessionID,
 			AutopilotID:             params.AutopilotID,
+			DocID:                   params.DocID,
 			AgentID:                 params.AgentID,
 			AgentName:               params.AgentName,
 		}); err != nil {

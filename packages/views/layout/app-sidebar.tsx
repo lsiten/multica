@@ -1,4 +1,5 @@
 "use client";
+import { issueRouteRef } from "@multica/core/paths/paths";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 
 import { issueStatusCategory } from "@multica/core/issues";
@@ -578,7 +579,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const getPinHref = useCallback(
     (pin: PinnedItem) =>
       pin.item_type === "issue"
-        ? p.issueDetail(pin.item_id)
+        ? p.issueDetail(issueRouteRef({ id: pin.item_id, identifier: undefined }))
         : pin.item_type === "project"
           ? p.projectDetail(pin.item_id)
           : pin.item_type === "runtime_mirror"

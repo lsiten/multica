@@ -148,7 +148,7 @@ export function WorktreeManager({ status }: { status: DaemonStatus }) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-foreground" title={row.taskName}>{row.taskName}</p>
                     <p className="break-all font-mono" title={row.path}>{row.path}</p>
-                    <p>{(row.sizeBytes / 1024 ** 2).toFixed(1)} MB · {reasonLabel(row.active ? "active" : row.protectionReason)}</p>
+                    <p>{`${(row.sizeBytes / 1024 ** 2).toFixed(1)} MB`} · {reasonLabel(row.active ? "active" : row.protectionReason)}</p>
                     {Array.from(new Set([...row.consumerTaskIds, ...(row.retainedTaskId ? [row.retainedTaskId] : [])])).map((id) => <p key={id} className="break-all">{t(($) => $.desktop.worktrees.retained_run, { id })}</p>)}
                     {row.storage && <p>{t(($) => $.desktop.worktrees.storage_breakdown, { code: (row.storage.codeBytes / 1024 ** 2).toFixed(1), output: (row.storage.outputBytes / 1024 ** 2).toFixed(1), logs: (row.storage.logBytes / 1024 ** 2).toFixed(1), runtime: (row.storage.runtimeBytes / 1024 ** 2).toFixed(1) })}</p>}
                     {row.storage?.allocatedBytes != null && <p>{t(($) => $.desktop.worktrees.allocated_size, { size: (row.storage.allocatedBytes / 1024 ** 2).toFixed(1) })}</p>}

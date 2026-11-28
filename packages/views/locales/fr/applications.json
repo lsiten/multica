@@ -252,5 +252,11 @@
   "log_info": "Info",
   "log_debug": "Débogage",
   "log_since": "Depuis",
-  "created_by": "Créé par"
+  "created_by": "Créé par",
+  "local_offline": {
+    "title": "Applications locales",
+    "description": "Le serveur est indisponible. Les commandes locales restent accessibles ; les modifications seront synchronisées au rétablissement de la connexion.",
+    "empty": "Aucune configuration locale vérifiée n’est disponible.",
+    "working": "Traitement..."
+  }
 }

@@ -51,6 +51,9 @@ func (h *Handler) loadProjectCollaboration(w http.ResponseWriter, r *http.Reques
 		}
 		return out, false
 	}
+	if !h.requireProjectVisible(w, r, uuidToString(workspaceID), projectID, http.StatusNotFound, "project not found") {
+		return out, false
+	}
 	out.ProjectID = uuidToString(projectID)
 	params := db.ListProjectCollaborationRunsParams{WorkspaceID: workspaceID, ProjectID: projectID, UserID: member.UserID, IsAdmin: roleAllowed(member.Role, "owner", "admin"), ScanLimit: projectCollaborationScanLimit + 1}
 	q := r.URL.Query()

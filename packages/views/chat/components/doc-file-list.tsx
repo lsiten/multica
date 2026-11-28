@@ -1,4 +1,5 @@
 "use client";
+import { issueRouteRef } from "@multica/core/paths/paths";
 
 import { ChevronRight, Eye, File, Folder, FolderOpen, GitBranch, Loader2, Search } from "@multica/ui/icons";
 import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
@@ -483,7 +484,7 @@ function DocModeFileListContent({ wsId, sessionId, session, agents = [], onChoos
             <ul className="divide-y">
               {(projectIssues?.issues ?? []).map((issue: Issue) => (
                 <li key={issue.id} className="flex items-center pr-2">
-                  <AppLink href={workspaceSlug ? paths.workspace(workspaceSlug).issueDetail(issue.identifier || issue.id) : `/issues/${issue.identifier || issue.id}`} className="min-w-0 flex-1 px-3 py-2 hover:bg-accent/50">
+                  <AppLink href={workspaceSlug ? paths.workspace(workspaceSlug).issueDetail(issueRouteRef(issue)) : `/issues/${issue.identifier || issue.id}`} className="min-w-0 flex-1 px-3 py-2 hover:bg-accent/50">
                     <span className="block truncate text-caption font-medium">{issue.identifier}</span>
                     <span className="block truncate text-body">{issue.title}</span>
                   </AppLink>

@@ -1,4 +1,5 @@
 "use client";
+import { issueRouteRef } from "@multica/core/paths/paths";
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -33,7 +34,7 @@ export function WorkProgressSummary({ summary, complete }: { summary: ProgressSu
 
 function IssueReference({ issue }: { issue: ProgressIssueRef }) {
   const paths = useWorkspacePaths();
-  return <AppLink href={paths.issueDetail(issue.identifier || issue.id)} className="rounded-sm text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground focus-visible:outline focus-visible:outline-ring">{issue.identifier} · {issue.title}</AppLink>;
+  return <AppLink href={paths.issueDetail(issueRouteRef(issue))} className="rounded-sm text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground focus-visible:outline focus-visible:outline-ring">{issue.identifier} · {issue.title}</AppLink>;
 }
 
 export function WorkProgressEntry({ entry, currentProjectId, requestLinksOnly = false }: { entry: ProgressEntry; currentProjectId?: string | null; requestLinksOnly?: boolean }) {
@@ -78,7 +79,7 @@ export function WorkProgressEntry({ entry, currentProjectId, requestLinksOnly = 
       <span className="text-muted-foreground">{t($ => $.work_progress.run)}: {runStateLabel(entry.run.status, t)}</span>
       <Button size="sm" variant="outline" onClick={() => setRunOpen(true)}>{t($ => $.work_progress.view_run)}</Button>
     </div>}
-    {entry.requests.map(request => requestLinksOnly ? <p key={request.id}><AppLink className="rounded-sm underline underline-offset-4" href={`${paths.issueDetail(entry.issue.identifier || entry.issue.id)}#comment-${request.id}`}>{request.needs_me ? t($ => $.work_progress.handle_request) : t($ => $.work_progress.waiting_member, { member: getActorName("member", request.recipient_id) })}</AppLink></p> : <details key={request.id}><summary className="cursor-pointer rounded-sm text-foreground focus-visible:outline focus-visible:outline-ring">{request.needs_me ? t($ => $.work_progress.handle_request) : t($ => $.work_progress.waiting_member, { member: getActorName("member", request.recipient_id) })}</summary><div className="mt-2"><HumanRequestCard requestId={request.id} /></div></details>)}
+    {entry.requests.map(request => requestLinksOnly ? <p key={request.id}><AppLink className="rounded-sm underline underline-offset-4" href={`${paths.issueDetail(issueRouteRef(entry.issue))}#comment-${request.id}`}>{request.needs_me ? t($ => $.work_progress.handle_request) : t($ => $.work_progress.waiting_member, { member: getActorName("member", request.recipient_id) })}</AppLink></p> : <details key={request.id}><summary className="cursor-pointer rounded-sm text-foreground focus-visible:outline focus-visible:outline-ring">{request.needs_me ? t($ => $.work_progress.handle_request) : t($ => $.work_progress.waiting_member, { member: getActorName("member", request.recipient_id) })}</summary><div className="mt-2"><HumanRequestCard requestId={request.id} /></div></details>)}
     {runOpen && entry.run && <ProgressRunDialog issueId={entry.issue.id} runId={entry.run.id} onClose={() => setRunOpen(false)} />}
   </article>;
 }

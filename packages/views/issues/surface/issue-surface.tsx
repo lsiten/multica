@@ -9,7 +9,9 @@ import { Button } from "@multica/ui/components/ui/button";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { cn } from "@multica/ui/lib/utils";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths, issueRouteRef } from "@multica/core/paths";
 import { useModalStore } from "@multica/core/modals";
+import { useIsGuest } from "@multica/core/permissions";
 import { useQuery } from "@tanstack/react-query";
 import { workspaceWakeupSummariesOptions } from "@multica/core/issues/wakeups";
 import {
@@ -21,7 +23,7 @@ import {
   seedIssueSurfaceViewState,
 } from "@multica/core/issues/stores/surface-view-store";
 import { useActiveIssueView } from "@multica/core/issue-views/use-active-view";
-import { UNREAD_VIEW_BASELINE, isUnreadView } from "@multica/core/issue-views/unread-view";
+import { filteredBuiltinBaseline } from "@multica/core/issue-views/builtin-issue-views";
 import {
   issueViewDefinitionFromState,
   issueViewSeedDefinition,
@@ -45,9 +47,11 @@ import { SwimLaneView } from "../components/swimlane-view";
 import { TableView } from "../components/table-view";
 import { useT } from "../../i18n";
 import { CollectionPageState } from "../../layout/collection-page";
+import { useWarmRoute } from "../../navigation";
 import { IssueContextMenuProvider } from "../actions";
 import { IssueSurfaceActionsProvider } from "./actions-context";
 import { IssuePeekHost } from "../components/issue-peek";
+import { IssueCursorProvider } from "./issue-cursor";
 import { IssueSurfaceSelectionProvider } from "./selection-context";
 import { ColumnStatusesProvider } from "./column-statuses-context";
 import type { IssueCreateDefaults, IssueSurfaceProps } from "./types";
@@ -60,6 +64,8 @@ import {
 export interface IssueSurfaceRenderContext {
   controller: IssueSurfaceController;
   issues: Issue[];
+  /** Whether the viewer may create issues here; false for a guest (MUL-9420). */
+  canCreate: boolean;
 }
 
 interface IssueSurfaceComponentProps extends IssueSurfaceProps {
@@ -91,6 +97,7 @@ export function IssueSurface({
   modes,
   surfaceKey,
   createDefaults,
+  allowCreate = true,
   search,
   renderHeader,
   renderBody,
@@ -134,7 +141,7 @@ export function IssueSurface({
       : activeView && scope.type === "my"
         ? { ...scope, relation: myRelationForViewVariant(activeView.scope_variant) }
         : scope;
-  const viewBaseline = isUnreadView(activeView) ? UNREAD_VIEW_BASELINE : null;
+  const viewBaseline = filteredBuiltinBaseline(activeView);
   const store = useMemo(() => {
     // First-open seeding happens HERE, at store-creation time for this key:
     // no React component has subscribed to the new key's store yet, so the
@@ -144,7 +151,7 @@ export function IssueSurface({
       seedIssueSurfaceViewState(resolvedSurfaceKey, seedDefinition);
     }
     const viewStore = getIssueSurfaceViewStore(resolvedSurfaceKey);
-    if (viewBaseline?.unread) keepUnreadFilter(viewStore);
+    if (viewBaseline) keepFixedFilters(viewStore, viewBaseline);
     return viewStore;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed identity follows the key
   }, [resolvedSurfaceKey]);
@@ -152,9 +159,9 @@ export function IssueSurface({
   // a workspace switch reloads it from that workspace's preferences, which may
   // never have held the condition. Re-apply it whenever it goes missing.
   useEffect(() => {
-    if (!viewBaseline?.unread) return;
-    keepUnreadFilter(store);
-    return store.subscribe(() => keepUnreadFilter(store));
+    if (!viewBaseline) return;
+    keepFixedFilters(store, viewBaseline);
+    return store.subscribe(() => keepFixedFilters(store, viewBaseline));
   }, [store, viewBaseline]);
 
   // Every change of this key tears down and remounts the ENTIRE surface
@@ -188,6 +195,7 @@ export function IssueSurface({
           scope={effectiveScope}
           modes={modes}
           createDefaults={createDefaults}
+          allowCreate={allowCreate}
           search={search}
           renderHeader={renderHeader}
           renderBody={renderBody}
@@ -203,14 +211,37 @@ export function IssueSurface({
   );
 }
 
-function keepUnreadFilter(store: StoreApi<IssueViewState>) {
-  if (!store.getState().unreadFilter) store.setState({ unreadFilter: true });
+/**
+ * Holds a built-in view to its condition: exactly the relations and agent
+ * filter it is defined by. Other dimensions narrow it; these would widen it,
+ * since a dimension's values are ORed (Subscribed + Assigned is "subscribed
+ * or assigned").
+ */
+function keepFixedFilters(store: StoreApi<IssueViewState>, baseline: IssueViewBaseline) {
+  const state = store.getState();
+  const patch: Partial<IssueViewState> = {};
+  if (baseline.agentRunning && (!state.agentRunningFilter || state.agentIdleFilter)) {
+    Object.assign(patch, { agentRunningFilter: true, agentIdleFilter: false });
+  }
+  const relations = baseline.raw.relationFilters;
+  if (
+    relations.length > 0 &&
+    (relations.length !== state.relationFilters.length ||
+      relations.some((relation) => !state.relationFilters.includes(relation)))
+  ) {
+    patch.relationFilters = [...relations];
+  }
+  if (relations.length > 0 && state.negatedFilters.includes("relation")) {
+    patch.negatedFilters = state.negatedFilters.filter((dimension) => dimension !== "relation");
+  }
+  if (Object.keys(patch).length > 0) store.setState(patch);
 }
 
 function IssueSurfaceContent({
   scope,
   modes,
   createDefaults,
+  allowCreate = true,
   search,
   renderHeader,
   renderBody = (content) => content,
@@ -222,9 +253,13 @@ function IssueSurfaceContent({
   contentClassName,
 }: Omit<IssueSurfaceComponentProps, "surfaceKey">) {
   const workspaceId = useWorkspaceId();
+  // A guest (MUL-9420) cannot create issues anywhere, sub-issues included.
+  const guest = useIsGuest(workspaceId);
+  const canCreate = allowCreate && !guest;
   // One polling owner for the whole surface; individual cards only select cache data.
   useQuery({ ...workspaceWakeupSummariesOptions(workspaceId), refetchInterval: 10_000 });
   const { t } = useT("projects");
+  const paths = useWorkspacePaths();
   const controller = useIssueSurfaceController({
     scope,
     modes,
@@ -250,6 +285,8 @@ function IssueSurfaceContent({
         : controller.issues,
     [clientFilter, controller.issues],
   );
+  const firstIssue = issues[0] ?? tableLoadedIssues[0];
+  useWarmRoute("issue", firstIssue ? paths.issueDetail(issueRouteRef(firstIssue)) : null);
   const swimlaneIssues = useMemo(
     () =>
       clientFilter
@@ -258,8 +295,8 @@ function IssueSurfaceContent({
     [clientFilter, controller.swimlaneIssues],
   );
   const renderContext = useMemo(
-    () => ({ controller, issues }),
-    [controller, issues],
+    () => ({ controller, issues, canCreate }),
+    [controller, issues, canCreate],
   );
   const openCreateIssue = useCallback(
     (defaults?: IssueCreateDefaults) => {
@@ -324,7 +361,7 @@ function IssueSurfaceContent({
               title={t(($) => $.detail.empty_issues_title)}
               description={t(($) => $.detail.empty_issues_hint)}
               actions={
-                <>
+                canCreate && <>
                   <Button size="sm" onClick={() => controller.openCreateIssue()}>
                     <Plus aria-hidden="true" />
                     {t(($) => $.detail.empty_issues_new_button)}
@@ -347,6 +384,11 @@ function IssueSurfaceContent({
             />
           )
         ) : (
+          <IssueCursorProvider
+            issues={controller.viewMode === "table" ? tableLoadedIssues : issues}
+            selectable={shouldShowBatchToolbar && controller.viewMode !== "board"}
+            enabled={controller.viewMode === "list" || controller.viewMode === "table" || controller.viewMode === "board"}
+          >
           <div className={cn("flex flex-col flex-1 min-h-0", contentClassName)}>
             {controller.viewMode === "board" && (
               <BoardView
@@ -356,7 +398,7 @@ function IssueSurfaceContent({
                 childProgressMap={controller.childProgressMap}
                 projectMap={controller.projectMap}
                 projectId={controller.projectId}
-                onCreateIssue={openCreateIssue}
+                onCreateIssue={canCreate ? openCreateIssue : undefined}
                 statusPagination={controller.statusPagination}
                 groupBranches={controller.groupBranches}
               />
@@ -369,7 +411,7 @@ function IssueSurfaceContent({
                 projectMap={controller.projectMap}
                 projectId={controller.projectId}
                 onMoveIssue={controller.moveIssue}
-                onCreateIssue={openCreateIssue}
+                onCreateIssue={canCreate ? openCreateIssue : undefined}
                 statusPagination={controller.statusPagination!}
               />
             )}
@@ -380,7 +422,7 @@ function IssueSurfaceContent({
                 search={controller.tableSearch}
                 onSearchChange={controller.setTableSearch}
                 onLoadedIssuesChange={handleTableLoadedIssuesChange}
-                onCreateIssue={openCreateIssue}
+                onCreateIssue={guest ? undefined : openCreateIssue}
                 exportIssues={controller.exportTableIssues}
                 resolveExportLookups={controller.resolveTableExportLookups}
               />
@@ -398,11 +440,12 @@ function IssueSurfaceContent({
                 childProgressMap={controller.childProgressMap}
                 projectMap={controller.projectMap}
                 projectId={controller.projectId}
-                onCreateIssue={openCreateIssue}
+                onCreateIssue={canCreate ? openCreateIssue : undefined}
                 groupBranches={controller.groupBranches}
               />
             )}
           </div>
+          </IssueCursorProvider>
         )}
         </IssuePeekHost>
         {shouldShowBatchToolbar && (

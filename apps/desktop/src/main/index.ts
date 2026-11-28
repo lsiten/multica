@@ -14,6 +14,7 @@ import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import fixPath from "fix-path";
 import { createElectronBusyInstallPrompt, setupAutoUpdater } from "./updater";
+import { getEffectiveDialogLocale, setAppDialogLocale } from "./dialog-locale";
 import {
   prepareDaemonForUpdateInstall,
   resumeDaemonAfterAbortedUpdateInstall,
@@ -23,6 +24,7 @@ import { setupLocalDirectory } from "./local-directory";
 import { setupLocalVoice } from "./local-voice";
 import { setupMicrophonePermission } from "./microphone-permission";
 import { setupThemeFolder } from "./theme-folder";
+import { setupVoiceInput } from "./voice";
 import { configureLinuxFileDialogs } from "./linux-file-dialog";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
@@ -48,6 +50,7 @@ import {
   type RendererRecoveryWindow,
 } from "./renderer-recovery";
 import { createBestEffortDevLog } from "./dev-log";
+import { ignoreBrokenStdio } from "./stdio-guard";
 import { appendMissingPathDirs } from "./path-fallback";
 import {
   writeFreezeBreadcrumb,
@@ -156,6 +159,9 @@ if (process.platform !== "win32") {
     join(homedir(), ".local/bin"),
   ]);
 }
+
+// Before anything can log: release builds write to stdout/stderr too.
+ignoreBrokenStdio();
 
 const PROTOCOL = "multica";
 const devLog = is.dev ? createBestEffortDevLog() : undefined;
@@ -370,7 +376,11 @@ function handleDeepLink(url: string): void {
       return;
     }
 
-    if (parsed.hostname === "open" && parsed.pathname === "/issue") {
+    // multica://open/issue?url=… and multica://open/chat?url=…
+    if (
+      parsed.hostname === "open" &&
+      (parsed.pathname === "/issue" || parsed.pathname === "/chat")
+    ) {
       // Keep the source instance in the payload. The authenticated renderer
       // validates it against runtime config before opening a workspace tab.
       dispatchToMainRenderer("issue:open", url);
@@ -391,6 +401,10 @@ let lastKnownSystemLocale = "en";
 
 function getSystemLocale(): string {
   return app.getPreferredSystemLanguages()[0] ?? "en";
+}
+
+function getEffectiveLocale(): string {
+  return getEffectiveDialogLocale(getSystemLocale);
 }
 
 function loadRenderer(window: BrowserWindow): void {
@@ -606,8 +620,9 @@ function createMainWindow(saved: WindowState = {}): BrowserWindow {
 
   installRendererRecoveryHandlers(window as unknown as RendererRecoveryWindow, {
     isDev: is.dev,
-    showReloadPrompt: createElectronReloadPrompt((options) =>
-      dialog.showMessageBox(window, options),
+    showReloadPrompt: createElectronReloadPrompt(
+      (options) => dialog.showMessageBox(window, options),
+      getEffectiveLocale,
     ),
     getDiagnosticContext: () => {
       // No `windowUrl`: it is an absolute install path (`/Users/<name>/...`
@@ -696,8 +711,9 @@ function createIssueWindow(context: IssueWindowContext): void {
   }
   installRendererRecoveryHandlers(window as unknown as RendererRecoveryWindow, {
     isDev: is.dev,
-    showReloadPrompt: createElectronReloadPrompt((options) =>
-      dialog.showMessageBox(window, options),
+    showReloadPrompt: createElectronReloadPrompt(
+      (options) => dialog.showMessageBox(window, options),
+      getEffectiveLocale,
     ),
     getDiagnosticContext: () => {
       // No `windowUrl`: it is an absolute install path (`/Users/<name>/...`
@@ -1117,6 +1133,10 @@ if (!gotTheLock) {
       applyUnreadBadge();
     });
 
+    ipcMain.on("locale:set", (_event, rawLocale: unknown) => {
+      setAppDialogLocale(typeof rawLocale === "string" ? rawLocale : null);
+    });
+
     desktopInitialized = true;
     setupMicrophonePermission();
     await setupLocalVoice();
@@ -1136,7 +1156,7 @@ if (!gotTheLock) {
           return parent && !parent.isDestroyed()
             ? dialog.showMessageBox(parent, options)
             : dialog.showMessageBox(options);
-        }),
+        }, getEffectiveLocale),
       },
     });
     setupDaemonManager(
@@ -1145,6 +1165,7 @@ if (!gotTheLock) {
     );
     setupLocalDirectory(() => mainWindows.mostRecent());
     setupThemeFolder();
+    setupVoiceInput();
 
     // Registered after the updater and daemon gates, so a quit they hold
     // (busy daemon, pending install) leaves the session writable; only the

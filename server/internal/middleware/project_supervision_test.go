@@ -27,9 +27,13 @@ func TestCoordinationTaskTokenFencesWrites(t *testing.T) {
 	const token = "mat_coordination-test"
 	f.Insert(t, "task_token", testutil.Cols{"token_hash": auth.HashToken(token), "task_id": task, "agent_id": agent, "workspace_id": workspace, "user_id": user, "expires_at": testutil.Raw("now()+interval '1 hour'")})
 	middleware := Auth(db.New(pool), nil, nil, nil)
+	acceptedWrites := 0
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Task-ID") != task || r.Header.Get("X-Agent-ID") != agent {
 			t.Error("task identity spoofed")
+		}
+		if r.Method == http.MethodPost {
+			acceptedWrites++
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -54,12 +58,16 @@ func TestCoordinationTaskTokenFencesWrites(t *testing.T) {
 			t.Fatalf("%s %s: %d %s", input.method, input.path, w.Code, w.Body.String())
 		}
 	}
+	writesBeforeCompletion := acceptedWrites
 	f.Exec(t, "UPDATE agent_task_queue SET status='completed' WHERE id=$1", task)
 	r := httptest.NewRequest("POST", "/api/projects/"+project+"/supervision/actions", nil)
 	r.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
-	if w.Code != 403 {
-		t.Fatalf("terminal task still writes: %d", w.Code)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("terminal task token still authenticates: %d", w.Code)
+	}
+	if acceptedWrites != writesBeforeCompletion {
+		t.Fatal("terminal task reached the write handler")
 	}
 }

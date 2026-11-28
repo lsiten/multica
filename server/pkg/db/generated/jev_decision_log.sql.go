@@ -14,29 +14,32 @@ import (
 const countJevDecisionLogs = `-- name: CountJevDecisionLogs :one
 SELECT count(*) FROM jev_decision_log
 WHERE workspace_id = $1 AND created_at <= $2::timestamptz
-  AND ($3::text = '' OR concat_ws(' ', id::text, task_id::text, agent_id::text, agent_name, issue_identifier, model, tool, error_code, payload::text) ILIKE '%' || $3::text || '%')
-  AND ($4::text = '' OR result_class = $4)
-  AND ($5::text = '' OR source = $5)
-  AND ($6::text = '' OR concat_ws(' ', agent_id::text, agent_name) ILIKE '%' || $6::text || '%')
-  AND ($7::timestamptz IS NULL OR started_at >= $7)
-  AND ($8::timestamptz IS NULL OR started_at <= $8)
+  AND ($3::uuid[] IS NULL OR NOT (task_id = ANY($3::uuid[])))
+  AND ($4::text = '' OR concat_ws(' ', id::text, task_id::text, agent_id::text, agent_name, issue_identifier, model, tool, error_code, payload::text) ILIKE '%' || $4::text || '%')
+  AND ($5::text = '' OR result_class = $5)
+  AND ($6::text = '' OR source = $6)
+  AND ($7::text = '' OR concat_ws(' ', agent_id::text, agent_name) ILIKE '%' || $7::text || '%')
+  AND ($8::timestamptz IS NULL OR started_at >= $8)
+  AND ($9::timestamptz IS NULL OR started_at <= $9)
 `
 
 type CountJevDecisionLogsParams struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	AsOf        pgtype.Timestamptz `json:"as_of"`
-	Query       string             `json:"query"`
-	ResultClass string             `json:"result_class"`
-	Source      string             `json:"source"`
-	AgentQuery  string             `json:"agent_query"`
-	FromTime    pgtype.Timestamptz `json:"from_time"`
-	ToTime      pgtype.Timestamptz `json:"to_time"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	AsOf          pgtype.Timestamptz `json:"as_of"`
+	HiddenTaskIds []pgtype.UUID      `json:"hidden_task_ids"`
+	Query         string             `json:"query"`
+	ResultClass   string             `json:"result_class"`
+	Source        string             `json:"source"`
+	AgentQuery    string             `json:"agent_query"`
+	FromTime      pgtype.Timestamptz `json:"from_time"`
+	ToTime        pgtype.Timestamptz `json:"to_time"`
 }
 
 func (q *Queries) CountJevDecisionLogs(ctx context.Context, arg CountJevDecisionLogsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countJevDecisionLogs,
 		arg.WorkspaceID,
 		arg.AsOf,
+		arg.HiddenTaskIds,
 		arg.Query,
 		arg.ResultClass,
 		arg.Source,
@@ -106,27 +109,29 @@ const listJevDecisionLogs = `-- name: ListJevDecisionLogs :many
 SELECT id, task_id, agent_id, agent_name, issue_identifier, tool, source, model, result_class, error_code, started_at, duration_ms
 FROM jev_decision_log
 WHERE workspace_id = $1 AND created_at <= $2::timestamptz
-  AND ($3::text = '' OR concat_ws(' ', id::text, task_id::text, agent_id::text, agent_name, issue_identifier, model, tool, error_code, payload::text) ILIKE '%' || $3::text || '%')
-  AND ($4::text = '' OR result_class = $4)
-  AND ($5::text = '' OR source = $5)
-  AND ($6::text = '' OR concat_ws(' ', agent_id::text, agent_name) ILIKE '%' || $6::text || '%')
-  AND ($7::timestamptz IS NULL OR started_at >= $7)
-  AND ($8::timestamptz IS NULL OR started_at <= $8)
+  AND ($3::uuid[] IS NULL OR NOT (task_id = ANY($3::uuid[])))
+  AND ($4::text = '' OR concat_ws(' ', id::text, task_id::text, agent_id::text, agent_name, issue_identifier, model, tool, error_code, payload::text) ILIKE '%' || $4::text || '%')
+  AND ($5::text = '' OR result_class = $5)
+  AND ($6::text = '' OR source = $6)
+  AND ($7::text = '' OR concat_ws(' ', agent_id::text, agent_name) ILIKE '%' || $7::text || '%')
+  AND ($8::timestamptz IS NULL OR started_at >= $8)
+  AND ($9::timestamptz IS NULL OR started_at <= $9)
 ORDER BY started_at DESC, id DESC
-LIMIT $10::integer OFFSET $9::integer
+LIMIT $11::integer OFFSET $10::integer
 `
 
 type ListJevDecisionLogsParams struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	AsOf        pgtype.Timestamptz `json:"as_of"`
-	Query       string             `json:"query"`
-	ResultClass string             `json:"result_class"`
-	Source      string             `json:"source"`
-	AgentQuery  string             `json:"agent_query"`
-	FromTime    pgtype.Timestamptz `json:"from_time"`
-	ToTime      pgtype.Timestamptz `json:"to_time"`
-	PageOffset  int32              `json:"page_offset"`
-	PageLimit   int32              `json:"page_limit"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	AsOf          pgtype.Timestamptz `json:"as_of"`
+	HiddenTaskIds []pgtype.UUID      `json:"hidden_task_ids"`
+	Query         string             `json:"query"`
+	ResultClass   string             `json:"result_class"`
+	Source        string             `json:"source"`
+	AgentQuery    string             `json:"agent_query"`
+	FromTime      pgtype.Timestamptz `json:"from_time"`
+	ToTime        pgtype.Timestamptz `json:"to_time"`
+	PageOffset    int32              `json:"page_offset"`
+	PageLimit     int32              `json:"page_limit"`
 }
 
 type ListJevDecisionLogsRow struct {
@@ -148,6 +153,7 @@ func (q *Queries) ListJevDecisionLogs(ctx context.Context, arg ListJevDecisionLo
 	rows, err := q.db.Query(ctx, listJevDecisionLogs,
 		arg.WorkspaceID,
 		arg.AsOf,
+		arg.HiddenTaskIds,
 		arg.Query,
 		arg.ResultClass,
 		arg.Source,
@@ -177,6 +183,50 @@ func (q *Queries) ListJevDecisionLogs(ctx context.Context, arg ListJevDecisionLo
 			&i.ErrorCode,
 			&i.StartedAt,
 			&i.DurationMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listJevDecisionTaskScopes = `-- name: ListJevDecisionTaskScopes :many
+SELECT task.id, task.issue_id, task.chat_session_id, task.autopilot_run_id, task.context
+FROM agent_task_queue task
+WHERE EXISTS (
+    SELECT 1 FROM jev_decision_log audit
+    WHERE audit.task_id = task.id AND audit.workspace_id = $1::uuid
+)
+`
+
+type ListJevDecisionTaskScopesRow struct {
+	ID             pgtype.UUID `json:"id"`
+	IssueID        pgtype.UUID `json:"issue_id"`
+	ChatSessionID  pgtype.UUID `json:"chat_session_id"`
+	AutopilotRunID pgtype.UUID `json:"autopilot_run_id"`
+	Context        []byte      `json:"context"`
+}
+
+// Resolve ownership through projectaccess.TasksProjects before paging audit rows.
+func (q *Queries) ListJevDecisionTaskScopes(ctx context.Context, workspaceID pgtype.UUID) ([]ListJevDecisionTaskScopesRow, error) {
+	rows, err := q.db.Query(ctx, listJevDecisionTaskScopes, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListJevDecisionTaskScopesRow{}
+	for rows.Next() {
+		var i ListJevDecisionTaskScopesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssueID,
+			&i.ChatSessionID,
+			&i.AutopilotRunID,
+			&i.Context,
 		); err != nil {
 			return nil, err
 		}

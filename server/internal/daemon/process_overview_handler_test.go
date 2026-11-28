@@ -116,7 +116,7 @@ func findOverviewRow(t *testing.T, rows []processOverviewEntry, category string)
 }
 
 func TestProcessesOverviewHandlerRejectsNonGet(t *testing.T) {
-	d := &Daemon{workerProcessRegistry: newWorkerProcessRegistry()}
+	d := &Daemon{}
 	rec := httptest.NewRecorder()
 	d.processesOverviewHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/runtimes/processes/overview", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -139,41 +139,6 @@ func TestProcessesOverviewHandlerRequiresLocalAuthorization(t *testing.T) {
 	d.processesOverviewHandler().ServeHTTP(response, authorized)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected authorized overview request to return 200, got %d", response.Code)
-	}
-}
-
-func TestProcessesOverviewHandlerListsTaskWorker(t *testing.T) {
-	c := &workerProcessClient{
-		transport:  &fakeWorkerTransport{healthState: "running"},
-		wait:       func(context.Context) error { return nil },
-		gate:       make(chan struct{}, 1),
-		instanceID: "instance-1",
-	}
-	d := &Daemon{workerProcessRegistry: newWorkerProcessRegistry()}
-	d.registerWorkerProcess(c, "exec-1", "task-1", "claude")
-
-	rec := httptest.NewRecorder()
-	d.processesOverviewHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/runtimes/processes/overview", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	var body struct {
-		Processes []processOverviewEntry `json:"processes"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatal(err)
-	}
-	// The daemon-self row plus the four long-lived service children are always
-	// present alongside the task worker, so the row must be found by category.
-	p := findOverviewRow(t, body.Processes, "task_worker")
-	if p.Category != "task_worker" || p.ID != "exec-1" || p.Name != "claude" || p.Detail != "task-1" {
-		t.Fatalf("unexpected task worker overview row: %+v", p)
-	}
-	if p.State != "running" || !p.Ready {
-		t.Fatalf("unexpected task worker state: %+v", p)
-	}
-	if !p.Stoppable {
-		t.Fatalf("task worker must be stoppable in the overview")
 	}
 }
 

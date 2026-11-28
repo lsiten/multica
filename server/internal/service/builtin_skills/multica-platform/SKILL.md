@@ -1,11 +1,13 @@
 ---
 name: multica-platform
-description: "Manage Multica via CLI for issues, requirements, sub-issues, issue wakeups and handoffs, Agent-to-Agent collaboration across Runtimes, local environments, coordination, mentions, chats, agents, squads, autopilots, projects, runtimes, skill import and notifications."
+description: "Multica operations: issues/PRs, requirements, issue wakeups, handoffs, agent collaboration, coordination, chats, notifications, sub-issues, batch, saved views, comment charts/files, mentions, inbox, docs, agents, squads, autopilots, projects, runtimes, local environments, skill import, themes."
 user-invocable: false
 allowed-tools: Bash(multica *), Bash(git *), Bash(gh *)
 ---
 
 # Operating Multica
+
+Use this skill for platform operations, not product-code implementation.
 
 Your runtime brief owns the per-turn workflow: which issue you are on, when to
 comment, what status to write. This skill owns the platform contracts behind
@@ -24,8 +26,12 @@ Read the invariants below, then open the reference(s) your task actually needs
 | `references/issue-wakeups.md` | Issue wakeups: events, conditions, timers, recurring checks and check-ins |
 | `references/coordination.md` | The coordination graph: how a task's project, sub-issues/stages, runs, and squad (leader / members / routing) connect — read it before acting on one node in isolation |
 | `references/agent-collaboration.md` | Agent-to-Agent collaboration across Runtimes: delegate, append, next turn, watch, stop, receipts and operation status |
+| `references/batch-changes.md` | Changing many issues at once (`issue batch update`, `issue delete <id>... --dry-run`): label and property operations, per-issue results, dry runs |
+| `references/dependencies.md` | Making one issue wait for another (`--blocked-by`, `--remove-blocked-by`), finding waiting work (`issue list --blocked`), blockers vs the `blocked` status |
+| `references/sub-issues.md` | Sub-issues: whether to split an issue at all, `todo` vs `backlog` children, ordering them with stages, and the parent wakeups stages drive |
 | `references/mentions.md` | Writing a `mention://` link: which types enqueue a run, which are inert, why one silently did nothing; steering another agent's running turn (`comment add --steer`) |
 | `references/notifications.md` | Personal inbox notification bots: platform credentials, workspace scope, delivery and test-send boundaries |
+| `references/docs.md` | Docs (the workspace knowledge base): reading, searching, editing a doc people may be editing live, folders, review comment threads, version history and restore, which doc actions are human-only |
 | `references/agents.md` | Creating, copying or debugging an agent definition: fields, secrets, MCP config, skill binding |
 | `references/squads.md` | Squads: leader routing, roster, recording leader activity, why a squad did or did not run |
 | `references/autopilots.md` | Autopilots: schedule / webhook / manual triggers, `create_issue` vs `run_only`, why one did not fire |
@@ -35,14 +41,16 @@ Read the invariants below, then open the reference(s) your task actually needs
 | `references/requirements.md` | The requirement dimension: a `kind=requirement` issue, its requirement document, and the confirm/change lifecycle the agent drives with human-request cards |
 | `references/sub-issues.md` | Sub-issues: whether to split an issue at all, `todo` vs `backlog` children, serial chains, stages and the parent wakeups they drive |
 | `references/environments.md` | Local environments in the issue sidebar: writing `.multica/environments.toml`, `multica env start` / `stop` / `list`, detected servers |
-| `references/skill-import.md` | Importing a skill into this workspace from a URL or a local archive |
+| `references/skill-import.md` | Importing a skill into this workspace from a URL or a local archive; editing a workspace skill's content without overwriting someone else's save (`--base-revision`) |
+| `references/themes.md` | Building or changing a Multica app theme: the format, the checker, delivering to Desktop's themes folder or as a `.zip` |
+| `references/inbox.md` | Going through the runtime owner's inbox for them: listing unread notifications, marking read or unread, archiving, snoozing, bulk clean-up (`multica inbox`) |
 
 Open what the task needs. A single-domain task usually needs one; a task that
 crosses domains needs each domain it touches — creating a squad, assigning it an
 issue, then writing a mention needs `squads.md`, `issues.md` and `mentions.md`,
 and skipping one of those means acting on a contract you have not read.
 
-What is never right is reading every reference because you are not sure. Each
+What is never right is reading all of them because you are not sure. Each
 reference states its own contracts in full and none depends on another, so
 pick by domain and skip the rest.
 

@@ -169,7 +169,7 @@ func TestExecutionCallbacksTerminalReplayAndLateReports(t *testing.T) {
 	for range 2 {
 		testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("complete"), f.grant.Token, TaskCompleteRequest{Output: "execution done", SessionID: "running-session"})).Want(200)
 	}
-	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("fail"), f.grant.Token, TaskFailRequest{Error: "late contradiction"})).Want(409)
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("fail"), f.grant.Token, protocol.TaskFailRequest{Error: "late contradiction"})).Want(409)
 	usage := map[string]any{"usage": []TaskUsagePayload{{Provider: "fake", Model: "fake-model", InputTokens: 7}}}
 	for range 2 {
 		testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("usage"), f.grant.Token, usage)).Want(200)
@@ -392,7 +392,7 @@ func TestExecutionEveryReportRejectsReclaimAfterAuthentication(t *testing.T) {
 			case "complete":
 				body = TaskCompleteRequest{Output: "must not persist"}
 			case "fail":
-				body = TaskFailRequest{Error: "must not persist", FailureReason: "agent_error"}
+				body = protocol.TaskFailRequest{Error: "must not persist", FailureReason: "agent_error"}
 			case "usage":
 				body = map[string]any{"usage": []TaskUsagePayload{{Provider: "fake", Model: "must-not-persist", InputTokens: 99}}}
 			case "messages":
@@ -493,7 +493,7 @@ func TestExecutionInventoryPaginationAndLateDecision(t *testing.T) {
 	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("prepare-lease"), f.grant.Token, map[string]any{})).Want(200)
 	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("start"), f.grant.Token, map[string]any{})).Want(200)
 	for range 2 {
-		testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("fail"), f.grant.Token, TaskFailRequest{Error: "fake failure", FailureReason: "agent_error"})).Want(200)
+		testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("fail"), f.grant.Token, protocol.TaskFailRequest{Error: "fake failure", FailureReason: "agent_error"})).Want(200)
 	}
 	report := jevAuditReport(uuid.NewString(), time.Now().UTC(), "success")
 	f.fx.Cleanup(t, "DELETE FROM jev_decision_log WHERE task_id=$1", f.task)
@@ -696,7 +696,7 @@ func TestExecutionNormalizedCompletionReplayKeepsTransportScope(t *testing.T) {
 	if status != "failed" || reason != string(taskfailure.ReasonAgentContextOverflow) {
 		t.Fatalf("normalized terminal=%s %s", status, reason)
 	}
-	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("fail"), grant.Token, TaskFailRequest{Error: "not an authorized transport"})).Want(403)
+	testutil.Call(t, f.router.ServeHTTP, executionRequest("POST", f.taskPath("fail"), grant.Token, protocol.TaskFailRequest{Error: "not an authorized transport"})).Want(403)
 }
 
 // TestExecutionAcquireAdoptsStaleSameDaemonSupervisor is the regression for the

@@ -16,10 +16,11 @@ export {
   canAssignAgentToIssue,
   canEditAgent,
   canEditRuntimeFile,
+  canPurgeRunLog,
 } from "./rules";
 
 export {
   useAgentPermissions,
   useSkillPermissions,
 } from "./use-resource-permissions";
-export { useCurrentMember } from "./use-current-member";
+export { useCurrentMember, useIsGuest } from "./use-current-member";

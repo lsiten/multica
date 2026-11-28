@@ -34,21 +34,9 @@ import (
 // The returned slice contains both reclaimed and freshly-claimed tasks, each
 // already carrying its runtime_id so the daemon routes it to the matching
 // runtime locally.
-func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int) ([]db.AgentTaskQueue, error) {
-	return s.claimTasksForRuntimes(ctx, runtimeIDs, maxTasks, false)
-}
-
-// ClaimTasksForRuntimesFresh bypasses the Redis negative-result cache. Daemons
-// use this on every poll so a missed enqueue invalidation cannot strand work
-// behind the cache TTL. The cache remains available to the singular/legacy
-// path and for deployments that call ClaimTasksForRuntimes directly.
-func (s *TaskService) ClaimTasksForRuntimesFresh(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int) ([]db.AgentTaskQueue, error) {
-	return s.claimTasksForRuntimes(ctx, runtimeIDs, maxTasks, true)
-}
-
-func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int, bypassEmptyCache bool) ([]db.AgentTaskQueue, error) {
+func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pgtype.UUID, maxTasks int, forceRecheckRuntimeIDs ...pgtype.UUID) ([]db.AgentTaskQueue, []string, error) {
 	if len(runtimeIDs) == 0 || maxTasks <= 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// De-dup runtime IDs defensively so MarkEmpty/version bookkeeping stays
@@ -90,7 +78,7 @@ func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		promoted = nil
 	} else if err != nil {
 		s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeErrorPromoteDeferred, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
-		return nil, fmt.Errorf("promote deferred tasks: %w", err)
+		return nil, nil, fmt.Errorf("promote deferred tasks: %w", err)
 	}
 	for _, task := range promoted {
 		slog.Info("deferred task promoted (batch)",
@@ -126,7 +114,7 @@ func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		})
 		if err != nil {
 			s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeErrorReclaimDispatched, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
-			return nil, fmt.Errorf("reclaim stale dispatched tasks: %w", err)
+			return nil, nil, fmt.Errorf("reclaim stale dispatched tasks: %w", err)
 		}
 		// The UPDATE's fixed setup/locking cost dominates array width. Query and
 		// advance the complete machine-level set together so per-runtime backstops
@@ -149,15 +137,20 @@ func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		)
 	}
 	if len(claimed) >= maxTasks {
-		return claimed[:maxTasks], nil
+		return claimed[:maxTasks], nil, nil
 	}
 
 	// 3. Empty-cache short-circuit + version sampling for the remaining runtimes.
 	nonEmpty := make([]pgtype.UUID, 0, len(uniqueIDs))
 	versions := make(map[string]int64, len(uniqueIDs))
+	forceRecheck := make(map[string]bool, len(forceRecheckRuntimeIDs))
+	for _, id := range forceRecheckRuntimeIDs {
+		forceRecheck[util.UUIDToString(id)] = true
+	}
+	forceRechecked := make([]string, 0, len(forceRecheck))
 	for _, rid := range uniqueIDs {
 		key := util.UUIDToString(rid)
-		if !bypassEmptyCache && s.EmptyClaim.IsEmpty(ctx, key) {
+		if !forceRecheck[key] && s.EmptyClaim.IsEmpty(ctx, key) {
 			continue
 		}
 		versions[key] = s.EmptyClaim.CurrentVersion(ctx, key)
@@ -165,7 +158,7 @@ func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 	}
 	if len(nonEmpty) == 0 {
 		s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeEmptyCacheHit, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
-		return claimed, nil
+		return claimed, forceRechecked, nil
 	}
 
 	// 4. One candidate SELECT across the non-empty set.
@@ -183,9 +176,9 @@ func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		if len(claimed) > 0 {
 			slog.Error("batch claim: candidate query failed after partial success; returning claimed tasks to avoid loss",
 				"error", err, "claimed", len(claimed))
-			return claimed, nil
+			return claimed, forceRechecked, nil
 		}
-		return nil, fmt.Errorf("list queued claim candidates: %w", err)
+		return nil, nil, fmt.Errorf("list queued claim candidates: %w", err)
 	}
 
 	// 5. Mark runtimes with zero candidates empty so their next idle poll skips
@@ -200,12 +193,15 @@ func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		key := util.UUIDToString(rid)
 		if _, ok := withCandidates[key]; !ok {
 			s.EmptyClaim.MarkEmpty(ctx, key, versions[key])
+			if forceRecheck[key] {
+				forceRechecked = append(forceRechecked, key)
+			}
 		}
 	}
 
 	if len(candidates) == 0 {
 		s.recordClaimDecision(pgtype.UUID{}, pgtype.UUID{}, claimOutcomeEmptyDB, claimScope{claimPath: claimPathBatch}, claimDecisionDetail{})
-		return claimed, nil
+		return claimed, forceRechecked, nil
 	}
 	candidateCounts := make(map[string]int, len(candidates))
 	for _, candidate := range candidates {
@@ -253,7 +249,7 @@ func (s *TaskService) claimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 
 	// Never discard claims already committed by earlier agents or reclamation.
 	if len(claimed) == 0 && claimErr != nil {
-		return nil, claimErr
+		return nil, forceRechecked, claimErr
 	}
-	return claimed, nil
+	return claimed, forceRechecked, nil
 }

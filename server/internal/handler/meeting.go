@@ -139,8 +139,15 @@ func (h *Handler) ListMeetings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list meetings")
 		return
 	}
+	hidden, ok := h.requestHiddenProjects(w, r, uuidToString(workspaceUUID))
+	if !ok {
+		return
+	}
 	responses := make([]MeetingResponse, 0, len(meetings))
 	for _, meeting := range meetings {
+		if !hidden.CanSeeProject(meeting.ProjectID) {
+			continue
+		}
 		responses = append(responses, meetingResponse(meeting, nil, false))
 	}
 	writeJSON(w, http.StatusOK, responses)
@@ -211,6 +218,9 @@ func (h *Handler) loadMeeting(w http.ResponseWriter, r *http.Request) (db.Meetin
 		} else {
 			writeError(w, http.StatusInternalServerError, "failed to load meeting")
 		}
+		return db.MeetingSession{}, false
+	}
+	if !h.requireProjectVisible(w, r, uuidToString(workspaceUUID), meeting.ProjectID, http.StatusNotFound, "meeting not found") {
 		return db.MeetingSession{}, false
 	}
 	return meeting, true

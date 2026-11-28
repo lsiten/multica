@@ -6,7 +6,6 @@ import type {
 
 const optionalString = z.string().optional();
 const optionalNumber = z.number().finite().nonnegative().optional();
-const capabilities = z.array(z.string()).optional();
 
 const localApplicationSchema = z.object({
   application_id: z.string(),
@@ -17,19 +16,6 @@ const localApplicationSchema = z.object({
   observation: z.unknown().optional(),
 }).passthrough();
 
-const workerProcessSchema = z.object({
-  exec_id: z.string(),
-  instance_id: z.string(),
-  task_id: z.string(),
-  provider: z.string(),
-  state: z.string(),
-  ready: z.boolean(),
-  capabilities,
-  started_at: z.string(),
-  pid: z.number().int().positive().optional(),
-  memory_bytes: optionalNumber,
-  cpu_time_ms: optionalNumber,
-}).passthrough();
 
 const mcpInstanceSchema = z.object({
   name: z.string(),
@@ -91,9 +77,6 @@ const listResponse = z.object({
   applications: z.array(localApplicationSchema).default([]),
 }).loose();
 
-const workerResponse = z.object({
-  processes: z.array(workerProcessSchema).default([]),
-}).loose();
 
 const mcpReadinessResponse = z.object({
   mcp: z.array(mcpInstanceSchema).default([]),
@@ -137,12 +120,6 @@ export function parseDaemonLocalApplications(raw: unknown): Record<string, unkno
   }).applications;
 }
 
-export function parseDaemonWorkerProcesses(raw: unknown): Record<string, unknown>[] {
-  return parseWithFallback(raw, workerResponse, { processes: [] }, {
-    endpoint: "daemon /runtimes/processes",
-    redactPayload: true,
-  }).processes;
-}
 
 export function parseDaemonMcpReadiness(raw: unknown): Record<string, unknown>[] {
   return parseWithFallback(raw, mcpReadinessResponse, { mcp: [] }, {

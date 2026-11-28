@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/events"
+	inboxdelivery "github.com/multica-ai/multica/server/internal/inbox"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/dbid"
@@ -183,7 +184,7 @@ func (s *TaskService) CreateHumanRequest(ctx context.Context, source db.AgentTas
 	}
 	s.publishHumanRequest(result)
 	if inbox.ID.Valid && s.Bus != nil {
-		s.publishQuickCreateInbox(inbox, util.UUIDToString(workspaceID), util.UUIDToString(source.AgentID), "")
+		s.Bus.Publish(inboxdelivery.NewItemEvent(inbox, nil))
 	}
 	if comment.ID.Valid && s.Bus != nil {
 		s.Bus.Publish(events.Event{Type: commentEvent, WorkspaceID: util.UUIDToString(workspaceID), ActorType: "agent", ActorID: util.UUIDToString(source.AgentID), Payload: map[string]any{"comment": comment}})

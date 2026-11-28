@@ -53,8 +53,6 @@
     "days_ago_other": "{{count}} 天前",
     "weeks_ago_other": "{{count}} 周前"
   },
-  "states.empty": "暂无内容",
-  "states.error": "出现错误",
   "human_request": {
     "loading": "正在读取请求...",
     "load_failed": "无法读取请求。请重试，获取当前状态。",

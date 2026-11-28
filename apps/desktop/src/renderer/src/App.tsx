@@ -22,6 +22,10 @@ import { UpdateNotification } from "./components/update-notification";
 import { NativeContextMenu } from "./components/native-context-menu";
 import { IssueWindow } from "./components/issue-window";
 import { DesktopDevToolbar } from "./components/desktop-dev-toolbar";
+import {
+  DESKTOP_EMERGENCY_COPY,
+  resolveDesktopEmergencyLocale,
+} from "./components/emergency-copy";
 import { useTabStore } from "./stores/tab-store";
 import { useWindowOverlayStore } from "./stores/window-overlay-store";
 import { useOpenSettingsShortcut } from "./hooks/use-open-settings-shortcut";
@@ -31,6 +35,8 @@ import { syncDaemonOnLogin } from "./platform/daemon-login-sync";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
 import { captureEvent } from "@multica/core/analytics";
 import { AppearanceSync } from "@multica/views/common/appearance-sync";
+import { MotionProvider } from "@multica/views/common/motion-provider";
+import { useT } from "@multica/views/i18n";
 import { RESOURCES } from "@multica/views/locales";
 import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
@@ -50,6 +56,7 @@ import {
 } from "./platform/session-teardown";
 
 function DesktopLocalApplicationsPage() {
+  const { t } = useT("applications");
   const [applications,setApplications]=useState<Array<{workspace_id:string;runtime_id:string;application_id:string;revision:number}>>([]);
   const [busy,setBusy]=useState<string>("");
   const [error,setError]=useState("");
@@ -64,7 +71,7 @@ function DesktopLocalApplicationsPage() {
     catch(cause){setError(cause instanceof Error?cause.message:"Local operation failed");}
     finally{setBusy("");}
   };
-  return <div className="flex h-screen flex-col"><DragStrip/><main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-auto p-8"><h1 className="text-title font-semibold">Local applications</h1><p className="text-body text-muted-foreground">The server is unavailable. Local application controls remain available; changes will sync when the connection recovers.</p>{syncMessage&&<p role="status" className="text-caption text-muted-foreground">{syncMessage}</p>}{error&&<div className="flex items-center gap-3"><p role="alert" className="text-caption text-destructive">{error}</p><Button size="sm" variant="outline" onClick={load}>Retry</Button></div>}{applications.length===0?<p className="text-body text-muted-foreground">No verified local application recipes are available.</p>:applications.map((application)=><section key={`${application.workspace_id}:${application.application_id}`} className="rounded-lg border p-4"><p className="break-all text-body font-medium">{application.application_id}</p><p className="text-caption text-muted-foreground">Runtime {application.runtime_id} · revision {application.revision}</p><div className="mt-3 flex gap-2">{(["start","stop","restart"] as const).map((action)=><Button key={action} size="sm" variant="outline" disabled={busy!==""} aria-busy={busy===`${application.application_id}:${action}`} onClick={()=>void run(application,action)}>{busy===`${application.application_id}:${action}`?"Working…":action}</Button>)}</div></section>)}</main></div>;
+  return <div className="flex h-screen flex-col"><DragStrip/><main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-auto p-8"><h1 className="text-title font-semibold">{t(($) => $.local_offline.title)}</h1><p className="text-body text-muted-foreground">{t(($) => $.local_offline.description)}</p>{syncMessage&&<p role="status" className="text-caption text-muted-foreground">{syncMessage}</p>}{error&&<div className="flex items-center gap-3"><p role="alert" className="text-caption text-destructive">{error}</p><Button size="sm" variant="outline" onClick={load}>{t(($) => $.retry)}</Button></div>}{applications.length===0?<p className="text-body text-muted-foreground">{t(($) => $.local_offline.empty)}</p>:applications.map((application)=><section key={`${application.workspace_id}:${application.application_id}`} className="rounded-lg border p-4"><p className="break-all text-body font-medium">{application.application_id}</p><p className="text-caption text-muted-foreground">{t(($) => $.runtime)} {application.runtime_id} · {t(($) => $.revision)} {application.revision}</p><div className="mt-3 flex gap-2">{(["start","stop","restart"] as const).map((action)=><Button key={action} size="sm" variant="outline" disabled={busy!==""} aria-busy={busy===`${application.application_id}:${action}`} onClick={()=>void run(application,action)}>{busy===`${application.application_id}:${action}`?t(($) => $.local_offline.working):t(($) => $[action])}</Button>)}</div></section>)}</main></div>;
 }
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
@@ -389,13 +396,22 @@ function AppContent() {
   return user ? <DesktopShell /> : <DesktopLoginPage />;
 }
 
-function BlockingRuntimeConfigError({ message }: { message: string }) {
+function BlockingRuntimeConfigError({
+  locale,
+  message,
+}: {
+  locale: SupportedLocale;
+  message: string;
+}) {
+  const copy = DESKTOP_EMERGENCY_COPY[resolveDesktopEmergencyLocale(locale)];
   return (
     <div className="flex h-screen items-center justify-center bg-background p-8 text-foreground">
       <div className="max-w-xl rounded-lg border bg-card p-6 shadow-sm">
-        <h1 className="text-title font-semibold">Desktop configuration error</h1>
+        <h1 className="text-title font-semibold">{copy.configTitle}</h1>
         <p className="mt-3 text-body text-muted-foreground">
-          Multica Desktop could not load <code>~/.multica/desktop.json</code>. Fix or remove the file and restart the app.
+          {copy.configDescriptionBefore}
+          <code>~/.multica/desktop.json</code>
+          {copy.configDescriptionAfter}
         </p>
         <pre className="mt-4 whitespace-pre-wrap rounded-md bg-muted p-3 text-caption text-muted-foreground">
           {message}
@@ -486,6 +502,7 @@ export default function App() {
   // with the Chinese-first fallback stack before the override kicks in.
   useLayoutEffect(() => {
     document.documentElement.lang = HTML_LANG[locale];
+    window.desktopAPI.setLocale?.(locale);
   }, [locale]);
 
   // React to OS-level language changes detected by main on focus regain.
@@ -507,54 +524,61 @@ export default function App() {
   }, [localeAdapter, locale]);
 
   return (
-    <ThemeProvider>
-      <AppearanceSync />
-      {runtimeConfigResult.ok ? (
-        <CoreProvider
-          apiBaseUrl={runtimeConfigResult.config.apiUrl}
+    <MotionProvider>
+      <ThemeProvider>
+        <AppearanceSync />
+        {runtimeConfigResult.ok ? (
+          <CoreProvider
           localApplicationSupported={(workspaceId,id,runtimeId,revision)=>window.daemonAPI.localApplicationSupported({workspace_id:workspaceId,application_id:id,runtime_id:runtimeId,revision,action:"start",command_id:crypto.randomUUID()})}
           localApplicationOperation={(workspaceId,id,input)=>window.daemonAPI.localApplicationOperation({workspace_id:workspaceId,application_id:id,runtime_id:input.runtime_id,revision:input.revision,action:input.action,command_id:input.idempotency_key})}
-          wsUrl={runtimeConfigResult.config.wsUrl}
-          onLogout={
-            windowContext.kind === "main" ? handleDaemonLogout : undefined
-          }
-          onSessionExpired={
-            windowContext.kind === "main" ? handleSessionExpired : undefined
-          }
-          identity={identity}
-          locale={locale}
-          resources={resources}
-          localeAdapter={localeAdapter}
-        >
-          <LocalVoiceProvider locale={locale}>
-          <DesktopAuthSessionBridge />
-          <NativeContextMenu />
-          {windowContext.kind === "main" && <DiagnosticRouteReporter />}
-          {windowContext.kind === "main" && <WorkspaceWindowBridge />}
-          {windowContext.kind === "main" && <IssueDeepLinkBridge />}
-          {windowContext.kind === "main" && (
-            <DesktopClientUsageReporter
-              apiUrl={runtimeConfigResult.config.apiUrl}
-            />
-          )}
-          <MirrorPlatformProvider value={mirrorPlatform}>{windowContext.kind === "issue" ? (
-            <IssueWindowContent />
-          ) : (
-            <AppContent />
-          )}</MirrorPlatformProvider>
-          </LocalVoiceProvider>
-          {/* Opt-in dev status bar; see "Dev Toolbar" in CONTRIBUTING.md. */}
-          {import.meta.env.DEV &&
-            import.meta.env.VITE_DEV_TOOLBAR &&
-            windowContext.kind === "main" && (
-              <DesktopDevToolbar apiUrl={runtimeConfigResult.config.apiUrl} />
+            apiBaseUrl={runtimeConfigResult.config.apiUrl}
+            wsUrl={runtimeConfigResult.config.wsUrl}
+            onLogout={
+              windowContext.kind === "main" ? handleDaemonLogout : undefined
+            }
+            onSessionExpired={
+              windowContext.kind === "main" ? handleSessionExpired : undefined
+            }
+            identity={identity}
+            locale={locale}
+            resources={resources}
+            localeAdapter={localeAdapter}
+          >
+            <LocalVoiceProvider locale={locale}>
+            <MirrorPlatformProvider value={mirrorPlatform}>
+            <DesktopAuthSessionBridge />
+            <NativeContextMenu />
+            {windowContext.kind === "main" && <DiagnosticRouteReporter />}
+            {windowContext.kind === "main" && <WorkspaceWindowBridge />}
+            {windowContext.kind === "main" && <IssueDeepLinkBridge />}
+            {windowContext.kind === "main" && (
+              <DesktopClientUsageReporter
+                apiUrl={runtimeConfigResult.config.apiUrl}
+              />
             )}
-        </CoreProvider>
-      ) : (
-        <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />
-      )}
-      <Toaster />
-      {windowContext.kind === "main" && <UpdateNotification />}
-    </ThemeProvider>
+            {windowContext.kind === "issue" ? (
+              <IssueWindowContent />
+            ) : (
+              <AppContent />
+            )}
+            {/* Opt-in dev status bar; see "Dev Toolbar" in CONTRIBUTING.md. */}
+            {import.meta.env.DEV &&
+              import.meta.env.VITE_DEV_TOOLBAR &&
+              windowContext.kind === "main" && (
+                <DesktopDevToolbar apiUrl={runtimeConfigResult.config.apiUrl} />
+              )}
+            </MirrorPlatformProvider>
+            </LocalVoiceProvider>
+          </CoreProvider>
+        ) : (
+          <BlockingRuntimeConfigError
+            locale={locale}
+            message={runtimeConfigResult.error.message}
+          />
+        )}
+        <Toaster />
+        {windowContext.kind === "main" && <UpdateNotification />}
+      </ThemeProvider>
+    </MotionProvider>
   );
 }

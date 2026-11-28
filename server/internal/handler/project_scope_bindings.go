@@ -240,6 +240,9 @@ func (h *Handler) loadProjectScopeBindingTarget(w http.ResponseWriter, r *http.R
 		}
 		return db.Project{}, db.Member{}, false
 	}
+	if !h.requireProjectVisible(w, r, workspaceID, project.ID, http.StatusNotFound, "project not found") {
+		return db.Project{}, db.Member{}, false
+	}
 	member, ok := h.workspaceMember(w, r, workspaceID)
 	return project, member, ok
 }

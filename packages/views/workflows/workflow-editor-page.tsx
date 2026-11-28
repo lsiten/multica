@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   DndContext,
@@ -51,6 +51,7 @@ import {
 import { useActorName } from "@multica/core/workspace/hooks";
 import { projectListOptions } from "@multica/core/projects/queries";
 import type {
+  IssueStatusEntry,
   IssueWorkflow,
   IssueWorkflowMappingPlan,
   IssueWorkflowStep,
@@ -89,6 +90,22 @@ import { confirmNavigation } from "../platform/navigation-confirmation";
 const INLINE_FIELD =
   "-mx-1.5 block w-[calc(100%+0.75rem)] rounded-md bg-transparent px-1.5 outline-none transition-colors placeholder:text-muted-foreground read-only:cursor-default hover:[&:not(:read-only)]:bg-accent/60 focus-visible:[&:not(:read-only)]:bg-accent/60 focus-visible:[&:not(:read-only)]:ring-1 focus-visible:[&:not(:read-only)]:ring-ring/40";
 
+
+/** Points columns that would create a status at the one the catalog already has by that name. */
+function withExistingStatuses(draft: Draft, statuses: readonly IssueStatusEntry[]): Draft {
+  const used = new Set(draft.middle.flatMap((c) => ("status_key" in c ? [c.status_key] : [])));
+  let changed = false;
+  const middle = draft.middle.map((column): DraftColumn => {
+    if ("status_key" in column) return column;
+    const name = column.new_name.toLowerCase();
+    const existing = statuses.find((e) => e.name.toLowerCase() === name);
+    if (!existing || isFixedWorkflowStatus(existing.key) || used.has(existing.key)) return column;
+    used.add(existing.key);
+    changed = true;
+    return { id: column.id, status_key: existing.key };
+  });
+  return changed ? { ...draft, middle } : draft;
+}
 
 function mappingPlanFrom(err: unknown): IssueWorkflowMappingPlan | null {
   if (!(err instanceof ApiError) || err.status !== 409 || !err.body || typeof err.body !== "object") return null;
@@ -176,7 +193,7 @@ export function WorkflowEditorPage({
     };
     // Re-seed only when the target changes or the saved row is refreshed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saved?.updated_at, workflowId, seed?.id, template, catalog.activeStatuses.length]);
+  }, [saved?.updated_at, workflowId, seed?.id, template]);
 
   const draftState = useWorkflowDraft(baseline, workflowId ?? `${seed?.id ?? "new"}:${template ?? ""}`, saved?.updated_at ?? "");
   const { draft, setDraft, dirty } = draftState;
@@ -184,6 +201,11 @@ export function WorkflowEditorPage({
   const [newName, setNewName] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  // The catalog can load or change under an open draft; that must not re-seed it.
+  useEffect(
+    () => setDraft((d) => withExistingStatuses(d, catalog.activeStatuses)),
+    [baseline, catalog.activeStatuses, setDraft],
+  );
   const pending = createWorkflow.isPending || updateWorkflow.isPending;
   const mayLeave = () => !pending && (!dirty || confirmNavigation({ message: t(($) => $.workflows.editor.discard_prompt), cancelLabel: t(($) => $.workflows.editor.discard_keep), confirmLabel: t(($) => $.workflows.editor.discard_confirm) }));
   useNavigationGuard(mayLeave, dirty || pending);
@@ -321,7 +343,7 @@ export function WorkflowEditorPage({
   ];
   const current = listed.find((c) => c.id === selectedId) ?? listed[1]!;
   const nextOf = (column: DraftColumn, h: Handoff | undefined) =>
-    h?.next_status_key ?? workflowNextStatus(draftFlow, columnKey(column));
+    h?.next_status_key ?? workflowNextStatus(draftFlow, columnKey(column), catalog.categoryOf);
   const card = (column: DraftColumn) => {
     const key = "status_key" in column ? column.status_key : null;
     const optional = key === "backlog" || key === "blocked";
@@ -540,7 +562,7 @@ export function WorkflowEditorPage({
           off={isOff(current)}
           handoff={draft.handoffs[current.id]}
           flow={flow}
-          defaultNextLabel={columnLabel(workflowNextStatus(draftFlow, columnKey(current)))}
+          defaultNextLabel={columnLabel(workflowNextStatus(draftFlow, columnKey(current), catalog.categoryOf))}
           canEdit={canEdit}
           statusOptions={middleIds.has(current.id) ? addable : null}
           onReplaceStatus={(key) => replaceStatus(current, key)}

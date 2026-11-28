@@ -252,5 +252,11 @@
   "log_info": "資訊",
   "log_debug": "除錯",
   "log_since": "起始時間",
-  "created_by": "建立者"
+  "created_by": "建立者",
+  "local_offline": {
+    "title": "本機應用",
+    "description": "伺服器暫時無法連線。仍可操作本機應用，連線恢復後會同步變更。",
+    "empty": "尚無經過驗證的本機應用設定。",
+    "working": "處理中..."
+  }
 }

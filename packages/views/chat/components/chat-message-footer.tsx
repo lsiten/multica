@@ -9,8 +9,8 @@ import { cn } from "@multica/ui/lib/utils";
 import type { ChatMessage } from "@multica/core/types";
 import type { ChatTimelineItem } from "@multica/core/chat";
 import { extractCopyText } from "../lib/copy-text";
-import { formatElapsedMs } from "../lib/format";
-import { useT } from "../../i18n";
+import { formatElapsedMs, formatMessageTime } from "../lib/format";
+import { useLocale, useT } from "../../i18n";
 import { ChatMessageActions, type ChatMessageActionCallbacks } from "./chat-message-actions";
 
 export function ChatMessageFooter({ message, timeline, isPending, transformContent, onQuoteMessage, onStartDiscussion }: ChatMessageActionCallbacks & {
@@ -19,13 +19,16 @@ export function ChatMessageFooter({ message, timeline, isPending, transformConte
   readonly isPending: boolean;
   readonly transformContent?: (content: string) => string;
 }) {
+  const locale = useLocale();
+  const timeLabel = formatMessageTime(message.created_at, locale);
   const isNoResponse = message.message_kind === "no_response";
   const copyContent = extractCopyText(message, timeline, transformContent);
   const showCopy = !isPending && !isNoResponse && copyContent.trim().length > 0;
   const showActions = !isPending && !isNoResponse && (!!onQuoteMessage || !!onStartDiscussion);
-  if (message.elapsed_ms == null && !showCopy && !showActions) return null;
+  if (message.elapsed_ms == null && !showCopy && !showActions && !timeLabel) return null;
   return <div className="flex flex-wrap items-center gap-1.5">
-    {message.elapsed_ms != null && <ElapsedCaption variant={isNoResponse ? "finished" : "replied"} elapsedMs={message.elapsed_ms} />}
+    {message.elapsed_ms != null && <ElapsedCaption variant={isNoResponse ? "finished" : "replied"} elapsedMs={message.elapsed_ms} timeLabel={timeLabel || undefined} />}
+    {message.elapsed_ms == null && timeLabel && <div className="text-caption text-muted-foreground">{timeLabel}</div>}
     {showCopy && <MessageCopyButton content={copyContent} />}
     {showActions && <ChatMessageActions message={message} onQuoteMessage={onQuoteMessage} onStartDiscussion={onStartDiscussion} inline />}
   </div>;
@@ -43,10 +46,11 @@ function MessageCopyButton({ content }: { readonly content: string }) {
   </Tooltip>;
 }
 
-export function ElapsedCaption({ variant, elapsedMs, className }: {
+export function ElapsedCaption({ variant, elapsedMs, className, timeLabel }: {
   readonly variant: "replied" | "failed" | "finished";
   readonly elapsedMs: number;
   readonly className?: string;
+  readonly timeLabel?: string;
 }) {
   const { t } = useT("chat");
   const elapsed = formatElapsedMs(elapsedMs);
@@ -57,5 +61,5 @@ export function ElapsedCaption({ variant, elapsedMs, className }: {
     case "failed": text = t(($) => $.message_list.failed_after, { elapsed }); break;
     default: { const unhandled: never = variant; return unhandled; }
   }
-  return <div className={cn("text-caption text-muted-foreground", className)}>{text}</div>;
+  return <div className={cn("text-caption text-muted-foreground", className)}>{timeLabel ? `${text} · ${timeLabel}` : text}</div>;
 }

@@ -152,11 +152,10 @@ type Config struct {
 	LLM2JevEnabled                 bool                  // inject semantic decision MCP when supported (default: true)
 	LLM2JevMaxConcurrency          int                   // per-task semantic MCP call concurrency
 	LLM2JevTimeout                 time.Duration         // per-call semantic MCP timeout
-	ControlRuntimeRoot             string
-	EnvironmentRecycleEnabled      bool          // delete environments with no current task consumer
-	EnvironmentArchiveTTL          time.Duration // minimum idle terminal-run retention before automatic archival
-	EnvironmentRecycleInterval     time.Duration // parent-lifecycle scan interval
-	WorktreeStaleTTL               time.Duration // reminder age from authoritative business activity; never deletion authorization
+	EnvironmentRecycleEnabled      bool                  // delete environments with no current task consumer
+	EnvironmentArchiveTTL          time.Duration         // minimum idle terminal-run retention before automatic archival
+	EnvironmentRecycleInterval     time.Duration         // parent-lifecycle scan interval
+	WorktreeStaleTTL               time.Duration         // reminder age from authoritative business activity; never deletion authorization
 	PollInterval                   time.Duration
 	WSClaimPollInterval            time.Duration // upper bound for healthy WS batch-claim safety polls; actual sleeps use downward-only jitter
 	HeartbeatInterval              time.Duration
@@ -469,12 +468,9 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// built-in default. Disabling the daemon's watchdogs has never disabled this
 	// timer, and quietly turning it into "unbounded" here would be a much larger
 	// change than this one.
-	codexSemanticDefault := agentIdleWatchdog
-	if agentToolWatchdog > codexSemanticDefault {
-		codexSemanticDefault = agentToolWatchdog
-	}
-	if codexSemanticDefault <= 0 {
-		codexSemanticDefault = DefaultCodexSemanticInactivityTimeout
+	codexSemanticDefault := DefaultCodexSemanticInactivityTimeout
+	if agentIdleWatchdog > 0 {
+		codexSemanticDefault = max(agentIdleWatchdog, agentToolWatchdog)
 	}
 	codexSemanticInactivityTimeout, err := durationFromEnv("MULTICA_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", codexSemanticDefault)
 	if err != nil {
@@ -573,9 +569,6 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if llm2jevTimeout <= 0 {
 		llm2jevTimeout = 45 * time.Second
 	}
-	// ControlRuntimeRoot defaults empty: the control writes no runtimeproc record,
-	// so a capability-replacing restart is never admitted and the daemon drains before restart.
-	controlRuntimeRoot := strings.TrimSpace(os.Getenv("MULTICA_CONTROL_RUNTIME_ROOT"))
 
 	// Profile
 	profile := overrides.Profile
@@ -781,7 +774,6 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		LLM2JevEnabled:                  llm2jevEnabled,
 		LLM2JevMaxConcurrency:           llm2jevMaxConcurrency,
 		LLM2JevTimeout:                  llm2jevTimeout,
-		ControlRuntimeRoot:              controlRuntimeRoot,
 		PollInterval:                    pollInterval,
 		WSClaimPollInterval:             wsClaimPollInterval,
 		HeartbeatInterval:               heartbeatInterval,

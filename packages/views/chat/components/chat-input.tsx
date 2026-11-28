@@ -33,6 +33,7 @@ import type { MentionItem } from "../../editor/extensions/mention-suggestion";
 import { escapeMarkdownLabel } from "../../editor/utils/escape-markdown-label";
 import type { Attachment, ChatAutonomyPolicyOverride, ChatMessage, Project, Squad } from "@multica/core/types";
 import { ChatInputContext } from "./chat-input-context";
+import { StorageLimitNotice } from "../../billing/storage-limit-notice";
 import { useT } from "../../i18n";
 import { useCommentDraftStore } from "@multica/core/issues/stores";
 import { composeAnnotatedReply, EMPTY_REPLY_ANNOTATIONS, hasReplyIntent } from "@multica/core/drafts/reply-annotation";
@@ -118,6 +119,8 @@ interface ChatInputProps {
   isRunning?: boolean;
   /** Enabled only after the server explicitly advertises follow-up queues. */
   allowSubmitWhileRunning?: boolean;
+  /** Server-confirmed permission and capability for this exact running turn. */
+  canSteerWhileRunning?: boolean;
   disabled?: boolean;
   /** True when the user has no agent available — disables the editor and
    *  surfaces a distinct placeholder. Kept separate from `disabled` so
@@ -180,6 +183,8 @@ interface ChatInputProps {
   onRemoveReference?: (id: string) => void;
   onOpenReference?: (reference: ChatReference) => void;
   onReferencesConsumed?: (ids: readonly string[]) => void;
+  /** Mounted but not shown (the closed floating window): voice input is off. */
+  hidden?: boolean;
   /** Saved quotes from this session's replies, sent ahead of the typed text. */
   annotations?: Pick<ChatAnnotations, "draftKey" | "composer" | "editAnnotation">;
 }
@@ -202,6 +207,7 @@ export function ChatInput({
   stopping,
   isRunning,
   allowSubmitWhileRunning,
+  canSteerWhileRunning,
   disabled,
   noAgent,
   agentArchived,
@@ -231,10 +237,12 @@ export function ChatInput({
   onRemoveReference,
   onOpenReference,
   onReferencesConsumed,
+  hidden = false,
   annotations: annotationSlot,
 }: ChatInputProps) {
   const { t } = useT("chat");
   const { t: tEditor } = useT("editor");
+  const { t: tIssues } = useT("issues");
   const sendShortcut = useShortcut("send");
   const editorRef = useRef<ContentEditorRef>(null);
   const voiceRef = useRef<ChatVoiceInputRef>(null);
@@ -414,6 +422,8 @@ export function ChatInput({
     canRetryUpload,
     removeUpload,
     gate,
+    storageRefusal,
+    dismissStorageRefusal,
   } = useCoordinatedUploads(uploadBinding, storeUploads, {}, uploadGate, editorRef, {
     resolveUploadTarget: () => makeUploadBinding(editorDraftKeyRef.current),
     liveRegistryKey: `chat:${loadedDraftKey}`,
@@ -725,13 +735,14 @@ export function ChatInput({
       const sent = attachedPage
         ? `[${escapeMarkdownLabel(attachedPage.label)}](mention://${attachedPage.type}/${attachedPage.id})\n\n${content}`
         : content;
-      const accepted = await onSend(
+      const sendArgs = [
         sent,
         uniqueActiveIds.length > 0 ? uniqueActiveIds : undefined,
         commitInput,
         sentAttachments,
         effectiveAutonomyPolicy,
-      );
+      ] as const;
+      const accepted = await onSend(...sendArgs);
       // Owner rejected the send (or threw, which useComposerSubmit also treats
       // as a rejection): the draft was never committed, so it stays put for
       // retry. Only a commit — here or by the owner — clears it.
@@ -775,6 +786,10 @@ export function ChatInput({
     !submitting &&
     !isProjectUpdating;
   const canSubmitNow = !disabled && !noAgent && (!isRunning || !!allowSubmitWhileRunning);
+  const showRunHint = isRunning && allowSubmitWhileRunning && canSteerWhileRunning !== undefined
+    && !hasNothingToSend && !disabled && !noAgent;
+  const willSteer = canSteerWhileRunning && draftUploads.length === 0
+    && !inputDraft.includes("](slash://skill/");
 
   return (
     <>
@@ -849,6 +864,13 @@ export function ChatInput({
           togglePageContext();
         }}
       >
+        {showRunHint && (
+          <p role="status" className={cn("px-3 pt-2 text-caption", willSteer ? "text-brand" : "text-muted-foreground")}>
+            {willSteer
+              ? tIssues(($) => $.comment.recipient_steer)
+              : tIssues(($) => $.comment.recipient_after_run)}
+          </p>
+        )}
         {annotationDraftKey && annotations.length > 0 && (
           <div className="px-3 pt-2">
             <ReplyAnnotations draftKey={annotationDraftKey} annotations={annotations} disabled={submitting}
@@ -870,7 +892,7 @@ export function ChatInput({
                 type="button"
                 onClick={() => setAttachedPageKey(null)}
                 aria-label={t(($) => $.input.page_context_remove)}
-                className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground outline-none hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring"
               >
                 <X aria-hidden className="size-3" />
               </button>
@@ -974,6 +996,7 @@ export function ChatInput({
             showBubbleMenu
           />
         </div>
+        {storageRefusal && <StorageLimitNotice refusal={storageRefusal} onDismiss={dismissStorageRefusal} className="mx-2 mb-1" />}
         <div ref={setVoiceFeedbackContainer} data-chat-voice-feedback className="shrink-0" />
         <div data-chat-composer-toolbar className="relative flex min-h-10 shrink-0 items-center justify-between gap-1 px-1.5 pb-1 pointer-coarse:min-h-14">
         {!voiceActive && (
@@ -1011,7 +1034,7 @@ export function ChatInput({
           key={voiceScope}
           ref={voiceRef}
           agentId={agentId}
-          disabled={!!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
+          disabled={hidden || !!disabled || !!noAgent || submitting || loadedDraftKey !== draftKey}
           onActiveChange={setVoiceActive}
           feedbackContainer={voiceFeedbackContainer}
           onBegin={() => {
@@ -1055,7 +1078,7 @@ export function ChatInput({
             loading={submitting}
             busy={gate.uploading}
             // Queue-capable runs reuse this one action slot: an empty composer
-            // offers Stop, while live content swaps it to Queue Send. Older
+            // offers Stop, while live content swaps it to Send. Older
             // servers cannot accept follow-ups, so they remain stop-only. An
             // upload blocks submit, so it also falls back to Stop rather than
             // removing chat's only cancellation path; the attachment node
@@ -1069,14 +1092,12 @@ export function ChatInput({
             tooltip={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
               ? tEditor(($) => $.upload.in_progress)
               : isRunning
-                ? t(($) => $.input.queue_send_tooltip)
+                ? t(($) => $.input.send_tooltip)
                 : sendShortcut
                   ? `${t(($) => $.input.send_tooltip)} · ${formatShortcut(sendShortcut)}`
                   : t(($) => $.input.send_tooltip)}
             ariaLabel={humanReply.bound ? tHuman($ => $.human_request.reply_submit) : gate.uploading
               ? tEditor(($) => $.upload.in_progress)
-              : isRunning
-                ? t(($) => $.input.queue_send_tooltip)
               : t(($) => $.input.send_tooltip)}
             stopTooltip={t(($) => stopping ? $.workspace.stopping : $.input.stop_tooltip)}
             stopAriaLabel={t(($) => stopping ? $.workspace.stopping : $.input.stop_tooltip)}

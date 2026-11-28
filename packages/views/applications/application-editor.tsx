@@ -195,7 +195,7 @@ export function ApplicationEditor({ workspaceId, application, projectId, trigger
   };
   return <><Dialog open={open} onOpenChange={changeOpen}>
     <DialogTrigger render={trigger} />
-    <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-2xl" aria-describedby={undefined}>
+    <DialogContent className="flex max-h-[90%] flex-col sm:max-w-2xl" aria-describedby={undefined}>
       <DialogHeader><DialogTitle>{application ? t(($) => $.edit) : t(($) => $.new)}</DialogTitle></DialogHeader>
       {open && <EditorForm workspaceId={workspaceId} initial={application} projectId={projectId} onStateChange={setState} onSaved={(saved) => runGuardedNavigation(() => { setOpen(false); onSaved?.(saved); }, true)} />}
     </DialogContent>

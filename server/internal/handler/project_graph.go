@@ -91,6 +91,9 @@ func (h *Handler) ListProjectGraphEvents(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
+	if !h.requireProjectVisible(w, r, uuidToString(workspaceID), projectID, http.StatusNotFound, "project not found") {
+		return
+	}
 	limit := int32(100)
 	offset := int32(0)
 	if raw := r.URL.Query().Get("limit"); raw != "" {

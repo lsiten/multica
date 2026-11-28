@@ -30,13 +30,6 @@ type EvaluationContext struct {
 	TaskID       string
 	DispatchedAt time.Time
 
-	// ExecutionIdentity is optional and server-issued; it is never fabricated
-	// for a pre-existing run.
-	ExecutionIdentity *protocol.ExecutionIdentity
-
-	// ProducerAI and ContextGeneration are the AI instance and the logical
-	// context generation; both are separate from execution authority and must
-	// not be confused with the ExecutionIdentity.
 	ProducerAI        string
 	ContextGeneration int64
 

@@ -252,5 +252,11 @@
   "log_info": "Info",
   "log_debug": "Debug",
   "log_since": "Since",
-  "created_by": "Created by"
+  "created_by": "Created by",
+  "local_offline": {
+    "title": "Local applications",
+    "description": "The server is unavailable. Local controls remain available; changes will sync when the connection recovers.",
+    "empty": "No verified local application recipes are available.",
+    "working": "Working..."
+  }
 }

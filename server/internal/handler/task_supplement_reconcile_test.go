@@ -12,7 +12,7 @@ import (
 )
 
 func TestTaskSupplementCompletionDoesNotReplayBoundComments(t *testing.T) {
-	for _, provider := range []string{"codex", "claude", "grok", "cursor", "kiro", "pi"} {
+	for _, provider := range []string{"codex", "claude", "grok", "cursor", "kiro", "pi", "antigravity", "hermes"} {
 		for _, status := range []string{"pending", "delivering", "delivered", "failed"} {
 			for _, ordinary := range []string{"none", "unhandled", "queued"} {
 				t.Run(provider+"/"+status+"/"+ordinary, func(t *testing.T) {

@@ -132,7 +132,8 @@ func payloadToStep(statusKey string, in IssueWorkflowStepPayload) issueworkflow.
 // without a workflow, or pointing at a deleted one, count for Default.
 // Projects the caller may not see (visible returns false) are left out.
 func (h *Handler) projectIDsByWorkflow(ctx context.Context, wsUUID pgtype.UUID, rows []db.IssueWorkflow, visible func(db.Project) bool) (map[string][]string, error) {
-	projects, err := h.Queries.ListProjects(ctx, db.ListProjectsParams{WorkspaceID: wsUUID})
+	// Archived projects still run on their workflow, so they count as users.
+	projects, err := h.Queries.ListProjects(ctx, db.ListProjectsParams{WorkspaceID: wsUUID, IncludeArchived: true})
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +168,7 @@ func (h *Handler) workflowStatusCatalog(ctx context.Context, q *db.Queries, wsUU
 	if err := issuestatus.Ensure(ctx, q, wsUUID); err != nil {
 		return nil, err
 	}
-	rows, err := q.ListIssueStatusEntries(ctx, db.ListIssueStatusEntriesParams{WorkspaceID: wsUUID, IncludeArchived: true})
+	rows, err := q.ListIssueStatusEntries(ctx, db.ListIssueStatusEntriesParams{WorkspaceID: wsUUID})
 	if err != nil {
 		return nil, err
 	}
@@ -695,13 +696,7 @@ func (h *Handler) publishIssueWorkflowChanged(workspaceID string, actor db.Membe
 // changed and returns the project as the API shapes it.
 func (h *Handler) publishProjectWorkflowUpdate(ctx context.Context, workspaceID string, member db.Member, project db.Project) ProjectResponse {
 	resp := projectToResponse(project)
-	if stats, ok := h.loadProjectIssueStats(ctx, project.WorkspaceID, project.ID); ok {
-		resp.IssueCount = stats.TotalCount
-		resp.DoneCount = stats.DoneCount
-		resp.LeafIssueCount = stats.LeafCount
-		resp.DoneLeafCount = stats.DoneLeafCount
-		resp.OpenParentCount = stats.OpenParentCount
-	}
+	h.fillProjectIssueStats(ctx, &resp, project)
 	resp.ResourceCount = h.loadProjectResourceCount(ctx, project.ID)
 	h.publish(protocol.EventProjectUpdated, workspaceID, "member", uuidToString(member.UserID), map[string]any{"project": resp})
 	return resp
@@ -1144,6 +1139,15 @@ func (h *Handler) PreviewIssueWorkflowBrief(w http.ResponseWriter, r *http.Reque
 		IssueIdentifier: h.getIssuePrefix(ctx, wsUUID) + "-123",
 		StatusName: func(key string) string {
 			return resolver.Name(ctx, h.Queries, key)
+		},
+		EffectiveStatus: func(key string) string {
+			return resolver.Effective(ctx, h.Queries, key)
+		},
+		StatusCategory: func(key string) string {
+			return resolver.Category(ctx, h.Queries, key)
+		},
+		StatusDescription: func(key string) string {
+			return resolver.Description(ctx, h.Queries, key)
 		},
 		HandlerName: func(s issueworkflow.Step) string {
 			switch s.Handler.Type {

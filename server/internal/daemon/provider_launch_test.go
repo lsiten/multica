@@ -6,12 +6,7 @@ import (
 	"time"
 )
 
-// TestBuildProviderExecOptions is the behaviour-preservation gate for the shared
-// launch seam of the F3 provider-run migration: the legacy runner (runTask) and
-// the per-execution task worker build an identical agent.ExecOptions from the
-// same facts. It asserts the exact field mapping the extraction moved out of
-// runTask, so a future change to the shared assembly cannot drift from the
-// legacy run.
+// TestBuildProviderExecOptions covers the task-specific provider options.
 func TestBuildProviderExecOptions(t *testing.T) {
 	// PriorSessionResumeUnavailable makes backendResumeContinuityNotice return
 	// "" deterministically, so the test pins the resume mapping without

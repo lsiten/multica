@@ -1,4 +1,5 @@
 "use client";
+import { issueRouteRef } from "@multica/core/paths/paths";
 import { useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { projectCollaborationEvidenceInfiniteOptions, type ProjectCollaborationFilters } from "@multica/core/collaboration";
@@ -39,7 +40,7 @@ export function CollaborationEvidenceDrawer({projectId,filters,selection,graph,o
   const runs=byIssue.get(issue.id)??[];
   return <details key={issue.id} open className="rounded-md border p-3">
    <summary className={"cursor-pointer text-caption font-medium"+(issue.context_only?" text-muted-foreground":"")}><span>{issue.key} · {issue.title}</span> <span className="text-muted-foreground">{issue.status?statusLabel(issue.status):""}</span>{issue.context_only&&<span className="ml-2 text-muted-foreground">{t($=>$.context_task)}</span>}</summary>
-   <div className="mt-2 space-y-2"><AppLink className="text-caption underline" href={paths.issueDetail(issue.key||issue.id)}>{t($=>$.open_task)}</AppLink>
+   <div className="mt-2 space-y-2"><AppLink className="text-caption underline" href={paths.issueDetail(issueRouteRef({ id: issue.id, identifier: issue.key }))}>{t($=>$.open_task)}</AppLink>
     {runs.map(run=><CollaborationRun key={run.task_id} projectId={projectId} run={run}/>)}
     {children.length>0&&<div className="ml-3 space-y-2 border-l pl-3">{children.map(child=>renderIssue(child,path))}</div>}
    </div>
@@ -92,8 +93,8 @@ function CollaborationRun({run,projectId,allowSource=true}:{run:ProjectCollabora
    <p>{t($=>$.task_events,{id:run.task_id,count:run.event_count})}</p>
    <p>{t($=>$.started)} {run.started_at?new Date(run.started_at).toLocaleString(locale):"—"} · {t($=>$.finished)} {run.completed_at?new Date(run.completed_at).toLocaleString(locale):"—"}</p>
    {run.source_task_id?<><p>{t($=>$.source_task,{id:run.source_task_id})} · {run.source_agent_name} · {relationLabels[run.relation_type]??run.relation_type}</p>{allowSource&&<SourceRunPreview projectId={projectId} runId={run.source_task_id}/>}</>:run.relation_type==="unknown"?<p>{t($=>$.source_missing)}</p>:null}
-   {run.source_issue_id&&<AppLink className="underline" href={paths.issueDetail(run.source_issue_id)}>{t($=>$.open_task)} · {run.source_agent_name}</AppLink>}
-   {run.issue_id&&run.trigger_comment_id&&<AppLink className="underline" href={paths.issueDetail(run.issue_key||run.issue_id)+"#comment-"+run.trigger_comment_id}>{t($=>$.open_trigger)}</AppLink>}
+   {run.source_issue_id&&<AppLink className="underline" href={paths.issueDetail(issueRouteRef({ id: run.source_issue_id, identifier: undefined }))}>{t($=>$.open_task)} · {run.source_agent_name}</AppLink>}
+   {run.issue_id&&run.trigger_comment_id&&<AppLink className="underline" href={paths.issueDetail(issueRouteRef({ id: run.issue_id, identifier: run.issue_key }))+"#comment-"+run.trigger_comment_id}>{t($=>$.open_trigger)}</AppLink>}
    {(run.artifacts??[]).map(artifact=><Button key={artifact.id} variant="outline" size="sm" disabled={downloading} onClick={()=>void download(artifact.id,artifact.filename)}>{artifact.filename}</Button>)}
    {(run.events??[]).map(event=><p key={event.id}><span title={event.event_type}>{eventLabels[event.event_type]??t($=>$.runtime_event)}</span> · {new Date(event.created_at).toLocaleString(locale)}</p>)}
    {error&&<p role="alert" className="text-destructive">{t($=>$.download_failed)}</p>}
@@ -106,5 +107,5 @@ function SourceRunPreview({projectId,runId}:{projectId:string;runId:string}){
  const [open,setOpen]=useState(false);
  const query=useQuery({queryKey:["collaboration-graph","source-run",wsId,projectId,runId],queryFn:()=>api.getProjectCollaborationEvidence(projectId,{activity:"all",run_id:runId,limit:1}),enabled:open,staleTime:15_000,refetchInterval:open?15_000:false});
  const source=query.data?.evidence[0];
- return <div className="space-y-2"><Button size="sm" variant="outline" aria-expanded={open} onClick={()=>setOpen(current=>!current)}>{t($=>$.open_source_run)}</Button>{open&&(query.isPending?<p role="status">{t($=>$.loading_more)}</p>:query.isError?<div role="alert">{t($=>$.load_failed)} <Button size="sm" variant="outline" onClick={()=>void query.refetch()}>{t($=>$.retry)}</Button></div>:source?<div className="space-y-2 rounded-md border p-2">{source.issue_id&&<AppLink className="underline" href={paths.issueDetail(source.issue_key||source.issue_id)}>{source.issue_key} · {source.issue_title}</AppLink>}<CollaborationRun projectId={projectId} run={source} allowSource={false}/></div>:<p>{t($=>$.source_missing)}</p>)}</div>;
+ return <div className="space-y-2"><Button size="sm" variant="outline" aria-expanded={open} onClick={()=>setOpen(current=>!current)}>{t($=>$.open_source_run)}</Button>{open&&(query.isPending?<p role="status">{t($=>$.loading_more)}</p>:query.isError?<div role="alert">{t($=>$.load_failed)} <Button size="sm" variant="outline" onClick={()=>void query.refetch()}>{t($=>$.retry)}</Button></div>:source?<div className="space-y-2 rounded-md border p-2">{source.issue_id&&<AppLink className="underline" href={paths.issueDetail(issueRouteRef({ id: source.issue_id, identifier: source.issue_key }))}>{source.issue_key} · {source.issue_title}</AppLink>}<CollaborationRun projectId={projectId} run={source} allowSource={false}/></div>:<p>{t($=>$.source_missing)}</p>)}</div>;
 }

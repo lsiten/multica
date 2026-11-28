@@ -582,7 +582,7 @@ WHERE id = $1;
 INSERT INTO chat_message (
     chat_session_id, role, content, task_id, failure_reason, elapsed_ms,
     message_kind, quick_actions, channel_media_pending_until, channel_ingested,
-    channel_context_revision, author_type, author_id, id
+    channel_context_revision, author_type, author_id, id, wakeup_id
 )
 VALUES (
     $1, $2, $3, sqlc.narg(task_id), sqlc.narg(failure_reason), sqlc.narg(elapsed_ms),
@@ -600,7 +600,8 @@ VALUES (
     sqlc.narg(channel_context_revision),
     sqlc.narg(author_type),
     sqlc.narg(author_id),
-    COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
+    COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()),
+    sqlc.narg(wakeup_id)::uuid
 )
 RETURNING *;
 
@@ -874,11 +875,19 @@ RETURNING task.*;
 -- member the product's internal prompt as their restored draft, and silently
 -- drop what they actually typed. Callers release the kickoff separately
 -- (ReleaseOnboardingKickoffFromTask) so the next send re-adopts it.
-DELETE FROM chat_message
-WHERE task_id = $1
-  AND role = 'user'
-  AND message_kind <> 'onboarding_kickoff'
-RETURNING *;
+DELETE FROM chat_message AS message
+WHERE message.task_id = $1
+  AND message.role = 'user'
+  AND message.message_kind <> 'onboarding_kickoff'
+  -- A wakeup turn's input is the platform's, never a draft to restore.
+  AND message.message_kind <> 'wakeup'
+  -- Guidance already accepted into a run is conversation history, not the
+  -- original draft restored by Stop. A requeued message is editable normally.
+  AND NOT EXISTS (
+      SELECT 1 FROM chat_task_supplement s
+      WHERE s.message_id = message.id AND s.status <> 'requeued'
+  )
+RETURNING message.*;
 
 -- name: ReleaseOnboardingKickoffFromTask :exec
 -- Hands an adopted kickoff on to the session's next un-started turn when its
@@ -1463,6 +1472,13 @@ WHERE id = $1;
 -- The chat sender (initiator) is a direct_human originator and accountable;
 -- attribution provenance is stamped so this path is not a NULL-source enqueue
 -- bypass (MUL-4302 §2).
+WITH enqueue_agent AS MATERIALIZED (
+    SELECT a.id, COALESCE(a.runtime_id, sqlc.narg(runtime_id)::uuid) AS runtime_id
+    FROM agent a
+    WHERE a.id = sqlc.arg(agent_id)
+      AND lock_task_owner_rows(a.id, NULL, COALESCE(a.runtime_id, sqlc.narg(runtime_id)::uuid))
+    FOR KEY SHARE OF a
+)
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, chat_session_id, squad_id,
     initiator_user_id, originator_user_id, accountable_user_id, force_fresh_session, context, runtime_mcp_overlay,
@@ -1470,18 +1486,18 @@ INSERT INTO agent_task_queue (
     fire_at, channel_context_revision, id
 )
 SELECT
-    $1, $2, NULL,
+    sqlc.arg(agent_id), enqueue_agent.runtime_id, NULL,
     CASE WHEN sqlc.narg('fire_at')::timestamptz IS NULL THEN 'queued' ELSE 'deferred' END,
-    $3, $4,
-    (SELECT squad_id FROM chat_session WHERE id = $4),
-    $5,
+    sqlc.arg(priority), sqlc.narg(chat_session_id),
+    (SELECT squad_id FROM chat_session WHERE id = sqlc.narg(chat_session_id)),
+    sqlc.narg(initiator_user_id),
     sqlc.narg(originator_user_id),
     sqlc.narg(accountable_user_id),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     COALESCE(sqlc.narg(context)::jsonb, '{}'::jsonb)
       || jsonb_build_object(
-          'project_id', (SELECT project_id::text FROM chat_session WHERE id = $4),
-          'squad_id', (SELECT squad_id::text FROM chat_session WHERE id = $4)
+          'project_id', (SELECT project_id::text FROM chat_session WHERE id = sqlc.narg(chat_session_id)),
+          'squad_id', (SELECT squad_id::text FROM chat_session WHERE id = sqlc.narg(chat_session_id))
       ),
     sqlc.narg(runtime_mcp_overlay),
     sqlc.narg(runtime_connected_apps),
@@ -1491,7 +1507,7 @@ SELECT
     sqlc.narg('fire_at')::timestamptz,
     sqlc.narg('channel_context_revision')::bigint,
     COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
-WHERE lock_task_owner_rows($1, NULL, $2)
+FROM enqueue_agent
 RETURNING *;
 
 -- name: PromoteChannelChatTasksIfMediaReady :many
@@ -1639,7 +1655,10 @@ WITH retired_sessions AS (
       )
 ), latest_per_session AS (
     SELECT DISTINCT ON (t.session_id)
-        t.session_id, t.work_dir, t.runtime_id, t.status, t.failure_reason, t.error, t.completed_at
+        t.session_id, t.work_dir, t.runtime_id, t.status, t.failure_reason,
+        -- Match the issue resume query and taskfailure.WithoutCodebuddyProtocolSummary.
+        regexp_replace(COALESCE(t.error, ''), '^\[codebuddy protocol: exit_code=-?[0-9]+ stdout_bytes=[0-9]+ stderr_bytes=[0-9]+ event_count=[0-9]+ invalid_event_count=[0-9]+ assistant_event_count=[0-9]+ tool_use_count=[0-9]+ saw_result=(true|false) result_is_error=(true|false) result_bytes=[0-9]+ last_assistant_bytes=[0-9]+ scanner_error=(true|false)\]$', '', 'gn') AS error,
+        t.completed_at
     FROM agent_task_queue t
     WHERE t.chat_session_id = sqlc.arg('chat_session_id')
       AND t.context->>'project_id' IS NOT DISTINCT FROM (
@@ -1761,10 +1780,12 @@ SELECT
     -- renderer reads it only for the waiting one.
     task.wait_reason,
     message.id AS message_id,
-    COALESCE(message.content, '')::text AS content
+    COALESCE(message.content, '')::text AS content,
+    COALESCE(message.message_kind, 'message')::text AS message_kind,
+    message.wakeup_id
 FROM agent_task_queue AS task
 LEFT JOIN LATERAL (
-    SELECT input.id, input.content
+    SELECT input.id, input.content, input.message_kind, input.wakeup_id
     FROM chat_message AS input
     WHERE input.task_id = COALESCE(task.chat_input_task_id, task.id)
       AND input.role = 'user'

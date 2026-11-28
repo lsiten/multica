@@ -174,12 +174,21 @@ func (h *Handler) ListJevDecisionLogs(w http.ResponseWriter, r *http.Request) {
 		asOf = times["as_of"].Time
 	}
 	snapshot := pgtype.Timestamptz{Time: asOf, Valid: true}
-	rows, err := h.Queries.ListJevDecisionLogs(r.Context(), db.ListJevDecisionLogsParams{WorkspaceID: wsID, AsOf: snapshot, Query: query, AgentQuery: agentQuery, ResultClass: status, Source: source, FromTime: times["from"], ToTime: times["to"], PageLimit: limit, PageOffset: offset})
+	hidden, ok := h.requestHiddenProjects(w, r, uuidToString(wsID))
+	if !ok {
+		return
+	}
+	hiddenTaskIDs, err := h.hiddenJevDecisionTasks(r.Context(), wsID, hidden)
+	if err != nil {
+		writeProjectAccessError(w, r, uuidToString(wsID), err)
+		return
+	}
+	rows, err := h.Queries.ListJevDecisionLogs(r.Context(), db.ListJevDecisionLogsParams{HiddenTaskIds: hiddenTaskIDs, WorkspaceID: wsID, AsOf: snapshot, Query: query, AgentQuery: agentQuery, ResultClass: status, Source: source, FromTime: times["from"], ToTime: times["to"], PageLimit: limit, PageOffset: offset})
 	if err != nil {
 		writeError(w, 500, "failed to load Jev decision logs")
 		return
 	}
-	total, err := h.Queries.CountJevDecisionLogs(r.Context(), db.CountJevDecisionLogsParams{WorkspaceID: wsID, AsOf: snapshot, Query: query, AgentQuery: agentQuery, ResultClass: status, Source: source, FromTime: times["from"], ToTime: times["to"]})
+	total, err := h.Queries.CountJevDecisionLogs(r.Context(), db.CountJevDecisionLogsParams{HiddenTaskIds: hiddenTaskIDs, WorkspaceID: wsID, AsOf: snapshot, Query: query, AgentQuery: agentQuery, ResultClass: status, Source: source, FromTime: times["from"], ToTime: times["to"]})
 	if err != nil {
 		writeError(w, 500, "failed to count Jev decision logs")
 		return
@@ -220,6 +229,18 @@ func (h *Handler) GetJevDecisionLog(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, 500, "failed to load Jev decision log")
+		return
+	}
+	task, err := h.Queries.GetAgentTask(r.Context(), row.TaskID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "Jev decision log not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to load decision task")
+		}
+		return
+	}
+	if !h.requireTaskVisible(w, r, uuidToString(wsID), task, http.StatusNotFound, "Jev decision log not found") {
 		return
 	}
 	var record protocol.JevDecisionLog

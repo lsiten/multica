@@ -20,7 +20,7 @@ export function BuiltinMcpDetailsButton({name}:{name:string}){
  const instances=(query.data?.instances??[]).filter(item=>item.name===name&&(!item.workspace_id||item.workspace_id===workspace?.id));
  return <Dialog open={open} onOpenChange={setOpen}>
   <DialogTrigger render={<Button size="sm" variant="outline" aria-label={`${t($=>$.jev.view_details)} · ${name}`}/>}>{t($=>$.jev.view_details)}</DialogTrigger>
-  <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+  <DialogContent className="max-h-[85%] overflow-y-auto sm:max-w-2xl">
    <DialogHeader><DialogTitle>{name}</DialogTitle><DialogDescription>{t($=>$.jev.service_details_hint)}</DialogDescription></DialogHeader>
    {!daemon?.getBuiltinMcpServices?<p role="status" className="text-caption">{t($=>$.jev.daemon_unavailable)}</p>:query.isPending?<p role="status">{t($=>$.jev.loading)}</p>:query.isError?<div role="alert" className="space-y-2 text-caption"><p>{query.error.message}</p><Button size="sm" variant="outline" onClick={()=>void query.refetch()}>{t($=>$.jev.retry)}</Button></div>:service?<div className="space-y-4">
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-caption"><dt>{t($=>$.jev.transport)}</dt><dd>{service.transport}</dd><dt>{t($=>$.jev.authorization)}</dt><dd>{service.requires_capability?t($=>$.jev.identity_authorization):t($=>$.jev.provider_context)}</dd></dl>

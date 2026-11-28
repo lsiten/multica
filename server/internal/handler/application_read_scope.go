@@ -9,6 +9,17 @@ import (
 )
 
 func (h *Handler) filterReadableApplications(w http.ResponseWriter, r *http.Request, workspaceID pgtype.UUID, member db.Member, applications []application.View) ([]application.View, bool) {
+	hidden, ok := h.requestHiddenProjects(w, r, uuidToString(workspaceID))
+	if !ok {
+		return nil, false
+	}
+	projectVisible := make([]application.View, 0, len(applications))
+	for _, app := range applications {
+		if hidden.CanSeeProject(parseUUID(app.ProjectID)) {
+			projectVisible = append(projectVisible, app)
+		}
+	}
+	applications = projectVisible
 	actorType, actorID := h.resolveActor(r, uuidToString(member.UserID), uuidToString(workspaceID))
 	if actorType != "agent" {
 		return applications, true

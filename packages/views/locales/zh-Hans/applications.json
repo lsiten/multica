@@ -252,5 +252,11 @@
   "log_info": "信息",
   "log_debug": "调试",
   "log_since": "起始时间",
-  "created_by": "创建者"
+  "created_by": "创建者",
+  "local_offline": {
+    "title": "本地应用",
+    "description": "服务器暂不可用。仍可操作本地应用，连接恢复后会同步改动。",
+    "empty": "暂无经过验证的本地应用配置。",
+    "working": "处理中..."
+  }
 }

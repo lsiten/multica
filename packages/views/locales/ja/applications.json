@@ -252,5 +252,11 @@
   "log_info": "情報",
   "log_debug": "デバッグ",
   "log_since": "開始日",
-  "created_by": "作成者"
+  "created_by": "作成者",
+  "local_offline": {
+    "title": "ローカルアプリ",
+    "description": "サーバーに接続できません。ローカル操作は利用でき、接続が復旧すると変更が同期されます。",
+    "empty": "検証済みのローカルアプリ設定はありません。",
+    "working": "処理中..."
+  }
 }

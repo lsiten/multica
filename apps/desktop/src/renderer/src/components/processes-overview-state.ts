@@ -1,6 +1,5 @@
 export type ProcessCategory =
   | "daemon"
-  | "task_worker"
   | "ai"
   | "application"
   | "gateway"
@@ -11,7 +10,6 @@ export type ProcessCategory =
 
 export const PROCESS_CATEGORIES: readonly ProcessCategory[] = [
   "daemon",
-  "task_worker",
   "ai",
   "application",
   "gateway",

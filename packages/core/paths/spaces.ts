@@ -7,9 +7,9 @@
  */
 
 export type AppSpaceId =
-  | "inbox"
   | "applications"
   | "work"
+  | "docs"
   | "team"
   | "chat"
   | "meetings"
@@ -21,9 +21,9 @@ export type RailSpaceId = Exclude<AppSpaceId, "settings">;
 
 /** Spaces in rail order. */
 export const RAIL_SPACES: readonly RailSpaceId[] = [
-  "inbox",
   "applications",
   "work",
+  "docs",
   "team",
   "chat",
   "meetings",
@@ -31,7 +31,8 @@ export const RAIL_SPACES: readonly RailSpaceId[] = [
 ];
 
 const SPACE_BY_SEGMENT: Record<string, AppSpaceId> = {
-  inbox: "inbox",
+  // The full notification list; its sidebar section heads the Work panel.
+  inbox: "work",
   applications: "applications",
   "my-issues": "work",
   issues: "work",
@@ -41,6 +42,8 @@ const SPACE_BY_SEGMENT: Record<string, AppSpaceId> = {
   squads: "team",
   members: "team",
   skills: "team",
+  docs: "docs",
+  apps: "team",
   runtimes: "team",
   usage: "team",
   chat: "chat",

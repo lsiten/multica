@@ -71,6 +71,9 @@ type IssueStatusData struct {
 // observer's — and goes into the per-turn prompt as is.
 type ProjectWorkflowData struct {
 	Brief string `json:"brief"`
+	// StatusMap marks a status-map brief (MUL-9913); an older server sends
+	// the per-step command brief and leaves it false.
+	StatusMap bool `json:"status_map,omitempty"`
 }
 
 // Task represents a claimed task from the server.
@@ -175,6 +178,17 @@ type Task struct {
 	GroupCollaborationPhase       string                       `json:"group_collaboration_phase,omitempty"`
 	GroupCollaborationLeadPlan    string                       `json:"group_collaboration_lead_plan,omitempty"`
 	GroupCollaborationReports     string                       `json:"group_collaboration_reports,omitempty"`
+	ProjectArchived               bool                         `json:"project_archived,omitempty"`        // project is archived; the brief says so
+	DocsEnabled                   bool                         `json:"docs_enabled,omitempty"`            // the server's docs_v1 flag. Absent on servers predating it, which reads as false: the brief leaves out the `multica doc` and mention://doc lines
+	ChatSkillMessage              *string                      `json:"chat_skill_message,omitempty"`      // verified member-authored input only; excludes system kickoff and agent messages
+	ChatResumeMessage             *string                      `json:"chat_resume_message,omitempty"`     // input excluding guidance already in PriorSessionID
+	DocID                         string                       `json:"doc_id,omitempty"`                  // non-empty for doc discussion tasks (MUL-9933)
+	DocThreadID                   string                       `json:"doc_thread_id,omitempty"`           // the discussion's first comment; replies go under it
+	DocCommentID                  string                       `json:"doc_comment_id,omitempty"`          // the comment that triggered the run
+	DocTitle                      string                       `json:"doc_title,omitempty"`               // the doc's title
+	DocThreadQuote                string                       `json:"doc_thread_quote,omitempty"`        // the doc text the discussion is about
+	DocCommentContent             string                       `json:"doc_comment_content,omitempty"`     // the triggering comment; empty when it was deleted before the claim
+	DocCommentAuthorName          string                       `json:"doc_comment_author_name,omitempty"` // who wrote the triggering comment
 
 	ChatSource *protocol.ChatSource `json:"chat_source,omitempty"`
 	// ChatFeishuSource is the Feishu ids of the message a Feishu chat task
@@ -345,15 +359,14 @@ type TaskUsageEntry struct {
 
 // TaskResult is the outcome of executing a task.
 type TaskResult struct {
-	Execution               *protocol.ExecutionIdentity `json:"-"`
-	WorktreeDeliveryPending bool                        `json:"worktree_delivery_pending,omitempty"`
-	WorktreeCommit          string                      `json:"worktree_commit,omitempty"`
-	Status                  string                      `json:"status"`
-	Comment                 string                      `json:"comment"`
-	BranchName              string                      `json:"branch_name,omitempty"`
-	EnvType                 string                      `json:"env_type,omitempty"`
-	SessionID               string                      `json:"session_id,omitempty"` // Claude session ID for future resumption
-	WorkDir                 string                      `json:"work_dir,omitempty"`   // working directory used during execution
+	WorktreeDeliveryPending bool   `json:"worktree_delivery_pending,omitempty"`
+	WorktreeCommit          string `json:"worktree_commit,omitempty"`
+	Status                  string `json:"status"`
+	Comment                 string `json:"comment"`
+	BranchName              string `json:"branch_name,omitempty"`
+	EnvType                 string `json:"env_type,omitempty"`
+	SessionID               string `json:"session_id,omitempty"` // Claude session ID for future resumption
+	WorkDir                 string `json:"work_dir,omitempty"`   // working directory used during execution
 	// DurableWorkDir replaces WorkDir only after a disposable local worktree
 	// was finalized and its removal was confirmed. Empty keeps WorkDir authoritative.
 	DurableWorkDir string `json:"durable_work_dir,omitempty"`
@@ -365,6 +378,7 @@ type TaskResult struct {
 	// Owner-side identity, not a backend wire field.
 	PhysicalPreparationID string `json:"-"`
 	FailureReason         string `json:"-"` // classifier forwarded to FailTask on the blocked path; empty falls back to 'agent_error'
+	NoToolCallsStarted    bool   `json:"-"` // positive evidence from the original prompt
 	// SessionRolloutMissing is set when the daemon withheld this task's Codex
 	// session because its rollout was not in the store (MUL-5305). Forwarded to
 	// the terminal report so the server clears the resume pointer and flags the

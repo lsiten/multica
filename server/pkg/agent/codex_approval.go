@@ -8,13 +8,15 @@ import (
 )
 
 func (c *codexClient) requestHumanApproval(id int, method string, params json.RawMessage) {
+	cfg := c.cfg
+	approvalContext := c.approvalContext
 	reply := func(approved bool, unavailable bool) {
 		if method == "mcpServer/elicitation/request" {
 			action := "decline"
 			if unavailable {
 				action = "cancel"
-				if c.cfg.Logger != nil {
-					c.cfg.Logger.Warn("codex: MCP approval unavailable; cancelling tool call", "method", method)
+				if cfg.Logger != nil {
+					cfg.Logger.Warn("codex: MCP approval unavailable; cancelling tool call", "method", method)
 				}
 			} else if approved {
 				action = "accept"
@@ -42,7 +44,7 @@ func (c *codexClient) requestHumanApproval(id int, method string, params json.Ra
 		}
 		c.respond(id, map[string]any{"decision": decision})
 	}
-	if c.cfg.RequestApproval == nil || c.approvalContext == nil || len(params) > 1800 || !json.Valid(params) {
+	if cfg.RequestApproval == nil || approvalContext == nil || len(params) > 1800 || !json.Valid(params) {
 		reply(false, true)
 		return
 	}
@@ -53,6 +55,7 @@ func (c *codexClient) requestHumanApproval(id int, method string, params json.Ra
 		return
 	}
 	c.approvalPending = true
+	generation := c.approvalGeneration
 	var requestItem struct {
 		ItemID       string         `json:"itemId"`
 		CallID       string         `json:"call_id"`
@@ -74,8 +77,14 @@ func (c *codexClient) requestHumanApproval(id int, method string, params json.Ra
 	}
 	// The reader must keep draining notifications while the reviewer decides.
 	go func() {
-		defer func() { c.mu.Lock(); c.approvalPending = false; c.mu.Unlock() }()
-		ctx, cancel := context.WithTimeout(c.approvalContext, 2*time.Minute)
+		defer func() {
+			c.mu.Lock()
+			if c.approvalGeneration == generation {
+				c.approvalPending = false
+			}
+			c.mu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(approvalContext, 2*time.Minute)
 		defer cancel()
 		go func() {
 			select {
@@ -84,7 +93,7 @@ func (c *codexClient) requestHumanApproval(id int, method string, params json.Ra
 			case <-ctx.Done():
 			}
 		}()
-		approved, err := c.cfg.RequestApproval(ctx, ApprovalRequest{Method: method, Params: append(json.RawMessage(nil), params...), FileChanges: files})
+		approved, err := cfg.RequestApproval(ctx, ApprovalRequest{Method: method, Params: append(json.RawMessage(nil), params...), FileChanges: files})
 		reply(err == nil && ctx.Err() == nil && approved, err != nil || ctx.Err() != nil)
 	}()
 }
