@@ -13,9 +13,10 @@ import { GitUncommittedChanges, GitCommitList } from "./git-live-changes";
 export type GitChangesRequest = Omit<PagedReviewInput, "action">;
 export type GitChangesScope = "uncommitted" | "branch" | "commits";
 
-export function GitChangesPanel({ request, initialScope = "uncommitted" }: {
+export function GitChangesPanel({ request, initialScope = "uncommitted", compact = false }: {
   readonly request: GitChangesRequest;
   readonly initialScope?: GitChangesScope;
+  readonly compact?: boolean;
 }) {
   const { t } = useT("issues");
   const [selected, setSelected] = useState("");
@@ -32,11 +33,11 @@ export function GitChangesPanel({ request, initialScope = "uncommitted" }: {
     {repositories.error && <><LocalReviewError error={repositories.error} id="git-repositories-error" /><Button size="sm" variant="outline" disabled={repositories.isFetching} onClick={() => void repositories.refetch()}>{t(($) => $.local_review.refresh)}</Button></>}
     {repositories.isSuccess && !paths.length && <p role="status">{t(($) => $.git_changes.no_git)}</p>}
     {paths.length > 1 && <label className="block space-y-1 text-caption">{t(($) => $.local_review.repository)}<select className="h-8 w-full rounded-md border bg-background px-2" value={path} onChange={(event) => setSelected(event.target.value)}>{paths.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>}
-    {path && <GitChangesSession key={JSON.stringify([request.workspace_id, request.runtime_id, request.task_id, request.project_resource_id, path])} request={{ ...request, path, target: path === request.path ? request.target : "", scope: "checkout" }} initialScope={initialScope} />}
+    {path && <GitChangesSession key={JSON.stringify([request.workspace_id, request.runtime_id, request.task_id, request.project_resource_id, path])} request={{ ...request, path, target: path === request.path ? request.target : "", scope: "checkout" }} initialScope={initialScope} compact={compact} />}
   </div>;
 }
 
-function GitChangesSession({ request, initialScope }: { readonly request: GitChangesRequest; readonly initialScope: GitChangesScope }) {
+function GitChangesSession({ request, initialScope, compact }: { readonly request: GitChangesRequest; readonly initialScope: GitChangesScope; readonly compact: boolean }) {
   const { t } = useT("issues");
   const [scope, setScope] = useState(initialScope);
   const index = useQuery({ queryKey: ["git-uncommitted", request], queryFn: ({ signal }) => readLocalIndex(request, signal), retry: false, networkMode: "always", refetchOnWindowFocus: false });
@@ -70,11 +71,11 @@ function GitChangesSession({ request, initialScope }: { readonly request: GitCha
         {targets.map((branch) => <option key={branch} value={branch}>{branch}</option>)}
       </select>
     </label>}
-    {scope === "uncommitted" ? <GitUncommittedChanges request={request} /> : scope === "commits" ? <GitCommitList request={request} /> : branches.isPending ? <p role="status">{t(($) => $.local_review.loading)}</p> : branches.error ? <LocalReviewError error={branches.error} id="git-branches-error" /> : !target ? <p role="status">{t(($) => $.git_changes.no_git)}</p> : <GitComparison key={target} request={current} />}
+    {scope === "uncommitted" ? <GitUncommittedChanges request={request} compact={compact} /> : scope === "commits" ? <GitCommitList request={request} compact={compact} /> : branches.isPending ? <p role="status">{t(($) => $.local_review.loading)}</p> : branches.error ? <LocalReviewError error={branches.error} id="git-branches-error" /> : !target ? <p role="status">{t(($) => $.git_changes.no_git)}</p> : <GitComparison key={target} request={current} compact={compact} />}
   </section>;
 }
 
-function GitComparison({ request }: { readonly request: GitChangesRequest }) {
+function GitComparison({ request, compact }: { readonly request: GitChangesRequest; readonly compact: boolean }) {
   const { t } = useT("issues");
   const comparison = useQuery({
     queryKey: ["git-comparison", request],
@@ -88,7 +89,7 @@ function GitComparison({ request }: { readonly request: GitChangesRequest }) {
     {comparison.error && <LocalReviewError error={comparison.error} id="git-comparison-error" />}
     {manifest && <>
       <p className="break-all text-caption">{manifest.header.repository} · {manifest.header.branch}</p>
-      <LocalReviewFileBrowser key={manifest.version_id} request={request} manifest={manifest} />
+      <LocalReviewFileBrowser compact={compact} diffLayout={compact ? "unified" : "split"} key={manifest.version_id} request={request} manifest={manifest} />
     </>}
   </div>;
 }

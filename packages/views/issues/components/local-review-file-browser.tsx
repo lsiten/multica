@@ -54,7 +54,9 @@ export type LocalReviewRowStaging = {
 };
 export type LocalReviewFileSelection = { readonly files: readonly { readonly path: string }[]; readonly busy: boolean; readonly add: (file: ReviewManifest["page"]["files"][number]) => void; readonly remove: (path: string) => void; readonly addAll?: () => void; readonly removeAll?: () => void };
 
-export function LocalReviewFileBrowser({ request, manifest, staging, selection, selectedPath, onSelectPath, diffLayout = "inherit", fileFilter = "all", fileView = "list", onFileFilterChange, onFileViewChange, comments = [], focusComment, commentSide = "new", onCommentSideChange, onAddComment, onFindings }: {
+export function LocalReviewFileBrowser({ request, manifest, compact = false, changesLabel, staging, selection, selectedPath, onSelectPath, diffLayout = "inherit", fileFilter = "all", fileView = "list", onFileFilterChange, onFileViewChange, comments = [], focusComment, commentSide = "new", onCommentSideChange, onAddComment, onFindings }: {
+  compact?: boolean;
+  changesLabel?: string;
   request: Omit<PagedReviewInput, "action">;
   manifest: ReviewManifest;
   staging?: LocalReviewRowStaging;
@@ -81,7 +83,7 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
   const [stagedVisible, setStagedVisible] = useState(100);
   const [workingVisible, setWorkingVisible] = useState(100);
   const [query, setQuery] = useState("");
-  const [fileBrowserOpen, setFileBrowserOpen] = useState(true);
+  const [fileBrowserOpen, setFileBrowserOpen] = useState(!compact);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [openTabs, setOpenTabs] = useState<readonly string[]>(selectedPath ? [selectedPath] : []);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -287,8 +289,8 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
     overscan: 12,
   });
   return (
-    <div className={`grid min-h-0 flex-1 grid-cols-1 ${fileBrowserOpen ? "grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[17rem_minmax(0,1fr)] md:grid-rows-1" : ""}`}>
-      {fileBrowserOpen && <nav id="local-review-changes" tabIndex={-1} className="flex max-h-60 min-h-0 flex-col overflow-hidden border-r bg-card outline-none md:max-h-none" aria-label={t(($) => $.local_review.files)}>
+    <div className={`grid min-h-0 flex-1 grid-cols-1 ${fileBrowserOpen ? compact ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[auto_minmax(0,1fr)] md:grid-cols-[17rem_minmax(0,1fr)] md:grid-rows-1" : ""}`}>
+      {fileBrowserOpen && <nav id="local-review-changes" tabIndex={-1} className={`flex max-h-60 min-h-0 flex-col overflow-hidden border-r bg-card outline-none ${compact ? "" : "md:max-h-none"}`} aria-label={t(($) => $.local_review.files)}>
         <div className="shrink-0 space-y-2 border-b p-2">
           <div className="flex items-center justify-between gap-2">
             <span className="text-caption font-semibold">{t(($) => $.local_review.files)}</span>
@@ -337,7 +339,7 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
           {selection && <div className="border-b"><h4 className="px-2 py-1.5 text-caption font-semibold">{t(($) => $.local_review.pending_merge)} · {selection.files.length}</h4>{selection.files.map((entry) => <div key={entry.path} className={`flex items-start ${branchPath === entry.path ? "bg-accent" : ""}`}><button type="button" aria-label={`${t(($) => $.local_review.pending_merge)} ${entry.path}`} aria-pressed={branchPath === entry.path} className="min-w-0 flex-1 break-all px-2 py-1.5 text-left text-caption" onClick={() => { selectFile(entry.path); setStagedSelection(""); setBranchSelection(entry.path); }}>{entry.path}</button><Button variant="ghost" size="icon-xs" className="mr-1 mt-1" aria-label={t(($) => $.local_review.remove_selection, { path: entry.path })} disabled={selection.busy} onClick={() => selection.remove(entry.path)}><Minus aria-hidden="true" /></Button></div>)}</div>}
           {staging && <div className="border-b"><h4 className="px-2 py-1.5 text-caption font-semibold">{t(($) => $.local_review.staged)} · {stagedFiles.length}</h4>{stagedFiles.slice(0, stagedVisible).map((entry) => <div key={entry.path} className={`flex items-start ${stagedPath === entry.path ? "bg-accent" : ""}`}><button type="button" aria-label={`${t(($) => $.local_review.staged)} ${entry.path}`} aria-pressed={stagedPath === entry.path} className="min-w-0 flex-1 break-all px-2 py-1.5 text-left text-caption hover:bg-accent" onClick={() => selectStaged(entry.path)}>{entry.path}</button><Button className="mr-1 mt-1" variant="ghost" size="icon-xs" aria-label={t(($) => $.local_review.unstage_file, { path: entry.path })} disabled={staging.busy || entry.conflicted || entry.unsupported} onClick={() => staging.change("unstage", entry.path)}><Minus aria-hidden="true" /></Button></div>)}</div>}
           {staging && stagedFiles.length > stagedVisible && <Button variant="ghost" className="m-2" onClick={() => setStagedVisible(stagedVisible + 100)}>{t(($) => $.local_review.staged)} · {t(($) => $.local_review.load_more_files)}</Button>}
-          <div className="border-b px-2 py-1.5 text-caption font-semibold">{t(($) => $.local_review.branch_changes)} · {filteredRows.length}</div>
+          <div className="border-b px-2 py-1.5 text-caption font-semibold">{changesLabel ?? t(($) => $.local_review.branch_changes)} · {filteredRows.length}</div>
           {fileView === "tree" ? virtualizeTree ? (
             <div ref={changedListRef} className="h-[min(60vh,44rem)] min-h-72 overflow-auto">
               <div
@@ -410,7 +412,7 @@ export function LocalReviewFileBrowser({ request, manifest, staging, selection, 
             </div>
           ) : filteredRows.slice(0, visibleRows).map(renderChangedFile)}
           {filteredRows.length > visibleRows && <Button variant="ghost" className="m-2" onClick={() => setWorkingVisible(visibleRows + 100)}>{t(($) => $.local_review.unstaged)} · {t(($) => $.local_review.load_more_files)}</Button>}
-          <p className="p-2 text-caption text-muted-foreground">{t(($) => $.local_review.branch_changes)} · {t(($) => $.local_review.loaded_files, { loaded: allRows.length, total: manifest.page.total_files })}</p>
+          <p className="p-2 text-caption text-muted-foreground">{changesLabel ?? t(($) => $.local_review.branch_changes)} · {t(($) => $.local_review.loaded_files, { loaded: allRows.length, total: manifest.page.total_files })}</p>
           {files.error && <LocalReviewError error={files.error} id={errorId} />}
           {files.hasNextPage && <Button className="m-2" variant="outline" disabled={files.isFetchingNextPage} onClick={() => void files.fetchNextPage()}>{t(($) => $.local_review.load_more_files)}</Button>}
         </div>

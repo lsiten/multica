@@ -91,3 +91,13 @@ it.each([
   expect(await screen.findByRole("alert")).toHaveTextContent(visible);
   expect(pages.readLocalIndex).not.toHaveBeenCalled();
 });
+
+it("starts the narrow chat diff with a reopenable file list", async () => {
+  renderWithI18n(panel());
+  expect(await screen.findByText("bytes:/repo")).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Files" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Show changed files" }));
+  expect(screen.getByRole("navigation", { name: "Files" })).toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: "Files" })).toHaveTextContent("Uncommitted");
+  expect(await screen.findByText("bytes:/repo")).toBeInTheDocument();
+});

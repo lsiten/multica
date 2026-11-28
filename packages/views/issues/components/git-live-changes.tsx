@@ -7,7 +7,7 @@ import { LocalReviewFileBrowser } from "./local-review-file-browser";
 import { LocalReviewError } from "./local-review-error";
 import type { GitChangesRequest } from "./git-changes-panel";
 
-export function GitUncommittedChanges({ request }: { readonly request: GitChangesRequest }) {
+export function GitUncommittedChanges({ request, compact = false }: { readonly request: GitChangesRequest; readonly compact?: boolean }) {
   const { t } = useT("issues");
   const [side, setSide] = useState<"working" | "staged">("working");
   const index = useQuery({ queryKey: ["git-uncommitted", request], queryFn: ({ signal }) => readLocalIndex(request, signal), retry: false, networkMode: "always", refetchOnWindowFocus: false });
@@ -28,7 +28,7 @@ export function GitUncommittedChanges({ request }: { readonly request: GitChange
         <div className="flex gap-1"><Button size="sm" variant={side === "working" ? "secondary" : "ghost"} aria-pressed={side === "working"} onClick={() => setSide("working")}>{t(($) => $.local_review.unstaged)}</Button><Button size="sm" variant={side === "staged" ? "secondary" : "ghost"} aria-pressed={side === "staged"} onClick={() => setSide("staged")}>{t(($) => $.local_review.staged)}</Button></div>
         {diff.isFetching && <p role="status">{t(($) => $.local_review.loading)}</p>}
         {diff.error && <LocalReviewError error={diff.error} id="git-index-diff-error" />}
-        {!diff.error && diff.data ? <LocalReviewFileBrowser key={diff.data.version_id} request={{ ...request, target: data.status.branch }} manifest={diff.data} /> : !diff.isFetching && !diff.error && <>
+        {!diff.error && diff.data ? <LocalReviewFileBrowser compact={compact} diffLayout={compact ? "unified" : "split"} changesLabel={t(($) => $.git_changes.uncommitted)} key={diff.data.version_id} request={{ ...request, target: data.status.branch }} manifest={diff.data} /> : !diff.isFetching && !diff.error && <>
           <ul className="space-y-1 text-caption">{data.status.files.filter((file) => side === "staged" ? file.staged : file.unstaged || file.untracked).map((file) => <li key={file.path} className="break-all">{file.old_path ? `${file.old_path} → ` : ""}{file.path} · {file.index_code}{file.working_code}</li>)}</ul>
           <p className="text-caption text-muted-foreground">{t(($) => $.git_changes.diff_unavailable)}</p>
         </>}
@@ -37,7 +37,7 @@ export function GitUncommittedChanges({ request }: { readonly request: GitChange
   </div>;
 }
 
-export function GitCommitList({ request }: { readonly request: GitChangesRequest }) {
+export function GitCommitList({ request, compact = false }: { readonly request: GitChangesRequest; readonly compact?: boolean }) {
   const { t } = useT("issues");
   const [selectedCommit, setSelectedCommit] = useState("");
   const commits = useInfiniteQuery({
@@ -60,7 +60,7 @@ export function GitCommitList({ request }: { readonly request: GitChangesRequest
     {commits.data?.pages[0]?.commits.length === 0 && <p role="status">{t(($) => $.local_review.empty)}</p>}
     {diff.isFetching && <p role="status">{t(($) => $.local_review.loading)}</p>}
     {diff.error && <LocalReviewError error={diff.error} id="git-commit-diff-error" />}
-    {!diff.error && diff.data && <LocalReviewFileBrowser key={diff.data.version_id} request={request} manifest={diff.data} />}
+    {!diff.error && diff.data && <LocalReviewFileBrowser compact={compact} diffLayout={compact ? "unified" : "split"} changesLabel={t(($) => $.git_changes.commits)} key={diff.data.version_id} request={request} manifest={diff.data} />}
     {commits.hasNextPage && <Button variant="outline" disabled={commits.isFetchingNextPage} onClick={() => void commits.fetchNextPage()}>{t(($) => $.local_review.load_more)}</Button>}
   </div>;
 }

@@ -7,5 +7,5 @@ export function ChatChangesPanel({ request }: {
   readonly onChanged: () => void;
   readonly onInvalidBinding: () => void;
 }) {
-  return <GitChangesPanel request={request} initialScope="uncommitted" />;
+  return <GitChangesPanel request={request} initialScope="uncommitted" compact />;
 }
